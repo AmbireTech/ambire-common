@@ -89,7 +89,7 @@ export interface Network {
   allowForce4337?: boolean
   predefinedConfigVersion?: number
   // Last time the network details were updated from the rpc for custom and no SA networks
-  lastUpdated?: number
+  lastUpdatedNetworkInfo?: number
   // When we migrate from custom to predefined network from relayer, we need to store the custom network name
   // for future migration of other storages by this id
   customNetworkId?: string
@@ -182,7 +182,7 @@ export type RelayerNetwork = {
       enabled: boolean
       hasPaymaster: boolean
       hasBundlerSupport?: boolean
-      bundlers?: { [bundler in BUNDLER]: string }
+      bundlers?: [bundler: BUNDLER]
       defaultBundler?: BUNDLER
       increasePreVerGas?: number
     }

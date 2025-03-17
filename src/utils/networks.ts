@@ -174,10 +174,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     ...(typeof incomingErc4337.hasBundlerSupport === 'boolean' && {
       hasBundlerSupport: incomingErc4337.hasBundlerSupport
     }),
-    // TODO: Also store the values (bundler API keys) somewhere. Currently,
-    // they are pulled from the .env file
     ...(incomingErc4337.bundlers && {
-      bundlers: Object.keys(incomingErc4337.bundlers) as BUNDLER[]
+      bundlers: incomingErc4337.bundlers as BUNDLER[]
     }),
     ...(incomingErc4337.defaultBundler && {
       defaultBundler: incomingErc4337.defaultBundler
@@ -189,8 +187,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
 
   // Always fallback to these values for the "predefined" networks, coming from
   // the RPC for the custom networks.
-  // TODO: Call the RPC to get these values dynamically
-  // on version update on isSAEnabled = false
   const rpcNoStateOverride = false
   const isSAEnabled = !!smartAccounts
   const areContractsDeployed = !!smartAccounts

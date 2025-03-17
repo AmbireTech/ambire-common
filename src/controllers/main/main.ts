@@ -1062,7 +1062,7 @@ export class MainController extends EventEmitter {
 
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
-    await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
+    await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
   #removeAccountKeyData(address: Account['addr']) {

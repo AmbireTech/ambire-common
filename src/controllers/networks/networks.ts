@@ -14,10 +14,7 @@ import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
-  getShouldMigrateNetworkPreferencesToNetworks,
-  is4337Enabled,
-  LegacyNetworkPreferences,
-  migrateNetworkPreferencesToNetworks
+  is4337Enabled
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
@@ -89,20 +86,23 @@ export class NetworksController extends EventEmitter {
       .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
     return uniqueNetworksByChainId.map((network) => {
       // eslint-disable-next-line no-param-reassign
-      network.features = getFeaturesByNetworkProperties({
-        isSAEnabled: network.isSAEnabled,
-        isOptimistic: network.isOptimistic ?? false,
-        rpcNoStateOverride: network.rpcNoStateOverride,
-        erc4337: network.erc4337,
-        areContractsDeployed: network.areContractsDeployed,
-        feeOptions: network.feeOptions,
-        platformId: network.platformId,
-        nativeAssetId: network.nativeAssetId,
-        flagged: network.flagged ?? false,
-        chainId: network.chainId,
-        hasSingleton: network.hasSingleton,
-        force4337: network.force4337
-      })
+      network.features = getFeaturesByNetworkProperties(
+        {
+          isSAEnabled: network.isSAEnabled,
+          isOptimistic: network.isOptimistic ?? false,
+          rpcNoStateOverride: network.rpcNoStateOverride,
+          erc4337: network.erc4337,
+          areContractsDeployed: network.areContractsDeployed,
+          feeOptions: network.feeOptions,
+          platformId: network.platformId,
+          nativeAssetId: network.nativeAssetId,
+          flagged: network.flagged ?? false,
+          chainId: network.chainId,
+          hasSingleton: network.hasSingleton,
+          force4337: network.force4337
+        },
+        network
+      )
       return network
     })
   }
@@ -125,23 +125,11 @@ export class NetworksController extends EventEmitter {
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
    */
   async #load() {
-    const legacyNetworkPrefInStorage: LegacyNetworkPreferences = await this.#storage.get(
-      'networkPreferences',
-      {}
-    )
     // Step 1. Get latest storage (networksInStorage)
-    let networksInStorage: { [key: NetworkId]: Network } = await this.#storage.get('networks', {})
-    if (
-      getShouldMigrateNetworkPreferencesToNetworks(networksInStorage, legacyNetworkPrefInStorage)
-    ) {
-      networksInStorage = await migrateNetworkPreferencesToNetworks(legacyNetworkPrefInStorage)
-      await this.#storage.remove('networkPreferences')
-    }
+    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
 
-    // migrate from the old structure [key: NetworkId] to [key: chainId]
-    let finalNetworks: { [key: string]: Network } = Object.fromEntries(
-      Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
-    )
+    let finalNetworks: { [key: string]: Network } = {}
+
     // If networksInStorage is empty, set predefinedNetworks and emit update
     if (!Object.keys(networksInStorage).length) {
       finalNetworks = predefinedNetworks.reduce((acc, network) => {
@@ -222,18 +210,8 @@ export class NetworksController extends EventEmitter {
         finalNetworks[chainId] = { ...network, platformId: 'ethereum' }
       }
     })
+    this.#networks = finalNetworks
 
-    // Sort networks: predefined first, then custom, ordered by chainId
-    this.#networks = Object.fromEntries(
-      Object.values(finalNetworks)
-        .sort((a, b) => {
-          if (a.predefined !== b.predefined) {
-            return a.predefined ? -1 : 1 // Predefined networks come first
-          }
-          return a.chainId.toString().localeCompare(b.chainId.toString()) // Sort by chainId
-        })
-        .map((network) => [network.chainId.toString(), network])
-    )
     this.emitUpdate()
 
     await this.#updateNetworksInStorage()
@@ -242,7 +220,11 @@ export class NetworksController extends EventEmitter {
     Object.values(finalNetworks).forEach((network) => {
       if (network.isSAEnabled) return
 
-      if (network.lastUpdated && Date.now() - network.lastUpdated <= 24 * 60 * 60 * 1000) return
+      if (
+        network.lastUpdatedNetworkInfo &&
+        Date.now() - network.lastUpdatedNetworkInfo <= 24 * 60 * 60 * 1000
+      )
+        return
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       getNetworkInfo(this.#fetch, network.selectedRpcUrl, network.chainId, async (info) => {
@@ -250,11 +232,12 @@ export class NetworksController extends EventEmitter {
           return
         }
 
+        if (info.flagged) return
         const chainId = network.chainId.toString()
         this.#networks[chainId] = {
           ...this.#networks[chainId],
           ...(info as NetworkInfo),
-          lastUpdated: Date.now()
+          lastUpdatedNetworkInfo: Date.now()
         }
 
         await this.#updateNetworksInStorage()
@@ -326,7 +309,7 @@ export class NetworksController extends EventEmitter {
       ...network,
       ...info,
       feeOptions,
-      features: getFeaturesByNetworkProperties(info),
+      features: getFeaturesByNetworkProperties(info, undefined),
       hasRelayer: false,
       predefined: false,
       has7702: false
@@ -343,12 +326,12 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('addNetwork', () => this.#addNetwork(network))
   }
 
-  async #updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+  async #updateNetwork(network: Partial<Network>, chainId: ChainId) {
     await this.initialLoadPromise
 
     if (!Object.keys(network).length) return
 
-    const networkData = this.networks.find((n) => n.id === networkId)
+    const networkData = this.networks.find((n) => n.chainId === chainId)
     const changedNetwork: Network = Object.keys(network).reduce((acc, key) => {
       if (!networkData) return acc
 
@@ -364,16 +347,13 @@ export class NetworksController extends EventEmitter {
     if ('force4337' in changedNetwork) {
       nextNetwork.erc4337.enabled = is4337Enabled(
         true,
-        this.#networks[networkId],
+        this.#networks[chainId.toString()],
         nextNetwork.force4337
       )
     }
 
-    // Update the networks with the incoming new values
-    this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
-
-    this.#networks[networkId] = nextNetwork
-    this.#onAddOrUpdateNetwork(this.#networks[networkId])
+    this.#networks[chainId.toString()] = { ...nextNetwork, ...networkData }
+    this.#onAddOrUpdateNetwork(this.#networks[chainId.toString()])
 
     // TODO: Figure out if this needs adjustments, it probably does
     const checkRPC = async (
@@ -393,8 +373,8 @@ export class NetworksController extends EventEmitter {
 
           // eslint-disable-next-line no-param-reassign
           delete (info as any).feeOptions
-          this.#networks[networkId] = {
-            ...this.#networks[networkId],
+          this.#networks[chainId.toString()] = {
+            ...this.#networks[chainId.toString()],
             ...info,
             ...feeOptions
           }
@@ -409,7 +389,7 @@ export class NetworksController extends EventEmitter {
         getNetworkInfo(
           this.#fetch,
           changedNetwork.selectedRpcUrl,
-          this.#networks[networkId].chainId!,
+          this.#networks[chainId.toString()].chainId!,
           async (info) => {
             if (Object.values(info).some((prop) => prop === 'LOADING')) {
               return
@@ -419,8 +399,8 @@ export class NetworksController extends EventEmitter {
 
             // eslint-disable-next-line no-param-reassign
             delete (info as any).feeOptions
-            this.#networks[networkId] = {
-              ...this.#networks[networkId],
+            this.#networks[chainId.toString()] = {
+              ...this.#networks[chainId.toString()],
               ...(info as NetworkInfo),
               ...feeOptions
             }
@@ -441,8 +421,8 @@ export class NetworksController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
-    await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
+  async updateNetwork(network: Partial<Network>, chainId: ChainId) {
+    await this.withStatus('updateNetwork', () => this.#updateNetwork(network, chainId))
   }
 
   async removeNetwork(chainId: ChainId) {

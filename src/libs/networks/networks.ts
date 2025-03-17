@@ -215,7 +215,8 @@ export async function getNetworkInfo(
 
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
-  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined
+  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
+  network: Network | undefined
 ): NetworkFeature[] {
   const features: NetworkFeature[] = [
     {
@@ -289,7 +290,7 @@ export function getFeaturesByNetworkProperties(
       })
     }
 
-    const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId)
+    const predefinedNetSettings = network
 
     const erc4337Settings = {
       enabled: is4337Enabled(
@@ -360,9 +361,10 @@ export function getFeaturesByNetworkProperties(
 // call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
 export function getFeatures(
-  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined
+  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined,
+  network: Network | undefined
 ): NetworkFeature[] {
-  return getFeaturesByNetworkProperties(networkInfo)
+  return getFeaturesByNetworkProperties(networkInfo, network)
 }
 
 // Since v4.24.0, a new Network interface has been introduced,
@@ -415,7 +417,7 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       ...preference,
       ...networkInfo,
       // TODO: Not sure if we need to add these, as they are [] by default for predefined networks
-      features: getFeaturesByNetworkProperties(networkInfo),
+      features: getFeaturesByNetworkProperties(networkInfo, undefined),
       hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
       predefined: false
     } as Network
@@ -423,11 +425,6 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
 
   return networksToStore
 }
-
-// TODO: Description
-export const getShouldMigrateNetworksInStorageToNetworksV2 = (networksInStorage: {
-  [key in NetworkId]: Network
-}) => !!Object.keys(networksInStorage)
 
 // is the user allowed to change the network settings to 4337
 export function canForce4337(network?: Network) {

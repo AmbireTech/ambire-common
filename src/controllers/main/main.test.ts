@@ -380,7 +380,7 @@ describe('Main Controller ', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    await controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+    await controller.networks.updateNetwork({ areContractsDeployed: false }, 1n)
 
     const eth2 = controller.networks.networks.find((net) => net.id === 'ethereum')!
     expect(eth2.areContractsDeployed).toEqual(false)

@@ -38,7 +38,7 @@ describe('Networks Controller', () => {
       }
     })
 
-    networksController.updateNetwork(preferences, 'ethereum')
+    networksController.updateNetwork(preferences, 1n)
   })
 
   test('should add the mantle network as a custom network', (done) => {
@@ -116,7 +116,7 @@ describe('Networks Controller', () => {
         expect(prices).not.toBe(undefined)
         expect(prices!.level).toBe('success')
 
-        networksController.updateNetwork({ areContractsDeployed: true }, 'mantle')
+        networksController.updateNetwork({ areContractsDeployed: true }, 5000n)
       }
 
       // test to see if updateNetwork is working
