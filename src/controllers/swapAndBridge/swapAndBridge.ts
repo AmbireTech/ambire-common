@@ -1022,14 +1022,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
           if (alreadySelectedRoute) {
             routeToSelect = alreadySelectedRoute
-            routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)
+            // TODO: Adjust for LiFi
+            // routeToSelectSteps = getQuoteRouteSteps(alreadySelectedRoute.userTxs)
           } else {
+            // TODO: Socket specific, skip for LiFi
             const bestRoute =
               this.routePriority === 'output'
                 ? routes[0] // API returns highest output first
                 : routes[routes.length - 1] // API returns fastest... last
             routeToSelect = bestRoute
-            routeToSelectSteps = getQuoteRouteSteps(bestRoute.userTxs)
+            // TODO: Adjust for LiFi
+            // routeToSelectSteps = getQuoteRouteSteps(bestRoute.userTxs)
           }
 
           this.quote = {
@@ -1037,8 +1040,11 @@ export class SwapAndBridgeController extends EventEmitter {
             fromChainId: quoteResult.fromChainId,
             toAsset: quoteResult.toAsset,
             toChainId: quoteResult.toChainId,
-            selectedRoute: routeToSelect,
-            selectedRouteSteps: routeToSelectSteps,
+            // TODO: Adjust for LiFi
+            // selectedRoute: routeToSelect,
+            // selectedRouteSteps: routeToSelectSteps,
+            selectedRoute: quoteResult.routes[0],
+            selectedRouteSteps: quoteResult.routes[0].steps,
             routes
           }
         }
