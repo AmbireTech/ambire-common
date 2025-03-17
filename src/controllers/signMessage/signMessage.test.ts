@@ -1,3 +1,5 @@
+import { hexlify, randomBytes } from 'ethers'
+/* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
@@ -8,16 +10,49 @@ import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
+import { Key } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
-import { InternalSigner } from '../keystore/keystore.test'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 import { SignMessageController } from './signMessage'
+
+class InternalSigner {
+  key
+
+  privKey
+
+  constructor(_key: Key, _privKey?: string) {
+    this.key = _key
+    this.privKey = _privKey
+  }
+
+  signRawTransaction() {
+    return Promise.resolve('')
+  }
+
+  signTypedData() {
+    return Promise.resolve('')
+  }
+
+  signMessage() {
+    return Promise.resolve('')
+  }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+}
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -67,8 +102,8 @@ describe('SignMessageController', () => {
   beforeAll(async () => {
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    await storageCtrl.set('accounts', JSON.stringify([account]))
-    await storageCtrl.set('selectedAccount', JSON.stringify(account.addr))
+    await storageCtrl.set('accounts', [account])
+    await storageCtrl.set('selectedAccount', account.addr)
 
     keystoreCtrl = new KeystoreController(storageCtrl, { internal: InternalSigner }, windowManager)
     networksCtrl = new NetworksController(

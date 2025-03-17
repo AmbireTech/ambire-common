@@ -18,6 +18,7 @@ import {
   AccountAssetsState as PortfolioAccountAssetsState,
   PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
+import { parse } from '../../libs/richJson/richJson'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateCustomTokens,
@@ -113,6 +114,8 @@ export class StorageController {
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
+
+    await this.#initStorage()
   }
 
   // As of version 4.24.0, a new Network interface has been introduced,
@@ -295,14 +298,18 @@ export class StorageController {
 
     if (!key) return this.#storage
 
-    return this.#storage[key as keyof StorageType] ?? defaultValue
+    return this.#storage[key] || defaultValue
   }
 
   async set(key: string, value: any) {
     await this.#initialLoadPromise
     this.#updateQueue = this.#updateQueue.then(async () => {
       try {
-        ;(this.#storage as any)[key] = value
+        try {
+          ;(this.#storage as any)[key] = value === 'string' ? parse(value) : value
+        } catch (error) {
+          ;(this.#storage as any)[key] = value
+        }
         await this.#storageAPI.set(key, value)
       } catch (err) {
         console.error(`Failed to set storage key "${key}":`, err)

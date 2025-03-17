@@ -57,7 +57,7 @@ describe('AccountsController', () => {
 
   let accountsCtrl: AccountsController
   test('should init AccountsController', async () => {
-    await storage.set('accounts', accounts)
+    await storageCtrl.set('accounts', accounts)
     accountsCtrl = new AccountsController(
       storageCtrl,
       providersCtrl,
