@@ -133,7 +133,7 @@ export class Paymaster extends AbstractPaymaster {
     if (!this.network) throw new Error('network not set, did you call init?')
 
     if (this.type === 'Ambire') {
-      const feeToken = getFeeTokenForEstimate(feeTokens, this.network)
+      const feeToken = getFeeTokenForEstimate(feeTokens)
       if (!feeToken) return undefined
 
       return getFeeCall(feeToken)
