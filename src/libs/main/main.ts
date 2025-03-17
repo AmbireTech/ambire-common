@@ -167,27 +167,3 @@ export const getAccountOpsForSimulation = (
 
   return undefined
 }
-
-async function migrateStateFromLegacyNetworkIdToChainId(storage: Storage) {
-  const [
-    storageVersion,
-    storedNetworks,
-    storedTokenPreferences,
-    storedNetworksWithAssetsByAccount,
-    storedNetworksWithPositionsByAccounts,
-    storedPreviousHints
-  ] = await Promise.all([
-    storage.get('storageVersion', undefined),
-    storage.get('networks', {}),
-    storage.get('tokenPreferences', []),
-    storage.get('networksWithAssetsByAccount', {}),
-    storage.get('networksWithPositionsByAccounts', {}),
-    storage.get('previousHints', {})
-  ])
-
-  // if (storageVersion && Number(storageVersion) >= )
-
-  Object.values(storedNetworks).forEach((network: Network) => {})
-}
-
-export async function storageMigrations(storage: Storage) {}

@@ -21,7 +21,7 @@ import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { StorageController } from '../storage/storage'
 import { KeystoreController } from './keystore'
 
-export class InternalSigner {
+class InternalSigner {
   key
 
   privKey
@@ -574,10 +574,12 @@ describe('import/export with pub key test', () => {
 
   beforeEach(async () => {
     const storage = produceMemoryStore()
+    const storage2 = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
+    const storageCtrl2 = new StorageController(storage2)
 
     keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
-    keystore2 = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
+    keystore2 = new KeystoreController(storageCtrl2, keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')
