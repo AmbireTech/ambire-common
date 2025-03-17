@@ -267,6 +267,7 @@ export class StorageController {
 
   async get(key: string | null, defaultValue?: any) {
     await this.#initialLoadPromise
+    await this.#updateQueue
 
     if (key === null) return this.#storage
 
@@ -277,8 +278,8 @@ export class StorageController {
     await this.#initialLoadPromise
     this.#updateQueue = this.#updateQueue.then(async () => {
       try {
-        await this.#storageAPI.set(key, value)
         ;(this.#storage as any)[key] = value
+        await this.#storageAPI.set(key, value)
       } catch (err) {
         console.error(`Failed to set storage key "${key}":`, err)
       }
@@ -290,8 +291,8 @@ export class StorageController {
     await this.#initialLoadPromise
     this.#updateQueue = this.#updateQueue.then(async () => {
       try {
-        await this.#storageAPI.remove(key)
         ;(this.#storage as any)[key] = undefined
+        await this.#storageAPI.remove(key)
       } catch (err) {
         console.error(`Failed to remove storage key "${key}":`, err)
       }
