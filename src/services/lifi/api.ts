@@ -1,6 +1,6 @@
 import { getAddress } from 'ethers'
 
-import { ExtendedChain, LiFiStep, TokensResponse } from '@lifi/types'
+import { ExtendedChain, LiFiStep, Token as LiFiToken, TokensResponse } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { InviteController } from '../../controllers/invite/invite'
@@ -12,7 +12,8 @@ import {
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken,
-  SocketRouteStatus
+  SocketRouteStatus,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
@@ -190,7 +191,7 @@ export class LiFiAPI {
   }: {
     fromChainId: number
     toChainId: number
-  }): Promise<SocketAPIToken[]> {
+  }): Promise<SwapAndBridgeToToken[]> {
     // TODO: Figure out a way to pull only a shortlist
     const params = new URLSearchParams({
       chains: toChainId.toString(),
@@ -220,8 +221,14 @@ export class LiFiAPI {
     // TODO: Add custom tokens
     // response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
 
-    // TODO: Refine types
-    return response.tokens[toChainId].map((t) => ({ ...t, icon: t.logoURI, symbol: t.coinKey }))
+    return response.tokens[toChainId].map((t: LiFiToken) => ({
+      name: t.name,
+      address: t.address,
+      decimals: t.decimals,
+      symbol: t.symbol,
+      icon: t.logoURI,
+      chainId: toChainId
+    }))
   }
 
   async getToken({

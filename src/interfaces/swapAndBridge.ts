@@ -19,7 +19,7 @@ export interface SwapAndBridgeToToken {
   name: string
   chainId: number
   address: string
-  icon: string
+  icon?: string
   decimals: number
 }
 
