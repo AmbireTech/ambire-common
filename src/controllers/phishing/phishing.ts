@@ -1,9 +1,9 @@
 import jsYaml from 'js-yaml'
 
 import { Fetch } from '../../interfaces/fetch'
-import { Storage } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
 import EventEmitter from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
 
 const METAMASK_BLACKLIST_URL =
@@ -12,7 +12,7 @@ const METAMASK_BLACKLIST_URL =
 const PHANTOM_BLACKLIST_URL =
   'https://api.github.com/repos/phantom/blocklist/contents/blocklist.yaml?ref=master'
 
-type StoredPhishingDetection = {
+export type StoredPhishingDetection = {
   timestamp: number
   metamaskBlacklist: string[]
   phantomBlacklist: string[]

@@ -1,10 +1,12 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Account, AccountId, AccountPreferences } from '../../interfaces/account'
-import { Key, KeystoreSeed, StoredKey } from '../../interfaces/keystore'
+import { Dapp } from '../../interfaces/dapp'
+import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from '../../interfaces/keystore'
 import { Network, NetworkId } from '../../interfaces/network'
-import { CashbackStatus, LegacyCashbackStatus } from '../../interfaces/selectedAccount'
+import { CashbackStatus, CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
+import { ActiveRoute } from '../../interfaces/swapAndBridge'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { NetworksWithPositionsByAccounts } from '../../libs/defiPositions/types'
 import {
@@ -22,6 +24,8 @@ import {
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
+// eslint-disable-next-line import/no-cycle
+import { StoredPhishingDetection } from '../phishing/phishing'
 
 type StorageType = {
   migrations: string[]
@@ -37,10 +41,18 @@ type StorageType = {
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
   keystoreSeeds: string[] | KeystoreSeed[]
-  cashbackStatusByAccount: Record<
-    Account['addr'],
-    CashbackStatus | LegacyCashbackStatus | null | undefined
-  >
+  cashbackStatusByAccount: CashbackStatusByAccount
+  dapps: Dapp[]
+  invite: object
+  isPinned: boolean
+  isSetupComplete: boolean
+  keyStoreUid?: string
+  keystoreSecrets: MainKeyEncryptedWithSecret[]
+  onboardingState?: object
+  phishingDetection: StoredPhishingDetection
+  selectedAccount: string | null
+  swapAndBridgeActiveRoutes: ActiveRoute[]
+  termsState?: object
 }
 
 export class StorageController {
@@ -60,7 +72,18 @@ export class StorageController {
     keyPreferences: [],
     keystoreKeys: [],
     keystoreSeeds: [],
-    cashbackStatusByAccount: {}
+    cashbackStatusByAccount: {},
+    dapps: [],
+    invite: {},
+    isPinned: false,
+    isSetupComplete: false,
+    keyStoreUid: undefined,
+    keystoreSecrets: [],
+    onboardingState: undefined,
+    phishingDetection: null,
+    selectedAccount: null,
+    swapAndBridgeActiveRoutes: [],
+    termsState: undefined
   }
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -253,7 +276,7 @@ export class StorageController {
     if (!Object.keys(storage).length) return
 
     Object.keys(storage).forEach((key) => {
-      this.#storage[key as keyof StorageType] = storage[key]
+      ;(this.#storage as any)[key] = storage[key]
     })
   }
 
