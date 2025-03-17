@@ -64,23 +64,16 @@ export class Paymaster extends AbstractPaymaster {
   // a chain id paymaster route open yet as it's not merged
   ambirePaymasterUrl: string | undefined
 
-  // this is a temporary solution where the live relayer doesn't have
-  // a chain id paymaster route open yet as it's not merged
-  isStaging: boolean
-
   constructor(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
     super()
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.errorCallback = errorCallback
-    this.isStaging = relayerUrl.indexOf('staging') !== -1
   }
 
   async init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider) {
     this.network = network
     this.provider = provider
-    this.ambirePaymasterUrl = this.isStaging
-      ? `/v2/paymaster/${this.network.chainId}/request`
-      : `/v2/paymaster/${this.network.id}/sign`
+    this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
 
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
@@ -140,7 +133,7 @@ export class Paymaster extends AbstractPaymaster {
     if (!this.network) throw new Error('network not set, did you call init?')
 
     if (this.type === 'Ambire') {
-      const feeToken = getFeeTokenForEstimate(feeTokens, this.network)
+      const feeToken = getFeeTokenForEstimate(feeTokens)
       if (!feeToken) return undefined
 
       return getFeeCall(feeToken)

@@ -4,17 +4,15 @@ import { toBeHex } from 'ethers'
 
 /* eslint-disable import/no-extraneous-dependencies */
 import { BUNDLER } from '../../consts/bundlers'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { Message } from '../../interfaces/userRequest'
 import { decodeError } from '../../libs/errorDecoder'
 import { BundlerError } from '../../libs/errorDecoder/customErrors'
 import { DecodedError } from '../../libs/errorDecoder/types'
 import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
-import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
@@ -56,24 +54,6 @@ export abstract class Bundler {
   public abstract getName(): BUNDLER
 
   /**
-   * Each bundler implements its own 7702 function for now
-   */
-  public abstract estimate7702(
-    userOperation: UserOperation,
-    network: Network,
-    authorizationMsg?: Message
-  ): Promise<BundlerEstimateResult>
-
-  /**
-   * Broadcast a userOperation for 7702 accounts to the specified bundler
-   * and get a userOperationHash in return
-   *
-   * @param UserOperation userOperation
-   * @returns userOperationHash
-   */
-  public abstract broadcast7702(userOperation: UserOperation, network: Network): Promise<string>
-
-  /**
    * Get the bundler RPC
    *
    * @param network
@@ -85,37 +65,35 @@ export abstract class Bundler {
   private async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride = false
+    stateOverride?: {
+      [accAddr: string]: {
+        code: string
+      }
+    }
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
-
-    if (shouldStateOverride) {
-      return provider.send('eth_estimateUserOperationGas', [
-        getCleanUserOp(userOperation)[0],
-        ERC_4337_ENTRYPOINT,
-        {
-          [userOperation.sender]: {
-            stateDiff: {
-              // add privileges to the entry point
-              [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
-            }
-          }
-        }
-      ])
-    }
-
-    return provider.send('eth_estimateUserOperationGas', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
+    return stateOverride
+      ? provider.send('eth_estimateUserOperationGas', [
+          getCleanUserOp(userOperation)[0],
+          ERC_4337_ENTRYPOINT,
+          stateOverride
+        ])
+      : provider.send('eth_estimateUserOperationGas', [
+          getCleanUserOp(userOperation)[0],
+          ERC_4337_ENTRYPOINT
+        ])
   }
 
   async estimate(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride = false
+    stateOverride?: {
+      [accAddr: string]: {
+        code: string
+      }
+    }
   ): Promise<BundlerEstimateResult> {
-    const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride)
+    const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
 
     // Whole formula:
     // final = estimation + estimation * percentage

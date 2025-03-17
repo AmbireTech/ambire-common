@@ -27,7 +27,6 @@ interface FeeOptions {
 
 /** Current network configuration and statuses, which may change over time */
 export interface NetworkInfo {
-  force4337?: boolean
   chainId: bigint
   isSAEnabled: boolean
   hasSingleton: boolean
@@ -85,7 +84,6 @@ export interface Network {
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
-  force4337?: NetworkInfo['force4337']
   allowForce4337?: boolean
   predefinedConfigVersion?: number
   // Last time the network details were updated from the rpc for custom and no SA networks

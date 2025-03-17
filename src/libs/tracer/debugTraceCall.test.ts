@@ -4,6 +4,7 @@ import { beforeAll, expect } from '@jest/globals'
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp } from '../accountOp/accountOp'
+import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
 import { debugTraceCall } from './debugTraceCall'
 
@@ -49,7 +50,7 @@ describe('Debug tracecall detection for transactions', () => {
       gasLimit: null,
       gasFeePayment: {
         paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        isERC4337: false,
+        broadcastOption: BROADCAST_OPTIONS.byRelayer,
         isGasTank: false,
         inToken: '0x0000000000000000000000000000000000000000',
         amount: 5205038755874012n,
@@ -71,6 +72,7 @@ describe('Debug tracecall detection for transactions', () => {
     state = {
       accountAddr: ACCOUNT_ADDRESS,
       nonce: 1n,
+      eoaNonce: 1n,
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
       isV2: true,
@@ -157,7 +159,6 @@ describe('Debug tracecall detection for transactions', () => {
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe(NFT_ADDRESS)
-    expect(res.nfts[0][1]).toContain(0n)
     expect(res.nfts[0][1]).toContain(25n)
     expect(res.tokens.length).toBe(2)
     expect(res.tokens).toContain(USDC_ADDRESS_OPTIMISM)

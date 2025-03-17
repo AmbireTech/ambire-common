@@ -201,140 +201,47 @@ const buildSwapAndBridgeUserRequests = async (
   provider: RPCProvider,
   state: AccountOnchainState
 ) => {
-  if (!isBasicAccount(account, state)) {
-    const calls: Call[] = []
-    if (userTx.approvalData) {
-      const erc20Interface = new Interface(ERC20.abi)
-
-      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
-      if (revokeApproval) calls.push(revokeApproval)
-
-      calls.push({
-        to: userTx.approvalData.approvalTokenAddress,
-        value: BigInt('0'),
-        data: erc20Interface.encodeFunctionData('approve', [
-          userTx.approvalData.allowanceTarget,
-          BigInt(userTx.approvalData.minimumApprovalAmount)
-        ]),
-        fromUserRequestId: userTx.activeRouteId
-      } as Call)
-    }
-
-    calls.push({
-      to: userTx.txTarget,
-      value: BigInt(userTx.value),
-      data: userTx.txData,
-      fromUserRequestId: userTx.activeRouteId
-    } as Call)
-
-    return [
-      {
-        id: userTx.activeRouteId,
-        action: {
-          kind: 'calls' as const,
-          calls
-        },
-        meta: {
-          isSignAction: true,
-          networkId,
-          accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId,
-          isSwapAndBridgeCall: true
-        }
-      } as SignUserRequest
-    ]
-  }
-  const requests: SignUserRequest[] = []
-  let shouldBuildSwapOrBridgeTx = true
+  const calls: Call[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
-    let shouldApprove = true
-    try {
-      const erc20Contract = new Contract(
-        userTx.approvalData.approvalTokenAddress,
-        ERC20.abi,
-        provider
-      )
-      const allowance = await erc20Contract.allowance(
-        userTx.approvalData.owner,
-        userTx.approvalData.allowanceTarget
-      )
-      // check if an approval already exists
-      if (BigInt(allowance) >= BigInt(userTx.approvalData.minimumApprovalAmount))
-        shouldApprove = false
-    } catch (error) {
-      console.error(error)
-    }
 
-    if (shouldApprove) {
-      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
-      if (revokeApproval) {
-        requests.push({
-          id: `${userTx.activeRouteId}-revoke-approval`,
-          action: { kind: 'calls' as const, calls: [revokeApproval] },
-          meta: {
-            isSignAction: true,
-            networkId,
-            accountAddr: account.addr,
-            isSwapAndBridgeCall: true,
-            activeRouteId: userTx.activeRouteId
-          }
-        } as SignUserRequest)
-      }
-      requests.push({
-        id: `${userTx.activeRouteId}-approval`,
-        action: {
-          kind: 'calls' as const,
-          calls: [
-            {
-              to: userTx.approvalData.approvalTokenAddress,
-              value: BigInt('0'),
-              data: erc20Interface.encodeFunctionData('approve', [
-                userTx.approvalData.allowanceTarget,
-                MaxUint256 // approve the max possible amount for better UX on BA
-              ]),
-              fromUserRequestId: `${userTx.activeRouteId}-approval`
-            } as Call
-          ]
-        },
-        meta: {
-          isSignAction: true,
-          networkId,
-          accountAddr: account.addr,
-          isSwapAndBridgeCall: true,
-          activeRouteId: userTx.activeRouteId
-        }
-      } as SignUserRequest)
-      // first build only the approval tx and then when confirmed this func will be called a second time
-      // and then only the swap or bridge tx will be created
-      shouldBuildSwapOrBridgeTx = false
-    }
+    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
+    if (revokeApproval) calls.push(revokeApproval)
+
+    calls.push({
+      to: userTx.approvalData.approvalTokenAddress,
+      value: BigInt('0'),
+      data: erc20Interface.encodeFunctionData('approve', [
+        userTx.approvalData.allowanceTarget,
+        BigInt(userTx.approvalData.minimumApprovalAmount)
+      ]),
+      fromUserRequestId: userTx.activeRouteId
+    } as Call)
   }
 
-  if (shouldBuildSwapOrBridgeTx) {
-    requests.push({
+  calls.push({
+    to: userTx.txTarget,
+    value: BigInt(userTx.value),
+    data: userTx.txData,
+    fromUserRequestId: userTx.activeRouteId
+  } as Call)
+
+  return [
+    {
       id: userTx.activeRouteId,
       action: {
         kind: 'calls' as const,
-        calls: [
-          {
-            to: userTx.txTarget,
-            value: BigInt(userTx.value),
-            data: userTx.txData,
-            fromUserRequestId: userTx.activeRouteId
-          } as Call
-        ]
+        calls
       },
       meta: {
         isSignAction: true,
         networkId,
         accountAddr: account.addr,
-        isSwapAndBridgeCall: true,
-        activeRouteId: userTx.activeRouteId
+        activeRouteId: userTx.activeRouteId,
+        isSwapAndBridgeCall: true
       }
-    } as SignUserRequest)
-  }
-  return requests
+    } as SignUserRequest
+  ]
 }
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>

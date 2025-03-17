@@ -61,7 +61,7 @@ describe('1559 Network gas price tests', () => {
     expect(ape.baseFeePerGas).toBe(expectations.ape)
     provider.destroy()
   })
-  test('should make a prediction for an empty previous block, should decrease the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
+  test('should make a prediction for an empty previous block, should NOT decrease the baseFeePerGas as we do not decrease it anymore, set slow to the base gas and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
       gasUsed: 0n
     }
@@ -70,10 +70,10 @@ describe('1559 Network gas price tests', () => {
     const gasPrice = gasPriceData.gasPrice
 
     const expectations = {
-      slow: ethers.parseUnits('0.875', 'gwei'),
-      medium: ethers.parseUnits('0.91875', 'gwei'),
-      fast: ethers.parseUnits('0.9625', 'gwei'),
-      ape: ethers.parseUnits('1.00625', 'gwei')
+      slow: ethers.parseUnits('1', 'gwei'),
+      medium: ethers.parseUnits('1.05', 'gwei'),
+      fast: ethers.parseUnits('1.1', 'gwei'),
+      ape: ethers.parseUnits('1.15', 'gwei')
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow)
@@ -85,7 +85,7 @@ describe('1559 Network gas price tests', () => {
     expect(ape.baseFeePerGas).toBe(expectations.ape)
     provider.destroy()
   })
-  test('should make a prediction for a previous block of 10M gas, should decrease the baseFeePerGas by 4.16% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
+  test('should make a prediction for a previous block of 10M gas, should NOT decrease the baseFeePerGas for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async () => {
     const params = {
       gasUsed: 10000000n
     }
@@ -95,10 +95,10 @@ describe('1559 Network gas price tests', () => {
 
     // 958333334
     const expectations = {
-      slow: ethers.parseUnits('0.958333334', 'gwei'),
-      medium: ethers.parseUnits('1.006250000', 'gwei'),
-      fast: ethers.parseUnits('1.054166667', 'gwei'),
-      ape: ethers.parseUnits('1.102083334', 'gwei')
+      slow: ethers.parseUnits('1', 'gwei'),
+      medium: ethers.parseUnits('1.05', 'gwei'),
+      fast: ethers.parseUnits('1.1', 'gwei'),
+      ape: ethers.parseUnits('1.15', 'gwei')
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow)

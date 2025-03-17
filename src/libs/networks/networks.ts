@@ -38,19 +38,11 @@ export const relayerAdditionalNetworks = [
 
 // 4337 network support
 // if it is supported on the network (hasBundlerSupport),
-// we check if the user has specifically enabled it through settings (force4337)
-// if he has not, we check if the network is predefinedNetwork and we
+// we check if the network is predefinedNetwork and we
 // have specifically disabled 4337
 // finally, we fallback to the bundler support
-export function is4337Enabled(
-  hasBundlerSupport: boolean,
-  network?: Network,
-  force4337?: boolean
-): boolean {
+export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): boolean {
   if (!hasBundlerSupport) return false
-
-  // the user has chosen to use 4337
-  if (force4337 !== undefined) return force4337 as boolean
 
   // if we have set it specifically
   if (network && network.predefined) return network.erc4337.enabled
@@ -84,13 +76,9 @@ export async function getNetworkInfo(
   fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
-  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
-  optionalArgs?: {
-    force4337?: boolean
-  }
+  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = {
-    force4337: optionalArgs?.force4337,
     chainId,
     isSAEnabled: 'LOADING',
     hasSingleton: 'LOADING',
@@ -155,7 +143,7 @@ export async function getNetworkInfo(
               ? true
               : !saSupport.supportsStateOverride,
           erc4337: {
-            enabled: is4337Enabled(hasBundlerSupport, predefinedNetwork, optionalArgs?.force4337),
+            enabled: is4337Enabled(hasBundlerSupport, predefinedNetwork),
             hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false,
             hasBundlerSupport
           }
@@ -246,8 +234,7 @@ export function getFeaturesByNetworkProperties(
     rpcNoStateOverride,
     nativeAssetId,
     chainId,
-    hasSingleton,
-    force4337
+    hasSingleton
   } = networkInfo
 
   const updateFeature = (
@@ -275,12 +262,13 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
-  if (
-    [isSAEnabled, areContractsDeployed, erc4337, hasSingleton, force4337].every(
-      (p) => p !== 'LOADING'
-    )
-  ) {
-    if (!isSAEnabled) {
+  const predefinedNetSettings = network
+
+  if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
+    const isCustomNetworkWithout4337 =
+      !predefinedNetSettings && !(erc4337 as Erc4337settings).enabled
+
+    if (!isSAEnabled || isCustomNetworkWithout4337) {
       updateFeature('saSupport', {
         level: 'danger',
         title: 'Smart contract wallets are not supported',
@@ -290,14 +278,8 @@ export function getFeaturesByNetworkProperties(
       })
     }
 
-    const predefinedNetSettings = network
-
     const erc4337Settings = {
-      enabled: is4337Enabled(
-        (erc4337 as Erc4337settings).enabled,
-        predefinedNetSettings,
-        force4337 as boolean | undefined
-      ),
+      enabled: is4337Enabled((erc4337 as Erc4337settings).enabled, predefinedNetSettings),
       hasPaymaster: predefinedNetSettings
         ? predefinedNetSettings.erc4337.hasPaymaster
         : (erc4337 as Erc4337settings).hasPaymaster
@@ -307,13 +289,13 @@ export function getFeaturesByNetworkProperties(
       ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
       : 'Ambire Smart Accounts'
 
-    if (isSAEnabled && areContractsDeployed) {
+    if (!isCustomNetworkWithout4337 && isSAEnabled && areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'success',
         msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
       })
-    } else if (isSAEnabled && !areContractsDeployed) {
+    } else if (!isCustomNetworkWithout4337 && isSAEnabled && !areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'warning',
@@ -424,11 +406,6 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   })
 
   return networksToStore
-}
-
-// is the user allowed to change the network settings to 4337
-export function canForce4337(network?: Network) {
-  return network && network.allowForce4337
 }
 
 export function hasRelayerSupport(network: Network) {
