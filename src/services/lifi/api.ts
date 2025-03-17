@@ -339,42 +339,16 @@ export class LiFiAPI {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
+    // TODO: Refine types
     route: SocketAPIQuote['selectedRoute']
   }) {
-    const params = {
-      fromChainId,
-      toChainId,
-      fromAssetAddress: normalizeOutgoingSocketTokenAddress(fromAssetAddress),
-      toAssetAddress: normalizeOutgoingSocketTokenAddress(toAssetAddress),
-      includeFirstTxDetails: true,
-      route: {
-        ...route,
-        userTxs: route.userTxs.map((userTx) => ({
-          ...userTx,
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          fromAsset: userTx?.fromAsset ? normalizeOutgoingSocketToken(userTx.fromAsset) : undefined,
-          toAsset: {
-            ...userTx.toAsset,
-            address: normalizeOutgoingSocketTokenAddress(userTx.toAsset.address)
-          },
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          steps: userTx.steps
-            ? // @ts-ignore fromAsset exists on one of the two userTx sub-types
-              userTx.steps.map((step) => ({
-                ...step,
-                fromAsset: normalizeOutgoingSocketToken(step.fromAsset),
-                toAsset: normalizeOutgoingSocketToken(step.toAsset)
-              }))
-            : undefined
-        }))
-      }
-    }
+    const body = JSON.stringify(route.steps[0])
 
     const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
-      fetchPromise: this.#fetch(`${this.#baseUrl}/route/start`, {
+      fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {
         method: 'POST',
         headers: this.#headers,
-        body: JSON.stringify(params)
+        body
       }),
       errorPrefix: 'Unable to start the route.'
     })
