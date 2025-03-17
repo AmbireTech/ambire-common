@@ -37,7 +37,7 @@ describe('Generic error fallbacks work', () => {
   })
   it('Null error type', () => {
     const LAST_RESORT_ERROR_MESSAGE =
-      'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
+      'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
     // @ts-ignore
     const message = getGenericMessageFromType(null, null, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
 

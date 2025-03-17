@@ -531,7 +531,7 @@ describe('estimate', () => {
     expect(response instanceof Error).toBe(true)
     expect(
       (response as Error).message.indexOf(
-        'The transaction will fail because the transfer amount exceeds your account balance'
+        'Transaction cannot be sent because the transfer amount exceeds your account balance'
       )
     ).not.toBe(-1)
   })
@@ -932,7 +932,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'The transaction will fail because it will revert onchain. Error code: Insufficient ETH for transaction calls\n'
+      'Transaction cannot be sent because it will revert onchain. Error code: Insufficient ETH for transaction calls\n'
     )
   })
 
@@ -984,7 +984,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'The transaction will fail because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
+      'Transaction cannot be sent because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
     )
   })
 
@@ -1117,7 +1117,7 @@ describe('estimate', () => {
     )
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'The transaction will fail because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
+      'Transaction cannot be sent because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
     )
   })
 
@@ -1156,7 +1156,7 @@ describe('estimate', () => {
     )
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'The transaction will fail because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
+      'Transaction cannot be sent because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
     )
   })
 
@@ -1191,7 +1191,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'The transaction will fail because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
+      'Transaction cannot be sent because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
     )
   })
 })

@@ -6,10 +6,10 @@ import { ESTIMATION_ERRORS } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
-export const MESSAGE_PREFIX = 'The transaction will fail because'
+export const MESSAGE_PREFIX = 'Transaction cannot be sent because of'
 
 const LAST_RESORT_ERROR_MESSAGE =
-  'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
+  'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
 
 function getPrefix(reason: string | null): string {
   if (!reason) return MESSAGE_PREFIX
