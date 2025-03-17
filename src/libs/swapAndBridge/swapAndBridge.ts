@@ -9,7 +9,6 @@ import {
   SocketAPIBridgeUserTx,
   SocketAPISendTransactionRequest,
   SocketAPIStep,
-  SocketAPIToken,
   SocketAPIUserTx,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
@@ -41,7 +40,7 @@ export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  return tokenListResponse.sort((a: SocketAPIToken, b: SocketAPIToken) => {
+  return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
     const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
     const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
 
@@ -91,10 +90,10 @@ export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
   )
 }
 
-export const convertPortfolioTokenToSocketAPIToken = (
+export const convertPortfolioTokenToSwapAndBridgeToToken = (
   portfolioToken: TokenResult,
   chainId: number
-): SocketAPIToken => {
+): SwapAndBridgeToToken => {
   const { address, decimals, symbol } = portfolioToken
   // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
   const name = symbol
@@ -103,7 +102,7 @@ export const convertPortfolioTokenToSocketAPIToken = (
   const icon = ''
   const logoURI = ''
 
-  return { address, chainId, decimals, symbol, name, icon, logoURI }
+  return { address, chainId, decimals, symbol, name, icon }
 }
 
 const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {

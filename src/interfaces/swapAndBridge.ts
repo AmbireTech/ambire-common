@@ -14,8 +14,13 @@ export interface SocketAPIToken {
   symbol: string
 }
 
-export interface SwapAndBridgeToToken extends SocketAPIToken {
-  // TODO: Strip out the properties that are not needed.
+export interface SwapAndBridgeToToken {
+  symbol: string
+  name: string
+  chainId: number
+  address: string
+  icon: string
+  decimals: number
 }
 
 export interface SocketAPIQuote {

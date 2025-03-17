@@ -27,7 +27,7 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
-  convertPortfolioTokenToSocketAPIToken,
+  convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
@@ -469,7 +469,7 @@ export class SwapAndBridgeController extends EventEmitter {
     fromAmountFieldMode?: 'fiat' | 'token'
     fromSelectedToken?: TokenResult | null
     toChainId?: bigint | number
-    toSelectedToken?: SocketAPIToken | null
+    toSelectedToken?: SwapAndBridgeToToken | null
     routePriority?: 'output' | 'time'
   }) {
     const {
@@ -728,7 +728,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const additionalTokensFromPortfolio = this.portfolioTokenList
       .filter((t) => t.networkId === toTokenNetwork.id)
       .filter((token) => !toTokenList.some((t) => t.address === token.address))
-      .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
+      .map((t) => convertPortfolioTokenToSwapAndBridgeToToken(t, Number(toTokenNetwork.chainId)))
 
     this.#toTokenList = sortTokenListResponse(
       [...toTokenList, ...additionalTokensFromPortfolio],
