@@ -25,3 +25,13 @@ export const networks7702: Custom7702Settings = {
     implementation: SEPOLIA_7702
   }
 }
+
+export interface EIP7702Auth {
+  contractAddress: Hex
+  chainId: Hex
+  nonce: Hex
+  r: Hex
+  s: Hex
+  v: Hex
+  yParity: Hex
+}

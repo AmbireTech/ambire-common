@@ -8,7 +8,7 @@ import { NetworkId } from '../../interfaces/network'
 import { PaymasterService } from '../erc7677/types'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
-import { Call } from './types'
+import { AccountOpStatus, Call } from './types'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -17,7 +17,6 @@ import { Call } from './types'
 // 3) isGasTank and isERC4337 can both be true
 // 4) whether those values are sane will be checked in an additional function (currently `canBroadcast`); for example, this function is meant to ensure that in case of an EOA, the fee is always paid in native
 export interface GasFeePayment {
-  isERC4337: boolean
   isGasTank: boolean
   paidBy: string
   inToken: string
@@ -26,18 +25,9 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
+  broadcastOption: string
   maxPriorityFeePerGas?: bigint
   isSponsored?: boolean
-}
-
-export enum AccountOpStatus {
-  Pending = 'pending',
-  BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
-  Success = 'success',
-  Failure = 'failure',
-  Rejected = 'rejected',
-  UnknownButPastNonce = 'unknown-but-past-nonce',
-  BroadcastButStuck = 'broadcast-but-stuck'
 }
 
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to

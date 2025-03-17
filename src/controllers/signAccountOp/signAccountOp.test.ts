@@ -15,13 +15,16 @@ import {
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
-import { estimate } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { getEstimation } from '../../libs/estimate/estimate'
+import { FullEstimation } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
@@ -354,7 +357,7 @@ const init = async (
     feeTokens: TokenResult[]
   },
   signer: any,
-  estimationMock?: EstimateResult,
+  estimationMock?: FullEstimation,
   gasPricesMock?: gasPricesLib.GasRecommendation[],
   updateWholePortfolio?: boolean
 ) => {
@@ -422,20 +425,22 @@ const init = async (
     return null
   }
   const noStateUpdateStatuses: any[] = []
+  const accountState = accountsCtrl.accountStates[account.addr][network.id]
+  const baseAcc = getBaseAccount(account, accountState, keystore.getAccountKeys(account), network)
   const prices =
     gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
   const estimation =
     estimationMock ||
-    (await estimate(
-      provider,
-      network,
-      account,
+    (await getEstimation(
+      baseAcc,
+      accountState,
       op,
-      accountsCtrl.accountStates,
-      getNativeToCheckFromEOAs(nativeToCheck, account),
+      network,
+      provider,
       feeTokens,
-      errorCallback,
-      new BundlerSwitcher(network, getSignAccountOpStatus, noStateUpdateStatuses)
+      getNativeToCheckFromEOAs(nativeToCheck, account),
+      new BundlerSwitcher(network, getSignAccountOpStatus, noStateUpdateStatuses),
+      errorCallback
     ))
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
@@ -473,12 +478,13 @@ const init = async (
     ]
   }
   const controller = new SignAccountOpController(
-    accountsCtrl,
     keystore,
     portfolio,
     {},
     account,
-    networks.find((n) => n.id === op.networkId)!,
+    accountState,
+    network,
+    provider,
     1,
     op,
     () => {},
@@ -509,37 +515,46 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [EOA]: EOA account paying with a native token', async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n, // 1 ETH
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'ETH',
+          name: 'Ether',
+          networkId: 'ethereum',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const { controller, estimation, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 ETH
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'ETH',
-              name: 'Ether',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        provider: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {
@@ -583,7 +598,7 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
-      isERC4337: false,
+      broadcastOption: BROADCAST_OPTIONS.bySelf,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenNetworkId: 'ethereum',
@@ -598,39 +613,46 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [EOA]: should emit an error if the availableAmount is 0', async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 0n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'ETH',
+          name: 'Ether',
+          networkId: 'ethereum',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const { controller, estimation, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 0n,
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'ETH',
-              name: 'Ether',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        // even if availableAmount is 0, there is no error from the
-        // estimation. It is singAccountOp's responsibility to disable signing
-        error: null
+        provider: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {
@@ -675,39 +697,46 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [EOA]: should emit an error if the availableAmount is lower than required', async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'ETH',
+          name: 'Ether',
+          networkId: 'ethereum',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const { controller, estimation, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1n,
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'ETH',
-              name: 'Ether',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        // even if availableAmount is lower than required, there is no error in
-        // the estimation. SingAccountOp should disable signing
-        error: null
+        provider: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {
@@ -753,90 +782,99 @@ describe('SignAccountOp Controller ', () => {
 
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
     const networkId = 'polygon'
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          networkId: 'polygon',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          networkId: 'polygon',
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: usdcFeeToken.address,
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          networkId: 'polygon',
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const network = networks.find((net) => net.id === networkId)!
     const { controller, estimation, prices } = await init(
       smartAccount,
       createAccountOp(smartAccount, network.id),
       eoaSigner,
       {
-        gasUsed: 50000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              name: 'Polygon Ecosystem Token',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 50000n,
-            addedNative: 0n,
-            token: {
-              address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-              amount: 1n,
-              symbol: 'usdt',
-              name: 'USD Token',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [
-                {
-                  baseCurrency: 'usd',
-                  price: 1
-                }
-              ],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: usdcFeeToken.address,
-              amount: 1n,
-              symbol: 'usdc',
-              name: 'USD Coin',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [
-                {
-                  baseCurrency: 'usd',
-                  price: 1
-                }
-              ],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        provider: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {
@@ -892,7 +930,6 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    expect(controller.accountOp!.gasFeePayment?.isERC4337).toBe(false)
     expect(controller.accountOp!.gasFeePayment?.paidBy).toBe(smartAccount.addr)
 
     const typedData = getTypedData(
@@ -950,23 +987,32 @@ describe('SignAccountOp Controller ', () => {
           isFeeToken: true
         }
       }
+      const feePaymentOptions = [
+        {
+          paidBy: smartAccount.addr,
+          availableAmount: 500000000n,
+          gasUsed: 50000n,
+          addedNative: 0n,
+          token: feeTokenResult
+        }
+      ]
       const { controller, estimation, prices } = await init(
         smartAccount,
         createAccountOp(smartAccount, network.id),
         eoaSigner,
         {
-          gasUsed: 50000n,
-          currentAccountNonce: 0,
-          feePaymentOptions: [
-            {
-              paidBy: smartAccount.addr,
-              availableAmount: 500000000n,
-              gasUsed: 50000n,
-              addedNative: 0n,
-              token: feeTokenResult
-            }
-          ],
-          error: null
+          provider: {
+            gasUsed: 50000n,
+            feePaymentOptions
+          },
+          ambire: {
+            gasUsed: 50000n,
+            feePaymentOptions,
+            ambireAccountNonce: 0,
+            flags: {}
+          },
+          bundler: null,
+          flags: {}
         },
         [
           {
@@ -1030,79 +1076,88 @@ describe('SignAccountOp Controller ', () => {
     const networkId = 'polygon'
     const network = networks.find((net) => net.id === networkId)!
     network.erc4337.enabled = false
+    const feePaymentOptions = [
+      {
+        paidBy: e2esmartAccount.addr,
+        availableAmount: 500000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          networkId: 'polygon',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: true,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: e2esmartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          networkId: 'polygon',
+          decimals: 6,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: e2esmartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          networkId: 'polygon',
+          decimals: 6,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const { controller, estimation, prices } = await init(
       e2esmartAccount,
       createAccountOp(e2esmartAccount, network.id),
       eoaSigner,
       {
-        gasUsed: 50000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: e2esmartAccount.addr,
-            availableAmount: 500000000000000000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              name: 'Polygon Ecosystem Token',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: true,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: e2esmartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 50000n,
-            addedNative: 0n,
-            token: {
-              address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-              amount: 1n,
-              symbol: 'usdt',
-              name: 'USD Token',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: e2esmartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-              amount: 1n,
-              symbol: 'usdc',
-              name: 'USD Coin',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        provider: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {
@@ -1188,79 +1243,88 @@ describe('SignAccountOp Controller ', () => {
 
   test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions but 1 feeSpeed as both feePaymentOptions are EOA', async () => {
     const network = networks.find((net) => net.id === 'polygon')!
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n, // 1 POL
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          networkId: 'polygon',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: trezorEoa.addr,
+        availableAmount: 2000000000000000000n, // 1 POL
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          networkId: 'polygon',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: otherEoa.addr,
+        availableAmount: 3000000000000000000n, // 1 POL
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          networkId: 'polygon',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const { controller, estimation, prices } = await init(
       smartAccount,
       createAccountOp(smartAccount, network.id),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 POL
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              name: 'Polygon Ecosystem Token',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: trezorEoa.addr,
-            availableAmount: 2000000000000000000n, // 1 POL
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              name: 'Polygon Ecosystem Token',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: otherEoa.addr,
-            availableAmount: 3000000000000000000n, // 1 POL
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              name: 'Polygon Ecosystem Token',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        provider: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {
@@ -1324,7 +1388,7 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaSigner.keyPublicAddress,
-      isERC4337: false,
+      broadcastOption: BROADCAST_OPTIONS.byOtherEOA,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenNetworkId: 'polygon',
@@ -1363,37 +1427,46 @@ describe('SignAccountOp Controller ', () => {
 
     test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
       const network = networks.find((net) => net.id === 'polygon')!
+      const feePaymentOptions = [
+        {
+          paidBy: eoaAccount.addr,
+          availableAmount: 100n, // not enough
+          gasUsed: 0n,
+          addedNative: 5000n,
+          token: {
+            address: '0x0000000000000000000000000000000000000000',
+            amount: 1n,
+            symbol: 'POL',
+            name: 'Polygon Ecosystem Token',
+            networkId: 'polygon',
+            decimals: 18,
+            priceIn: [],
+            flags: {
+              onGasTank: false,
+              rewardsType: null,
+              canTopUpGasTank: true,
+              isFeeToken: true
+            }
+          }
+        }
+      ]
       const { controller, estimation, prices } = await init(
         smartAccount,
         createAccountOp(smartAccount, network.id),
         eoaSigner,
         {
-          gasUsed: 10000n,
-          currentAccountNonce: 0,
-          feePaymentOptions: [
-            {
-              paidBy: eoaAccount.addr,
-              availableAmount: 100n, // not enough
-              gasUsed: 0n,
-              addedNative: 5000n,
-              token: {
-                address: '0x0000000000000000000000000000000000000000',
-                amount: 1n,
-                symbol: 'POL',
-                name: 'Polygon Ecosystem Token',
-                networkId: 'polygon',
-                decimals: 18,
-                priceIn: [],
-                flags: {
-                  onGasTank: false,
-                  rewardsType: null,
-                  canTopUpGasTank: true,
-                  isFeeToken: true
-                }
-              }
-            }
-          ],
-          error: null
+          provider: {
+            gasUsed: 10000n,
+            feePaymentOptions
+          },
+          ambire: {
+            gasUsed: 10000n,
+            feePaymentOptions,
+            ambireAccountNonce: 0,
+            flags: {}
+          },
+          bundler: null,
+          flags: {}
         },
         [
           {
@@ -1446,37 +1519,46 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [V1 with EOA payment]: working case', async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n, // 1 ETH
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'eth',
+          name: 'Ether',
+          networkId: 'ethereum',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
     const { controller, estimation, prices } = await init(
       v1Account,
       createAccountOp(v1Account),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 ETH
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'eth',
-              name: 'Ether',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        provider: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambire: {
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundler: null,
+        flags: {}
       },
       [
         {

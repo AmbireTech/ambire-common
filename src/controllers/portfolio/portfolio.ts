@@ -4,7 +4,8 @@ import { Account, AccountId, AccountOnchainState } from '../../interfaces/accoun
 import { Fetch } from '../../interfaces/fetch'
 import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
-import { AccountOp, AccountOpStatus, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
@@ -147,7 +148,7 @@ export class PortfolioController extends EventEmitter {
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
           Array.isArray(networksWithAssets[key]) &&
-          networksWithAssets[key].every((item: any) => typeof item === 'string')
+          (networksWithAssets[key] as any).every((item: any) => typeof item === 'string')
       )
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets

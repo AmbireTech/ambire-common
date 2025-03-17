@@ -25,7 +25,6 @@ interface FeeOptions {
 }
 
 export interface NetworkInfo {
-  force4337?: boolean
   chainId: bigint
   isSAEnabled: boolean
   hasSingleton: boolean
@@ -83,8 +82,6 @@ export interface Network {
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
-  force4337?: boolean
-  allowForce4337?: boolean
   has7702: boolean
 }
 

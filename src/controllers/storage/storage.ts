@@ -40,7 +40,7 @@ type StorageType = {
   previousHints: PreviousHintsStorage
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
-  keystoreSeeds: string[] | KeystoreSeed[]
+  keystoreSeeds: KeystoreSeed[]
   cashbackStatusByAccount: CashbackStatusByAccount
   dapps: Dapp[]
   invite: object

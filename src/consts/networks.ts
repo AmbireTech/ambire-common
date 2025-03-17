@@ -24,8 +24,7 @@ const networks: Network[] = [
     feeOptions: { is1559: true },
     predefined: true,
     wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-    disableEstimateGas: true,
-    allowForce4337: true
+    disableEstimateGas: true
   },
   {
     id: 'polygon',
@@ -56,8 +55,7 @@ const networks: Network[] = [
     predefined: true,
     wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     oldNativeAssetSymbols: ['MATIC'],
-    disableEstimateGas: true,
-    allowForce4337: true
+    disableEstimateGas: true
   },
   {
     id: 'optimism',
@@ -219,10 +217,40 @@ const networks: Network[] = [
     feeOptions: { is1559: false },
     predefined: true,
     disableEstimateGas: true,
-    wrappedAddr: '0x5300000000000000000000000000000000000004',
-    allowForce4337: true
+    wrappedAddr: '0x5300000000000000000000000000000000000004'
+  },
+  {
+    id: 'binance-smart-chain',
+    name: 'Binance Smart Chain',
+    nativeAssetSymbol: 'BNB',
+    has7702: false,
+    nativeAssetName: 'Binance Coin',
+    rpcUrls: ['https://invictus.ambire.com/binance-smart-chain'],
+    selectedRpcUrl: 'https://invictus.ambire.com/binance-smart-chain',
+    rpcNoStateOverride: false,
+    chainId: 56n,
+    explorerUrl: 'https://bscscan.com/',
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO, BICONOMY],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: true,
+    platformId: 'binance-smart-chain',
+    nativeAssetId: 'binancecoin',
+    hasSingleton: true,
+    features: [],
+    feeOptions: { is1559: true },
+    predefined: true,
+    disableEstimateGas: true,
+    wrappedAddr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
   }
 ]
 export { networks }
 
 export const ODYSSEY_CHAIN_ID = 911867n
+export const ARBITRUM_CHAIN_ID = 42161n

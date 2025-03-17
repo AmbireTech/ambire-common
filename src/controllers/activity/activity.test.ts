@@ -60,7 +60,6 @@ const SUBMITTED_ACCOUNT_OP = {
   signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
   gasLimit: null,
   gasFeePayment: {
-    isERC4337: false,
     isGasTank: false,
     paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
     inToken: '0x0000000000000000000000000000000000000000',
@@ -232,7 +231,6 @@ describe('Activity Controller ', () => {
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
           gasFeePayment: {
-            isERC4337: false,
             isGasTank: false,
             paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
             inToken: '0x0000000000000000000000000000000000000000',
@@ -262,7 +260,6 @@ describe('Activity Controller ', () => {
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
           gasFeePayment: {
-            isERC4337: false,
             isGasTank: false,
             paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
             inToken: '0x0000000000000000000000000000000000000000',
@@ -292,7 +289,6 @@ describe('Activity Controller ', () => {
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
           gasFeePayment: {
-            isERC4337: false,
             isGasTank: false,
             paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
             inToken: '0x0000000000000000000000000000000000000000',
@@ -322,7 +318,6 @@ describe('Activity Controller ', () => {
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
           gasFeePayment: {
-            isERC4337: false,
             isGasTank: false,
             paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
             inToken: '0x0000000000000000000000000000000000000000',
@@ -374,7 +369,6 @@ describe('Activity Controller ', () => {
             signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
             gasLimit: null,
             gasFeePayment: {
-              isERC4337: false,
               isGasTank: false,
               paidBy: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
               inToken: '0x0000000000000000000000000000000000000000',
@@ -414,7 +408,6 @@ describe('Activity Controller ', () => {
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
         gasFeePayment: {
-          isERC4337: false,
           isGasTank: false,
           paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
           inToken: '0x0000000000000000000000000000000000000000',
@@ -459,7 +452,6 @@ describe('Activity Controller ', () => {
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
         gasFeePayment: {
-          isERC4337: false,
           isGasTank: false,
           paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
           inToken: '0x0000000000000000000000000000000000000000',
@@ -524,7 +516,6 @@ describe('Activity Controller ', () => {
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
         gasFeePayment: {
-          isERC4337: false,
           isGasTank: false,
           paidBy: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
           inToken: '0x0000000000000000000000000000000000000000',
@@ -555,7 +546,6 @@ describe('Activity Controller ', () => {
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
         gasFeePayment: {
-          isERC4337: false,
           isGasTank: false,
           paidBy: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
           inToken: '0x0000000000000000000000000000000000000000',
@@ -603,7 +593,6 @@ describe('Activity Controller ', () => {
         signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
         gasLimit: null,
         gasFeePayment: {
-          isERC4337: false,
           isGasTank: false,
           paidBy: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
           inToken: '0x0000000000000000000000000000000000000000',

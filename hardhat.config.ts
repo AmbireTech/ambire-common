@@ -34,10 +34,6 @@ const config: HardhatUserConfig = {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
-    pectra: {
-      url: 'https://rpc.pectra-devnet-5.ethpandaops.io',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
-    },
     odyssey: {
       url: 'https://odyssey.ithaca.xyz',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -49,10 +45,21 @@ const config: HardhatUserConfig = {
     sepolia: {
       url: 'https://eth-sepolia.public.blastapi.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    binance: {
+      url: 'https://invictus.ambire.com/binance-smart-chain',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY,
+    apiKey: {
+      base: process.env.ETHERSCAN_API_KEY,
+      optimism: process.env.ETHERSCAN_API_KEY,
+      odyssey: process.env.ETHERSCAN_API_KEY,
+      ethereum: process.env.ETHERSCAN_API_KEY,
+      sepolia: process.env.ETHERSCAN_API_KEY,
+      binance: process.env.BNB_API_KEY
+    },
     customChains: [
       {
         network: 'base',
@@ -92,6 +99,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api-sepolia.etherscan.io/api',
           browserURL: 'https://api-sepolia.etherscan.io/'
+        }
+      },
+      {
+        network: 'binance',
+        chainId: 56,
+        urls: {
+          apiURL: 'https://api.bscscan.com/api',
+          browserURL: 'https://api.bscscan.com/'
         }
       }
     ]

@@ -8,6 +8,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
@@ -87,11 +88,11 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
       feeTokenNetworkId: SIGN_ACCOUNT_OP_REQUEST.meta.networkId,
       gasPrice: 1101515n,
       inToken: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-      isERC4337: true,
       isGasTank: false,
       maxPriorityFeePerGas: 1100000n,
       paidBy: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
-      simulatedGasLimit: 2580640n
+      simulatedGasLimit: 2580640n,
+      broadcastOption: BROADCAST_OPTIONS.byBundler
     },
     gasLimit: null,
     meta: {},
