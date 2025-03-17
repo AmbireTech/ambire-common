@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks, ODYSSEY_CHAIN_ID } from '../../consts/networks'
+import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
