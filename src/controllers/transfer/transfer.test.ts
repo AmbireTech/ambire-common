@@ -2,7 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { velcroUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -55,6 +55,7 @@ let providersCtrl: ProvidersController
 const networksCtrl = new NetworksController(
   produceMemoryStore(),
   fetch,
+  relayerUrl,
   (net) => {
     providersCtrl.setProvider(net)
   },

@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
 import { NetworksController } from './networks'
@@ -14,6 +15,7 @@ describe('Networks Controller', () => {
     networksController = new NetworksController(
       produceMemoryStore(),
       fetch,
+      relayerUrl,
       () => {},
       () => {}
     )

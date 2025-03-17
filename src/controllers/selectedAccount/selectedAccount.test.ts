@@ -30,6 +30,7 @@ let providersCtrl: ProvidersController
 const networksCtrl = new NetworksController(
   produceMemoryStore(),
   fetch,
+  relayerUrl,
   (net) => {
     providersCtrl.setProvider(net)
   },

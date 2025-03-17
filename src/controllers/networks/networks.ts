@@ -11,11 +11,7 @@ import {
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import {
-  getFeaturesByNetworkProperties,
-  getNetworkInfo,
-  is4337Enabled
-} from '../../libs/networks/networks'
+import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -79,7 +75,7 @@ export class NetworksController extends EventEmitter {
   }
 
   get networks(): Network[] {
-    if (!this.#networks) return predefinedNetworks
+    if (!Object.keys(this.#networks).length) return predefinedNetworks
 
     const uniqueNetworksByChainId = Object.values(this.#networks)
       .sort((a, b) => +b.predefined - +a.predefined) // first predefined
@@ -191,11 +187,14 @@ export class NetworksController extends EventEmitter {
     } catch (e: any) {
       // Fail silently, we already have the networks from the storage
       // and assured we used predefined networks
-      console.log('Failed to fetch networks from the Relayer', e)
+      console.error('Failed to fetch networks from the Relayer', e)
     }
 
     // Ensure predefined networks stay marked correctly and handle special cases (e.g., Odyssey network)
-    const predefinedNetworkIds = Object.keys(relayerNetworks)
+    let predefinedNetworkIds = Object.keys(relayerNetworks)
+    if (!predefinedNetworkIds.length) {
+      predefinedNetworkIds = predefinedNetworks.map((network) => network.chainId.toString())
+    }
     Object.keys(finalNetworks).forEach((chainId: string) => {
       const network = finalNetworks[chainId]
 
@@ -340,7 +339,7 @@ export class NetworksController extends EventEmitter {
 
     // Update the networks with the incoming new values
     this.#networks[chainId.toString()] = {
-      ...this.#networks[chainId.toString()],
+      ...networkData,
       ...changedNetwork
     }
 

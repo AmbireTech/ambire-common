@@ -1,5 +1,6 @@
 import fetch from 'node-fetch'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
@@ -45,6 +46,7 @@ const prepareTest = async () => {
   const networksCtrl = new NetworksController(
     storage,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
