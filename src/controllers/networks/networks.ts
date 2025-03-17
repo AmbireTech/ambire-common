@@ -3,18 +3,17 @@ import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/n
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
+  ChainId,
   Network,
   NetworkId,
   NetworkInfo,
-  NetworkInfoLoading
+  NetworkInfoLoading,
+  RelayerNetworkConfigResponse
 } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import {
-  getFeaturesByNetworkProperties,
-  getNetworkInfo,
-  is4337Enabled,
-  migrateNetworkPreferencesToNetworks
-} from '../../libs/networks/networks'
+import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
@@ -32,7 +31,9 @@ export class NetworksController extends EventEmitter {
 
   #fetch: Fetch
 
-  #networks: { [key: NetworkId]: Network } = {}
+  #callRelayer: Function
+
+  #networks: { [key: string]: Network } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -44,20 +45,25 @@ export class NetworksController extends EventEmitter {
 
   #onRemoveNetwork: (id: NetworkId) => void
 
+  /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetwork: (network: Network) => void
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  #networksStorageUpdatePromise: Promise<null> = Promise.resolve(null)
+
   constructor(
     storage: Storage,
     fetch: Fetch,
+    relayerUrl: string,
     onAddOrUpdateNetwork: (network: Network) => void,
     onRemoveNetwork: (id: NetworkId) => void
   ) {
     super()
     this.#storage = storage
     this.#fetch = fetch
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddOrUpdateNetwork = onAddOrUpdateNetwork
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -69,80 +75,174 @@ export class NetworksController extends EventEmitter {
   }
 
   get networks(): Network[] {
-    if (!this.#networks) return predefinedNetworks
+    if (!Object.keys(this.#networks).length) return predefinedNetworks
 
     const uniqueNetworksByChainId = Object.values(this.#networks)
       .sort((a, b) => +b.predefined - +a.predefined) // first predefined
       .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
     return uniqueNetworksByChainId.map((network) => {
       // eslint-disable-next-line no-param-reassign
-      network.features = getFeaturesByNetworkProperties({
-        isSAEnabled: network.isSAEnabled,
-        isOptimistic: network.isOptimistic ?? false,
-        rpcNoStateOverride: network.rpcNoStateOverride,
-        erc4337: network.erc4337,
-        areContractsDeployed: network.areContractsDeployed,
-        feeOptions: network.feeOptions,
-        platformId: network.platformId,
-        nativeAssetId: network.nativeAssetId,
-        flagged: network.flagged ?? false,
-        chainId: network.chainId,
-        hasSingleton: network.hasSingleton
-      })
+      network.features = getFeaturesByNetworkProperties(
+        {
+          isSAEnabled: network.isSAEnabled,
+          isOptimistic: network.isOptimistic ?? false,
+          rpcNoStateOverride: network.rpcNoStateOverride,
+          erc4337: network.erc4337,
+          areContractsDeployed: network.areContractsDeployed,
+          feeOptions: network.feeOptions,
+          platformId: network.platformId,
+          nativeAssetId: network.nativeAssetId,
+          flagged: network.flagged ?? false,
+          chainId: network.chainId,
+          hasSingleton: network.hasSingleton
+        },
+        network
+      )
       return network
     })
   }
 
+  /**
+   * Loads and synchronizes network configurations from storage and the relayer.
+   *
+   * This method performs the following steps:
+   * 1. Retrieves the legacy network preferences and the latest network configurations from storage.
+   * 2. Migrates legacy network preferences to the new network structure if needed.
+   * 3. Converts the network structure from [key: NetworkId] to [key: chainId].
+   * 4. If no networks are found in storage, sets predefined networks and emits an update.
+   * 5. Merges the networks from the Relayer with the stored networks.
+   * 6. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
+   * 7. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
+   * 8. Updates the networks in storage.
+   * 9. Asynchronously updates network features if needed.
+   *
+   * This method ensures that the application has the most up-to-date network configurations,
+   * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
+   */
   async #load() {
-    const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
-      await this.#storage.get('networkPreferences', undefined)
-    let storedNetworks: { [key: NetworkId]: Network }
-    storedNetworks = await this.#storage.get('networks', {})
-    if (!Object.keys(storedNetworks).length && storedNetworkPreferences) {
-      storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences)
-      await this.#storage.set('networks', storedNetworks)
-      await this.#storage.remove('networkPreferences')
+    // Step 1. Get latest storage (networksInStorage)
+    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+
+    let finalNetworks: { [key: string]: Network } = {}
+
+    // If networksInStorage is empty, set predefinedNetworks and emit update
+    if (!Object.keys(networksInStorage).length) {
+      finalNetworks = predefinedNetworks.reduce((acc, network) => {
+        acc[network.chainId.toString()] = network
+        return acc
+      }, {} as { [key: string]: Network })
+      this.#networks = finalNetworks
+      this.emitUpdate()
     }
-    this.#networks = storedNetworks
 
-    predefinedNetworks.forEach((n) => {
-      this.#networks[n.id] = {
-        ...n, // add the latest structure of the predefined network to include the new props that are not in storage yet
-        ...(this.#networks[n.id] || {}), // override with stored props
-        // attributes that should take predefined priority
-        feeOptions: n.feeOptions,
-        hasRelayer: n.hasRelayer,
-        erc4337: {
-          enabled: is4337Enabled(!!n.erc4337.hasBundlerSupport, n),
-          hasPaymaster: n.erc4337.hasPaymaster,
-          defaultBundler: n.erc4337.defaultBundler,
-          bundlers: n.erc4337.bundlers,
-          increasePreVerGas: n.erc4337.increasePreVerGas ?? 0
-        },
-        nativeAssetId: n.nativeAssetId,
-        nativeAssetSymbol: n.nativeAssetSymbol,
-        has7702: n.has7702
+    finalNetworks = Object.fromEntries(
+      Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
+    )
+
+    // Step 2: Merge the networks coming from the Relayer
+    // For now we call this on load, but will decide later if we need to call it periodically
+    let relayerNetworks: RelayerNetworkConfigResponse = {}
+    try {
+      const res = await this.#callRelayer('/v2/config/networks')
+      relayerNetworks = res.data.extensionConfigNetworks
+      Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
+        const chainId = BigInt(_chainId)
+        const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
+        const storedNetwork = Object.values(networksInStorage).find(
+          (net) => net.chainId === chainId
+        )
+
+        if (!storedNetwork) {
+          finalNetworks[chainId.toString()] = {
+            ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
+            ...relayerNetwork
+          }
+          return
+        }
+
+        // If the network is custom we assume predefinedConfigVersion = 0
+        if (storedNetwork.predefinedConfigVersion === undefined) {
+          storedNetwork.predefinedConfigVersion = 0
+        }
+
+        // Mechanism to force an update network preferences if needed
+        const shouldOverrideStoredNetwork =
+          relayerNetwork.predefinedConfigVersion > 0 &&
+          relayerNetwork.predefinedConfigVersion > storedNetwork.predefinedConfigVersion
+
+        if (shouldOverrideStoredNetwork) {
+          finalNetworks[chainId.toString()] = {
+            ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
+            ...relayerNetwork,
+            id: storedNetwork?.id || relayerNetwork.id,
+            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
+          }
+        } else {
+          finalNetworks[chainId.toString()] = {
+            ...storedNetwork,
+            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
+          }
+        }
+      })
+    } catch (e: any) {
+      // Fail silently, we already have the networks from the storage
+      // and assured we used predefined networks
+      console.error('Failed to fetch networks from the Relayer', e)
+    }
+
+    // Ensure predefined networks stay marked correctly and handle special cases (e.g., Odyssey network)
+    let predefinedNetworkIds = Object.keys(relayerNetworks)
+    if (!predefinedNetworkIds.length) {
+      predefinedNetworkIds = predefinedNetworks.map((network) => network.chainId.toString())
+    }
+    Object.keys(finalNetworks).forEach((chainId: string) => {
+      const network = finalNetworks[chainId]
+
+      // If a predefined network is removed by the relayer, mark it as custom
+      if (!predefinedNetworkIds.includes(network.chainId.toString()) && network.predefined) {
+        finalNetworks[chainId] = { ...network, predefined: false }
+      }
+
+      // Special case: Set the platformId for Odyssey chain
+      if (network.chainId === ODYSSEY_CHAIN_ID) {
+        finalNetworks[chainId] = { ...network, platformId: 'ethereum' }
       }
     })
-
-    // add predefined: false for each deleted network from predefined
-    Object.keys(this.#networks).forEach((networkName) => {
-      const predefinedNetwork = predefinedNetworks.find(
-        (net) => net.chainId === this.#networks[networkName].chainId
-      )
-      if (!predefinedNetwork) {
-        this.#networks[networkName].predefined = false
-
-        if (this.#networks[networkName].chainId === ODYSSEY_CHAIN_ID)
-          this.#networks[networkName].platformId = 'ethereum'
-      }
-    })
-
-    // without await to avoid performance impact on load
-    // needed to keep the networks storage up to date with the latest from predefinedNetworks
-    this.#storage.set('networks', this.#networks)
+    this.#networks = finalNetworks
 
     this.emitUpdate()
+
+    await this.#updateNetworksInStorage()
+
+    // update networks features asynchronously
+    Object.values(finalNetworks).forEach((network) => {
+      if (network.isSAEnabled) return
+
+      if (
+        network.lastUpdatedNetworkInfo &&
+        Date.now() - network.lastUpdatedNetworkInfo <= 24 * 60 * 60 * 1000
+      )
+        return
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      getNetworkInfo(this.#fetch, network.selectedRpcUrl, network.chainId, async (info) => {
+        if (Object.values(info).some((prop) => prop === 'LOADING')) {
+          return
+        }
+
+        if (info.flagged) return
+        const chainId = network.chainId.toString()
+        this.#networks[chainId] = {
+          ...this.#networks[chainId],
+          ...(info as NetworkInfo),
+          lastUpdatedNetworkInfo: Date.now()
+        }
+
+        await this.#updateNetworksInStorage()
+
+        this.emitUpdate()
+      })
+    })
   }
 
   async setNetworkToAddOrUpdate(
@@ -182,10 +282,10 @@ export class NetworksController extends EventEmitter {
     ) {
       return
     }
+
     const chainIds = this.networks.map((net) => net.chainId)
     const ids = this.networks.map((n) => n.id)
     const networkId = network.name.toLowerCase()
-
     // make sure the id and chainId of the network are unique
     if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
@@ -200,18 +300,20 @@ export class NetworksController extends EventEmitter {
 
     // @ts-ignore
     delete info.feeOptions
-    this.#networks[networkId] = {
+    this.#networks[network.chainId.toString()] = {
       id: networkId,
       ...network,
       ...info,
       feeOptions,
-      features: getFeaturesByNetworkProperties(info),
+      features: getFeaturesByNetworkProperties(info, undefined),
       hasRelayer: false,
       predefined: false,
       has7702: false
     }
-    this.#onAddOrUpdateNetwork(this.#networks[networkId])
-    await this.#storage.set('networks', this.#networks)
+
+    this.#onAddOrUpdateNetwork(this.#networks[network.chainId.toString()])
+
+    await this.#updateNetworksInStorage()
     this.networkToAddOrUpdate = null
     this.emitUpdate()
   }
@@ -220,11 +322,12 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('addNetwork', () => this.#addNetwork(network))
   }
 
-  async #updateNetwork(network: Partial<Network>, networkId: NetworkId) {
+  async #updateNetwork(network: Partial<Network>, chainId: ChainId) {
     await this.initialLoadPromise
+
     if (!Object.keys(network).length) return
 
-    const networkData = this.networks.find((n) => n.id === networkId)
+    const networkData = this.networks.find((n) => n.chainId === chainId)
     const changedNetwork: Network = Object.keys(network).reduce((acc, key) => {
       if (!networkData) return acc
 
@@ -235,11 +338,15 @@ export class NetworksController extends EventEmitter {
     }, {} as Network)
 
     // Update the networks with the incoming new values
-    this.#networks[networkId] = { ...this.#networks[networkId], ...changedNetwork }
+    this.#networks[chainId.toString()] = {
+      ...networkData,
+      ...changedNetwork
+    }
 
-    this.#onAddOrUpdateNetwork(this.#networks[networkId])
+    this.#onAddOrUpdateNetwork(this.#networks[chainId.toString()])
     await this.#storage.set('networks', this.#networks)
 
+    // TODO: Figure out if this needs adjustments, it probably does
     const checkRPC = async (
       networkToAddOrUpdate: {
         chainId: bigint
@@ -257,13 +364,13 @@ export class NetworksController extends EventEmitter {
 
           // eslint-disable-next-line no-param-reassign
           delete (info as any).feeOptions
-          this.#networks[networkId] = {
-            ...this.#networks[networkId],
+          this.#networks[chainId.toString()] = {
+            ...this.#networks[chainId.toString()],
             ...info,
             ...feeOptions
           }
 
-          await this.#storage.set('networks', this.#networks)
+          await this.#updateNetworksInStorage()
 
           this.emitUpdate()
           return
@@ -273,7 +380,7 @@ export class NetworksController extends EventEmitter {
         getNetworkInfo(
           this.#fetch,
           changedNetwork.selectedRpcUrl,
-          this.#networks[networkId].chainId!,
+          this.#networks[chainId.toString()].chainId!,
           async (info) => {
             if (Object.values(info).some((prop) => prop === 'LOADING')) {
               return
@@ -283,13 +390,13 @@ export class NetworksController extends EventEmitter {
 
             // eslint-disable-next-line no-param-reassign
             delete (info as any).feeOptions
-            this.#networks[networkId] = {
-              ...this.#networks[networkId],
+            this.#networks[chainId.toString()] = {
+              ...this.#networks[chainId.toString()],
               ...(info as NetworkInfo),
               ...feeOptions
             }
 
-            await this.#storage.set('networks', this.#networks)
+            await this.#updateNetworksInStorage()
 
             this.emitUpdate()
           }
@@ -305,18 +412,27 @@ export class NetworksController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetwork(network: Partial<Network>, networkId: NetworkId) {
-    await this.withStatus('updateNetwork', () => this.#updateNetwork(network, networkId))
+  async updateNetwork(network: Partial<Network>, chainId: ChainId) {
+    await this.withStatus('updateNetwork', () => this.#updateNetwork(network, chainId))
   }
 
-  async removeNetwork(id: NetworkId) {
+  async removeNetwork(chainId: ChainId) {
     await this.initialLoadPromise
-    if (!this.#networks[id]) return
 
-    delete this.#networks[id]
-    this.#onRemoveNetwork(id)
-    await this.#storage.set('networks', this.#networks)
+    if (!this.#networks[chainId.toString()]) return
+    delete this.#networks[chainId.toString()]
+    this.#onRemoveNetwork(chainId.toString())
+    await this.#updateNetworksInStorage()
     this.emitUpdate()
+  }
+
+  async #updateNetworksInStorage() {
+    // ensures sequential execution
+    this.#networksStorageUpdatePromise = this.#networksStorageUpdatePromise
+      .then(() => this.#storage.set('networks', this.#networks))
+      .catch(() => this.#storage.set('networks', this.#networks))
+
+    await this.#networksStorageUpdatePromise
   }
 
   toJSON() {

@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
 import { NetworksController } from './networks'
@@ -14,6 +15,7 @@ describe('Networks Controller', () => {
     networksController = new NetworksController(
       produceMemoryStore(),
       fetch,
+      relayerUrl,
       () => {},
       () => {}
     )
@@ -38,7 +40,7 @@ describe('Networks Controller', () => {
       }
     })
 
-    networksController.updateNetwork(preferences, 'ethereum')
+    networksController.updateNetwork(preferences, 1n)
   })
 
   test('should add the mantle network as a custom network', (done) => {
@@ -116,7 +118,7 @@ describe('Networks Controller', () => {
         expect(prices).not.toBe(undefined)
         expect(prices!.level).toBe('success')
 
-        networksController.updateNetwork({ areContractsDeployed: true }, 'mantle')
+        networksController.updateNetwork({ areContractsDeployed: true }, 5000n)
       }
 
       // test to see if updateNetwork is working

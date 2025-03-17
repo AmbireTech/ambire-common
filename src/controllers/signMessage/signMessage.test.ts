@@ -73,6 +73,7 @@ describe('SignMessageController', () => {
     networksCtrl = new NetworksController(
       storage,
       fetch,
+      relayerUrl,
       (net) => {
         providersCtrl.setProvider(net)
       },

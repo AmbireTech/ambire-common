@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -163,6 +164,7 @@ describe('Actions Controller', () => {
   const networksCtrl = new NetworksController(
     storage,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },

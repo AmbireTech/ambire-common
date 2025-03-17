@@ -6,7 +6,7 @@ import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
+import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import {
   getNativeToCheckFromEOAs,
   produceMemoryStore,
@@ -383,6 +383,7 @@ const init = async (
   const networksCtrl = new NetworksController(
     storage,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },

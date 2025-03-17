@@ -24,8 +24,13 @@ import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
-import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
-import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
+import {
+  ExternalSignerControllers,
+  Key,
+  KeystoreSignerType,
+  TxnRequest
+} from '../../interfaces/keystore'
+import { AddNetworkRequestParams, ChainId, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -276,6 +281,7 @@ export class MainController extends EventEmitter {
     this.networks = new NetworksController(
       this.#storage,
       this.fetch,
+      relayerUrl,
       async (network: Network) => {
         this.providers.setProvider(network)
         await this.reloadSelectedAccount({ networkId: network.id })
@@ -978,7 +984,7 @@ export class MainController extends EventEmitter {
 
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
-    await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
+    await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
   #removeAccountKeyData(address: Account['addr']) {
@@ -2065,13 +2071,13 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetwork(id: NetworkId) {
-    const chainId = this.networks.networks.find((net) => net.id === id)?.chainId
-    await this.networks.removeNetwork(id)
-    this.portfolio.removeNetworkData(id)
-    this.defiPositions.removeNetworkData(id)
-    this.accountAdder.removeNetworkData(id)
-    this.activity.removeNetworkData(id)
+  async removeNetwork(chainId: ChainId, networkId: NetworkId) {
+    await this.networks.removeNetwork(chainId)
+
+    this.portfolio.removeNetworkData(networkId)
+    this.defiPositions.removeNetworkData(networkId)
+    this.accountAdder.removeNetworkData(networkId)
+    this.activity.removeNetworkData(networkId)
 
     // disable 7702 if the network removed was oddysey
     if (chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', false)

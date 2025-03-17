@@ -203,7 +203,8 @@ export async function getNetworkInfo(
 
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
-  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined
+  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
+  network: Network | undefined
 ): NetworkFeature[] {
   const features: NetworkFeature[] = [
     {
@@ -261,13 +262,10 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
-  const predefinedNetSettings = predefinedNetworks.find((net) => net.chainId === chainId)
-
   if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
-    const isCustomNetworkWithout4337 =
-      !predefinedNetSettings && !(erc4337 as Erc4337settings).enabled
+    const canBroadcast = (erc4337 as Erc4337settings).enabled || network?.hasRelayer
 
-    if (!isSAEnabled || isCustomNetworkWithout4337) {
+    if (!isSAEnabled || !canBroadcast) {
       updateFeature('saSupport', {
         level: 'danger',
         title: 'Smart contract wallets are not supported',
@@ -278,9 +276,9 @@ export function getFeaturesByNetworkProperties(
     }
 
     const erc4337Settings = {
-      enabled: is4337Enabled((erc4337 as Erc4337settings).enabled, predefinedNetSettings),
-      hasPaymaster: predefinedNetSettings
-        ? predefinedNetSettings.erc4337.hasPaymaster
+      enabled: is4337Enabled((erc4337 as Erc4337settings).enabled, network),
+      hasPaymaster: network
+        ? network.erc4337.hasPaymaster
         : (erc4337 as Erc4337settings).hasPaymaster
     }
 
@@ -288,13 +286,13 @@ export function getFeaturesByNetworkProperties(
       ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
       : 'Ambire Smart Accounts'
 
-    if (!isCustomNetworkWithout4337 && isSAEnabled && areContractsDeployed) {
+    if (canBroadcast && isSAEnabled && areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'success',
         msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
       })
-    } else if (!isCustomNetworkWithout4337 && isSAEnabled && !areContractsDeployed) {
+    } else if (canBroadcast && isSAEnabled && !areContractsDeployed) {
       updateFeature('saSupport', {
         title,
         level: 'warning',
@@ -342,9 +340,10 @@ export function getFeaturesByNetworkProperties(
 // call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
 export function getFeatures(
-  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined
+  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined,
+  network: Network | undefined
 ): NetworkFeature[] {
-  return getFeaturesByNetworkProperties(networkInfo)
+  return getFeaturesByNetworkProperties(networkInfo, network)
 }
 
 // Since v4.24.0, a new Network interface has been introduced,
@@ -354,6 +353,11 @@ export function getFeatures(
 // Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
 // This function migrates the data from the old NetworkPreferences to the new structure
 // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
+export type LegacyNetworkPreferences = { [key in NetworkId]: Partial<Network> }
+export const getShouldMigrateNetworkPreferencesToNetworks = (
+  networksInStorage: { [key in NetworkId]: Network },
+  legacyNetworkPreferencesInStorage: LegacyNetworkPreferences
+) => !Object.keys(networksInStorage).length && Object.keys(legacyNetworkPreferencesInStorage).length
 export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   [key: NetworkId]: Partial<Network>
 }) {
@@ -362,10 +366,10 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
     (k) => !predefinedNetworkIds.includes(k)
   )
 
-  const networksToStore: { [key: NetworkId]: Network } = {}
+  const networksToStore: { [key: string]: Network } = {}
 
   predefinedNetworks.forEach((n) => {
-    networksToStore[n.id] = n
+    networksToStore[n.chainId.toString()] = n
   })
   customNetworkIds.forEach((networkId: NetworkId) => {
     const preference = networkPreferences[networkId]
@@ -387,11 +391,12 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       hasSingleton: preference.hasSingleton ?? false
     }
     delete (preference as any).is1559
-    networksToStore[networkId] = {
+    networksToStore[preference.chainId!.toString()] = {
       id: networkId,
       ...preference,
       ...networkInfo,
-      features: getFeaturesByNetworkProperties(networkInfo),
+      // TODO: Not sure if we need to add these, as they are [] by default for predefined networks
+      features: getFeaturesByNetworkProperties(networkInfo, undefined),
       hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
       predefined: false
     } as Network

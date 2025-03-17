@@ -100,6 +100,7 @@ describe('AccountAdder', () => {
   const networksCtrl = new NetworksController(
     storage,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
