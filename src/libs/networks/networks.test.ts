@@ -27,8 +27,7 @@ const network = {
   feeOptions: { is1559: true },
   predefined: true,
   wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-  disableEstimateGas: true,
-  allowForce4337: true
+  disableEstimateGas: true
 }
 
 describe('Network features', () => {

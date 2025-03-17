@@ -148,7 +148,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   } = relayerNetwork
 
   const hasRelayer = smartAccounts?.hasRelayer ?? false
-  const allowForce4337 = smartAccounts?.allowForce4337 ?? false
   const incomingErc4337 = smartAccounts?.erc4337 ?? { enabled: false, hasPaymaster: false }
 
   const feeOptions = {
@@ -216,7 +215,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     hasRelayer,
     wrappedAddr,
     oldNativeAssetSymbols,
-    allowForce4337,
     feeOptions,
     erc4337,
     rpcNoStateOverride,
@@ -230,4 +228,4 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   }
 }
 
-export { rollProviderUrlsAndFindWorking, checkIsRpcUrlWorking, convertToAmbireNetworkFormat }
+export { checkIsRpcUrlWorking, convertToAmbireNetworkFormat, rollProviderUrlsAndFindWorking }

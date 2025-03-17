@@ -84,7 +84,6 @@ export interface Network {
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
-  allowForce4337?: boolean
   predefinedConfigVersion?: number
   // Last time the network details were updated from the rpc for custom and no SA networks
   lastUpdatedNetworkInfo?: number
@@ -184,7 +183,6 @@ export type RelayerNetwork = {
       defaultBundler?: BUNDLER
       increasePreVerGas?: number
     }
-    allowForce4337: boolean
   }
 }
 
