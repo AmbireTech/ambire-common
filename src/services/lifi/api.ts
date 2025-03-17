@@ -230,21 +230,21 @@ export class LiFiAPI {
   }: {
     address: string
     chainId: number
-  }): Promise<SocketAPIToken | null> {
+  }): Promise<TokensResponse | null> {
     const params = new URLSearchParams({
-      address: address.toString(),
-      chainId: chainId.toString()
+      token: address.toString(),
+      chain: chainId.toString()
     })
-    const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
+    const url = `${this.#baseUrl}/token`
 
-    const response = await this.#handleResponse<{ isSupported: boolean; token: SocketAPIToken }>({
+    const response = await this.#handleResponse<TokensResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to retrieve token information by address.'
     })
 
-    if (!response.isSupported || !response.token) return null
+    if (!response) return null
 
-    return normalizeIncomingSocketToken(response.token)
+    return response
   }
 
   async quote({
