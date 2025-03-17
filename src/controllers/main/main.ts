@@ -354,7 +354,7 @@ export class MainController extends EventEmitter {
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
-      storage,
+      storage: this.#storage,
       windowManager: this.#windowManager
     })
     const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })

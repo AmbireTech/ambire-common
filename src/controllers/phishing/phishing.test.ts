@@ -5,9 +5,11 @@ import { expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { Storage } from '../../interfaces/storage'
+import { StorageController } from '../storage/storage'
 import { PhishingController } from './phishing'
 
 const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 
 const event = new EventEmitter()
 let windowId = 0
@@ -37,7 +39,7 @@ let phishing: PhishingController
 const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
 describe('PhishingController', () => {
   beforeEach(async () => {
-    await storage.set('phishingDetection', {
+    await storageCtrl.set('phishingDetection', {
       timestamp: twentyFourHoursAgo,
       // actual blacklisted domains by MetaMask/eth-phishing-detect
       metamaskBlacklist: [
@@ -52,14 +54,14 @@ describe('PhishingController', () => {
       ],
       phantomBlacklist: []
     })
-    phishing = new PhishingController({ storage, fetch, windowManager })
+    phishing = new PhishingController({ storage: storageCtrl, fetch, windowManager })
   })
   test('should initialize', async () => {
     expect(phishing).toBeDefined()
   })
   test('should fetch lists from github', async () => {
     await phishing.initialLoadPromise
-    const storedPhishingDetection = await storage.get('phishingDetection', {
+    const storedPhishingDetection = await storageCtrl.get('phishingDetection', {
       timestamp: null,
       metamaskBlacklist: [],
       phantomBlacklist: []

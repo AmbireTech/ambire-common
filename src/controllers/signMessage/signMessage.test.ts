@@ -16,6 +16,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { SignMessageController } from './signMessage'
 
 const providers = Object.fromEntries(
@@ -65,13 +66,13 @@ describe('SignMessageController', () => {
 
   beforeAll(async () => {
     const storage = produceMemoryStore()
+    const storageCtrl = new StorageController(storage)
+    await storageCtrl.set('accounts', JSON.stringify([account]))
+    await storageCtrl.set('selectedAccount', JSON.stringify(account.addr))
 
-    await storage.set('accounts', JSON.stringify([account]))
-    await storage.set('selectedAccount', JSON.stringify(account.addr))
-
-    keystoreCtrl = new KeystoreController(storage, { internal: InternalSigner }, windowManager)
+    keystoreCtrl = new KeystoreController(storageCtrl, { internal: InternalSigner }, windowManager)
     networksCtrl = new NetworksController(
-      storage,
+      storageCtrl,
       fetch,
       (net) => {
         providersCtrl.setProvider(net)
@@ -82,14 +83,14 @@ describe('SignMessageController', () => {
     providersCtrl.providers = providers
 
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},
       () => {},
       () => {}
     )
-    inviteCtrl = new InviteController({ relayerUrl, fetch, storage })
+    inviteCtrl = new InviteController({ relayerUrl, fetch, storage: storageCtrl })
 
     await waitForAccountsCtrlFirstLoad(accountsCtrl)
   })
