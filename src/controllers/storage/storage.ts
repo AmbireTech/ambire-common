@@ -75,9 +75,7 @@ export class StorageController {
   }
 
   async #load() {
-    const storage = await this.#storageAPI.get(undefined, {})
-
-    if (!Object.keys(storage).length) return
+    await this.#initStorage()
 
     try {
       // IMPORTANT: should be ordered by versions
@@ -249,15 +247,26 @@ export class StorageController {
     }
   }
 
+  async #initStorage() {
+    const storage = await this.#storageAPI.get(undefined, {})
+
+    if (!Object.keys(storage).length) return
+
+    Object.keys(storage).forEach((key) => {
+      this.#storage[key as keyof StorageType] = storage[key]
+    })
+  }
+
   async get(): Promise<StorageType>
 
   async get<K extends keyof StorageType>(
     key: K,
     defaultValue?: StorageType[K]
   ): Promise<StorageType[K]>
+
   async get<K extends string>(key: K, defaultValue?: any): Promise<any>
 
-  async get(key?: keyof StorageType | string | null, defaultValue?: any): Promise<any> {
+  async get(key?: keyof StorageType, defaultValue?: any): Promise<any> {
     await this.#initialLoadPromise
     await this.#updateQueue
 
