@@ -43,88 +43,92 @@ describe('Networks Controller', () => {
     networksController.updateNetwork(preferences, 1n)
   })
 
-  test('should add the mantle network as a custom network', (done) => {
+  test('should add the sei network as a custom network', (done) => {
     let checks = 0
-    let mantleNetwork: null | AddNetworkRequestParams = null
+    let setNetwork: null | AddNetworkRequestParams = null
     networksController.onUpdate(() => {
-      if (checks === 0) {
-        expect(networksController.networkToAddOrUpdate?.chainId).toBe(5000n)
+      if (checks === 0 || checks === 1) {
+        checks++
+        return
+      }
+      if (checks === 2) {
+        expect(networksController.networkToAddOrUpdate?.chainId).toBe(1329n)
         const networkInfoLoading = networksController.networkToAddOrUpdate?.info
         if (!networkInfoLoading) return
 
         const isLoading = Object.values(networkInfoLoading).some((v) => v === 'LOADING')
         if (isLoading) return
-        const mantleNetworkInfo: NetworkInfo = networkInfoLoading as NetworkInfo
+        const setNetworkInfo: NetworkInfo = networkInfoLoading as NetworkInfo
         // mantle has the entry point uploaded
-        expect(mantleNetworkInfo?.erc4337.enabled).toBe(true)
-        expect(mantleNetworkInfo?.erc4337.hasPaymaster).toBe(false)
+        expect(setNetworkInfo?.erc4337.enabled).toBe(true)
+        expect(setNetworkInfo?.erc4337.hasPaymaster).toBe(false)
         // has smart accounts
-        expect(mantleNetworkInfo?.isSAEnabled).toBe(true)
+        expect(setNetworkInfo?.isSAEnabled).toBe(true)
 
         // contracts are deployed
-        expect(mantleNetworkInfo?.areContractsDeployed).toBe(true)
-        expect(mantleNetworkInfo?.feeOptions!.is1559).toBe(true)
+        expect(setNetworkInfo?.areContractsDeployed).toBe(true)
+        expect(setNetworkInfo?.feeOptions!.is1559).toBe(true)
 
         // mantle is optimistic
-        expect(mantleNetworkInfo?.isOptimistic).toBe(true)
+        expect(setNetworkInfo?.isOptimistic).toBe(false)
         // coingecko
-        expect(mantleNetworkInfo?.platformId).toBe('mantle')
-        expect(mantleNetworkInfo?.nativeAssetId).toBe('mantle')
+        expect(setNetworkInfo?.platformId).toBe('sei-v2')
+        expect(setNetworkInfo?.nativeAssetId).toBe('wrapped-sei')
         // simulation is somewhat supported
-        expect(mantleNetworkInfo?.rpcNoStateOverride).toBe(false)
-        mantleNetwork = {
-          name: 'Mantle',
+        expect(setNetworkInfo?.rpcNoStateOverride).toBe(false)
+        setNetwork = {
+          name: 'Sei',
           rpcUrls: [networksController.networkToAddOrUpdate?.rpcUrl],
           selectedRpcUrl: networksController.networkToAddOrUpdate?.rpcUrl,
-          nativeAssetSymbol: 'MNT',
-          nativeAssetName: 'Mantle',
-          explorerUrl: 'https://explorer.mantle.xyz/',
-          ...mantleNetworkInfo,
-          feeOptions: mantleNetworkInfo.feeOptions ?? {
+          nativeAssetSymbol: 'SEI',
+          nativeAssetName: 'Sei',
+          explorerUrl: 'https://seitrace.com',
+          ...setNetworkInfo,
+          feeOptions: setNetworkInfo.feeOptions ?? {
             is1559: false
           },
           iconUrls: []
         } as AddNetworkRequestParams
 
         checks++
-        networksController.addNetwork(mantleNetwork)
+        networksController.addNetwork(setNetwork)
       }
 
-      if (checks === 1) {
+      if (checks === 3) {
         const noUpdate = networksController.networkToAddOrUpdate
         if (noUpdate !== null) return
 
         checks++
-        const mantle = networksController.networks.find((net) => net.id === 'mantle')
-        expect(mantle).not.toBe(null)
-        expect(mantle).not.toBe(undefined)
+        const sei = networksController.networks.find((net) => net.id === 'sei')
+        expect(sei).not.toBe(null)
+        expect(sei).not.toBe(undefined)
 
         // contracts are not deployed
-        const saSupport = mantle?.features.find((feat) => feat.id === 'saSupport')
+        const saSupport = sei?.features.find((feat) => feat.id === 'saSupport')
         expect(saSupport).not.toBe(null)
         expect(saSupport).not.toBe(undefined)
-        expect(saSupport!.level).toBe('warning')
+        expect(saSupport!.level).toBe('success')
         expect(saSupport!.title).toBe('Ambire Smart Accounts via ERC-4337 (Account Abstraction)')
 
         // somewhat simulation
-        const simulation = mantle?.features.find((feat) => feat.id === 'simulation')
+        const simulation = sei?.features.find((feat) => feat.id === 'simulation')
         expect(simulation).not.toBe(null)
         expect(simulation).not.toBe(undefined)
         expect(simulation!.level).toBe('warning')
 
         // has token prices
-        const prices = mantle?.features.find((feat) => feat.id === 'prices')
+        const prices = sei?.features.find((feat) => feat.id === 'prices')
         expect(prices).not.toBe(null)
         expect(prices).not.toBe(undefined)
         expect(prices!.level).toBe('success')
 
-        networksController.updateNetwork({ areContractsDeployed: true }, 5000n)
+        networksController.updateNetwork({ areContractsDeployed: true }, 1329n)
       }
 
       // test to see if updateNetwork is working
-      if (checks === 2) {
-        const mantle = networksController.networks.find((net) => net.id === 'mantle')
-        expect(mantle?.areContractsDeployed).toBe(true)
+      if (checks === 4) {
+        const sei = networksController.networks.find((net) => net.id === 'sei')
+        expect(sei?.areContractsDeployed).toBe(true)
         done()
       }
     })
@@ -154,8 +158,8 @@ describe('Networks Controller', () => {
     // })
 
     networksController.setNetworkToAddOrUpdate({
-      rpcUrl: 'https://mantle-mainnet.public.blastapi.io',
-      chainId: 5000n
+      rpcUrl: 'https://evm-rpc.sei-apis.com',
+      chainId: 1329n
     })
   })
 
