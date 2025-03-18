@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/networks'
+import { networks as predefinedNetworks, ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -225,23 +225,29 @@ export class NetworksController extends EventEmitter {
         return
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      getNetworkInfo(this.#fetch, network.selectedRpcUrl, network.chainId, async (info) => {
-        if (Object.values(info).some((prop) => prop === 'LOADING')) {
-          return
-        }
+      getNetworkInfo(
+        this.#fetch,
+        network.selectedRpcUrl,
+        network.chainId,
+        async (info) => {
+          if (Object.values(info).some((prop) => prop === 'LOADING')) {
+            return
+          }
 
-        if (info.flagged) return
-        const chainId = network.chainId.toString()
-        this.#networks[chainId] = {
-          ...this.#networks[chainId],
-          ...(info as NetworkInfo),
-          lastUpdatedNetworkInfo: Date.now()
-        }
+          if (info.flagged) return
+          const chainId = network.chainId.toString()
+          this.#networks[chainId] = {
+            ...this.#networks[chainId],
+            ...(info as NetworkInfo),
+            lastUpdatedNetworkInfo: Date.now()
+          }
 
-        await this.#updateNetworksInStorage()
+          await this.#updateNetworksInStorage()
 
-        this.emitUpdate()
-      })
+          this.emitUpdate()
+        },
+        network
+      )
     })
   }
 
@@ -266,7 +272,8 @@ export class NetworksController extends EventEmitter {
             this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
             this.emitUpdate()
           }
-        }
+        },
+        this.#networks[networkToAddOrUpdate.chainId.toString()]
       )
     } else {
       this.networkToAddOrUpdate = null
@@ -399,7 +406,8 @@ export class NetworksController extends EventEmitter {
             await this.#updateNetworksInStorage()
 
             this.emitUpdate()
-          }
+          },
+          this.#networks[chainId.toString()]
         )
       }
     }

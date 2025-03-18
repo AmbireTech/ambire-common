@@ -76,7 +76,8 @@ export async function getNetworkInfo(
   fetch: Fetch,
   rpcUrl: string,
   chainId: bigint,
-  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
+  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
+  network: Network | undefined
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = {
     chainId,
@@ -125,7 +126,6 @@ export async function getNetworkInfo(
         const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
-        const predefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
 
         // Ambire support is as follows:
         // - either the addresses match after simulation, that's perfect
@@ -139,12 +139,12 @@ export async function getNetworkInfo(
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
           rpcNoStateOverride:
-            predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true
+            network && network.rpcNoStateOverride === true
               ? true
               : !saSupport.supportsStateOverride,
           erc4337: {
-            enabled: is4337Enabled(hasBundlerSupport, predefinedNetwork),
-            hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false,
+            enabled: is4337Enabled(hasBundlerSupport, network),
+            hasPaymaster: network ? network.erc4337.hasPaymaster : false,
             hasBundlerSupport
           }
         }
@@ -302,7 +302,7 @@ export function getFeaturesByNetworkProperties(
   }
 
   if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
-    const isPredefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
+    const isPredefinedNetwork = network?.predefined
     if (!rpcNoStateOverride && isPredefinedNetwork) {
       updateFeature('simulation', {
         level: 'success',
