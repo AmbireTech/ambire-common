@@ -58,12 +58,9 @@ import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/bro
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
-import {
-  getHumanReadableBroadcastError,
-  getHumanReadableEstimationError
-} from '../../libs/errorHumanizer'
+import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
+import { getEstimationSummary } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -74,7 +71,6 @@ import {
   makeAccountOpAction
 } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
-import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
@@ -102,7 +98,6 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
-import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -131,6 +126,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
+import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -637,6 +633,9 @@ export class MainController extends EventEmitter {
     this.signAccOpInitError = null
 
     this.signAccountOp = new SignAccountOpController(
+      this.accounts,
+      this.networks,
+      this.providers,
       this.keystore,
       this.portfolio,
       this.#externalSignerControllers,
@@ -714,12 +713,33 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall(gasUsed: bigint) {
+  async traceCall(estimation: FullEstimationSummary) {
     const accountOp = this.signAccountOp?.accountOp
     if (!accountOp) return
 
-    const network = this.networks.networks.find((net) => net.id === accountOp?.networkId)
+    const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
     if (!network) return
+
+    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp?.accountAddr)
+    if (!account) return
+
+    const accountState = await this.accounts.getOrFetchAccountOnChainState(account.addr, network.id)
+    const baseAcc = getBaseAccount(
+      account,
+      accountState,
+      this.keystore.getAccountKeys(account),
+      network
+    )
+    const networkFeeTokens =
+      this.portfolio.getLatestPortfolioState(accountOp.accountAddr)?.[accountOp.networkId]?.result
+        ?.feeTokens ?? []
+
+    // calculate the gasLimit so it doesn't revert
+    const gasUsed = baseAcc.getGasUsed(estimation, {
+      // the fee token is always native for the trace call
+      feeToken: networkFeeTokens.find((tok) => tok.address === ZeroAddress) as TokenResult,
+      op: accountOp
+    })
 
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
@@ -746,7 +766,6 @@ export class MainController extends EventEmitter {
     this.#traceCallTimeoutId = timeoutId
 
     try {
-      const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       const provider = this.providers.providers[network.id]
       const gasPrice = this.gasPrices[network.id]
@@ -2338,28 +2357,6 @@ export class MainController extends EventEmitter {
       // this.accountStates[accountOp.accountAddr][accountOp.networkId].
       const account = this.accounts.accounts.find((x) => x.addr === localAccountOp.accountAddr)
 
-      // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
-      // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
-      //
-      // If the current account is an EOA, only this account can pay the fee,
-      // and there's no need for checking other EOA accounts native balances.
-      // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
-      //
-      // we're excluding the view only accounts from the natives to check
-      // in all cases EXCEPT the case where we're making an estimation for
-      // the view only account itself. In all other, view only accounts options
-      // should not be present as the user cannot pay the fee with them (no key)
-      const nativeToCheck = account?.creation
-        ? this.accounts.accounts
-            .filter(
-              (acc) =>
-                !isSmartAccount(acc) &&
-                (acc.addr === localAccountOp.accountAddr ||
-                  !getIsViewOnly(this.keystore.keys, acc.associatedKeys))
-            )
-            .map((acc) => acc.addr)
-        : []
-
       if (!account)
         throw new Error(
           `estimateSignAccountOp: ${localAccountOp.accountAddr}: account does not exist`
@@ -2369,25 +2366,6 @@ export class MainController extends EventEmitter {
         throw new Error(
           `estimateSignAccountOp: ${localAccountOp.networkId}: network does not exist`
         )
-
-      // Take the fee tokens from two places: the user's tokens and his gasTank
-      // The gasTank tokens participate on each network as they belong everywhere
-      // NOTE: at some point we should check all the "?" signs below and if
-      // an error pops out, we should notify the user about it
-      const networkFeeTokens =
-        this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)?.[
-          localAccountOp.networkId
-        ]?.result?.feeTokens ?? []
-
-      const gasTankResult = this.portfolio.getLatestPortfolioState(localAccountOp.accountAddr)
-        ?.gasTank?.result
-
-      const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
-        ? gasTankResult.gasTankTokens
-        : []
-
-      const feeTokens =
-        [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
       // can be read from the UI
       const humanization = humanizeAccountOp(localAccountOp, {})
@@ -2414,62 +2392,17 @@ export class MainController extends EventEmitter {
 
       this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
-      const accountState = await this.accounts.getOrFetchAccountOnChainState(
-        account.addr,
-        network.id
-      )
-      const baseAcc = getBaseAccount(
-        account,
-        accountState,
-        this.keystore.getAccountKeys(account),
-        network
-      )
       const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.getPortfolioSimulationPromise(localAccountOp),
-        getEstimation(
-          baseAcc,
-          accountState,
-          localAccountOp,
-          network,
-          this.providers.providers[localAccountOp.networkId],
-          feeTokens,
-          nativeToCheck,
-          this.signAccountOp.bundlerSwitcher,
-          (e: ErrorRef) => {
-            if (!this.signAccountOp) return
-
-            this.signAccountOp?.update({ estimationRetryError: e })
-          }
-        ).catch((e) => {
-          const { message } = getHumanReadableEstimationError(e)
-
-          this.emitError({
-            level: 'major',
-            message,
-            error: e
-          })
-          return null
-        })
+        this.signAccountOp.estimate()
       ])
 
       // @race
       // if the signAccountOp has been deleted, don't continue as the request has already finished
       if (!this.signAccountOp) return
-
-      // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
-      // that the account state is not the latest and needs to be updated
-      if (
-        estimation &&
-        !(estimation instanceof Error) &&
-        (estimation.flags.hasNonceDiscrepancy || estimation.flags.has4337NonceDiscrepancy)
-      ) {
-        this.accounts.updateAccountState(localAccountOp.accountAddr, 'pending', [
-          localAccountOp.networkId
-        ])
-      }
 
       // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
       // that we should update the portfolio to get a correct simulation
@@ -2487,21 +2420,10 @@ export class MainController extends EventEmitter {
       if (estimation instanceof Error) {
         this.portfolio.overridePendingResults(localAccountOp)
       }
-      // update the signAccountOp controller once estimation finishes;
-      // this eliminates the infinite loading bug if the estimation comes slower
-      if (this.signAccountOp && estimation) {
-        this.signAccountOp.update({ estimation })
-        if (shouldTraceCall)
-          this.traceCall(
-            baseAcc.getGasUsed(getEstimationSummary(estimation), {
-              // the fee token is always native for the trace call
-              feeToken: feeTokens.find(
-                (tok) => tok.address === ZeroAddress && !tok.flags.onGasTank
-              ) as TokenResult,
-              op: localAccountOp
-            })
-          )
-      }
+
+      // make a debug_traceCall if all the conditions match
+      if (this.signAccountOp && estimation && shouldTraceCall)
+        this.traceCall(getEstimationSummary(estimation))
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()
       this.emitError({

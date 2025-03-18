@@ -15,6 +15,8 @@ import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
+import { EstimationController } from '../estimation/estimation'
+import { NetworksController } from '../networks/networks'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -73,10 +75,12 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
+import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -145,6 +149,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #blockGasLimit: bigint | undefined = undefined
 
+  // this is not used in the controller directly but it's being read outside
   fromActionId: AccountOpAction['id']
 
   accountOp: AccountOp
@@ -213,7 +218,14 @@ export class SignAccountOpController extends EventEmitter {
 
   provider: RPCProvider
 
+  estimationController: EstimationController
+
+  #accounts: AccountsController
+
   constructor(
+    accounts: AccountsController,
+    networks: NetworksController,
+    providers: ProvidersController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
@@ -256,6 +268,22 @@ export class SignAccountOpController extends EventEmitter {
       noStateUpdateStatuses
     )
     this.provider = provider
+    this.#accounts = accounts
+    this.estimationController = new EstimationController(
+      keystore,
+      accounts,
+      networks,
+      providers,
+      portfolio,
+      (e: ErrorRef) => {
+        if (!this) return
+        this.update({ estimationRetryError: e })
+      },
+      () => {
+        return this.status ? this.status.type : null
+      },
+      noStateUpdateStatuses
+    )
   }
 
   get isInitialized(): boolean {
@@ -557,6 +585,28 @@ export class SignAccountOpController extends EventEmitter {
     this.warnings = warnings
 
     this.emitUpdate()
+  }
+
+  async estimate(): Promise<FullEstimation | Error> {
+    // this shouldn't throw
+    const estimation = await this.estimationController.estimate(this.accountOp).catch((e) => e)
+
+    // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
+    // that the account state is not the latest and needs to be updated
+    if (
+      estimation &&
+      !(estimation instanceof Error) &&
+      (estimation.flags.hasNonceDiscrepancy || estimation.flags.has4337NonceDiscrepancy)
+    ) {
+      // silenly continuing on error here as the flags are more like app helpers
+      this.#accounts
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.networkId])
+        .catch((e) => e)
+    }
+
+    this.update({ estimation })
+
+    return estimation
   }
 
   update({

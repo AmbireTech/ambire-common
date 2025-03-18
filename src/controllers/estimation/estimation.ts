@@ -1,10 +1,11 @@
-import { getIsViewOnly } from 'utils/accounts'
+/* eslint-disable class-methods-use-this */
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { getHumanReadableEstimationError } from '../../libs/errorHumanizer'
 import { getEstimation } from '../../libs/estimate/estimate'
+import { FullEstimation } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { getIsViewOnly } from '../../utils/accounts'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -23,12 +24,27 @@ export class EstimationController extends EventEmitter {
 
   #portfolio: PortfolioController
 
+  #errorCallback: Function
+
+  // this is mainly for the bundler switcher but in general
+  // if the estimation wants to know the status of the outside
+  // controller, this is the function to set up intiially
+  #getOutsideControllerStatus: Function = () => {}
+
+  // this is mainly for the bundler switcher but in general
+  // if the estimation wants to know on which statuses in should
+  // disregard updates, this is the place
+  #outsideControllerNoUpdateStatuses: any[] = []
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
     networks: NetworksController,
     providers: ProvidersController,
-    portfolio: PortfolioController
+    portfolio: PortfolioController,
+    errorCallback: Function,
+    getOutsideControllerStatus?: Function,
+    outsideControllerNoUpdateStatuses?: any[]
   ) {
     super()
     this.#keystore = keystore
@@ -36,14 +52,13 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#providers = providers
     this.#portfolio = portfolio
+    this.#errorCallback = errorCallback
+    if (getOutsideControllerStatus) this.#getOutsideControllerStatus = getOutsideControllerStatus
+    if (outsideControllerNoUpdateStatuses)
+      this.#outsideControllerNoUpdateStatuses = outsideControllerNoUpdateStatuses
   }
 
-  async estimate(
-    op: AccountOp,
-    errorCallback: Function,
-    getStatus?: Function,
-    noStateUpdateStatuses?: any[]
-  ) {
+  async estimate(op: AccountOp): Promise<FullEstimation | Error> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
     const network = this.#networks.networks.find((net) => net.id === op.networkId)!
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
@@ -96,10 +111,10 @@ export class EstimationController extends EventEmitter {
     // configure the bundler switcher for the network if any
     const bundlerSwitcher = new BundlerSwitcher(
       network,
-      getStatus || (() => {}),
-      noStateUpdateStatuses ?? []
+      this.#getOutsideControllerStatus,
+      this.#outsideControllerNoUpdateStatuses
     )
-    const estimation = await getEstimation(
+    return getEstimation(
       baseAcc,
       accountState,
       op,
@@ -108,16 +123,7 @@ export class EstimationController extends EventEmitter {
       feeTokens,
       nativeToCheck,
       bundlerSwitcher,
-      errorCallback
-    ).catch((e) => {
-      const { message } = getHumanReadableEstimationError(e)
-
-      this.emitError({
-        level: 'major',
-        message,
-        error: e
-      })
-      return null
-    })
+      this.#errorCallback
+    ).catch((e) => e)
   }
 }

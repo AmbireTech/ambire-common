@@ -628,7 +628,7 @@ export class PortfolioController extends EventEmitter {
     network?: Network,
     simulation?: {
       accountOps: { [key: string]: AccountOp[] }
-      states: { [networId: NetworkId]: AccountOnchainState }
+      states: { [networkId: NetworkId]: AccountOnchainState }
     },
     opts?: { forceUpdate?: boolean; maxDataAgeMs?: number }
   ) {
