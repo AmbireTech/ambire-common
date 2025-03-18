@@ -7,7 +7,6 @@ import {
   Erc4337settings,
   Network,
   NetworkFeature,
-  NetworkId,
   NetworkInfo,
   NetworkInfoLoading
 } from '../../interfaces/network'
@@ -347,57 +346,9 @@ export function getFeatures(
   return getFeaturesByNetworkProperties(networkInfo)
 }
 
-// Since v4.24.0, a new Network interface has been introduced,
-// that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
-// Previously, only NetworkPreferences were stored, with other network properties
-// being calculated in a getter each time the networks were needed.
-// Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
-// This function migrates the data from the old NetworkPreferences to the new structure
-// to ensure compatibility and prevent breaking the extension after updating to v4.24.0
-export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
-  [key: NetworkId]: Partial<Network>
-}) {
-  const predefinedNetworkIds = predefinedNetworks.map((n) => n.id)
-  const customNetworkIds = Object.keys(networkPreferences).filter(
-    (k) => !predefinedNetworkIds.includes(k)
-  )
-
-  const networksToStore: { [key: NetworkId]: Network } = {}
-
-  predefinedNetworks.forEach((n) => {
-    networksToStore[n.id] = n
-  })
-  customNetworkIds.forEach((networkId: NetworkId) => {
-    const preference = networkPreferences[networkId]
-    const networkInfo = {
-      chainId: preference.chainId!,
-      isSAEnabled: preference.isSAEnabled ?? false,
-      isOptimistic: preference.isOptimistic ?? false,
-      rpcNoStateOverride: preference.rpcNoStateOverride ?? true,
-      erc4337: preference.erc4337 ?? {
-        enabled: false,
-        hasPaymaster: false,
-        hasBundlerSupport: false
-      },
-      areContractsDeployed: preference.areContractsDeployed ?? false,
-      feeOptions: { is1559: (preference as any).is1559 ?? false },
-      platformId: preference.platformId ?? '',
-      nativeAssetId: preference.nativeAssetId ?? '',
-      flagged: preference.flagged ?? false,
-      hasSingleton: preference.hasSingleton ?? false
-    }
-    delete (preference as any).is1559
-    networksToStore[networkId] = {
-      id: networkId,
-      ...preference,
-      ...networkInfo,
-      features: getFeaturesByNetworkProperties(networkInfo),
-      hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
-      predefined: false
-    } as Network
-  })
-
-  return networksToStore
+// is the user allowed to change the network settings to 4337
+export function canForce4337(network?: Network) {
+  return network && network.allowForce4337
 }
 
 export function hasRelayerSupport(network: Network) {

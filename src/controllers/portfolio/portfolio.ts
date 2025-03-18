@@ -4,7 +4,6 @@ import { Account, AccountId, AccountOnchainState } from '../../interfaces/accoun
 import { Fetch } from '../../interfaces/fetch'
 import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
-import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
@@ -33,12 +32,12 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { migrateTokenPreferences } from '../../libs/portfolio/migrations/tokenPreferences'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -74,7 +73,7 @@ export class PortfolioController extends EventEmitter {
 
   #portfolioLibs: Map<string, Portfolio>
 
-  #storage: Storage
+  #storage: StorageController
 
   #fetch: Fetch
 
@@ -110,7 +109,7 @@ export class PortfolioController extends EventEmitter {
   #initialLoadPromise: Promise<void>
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     providers: ProvidersController,
     networks: NetworksController,
@@ -140,28 +139,16 @@ export class PortfolioController extends EventEmitter {
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
-      const storageTokenPreferences = await this.#storage.get('tokenPreferences', [])
-      const storageCustomTokens = await this.#storage.get('customTokens', [])
 
-      const { tokenPreferences, customTokens, shouldUpdateStorage } = migrateTokenPreferences(
-        storageTokenPreferences,
-        storageCustomTokens
-      )
-
-      this.tokenPreferences = tokenPreferences
-      this.customTokens = customTokens
-
-      if (shouldUpdateStorage) {
-        await this.#storage.set('tokenPreferences', this.tokenPreferences)
-        await this.#storage.set('customTokens', this.customTokens)
-      }
+      this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
+      this.customTokens = await this.#storage.get('customTokens', [])
 
       this.#previousHints = await this.#storage.get('previousHints', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
           Array.isArray(networksWithAssets[key]) &&
-          networksWithAssets[key].every((item: any) => typeof item === 'string')
+          (networksWithAssets[key] as any).every((item: any) => typeof item === 'string')
       )
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets

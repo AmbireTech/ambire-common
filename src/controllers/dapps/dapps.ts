@@ -2,8 +2,8 @@ import { Session, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
-import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
@@ -15,17 +15,17 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export class DappsController extends EventEmitter {
   #dapps: Dapp[] = []
 
-  #storage: Storage
+  #storage: StorageController
 
   dappSessions: { [key: string]: Session } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(_storage: Storage) {
+  constructor(storage: StorageController) {
     super()
 
-    this.#storage = _storage
+    this.#storage = storage
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
