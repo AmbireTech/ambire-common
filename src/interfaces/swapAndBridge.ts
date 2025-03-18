@@ -198,6 +198,30 @@ export interface SocketApiBridgeStep {
 
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
+// TODO: Strip out the ones that are not used
+export type SwapAndBridgeStep = {
+  chainId: number
+  fromAmount: string
+  fromAsset: SocketAPIToken
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset: SocketAPIToken
+  }
+  minAmountOut: string
+  protocol: {
+    name: string
+    displayName: string
+    icon: string
+  }
+  swapSlippage: number
+  toAmount: string
+  toAsset: SocketAPIToken
+  type: 'middleware' | 'swap'
+  userTxIndex?: number
+}
+
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
 
 export type SocketAPIUserTxApprovalData = {

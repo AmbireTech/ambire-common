@@ -19,6 +19,7 @@ import {
   SocketRouteStatus,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeStep,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
@@ -300,7 +301,37 @@ export class LiFiAPI {
       // errorMessage: undefined
     }
 
-    const selectedRouteSteps = response.routes[0].steps
+    const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0].steps.map((step) => ({
+      chainId: fromChainId,
+      fromAmount: response.routes[0].fromAmount,
+      fromAsset: {
+        ...response.routes[0].fromToken,
+        icon: response.routes[0].fromToken.logoURI
+      },
+      gasFees: {
+        gasAmount: step.estimate.gasCosts.amount,
+        gasLimit: step.estimate.gasCosts.limit,
+        feesInUsd: step.estimate.gasCosts.amountUSD,
+        asset: {
+          ...response.routes[0].fromToken,
+          icon: response.routes[0].fromToken.logoURI
+        }
+      },
+      minAmountOut: response.routes[0].toAmountMin,
+      protocol: {
+        name: step.toolDetails.name,
+        displayName: step.toolDetails.name,
+        icon: step.toolDetails.logoURI
+      },
+      // swapSlippage: step.
+      toAmount: response.routes[0].toAmount,
+      toAsset: {
+        ...response.routes[0].toToken,
+        icon: response.routes[0].toToken.logoURI
+      },
+      // type: 'middleware' | 'swap'
+      userTxIndex: 1
+    }))
 
     return {
       fromAsset,
