@@ -38,12 +38,10 @@ export interface SwapAndBridgeQuote {
   fromChainId: number
   toAsset: SwapAndBridgeToToken
   toChainId: number
-  // TODO: Common type
-  selectedRoute: SocketAPIRoute
+  selectedRoute: SwapAndBridgeRoute
   // TODO: Common type
   selectedRouteSteps: SocketAPIStep[]
-  // TODO: Common type
-  routes: SocketAPIRoute[]
+  routes: SwapAndBridgeRoute[]
 }
 
 export interface SocketAPIRoute {
@@ -71,6 +69,25 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
+  errorMessage?: string
+}
+
+export interface SwapAndBridgeRoute {
+  routeId: string
+  isOnlySwapRoute: boolean
+  fromAmount: string
+  toAmount: string
+  usedBridgeNames?: string[]
+  usedDexName?: string
+  totalUserTx: number
+  totalGasFeesInUsd: number
+  // TODO: Common type
+  userTxs: SocketAPIUserTx[]
+  receivedValueInUsd: number
+  inputValueInUsd: number
+  outputValueInUsd: number
+  serviceTime: number
+  maxServiceTime: number
   errorMessage?: string
 }
 

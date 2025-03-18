@@ -18,6 +18,7 @@ import {
   SocketAPIToken,
   SocketRouteStatus,
   SwapAndBridgeQuote,
+  SwapAndBridgeRoute,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
@@ -278,13 +279,36 @@ export class LiFiAPI {
       chainId: toChainId
     }
 
+    const selectedRoute: SwapAndBridgeRoute = {
+      routeId: response.routes[0].id,
+      isOnlySwapRoute: !response.routes[0].containsSwitchChain,
+      fromAmount: response.routes[0].fromAmount,
+      toAmount: response.routes[0].toAmount,
+      // TODO: Make optional?
+      usedBridgeNames: [],
+      // TODO: Make optional?
+      usedDexName: '',
+      totalUserTx: 1,
+      totalGasFeesInUsd: +(response.routes[0].gasCostUSD || 0),
+      // TODO: Make optional?
+      userTxs: [],
+      receivedValueInUsd: +response.routes[0].toAmountUSD,
+      inputValueInUsd: +response.routes[0].fromAmountUSD,
+      outputValueInUsd: +response.routes[0].toAmountUSD,
+      serviceTime: +response.routes[0].toAmountMin,
+      maxServiceTime: +response.routes[0].toAmountMin
+      // errorMessage: undefined
+    }
+
+    const selectedRouteSteps = response.routes[0].steps
+
     return {
       fromAsset,
       fromChainId,
       toAsset,
       toChainId,
-      selectedRoute: response.routes[0],
-      selectedRouteSteps: response.routes[0].steps,
+      selectedRoute,
+      selectedRouteSteps,
       // TODO: Monkey-patched the response temporarily
       routes: response.routes.map((route) => ({
         ...route,
