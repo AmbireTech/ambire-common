@@ -16,8 +16,8 @@ import {
   SocketAPIQuote,
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
-  SocketAPIToken,
   SocketRouteStatus,
+  SwapAndBridgeQuote,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { isSmartAccount } from '../../libs/account/account'
@@ -27,6 +27,7 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
+  addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
   getIsBridgeTxn,
@@ -153,7 +154,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   toSelectedToken: SwapAndBridgeToToken | null = null
 
-  quote: SocketAPIQuote | null = null
+  quote: SwapAndBridgeQuote | null = null
 
   quoteRoutesStatuses: { [key: string]: { status: string } } = {}
 
@@ -688,7 +689,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const toTokenListInCache =
       this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey]
-    let toTokenList: SocketAPIToken[] = toTokenListInCache?.data || []
+    let toTokenList: SwapAndBridgeToToken[] = toTokenListInCache?.data || []
     const shouldFetchTokenList =
       !toTokenList.length ||
       now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
@@ -708,7 +709,7 @@ export class SwapAndBridgeController extends EventEmitter {
       } catch (error: any) {
         // Display an error only if there is no cached data
         if (!toTokenList.length) {
-          toTokenList = SocketAPI.addCustomTokens({ chainId: this.toChainId, tokens: toTokenList })
+          toTokenList = addCustomTokensIfNeeded({ chainId: this.toChainId, tokens: toTokenList })
           const { message } = getHumanReadableSwapAndBridgeError(error)
 
           this.addOrUpdateError({
@@ -768,7 +769,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address)
     if (isAlreadyInTheList) return
 
-    let token: SocketAPIToken | null
+    let token: SwapAndBridgeToToken | null
     try {
       token = await this.#serviceProviderAPI.getToken({ address, chainId: this.toChainId })
 

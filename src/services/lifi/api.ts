@@ -1,6 +1,11 @@
 import { getAddress } from 'ethers'
 
-import { ExtendedChain, LiFiStep, Token as LiFiToken, TokensResponse } from '@lifi/types'
+import {
+  ExtendedChain,
+  RoutesResponse as LiFiRoutesResponse,
+  Token as LiFiToken,
+  TokensResponse as LiFiTokensResponse
+} from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { InviteController } from '../../controllers/invite/invite'
@@ -12,6 +17,7 @@ import {
   SocketAPISendTransactionRequest,
   SocketAPIToken,
   SocketRouteStatus,
+  SwapAndBridgeQuote,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
@@ -163,7 +169,7 @@ export class LiFiAPI {
     })
     const url = `${this.#baseUrl}/tokens?${params.toString()}`
 
-    const response = await this.#handleResponse<TokensResponse>({
+    const response = await this.#handleResponse<LiFiTokensResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
@@ -223,7 +229,7 @@ export class LiFiAPI {
     isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
-  }): Promise<SocketAPIQuote> {
+  }): Promise<SwapAndBridgeQuote> {
     const body = JSON.stringify({
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
@@ -249,17 +255,34 @@ export class LiFiAPI {
 
     const url = `${this.#baseUrl}/advanced/routes`
 
-    const response = await this.#handleResponse<LiFiStep>({
+    const response = await this.#handleResponse<LiFiRoutesResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers, method: 'POST', body }),
       errorPrefix: 'Unable to fetch the quote.'
     })
 
+    const fromAsset = {
+      name: response.routes[0].fromToken.name,
+      address: response.routes[0].fromToken.address,
+      decimals: response.routes[0].fromToken.decimals,
+      symbol: response.routes[0].fromToken.symbol,
+      icon: response.routes[0].fromToken.logoURI,
+      chainId: fromChainId
+    }
+
+    const toAsset = {
+      name: response.routes[0].toToken.name,
+      address: response.routes[0].toToken.address,
+      decimals: response.routes[0].toToken.decimals,
+      symbol: response.routes[0].toToken.symbol,
+      icon: response.routes[0].toToken.logoURI,
+      chainId: toChainId
+    }
+
     return {
-      ...response,
-      fromAsset: response.routes[0].fromToken,
-      fromChainId: response.routes[0].fromChainId,
-      toAsset: response.routes[0].toToken,
-      toChainId: response.routes[0].toChainId,
+      fromAsset,
+      fromChainId,
+      toAsset,
+      toChainId,
       selectedRoute: response.routes[0],
       selectedRouteSteps: response.routes[0].steps,
       // TODO: Monkey-patched the response temporarily

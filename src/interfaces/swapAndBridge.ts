@@ -33,6 +33,19 @@ export interface SocketAPIQuote {
   routes: SocketAPIRoute[]
 }
 
+export interface SwapAndBridgeQuote {
+  fromAsset: SwapAndBridgeToToken
+  fromChainId: number
+  toAsset: SwapAndBridgeToToken
+  toChainId: number
+  // TODO: Common type
+  selectedRoute: SocketAPIRoute
+  // TODO: Common type
+  selectedRouteSteps: SocketAPIStep[]
+  // TODO: Common type
+  routes: SocketAPIRoute[]
+}
+
 export interface SocketAPIRoute {
   routeId: string
   isOnlySwapRoute: boolean
