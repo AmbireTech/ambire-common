@@ -53,7 +53,8 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
   'aevo.xyz',
   'socialscan.io',
   'tally.xyz',
-  'questn.com'
+  'questn.com',
+  'taskon.xyz'
 ]
 
 /**
