@@ -137,12 +137,50 @@ export class NetworksController extends EventEmitter {
       Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
     )
 
-    // Step 2: Merge the networks coming from the Relayer
-    // For now we call this on load, but will decide later if we need to call it periodically
+    // Step 2: Merge the networks from the Relayer
+    finalNetworks = await this.#mergeRelayerNetworks(finalNetworks, networksInStorage)
+
+    this.#networks = finalNetworks
+    this.emitUpdate()
+
+    await this.#storage.set('networks', this.#networks)
+
+    // Update networks features asynchronously
+    this.#updateNetworkFeatures(finalNetworks)
+  }
+
+  /**
+   * Processes network updates, finalizes changes, and updates network features asynchronously.
+   */
+  async synchronizeNetworks() {
+    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+    const finalNetworks = { ...this.#networks }
+
+    // Step 3 & 4: Process updates (merge Relayer data and apply rules)
+    const updatedNetworks = await this.#mergeRelayerNetworks(finalNetworks, networksInStorage)
+
+    // Step 5: Finalize updates
+    this.#networks = updatedNetworks
+    this.emitUpdate()
+    await this.#storage.set('networks', this.#networks)
+
+    // Step 6: Asynchronously update network features
+    this.#updateNetworkFeatures(updatedNetworks)
+  }
+
+  /**
+   * Merges stored networks with networks fetched from the Relayer.
+   */
+  async #mergeRelayerNetworks(
+    finalNetworks: { [key: string]: Network },
+    networksInStorage: { [key: string]: Network }
+  ): Promise<{ [key: string]: Network }> {
     let relayerNetworks: RelayerNetworkConfigResponse = {}
+    const updatedNetworks = { ...finalNetworks }
     try {
       const res = await this.#callRelayer('/v2/config/networks')
       relayerNetworks = res.data.extensionConfigNetworks
+
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
@@ -151,7 +189,7 @@ export class NetworksController extends EventEmitter {
         )
 
         if (!storedNetwork) {
-          finalNetworks[chainId.toString()] = {
+          updatedNetworks[chainId.toString()] = {
             ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
             ...relayerNetwork
           }
@@ -169,50 +207,53 @@ export class NetworksController extends EventEmitter {
           relayerNetwork.predefinedConfigVersion > storedNetwork.predefinedConfigVersion
 
         if (shouldOverrideStoredNetwork) {
-          finalNetworks[chainId.toString()] = {
+          updatedNetworks[chainId.toString()] = {
             ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
             ...relayerNetwork,
             id: storedNetwork?.id || relayerNetwork.id,
             rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
           }
         } else {
-          finalNetworks[chainId.toString()] = {
+          updatedNetworks[chainId.toString()] = {
             ...storedNetwork,
             rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
           }
         }
       })
+
+      // Step 3: Ensure predefined networks are marked correctly and handle special cases
+      let predefinedNetworkIds = Object.keys(updatedNetworks)
+
+      if (!predefinedNetworkIds.length) {
+        predefinedNetworkIds = predefinedNetworks.map((network) => network.chainId.toString())
+      }
+
+      Object.keys(updatedNetworks).forEach((chainId: string) => {
+        const network = updatedNetworks[chainId]
+
+        // If a predefined network is removed by the relayer, mark it as custom
+        // and remove the predefined flag
+        // Update the hasRelayer flag to false just in case
+        if (!predefinedNetworkIds.includes(network.chainId.toString()) && network.predefined) {
+          updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
+        }
+
+        // Special case: Set the platformId for Odyssey chain
+        if (network.chainId === ODYSSEY_CHAIN_ID) {
+          updatedNetworks[chainId] = { ...network, platformId: 'ethereum' }
+        }
+      })
     } catch (e: any) {
-      // Fail silently, we already have the networks from the storage
-      // and assured we used predefined networks
       console.error('Failed to fetch networks from the Relayer', e)
     }
 
-    // Ensure predefined networks stay marked correctly and handle special cases (e.g., Odyssey network)
-    let predefinedNetworkIds = Object.keys(relayerNetworks)
-    if (!predefinedNetworkIds.length) {
-      predefinedNetworkIds = predefinedNetworks.map((network) => network.chainId.toString())
-    }
-    Object.keys(finalNetworks).forEach((chainId: string) => {
-      const network = finalNetworks[chainId]
+    return updatedNetworks
+  }
 
-      // If a predefined network is removed by the relayer, mark it as custom
-      if (!predefinedNetworkIds.includes(network.chainId.toString()) && network.predefined) {
-        finalNetworks[chainId] = { ...network, predefined: false }
-      }
-
-      // Special case: Set the platformId for Odyssey chain
-      if (network.chainId === ODYSSEY_CHAIN_ID) {
-        finalNetworks[chainId] = { ...network, platformId: 'ethereum' }
-      }
-    })
-    this.#networks = finalNetworks
-
-    this.emitUpdate()
-
-    await this.#storage.set('networks', this.#networks)
-
-    // update networks features asynchronously
+  /**
+   * Updates network features asynchronously if needed.
+   */
+  #updateNetworkFeatures(finalNetworks: { [key: string]: Network }) {
     Object.values(finalNetworks).forEach((network) => {
       if (network.isSAEnabled) return
 
@@ -352,7 +393,6 @@ export class NetworksController extends EventEmitter {
     this.#onAddOrUpdateNetwork(this.#networks[chainId.toString()])
     await this.#storage.set('networks', this.#networks)
 
-    // TODO: Figure out if this needs adjustments, it probably does
     const checkRPC = async (
       networkToAddOrUpdate: {
         chainId: bigint
