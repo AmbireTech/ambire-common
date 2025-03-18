@@ -16,6 +16,7 @@ import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { EstimationController } from '../estimation/estimation'
+import { EstimationStatus } from '../estimation/types'
 import { NetworksController } from '../networks/networks'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
@@ -220,8 +221,6 @@ export class SignAccountOpController extends EventEmitter {
 
   estimationController: EstimationController
 
-  #accounts: AccountsController
-
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -268,7 +267,6 @@ export class SignAccountOpController extends EventEmitter {
       noStateUpdateStatuses
     )
     this.provider = provider
-    this.#accounts = accounts
     this.estimationController = new EstimationController(
       keystore,
       accounts,
@@ -284,6 +282,19 @@ export class SignAccountOpController extends EventEmitter {
       },
       noStateUpdateStatuses
     )
+
+    this.#load()
+  }
+
+  #load() {
+    this.estimationController.onUpdate(() => {
+      if (this.estimationController.status === EstimationStatus.Success) {
+        this.update({ estimation: this.estimationController.estimation as FullEstimation })
+      }
+      if (this.estimationController.status === EstimationStatus.Error) {
+        this.update({ estimation: this.estimationController.error as Error })
+      }
+    })
   }
 
   get isInitialized(): boolean {
@@ -587,26 +598,10 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async estimate(): Promise<FullEstimation | Error> {
+  async estimate(callback: Function) {
     // this shouldn't throw
-    const estimation = await this.estimationController.estimate(this.accountOp).catch((e) => e)
-
-    // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
-    // that the account state is not the latest and needs to be updated
-    if (
-      estimation &&
-      !(estimation instanceof Error) &&
-      (estimation.flags.hasNonceDiscrepancy || estimation.flags.has4337NonceDiscrepancy)
-    ) {
-      // silenly continuing on error here as the flags are more like app helpers
-      this.#accounts
-        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.networkId])
-        .catch((e) => e)
-    }
-
-    this.update({ estimation })
-
-    return estimation
+    await this.estimationController.estimate(this.accountOp).catch((e) => e)
+    await callback()
   }
 
   update({

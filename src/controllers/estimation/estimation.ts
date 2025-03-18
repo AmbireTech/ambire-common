@@ -12,6 +12,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { EstimationStatus } from './types'
 
 export class EstimationController extends EventEmitter {
   #keystore: KeystoreController
@@ -36,6 +37,12 @@ export class EstimationController extends EventEmitter {
   // disregard updates, this is the place
   #outsideControllerNoUpdateStatuses: any[] = []
 
+  status: EstimationStatus = EstimationStatus.Initial
+
+  estimation: FullEstimation | null = null
+
+  error: Error | null = null
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
@@ -58,7 +65,10 @@ export class EstimationController extends EventEmitter {
       this.#outsideControllerNoUpdateStatuses = outsideControllerNoUpdateStatuses
   }
 
-  async estimate(op: AccountOp): Promise<FullEstimation | Error> {
+  async estimate(op: AccountOp) {
+    this.status = EstimationStatus.Loading
+    this.emitUpdate()
+
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
     const network = this.#networks.networks.find((net) => net.id === op.networkId)!
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
@@ -114,7 +124,7 @@ export class EstimationController extends EventEmitter {
       this.#getOutsideControllerStatus,
       this.#outsideControllerNoUpdateStatuses
     )
-    return getEstimation(
+    const estimation = await getEstimation(
       baseAcc,
       accountState,
       op,
@@ -125,5 +135,27 @@ export class EstimationController extends EventEmitter {
       bundlerSwitcher,
       this.#errorCallback
     ).catch((e) => e)
+
+    // set estimation OR error depending on the res
+    if (!(estimation instanceof Error)) {
+      this.estimation = estimation
+      this.error = null
+      this.status = EstimationStatus.Success
+    } else {
+      this.estimation = null
+      this.error = estimation
+      this.status = EstimationStatus.Error
+    }
+
+    // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
+    // that the account state is not the latest and needs to be updated
+    if (
+      this.estimation &&
+      (this.estimation.flags.hasNonceDiscrepancy || this.estimation.flags.has4337NonceDiscrepancy)
+    )
+      // silenly continuing on error here as the flags are more like app helpers
+      this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.networkId]).catch((e) => e)
+
+    this.emitUpdate()
   }
 }

@@ -28,6 +28,7 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -768,7 +769,11 @@ export class MainController extends EventEmitter {
     try {
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       const provider = this.providers.providers[network.id]
-      const gasPrice = this.gasPrices[network.id]
+      let gasPrice = this.gasPrices[network.id]
+      if (!gasPrice) {
+        await this.#updateGasPrice()
+        gasPrice = this.gasPrices[network.id]
+      }
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
@@ -2392,38 +2397,38 @@ export class MainController extends EventEmitter {
 
       this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
-      const [, estimation] = await Promise.all([
+      await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
         this.getPortfolioSimulationPromise(localAccountOp),
-        this.signAccountOp.estimate()
+        this.signAccountOp.estimate(async () => {
+          // @race
+          // if the signAccountOp has been deleted, don't continue as the request has already finished
+          if (!this.signAccountOp) return
+          const estimation = this.signAccountOp.estimationController.estimation
+
+          // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
+          // that we should update the portfolio to get a correct simulation
+          if (
+            estimation &&
+            !(estimation.ambire instanceof Error) &&
+            estimation.flags.hasNonceDiscrepancy
+          ) {
+            localAccountOp.nonce = BigInt(estimation.ambire.ambireAccountNonce)
+            await this.getPortfolioSimulationPromise(localAccountOp)
+          }
+
+          // if there's an estimation error, override the pending results
+          if (this.signAccountOp.estimationController.status === EstimationStatus.Error) {
+            this.portfolio.overridePendingResults(localAccountOp)
+          }
+
+          // make a debug_traceCall if all the conditions match
+          if (this.signAccountOp && estimation && shouldTraceCall)
+            this.traceCall(getEstimationSummary(estimation))
+        })
       ])
-
-      // @race
-      // if the signAccountOp has been deleted, don't continue as the request has already finished
-      if (!this.signAccountOp) return
-
-      // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
-      // that we should update the portfolio to get a correct simulation
-      if (
-        estimation &&
-        !(estimation instanceof Error) &&
-        !(estimation.ambire instanceof Error) &&
-        estimation.flags.hasNonceDiscrepancy
-      ) {
-        localAccountOp.nonce = BigInt(estimation.ambire.ambireAccountNonce)
-        await this.getPortfolioSimulationPromise(localAccountOp)
-      }
-
-      // if there's an estimation error, override the pending results
-      if (estimation instanceof Error) {
-        this.portfolio.overridePendingResults(localAccountOp)
-      }
-
-      // make a debug_traceCall if all the conditions match
-      if (this.signAccountOp && estimation && shouldTraceCall)
-        this.traceCall(getEstimationSummary(estimation))
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()
       this.emitError({
