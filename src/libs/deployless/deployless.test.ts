@@ -10,7 +10,7 @@ const helloWorld = compile('HelloWorld', {
   contractsFolder: 'test/contracts'
 })
 const deployErrBin = '0x6080604052348015600f57600080fd5b600080fdfe'
-const mainnetProvider = new JsonRpcProvider('https://rpc.ankr.com/eth')
+const mainnetProvider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
 let deployless: Deployless
 
 describe('Deployless', () => {
@@ -146,7 +146,11 @@ describe('Deployless', () => {
       await localDeployless.call('helloWorld', [], { blockTag: '0x1' })
     } catch (e: any) {
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
-      expect(e.info.error.message.includes('invalid opcode: SHR')).toBe(true)
+      const noSHR = 'invalid opcode: SHR'
+      const notActivated = 'EVM error: NotActivated'
+      expect(
+        e.info.error.message.includes(noSHR) || e.info.error.message.includes(notActivated)
+      ).toBe(true)
     }
     try {
       await localDeployless.call('helloWorld', [], {
