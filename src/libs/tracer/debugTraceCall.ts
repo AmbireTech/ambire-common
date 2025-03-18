@@ -7,7 +7,7 @@ import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { getAccountDeployParams, getSpoof, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { GasRecommendation } from '../gasPrice/gasPrice'
@@ -61,12 +61,20 @@ export async function debugTraceCall(
     blockTag: 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract,
-    isEOA: !isSmartAccount(account)
+    isEOA: isBasicAccount(account, accountState),
+    simulation: {
+      accountOps: [op],
+      account,
+      state: accountState
+    }
   }
   const deploylessOpts = getDeploylessOpts(account.addr, supportsStateOverride, opts)
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const simulationOps = [
-    [isSmartAccount(account) ? op.nonce : BigInt(EOA_SIMULATION_NONCE), op.calls.map(callToTuple)]
+    [
+      !isBasicAccount(account, accountState) ? op.nonce : BigInt(EOA_SIMULATION_NONCE),
+      op.calls.map(callToTuple)
+    ]
   ]
   const fast = gasPrices.find((gas: any) => gas.name === 'fast')
   if (!fast) return { tokens: [], nfts: [] }
@@ -160,7 +168,7 @@ export async function debugTraceCall(
   )
 
   const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = await Promise.all([
-    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
+    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
     getNftsPromise
   ])
 
