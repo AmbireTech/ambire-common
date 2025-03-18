@@ -2,7 +2,7 @@
 /* eslint-disable no-await-in-loop */
 
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, getBigInt, ZeroAddress } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -63,7 +63,6 @@ import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 import { getEstimationSummary } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
-import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
@@ -72,7 +71,7 @@ import {
   makeAccountOpAction
 } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
-import { GetOptions, TokenResult } from '../../libs/portfolio/interfaces'
+import { TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
@@ -2356,50 +2355,6 @@ export class MainController extends EventEmitter {
       const localAccountOp: AccountOp = { ...this.signAccountOp.accountOp }
 
       await this.#initialLoadPromise
-      // new accountOps should have spoof signatures so that they can be easily simulated
-      // this is not used by the Estimator, because it iterates through all associatedKeys and
-      // it knows which ones are authenticated, and it can generate it's own spoofSig
-      // @TODO
-      // accountOp.signature = `${}03`
-
-      // TODO check if needed data in accountStates are available
-      // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-      const account = this.accounts.accounts.find((x) => x.addr === localAccountOp.accountAddr)
-
-      if (!account)
-        throw new Error(
-          `estimateSignAccountOp: ${localAccountOp.accountAddr}: account does not exist`
-        )
-      const network = this.networks.networks.find((x) => x.id === localAccountOp.networkId)
-      if (!network)
-        throw new Error(
-          `estimateSignAccountOp: ${localAccountOp.networkId}: network does not exist`
-        )
-
-      // can be read from the UI
-      const humanization = humanizeAccountOp(localAccountOp, {})
-      humanization.forEach((call: any) => {
-        if (!call.fullVisualization) return
-
-        call.fullVisualization.forEach(async (visualization: any) => {
-          if (visualization.type !== 'address' || !visualization.address) return
-
-          await this.domains.reverseLookup(visualization.address)
-        })
-      })
-
-      const additionalHints: GetOptions['additionalErc20Hints'] = humanization
-        .map((call: any) =>
-          !call.fullVisualization
-            ? []
-            : call.fullVisualization.map((vis: any) =>
-                vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
-              )
-        )
-        .flat()
-        .filter((x: any) => isAddress(x))
-
-      this.portfolio.addTokensToBeLearned(additionalHints, network.id)
 
       await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that

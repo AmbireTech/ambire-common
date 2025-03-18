@@ -4,6 +4,7 @@ import {
   formatUnits,
   getAddress,
   Interface,
+  isAddress,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -54,8 +55,9 @@ import {
   GasRecommendation,
   getProbableCallData
 } from '../../libs/gasPrice/gasPrice'
+import { humanizeAccountOp } from '../../libs/humanizer'
 import { hasRelayerSupport } from '../../libs/networks/networks'
-import { Price, TokenResult } from '../../libs/portfolio'
+import { GetOptions, Price, TokenResult } from '../../libs/portfolio'
 import {
   get7702Sig,
   get7702UserOpTypedData,
@@ -286,7 +288,24 @@ export class SignAccountOpController extends EventEmitter {
     this.#load()
   }
 
+  learnTokensFromCalls() {
+    const humanization = humanizeAccountOp(this.accountOp, {})
+    const additionalHints: GetOptions['additionalErc20Hints'] = humanization
+      .map((call: any) =>
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis: any) =>
+              vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
+            )
+      )
+      .flat()
+      .filter((x: any) => isAddress(x))
+    this.#portfolio.addTokensToBeLearned(additionalHints, this.#network.id)
+  }
+
   #load() {
+    this.learnTokensFromCalls()
+
     this.estimationController.onUpdate(() => {
       if (this.estimationController.status === EstimationStatus.Success) {
         this.update({ estimation: this.estimationController.estimation as FullEstimation })
@@ -653,7 +672,10 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      if (Array.isArray(calls)) this.accountOp.calls = calls
+      if (Array.isArray(calls)) {
+        this.accountOp.calls = calls
+        this.learnTokensFromCalls()
+      }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
 
