@@ -97,6 +97,7 @@ export const updatePortfolioStateWithDefiPositions = (
               networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
               // Get the price from defiPositions
               tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
+              tokenInPortfolio.flags.isDefiToken = true
             } else {
               const positionAsset: TokenResult = {
                 amount: a.amount,
