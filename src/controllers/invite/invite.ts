@@ -1,7 +1,7 @@
 import { Fetch } from '../../interfaces/fetch'
-import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export enum INVITE_STATUS {
@@ -30,7 +30,7 @@ const DEFAULT_STATE = {
  * verification of these invite codes and persisting the current invite status.
  */
 export class InviteController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #callRelayer: Function
 
@@ -55,7 +55,7 @@ export class InviteController extends EventEmitter {
   }: {
     relayerUrl: string
     fetch: Fetch
-    storage: Storage
+    storage: StorageController
   }) {
     super()
 
