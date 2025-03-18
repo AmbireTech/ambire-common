@@ -132,7 +132,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     predefinedConfigVersion,
     rpcUrls,
     iconUrls,
-    platformId
+    platformId,
+    has7702
   } = relayerNetwork
   const {
     ambireId: id,
@@ -147,6 +148,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     feeOptions: incomingFeeOptions
   } = relayerNetwork
 
+  const is7702Enabled = has7702 || false
   const hasRelayer = smartAccounts?.hasRelayer ?? false
   const incomingErc4337 = smartAccounts?.erc4337 ?? { enabled: false, hasPaymaster: false }
 
@@ -224,7 +226,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     areContractsDeployed,
     features,
     hasSingleton,
-    has7702: false
+    has7702: is7702Enabled
   }
 }
 

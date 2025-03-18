@@ -173,6 +173,7 @@ export type RelayerNetwork = {
     minBaseFee?: number
     minBaseFeeEqualToLastBlock?: boolean
   }
+  has7702?: boolean
   smartAccounts?: {
     hasRelayer: boolean
     erc4337: {
