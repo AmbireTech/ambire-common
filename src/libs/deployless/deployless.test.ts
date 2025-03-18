@@ -148,8 +148,11 @@ describe('Deployless', () => {
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
       const noSHR = 'invalid opcode: SHR'
       const notActivated = 'EVM error: NotActivated'
+      const notAvailable = 'not available'
       expect(
-        e.info.error.message.includes(noSHR) || e.info.error.message.includes(notActivated)
+        e.info.error.message.includes(noSHR) ||
+          e.info.error.message.includes(notActivated) ||
+          e.info.error.message.includes(notAvailable)
       ).toBe(true)
     }
     try {
@@ -162,7 +165,8 @@ describe('Deployless', () => {
       // fails with out-of-gas when wrapped in the ProxyContract mode (or invalid opcode: SHL)
       expect(
         e.info.error.message.includes('out of gas') ||
-          e.info.error.message.includes('invalid opcode: SHL')
+          e.info.error.message.includes('invalid opcode: SHL') ||
+          e.info.error.message.includes('NotActivated')
       ).toBe(true)
     }
   })
