@@ -178,13 +178,13 @@ export class Portfolio {
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
             : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
           message: errorMesssage,
-          level: 'critical'
+          level: isLastUpdateTooOld ? 'critical' : 'silent'
         })
       } else {
         errors.push({
           name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
           message: errorMesssage,
-          level: 'silent'
+          level: 'critical'
         })
       }
 
