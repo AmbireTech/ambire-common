@@ -10,12 +10,12 @@ import {
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken,
-  SocketRouteStatus
+  SocketRouteStatus,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
-  AMBIRE_WALLET_TOKEN_ON_BASE,
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
   FEE_PERCENT,
   NULL_ADDRESS,
@@ -167,26 +167,13 @@ export class SocketAPI {
     return response.filter((c) => c.sendingEnabled && c.receivingEnabled)
   }
 
-  /**
-   * Since v4.41.0 we request the shortlist from Socket, which does not include
-   * the Ambire $WALLET token. So adding it manually on the supported chains.
-   */
-  static addCustomTokens({ chainId, tokens }: { chainId: number; tokens: SocketAPIToken[] }) {
-    const newTokens = [...tokens]
-
-    if (chainId === 1) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
-    if (chainId === 8453) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
-
-    return newTokens
-  }
-
   async getToTokenList({
     fromChainId,
     toChainId
   }: {
     fromChainId: number
     toChainId: number
-  }): Promise<SocketAPIToken[]> {
+  }): Promise<SwapAndBridgeToToken[]> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       toChainId: toChainId.toString(),
@@ -215,9 +202,9 @@ export class SocketAPI {
     if (toChainId === 1)
       response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
-    response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
+    response = response.map(normalizeIncomingSocketToken)
 
-    return response.map(normalizeIncomingSocketToken)
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: response })
   }
 
   async getToken({
@@ -226,7 +213,7 @@ export class SocketAPI {
   }: {
     address: string
     chainId: number
-  }): Promise<SocketAPIToken | null> {
+  }): Promise<SwapAndBridgeToToken | null> {
     const params = new URLSearchParams({
       address: address.toString(),
       chainId: chainId.toString()

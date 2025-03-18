@@ -10,23 +10,12 @@ import {
   SocketAPIQuote,
   SocketAPIResponse,
   SocketAPISendTransactionRequest,
-  SocketAPISupportedChain,
   SocketAPIToken,
   SocketRouteStatus,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
-import {
-  AMBIRE_FEE_TAKER_ADDRESSES,
-  AMBIRE_WALLET_TOKEN_ON_BASE,
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT,
-  NULL_ADDRESS,
-  ZERO_ADDRESS
-} from '../socket/constants'
-
-const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
-  addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
+import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
+import { NULL_ADDRESS, ZERO_ADDRESS } from '../socket/constants'
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
@@ -160,19 +149,6 @@ export class LiFiAPI {
     return response.chains.map((c) => ({ ...c, chainId: c.id }))
   }
 
-  /**
-   * Since v4.41.0 we request the shortlist from Socket, which does not include
-   * the Ambire $WALLET token. So adding it manually on the supported chains.
-   */
-  static addCustomTokens({ chainId, tokens }: { chainId: number; tokens: SocketAPIToken[] }) {
-    const newTokens = [...tokens]
-
-    if (chainId === 1) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
-    if (chainId === 8453) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
-
-    return newTokens
-  }
-
   async getToTokenList({
     fromChainId,
     toChainId
@@ -193,50 +169,38 @@ export class LiFiAPI {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    // Exception for Optimism, strip out the legacy ETH address
-    // TODO: Remove when Socket removes the legacy ETH address from their response
-    // if (toChainId === 10)
-    //   response = response.filter(
-    //     (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
-    //   )
-
-    // Exception for Ethereum, duplicate ETH tokens are incoming from the API.
-    // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
-    // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
-    // if (toChainId === 1)
-    //   response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
-
-    // TODO: Add custom tokens
-    // response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
-
-    return response.tokens[toChainId].map((t: LiFiToken) => {
+    const result: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) => {
       const { name, address, decimals, symbol, logoURI: icon } = t
 
       return { name, address, decimals, symbol, icon, chainId: toChainId }
     })
+
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: result })
   }
 
   async getToken({
-    address,
+    address: token,
     chainId
   }: {
     address: string
     chainId: number
-  }): Promise<TokensResponse | null> {
+  }): Promise<SwapAndBridgeToToken | null> {
     const params = new URLSearchParams({
-      token: address.toString(),
+      token: token.toString(),
       chain: chainId.toString()
     })
     const url = `${this.#baseUrl}/token?${params.toString()}`
 
-    const response = await this.#handleResponse<TokensResponse>({
+    const response = await this.#handleResponse<LiFiToken>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to retrieve token information by address.'
     })
 
     if (!response) return null
 
-    return response
+    const { name, address, decimals, symbol, logoURI: icon } = response
+
+    return { name, address, decimals, symbol, icon, chainId }
   }
 
   async quote({

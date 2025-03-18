@@ -251,5 +251,5 @@ export type CachedSupportedChains = { lastFetched: number; data: SocketAPISuppor
 type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
 export type CachedToTokenLists = {
-  [key: CachedTokenListKey]: { lastFetched: number; data: SocketAPIToken[] }
+  [key: CachedTokenListKey]: { lastFetched: number; data: SwapAndBridgeToToken[] }
 }

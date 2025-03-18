@@ -13,6 +13,10 @@ import {
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
+import {
+  AMBIRE_WALLET_TOKEN_ON_BASE,
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM
+} from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
@@ -289,10 +293,40 @@ const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveR
   )
 }
 
+/**
+ * Since v4.41.0 we request the shortlist from our service provider, which might
+ * not include the Ambire $WALLET token. So adding it manually on the supported chains.
+ */
+const addCustomTokensIfNeeded = ({
+  tokens,
+  chainId
+}: {
+  tokens: SwapAndBridgeToToken[]
+  chainId: number
+}) => {
+  const newTokens = [...tokens]
+
+  if (chainId === 1) {
+    const shouldAddAmbireWalletToken = newTokens.every(
+      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_ETHEREUM.address
+    )
+    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+  }
+  if (chainId === 8453) {
+    const shouldAddAmbireWalletToken = newTokens.every(
+      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
+    )
+    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+  }
+
+  return newTokens
+}
+
 export {
   buildSwapAndBridgeUserRequests,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  getQuoteRouteSteps
+  getQuoteRouteSteps,
+  addCustomTokensIfNeeded
 }
