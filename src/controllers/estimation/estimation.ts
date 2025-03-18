@@ -101,7 +101,7 @@ export class EstimationController extends EventEmitter {
       ? this.#accounts.accounts
           .filter(
             (acc) =>
-              !account.creation &&
+              !acc.creation &&
               (acc.addr === op.accountAddr ||
                 !getIsViewOnly(this.#keystore.keys, acc.associatedKeys))
           )
