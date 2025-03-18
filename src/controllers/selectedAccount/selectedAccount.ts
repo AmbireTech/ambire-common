@@ -265,8 +265,12 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     if (
+      // Fully loaded
       newSelectedAccountPortfolio.isReadyToVisualize ||
-      (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
+      // Has tokens to show
+      (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length) ||
+      // There is a simulation
+      !!newSelectedAccountPortfolio.networkSimulatedAccountOp
     ) {
       this.portfolio = newSelectedAccountPortfolio
       this.#updatePortfolioErrors(true)
