@@ -250,6 +250,7 @@ export class MainController extends EventEmitter {
     relayerUrl,
     velcroUrl,
     socketApiKey,
+    lifiApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -260,6 +261,7 @@ export class MainController extends EventEmitter {
     relayerUrl: string
     velcroUrl: string
     socketApiKey: string
+    lifiApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -344,7 +346,7 @@ export class MainController extends EventEmitter {
       windowManager: this.#windowManager
     })
     const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
-    const lifiAPI = new LiFiAPI({ apiKey: '', fetch: this.fetch })
+    const lifiAPI = new LiFiAPI({ apiKey: lifiApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,

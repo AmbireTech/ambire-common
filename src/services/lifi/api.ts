@@ -66,8 +66,7 @@ export class LiFiAPI {
     this.#fetch = fetch
 
     this.#headers = {
-      // TODO: API does NOT require any authentication to be used (with lower limits)
-      // 'x-lifi-api-key': apiKey,
+      'x-lifi-api-key': apiKey,
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }
