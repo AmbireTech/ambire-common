@@ -42,17 +42,6 @@ export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
   address: normalizeIncomingSocketTokenAddress(token.address)
 })
 
-const normalizeOutgoingSocketTokenAddress = (address: string) =>
-  // Socket expects to receive null address instead of the zero address for native tokens.
-  convertZeroAddressToNullAddressIfNeeded(
-    // Socket works only with all lowercased token addresses, otherwise, bad request
-    address.toLocaleLowerCase()
-  )
-const normalizeOutgoingSocketToken = (token: SocketAPIToken) => ({
-  ...token,
-  address: normalizeOutgoingSocketTokenAddress(token.address)
-})
-
 export class LiFiAPI {
   #fetch: Fetch
 
@@ -220,14 +209,11 @@ export class LiFiAPI {
     // TODO: Add custom tokens
     // response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
 
-    return response.tokens[toChainId].map((t: LiFiToken) => ({
-      name: t.name,
-      address: t.address,
-      decimals: t.decimals,
-      symbol: t.symbol,
-      icon: t.logoURI,
-      chainId: toChainId
-    }))
+    return response.tokens[toChainId].map((t: LiFiToken) => {
+      const { name, address, decimals, symbol, logoURI: icon } = t
+
+      return { name, address, decimals, symbol, icon, chainId: toChainId }
+    })
   }
 
   async getToken({
@@ -241,7 +227,7 @@ export class LiFiAPI {
       token: address.toString(),
       chain: chainId.toString()
     })
-    const url = `${this.#baseUrl}/token`
+    const url = `${this.#baseUrl}/token?${params.toString()}`
 
     const response = await this.#handleResponse<TokensResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
