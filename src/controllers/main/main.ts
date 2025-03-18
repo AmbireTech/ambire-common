@@ -28,7 +28,7 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
-import { EstimationStatus } from '../estimation/types'
+import { getEstimationSummary } from '../../libs/estimate/estimate'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -61,7 +61,6 @@ import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { getEstimationSummary } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
@@ -650,17 +649,17 @@ export class MainController extends EventEmitter {
       actionId,
       accountOp,
       () => {
-        this.estimateSignAccountOp()
+        return this.isSignRequestStillActive
       },
       () => {
-        return this.isSignRequestStillActive
+        if (this.signAccountOp && this.signAccountOp.estimationController.estimation)
+          this.traceCall(getEstimationSummary(this.signAccountOp.estimationController.estimation))
       }
     )
 
     this.emitUpdate()
 
     this.updateSignAccountOpGasPrice()
-    this.estimateSignAccountOp({ shouldTraceCall: true })
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -1723,7 +1722,6 @@ export class MainController extends EventEmitter {
 
           this.actions.addOrUpdateAction(accountOpAction)
           this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
-          this.estimateSignAccountOp()
         }
       }
     } else {
@@ -1944,7 +1942,6 @@ export class MainController extends EventEmitter {
       if (this.signAccountOp) {
         if (this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-          await this.estimateSignAccountOp({ shouldTraceCall: true })
         }
       } else {
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
@@ -2047,7 +2044,6 @@ export class MainController extends EventEmitter {
 
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ calls: accountOpAction.accountOp.calls, estimation: null })
-          this.estimateSignAccountOp()
         }
       } else {
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
@@ -2325,79 +2321,6 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async getPortfolioSimulationPromise(op: AccountOp) {
-    const network = this.networks.networks.find((net) => net.id === op.networkId)!
-    const accOpsForSimulation = getAccountOpsForSimulation(
-      this.accounts.accounts.find((acc) => acc.addr === op.accountAddr)!,
-      this.actions.visibleActionsQueue,
-      network,
-      op
-    )
-    return this.portfolio.updateSelectedAccount(
-      op.accountAddr,
-      network,
-      accOpsForSimulation
-        ? {
-            accountOps: accOpsForSimulation,
-            states: await this.accounts.getOrFetchAccountStates(op.accountAddr)
-          }
-        : undefined,
-      { forceUpdate: true }
-    )
-  }
-
-  // @TODO: protect this from race conditions/simultanous executions
-  async estimateSignAccountOp({ shouldTraceCall = false }: { shouldTraceCall?: boolean } = {}) {
-    try {
-      if (!this.signAccountOp) return
-
-      // make a local copy to avoid updating the main reference
-      const localAccountOp: AccountOp = { ...this.signAccountOp.accountOp }
-
-      await this.#initialLoadPromise
-
-      await Promise.all([
-        // NOTE: we are not emitting an update here because the portfolio controller will do that
-        // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
-        // it may have different needs
-        this.getPortfolioSimulationPromise(localAccountOp),
-        this.signAccountOp.estimate(async () => {
-          // @race
-          // if the signAccountOp has been deleted, don't continue as the request has already finished
-          if (!this.signAccountOp) return
-          const estimation = this.signAccountOp.estimationController.estimation
-
-          // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
-          // that we should update the portfolio to get a correct simulation
-          if (
-            estimation &&
-            !(estimation.ambire instanceof Error) &&
-            estimation.flags.hasNonceDiscrepancy
-          ) {
-            localAccountOp.nonce = BigInt(estimation.ambire.ambireAccountNonce)
-            await this.getPortfolioSimulationPromise(localAccountOp)
-          }
-
-          // if there's an estimation error, override the pending results
-          if (this.signAccountOp.estimationController.status === EstimationStatus.Error) {
-            this.portfolio.overridePendingResults(localAccountOp)
-          }
-
-          // make a debug_traceCall if all the conditions match
-          if (this.signAccountOp && estimation && shouldTraceCall)
-            this.traceCall(getEstimationSummary(estimation))
-        })
-      ])
-    } catch (error: any) {
-      this.signAccountOp?.calculateWarnings()
-      this.emitError({
-        level: 'silent',
-        message: 'Estimation error',
-        error
-      })
-    }
-  }
-
   /**
    * There are 4 ways to broadcast an AccountOp:
    *   1. For basic accounts (EOA), there is only one way to do that. After
@@ -2585,7 +2508,7 @@ export class MainController extends EventEmitter {
 
           if (switcher.canSwitch(account, humanReadable)) {
             switcher.switch()
-            this.estimateSignAccountOp()
+            this.signAccountOp.simulate()
             this.#updateGasPrice()
             retryMsg = 'Broadcast failed because bundler was down. Please try again'
           }
@@ -2789,7 +2712,7 @@ export class MainController extends EventEmitter {
         message =
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         isReplacementFeeLow = true
-        this.estimateSignAccountOp()
+        if (this.signAccountOp) this.signAccountOp.simulate()
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
           !accountState?.isV2
@@ -2800,7 +2723,7 @@ export class MainController extends EventEmitter {
         message =
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
         this.updateSignAccountOpGasPrice()
-        this.estimateSignAccountOp()
+        if (this.signAccountOp) this.signAccountOp.simulate()
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
@@ -2814,7 +2737,7 @@ export class MainController extends EventEmitter {
       // add it to the failedPaymasters to disable it until a top-up is made
       if (message.includes(insufficientPaymasterFunds) && provider && network) {
         failedPaymasters.addInsufficientFunds(provider, network).then(() => {
-          this.estimateSignAccountOp()
+          if (this.signAccountOp) this.signAccountOp.simulate()
         })
       }
       if (message.includes('the selected fee is too low')) {

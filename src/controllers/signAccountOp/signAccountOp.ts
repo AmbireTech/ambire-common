@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import {
   AbiCoder,
   formatEther,
@@ -177,8 +178,6 @@ export class SignAccountOpController extends EventEmitter {
 
   status: Status | null = null
 
-  #reEstimate: Function
-
   #isSignRequestStillActive: Function
 
   rbfAccountOps: { [key: string]: SubmittedAccountOp | null }
@@ -223,6 +222,8 @@ export class SignAccountOpController extends EventEmitter {
 
   estimationController: EstimationController
 
+  #traceCall: Function
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -236,8 +237,8 @@ export class SignAccountOpController extends EventEmitter {
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
-    reEstimate: Function,
-    isSignRequestStillActive: Function
+    isSignRequestStillActive: Function,
+    traceCall: Function
   ) {
     super()
 
@@ -255,7 +256,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
-    this.#reEstimate = reEstimate
     this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.rbfAccountOps = {}
@@ -284,8 +284,24 @@ export class SignAccountOpController extends EventEmitter {
       },
       noStateUpdateStatuses
     )
+    this.#traceCall = traceCall
 
     this.#load()
+  }
+
+  #load() {
+    this.learnTokensFromCalls()
+
+    this.estimationController.onUpdate(() => {
+      if (this.estimationController.status === EstimationStatus.Success) {
+        this.update({ estimation: this.estimationController.estimation as FullEstimation })
+      }
+      if (this.estimationController.status === EstimationStatus.Error) {
+        this.update({ estimation: this.estimationController.error as Error })
+      }
+    })
+
+    this.simulate(true)
   }
 
   learnTokensFromCalls() {
@@ -301,19 +317,6 @@ export class SignAccountOpController extends EventEmitter {
       .flat()
       .filter((x: any) => isAddress(x))
     this.#portfolio.addTokensToBeLearned(additionalHints, this.#network.id)
-  }
-
-  #load() {
-    this.learnTokensFromCalls()
-
-    this.estimationController.onUpdate(() => {
-      if (this.estimationController.status === EstimationStatus.Success) {
-        this.update({ estimation: this.estimationController.estimation as FullEstimation })
-      }
-      if (this.estimationController.status === EstimationStatus.Error) {
-        this.update({ estimation: this.estimationController.error as Error })
-      }
-    })
   }
 
   get isInitialized(): boolean {
@@ -617,10 +620,35 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async estimate(callback: Function) {
-    // this shouldn't throw
-    await this.estimationController.estimate(this.accountOp).catch((e) => e)
-    await callback()
+  async simulate(shouldTraceCall: boolean = false) {
+    await Promise.all([
+      this.#portfolio.simulateAccountOp(this.accountOp),
+      this.estimationController.estimate(this.accountOp).catch((e) => e)
+    ])
+
+    const estimation = this.estimationController.estimation
+
+    // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
+    // that we should update the portfolio to get a correct simulation
+    if (
+      estimation &&
+      !(estimation.ambire instanceof Error) &&
+      estimation.flags.hasNonceDiscrepancy
+    ) {
+      this.accountOp.nonce = BigInt(estimation.ambire.ambireAccountNonce)
+      await this.#portfolio.simulateAccountOp(this.accountOp)
+    }
+
+    // if there's an estimation error, override the pending results
+    if (this.estimationController.status === EstimationStatus.Error) {
+      this.#portfolio.overridePendingResults(this.accountOp)
+    }
+
+    if (shouldTraceCall) this.#traceCall()
+  }
+
+  async estimate() {
+    await this.estimationController.estimate(this.accountOp)
   }
 
   update({
@@ -673,8 +701,11 @@ export class SignAccountOpController extends EventEmitter {
       }
 
       if (Array.isArray(calls)) {
+        const hasNewCalls = this.accountOp.calls.length < calls.length
         this.accountOp.calls = calls
-        this.learnTokensFromCalls()
+
+        if (hasNewCalls) this.learnTokensFromCalls()
+        this.simulate(hasNewCalls)
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
@@ -1516,7 +1547,7 @@ export class SignAccountOpController extends EventEmitter {
             })
             this.status = { type: SigningStatus.ReadyToSign }
             this.emitUpdate()
-            this.#reEstimate()
+            this.estimate()
             return
           }
         }

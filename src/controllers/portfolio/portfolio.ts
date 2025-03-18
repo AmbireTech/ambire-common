@@ -3,6 +3,7 @@ import { getAddress, ZeroAddress } from 'ethers'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network, NetworkId } from '../../interfaces/network'
+import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -927,6 +928,20 @@ export class PortfolioController extends EventEmitter {
 
   getNetworksWithAssets(accountAddr: string) {
     return this.#networksWithAssetsByAccounts[accountAddr] || []
+  }
+
+  async simulateAccountOp(op: AccountOp): Promise<void> {
+    const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
+    const network = this.#networks.networks.find((net) => net.id === op.networkId)!
+    const state = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.networkId)
+    const noSimulation = isBasicAccount(account, state) && network.rpcNoStateOverride
+    const simulation = !noSimulation
+      ? {
+          accountOps: { [network.id]: [op] },
+          states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
+        }
+      : undefined
+    return this.updateSelectedAccount(op.accountAddr, network, simulation, { forceUpdate: true })
   }
 
   toJSON() {
