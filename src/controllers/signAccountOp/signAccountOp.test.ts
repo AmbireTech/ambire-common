@@ -476,6 +476,9 @@ const init = async (
     ]
   }
   const controller = new SignAccountOpController(
+    accountsCtrl,
+    networksCtrl,
+    providersCtrl,
     keystore,
     portfolio,
     {},
