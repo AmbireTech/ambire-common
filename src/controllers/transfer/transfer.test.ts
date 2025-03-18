@@ -90,7 +90,6 @@ describe('Transfer Controller', () => {
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -104,7 +103,6 @@ describe('Transfer Controller', () => {
       addressState: {
         fieldValue: XWALLET_ADDRESS,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -147,7 +145,6 @@ describe('Transfer Controller', () => {
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -206,7 +203,6 @@ describe('Transfer Controller', () => {
       addressState: {
         fieldValue: FEE_COLLECTOR,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -222,7 +218,6 @@ describe('Transfer Controller', () => {
     expect(transferController.addressState).toEqual({
       fieldValue: '',
       ensAddress: '',
-      udAddress: '',
       isDomainResolving: false
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)

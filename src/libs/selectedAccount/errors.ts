@@ -72,7 +72,7 @@ export const getNetworksWithFailedRPCErrors = ({
       networkNames: [n.name],
       type: 'error',
       title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
-      text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
+      text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.',
       actions: [
         {
           label: 'Select',
@@ -92,7 +92,7 @@ export const getNetworksWithFailedRPCErrors = ({
     title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
       .map((n) => n.name)
       .join(', ')} (RPC malfunction)`,
-    text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.'
+    text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.'
   })
 
   return errors

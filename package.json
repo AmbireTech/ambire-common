@@ -29,7 +29,6 @@
     "@ethersproject/abstract-signer": "^5.7.0",
     "@types/uuid": "9.0.0",
     "@types/validator": "^13.7.0",
-    "@unstoppabledomains/resolution": "^9.2.2",
     "@walletconnect/client": "^1.7.1",
     "bip44-constants": "^128.0.0",
     "ethereumjs-util": "^7.1.3",
