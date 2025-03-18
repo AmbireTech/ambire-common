@@ -1,5 +1,51 @@
+// eslint-disable-next-line import/no-cycle
+import { StoredPhishingDetection } from '../controllers/phishing/phishing'
+import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
+import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
+import {
+  AccountAssetsState as PortfolioAccountAssetsState,
+  PreviousHintsStorage
+} from '../libs/portfolio/interfaces'
+import { Account, AccountId, AccountPreferences } from './account'
+import { Dapp } from './dapp'
+import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
+import { Network, NetworkId } from './network'
+import { CashbackStatusByAccount } from './selectedAccount'
+import { ActiveRoute } from './swapAndBridge'
+
+export type StorageProps = {
+  migrations: string[]
+  networks: { [key: string]: Network }
+  accounts: Account[]
+  networkPreferences?: { [key: NetworkId]: Partial<Network> }
+  accountPreferences?: { [key: AccountId]: AccountPreferences }
+  networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
+  networksWithPositionsByAccounts: NetworksWithPositionsByAccounts
+  tokenPreferences: TokenPreference[]
+  customTokens: CustomToken[]
+  previousHints: PreviousHintsStorage
+  keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
+  keystoreKeys: StoredKey[]
+  keystoreSeeds: KeystoreSeed[]
+  cashbackStatusByAccount: CashbackStatusByAccount
+  dapps: Dapp[]
+  invite: object
+  isPinned: boolean
+  isSetupComplete: boolean
+  keyStoreUid: string | null
+  keystoreSecrets: MainKeyEncryptedWithSecret[]
+  onboardingState?: object
+  phishingDetection: StoredPhishingDetection
+  selectedAccount: string | null
+  swapAndBridgeActiveRoutes: ActiveRoute[]
+  termsState?: object
+}
+
 export interface Storage {
-  get(key?: string, defaultValue?: any): Promise<any>
+  get<K extends keyof StorageProps | string | undefined>(
+    key: K,
+    defaultValue?: any
+  ): Promise<K extends keyof StorageProps ? StorageProps[K] : any>
   set(key: string, value: any): Promise<null>
   remove(key: string): Promise<null>
 }

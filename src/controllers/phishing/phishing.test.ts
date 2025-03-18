@@ -66,13 +66,14 @@ describe('PhishingController', () => {
       metamaskBlacklist: [],
       phantomBlacklist: []
     })
+    expect(storedPhishingDetection).not.toBe(null)
     expect(phishing.lastStorageUpdate).not.toBe(null)
     if ((phishing.lastStorageUpdate as number) > twentyFourHoursAgo) {
       expect(phishing.blacklistLength).toBeGreaterThan(
-        storedPhishingDetection.metamaskBlacklist.length
+        storedPhishingDetection!.metamaskBlacklist.length
       )
     } else {
-      expect(phishing.blacklistLength).toEqual(storedPhishingDetection.metamaskBlacklist.length)
+      expect(phishing.blacklistLength).toEqual(storedPhishingDetection!.metamaskBlacklist.length)
     }
   })
   test('should load and update blacklists and correctly check for blacklisted urls', async () => {

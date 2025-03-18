@@ -11,7 +11,7 @@ import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {
   let networksController: NetworksController
-  beforeEach(() => {
+  beforeEach(async () => {
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
     networksController = new NetworksController(
@@ -48,8 +48,44 @@ describe('Networks Controller', () => {
     let checks = 0
     let mantleNetwork: null | AddNetworkRequestParams = null
     networksController.onUpdate(() => {
-      if (checks === 0) {
+      // test to see if updateNetwork is working
+      if (checks === 3) {
+        const mantle = networksController.networks.find((net) => net.id === 'mantle')
+        expect(mantle?.areContractsDeployed).toBe(true)
+        done()
+      }
+      if (checks === 2) {
+        const noUpdate = networksController.networkToAddOrUpdate
+        if (noUpdate !== null) return
+        const mantle = networksController.networks.find((net) => net.id === 'mantle')
+        expect(mantle).not.toBe(null)
+        expect(mantle).not.toBe(undefined)
+
+        // contracts are deployed
+        const saSupport = mantle?.features.find((feat) => feat.id === 'saSupport')
+        expect(saSupport).not.toBe(null)
+        expect(saSupport).not.toBe(undefined)
+        expect(saSupport!.level).toBe('success')
+        expect(saSupport!.title).toBe('Ambire Smart Accounts via ERC-4337 (Account Abstraction)')
+
+        // somewhat simulation
+        const simulation = mantle?.features.find((feat) => feat.id === 'simulation')
+        expect(simulation).not.toBe(null)
+        expect(simulation).not.toBe(undefined)
+        expect(simulation!.level).toBe('warning')
+
+        // has token prices
+        const prices = mantle?.features.find((feat) => feat.id === 'prices')
+        expect(prices).not.toBe(null)
+        expect(prices).not.toBe(undefined)
+        expect(prices!.level).toBe('success')
+
+        networksController.updateNetwork({ areContractsDeployed: true }, 'mantle')
+        checks++
+      }
+      if (checks === 1) {
         expect(networksController.networkToAddOrUpdate?.chainId).toBe(5000n)
+
         const networkInfoLoading = networksController.networkToAddOrUpdate?.info
         if (!networkInfoLoading) return
 
@@ -87,46 +123,13 @@ describe('Networks Controller', () => {
           iconUrls: []
         } as AddNetworkRequestParams
 
-        checks++
         networksController.addNetwork(mantleNetwork)
-      }
-
-      if (checks === 1) {
-        const noUpdate = networksController.networkToAddOrUpdate
-        if (noUpdate !== null) return
-
         checks++
-        const mantle = networksController.networks.find((net) => net.id === 'mantle')
-        expect(mantle).not.toBe(null)
-        expect(mantle).not.toBe(undefined)
-
-        // contracts are not deployed
-        const saSupport = mantle?.features.find((feat) => feat.id === 'saSupport')
-        expect(saSupport).not.toBe(null)
-        expect(saSupport).not.toBe(undefined)
-        expect(saSupport!.level).toBe('warning')
-        expect(saSupport!.title).toBe('Ambire Smart Accounts via ERC-4337 (Account Abstraction)')
-
-        // somewhat simulation
-        const simulation = mantle?.features.find((feat) => feat.id === 'simulation')
-        expect(simulation).not.toBe(null)
-        expect(simulation).not.toBe(undefined)
-        expect(simulation!.level).toBe('warning')
-
-        // has token prices
-        const prices = mantle?.features.find((feat) => feat.id === 'prices')
-        expect(prices).not.toBe(null)
-        expect(prices).not.toBe(undefined)
-        expect(prices!.level).toBe('success')
-
-        networksController.updateNetwork({ areContractsDeployed: true }, 'mantle')
       }
-
-      // test to see if updateNetwork is working
-      if (checks === 2) {
-        const mantle = networksController.networks.find((net) => net.id === 'mantle')
-        expect(mantle?.areContractsDeployed).toBe(true)
-        done()
+      if (checks === 0) {
+        expect(networksController.networkToAddOrUpdate).toBe(null)
+        expect(networksController.isInitialized).toBe(true)
+        checks++
       }
     })
 

@@ -128,9 +128,7 @@ export class NetworksController extends EventEmitter {
       }
     })
 
-    // without await to avoid performance impact on load
-    // needed to keep the networks storage up to date with the latest from predefinedNetworks
-    this.#storage.set('networks', this.#networks)
+    await this.#storage.set('networks', this.#networks)
 
     this.emitUpdate()
   }
@@ -142,6 +140,7 @@ export class NetworksController extends EventEmitter {
     } | null = null
   ) {
     await this.initialLoadPromise
+
     if (networkToAddOrUpdate) {
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()

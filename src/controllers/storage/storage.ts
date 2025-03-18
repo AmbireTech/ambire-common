@@ -1,106 +1,33 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { Account, AccountId, AccountPreferences } from '../../interfaces/account'
-import { Dapp } from '../../interfaces/dapp'
-import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from '../../interfaces/keystore'
-import { Network, NetworkId } from '../../interfaces/network'
-import { CashbackStatus, CashbackStatusByAccount } from '../../interfaces/selectedAccount'
-import { Storage } from '../../interfaces/storage'
-import { ActiveRoute } from '../../interfaces/swapAndBridge'
+import { StoredKey } from '../../interfaces/keystore'
+import { CashbackStatus } from '../../interfaces/selectedAccount'
+// eslint-disable-next-line import/no-cycle
+import { Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
-import { NetworksWithPositionsByAccounts } from '../../libs/defiPositions/types'
-import {
-  CustomToken,
-  LegacyTokenPreference,
-  TokenPreference
-} from '../../libs/portfolio/customToken'
-import {
-  AccountAssetsState as PortfolioAccountAssetsState,
-  PreviousHintsStorage
-} from '../../libs/portfolio/interfaces'
-import { parse } from '../../libs/richJson/richJson'
+import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateCustomTokens,
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
-// eslint-disable-next-line import/no-cycle
-import { StoredPhishingDetection } from '../phishing/phishing'
-
-type StorageType = {
-  migrations: string[]
-  networks: Network[]
-  accounts: Account[]
-  networkPreferences?: { [key: NetworkId]: Partial<Network> }
-  accountPreferences?: { [key: AccountId]: AccountPreferences }
-  networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
-  networksWithPositionsByAccounts: NetworksWithPositionsByAccounts
-  tokenPreferences: TokenPreference[]
-  customTokens: CustomToken[]
-  previousHints: PreviousHintsStorage
-  keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
-  keystoreKeys: StoredKey[]
-  keystoreSeeds: KeystoreSeed[]
-  cashbackStatusByAccount: CashbackStatusByAccount
-  dapps: Dapp[]
-  invite: object
-  isPinned: boolean
-  isSetupComplete: boolean
-  keyStoreUid?: string
-  keystoreSecrets: MainKeyEncryptedWithSecret[]
-  onboardingState?: object
-  phishingDetection: StoredPhishingDetection
-  selectedAccount: string | null
-  swapAndBridgeActiveRoutes: ActiveRoute[]
-  termsState?: object
-}
 
 export class StorageController {
-  #storageAPI: Storage
-
-  #storage: StorageType = {
-    migrations: [],
-    networks: [],
-    accounts: [],
-    networkPreferences: undefined,
-    accountPreferences: undefined,
-    networksWithAssetsByAccount: {},
-    networksWithPositionsByAccounts: {},
-    tokenPreferences: [],
-    customTokens: [],
-    previousHints: { fromExternalAPI: {}, learnedTokens: {}, learnedNfts: {} },
-    keyPreferences: [],
-    keystoreKeys: [],
-    keystoreSeeds: [],
-    cashbackStatusByAccount: {},
-    dapps: [],
-    invite: {},
-    isPinned: false,
-    isSetupComplete: false,
-    keyStoreUid: undefined,
-    keystoreSecrets: [],
-    onboardingState: undefined,
-    phishingDetection: null,
-    selectedAccount: null,
-    swapAndBridgeActiveRoutes: [],
-    termsState: undefined
-  }
+  #storage: Storage
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #storageMigrationsPromise: Promise<void>
 
-  #updateQueue: Promise<void> = Promise.resolve()
+  #storageUpdateQueue: Promise<void> = Promise.resolve()
 
   constructor(storage: Storage) {
-    this.#storageAPI = storage
+    this.#storage = storage
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#initialLoadPromise = this.#load()
+    this.#storageMigrationsPromise = this.#loadMigrations()
   }
 
-  async #load() {
-    await this.#initStorage()
-
+  async #loadMigrations() {
     try {
       // IMPORTANT: should be ordered by versions
       await this.#migrateNetworkPreferencesToNetworks() // As of version 4.24.0
@@ -114,8 +41,6 @@ export class StorageController {
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
-
-    await this.#initStorage()
   }
 
   // As of version 4.24.0, a new Network interface has been introduced,
@@ -126,10 +51,14 @@ export class StorageController {
   // This function migrates the data from the old NetworkPreferences to the new structure
   // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
   async #migrateNetworkPreferencesToNetworks() {
-    if (!Object.keys(this.#storage.networks).length && this.#storage.networkPreferences) {
-      const networks = await migrateNetworkPreferencesToNetworks(this.#storage.networkPreferences)
-      await this.#storageAPI.set('networks', networks)
-      await this.#storageAPI.remove('networkPreferences')
+    const [networks, networkPreferences] = await Promise.all([
+      this.#storage.get('networks', {}),
+      this.#storage.get('networkPreferences')
+    ])
+    if (!Object.keys(networks).length && networkPreferences) {
+      const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences)
+      await this.#storage.set('networks', migratedNetworks)
+      await this.#storage.remove('networkPreferences')
     }
   }
 
@@ -138,10 +67,14 @@ export class StorageController {
   // This change requires a migration due to the introduction of a new controller, AccountsController,
   // which now manages both accounts and their preferences.
   async #migrateAccountPreferencesToAccounts() {
-    if (!this.#storage.accountPreferences) return
+    const [accounts, accountPreferences] = await Promise.all([
+      this.#storage.get('accounts', []),
+      this.#storage.get('accountPreferences')
+    ])
+    if (!accountPreferences) return
 
-    const accounts = getUniqueAccountsArray(
-      this.#storage.accounts.map((a) => {
+    const migratedAccounts = getUniqueAccountsArray(
+      accounts.map((a: any) => {
         return {
           ...a,
           // @ts-ignore
@@ -153,65 +86,69 @@ export class StorageController {
       })
     )
 
-    await this.#storageAPI.set('accounts', accounts)
-    await this.#storageAPI.remove('accountPreferences')
+    await this.#storage.set('accounts', migratedAccounts)
+    await this.#storage.remove('accountPreferences')
   }
 
   // As of version v4.33.0, user can change the HD path when importing a seed.
   // Migration is needed because previously the HD path was not stored,
   // and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.
   async #migrateKeystoreSeedsWithoutHdPathTemplate() {
-    if (!getShouldMigrateKeystoreSeedsWithoutHdPath(this.#storage.keystoreSeeds)) return
+    const keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
+    if (!getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) return
 
-    const keystoreSeeds = this.#storage.keystoreSeeds.map((seed) => ({
+    const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
       seed,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     }))
 
-    await this.#storageAPI.set('keystoreSeeds', keystoreSeeds)
+    await this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
   }
 
   // As of version 4.33.0, we no longer store the key preferences in a separate object called keyPreferences in the storage.
   // Migration is needed because each preference (like key label)
   // is now part of the Key interface and managed by the KeystoreController.
   async #migrateKeyPreferencesToKeystoreKeys() {
-    const shouldMigrateKeyPreferencesToKeystoreKeys = this.#storage.keyPreferences.length > 0
+    const [keyPreferences, keystoreKeys] = await Promise.all([
+      this.#storage.get('keyPreferences', []),
+      this.#storage.get('keystoreKeys', [])
+    ])
+    const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
 
     if (!shouldMigrateKeyPreferencesToKeystoreKeys) return
 
-    const keystoreKeys = this.#storage.keystoreKeys.map((key) => {
+    const migratedKeystoreKeys = keystoreKeys.map((key) => {
       if (key.label) return key
 
-      const keyPref = this.#storage.keyPreferences.find(
-        (k) => k.addr === key.addr && k.type === key.type
-      )
+      const keyPref = keyPreferences.find((k) => k.addr === key.addr && k.type === key.type)
 
       if (keyPref) return { ...key, label: keyPref.label }
 
       return key
     })
 
-    await this.#storageAPI.set('keystoreKeys', keystoreKeys)
-    await this.#storageAPI.remove('keyPreferences')
+    await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
+    await this.#storage.remove('keyPreferences')
   }
 
   // As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
   async #migrateKeyMetaNullToKeyMetaCreatedAt() {
-    const keystoreKeys = this.#storage.keystoreKeys.map((key) => {
+    const keystoreKeys = await this.#storage.get('keystoreKeys', [])
+    const migratedKeystoreKeys = keystoreKeys.map((key) => {
       if (!key.meta) return { ...key, meta: { createdAt: null } } as StoredKey
       if (!key.meta.createdAt)
         return { ...key, meta: { ...key.meta, createdAt: null } } as StoredKey
 
       return key
     })
-    await this.#storageAPI.set('keystoreKeys', keystoreKeys)
+    await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
   }
 
   // As of version v4.34.0 HumanizerMetaV2 in storage is no longer needed. It was
   // used for persisting learnt data from async operations, triggered by the
   // humanization process.
   async #clearHumanizerMetaObjectFromStorage() {
-    await this.#storageAPI.remove('HumanizerMetaV2')
+    await this.#storage.remove('HumanizerMetaV2')
   }
 
   // As of version 4.53.0, cashback status information has been introduced.
@@ -219,8 +156,10 @@ export class StorageController {
   // Now, they are normalized under a single structure for simplifying.
   // Migration is needed to transform existing data into the new format.
   async #migrateCashbackStatusToNewFormat() {
-    const cashbackStatusByAccount = Object.fromEntries(
-      Object.entries(this.#storage.cashbackStatusByAccount).map(([accountId, status]) => {
+    const cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+
+    const migratedCashbackStatusByAccount = Object.fromEntries(
+      Object.entries(cashbackStatusByAccount).map(([accountId, status]) => {
         if (typeof status === 'string') {
           return [accountId, status as CashbackStatus]
         }
@@ -252,82 +191,60 @@ export class StorageController {
         return [accountId, 'seen-cashback']
       })
     )
-    await this.#storageAPI.set('cashbackStatusByAccount', cashbackStatusByAccount)
+    await this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
   }
 
   // As of version 4.51.0, migrate legacy token preferences to token preferences and custom tokens
   async #migrateTokenPreferences() {
+    const tokenPreferences = await this.#storage.get('tokenPreferences', [])
+
     if (
-      (this.#storage.tokenPreferences as LegacyTokenPreference[]).some(
+      (tokenPreferences as LegacyTokenPreference[]).some(
         ({ symbol, decimals }) => !!symbol || !!decimals
       )
     ) {
-      await this.#storageAPI.set(
+      await this.#storage.set(
         'tokenPreferences',
-        migrateHiddenTokens(this.#storage.tokenPreferences as LegacyTokenPreference[])
+        migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
       )
-      await this.#storageAPI.set(
+      await this.#storage.set(
         'customTokens',
-        migrateCustomTokens(this.#storage.tokenPreferences as LegacyTokenPreference[])
+        migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
       )
     }
   }
 
-  async #initStorage() {
-    const storage = await this.#storageAPI.get(undefined, {})
-
-    if (!Object.keys(storage).length) return
-
-    Object.keys(storage).forEach((key) => {
-      ;(this.#storage as any)[key] = storage[key]
-    })
-  }
-
-  async get(): Promise<StorageType>
-
-  async get<K extends keyof StorageType>(
+  async get<K extends keyof StorageProps | string | undefined>(
     key: K,
-    defaultValue?: StorageType[K]
-  ): Promise<StorageType[K]>
+    defaultValue?: any
+  ): Promise<K extends keyof StorageProps ? StorageProps[K] : any> {
+    await this.#storageMigrationsPromise
+    await this.#storageUpdateQueue
 
-  async get<K extends string>(key: K, defaultValue?: any): Promise<any>
-
-  async get(key?: keyof StorageType, defaultValue?: any): Promise<any> {
-    await this.#initialLoadPromise
-    await this.#updateQueue
-
-    if (!key) return this.#storage
-
-    return this.#storage[key] || defaultValue
+    return this.#storage.get(key, defaultValue)
   }
 
   async set(key: string, value: any) {
-    await this.#initialLoadPromise
-    this.#updateQueue = this.#updateQueue.then(async () => {
+    await this.#storageMigrationsPromise
+    this.#storageUpdateQueue = this.#storageUpdateQueue.then(async () => {
       try {
-        try {
-          ;(this.#storage as any)[key] = value === 'string' ? parse(value) : value
-        } catch (error) {
-          ;(this.#storage as any)[key] = value
-        }
-        await this.#storageAPI.set(key, value)
+        await this.#storage.set(key, value)
       } catch (err) {
         console.error(`Failed to set storage key "${key}":`, err)
       }
     })
-    await this.#updateQueue
+    await this.#storageUpdateQueue
   }
 
   async remove(key: string) {
-    await this.#initialLoadPromise
-    this.#updateQueue = this.#updateQueue.then(async () => {
+    await this.#storageMigrationsPromise
+    this.#storageUpdateQueue = this.#storageUpdateQueue.then(async () => {
       try {
-        ;(this.#storage as any)[key] = undefined
-        await this.#storageAPI.remove(key)
+        await this.#storage.remove(key)
       } catch (err) {
         console.error(`Failed to remove storage key "${key}":`, err)
       }
     })
-    await this.#updateQueue
+    await this.#storageUpdateQueue
   }
 }

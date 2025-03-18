@@ -202,7 +202,11 @@ describe('Portfolio Controller ', () => {
   test('Previous tokens are persisted in the storage', async () => {
     const { controller, storageCtrl } = prepareTest()
     await controller.updateSelectedAccount(account2.addr)
-    const storagePreviousHints = await storageCtrl.get('previousHints', {})
+    const storagePreviousHints = await storageCtrl.get('previousHints', {
+      fromExternalAPI: {},
+      learnedTokens: {},
+      learnedNfts: {}
+    })
     const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
     const polygonHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
     const optimismHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
@@ -210,9 +214,9 @@ describe('Portfolio Controller ', () => {
     // Controller persists tokens having balance for the current account.
     // @TODO - here we can enhance the test to cover one more scenarios:
     //  #1) Does the account really have amount for the persisted tokens.
-    expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
-    expect(polygonHints.erc20s.length).toBeGreaterThan(0)
-    expect(optimismHints.erc20s.length).toBeGreaterThan(0)
+    expect(ethereumHints?.erc20s?.length).toBeGreaterThan(0)
+    expect(polygonHints?.erc20s?.length).toBeGreaterThan(0)
+    expect(optimismHints?.erc20s?.length).toBeGreaterThan(0)
   })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
