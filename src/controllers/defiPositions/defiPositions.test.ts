@@ -11,6 +11,7 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { DefiPositionsController } from './defiPositions'
 
 global.fetch = fetch as any
@@ -41,10 +42,11 @@ networks.forEach((network) => {
 const prepareTest = async () => {
   const storage = produceMemoryStore()
   await storage.set('accounts', [ACCOUNT])
+  const storageCtrl = new StorageController(storage)
   let providersCtrl: ProvidersController
 
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     relayerUrl,
     (net) => {
@@ -58,7 +60,7 @@ const prepareTest = async () => {
   providersCtrl.providers = providers
 
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -67,7 +69,7 @@ const prepareTest = async () => {
   )
 
   const selectedAccountCtrl = new SelectedAccountController({
-    storage,
+    storage: storageCtrl,
     accounts: accountsCtrl
   })
   await selectedAccountCtrl.initialLoadPromise

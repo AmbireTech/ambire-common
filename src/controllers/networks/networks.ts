@@ -10,11 +10,11 @@ import {
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
   addNetwork: 'INITIAL',
@@ -27,7 +27,7 @@ const STATUS_WRAPPED_METHODS = {
  * for adding, updating, and removing networks.
  */
 export class NetworksController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #fetch: Fetch
 
@@ -51,10 +51,8 @@ export class NetworksController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  #networksStorageUpdatePromise: Promise<null> = Promise.resolve(null)
-
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     relayerUrl: string,
     onAddOrUpdateNetwork: (network: Network) => void,
@@ -212,7 +210,7 @@ export class NetworksController extends EventEmitter {
 
     this.emitUpdate()
 
-    await this.#updateNetworksInStorage()
+    await this.#storage.set('networks', this.#networks)
 
     // update networks features asynchronously
     Object.values(finalNetworks).forEach((network) => {
@@ -242,7 +240,7 @@ export class NetworksController extends EventEmitter {
             lastUpdatedNetworkInfo: Date.now()
           }
 
-          await this.#updateNetworksInStorage()
+          await this.#storage.set('networks', this.#networks)
 
           this.emitUpdate()
         },
@@ -258,6 +256,7 @@ export class NetworksController extends EventEmitter {
     } | null = null
   ) {
     await this.initialLoadPromise
+
     if (networkToAddOrUpdate) {
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()
@@ -320,7 +319,7 @@ export class NetworksController extends EventEmitter {
 
     this.#onAddOrUpdateNetwork(this.#networks[network.chainId.toString()])
 
-    await this.#updateNetworksInStorage()
+    await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
     this.emitUpdate()
   }
@@ -377,7 +376,7 @@ export class NetworksController extends EventEmitter {
             ...feeOptions
           }
 
-          await this.#updateNetworksInStorage()
+          await this.#storage.set('networks', this.#networks)
 
           this.emitUpdate()
           return
@@ -403,7 +402,7 @@ export class NetworksController extends EventEmitter {
               ...feeOptions
             }
 
-            await this.#updateNetworksInStorage()
+            await this.#storage.set('networks', this.#networks)
 
             this.emitUpdate()
           },
@@ -430,17 +429,8 @@ export class NetworksController extends EventEmitter {
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
     this.#onRemoveNetwork(chainId.toString())
-    await this.#updateNetworksInStorage()
+    await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
-  }
-
-  async #updateNetworksInStorage() {
-    // ensures sequential execution
-    this.#networksStorageUpdatePromise = this.#networksStorageUpdatePromise
-      .then(() => this.#storage.set('networks', this.#networks))
-      .catch(() => this.#storage.set('networks', this.#networks))
-
-    await this.#networksStorageUpdatePromise
   }
 
   toJSON() {

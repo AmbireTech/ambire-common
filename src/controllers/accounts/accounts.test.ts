@@ -10,6 +10,7 @@ import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { AccountsController } from './accounts'
 
 describe('AccountsController', () => {
@@ -41,8 +42,9 @@ describe('AccountsController', () => {
   )
 
   let providersCtrl: ProvidersController
+  const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     relayerUrl,
     (net) => {
@@ -57,9 +59,9 @@ describe('AccountsController', () => {
 
   let accountsCtrl: AccountsController
   test('should init AccountsController', async () => {
-    await storage.set('accounts', accounts)
+    await storageCtrl.set('accounts', accounts)
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},

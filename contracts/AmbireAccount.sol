@@ -18,7 +18,6 @@ contract AmbireAccount is IAmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
-	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// @dev This is how we understand if msg.sender is the entry point
 	bytes32 constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
@@ -66,27 +65,10 @@ contract AmbireAccount is IAmbireAccount {
 	}
 
 	/**
-	 * @notice  fallback method: currently used to call the fallback handler
-	 * which is set by the user and can be changed
+	 * @notice  nothing to do here
 	 * @dev     this contract can accept ETH with calldata, hence payable
 	 */
 	fallback() external payable {
-		// We store the fallback handler at this magic slot
-		address fallbackHandler = address(uint160(uint(privileges(FALLBACK_HANDLER_SLOT))));
-		if (fallbackHandler == address(0)) return;
-		assembly {
-			// we can use addr 0 because logic is taking full control of the
-			// execution making sure it returns itself and does not
-			// rely on any further Solidity code.
-			calldatacopy(0, 0, calldatasize())
-			let result := delegatecall(gas(), fallbackHandler, 0, calldatasize(), 0, 0)
-			let size := returndatasize()
-			returndatacopy(0, 0, size)
-			if eq(result, 0) {
-				revert(0, size)
-			}
-			return(0, size)
-		}
 	}
 
 	function getAmbireStorage() internal pure returns (AmbireStorage storage ds) {
@@ -285,15 +267,12 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   interfaceID  the interface we're signaling support for
 	 * @return  bool  do we support the interface or not
 	 */
-	function supportsInterface(bytes4 interfaceID) external view returns (bool) {
+	function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
 		bool supported = interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
 			interfaceID == 0x150b7a02 || // ERC721TokenReceiver
 			interfaceID == 0x4e2312e0 || // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
 			interfaceID == 0x0a417632; // used for checking whether the account is v2 or not
-		if (supported) return true;
-		address payable fallbackHandler = payable(address(uint160(uint256(privileges(FALLBACK_HANDLER_SLOT)))));
-		if (fallbackHandler == address(0)) return false;
-		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
+		return supported;
 	}
 
 	//

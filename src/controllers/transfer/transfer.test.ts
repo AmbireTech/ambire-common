@@ -15,6 +15,7 @@ import { getRpcProvider } from '../../services/provider'
 import { Contacts } from '../addressBook/addressBook'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
@@ -52,8 +53,10 @@ const providers = Object.fromEntries(
 )
 
 let providersCtrl: ProvidersController
+const storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController(
-  produceMemoryStore(),
+  storageCtrl,
   fetch,
   relayerUrl,
   (net) => {

@@ -7,13 +7,16 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
+import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {
   let networksController: NetworksController
-  beforeEach(() => {
+  beforeEach(async () => {
+    const storage = produceMemoryStore()
+    const storageCtrl = new StorageController(storage)
     networksController = new NetworksController(
-      produceMemoryStore(),
+      storageCtrl,
       fetch,
       relayerUrl,
       () => {},

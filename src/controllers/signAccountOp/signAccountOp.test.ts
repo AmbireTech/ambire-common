@@ -36,6 +36,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
@@ -361,8 +362,9 @@ const init = async (
   updateWholePortfolio?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
-  await storage.set('accounts', [account])
-  const keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
+  const storageCtrl = new StorageController(storage)
+  await storageCtrl.set('accounts', [account])
+  const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
@@ -381,7 +383,7 @@ const init = async (
 
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     relayerUrl,
     (net) => {
@@ -394,7 +396,7 @@ const init = async (
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -407,7 +409,7 @@ const init = async (
   await providersCtrl.initialLoadPromise
 
   const portfolio = new PortfolioController(
-    storage,
+    storageCtrl,
     fetch,
     providersCtrl,
     networksCtrl,

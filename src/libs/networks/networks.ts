@@ -1,13 +1,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
-import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   Erc4337settings,
   Network,
   NetworkFeature,
-  NetworkId,
   NetworkInfo,
   NetworkInfoLoading
 } from '../../interfaces/network'
@@ -233,7 +231,6 @@ export function getFeaturesByNetworkProperties(
     erc4337,
     rpcNoStateOverride,
     nativeAssetId,
-    chainId,
     hasSingleton
   } = networkInfo
 
@@ -344,65 +341,6 @@ export function getFeatures(
   network: Network | undefined
 ): NetworkFeature[] {
   return getFeaturesByNetworkProperties(networkInfo, network)
-}
-
-// Since v4.24.0, a new Network interface has been introduced,
-// that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
-// Previously, only NetworkPreferences were stored, with other network properties
-// being calculated in a getter each time the networks were needed.
-// Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
-// This function migrates the data from the old NetworkPreferences to the new structure
-// to ensure compatibility and prevent breaking the extension after updating to v4.24.0
-export type LegacyNetworkPreferences = { [key in NetworkId]: Partial<Network> }
-export const getShouldMigrateNetworkPreferencesToNetworks = (
-  networksInStorage: { [key in NetworkId]: Network },
-  legacyNetworkPreferencesInStorage: LegacyNetworkPreferences
-) => !Object.keys(networksInStorage).length && Object.keys(legacyNetworkPreferencesInStorage).length
-export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
-  [key: NetworkId]: Partial<Network>
-}) {
-  const predefinedNetworkIds = predefinedNetworks.map((n) => n.id)
-  const customNetworkIds = Object.keys(networkPreferences).filter(
-    (k) => !predefinedNetworkIds.includes(k)
-  )
-
-  const networksToStore: { [key: string]: Network } = {}
-
-  predefinedNetworks.forEach((n) => {
-    networksToStore[n.chainId.toString()] = n
-  })
-  customNetworkIds.forEach((networkId: NetworkId) => {
-    const preference = networkPreferences[networkId]
-    const networkInfo = {
-      chainId: preference.chainId!,
-      isSAEnabled: preference.isSAEnabled ?? false,
-      isOptimistic: preference.isOptimistic ?? false,
-      rpcNoStateOverride: preference.rpcNoStateOverride ?? true,
-      erc4337: preference.erc4337 ?? {
-        enabled: false,
-        hasPaymaster: false,
-        hasBundlerSupport: false
-      },
-      areContractsDeployed: preference.areContractsDeployed ?? false,
-      feeOptions: { is1559: (preference as any).is1559 ?? false },
-      platformId: preference.platformId ?? '',
-      nativeAssetId: preference.nativeAssetId ?? '',
-      flagged: preference.flagged ?? false,
-      hasSingleton: preference.hasSingleton ?? false
-    }
-    delete (preference as any).is1559
-    networksToStore[preference.chainId!.toString()] = {
-      id: networkId,
-      ...preference,
-      ...networkInfo,
-      // TODO: Not sure if we need to add these, as they are [] by default for predefined networks
-      features: getFeaturesByNetworkProperties(networkInfo, undefined),
-      hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
-      predefined: false
-    } as Network
-  })
-
-  return networksToStore
 }
 
 export function hasRelayerSupport(network: Network) {

@@ -10,6 +10,7 @@ import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { KeystoreController } from '../../controllers/keystore/keystore'
+import { StorageController } from '../../controllers/storage/storage'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
@@ -144,7 +145,8 @@ let keystore: KeystoreController
 describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
-    keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
+    const storageCtrl = new StorageController(storage)
+    keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
@@ -672,7 +674,8 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
-    keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
+    const storageCtrl = new StorageController(storage)
+    keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([

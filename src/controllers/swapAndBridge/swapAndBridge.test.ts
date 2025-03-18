@@ -17,6 +17,7 @@ import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
@@ -54,9 +55,10 @@ const providers = Object.fromEntries(
 )
 
 const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 let providersCtrl: ProvidersController
 const networksCtrl = new NetworksController(
-  produceMemoryStore(),
+  storageCtrl,
   fetch,
   relayerUrl,
   (net) => {
@@ -70,14 +72,17 @@ const networksCtrl = new NetworksController(
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 const accountsCtrl = new AccountsController(
-  storage,
+  storageCtrl,
   providersCtrl,
   networksCtrl,
   () => {},
   () => {},
   () => {}
 )
-const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
 
 const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
@@ -89,13 +94,13 @@ const actionsCtrl = new ActionsController({
 const inviteCtrl = new InviteController({
   relayerUrl: '',
   fetch,
-  storage
+  storage: storageCtrl
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
 const activityCtrl = new ActivityController(
-  storage,
+  storageCtrl,
   fetch,
   callRelayer,
   accountsCtrl,
@@ -167,7 +172,7 @@ describe('SwapAndBridge Controller', () => {
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
       activity: activityCtrl,
-      storage,
+      storage: storageCtrl,
       socketAPI: socketAPIMock as any,
       actions: actionsCtrl,
       invite: inviteCtrl

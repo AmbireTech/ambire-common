@@ -91,6 +91,7 @@ export interface Network {
   // for future migration of other storages by this id
   customNetworkId?: string
   has7702: boolean
+  allowForce4337?: boolean
 }
 
 export interface AddNetworkRequestParams {
