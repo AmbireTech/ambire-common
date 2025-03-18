@@ -1,5 +1,5 @@
+import { Price } from '../../interfaces/assets'
 import { Network, NetworkId } from '../../interfaces/network'
-import { Price } from '../portfolio'
 
 export enum AssetType {
   Liquidity,
