@@ -1045,7 +1045,7 @@ export class SwapAndBridgeController extends EventEmitter {
             // selectedRoute: routeToSelect,
             // selectedRouteSteps: routeToSelectSteps,
             selectedRoute: quoteResult.routes[0],
-            selectedRouteSteps: quoteResult.routes[0].steps,
+            selectedRouteSteps: quoteResult.selectedRouteSteps,
             routes
           }
         }

@@ -309,9 +309,9 @@ export class LiFiAPI {
         icon: response.routes[0].fromToken.logoURI
       },
       gasFees: {
-        gasAmount: step.estimate.gasCosts.amount,
-        gasLimit: step.estimate.gasCosts.limit,
-        feesInUsd: step.estimate.gasCosts.amountUSD,
+        gasAmount: step.estimate.gasCosts?.[0]?.amount,
+        gasLimit: step.estimate.gasCosts?.[0]?.limit,
+        feesInUsd: step.estimate.gasCosts?.[0]?.amountUSD,
         asset: {
           ...response.routes[0].fromToken,
           icon: response.routes[0].fromToken.logoURI
