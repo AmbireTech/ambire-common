@@ -395,8 +395,6 @@ describe('Main Controller ', () => {
     const prepareTest = () => {
       const controllerAnyType = controller as any
       controllerAnyType.updateSignAccountOpGasPrice = jest.fn()
-      controllerAnyType.estimateSignAccountOp = jest.fn()
-
       return {
         controllerAnyType
       }
@@ -412,7 +410,6 @@ describe('Main Controller ', () => {
       } catch (e: any) {
         expect(e.message).toBe('message')
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('pimlico_getUserOperationGasPrice', async () => {
@@ -428,7 +425,6 @@ describe('Main Controller ', () => {
           'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -448,7 +444,6 @@ describe('Main Controller ', () => {
           'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('Unknown error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -464,7 +459,6 @@ describe('Main Controller ', () => {
           'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('replacement fee too low', async () => {
@@ -480,7 +474,6 @@ describe('Main Controller ', () => {
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).toHaveBeenCalledTimes(1)
       }
     })
     it('Relayer broadcast swap expired', async () => {
@@ -500,7 +493,6 @@ describe('Main Controller ', () => {
           'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
   })
