@@ -26,7 +26,11 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
-import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
+import { TokenResult } from '../../libs/portfolio'
+import {
+  addCustomTokensIfNeeded,
+  convertPortfolioTokenToSwapAndBridgeToToken
+} from '../../libs/swapAndBridge/swapAndBridge'
 import { NULL_ADDRESS, ZERO_ADDRESS } from '../socket/constants'
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
@@ -312,8 +316,10 @@ export class LiFiAPI {
   }
 
   async quote({
+    fromAsset,
     fromChainId,
     fromTokenAddress,
+    toAsset,
     toChainId,
     toTokenAddress,
     fromAmount,
@@ -322,8 +328,10 @@ export class LiFiAPI {
     sort,
     isOG
   }: {
+    fromAsset: TokenResult
     fromChainId: number
     fromTokenAddress: string
+    toAsset: SwapAndBridgeToToken
     toChainId: number
     toTokenAddress: string
     fromAmount: bigint
@@ -362,28 +370,20 @@ export class LiFiAPI {
       errorPrefix: 'Unable to fetch the quote.'
     })
 
-    const fromAsset = normalizeLiFiTokenToSwapAndBridgeToToken(
-      response.routes[0].fromToken,
-      fromChainId
-    )
-
-    const toAsset = normalizeLiFiTokenToSwapAndBridgeToToken(response.routes[0].toToken, toChainId)
-
-    const selectedRoute: SwapAndBridgeRoute = normalizeLiFiRouteToSwapAndBridgeRoute(
-      response.routes[0]
-    )
-    const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0].steps.flatMap(
-      normalizeLiFiStepToSwapAndBridgeStep
-    )
+    const selectedRoute: SwapAndBridgeRoute = response.routes[0]
+      ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0])
+      : null
+    const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0]
+      ? response.routes[0].steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep)
+      : []
 
     return {
-      fromAsset,
+      fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
       fromChainId,
       toAsset,
       toChainId,
       selectedRoute,
       selectedRouteSteps,
-      // TODO: Monkey-patched the response temporarily
       routes: response.routes.map(normalizeLiFiRouteToSwapAndBridgeRoute)
     }
   }

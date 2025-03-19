@@ -40,7 +40,7 @@ export interface SwapAndBridgeQuote {
   fromChainId: number
   toAsset: SwapAndBridgeToToken
   toChainId: number
-  selectedRoute: SwapAndBridgeRoute
+  selectedRoute: SwapAndBridgeRoute | null
   // TODO: Common type
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]

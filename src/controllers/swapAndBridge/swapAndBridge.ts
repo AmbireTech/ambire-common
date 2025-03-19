@@ -877,8 +877,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
       try {
         const quoteResult = await this.#serviceProviderAPI.quote({
+          fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
           fromTokenAddress: this.fromSelectedToken!.address,
+          toAsset: this.toSelectedToken,
           toChainId: this.toChainId!,
           toTokenAddress: this.toSelectedToken!.address,
           fromAmount: bigintFromAmount,
