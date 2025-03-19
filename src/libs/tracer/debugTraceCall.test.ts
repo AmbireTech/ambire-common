@@ -145,16 +145,7 @@ describe('Debug tracecall detection for transactions', () => {
       }
     }
 
-    const res = await debugTraceCall(
-      account,
-      accountOp,
-      provider,
-      state,
-      // a lot of gas
-      100000000000000n,
-      true,
-      overrideData
-    )
+    const res = await debugTraceCall(account, accountOp, provider, state, true, overrideData)
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe(NFT_ADDRESS)

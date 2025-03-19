@@ -2,7 +2,7 @@
 /* eslint-disable no-await-in-loop */
 
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, getBigInt, isAddress } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -718,7 +718,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall(gasUsed: bigint) {
+  async traceCall() {
     const accountOp = this.signAccountOp?.accountOp
     if (!accountOp) return
 
@@ -758,7 +758,6 @@ export class MainController extends EventEmitter {
         accountOp,
         provider,
         state,
-        gasUsed,
         !network.rpcNoStateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
@@ -2493,16 +2492,7 @@ export class MainController extends EventEmitter {
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
         this.signAccountOp.update({ estimation })
-        if (shouldTraceCall)
-          this.traceCall(
-            baseAcc.getGasUsed(getEstimationSummary(estimation), {
-              // the fee token is always native for the trace call
-              feeToken: feeTokens.find(
-                (tok) => tok.address === ZeroAddress && !tok.flags.onGasTank
-              ) as TokenResult,
-              op: localAccountOp
-            })
-          )
+        if (shouldTraceCall) this.traceCall()
       }
     } catch (error: any) {
       this.signAccountOp?.calculateWarnings()

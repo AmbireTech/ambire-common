@@ -51,7 +51,6 @@ export async function debugTraceCall(
   op: AccountOp,
   provider: JsonRpcProvider,
   accountState: AccountOnchainState,
-  gasUsed: bigint,
   supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
@@ -82,10 +81,7 @@ export async function debugTraceCall(
         to: params.to,
         value: toQuantity(params.value.toString()),
         data: params.data,
-        from: params.from,
-        // irrelevant
-        gasPrice: '0x1',
-        gas: toQuantity(gasUsed.toString())
+        from: params.from
       },
       'latest',
       {
