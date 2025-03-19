@@ -173,7 +173,7 @@ export type AccountState = {
 }
 
 export type PortfolioControllerState = {
-  // accountId:networkId:NetworkState
+  // accountId:chainId:NetworkState
   [accountId: string]: AccountState
 }
 

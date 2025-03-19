@@ -95,7 +95,7 @@ export interface HumanizerMeta {
 
 export interface HumanizerOptions {
   network?: Network
-  networkId?: NetworkId
+  chainId?: bigint
 }
 
 export type DataToHumanize = AccountOp | Message

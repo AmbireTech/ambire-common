@@ -133,12 +133,12 @@ export const updatePortfolioStateWithDefiPositions = (
 const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
-  Object.keys(portfolioState).forEach((networkId) => {
-    const networkState = portfolioState[networkId]
+  Object.keys(portfolioState).forEach((chainId) => {
+    const networkState = portfolioState[chainId]
     if (!networkState) return
 
     if (!networkState.result) {
-      strippedState[networkId] = networkState
+      strippedState[chainId] = networkState
       return
     }
 
@@ -146,10 +146,7 @@ const stripPortfolioState = (portfolioState: AccountState) => {
     const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
       networkState.result
 
-    strippedState[networkId] = {
-      ...networkState,
-      result
-    }
+    strippedState[chainId] = { ...networkState, result }
   })
 
   return strippedState
@@ -162,12 +159,12 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
 }
 
 const calculateTokenArray = (
-  networkId: string,
+  chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
   isPendingValid: boolean
 ) => {
-  if (networkId === 'gasTank' || networkId === 'rewards') {
+  if (chainId === 'gasTank' || chainId === 'rewards') {
     return latestTokens
   }
   // If the pending state is older or there are no pending tokens

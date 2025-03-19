@@ -40,7 +40,7 @@ export interface DeFiPositionsState {
 }
 
 export interface AccountState {
-  [networkId: string]: NetworkState
+  [chainId: string]: NetworkState
 }
 
 export interface ProviderError {

@@ -51,8 +51,7 @@ export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): bo
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter(
-    (networkId) =>
-      typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking
+    (chainId) => typeof providers[chainId].isWorking === 'boolean' && !providers[chainId].isWorking
   )
 }
 
