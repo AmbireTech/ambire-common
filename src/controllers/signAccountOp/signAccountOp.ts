@@ -1378,6 +1378,15 @@ export class SignAccountOpController extends EventEmitter {
         const paymaster = erc4337Estimation.paymaster
         if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
+        // fix two problems:
+        // 1) when we do eip7702Auth, initial estimation is not enough
+        // 2) we estimate with the gas tank but if the user chooses
+        // native, it could result in low gas limit => txn price too low.
+        // In both cases, we re-estimate before broadcast
+        let shouldReestimate =
+          erc4337Estimation.feeCallType &&
+          paymaster.getFeeCallType([this.selectedOption.token]) !== erc4337Estimation.feeCallType
+
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
@@ -1390,6 +1399,11 @@ export class SignAccountOpController extends EventEmitter {
               getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
             )
           )
+
+          shouldReestimate = true
+        }
+
+        if (shouldReestimate) {
           // we do another estimate here as signing the authorization changes entirely
           // the needed gas for the userOp to go through
           const newEstimate = await bundlerEstimate(
