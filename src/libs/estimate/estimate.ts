@@ -96,11 +96,7 @@ export async function getEstimation(
   return fullEstimation
 }
 
-export function getEstimationSummary(estimation: FullEstimation | Error): FullEstimationSummary {
-  if (estimation instanceof Error) {
-    return { error: estimation }
-  }
-
+export function getEstimationSummary(estimation: FullEstimation): FullEstimationSummary {
   return {
     providerEstimation:
       estimation.provider && !(estimation.provider instanceof Error)
@@ -109,6 +105,7 @@ export function getEstimationSummary(estimation: FullEstimation | Error): FullEs
     ambireEstimation:
       estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
     bundlerEstimation:
-      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
+      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
+    flags: estimation.flags
   }
 }

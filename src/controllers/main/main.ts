@@ -28,7 +28,6 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
-import { getEstimationSummary } from '../../libs/estimate/estimate'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -653,7 +652,7 @@ export class MainController extends EventEmitter {
       },
       () => {
         if (this.signAccountOp && this.signAccountOp.estimationController.estimation)
-          this.traceCall(getEstimationSummary(this.signAccountOp.estimationController.estimation))
+          this.traceCall(this.signAccountOp.estimationController.estimation)
       }
     )
 
@@ -2263,8 +2262,7 @@ export class MainController extends EventEmitter {
         // Don't display additional errors if the estimation hasn't initially loaded
         // or there is an estimation error
         if (
-          !this.signAccountOp?.estimation ||
-          this.signAccountOp?.estimation?.error ||
+          !this.signAccountOp?.estimationController.isLoadingOrFailed() ||
           this.signAccountOp.estimationRetryError
         )
           return null
@@ -2336,7 +2334,7 @@ export class MainController extends EventEmitter {
    */
   async #broadcastSignedAccountOp() {
     const accountOp = this.signAccountOp?.accountOp
-    const estimation = this.signAccountOp?.estimation
+    const estimation = this.signAccountOp?.estimationController.estimation
     const actionId = this.signAccountOp?.fromActionId
     const bundlerSwitcher = this.signAccountOp?.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'

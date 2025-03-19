@@ -1,8 +1,8 @@
 /* eslint-disable class-methods-use-this */
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { getEstimation } from '../../libs/estimate/estimate'
-import { FullEstimation } from '../../libs/estimate/interfaces'
+import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
+import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
@@ -39,9 +39,13 @@ export class EstimationController extends EventEmitter {
 
   status: EstimationStatus = EstimationStatus.Initial
 
-  estimation: FullEstimation | null = null
+  estimation: FullEstimationSummary | null = null
 
   error: Error | null = null
+
+  // a boolean to understand if the estimation has been performed
+  // at least one indicating clearly that all other are re-estimates
+  hasEstimated: boolean = false
 
   constructor(
     keystore: KeystoreController,
@@ -138,7 +142,7 @@ export class EstimationController extends EventEmitter {
 
     // set estimation OR error depending on the res
     if (!(estimation instanceof Error)) {
-      this.estimation = estimation
+      this.estimation = getEstimationSummary(estimation)
       this.error = null
       this.status = EstimationStatus.Success
     } else {
@@ -146,6 +150,8 @@ export class EstimationController extends EventEmitter {
       this.error = estimation
       this.status = EstimationStatus.Error
     }
+
+    this.hasEstimated = true
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that the account state is not the latest and needs to be updated
@@ -157,5 +163,22 @@ export class EstimationController extends EventEmitter {
       this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.networkId]).catch((e) => e)
 
     this.emitUpdate()
+  }
+
+  // it's initialized if it has estimated at least once
+  isInitialized() {
+    return this.hasEstimated
+  }
+
+  // has it estimated at least once without a failure
+  isLoadingOrFailed() {
+    return !this.hasEstimated || !!this.error
+  }
+
+  reset() {
+    this.estimation = null
+    this.error = null
+    this.hasEstimated = false
+    this.status = EstimationStatus.Initial
   }
 }
