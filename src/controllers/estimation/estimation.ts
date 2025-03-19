@@ -186,6 +186,7 @@ export class EstimationController extends EventEmitter {
       this.estimation = null
       this.error = estimation
       this.status = EstimationStatus.Error
+      this.availableFeeOptions = []
     }
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
