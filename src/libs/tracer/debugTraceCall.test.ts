@@ -152,7 +152,6 @@ describe('Debug tracecall detection for transactions', () => {
       state,
       // a lot of gas
       100000000000000n,
-      [{ name: 'fast', gasPrice: 338318181550000000n }],
       true,
       overrideData
     )

@@ -753,14 +753,12 @@ export class MainController extends EventEmitter {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       const provider = this.providers.providers[network.id]
-      const gasPrice = this.gasPrices[network.id]
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
         provider,
         state,
         gasUsed,
-        gasPrice,
         !network.rpcNoStateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
