@@ -651,8 +651,8 @@ export class MainController extends EventEmitter {
         return this.isSignRequestStillActive
       },
       () => {
-        if (this.signAccountOp && this.signAccountOp.estimationController.estimation)
-          this.traceCall(this.signAccountOp.estimationController.estimation)
+        if (this.signAccountOp && this.signAccountOp.estimation.estimation)
+          this.traceCall(this.signAccountOp.estimation.estimation)
       }
     )
 
@@ -2042,7 +2042,7 @@ export class MainController extends EventEmitter {
         this.actions.addOrUpdateAction(accountOpAction)
 
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ calls: accountOpAction.accountOp.calls, estimation: null })
+          this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
         }
       } else {
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
@@ -2262,8 +2262,8 @@ export class MainController extends EventEmitter {
         // Don't display additional errors if the estimation hasn't initially loaded
         // or there is an estimation error
         if (
-          !this.signAccountOp?.estimationController.isLoadingOrFailed() ||
-          this.signAccountOp.estimationRetryError
+          !this.signAccountOp?.estimation.isLoadingOrFailed() ||
+          this.signAccountOp.estimation.estimationRetryError
         )
           return null
 
@@ -2334,7 +2334,7 @@ export class MainController extends EventEmitter {
    */
   async #broadcastSignedAccountOp() {
     const accountOp = this.signAccountOp?.accountOp
-    const estimation = this.signAccountOp?.estimationController.estimation
+    const estimation = this.signAccountOp?.estimation.estimation
     const actionId = this.signAccountOp?.fromActionId
     const bundlerSwitcher = this.signAccountOp?.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'

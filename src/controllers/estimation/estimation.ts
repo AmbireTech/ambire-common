@@ -1,4 +1,5 @@
 /* eslint-disable class-methods-use-this */
+import { Warning } from '../../interfaces/signAccountOp'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
@@ -7,7 +8,7 @@ import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import { AccountsController } from '../accounts/accounts'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -24,8 +25,6 @@ export class EstimationController extends EventEmitter {
   #providers: ProvidersController
 
   #portfolio: PortfolioController
-
-  #errorCallback: Function
 
   // this is mainly for the bundler switcher but in general
   // if the estimation wants to know the status of the outside
@@ -47,13 +46,14 @@ export class EstimationController extends EventEmitter {
   // at least one indicating clearly that all other are re-estimates
   hasEstimated: boolean = false
 
+  estimationRetryError: ErrorRef | null = null
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
     networks: NetworksController,
     providers: ProvidersController,
     portfolio: PortfolioController,
-    errorCallback: Function,
     getOutsideControllerStatus?: Function,
     outsideControllerNoUpdateStatuses?: any[]
   ) {
@@ -63,7 +63,6 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#providers = providers
     this.#portfolio = portfolio
-    this.#errorCallback = errorCallback
     if (getOutsideControllerStatus) this.#getOutsideControllerStatus = getOutsideControllerStatus
     if (outsideControllerNoUpdateStatuses)
       this.#outsideControllerNoUpdateStatuses = outsideControllerNoUpdateStatuses
@@ -137,14 +136,19 @@ export class EstimationController extends EventEmitter {
       feeTokens,
       nativeToCheck,
       bundlerSwitcher,
-      this.#errorCallback
+      (e: ErrorRef) => {
+        if (!this) return
+        this.estimationRetryError = e
+        this.emitUpdate()
+      }
     ).catch((e) => e)
 
-    // set estimation OR error depending on the res
-    if (!(estimation instanceof Error)) {
+    const isSuccess = !(estimation instanceof Error)
+    if (isSuccess) {
       this.estimation = getEstimationSummary(estimation)
       this.error = null
       this.status = EstimationStatus.Success
+      this.estimationRetryError = null
     } else {
       this.estimation = null
       this.error = estimation
@@ -175,10 +179,52 @@ export class EstimationController extends EventEmitter {
     return !this.hasEstimated || !!this.error
   }
 
+  calculateWarnings() {
+    const warnings: Warning[] = []
+
+    // TODO: doesn't seem correct
+    if (this.estimationRetryError && this.status === EstimationStatus.Success) {
+      warnings.push({
+        id: 'estimation-retry',
+        title: this.estimationRetryError.message,
+        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
+        promptBeforeSign: false,
+        displayBeforeSign: true
+      })
+    }
+
+    return warnings
+  }
+
+  get errors(): string[] {
+    const errors: string[] = []
+
+    if (this.isLoadingOrFailed() && this.estimationRetryError) {
+      // If there is a successful estimation we should show this as a warning
+      // as the user can use the old estimation to broadcast
+      errors.push(
+        `${this.estimationRetryError.message} ${
+          this.error
+            ? 'We will continue retrying, but please check your internet connection.'
+            : 'Automatically retrying in a few seconds. Please wait...'
+        }`
+      )
+    }
+
+    if (!this.isInitialized()) return errors
+
+    if (this.error) {
+      errors.push(this.error.message)
+    }
+
+    return errors
+  }
+
   reset() {
     this.estimation = null
     this.error = null
     this.hasEstimated = false
     this.status = EstimationStatus.Initial
+    this.estimationRetryError = null
   }
 }
