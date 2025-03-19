@@ -18,6 +18,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { PortfolioController } from './portfolio'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
@@ -133,10 +134,11 @@ const emptyAccount = {
 
 const prepareTest = () => {
   const storage = produceMemoryStore()
-  storage.set('accounts', [account, account2, account3, account4, emptyAccount])
+  const storageCtrl = new StorageController(storage)
+  storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     (net) => {
       providersCtrl.setProvider(net)
@@ -148,7 +150,7 @@ const prepareTest = () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -156,7 +158,7 @@ const prepareTest = () => {
     () => {}
   )
   const controller = new PortfolioController(
-    storage,
+    storageCtrl,
     fetch,
     providersCtrl,
     networksCtrl,
@@ -165,7 +167,7 @@ const prepareTest = () => {
     velcroUrl
   )
 
-  return { storage, controller }
+  return { storageCtrl, controller }
 }
 
 describe('Portfolio Controller ', () => {
@@ -198,9 +200,13 @@ describe('Portfolio Controller ', () => {
   }
 
   test('Previous tokens are persisted in the storage', async () => {
-    const { controller, storage } = prepareTest()
+    const { controller, storageCtrl } = prepareTest()
     await controller.updateSelectedAccount(account2.addr)
-    const storagePreviousHints = await storage.get('previousHints', {})
+    const storagePreviousHints = await storageCtrl.get('previousHints', {
+      fromExternalAPI: {},
+      learnedTokens: {},
+      learnedNfts: {}
+    })
     const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
     const polygonHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
     const optimismHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
@@ -208,9 +214,9 @@ describe('Portfolio Controller ', () => {
     // Controller persists tokens having balance for the current account.
     // @TODO - here we can enhance the test to cover one more scenarios:
     //  #1) Does the account really have amount for the persisted tokens.
-    expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
-    expect(polygonHints.erc20s.length).toBeGreaterThan(0)
-    expect(optimismHints.erc20s.length).toBeGreaterThan(0)
+    expect(ethereumHints?.erc20s?.length).toBeGreaterThan(0)
+    expect(polygonHints?.erc20s?.length).toBeGreaterThan(0)
+    expect(optimismHints?.erc20s?.length).toBeGreaterThan(0)
   })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
@@ -653,7 +659,7 @@ describe('Portfolio Controller ', () => {
     test('Learned tokens to avoid persisting non-ERC20 tokens', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
-      const { storage, controller } = prepareTest()
+      const { storageCtrl, controller } = prepareTest()
 
       await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 'ethereum')
 
@@ -661,7 +667,7 @@ describe('Portfolio Controller ', () => {
         forceUpdate: true
       })
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
 
       expect(previousHintsStorage.learnedTokens?.ethereum).not.toHaveProperty(SMART_CONTRACT_ADDR)
     })
@@ -703,7 +709,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
-      const { storage, controller } = prepareTest()
+      const { storageCtrl, controller } = prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -724,7 +730,7 @@ describe('Portfolio Controller ', () => {
         forceUpdate: true
       })
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const firstTokenOnEthInLearned =
         previousHintsStorage.learnedTokens.ethereum[firstTokenOnEth!.address]
 
@@ -732,7 +738,7 @@ describe('Portfolio Controller ', () => {
       expect(firstTokenOnEthInLearned).toBeNull()
     })
     test('To be learned token is returned from portfolio and not passed to learnedTokens (as it is without balance)', async () => {
-      const { storage, controller } = prepareTest()
+      const { storageCtrl, controller } = prepareTest()
       const ethereum = networks.find((network) => network.id === 'ethereum')!
       const clonedEthereum = structuredClone(ethereum)
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
@@ -763,7 +769,7 @@ describe('Portfolio Controller ', () => {
 
       expect(toBeLearnedToken).toBeTruthy()
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const tokenInLearnedTokens =
         previousHintsStorage.learnedTokens?.ethereum &&
         previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
@@ -772,7 +778,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
-      const { storage, controller } = prepareTest()
+      const { storageCtrl, controller } = prepareTest()
       const polygon = networks.find((network) => network.id === 'polygon')!
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
@@ -803,7 +809,7 @@ describe('Portfolio Controller ', () => {
         )
       expect(toBeLearnedToken).toBeTruthy()
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const tokenInLearnedTokens =
         previousHintsStorage.learnedTokens?.polygon[toBeLearnedToken!.address]
 

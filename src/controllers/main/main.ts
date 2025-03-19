@@ -133,6 +133,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
+import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -149,7 +150,9 @@ const STATUS_WRAPPED_METHODS = {
 } as const
 
 export class MainController extends EventEmitter {
-  #storage: Storage
+  #storageAPI: Storage
+
+  #storage: StorageController
 
   fetch: Fetch
 
@@ -265,11 +268,12 @@ export class MainController extends EventEmitter {
     notificationManager: NotificationManager
   }) {
     super()
-    this.#storage = storage
+    this.#storageAPI = storage
     this.fetch = fetch
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
+    this.#storage = new StorageController(this.#storageAPI)
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
     this.keystore = new KeystoreController(this.#storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
@@ -339,7 +343,7 @@ export class MainController extends EventEmitter {
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
-      storage,
+      storage: this.#storage,
       windowManager: this.#windowManager
     })
     const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })

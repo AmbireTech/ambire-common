@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/networks'
+import { networks as predefinedNetworks, ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -8,14 +8,13 @@ import {
   NetworkInfo,
   NetworkInfoLoading
 } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
-  is4337Enabled,
-  migrateNetworkPreferencesToNetworks
+  is4337Enabled
 } from '../../libs/networks/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
   addNetwork: 'INITIAL',
@@ -28,7 +27,7 @@ const STATUS_WRAPPED_METHODS = {
  * for adding, updating, and removing networks.
  */
 export class NetworksController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #fetch: Fetch
 
@@ -50,7 +49,7 @@ export class NetworksController extends EventEmitter {
   initialLoadPromise: Promise<void>
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     onAddOrUpdateNetwork: (network: Network) => void,
     onRemoveNetwork: (id: NetworkId) => void
@@ -94,16 +93,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async #load() {
-    const storedNetworkPreferences: { [key: NetworkId]: Partial<Network> } | undefined =
-      await this.#storage.get('networkPreferences', undefined)
-    let storedNetworks: { [key: NetworkId]: Network }
-    storedNetworks = await this.#storage.get('networks', {})
-    if (!Object.keys(storedNetworks).length && storedNetworkPreferences) {
-      storedNetworks = await migrateNetworkPreferencesToNetworks(storedNetworkPreferences)
-      await this.#storage.set('networks', storedNetworks)
-      await this.#storage.remove('networkPreferences')
-    }
-    this.#networks = storedNetworks
+    this.#networks = await this.#storage.get('networks', {})
 
     predefinedNetworks.forEach((n) => {
       this.#networks[n.id] = {
@@ -138,9 +128,7 @@ export class NetworksController extends EventEmitter {
       }
     })
 
-    // without await to avoid performance impact on load
-    // needed to keep the networks storage up to date with the latest from predefinedNetworks
-    this.#storage.set('networks', this.#networks)
+    await this.#storage.set('networks', this.#networks)
 
     this.emitUpdate()
   }
@@ -152,6 +140,7 @@ export class NetworksController extends EventEmitter {
     } | null = null
   ) {
     await this.initialLoadPromise
+
     if (networkToAddOrUpdate) {
       this.networkToAddOrUpdate = networkToAddOrUpdate
       this.emitUpdate()

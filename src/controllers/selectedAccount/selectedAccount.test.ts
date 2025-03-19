@@ -8,10 +8,8 @@ import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
-import { migrateCashbackStatusToNewFormat } from '../../libs/selectedAccount/selectedAccount'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
@@ -19,6 +17,7 @@ import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
 const providers = Object.fromEntries(
@@ -27,8 +26,9 @@ const providers = Object.fromEntries(
 
 const storage: Storage = produceMemoryStore()
 let providersCtrl: ProvidersController
+const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController(
-  produceMemoryStore(),
+  storageCtrl,
   fetch,
   (net) => {
     providersCtrl.setProvider(net)
@@ -42,7 +42,7 @@ providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
 const accountsCtrl = new AccountsController(
-  storage,
+  storageCtrl,
   providersCtrl,
   networksCtrl,
   () => {},
@@ -50,10 +50,13 @@ const accountsCtrl = new AccountsController(
   () => {}
 )
 
-const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
 
 const portfolioCtrl = new PortfolioController(
-  storage,
+  storageCtrl,
   fetch,
   providersCtrl,
   networksCtrl,
@@ -196,46 +199,6 @@ describe('SelectedAccount Controller', () => {
   test('should toJSON()', () => {
     const json = selectedAccountCtrl.toJSON()
     expect(json).toBeDefined()
-  })
-  test('should migrate valid cashback statuses correctly', async () => {
-    const existingStatuses = {
-      '0x123': 'no-cashback',
-      '0x456': 'cashback-modal',
-      '0x789': 'seen-cashback',
-      '0xabc': 'unseen-cashback'
-    } as CashbackStatusByAccount
-
-    expect(migrateCashbackStatusToNewFormat(existingStatuses)).toEqual(existingStatuses)
-  })
-  test('should migrate old statuses with new ones', () => {
-    const existingStatuses = {
-      '0x111': {
-        firstCashbackReceivedAt: 1739790512765,
-        firstCashbackSeenAt: null,
-        cashbackWasZeroAt: null
-      },
-      '0x222': {
-        firstCashbackReceivedAt: 1739790315422,
-        firstCashbackSeenAt: 1739790512765,
-        cashbackWasZeroAt: null
-      },
-      '0x333': {
-        firstCashbackReceivedAt: null,
-        firstCashbackSeenAt: null,
-        cashbackWasZeroAt: 1739790512765
-      }
-    }
-
-    const expectedStatuses = {
-      '0x111': 'unseen-cashback',
-      '0x222': 'seen-cashback',
-      '0x333': 'no-cashback'
-    } as CashbackStatusByAccount
-
-    expect(migrateCashbackStatusToNewFormat(existingStatuses)).toEqual(expectedStatuses)
-  })
-  test('should return an empty object if input is empty', () => {
-    expect(migrateCashbackStatusToNewFormat({})).toEqual({})
   })
 
   describe('Banners', () => {

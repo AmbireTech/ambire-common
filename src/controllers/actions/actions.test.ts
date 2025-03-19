@@ -14,6 +14,7 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
 
 const DAPP_CONNECT_REQUEST: DappUserRequest = {
@@ -160,8 +161,9 @@ describe('Actions Controller', () => {
   )
 
   let providersCtrl: ProvidersController
+  const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     (net) => {
       providersCtrl.setProvider(net)
@@ -179,14 +181,17 @@ describe('Actions Controller', () => {
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},
       () => {},
       () => {}
     )
-    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+    selectedAccountCtrl = new SelectedAccountController({
+      storage: storageCtrl,
+      accounts: accountsCtrl
+    })
     await accountsCtrl.initialLoadPromise
     await networksCtrl.initialLoadPromise
     await providersCtrl.initialLoadPromise
