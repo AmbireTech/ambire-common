@@ -202,7 +202,7 @@ export async function getNetworkInfo(
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
   networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
-  network: Network | undefined
+  network?: Network
 ): NetworkFeature[] {
   const features: NetworkFeature[] = [
     {

@@ -234,7 +234,7 @@ export class StorageController {
     if (!Object.keys(networks).length) return
 
     const networkIdToChainId = Object.fromEntries(
-      Object.values(networks).map(({ id, chainId }) => [id, chainId.toString()])
+      Object.values(networks).map(({ id, chainId }: any) => [id, chainId.toString()])
     )
 
     const migrateKeys = <T>(obj: Record<string, T>) => {
@@ -258,13 +258,13 @@ export class StorageController {
       )
     }
 
-    const migratedCustomTokens = customTokens.map(({ networkId, ...rest }) => ({
+    const migratedCustomTokens = customTokens.map(({ networkId, ...rest }: any) => ({
       ...rest,
       chainId: networkIdToChainId[networkId]
     }))
 
     const migratedTokenPreferences: { address: string; chainId: string; isHidden?: boolean }[] =
-      tokenPreferences.map(({ networkId, ...rest }) => ({
+      tokenPreferences.map(({ networkId, ...rest }: any) => ({
         ...rest,
         chainId: networkIdToChainId[networkId]
       }))

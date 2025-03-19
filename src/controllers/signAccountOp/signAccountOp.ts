@@ -374,7 +374,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push('Please select a signer to sign the transaction.')
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
-    const currentPortfolioNetwork = currentPortfolio[this.accountOp.networkId]
+    const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
 
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === '0x0000000000000000000000000000000000000000'
@@ -440,8 +440,8 @@ export class SignAccountOpController extends EventEmitter {
         if (isUnableToCoverWithAllOtherTokens) {
           let skippedTokensCount = 0
           const gasTokenNames = gasTankFeeTokens
-            .filter(({ networkId, hiddenOnError }) => {
-              if (networkId !== this.accountOp.networkId) return false
+            .filter(({ chainId, hiddenOnError }) => {
+              if (chainId !== this.accountOp.chainId) return false
 
               if (hiddenOnError) {
                 skippedTokensCount++
@@ -522,7 +522,7 @@ export class SignAccountOpController extends EventEmitter {
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
       latestState,
       pendingState,
-      this.accountOp.networkId,
+      this.accountOp.chainId,
       this.traceCallDiscoveryStatus
     )
 
@@ -807,13 +807,13 @@ export class SignAccountOpController extends EventEmitter {
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
     const native = this.#portfolio
       .getLatestPortfolioState(this.accountOp.accountAddr)
-      [this.accountOp.networkId]?.result?.tokens.find(
+      [this.accountOp.chainId.toString()]?.result?.tokens.find(
         (token) => token.address === '0x0000000000000000000000000000000000000000'
       )
     if (!native) return null
 
     // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
-    if (native.address === feeToken.address && native.networkId === feeToken.networkId)
+    if (native.address === feeToken.address && native.chainId === feeToken.chainId)
       return BigInt(1 * 1e18)
 
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
@@ -1107,7 +1107,7 @@ export class SignAccountOpController extends EventEmitter {
       paidBy: this.paidBy,
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
-      feeTokenNetworkId: this.feeTokenResult.networkId,
+      feeTokenChainId: this.feeTokenResult.chainId,
       amount: chosenSpeed.amount,
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
       gasPrice: chosenSpeed.gasPrice,
@@ -1178,7 +1178,7 @@ export class SignAccountOpController extends EventEmitter {
     // get the native token from the portfolio to calculate prices
     const native = this.#portfolio
       .getLatestPortfolioState(this.accountOp.accountAddr)
-      [this.accountOp.networkId]?.result?.tokens.find(
+      [this.accountOp.chainId.toString()]?.result?.tokens.find(
         (token) => token.address === '0x0000000000000000000000000000000000000000'
       )
     if (!native) return null

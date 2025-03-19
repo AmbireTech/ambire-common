@@ -26,9 +26,12 @@ const usdcEMapping: { [key: string]: string } = {
   optimism: '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
 }
 
-export function overrideSymbol(address: string, networkId: string, symbol: string) {
+export function overrideSymbol(address: string, chainId: bigint, symbol: string) {
   // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
-  if (usdcEMapping[networkId] && usdcEMapping[networkId].toLowerCase() === address.toLowerCase()) {
+  if (
+    usdcEMapping[chainId.toString()] &&
+    usdcEMapping[chainId.toString()].toLowerCase() === address.toLowerCase()
+  ) {
     return 'USDC.E'
   }
 
@@ -152,15 +155,15 @@ export const addHiddenTokenValueToTotal = (
 
 export const getAccountPortfolioTotal = (
   accountPortfolio: AccountState,
-  excludeNetworks: Network['chainId'][] = [],
+  excludeNetworks: string[] = [],
   excludeHiddenTokens = true
 ) => {
   if (!accountPortfolio) return 0
 
-  return Object.keys(accountPortfolio).reduce((acc, key) => {
-    if (excludeNetworks.includes(BigInt(key))) return acc
+  return Object.keys(accountPortfolio).reduce((acc, chainId) => {
+    if (excludeNetworks.includes(chainId)) return acc
 
-    const networkData = accountPortfolio[key]
+    const networkData = accountPortfolio[chainId]
     const tokenList = networkData?.result?.tokens || []
     let networkTotalAmountUSD = networkData?.result?.total.usd || 0
 

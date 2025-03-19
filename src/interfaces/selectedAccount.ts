@@ -8,7 +8,7 @@ import { AccountId } from './account'
 
 /** A stripped version of the portfolio state that will be used in the UI */
 export type SelectedAccountPortfolioState = {
-  [networkId: string]:
+  [chainId: string]:
     | (Omit<NetworkState, 'result'> & {
         result?: Omit<
           NonNullable<NetworkState['result']>,

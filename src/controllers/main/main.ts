@@ -1136,8 +1136,8 @@ export class MainController extends EventEmitter {
     // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
-    const isAllReady = latestStateKeys.every((networkId) => {
-      return isNetworkReady(latestState[networkId])
+    const isAllReady = latestStateKeys.every((chainId) => {
+      return isNetworkReady(latestState[chainId])
     })
 
     // Set isOffline back to false if the portfolio is loading.
@@ -1151,14 +1151,14 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const allPortfolioNetworksHaveErrors = latestStateKeys.every((networkId) => {
-      const state = latestState[networkId]
+    const allPortfolioNetworksHaveErrors = latestStateKeys.every((chainId) => {
+      const state = latestState[chainId]
 
       return !!state?.criticalError
     })
 
-    const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
-      const provider = this.providers.providers[networkId]
+    const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((chainId) => {
+      const provider = this.providers.providers[chainId]
       const isWorking = provider.isWorking
 
       return typeof isWorking === 'boolean' && !isWorking
@@ -1663,7 +1663,7 @@ export class MainController extends EventEmitter {
       const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
 
       if (
-        isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.networkId]) &&
+        isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
         userRequest.meta.isSwapAndBridgeCall
       ) {
         this.removeUserRequest(userRequest.meta.activeRouteId)

@@ -105,13 +105,12 @@ export class NetworksController extends EventEmitter {
    * This method performs the following steps:
    * 1. Retrieves the legacy network preferences and the latest network configurations from storage.
    * 2. Migrates legacy network preferences to the new network structure if needed.
-   * 3. Converts the network structure from [key: NetworkId] to [key: chainId].
-   * 4. If no networks are found in storage, sets predefined networks and emits an update.
-   * 5. Merges the networks from the Relayer with the stored networks.
-   * 6. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
-   * 7. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
-   * 8. Updates the networks in storage.
-   * 9. Asynchronously updates network features if needed.
+   * 3. If no networks are found in storage, sets predefined networks and emits an update.
+   * 4. Merges the networks from the Relayer with the stored networks.
+   * 5. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
+   * 6. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
+   * 7. Updates the networks in storage.
+   * 8. Asynchronously updates network features if needed.
    *
    * This method ensures that the application has the most up-to-date network configurations,
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
@@ -145,9 +144,7 @@ export class NetworksController extends EventEmitter {
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
-        const storedNetwork = Object.values(networksInStorage).find(
-          (net) => net.chainId === chainId
-        )
+        const storedNetwork = Object.values(networksInStorage).find((n) => n.chainId === chainId)
 
         if (!storedNetwork) {
           finalNetworks[chainId.toString()] = {

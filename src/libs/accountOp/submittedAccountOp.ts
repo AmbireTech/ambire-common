@@ -1,4 +1,5 @@
 import { TransactionReceipt, ZeroAddress } from 'ethers'
+
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -228,7 +229,7 @@ export async function pollTxnId(
 }
 
 export function updateOpStatus(
-  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][networkId][index]
+  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][chainId][index]
   // so we could mutate it from inside this method
   opReference: SubmittedAccountOp,
   status: AccountOpStatus,

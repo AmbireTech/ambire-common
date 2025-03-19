@@ -86,7 +86,6 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
   }
 
   return {
-    id: network.name.toLowerCase(),
     name: network.name,
     chainId: BigInt(network.chainId),
     rpcUrls: [workingRpcUrl ?? network.rpc[0]],
@@ -136,7 +135,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     has7702
   } = relayerNetwork
   const {
-    ambireId: id,
     native: {
       symbol: nativeAssetSymbol,
       name: nativeAssetName,
@@ -201,7 +199,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   // const force4337
 
   return {
-    id,
     name,
     iconUrls,
     explorerUrl,

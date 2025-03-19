@@ -138,9 +138,9 @@ export function isAccountOpsIntentEqual(
   accountOps2: AccountOp[]
 ): boolean {
   const createIntent = (accountOps: AccountOp[]) => {
-    return accountOps.map(({ accountAddr, networkId, calls }) => ({
+    return accountOps.map(({ accountAddr, chainId, calls }) => ({
       accountAddr,
-      networkId,
+      chainId,
       calls
     }))
   }

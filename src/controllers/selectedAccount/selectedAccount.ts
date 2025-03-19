@@ -3,7 +3,6 @@ import { getAddress } from 'ethers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { NetworkId } from '../../interfaces/network'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
@@ -71,7 +70,7 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
-  dashboardNetworkFilter: NetworkId | null = null
+  dashboardNetworkFilter: bigint | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -162,7 +161,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
         if (!this.dashboardNetworkFilter) return
         const dashboardFilteredNetwork = this.#networks!.networks.find(
-          (n) => n.id === this.dashboardNetworkFilter
+          (n) => n.chainId === this.dashboardNetworkFilter
         )
 
         // reset the dashboardNetworkFilter if the network is removed
@@ -489,8 +488,8 @@ export class SelectedAccountController extends EventEmitter {
     return this.#cashbackStatusByAccount[this.account.addr]
   }
 
-  setDashboardNetworkFilter(networkFilter: NetworkId | null) {
-    this.dashboardNetworkFilter = networkFilter
+  setDashboardNetworkFilter(chainId: bigint | null) {
+    this.dashboardNetworkFilter = chainId
     this.emitUpdate()
   }
 

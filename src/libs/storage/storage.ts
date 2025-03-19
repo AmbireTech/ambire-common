@@ -1,7 +1,7 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { KeystoreSeed, StoredKey } from '../../interfaces/keystore'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { CashbackStatus, LegacyCashbackStatus } from '../../interfaces/selectedAccount'
 import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
 import { LegacyTokenPreference } from '../portfolio/customToken'
@@ -31,7 +31,7 @@ export const needsCashbackStatusMigration = (
 export const migrateHiddenTokens = (tokenPreferences: LegacyTokenPreference[]) => {
   return tokenPreferences
     .filter(({ isHidden }) => isHidden)
-    .map(({ address, networkId, isHidden }) => ({
+    .map(({ address, networkId, isHidden }: any) => ({
       address,
       networkId,
       isHidden
@@ -41,7 +41,7 @@ export const migrateHiddenTokens = (tokenPreferences: LegacyTokenPreference[]) =
 export const migrateCustomTokens = (tokenPreferences: LegacyTokenPreference[]) => {
   return tokenPreferences
     .filter(({ standard }) => !!standard)
-    .map(({ address, standard, networkId }) => ({
+    .map(({ address, standard, networkId }: any) => ({
       address,
       standard,
       networkId
@@ -49,19 +49,19 @@ export const migrateCustomTokens = (tokenPreferences: LegacyTokenPreference[]) =
 }
 
 export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
-  [key: NetworkId]: Partial<Network>
+  [key: string]: Partial<Network>
 }) {
-  const predefinedNetworkIds = predefinedNetworks.map((n) => n.id)
+  const predefinedNetworkIds = predefinedNetworks.map((n) => (n as any).id)
   const customNetworkIds = Object.keys(networkPreferences).filter(
     (k) => !predefinedNetworkIds.includes(k)
   )
 
-  const networksToStore: { [key: NetworkId]: Network } = {}
+  const networksToStore: { [key: string]: Network } = {}
 
   predefinedNetworks.forEach((n) => {
-    networksToStore[n.id] = n
+    networksToStore[(n as any).id] = n
   })
-  customNetworkIds.forEach((networkId: NetworkId) => {
+  customNetworkIds.forEach((networkId: string) => {
     const preference = networkPreferences[networkId]
     const networkInfo = {
       chainId: preference.chainId!,

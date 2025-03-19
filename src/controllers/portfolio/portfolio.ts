@@ -442,7 +442,7 @@ export class PortfolioController extends EventEmitter {
       .map((t: any) => ({
         ...t,
         symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
-        flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
+        flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
 
     accountState.rewards = {
@@ -464,7 +464,7 @@ export class PortfolioController extends EventEmitter {
       availableAmount: BigInt(t.availableAmount || 0),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
+      flags: getFlags(res.data, 'gasTank', t.chainId, t.address)
     }))
 
     accountState.gasTank = {
