@@ -501,15 +501,10 @@ describe('SignAccountOp Controller ', () => {
   test('Default options', async () => {
     // Please note that in this test case, we intentionally refrain from mocking the estimation and gasPrices libraries.
     // The reason is that we aim to simulate the signing process as realistically as possible and prefer to depend on the actual underlying libraries rather than using mocks.
-    const { controller, estimation, prices } = await init(
-      v1Account,
-      createAccountOp(v1Account),
-      eoaSigner
-    )
+    const { controller, prices } = await init(v1Account, createAccountOp(v1Account), eoaSigner)
 
     controller.update({
-      gasPrices: prices,
-      estimation
+      gasPrices: prices
     })
 
     // It sets a default signer
@@ -541,7 +536,7 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
@@ -585,7 +580,6 @@ describe('SignAccountOp Controller ', () => {
 
     controller.update({
       gasPrices: prices,
-      estimation,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
@@ -639,7 +633,7 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
@@ -687,7 +681,6 @@ describe('SignAccountOp Controller ', () => {
 
     controller.update({
       gasPrices: prices,
-      estimation,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
@@ -723,7 +716,7 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
@@ -771,7 +764,6 @@ describe('SignAccountOp Controller ', () => {
 
     controller.update({
       gasPrices: prices,
-      estimation,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
@@ -861,7 +853,7 @@ describe('SignAccountOp Controller ', () => {
       }
     ]
     const network = networks.find((net) => net.id === networkId)!
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       smartAccount,
       createAccountOp(smartAccount, network.id),
       eoaSigner,
@@ -908,8 +900,7 @@ describe('SignAccountOp Controller ', () => {
     jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
-      gasPrices: prices,
-      estimation
+      gasPrices: prices
     })
 
     controller.update({
@@ -919,8 +910,8 @@ describe('SignAccountOp Controller ', () => {
       signingKeyType: 'internal'
     })
 
-    expect(controller.availableFeeOptions.length).toBe(3)
-    controller.availableFeeOptions.forEach((option) => {
+    expect(controller.estimation.availableFeeOptions.length).toBe(3)
+    controller.estimation.availableFeeOptions.forEach((option) => {
       const identifier = getFeeSpeedIdentifier(option, smartAccount.addr, null)
       expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
       expect(controller.feeSpeeds[identifier].length).not.toBe(0)
@@ -999,7 +990,7 @@ describe('SignAccountOp Controller ', () => {
           token: feeTokenResult
         }
       ]
-      const { controller, estimation, prices } = await init(
+      const { controller, prices } = await init(
         smartAccount,
         createAccountOp(smartAccount, network.id),
         eoaSigner,
@@ -1047,16 +1038,15 @@ describe('SignAccountOp Controller ', () => {
 
       controller.update({
         gasPrices: prices,
-        estimation,
         feeToken: feeTokenResult,
         paidBy: smartAccount.addr,
         signingKeyAddr: eoaSigner.keyPublicAddress,
         signingKeyType: 'internal'
       })
 
-      expect(controller.availableFeeOptions.length).toBe(1)
+      expect(controller.estimation.availableFeeOptions.length).toBe(1)
       const identifier = getFeeSpeedIdentifier(
-        controller.availableFeeOptions[0],
+        controller.estimation.availableFeeOptions[0],
         smartAccount.addr,
         null
       )
@@ -1066,7 +1056,7 @@ describe('SignAccountOp Controller ', () => {
       const errors = controller.errors
       expect(errors.length).toBe(1)
       expect(errors[0]).toBe(
-        `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+        `Currently, ${controller.estimation.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
       )
       expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
       await controller.sign()
@@ -1144,7 +1134,7 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       e2esmartAccount,
       createAccountOp(e2esmartAccount, network.id),
       eoaSigner,
@@ -1192,8 +1182,7 @@ describe('SignAccountOp Controller ', () => {
     jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
-      gasPrices: prices,
-      estimation
+      gasPrices: prices
     })
 
     // @ts-ignore
@@ -1311,7 +1300,7 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       smartAccount,
       createAccountOp(smartAccount, network.id),
       eoaSigner,
@@ -1359,21 +1348,20 @@ describe('SignAccountOp Controller ', () => {
 
     controller.update({
       gasPrices: prices,
-      estimation,
       feeToken: nativeFeeTokenPolygon,
       paidBy: eoaSigner.keyPublicAddress,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })
 
-    expect(controller.availableFeeOptions.length).toBe(3)
+    expect(controller.estimation.availableFeeOptions.length).toBe(3)
     const firstIdentity = getFeeSpeedIdentifier(
-      controller.availableFeeOptions[0],
+      controller.estimation.availableFeeOptions[0],
       smartAccount.addr,
       null
     )
     const secondIdentity = getFeeSpeedIdentifier(
-      controller.availableFeeOptions[1],
+      controller.estimation.availableFeeOptions[1],
       smartAccount.addr,
       null
     )
@@ -1453,7 +1441,7 @@ describe('SignAccountOp Controller ', () => {
           }
         }
       ]
-      const { controller, estimation, prices } = await init(
+      const { controller, prices } = await init(
         smartAccount,
         createAccountOp(smartAccount, network.id),
         eoaSigner,
@@ -1501,7 +1489,6 @@ describe('SignAccountOp Controller ', () => {
 
       controller.update({
         gasPrices: prices,
-        estimation,
         feeToken: nativeFeeTokenPolygon,
         paidBy: eoaSigner.keyPublicAddress,
         signingKeyAddr: eoaSigner.keyPublicAddress,
@@ -1545,7 +1532,7 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const { controller, estimation, prices } = await init(
+    const { controller, prices } = await init(
       v1Account,
       createAccountOp(v1Account),
       eoaSigner,
@@ -1589,7 +1576,6 @@ describe('SignAccountOp Controller ', () => {
 
     controller.update({
       gasPrices: prices,
-      estimation,
       feeToken: nativeFeeToken,
       paidBy: eoaSigner.keyPublicAddress,
       signingKeyAddr: eoaSigner.keyPublicAddress,
