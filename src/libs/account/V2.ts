@@ -47,13 +47,14 @@ export class V2 extends BaseAccount {
   }
 
   getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     options: {
       feeToken: TokenResult
       op: AccountOp
     }
   ): bigint {
-    if (estimation.error || !estimation.ambireEstimation) return 0n
+    const isError = estimation instanceof Error
+    if (isError || !estimation.ambireEstimation) return 0n
 
     // no 4337 => use ambireEstimation
     if (!this.network.erc4337.enabled) return estimation.ambireEstimation.gasUsed

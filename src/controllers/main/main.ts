@@ -4,6 +4,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, ZeroAddress } from 'ethers'
 
+import { EstimationStatus } from 'controllers/estimation/types'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
@@ -124,7 +125,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
-import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
@@ -651,8 +651,8 @@ export class MainController extends EventEmitter {
         return this.isSignRequestStillActive
       },
       () => {
-        if (this.signAccountOp && this.signAccountOp.estimation.estimation)
-          this.traceCall(this.signAccountOp.estimation.estimation)
+        if (this.signAccountOp && this.signAccountOp.estimation.status === EstimationStatus.Success)
+          this.traceCall()
       }
     )
 
@@ -715,8 +715,10 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall(estimation: FullEstimationSummary) {
-    const accountOp = this.signAccountOp?.accountOp
+  async traceCall() {
+    if (!this.signAccountOp) return
+
+    const accountOp = this.signAccountOp.accountOp
     if (!accountOp) return
 
     const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
@@ -737,7 +739,9 @@ export class MainController extends EventEmitter {
         ?.feeTokens ?? []
 
     // calculate the gasLimit so it doesn't revert
-    const gasUsed = baseAcc.getGasUsed(estimation, {
+    const estimationOrError =
+      this.signAccountOp.estimation.estimation ?? (this.signAccountOp.estimation.error as Error)
+    const gasUsed = baseAcc.getGasUsed(estimationOrError, {
       // the fee token is always native for the trace call
       feeToken: networkFeeTokens.find((tok) => tok.address === ZeroAddress) as TokenResult,
       op: accountOp

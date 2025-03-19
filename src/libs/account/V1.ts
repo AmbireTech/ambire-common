@@ -27,13 +27,14 @@ export class V1 extends BaseAccount {
   }
 
   getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     options: {
       feeToken: TokenResult
       op: AccountOp
     }
   ): bigint {
-    if (estimation.error || !estimation.ambireEstimation) return 0n
+    const isError = estimation instanceof Error
+    if (isError || !estimation.ambireEstimation) return 0n
     const providerGasUsed = estimation.providerEstimation
       ? estimation.providerEstimation.gasUsed
       : 0n

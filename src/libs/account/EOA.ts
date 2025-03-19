@@ -44,13 +44,14 @@ export class EOA extends BaseAccount {
   }
 
   getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     options: {
       feeToken: TokenResult
       op: AccountOp
     }
   ): bigint {
-    if (estimation.error || !estimation.providerEstimation || !options.op) return 0n
+    const isError = estimation instanceof Error
+    if (isError || !estimation.providerEstimation || !options.op) return 0n
 
     const calls = options.op.calls
     if (calls.length === 1) {
