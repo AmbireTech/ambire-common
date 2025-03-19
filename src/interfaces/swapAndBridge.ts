@@ -40,7 +40,7 @@ export interface SwapAndBridgeQuote {
   toChainId: number
   selectedRoute: SwapAndBridgeRoute
   // TODO: Common type
-  selectedRouteSteps: SocketAPIStep[]
+  selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
 }
 
@@ -82,7 +82,7 @@ export interface SwapAndBridgeRoute {
   totalUserTx: number
   totalGasFeesInUsd: number
   // TODO: Common type
-  userTxs: SocketAPIUserTx[]
+  userTxs: SwapAndBridgeUserTx[]
   receivedValueInUsd: number
   inputValueInUsd: number
   outputValueInUsd: number
@@ -127,9 +127,7 @@ export interface SocketAPIBridgeUserTx {
   steps: SocketAPIStep[]
   stepCount: number
   serviceTime: number
-  sender: string
   routePath: string
-  recipient: string
   maxServiceTime: number
   gasFees: {
     gasAmount: string
@@ -202,12 +200,12 @@ export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 export type SwapAndBridgeStep = {
   chainId: number
   fromAmount: string
-  fromAsset: SocketAPIToken
+  fromAsset: SwapAndBridgeToToken
   gasFees: {
     gasAmount: string
     gasLimit: number
     feesInUsd: number
-    asset: SocketAPIToken
+    asset?: SwapAndBridgeToToken
   }
   minAmountOut: string
   protocol: {
@@ -215,16 +213,48 @@ export type SwapAndBridgeStep = {
     displayName: string
     icon: string
   }
-  swapSlippage: number
+  swapSlippage?: number
   toAmount: string
-  toAsset: SocketAPIToken
+  toAsset: SwapAndBridgeToToken
   type: 'middleware' | 'swap'
   userTxIndex?: number
 }
 
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
 
+export type SwapAndBridgeUserTx = {
+  userTxType: 'dex-swap' | 'fund-movr'
+  userTxIndex: number
+  txType: string
+  fromAsset: SwapAndBridgeToToken
+  toAsset: SwapAndBridgeToToken
+  chainId: number
+  fromAmount: string
+  toAmount: string
+  swapSlippage?: number
+  protocol: {
+    displayName: string
+    icon: string
+    name: string
+  }
+  minAmountOut: string
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset?: SwapAndBridgeToToken
+  }
+  approvalData: SwapAndBridgeTxApprovalData | null
+}
+
 export type SocketAPIUserTxApprovalData = {
+  allowanceTarget: string
+  approvalTokenAddress: string
+  minimumApprovalAmount: string
+  owner: string
+}
+
+export type SwapAndBridgeTxApprovalData = {
   allowanceTarget: string
   approvalTokenAddress: string
   minimumApprovalAmount: string
