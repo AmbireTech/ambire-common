@@ -214,6 +214,84 @@ export class StorageController {
     }
   }
 
+  async #migrateNetworkIdToChainId() {
+    const [
+      networks,
+      previousHints,
+      customTokens,
+      tokenPreferences,
+      networksWithAssetsByAccount,
+      networksWithPositionsByAccounts
+    ] = await Promise.all([
+      this.#storage.get('networks', {}),
+      this.#storage.get('previousHints', []),
+      this.#storage.get('customTokens', []),
+      this.#storage.get('tokenPreferences', []),
+      this.#storage.get('networksWithAssetsByAccount', {}),
+      this.#storage.get('networksWithPositionsByAccounts', {})
+    ])
+
+    if (!Object.keys(networks).length) return
+
+    const networkIdToChainId = Object.fromEntries(
+      Object.values(networks).map(({ id, chainId }) => [id, chainId.toString()])
+    )
+
+    const migrateKeys = <T>(obj: Record<string, T>) => {
+      return Object.fromEntries(
+        Object.entries(obj).map(([networkId, value]) => {
+          const chainId = networkIdToChainId[networkId]
+          return chainId ? [chainId, value] : [networkId, value]
+        })
+      )
+    }
+
+    const migratedPreviousHints = {
+      learnedTokens: migrateKeys(previousHints.learnedTokens),
+      learnedNfts: migrateKeys(previousHints.learnedNfts),
+      fromExternalAPI: Object.fromEntries(
+        Object.entries(previousHints.fromExternalAPI).map(([networkAndAccountKey, value]) => {
+          const [networkId, accountAddr] = networkAndAccountKey.split(':')
+          const chainId = networkIdToChainId[networkId]
+          return chainId ? [`${chainId}:${accountAddr}`, value] : [networkAndAccountKey, value]
+        })
+      )
+    }
+
+    const migratedCustomTokens = customTokens.map(({ networkId, ...rest }) => ({
+      ...rest,
+      chainId: networkIdToChainId[networkId]
+    }))
+
+    const migratedTokenPreferences: { address: string; chainId: string; isHidden?: boolean }[] =
+      tokenPreferences.map(({ networkId, ...rest }) => ({
+        ...rest,
+        chainId: networkIdToChainId[networkId]
+      }))
+
+    const migratedNetworksWithAssetsByAccount = Object.fromEntries(
+      Object.entries(networksWithAssetsByAccount).map(([accountId, assetsState]) => [
+        accountId,
+        migrateKeys(assetsState)
+      ])
+    )
+
+    const migratedNetworksWithPositionsByAccounts = Object.fromEntries(
+      Object.entries(networksWithPositionsByAccounts).map(([accountId, networksWithPositions]) => [
+        accountId,
+        migrateKeys(networksWithPositions)
+      ])
+    )
+
+    await Promise.all([
+      this.#storage.set('previousHints', migratedPreviousHints),
+      this.#storage.set('customTokens', migratedCustomTokens),
+      this.#storage.set('tokenPreferences', migratedTokenPreferences),
+      this.#storage.set('networksWithAssetsByAccount', migratedNetworksWithAssetsByAccount),
+      this.#storage.set('networksWithPositionsByAccounts', migratedNetworksWithPositionsByAccounts)
+    ])
+  }
+
   async get<K extends keyof StorageProps | string | undefined>(
     key: K,
     defaultValue?: any

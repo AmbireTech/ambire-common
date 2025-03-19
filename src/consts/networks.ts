@@ -3,7 +3,6 @@ import { BICONOMY, PIMLICO } from './bundlers'
 
 const networks: Network[] = [
   {
-    id: 'ethereum',
     name: 'Ethereum',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -27,7 +26,6 @@ const networks: Network[] = [
     disableEstimateGas: true
   },
   {
-    id: 'polygon',
     name: 'Polygon',
     nativeAssetSymbol: 'POL',
     has7702: false,
@@ -58,7 +56,6 @@ const networks: Network[] = [
     disableEstimateGas: true
   },
   {
-    id: 'optimism',
     name: 'Optimism',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -94,7 +91,6 @@ const networks: Network[] = [
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
-    id: 'avalanche',
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
     has7702: false,
@@ -125,7 +121,6 @@ const networks: Network[] = [
     wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
   },
   {
-    id: 'arbitrum',
     name: 'Arbitrum',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -157,7 +152,6 @@ const networks: Network[] = [
     wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
   },
   {
-    id: 'base',
     name: 'Base',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -192,7 +186,6 @@ const networks: Network[] = [
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
-    id: 'scroll',
     name: 'Scroll',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -220,7 +213,6 @@ const networks: Network[] = [
     wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
-    id: 'binance-smart-chain',
     name: 'Binance Smart Chain',
     nativeAssetSymbol: 'BNB',
     has7702: false,

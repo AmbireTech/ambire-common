@@ -4,7 +4,6 @@ import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
-import { NetworkId } from '../../interfaces/network'
 import { PaymasterService } from '../erc7677/types'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
@@ -21,7 +20,7 @@ export interface GasFeePayment {
   paidBy: string
   inToken: string
   // optional, because older versions of the extension did not have this stored locally
-  feeTokenNetworkId?: NetworkId
+  feeTokenChainId?: bigint
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
@@ -35,7 +34,7 @@ export interface GasFeePayment {
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
   accountAddr: string
-  networkId: NetworkId
+  chainId: bigint
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: Key['addr'] | null
   signingKeyType: Key['type'] | null

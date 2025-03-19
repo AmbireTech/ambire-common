@@ -5,7 +5,6 @@ import {
   AddNetworkRequestParams,
   ChainId,
   Network,
-  NetworkId,
   NetworkInfo,
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
@@ -43,7 +42,7 @@ export class NetworksController extends EventEmitter {
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
-  #onRemoveNetwork: (id: NetworkId) => void
+  #onRemoveNetwork: (chainId: bigint) => void
 
   /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetwork: (network: Network) => void
@@ -56,7 +55,7 @@ export class NetworksController extends EventEmitter {
     fetch: Fetch,
     relayerUrl: string,
     onAddOrUpdateNetwork: (network: Network) => void,
-    onRemoveNetwork: (id: NetworkId) => void
+    onRemoveNetwork: (chainId: bigint) => void
   ) {
     super()
     this.#storage = storage
@@ -172,7 +171,6 @@ export class NetworksController extends EventEmitter {
           finalNetworks[chainId.toString()] = {
             ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
             ...relayerNetwork,
-            id: storedNetwork?.id || relayerNetwork.id,
             rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
           }
         } else {
@@ -290,10 +288,8 @@ export class NetworksController extends EventEmitter {
     }
 
     const chainIds = this.networks.map((net) => net.chainId)
-    const ids = this.networks.map((n) => n.id)
-    const networkId = network.name.toLowerCase()
     // make sure the id and chainId of the network are unique
-    if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
+    if (chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
         level: 'major',
@@ -307,7 +303,6 @@ export class NetworksController extends EventEmitter {
     // @ts-ignore
     delete info.feeOptions
     this.#networks[network.chainId.toString()] = {
-      id: networkId,
       ...network,
       ...info,
       feeOptions,
@@ -428,7 +423,7 @@ export class NetworksController extends EventEmitter {
 
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
-    this.#onRemoveNetwork(chainId.toString())
+    this.#onRemoveNetwork(chainId)
     await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
   }

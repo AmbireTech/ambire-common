@@ -1,6 +1,5 @@
 import { BUNDLER } from '../consts/bundlers'
 
-export type NetworkId = string
 export type ChainId = bigint
 
 export interface Erc4337settings {
@@ -57,7 +56,6 @@ export interface NetworkFeature {
 // 1) it's easier to work with the string identifier, for example if we have an object segmented by networks it's easier to debug with string IDs
 // 2) multiple distinct networks may (rarely) run the same chainId
 export interface Network {
-  id: NetworkId
   name: string
   nativeAssetSymbol: string
   nativeAssetName: string
