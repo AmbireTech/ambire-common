@@ -267,7 +267,6 @@ export class SelectedAccountController extends EventEmitter {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
     if (newSelectedAccountPortfolio.isReadyToVisualize) {
-      // We don't want to track how long it took to load the portfolio if it's not loading from scratch (e.g. manual reload)
       this.portfolio = newSelectedAccountPortfolio
     }
 
