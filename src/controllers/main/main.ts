@@ -4,7 +4,6 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, ZeroAddress } from 'ethers'
 
-import { EstimationStatus } from 'controllers/estimation/types'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
@@ -29,6 +28,7 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
