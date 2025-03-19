@@ -104,15 +104,14 @@ export class NetworksController extends EventEmitter {
    * Loads and synchronizes network configurations from storage and the relayer.
    *
    * This method performs the following steps:
-   * 1. Retrieves the legacy network preferences and the latest network configurations from storage.
-   * 2. Migrates legacy network preferences to the new network structure if needed.
-   * 3. Converts the network structure from [key: NetworkId] to [key: chainId].
-   * 4. If no networks are found in storage, sets predefined networks and emits an update.
-   * 5. Merges the networks from the Relayer with the stored networks.
-   * 6. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
-   * 7. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
-   * 8. Updates the networks in storage.
-   * 9. Asynchronously updates network features if needed.
+   * 1. Retrieves the latest network configurations from storage.
+   * 2. Converts the network structure from [key: NetworkId] to [key: chainId].
+   * 3. If no networks are found in storage, sets predefined networks and emits an update.
+   * 4. Merges the networks from the Relayer with the stored networks.
+   * 5. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
+   * 6. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
+   * 7. Updates the networks in storage.
+   * 8. Asynchronously updates network features if needed.
    *
    * This method ensures that the application has the most up-to-date network configurations,
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
@@ -137,7 +136,7 @@ export class NetworksController extends EventEmitter {
       Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
     )
 
-    // Step 2: Merge the networks from the Relayer
+    // Step 4: Merge the networks from the Relayer
     finalNetworks = await this.#mergeRelayerNetworks(finalNetworks, networksInStorage)
 
     this.#networks = finalNetworks
@@ -145,31 +144,47 @@ export class NetworksController extends EventEmitter {
 
     await this.#storage.set('networks', this.#networks)
 
-    // Update networks features asynchronously
+    // Step 8: Update networks features asynchronously
     this.#updateNetworkFeatures(finalNetworks)
   }
 
   /**
    * Processes network updates, finalizes changes, and updates network features asynchronously.
+   * Used for periodically network synchronization.
    */
   async synchronizeNetworks() {
     const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
     const finalNetworks = { ...this.#networks }
 
-    // Step 3 & 4: Process updates (merge Relayer data and apply rules)
+    // Process updates (merge Relayer data and apply rules)
     const updatedNetworks = await this.#mergeRelayerNetworks(finalNetworks, networksInStorage)
 
-    // Step 5: Finalize updates
+    // Finalize updates
     this.#networks = updatedNetworks
     this.emitUpdate()
     await this.#storage.set('networks', this.#networks)
 
-    // Step 6: Asynchronously update network features
+    // Asynchronously update network features
     this.#updateNetworkFeatures(updatedNetworks)
   }
 
   /**
-   * Merges stored networks with networks fetched from the Relayer.
+   * Merges locally stored networks with those fetched from the Relayer.
+   *
+   * This function ensures that networks retrieved from the Relayer are properly merged
+   * with existing stored networks, keeping track of configuration versions and handling
+   * predefined networks appropriately. It also ensures that the latest RPC URLs are
+   * maintained and applies special-case handling where needed.
+   *
+   * ### Functionality:
+   * 1. Fetches the latest network configurations from the Relayer.
+   * 2. Maps and merges the fetched networks with those stored locally.
+   * 3. If a network does not exist in storage, it is added from the Relayer.
+   * 4. If a network is predefined but has an outdated configuration, it is updated.
+   * 5. Ensures RPC URLs are combined uniquely across sources.
+   * 6. Removes predefined flags if a predefined network is removed by the Relayer.
+   * 7. Applies special handling for networks like Odyssey.
+   *
    */
   async #mergeRelayerNetworks(
     finalNetworks: { [key: string]: Network },
@@ -273,6 +288,9 @@ export class NetworksController extends EventEmitter {
             return
           }
 
+          // If RPC is flagged there might be an issue with the RPC
+          // this information will fail to return
+          // and we dont want to update lastUpdatedNetworkInfo
           if (info.flagged) return
           const chainId = network.chainId.toString()
           this.#networks[chainId] = {
