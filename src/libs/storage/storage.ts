@@ -85,7 +85,7 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
       id: networkId,
       ...preference,
       ...networkInfo,
-      features: getFeaturesByNetworkProperties(networkInfo),
+      features: getFeaturesByNetworkProperties(networkInfo, undefined),
       hasRelayer: !!relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId!),
       predefined: false
     } as Network
