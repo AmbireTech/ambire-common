@@ -208,10 +208,6 @@ export class SignAccountOpController extends EventEmitter {
   // as its own property
   gasUsed: bigint = 0n
 
-  // we move this as an updateable property instead as we'd like to recalculate it
-  // only on estimation updates
-  availableFeeOptions: FeePaymentOption[] = []
-
   provider: RPCProvider
 
   estimation: EstimationController
@@ -375,6 +371,14 @@ export class SignAccountOpController extends EventEmitter {
       return errors
     }
 
+    /**
+     * A big block for logic separation
+     * The above errors (estimation & ambireV1) are okay to be shown
+     * even if isInitialized hasn't completed. Otherwise, do not load
+     * any errors
+     */
+    if (!this.isInitialized) return []
+
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
     if (!areGasPricesLoading && !this.gasPrices?.length) {
@@ -392,7 +396,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
-    if (!this.isSponsored && !this.availableFeeOptions.length)
+    if (!this.isSponsored && !this.estimation.availableFeeOptions.length)
       errors.push(ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
@@ -450,20 +454,22 @@ export class SignAccountOpController extends EventEmitter {
 
       if (speedCoverage.length === 0) {
         const isSA = isSmartAccount(this.account)
-        const isUnableToCoverWithAllOtherTokens = this.availableFeeOptions.every((option) => {
-          if (option === this.selectedOption) return true
-          const optionIdentifier = getFeeSpeedIdentifier(
-            option,
-            this.accountOp.accountAddr,
-            this.rbfAccountOps[option.paidBy]
-          )
+        const isUnableToCoverWithAllOtherTokens = this.estimation.availableFeeOptions.every(
+          (option) => {
+            if (option === this.selectedOption) return true
+            const optionIdentifier = getFeeSpeedIdentifier(
+              option,
+              this.accountOp.accountAddr,
+              this.rbfAccountOps[option.paidBy]
+            )
 
-          const speedsThatCanCover = this.feeSpeeds[optionIdentifier]?.filter(
-            (speed) => speed.amount <= option.availableAmount
-          )
+            const speedsThatCanCover = this.feeSpeeds[optionIdentifier]?.filter(
+              (speed) => speed.amount <= option.availableAmount
+            )
 
-          return !speedsThatCanCover?.length
-        })
+            return !speedsThatCanCover?.length
+          }
+        )
         if (isUnableToCoverWithAllOtherTokens) {
           let skippedTokensCount = 0
           const gasTokenNames = gasTankFeeTokens
@@ -661,7 +667,6 @@ export class SignAccountOpController extends EventEmitter {
         if (estimation.bundlerEstimation) {
           this.bundlerGasPrices = estimation.bundlerEstimation.gasPrice
         }
-        this.availableFeeOptions = this.getAvailableFeeOptions()
       }
 
       if (Array.isArray(calls)) {
@@ -701,7 +706,7 @@ export class SignAccountOpController extends EventEmitter {
         this.paidBy &&
         this.feeTokenResult
       ) {
-        this.selectedOption = this.availableFeeOptions.find(
+        this.selectedOption = this.estimation.availableFeeOptions.find(
           (option) =>
             option.paidBy === this.paidBy &&
             option.token.address === this.feeTokenResult!.address &&
@@ -734,8 +739,8 @@ export class SignAccountOpController extends EventEmitter {
           this.estimation.estimation.bundlerEstimation.paymaster.getEstimationData()?.sponsor
 
         if (isSponsorshipFallback) {
-          this.selectedOption = this.availableFeeOptions.length
-            ? this.availableFeeOptions[0]
+          this.selectedOption = this.estimation.availableFeeOptions.length
+            ? this.estimation.availableFeeOptions[0]
             : undefined
         }
       }
@@ -934,7 +939,7 @@ export class SignAccountOpController extends EventEmitter {
     // reset the fee speeds at the beginning to avoid duplications
     this.feeSpeeds = {}
 
-    this.availableFeeOptions.forEach((option) => {
+    this.estimation.availableFeeOptions.forEach((option) => {
       // if a calculation has been made, do not make it again
       // EOA pays for SA is the most common case for this scenario
       //
@@ -1107,7 +1112,7 @@ export class SignAccountOpController extends EventEmitter {
     // this is normal though as there are such cases:
     // - EOA paying in native but doesn't have any native
     // so no error should pop out because of this
-    if (!this.availableFeeOptions.length) {
+    if (!this.estimation.availableFeeOptions.length) {
       return null
     }
 
@@ -1172,33 +1177,6 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
-  getAvailableFeeOptions(): FeePaymentOption[] {
-    if (this.estimation.status !== EstimationStatus.Success) return []
-
-    const estimation = this.estimation.estimation as FullEstimationSummary
-
-    if (this.isSponsored) {
-      // if there's no ambireEstimation, it means there's an error
-      if (!estimation.ambireEstimation) return []
-
-      // if the txn is sponsored, return the native option only
-      const native = estimation.ambireEstimation.feePaymentOptions.find(
-        (feeOption) => feeOption.token.address === ZeroAddress
-      )
-      return native ? [native] : []
-    }
-
-    return this.baseAccount.getAvailableFeeOptions(
-      estimation,
-      // eslint-disable-next-line no-nested-ternary
-      estimation.ambireEstimation
-        ? estimation.ambireEstimation.feePaymentOptions
-        : estimation.providerEstimation
-        ? estimation.providerEstimation.feePaymentOptions
-        : []
-    )
-  }
-
   get accountKeyStoreKeys(): Key[] {
     return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
   }
@@ -1238,11 +1216,11 @@ export class SignAccountOpController extends EventEmitter {
       this.selectedOption.gasUsed > 0n ? this.selectedOption.gasUsed : GAS_TANK_TRANSFER_GAS_USED
     const isNativeSelected = this.selectedOption.token.address === ZeroAddress
     const gasUsedNative =
-      this.availableFeeOptions.find(
+      this.estimation.availableFeeOptions.find(
         (option) => option.token.address === ZeroAddress && !option.token.flags.onGasTank
       )?.gasUsed || SA_NATIVE_TRANSFER_GAS_USED
     const gasUsedERC20 =
-      this.availableFeeOptions.find(
+      this.estimation.availableFeeOptions.find(
         (option) => option.token.address !== ZeroAddress && !option.token.flags.onGasTank
       )?.gasUsed || SA_ERC20_TRANSFER_GAS_USED
 
@@ -1559,7 +1537,6 @@ export class SignAccountOpController extends EventEmitter {
       ...this,
       isInitialized: this.isInitialized,
       readyToSign: this.readyToSign,
-      availableFeeOptions: this.availableFeeOptions,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,

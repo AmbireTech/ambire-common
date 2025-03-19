@@ -1,9 +1,11 @@
 /* eslint-disable class-methods-use-this */
+import { ZeroAddress } from 'ethers'
 import { Warning } from '../../interfaces/signAccountOp'
+import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
-import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
@@ -48,6 +50,8 @@ export class EstimationController extends EventEmitter {
 
   estimationRetryError: ErrorRef | null = null
 
+  availableFeeOptions: FeePaymentOption[] = []
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
@@ -66,6 +70,34 @@ export class EstimationController extends EventEmitter {
     if (getOutsideControllerStatus) this.#getOutsideControllerStatus = getOutsideControllerStatus
     if (outsideControllerNoUpdateStatuses)
       this.#outsideControllerNoUpdateStatuses = outsideControllerNoUpdateStatuses
+  }
+
+  #getAvailableFeeOptions(baseAcc: BaseAccount): FeePaymentOption[] {
+    if (this.status !== EstimationStatus.Success) return []
+
+    const estimation = this.estimation as FullEstimationSummary
+    const isSponsored = !!estimation.bundlerEstimation?.paymaster.isSponsored()
+
+    if (isSponsored) {
+      // if there's no ambireEstimation, it means there's an error
+      if (!estimation.ambireEstimation) return []
+
+      // if the txn is sponsored, return the native option only
+      const native = estimation.ambireEstimation.feePaymentOptions.find(
+        (feeOption) => feeOption.token.address === ZeroAddress
+      )
+      return native ? [native] : []
+    }
+
+    return baseAcc.getAvailableFeeOptions(
+      estimation,
+      // eslint-disable-next-line no-nested-ternary
+      estimation.ambireEstimation
+        ? estimation.ambireEstimation.feePaymentOptions
+        : estimation.providerEstimation
+        ? estimation.providerEstimation.feePaymentOptions
+        : []
+    )
   }
 
   async estimate(op: AccountOp) {
@@ -149,13 +181,12 @@ export class EstimationController extends EventEmitter {
       this.error = null
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
+      this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc)
     } else {
       this.estimation = null
       this.error = estimation
       this.status = EstimationStatus.Error
     }
-
-    this.hasEstimated = true
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that the account state is not the latest and needs to be updated
@@ -166,6 +197,7 @@ export class EstimationController extends EventEmitter {
       // silenly continuing on error here as the flags are more like app helpers
       this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.networkId]).catch((e) => e)
 
+    this.hasEstimated = true
     this.emitUpdate()
   }
 
@@ -182,7 +214,6 @@ export class EstimationController extends EventEmitter {
   calculateWarnings() {
     const warnings: Warning[] = []
 
-    // TODO: doesn't seem correct
     if (this.estimationRetryError && this.status === EstimationStatus.Success) {
       warnings.push({
         id: 'estimation-retry',
@@ -209,9 +240,11 @@ export class EstimationController extends EventEmitter {
             : 'Automatically retrying in a few seconds. Please wait...'
         }`
       )
+
+      return errors
     }
 
-    if (!this.isInitialized()) return errors
+    if (!this.isInitialized()) return []
 
     if (this.error) {
       errors.push(this.error.message)
