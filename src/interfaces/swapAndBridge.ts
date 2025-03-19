@@ -81,8 +81,9 @@ export interface SwapAndBridgeRoute {
   usedDexName?: string
   totalUserTx: number
   totalGasFeesInUsd: number
-  // TODO: Common type
+  // TODO: Deprecate userTxs
   userTxs: SwapAndBridgeUserTx[]
+  steps: SwapAndBridgeStep[]
   receivedValueInUsd: number
   inputValueInUsd: number
   outputValueInUsd: number

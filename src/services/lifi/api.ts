@@ -133,6 +133,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   totalUserTx: 1,
   totalGasFeesInUsd: +(route.gasCostUSD || 0),
   userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
+  steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
   receivedValueInUsd: +route.toAmountUSD,
   inputValueInUsd: +route.fromAmountUSD,
   outputValueInUsd: +route.toAmountUSD,
