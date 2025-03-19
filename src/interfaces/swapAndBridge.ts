@@ -1,3 +1,5 @@
+import { Route as LiFiRoute } from '@lifi/types'
+
 export interface SocketAPIResponse<T> {
   result: T
   success?: boolean
@@ -90,6 +92,7 @@ export interface SwapAndBridgeRoute {
   serviceTime: number
   maxServiceTime: number
   errorMessage?: string
+  rawRoute: SocketAPIRoute | LiFiRoute
 }
 
 export interface SocketAPISwapUserTx {

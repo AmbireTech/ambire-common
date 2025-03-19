@@ -138,8 +138,9 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   inputValueInUsd: +route.fromAmountUSD,
   outputValueInUsd: +route.toAmountUSD,
   serviceTime: +route.toAmountMin,
-  maxServiceTime: +route.toAmountMin
+  maxServiceTime: +route.toAmountMin,
   // errorMessage: undefined
+  rawRoute: route
 })
 
 export class LiFiAPI {
@@ -399,9 +400,9 @@ export class LiFiAPI {
     fromAssetAddress: string
     toAssetAddress: string
     // TODO: Refine types
-    route: SocketAPIQuote['selectedRoute']
+    route: SwapAndBridgeRoute
   }) {
-    const body = JSON.stringify(route.steps[0])
+    const body = JSON.stringify(route.rawRoute.steps[0])
 
     const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
       fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {
