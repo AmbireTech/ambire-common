@@ -82,7 +82,6 @@ import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -217,18 +216,16 @@ export class SignAccountOpController extends EventEmitter {
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
-    providers: ProvidersController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accountState: AccountOnchainState,
     network: Network,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
-    traceCall: Function
+    traceCall?: Function
   ) {
     super()
 
@@ -236,13 +233,13 @@ export class SignAccountOpController extends EventEmitter {
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
+    this.accountState = accounts.accountStates[account.addr][network.id]
     this.baseAccount = getBaseAccount(
       account,
-      accountState,
+      this.accountState,
       keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
       network
     )
-    this.accountState = accountState
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
@@ -263,14 +260,15 @@ export class SignAccountOpController extends EventEmitter {
       keystore,
       accounts,
       networks,
-      providers,
+      provider,
       portfolio,
       () => {
         return this.status ? this.status.type : null
       },
       noStateUpdateStatuses
     )
-    this.#traceCall = traceCall
+    const emptyFunc = () => {}
+    this.#traceCall = traceCall ?? emptyFunc
 
     this.#load()
   }

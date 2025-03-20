@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import {
   ActiveRoute,
@@ -30,6 +31,7 @@ import {
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getQuoteRouteSteps,
+  getSwapAndBridgeCalls,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -41,13 +43,19 @@ import { validateSendTransferAmount } from '../../services/validations/validate'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
+import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-await-in-loop */
+import { randomId } from '../../libs/humanizer/utils'
+import { KeystoreController } from '../keystore/keystore'
+import { ProvidersController } from '../providers/providers'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -185,7 +193,24 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
+  #accounts: AccountsController
+
+  #keystore: KeystoreController
+
+  #portfolio: PortfolioController
+
+  #externalSignerControllers: ExternalSignerControllers
+
+  #providers: ProvidersController
+
+  signAccountOpController: SignAccountOpController | null = null
+
   constructor({
+    accounts,
+    keystore,
+    portfolio,
+    externalSignerControllers,
+    providers,
     selectedAccount,
     networks,
     activity,
@@ -194,6 +219,11 @@ export class SwapAndBridgeController extends EventEmitter {
     actions,
     invite
   }: {
+    accounts: AccountsController
+    keystore: KeystoreController
+    portfolio: PortfolioController
+    externalSignerControllers: ExternalSignerControllers
+    providers: ProvidersController
     selectedAccount: SelectedAccountController
     networks: NetworksController
     activity: ActivityController
@@ -203,6 +233,11 @@ export class SwapAndBridgeController extends EventEmitter {
     invite: InviteController
   }) {
     super()
+    this.#accounts = accounts
+    this.#keystore = keystore
+    this.#portfolio = portfolio
+    this.#externalSignerControllers = externalSignerControllers
+    this.#providers = providers
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -1437,6 +1472,74 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#shouldDebounceFlags[funcName] = false
       func()
     }, 0)
+  }
+
+  async initSignAccountOp() {
+    // shouldn't happen ever
+    if (!this.#selectedAccount.account) return
+
+    // again it shouldn't happen but there might be a case where the from token
+    // disappears because of a strange update event. It's fine to just not
+    // continue from the point forward
+    if (!this.fromSelectedToken) return
+
+    const fromToken = this.fromSelectedToken as TokenResult
+    const network = this.#networks.networks.find((net) => net.id === fromToken.networkId)
+
+    // shouldn't happen ever
+    if (!network) return
+
+    const provider = this.#providers.providers[network.id]
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      network.id
+    )
+    const userTxn = await this.getRouteStartUserTx()
+
+    // TODO:
+    // if the provider returns an error, we cannot proceed
+    // maybe we should auto select a different route or something
+    if (!userTxn) return
+
+    const calls = await getSwapAndBridgeCalls(
+      userTxn,
+      this.#selectedAccount.account,
+      provider,
+      accountState
+    )
+    const accountOp = {
+      accountAddr: this.#selectedAccount.account.addr,
+      networkId: network.id,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      nonce: accountState.nonce,
+      signature: null,
+      accountOpToExecuteBefore: null,
+      calls
+    }
+
+    // to do: if already initialized, do not re-init
+    // exception would be if the quote has changed but maybe we should
+    // destroy the sign account op instead of updating it as its made
+    // to work with a single account op
+    console.log('yes, init done')
+    this.signAccountOpController = new SignAccountOpController(
+      this.#accounts,
+      this.#networks,
+      this.#keystore,
+      this.#portfolio,
+      this.#externalSignerControllers,
+      this.#selectedAccount.account,
+      network,
+      provider,
+      randomId(), // the account op and the action are fabricated
+      accountOp,
+      () => {
+        return this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit
+      }
+    )
   }
 
   toJSON() {

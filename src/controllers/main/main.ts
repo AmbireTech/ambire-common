@@ -380,6 +380,11 @@ export class MainController extends EventEmitter {
       }
     )
     this.swapAndBridge = new SwapAndBridgeController({
+      accounts: this.accounts,
+      keystore: this.keystore,
+      portfolio: this.portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      providers: this.providers,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,
@@ -637,12 +642,10 @@ export class MainController extends EventEmitter {
     this.signAccountOp = new SignAccountOpController(
       this.accounts,
       this.networks,
-      this.providers,
       this.keystore,
       this.portfolio,
       this.#externalSignerControllers,
       this.selectedAccount.account,
-      this.accounts.accountStates[this.selectedAccount.account.addr][network.id],
       network,
       this.providers.providers[network.id],
       actionId,

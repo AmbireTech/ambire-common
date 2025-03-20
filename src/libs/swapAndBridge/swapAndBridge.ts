@@ -194,13 +194,12 @@ const buildRevokeApprovalIfNeeded = async (
   }
 }
 
-const buildSwapAndBridgeUserRequests = async (
+const getSwapAndBridgeCalls = async (
   userTx: SocketAPISendTransactionRequest,
-  networkId: string,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
-) => {
+): Promise<Call[]> => {
   const calls: Call[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
@@ -226,12 +225,22 @@ const buildSwapAndBridgeUserRequests = async (
     fromUserRequestId: userTx.activeRouteId
   } as Call)
 
+  return calls
+}
+
+const buildSwapAndBridgeUserRequests = async (
+  userTx: SocketAPISendTransactionRequest,
+  networkId: string,
+  account: Account,
+  provider: RPCProvider,
+  state: AccountOnchainState
+) => {
   return [
     {
       id: userTx.activeRouteId,
       action: {
         kind: 'calls' as const,
-        calls
+        calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
       },
       meta: {
         isSignAction: true,
@@ -273,5 +282,6 @@ export {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  getQuoteRouteSteps
+  getQuoteRouteSteps,
+  getSwapAndBridgeCalls
 }
