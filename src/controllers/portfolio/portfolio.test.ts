@@ -26,20 +26,22 @@ const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
-  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.id].isWorking = true
+  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.chainId.toString()].isWorking = true
 })
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex][accIndex]]
         })
       )
     ]
@@ -191,7 +193,7 @@ describe('Portfolio Controller ', () => {
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
           gasFeePayment: null,
-          networkId: 'ethereum',
+          chainId: 1n,
           nonce,
           signature: '0x',
           calls
@@ -222,7 +224,7 @@ describe('Portfolio Controller ', () => {
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
     const { controller } = prepareTest()
-    const ethereum = networks.find((network) => network.id === 'ethereum')
+    const ethereum = networks.find((network) => network.chainId === 1n)
 
     // Here's how we test if account updates are queued correctly.
     // First, we know that `updateSelectedAccount()` calls the `updatePortfolioState()` method twice for each account and network.
@@ -558,12 +560,12 @@ describe('Portfolio Controller ', () => {
         emptyAccount.addr,
         // we pass a network here, just because the portfolio is trying to perform a call to an undefined network,
         // and it throws a silent error
-        networks.find((network) => network.id === 'ethereum'),
+        networks.find((network) => network.chainId === 1n),
         undefined,
         { forceUpdate: true }
       )
 
-      PINNED_TOKENS.filter((token) => token.networkId === 'ethereum').forEach((pinnedToken) => {
+      PINNED_TOKENS.filter((token) => token.chainId === 1n).forEach((pinnedToken) => {
         const token = controller
           .getLatestPortfolioState(emptyAccount.addr)
           .ethereum?.result?.tokens.find((t) => t.address === pinnedToken.address)
@@ -594,7 +596,7 @@ describe('Portfolio Controller ', () => {
   describe('Gas Tank with USDC token', () => {
     const usdcTokenAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     const foundUsdcToken = PINNED_TOKENS.find(
-      (token) => token.address === usdcTokenAddress && token.networkId === 'ethereum'
+      (token) => token.address === usdcTokenAddress && token.chainId === 1n
     )
 
     test('USDC gas tank token is set in a smart account with no tokens', async () => {
@@ -644,7 +646,7 @@ describe('Portfolio Controller ', () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
 
-      await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
+      await controller.learnTokens([BANANA_TOKEN_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
@@ -662,7 +664,7 @@ describe('Portfolio Controller ', () => {
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
       const { storageCtrl, controller } = prepareTest()
 
-      await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 'ethereum')
+      await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
@@ -677,7 +679,7 @@ describe('Portfolio Controller ', () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = prepareTest()
 
-      await controller.learnTokens([ERC_20_MATIC_ADDR], 'polygon')
+      await controller.learnTokens([ERC_20_MATIC_ADDR], 137n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
@@ -696,7 +698,7 @@ describe('Portfolio Controller ', () => {
 
       const customToken = {
         address: ERC_20_MATIC_ADDR,
-        networkId: 'polygon',
+        chainId: 137n,
         standard: 'ERC20'
       } as const
 
@@ -725,7 +727,7 @@ describe('Portfolio Controller ', () => {
         )
 
       // Learn a token discovered by velcro
-      await controller.learnTokens([firstTokenOnEth!.address], 'ethereum')
+      await controller.learnTokens([firstTokenOnEth!.address], 1n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
@@ -740,7 +742,7 @@ describe('Portfolio Controller ', () => {
     })
     test('To be learned token is returned from portfolio and not passed to learnedTokens (as it is without balance)', async () => {
       const { storageCtrl, controller } = prepareTest()
-      const ethereum = networks.find((network) => network.id === 'ethereum')!
+      const ethereum = networks.find((network) => network.chainId === 1n)!
       const clonedEthereum = structuredClone(ethereum)
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
@@ -753,10 +755,7 @@ describe('Portfolio Controller ', () => {
       // but will be stored in fromExternalAPI.
       clonedEthereum.hasRelayer = false
 
-      await controller.addTokensToBeLearned(
-        ['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'],
-        'ethereum'
-      )
+      await controller.addTokensToBeLearned(['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'], 1n)
 
       await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
         forceUpdate: true
@@ -780,7 +779,7 @@ describe('Portfolio Controller ', () => {
 
     test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
       const { storageCtrl, controller } = prepareTest()
-      const polygon = networks.find((network) => network.id === 'polygon')!
+      const polygon = networks.find((network) => network.chainId === 137n)!
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
       // 2. retrieve the token from portfolio and check if it is found.
@@ -793,10 +792,7 @@ describe('Portfolio Controller ', () => {
       const clonedEthereum = structuredClone(polygon)
       clonedEthereum.hasRelayer = false
 
-      await controller.addTokensToBeLearned(
-        ['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'],
-        'polygon'
-      )
+      await controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
 
       await controller.updateSelectedAccount(account2.addr, clonedEthereum, undefined, {
         forceUpdate: true
@@ -825,7 +821,9 @@ describe('Portfolio Controller ', () => {
       networks.forEach((network) => {
         const nativeToken = controller
           .getLatestPortfolioState(account.addr)
-          [network.id]?.result?.tokens.find((token) => token.address === ZeroAddress)
+          [network.chainId.toString()]?.result?.tokens.find(
+            (token) => token.address === ZeroAddress
+          )
 
         expect(nativeToken).toBeTruthy()
       })
@@ -836,11 +834,11 @@ describe('Portfolio Controller ', () => {
     const { controller } = prepareTest()
     const token = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum'
+      chainId: 1n
     }
     const tokenERC1155 = {
       address: '0xEBba467eCB6b21239178033189CeAE27CA12EaDf',
-      networkId: 'arbitrum'
+      chainId: 42161n
     }
 
     await controller.updateTokenValidationByStandard(token, account.addr)
@@ -848,9 +846,9 @@ describe('Portfolio Controller ', () => {
 
     controller.onUpdate(() => {
       const tokenIsValid =
-        controller.validTokens.erc20[`${token.address}-${token.networkId}`] === true
+        controller.validTokens.erc20[`${token.address}-${token.chainId}`] === true
       const tokenIsNotValid =
-        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.networkId}`] === false
+        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.chainId}`] === false
       expect(tokenIsNotValid).toBeFalsy()
       expect(tokenIsValid).toBeTruthy()
     })
@@ -861,22 +859,21 @@ describe('Portfolio Controller ', () => {
 
     const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum',
+      chainId: 1n,
       standard: 'ERC20'
     } as const
 
     await controller.addCustomToken(customToken, account.addr, true)
 
     const tokenIsSet = controller.customTokens.find(
-      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+      (token) => token.address === customToken.address && token.chainId === customToken.chainId
     )
 
     const getCustomTokenFromPortfolio = () => {
       return controller
         .getLatestPortfolioState(account.addr)
         .ethereum?.result?.tokens.find(
-          (token) =>
-            token.address === customToken.address && token.networkId === customToken.networkId
+          (token) => token.address === customToken.address && token.chainId === customToken.chainId
         )
     }
 
@@ -886,7 +883,7 @@ describe('Portfolio Controller ', () => {
     await controller.removeCustomToken(customToken, account.addr, true)
 
     const tokenIsRemoved = controller.customTokens.find(
-      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+      (token) => token.address === customToken.address && token.chainId === customToken.chainId
     )
     expect(tokenIsRemoved).toBeFalsy()
     expect(getCustomTokenFromPortfolio()).toBeFalsy()
@@ -896,14 +893,14 @@ describe('Portfolio Controller ', () => {
     const { controller } = prepareTest()
     const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum',
+      chainId: 1n,
       standard: 'ERC20'
     } as const
 
     await controller.addCustomToken(customToken, account.addr)
 
     const tokenIsSet = controller.customTokens.find(
-      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+      (token) => token.address === customToken.address && token.chainId === customToken.chainId
     )
 
     expect(tokenIsSet).toEqual(customToken)
@@ -919,7 +916,7 @@ describe('Portfolio Controller ', () => {
     const matchingTokens = controller.customTokens.filter(
       (token) =>
         token.address.toLowerCase() === customToken.address.toLowerCase() &&
-        token.networkId === customToken.networkId
+        token.chainId === customToken.chainId
     )
 
     expect(matchingTokens.length).toBe(1)
@@ -930,7 +927,7 @@ describe('Portfolio Controller ', () => {
 
     const preference = {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-      networkId: 'ethereum'
+      chainId: 1n
     }
 
     await controller.toggleHideToken(preference, account.addr, true)
@@ -940,7 +937,7 @@ describe('Portfolio Controller ', () => {
       .ethereum?.result?.tokens.find(
         (token) =>
           token.address === preference.address &&
-          token.networkId === preference.networkId &&
+          token.chainId === preference.chainId &&
           token.flags.isHidden
       )
     expect(hiddenToken).toBeTruthy()
@@ -950,14 +947,13 @@ describe('Portfolio Controller ', () => {
 
     const preference = {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-      networkId: 'ethereum'
+      chainId: 1n
     }
 
     await controller.toggleHideToken(preference, account.addr)
 
     const tokenInPreferences = controller.tokenPreferences.find(
-      ({ address, networkId }) =>
-        address === preference.address && networkId === preference.networkId
+      ({ address, chainId }) => address === preference.address && chainId === preference.chainId
     )
 
     expect(tokenInPreferences).toBeTruthy()
@@ -966,8 +962,7 @@ describe('Portfolio Controller ', () => {
     await controller.toggleHideToken(preference, account.addr)
 
     const tokenInPreferencesAfterDelete = controller.tokenPreferences.find(
-      ({ address, networkId }) =>
-        address === preference.address && networkId === preference.networkId
+      ({ address, chainId }) => address === preference.address && chainId === preference.chainId
     )
 
     expect(tokenInPreferencesAfterDelete).toBeFalsy()

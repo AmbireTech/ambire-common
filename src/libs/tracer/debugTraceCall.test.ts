@@ -44,7 +44,7 @@ describe('Debug tracecall detection for transactions', () => {
     }
     accountOp = {
       accountAddr: ACCOUNT_ADDRESS,
-      networkId: 'optimism',
+      chainId: 10n,
       signingKeyAddr: '"0x02be1F941b6B777D4c30f110E997704fFc26B379"',
       signingKeyType: 'internal',
       gasLimit: null,

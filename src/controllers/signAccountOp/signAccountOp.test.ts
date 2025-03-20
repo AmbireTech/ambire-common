@@ -18,7 +18,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
@@ -41,13 +40,13 @@ import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const errorCallback = () => {}
 
 const createAccountOp = (
   account: Account,
-  networkId: NetworkId = 'ethereum'
+  chainId: bigint = 1n
 ): {
   op: AccountOp
   nativeToCheck: Account[]
@@ -82,7 +81,7 @@ const createAccountOp = (
       amount: 1n,
       symbol: 'ETH',
       name: 'Ether',
-      networkId: 'ethereum',
+      chainId: 1n,
       decimals: 18,
       priceIn: [],
       flags: {
@@ -100,7 +99,7 @@ const createAccountOp = (
     signingKeyType: null,
     gasLimit: null,
     gasFeePayment: null,
-    networkId,
+    chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
     accountOpToExecuteBefore: null,
@@ -133,7 +132,7 @@ const createEOAAccountOp = (account: Account) => {
       amount: 1n,
       symbol: 'ETH',
       name: 'Ether',
-      networkId: 'ethereum',
+      chainId: 1n,
       decimals: 18,
       priceIn: [],
       flags: {
@@ -151,7 +150,7 @@ const createEOAAccountOp = (account: Account) => {
     signingKeyType: null,
     gasLimit: null,
     gasFeePayment: null,
-    networkId: 'ethereum',
+    chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
     accountOpToExecuteBefore: null,
@@ -266,7 +265,7 @@ const nativeFeeToken: TokenResult = {
   symbol: 'ETH',
   name: 'Ether',
   amount: 1000n,
-  networkId: 'ethereum',
+  chainId: 1n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -281,7 +280,7 @@ const nativeFeeToken: TokenResult = {
 //   address: '0x0000000000000000000000000000000000000000',
 //   symbol: 'AVAX',
 //   amount: 1000n,
-//   networkId: 'avalanche',
+//   chainId: 43114n,
 //   decimals: Number(18),
 //   priceIn: [{ baseCurrency: 'usd', price: 100 }],
 //   flags: {
@@ -297,7 +296,7 @@ const nativeFeeTokenPolygon: TokenResult = {
   symbol: 'POL',
   name: 'Polygon Ecosystem Token',
   amount: 1000n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -313,7 +312,7 @@ const gasTankToken: TokenResult = {
   symbol: 'POL',
   name: 'Polygon Ecosystem Token',
   amount: 323871237812612123123n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -326,7 +325,7 @@ const gasTankToken: TokenResult = {
 
 const usdcFeeToken: TokenResult = {
   amount: 54409383n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(6),
   priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
   symbol: 'USDC',
@@ -418,7 +417,7 @@ const init = async (
     velcroUrl
   )
   const { op, nativeToCheck, feeTokens } = accountOp
-  const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
+  const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
@@ -426,7 +425,7 @@ const init = async (
     return null
   }
   const noStateUpdateStatuses: any[] = []
-  const accountState = accountsCtrl.accountStates[account.addr][network.id]
+  const accountState = accountsCtrl.accountStates[account.addr][network.chainId.toString()]
   const baseAcc = getBaseAccount(account, accountState, keystore.getAccountKeys(account), network)
   const prices =
     gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
@@ -444,11 +443,11 @@ const init = async (
       errorCallback
     ))
 
-  if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
-    portfolio!.getLatestPortfolioState(account.addr)[op.networkId]!.result!.tokens = [
+  if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
+    portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
         amount: 1n,
-        networkId: op.networkId,
+        chainId: op.chainId,
         decimals: Number(18),
         symbol: 'ETH',
         name: 'Ether',
@@ -463,7 +462,7 @@ const init = async (
       },
       {
         amount: 54409383n,
-        networkId: op.networkId,
+        chainId: op.chainId,
         decimals: Number(6),
         symbol: 'USDC',
         name: 'USD Coin',
@@ -527,7 +526,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -625,7 +624,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -709,7 +708,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -782,7 +781,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
-    const networkId = 'polygon'
+    const chainId = 137n
     const feePaymentOptions = [
       {
         paidBy: smartAccount.addr,
@@ -794,7 +793,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -815,7 +814,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdt',
           name: 'USD Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [
             {
@@ -841,7 +840,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdc',
           name: 'USD Coin',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [
             {
@@ -858,10 +857,10 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const network = networks.find((net) => net.id === networkId)!
+    const network = networks.find((n) => n.chainId === chainId)!
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.id),
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
         provider: {
@@ -970,14 +969,14 @@ describe('SignAccountOp Controller ', () => {
     suppressConsoleBeforeEach()
 
     test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
-      const networkId = 'polygon'
-      const network = networks.find((net) => net.id === networkId)!
+      const chainId = 137n
+      const network = networks.find((n) => n.chainId === chainId)!
       const feeTokenResult = {
         address: usdcFeeToken.address,
         amount: 1n,
         symbol: 'usdc',
         name: 'USD Coin',
-        networkId: 'polygon',
+        chainId: 137n,
         decimals: 6,
         // we make the priceIn empty for this test
         priceIn: [],
@@ -999,7 +998,7 @@ describe('SignAccountOp Controller ', () => {
       ]
       const { controller, estimation, prices } = await init(
         smartAccount,
-        createAccountOp(smartAccount, network.id),
+        createAccountOp(smartAccount, network.chainId),
         eoaSigner,
         {
           provider: {
@@ -1074,8 +1073,8 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
-    const networkId = 'polygon'
-    const network = networks.find((net) => net.id === networkId)!
+    const chainId = 127n
+    const network = networks.find((n) => n.chainId === chainId)!
     network.erc4337.enabled = false
     const feePaymentOptions = [
       {
@@ -1088,7 +1087,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1109,7 +1108,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdt',
           name: 'USD Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [],
           flags: {
@@ -1130,7 +1129,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdc',
           name: 'USD Coin',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [],
           flags: {
@@ -1144,7 +1143,7 @@ describe('SignAccountOp Controller ', () => {
     ]
     const { controller, estimation, prices } = await init(
       e2esmartAccount,
-      createAccountOp(e2esmartAccount, network.id),
+      createAccountOp(e2esmartAccount, network.chainId),
       eoaSigner,
       {
         provider: {
@@ -1243,7 +1242,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions but 1 feeSpeed as both feePaymentOptions are EOA', async () => {
-    const network = networks.find((net) => net.id === 'polygon')!
+    const network = networks.find((n) => n.chainId === 137n)!
     const feePaymentOptions = [
       {
         paidBy: eoaAccount.addr,
@@ -1255,7 +1254,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1276,7 +1275,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1297,7 +1296,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1311,7 +1310,7 @@ describe('SignAccountOp Controller ', () => {
     ]
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.id),
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
         provider: {
@@ -1427,7 +1426,7 @@ describe('SignAccountOp Controller ', () => {
     suppressConsoleBeforeEach()
 
     test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
-      const network = networks.find((net) => net.id === 'polygon')!
+      const network = networks.find((n) => n.chainId === 137n)!
       const feePaymentOptions = [
         {
           paidBy: eoaAccount.addr,
@@ -1439,7 +1438,7 @@ describe('SignAccountOp Controller ', () => {
             amount: 1n,
             symbol: 'POL',
             name: 'Polygon Ecosystem Token',
-            networkId: 'polygon',
+            chainId: 137n,
             decimals: 18,
             priceIn: [],
             flags: {
@@ -1453,7 +1452,7 @@ describe('SignAccountOp Controller ', () => {
       ]
       const { controller, estimation, prices } = await init(
         smartAccount,
-        createAccountOp(smartAccount, network.id),
+        createAccountOp(smartAccount, network.chainId),
         eoaSigner,
         {
           provider: {
@@ -1531,7 +1530,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'eth',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1625,7 +1624,7 @@ describe('SignAccountOp Controller ', () => {
   //   const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
   //   const userOp = getUserOperation(
   //     trezorSlot7v24337Deployed,
-  //     accountStates[accOp.accountAddr][accOp.networkId],
+  //     accountStates[accOp.accountAddr][accOp.chainId],
   //     accOp
   //   )
   //   userOp.verificationGasLimit = toBeHex(6000n)
