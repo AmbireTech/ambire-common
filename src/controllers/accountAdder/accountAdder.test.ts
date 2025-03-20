@@ -38,7 +38,7 @@ const windowManager = {
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const key1to11BasicAccPublicAddresses = Array.from(

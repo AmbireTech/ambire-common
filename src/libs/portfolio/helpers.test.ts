@@ -8,8 +8,8 @@ import { getRpcProvider } from '../../services/provider'
 import { getUpdatedHints } from './helpers'
 import { Portfolio } from './portfolio'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')
-const polygon = networks.find((x) => x.id === 'polygon')
+const ethereum = networks.find((x) => x.chainId === 1n)
+const polygon = networks.find((x) => x.chainId === 137n)
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
@@ -41,7 +41,7 @@ describe('Portfolio helpers', () => {
       },
       tokens,
       [],
-      'ethereum',
+      1n,
       {
         learnedTokens: {
           ethereum: {
