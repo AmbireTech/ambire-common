@@ -9,7 +9,7 @@ import {
   SocketAPIBridgeUserTx,
   SocketAPIStep,
   SocketAPIUserTx,
-  SwapAndBridgeSendTransactionRequest,
+  SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
@@ -160,7 +160,7 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
 
 // If you have approval that has not been spent (in some smart contracts), the transaction may revert
 const buildRevokeApprovalIfNeeded = async (
-  userTx: SwapAndBridgeSendTransactionRequest,
+  userTx: SwapAndBridgeSendTxRequest,
   account: Account,
   state: AccountOnchainState,
   provider: RPCProvider
@@ -199,7 +199,7 @@ const buildRevokeApprovalIfNeeded = async (
 }
 
 const buildSwapAndBridgeUserRequests = async (
-  userTx: SwapAndBridgeSendTransactionRequest,
+  userTx: SwapAndBridgeSendTxRequest,
   networkId: string,
   account: Account,
   provider: RPCProvider,

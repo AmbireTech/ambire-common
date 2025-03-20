@@ -22,7 +22,7 @@ import {
   SocketRouteStatus,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
-  SwapAndBridgeSendTransactionRequest,
+  SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
@@ -32,7 +32,12 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { NULL_ADDRESS, ZERO_ADDRESS } from '../socket/constants'
+import {
+  AMBIRE_FEE_TAKER_ADDRESSES,
+  FEE_PERCENT,
+  NULL_ADDRESS,
+  ZERO_ADDRESS
+} from '../socket/constants'
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
@@ -146,9 +151,9 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   rawRoute: route
 })
 
-const normalizeLiFiStepToSwapAndBridgeSendTransactionRequest = (
+const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   parentStep: LiFiStep
-): SwapAndBridgeSendTransactionRequest => {
+): SwapAndBridgeSendTxRequest => {
   const a = {
     activeRouteId: parentStep.id,
     approvalData:
@@ -367,7 +372,7 @@ export class LiFiAPI {
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
   }): Promise<SwapAndBridgeQuote> {
-    const body = JSON.stringify({
+    const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
       fromTokenAddress,
@@ -378,30 +383,34 @@ export class LiFiAPI {
       options: {
         slippage: '1',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
+        integrator: 'ambire-extension',
         // These two flags ensure we have NO transaction on the destination chain
         allowDestinationCall: 'true',
         allowSwitchChain: 'false'
       }
-    })
+    }
 
-    // TODO: Wire-up convenience fee
-    // const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    // const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
-    // if (shouldIncludeConvenienceFee) {
-    //   params.append('feeTakerAddress', feeTakerAddress)
-    //   params.append('feePercent', FEE_PERCENT.toString())
-    // }
+    const shouldIncludeConvenienceFee = !isOG
+    if (shouldIncludeConvenienceFee) {
+      // TODO: Enable convenience fee
+      // LiFi fee is from 0 to 1, so normalize it by dividing by 100
+      // body.options.fee = (FEE_PERCENT / 100).toString()
+    }
 
     const url = `${this.#baseUrl}/advanced/routes`
 
     const response = await this.#handleResponse<LiFiRoutesResponse>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers, method: 'POST', body }),
+      fetchPromise: this.#fetch(url, {
+        headers: this.#headers,
+        method: 'POST',
+        body: JSON.stringify(body)
+      }),
       errorPrefix: 'Unable to fetch the quote.'
     })
 
-    const selectedRoute: SwapAndBridgeRoute = response.routes[0]
+    const selectedRoute = response.routes[0]
       ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0])
-      : null
+      : undefined
     const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0]
       ? response.routes[0].steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep)
       : []
@@ -418,20 +427,15 @@ export class LiFiAPI {
   }
 
   async startRoute({
-    fromChainId,
-    toChainId,
-    fromAssetAddress,
-    toAssetAddress,
     route
   }: {
     fromChainId: number
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    // TODO: Refine types
     route: SwapAndBridgeRoute
-  }): Promise<SwapAndBridgeSendTransactionRequest> {
-    const body = JSON.stringify(route.rawRoute.steps[0])
+  }): Promise<SwapAndBridgeSendTxRequest> {
+    const body = JSON.stringify((route.rawRoute as LiFiRoute).steps[0])
 
     const response = await this.#handleResponse<LiFiStep>({
       fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {
@@ -442,7 +446,7 @@ export class LiFiAPI {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return normalizeLiFiStepToSwapAndBridgeSendTransactionRequest(response)
+    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response)
   }
 
   async getRouteStatus({

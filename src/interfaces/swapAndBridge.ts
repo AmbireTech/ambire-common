@@ -40,8 +40,7 @@ export interface SwapAndBridgeQuote {
   fromChainId: number
   toAsset: SwapAndBridgeToToken
   toChainId: number
-  selectedRoute: SwapAndBridgeRoute | null
-  // TODO: Common type
+  selectedRoute?: SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
 }
@@ -283,7 +282,7 @@ export type SocketAPISendTransactionRequest = {
   value: string
 }
 
-export type SwapAndBridgeSendTransactionRequest = {
+export type SwapAndBridgeSendTxRequest = {
   activeRouteId: string
   approvalData: SwapAndBridgeTxApprovalData | null
   chainId: number
