@@ -7,9 +7,9 @@ import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
   SocketAPIBridgeUserTx,
-  SocketAPISendTransactionRequest,
   SocketAPIStep,
   SocketAPIUserTx,
+  SwapAndBridgeSendTransactionRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
@@ -160,7 +160,7 @@ const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
 
 // If you have approval that has not been spent (in some smart contracts), the transaction may revert
 const buildRevokeApprovalIfNeeded = async (
-  userTx: SocketAPISendTransactionRequest,
+  userTx: SwapAndBridgeSendTransactionRequest,
   account: Account,
   state: AccountOnchainState,
   provider: RPCProvider
@@ -199,59 +199,40 @@ const buildRevokeApprovalIfNeeded = async (
 }
 
 const buildSwapAndBridgeUserRequests = async (
-  userTx: SocketAPISendTransactionRequest,
+  userTx: SwapAndBridgeSendTransactionRequest,
   networkId: string,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
 ) => {
   const calls: Call[] = []
-  // TODO: Refactor to common structure
-  // if (userTx.approvalData) {
-  if (userTx.estimate.approvalAddress) {
+  if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
 
-    // TODO: Refactor to common structure
-    // const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
-    // if (revokeApproval) calls.push(revokeApproval)
+    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
+    if (revokeApproval) calls.push(revokeApproval)
 
     calls.push({
-      // TODO: Refactor to common structure
-      // to: userTx.approvalData.approvalTokenAddress,
-      to: userTx.action.fromToken.address, // fromToken -> address
-      value: BigInt('0'), // always 0!
+      to: userTx.approvalData.approvalTokenAddress,
+      value: BigInt('0'),
       data: erc20Interface.encodeFunctionData('approve', [
-        // TODO: Refactor to common structure
-        // userTx.approvalData.allowanceTarget,
-        userTx.estimate.approvalAddress, // approvalAddress in estimate
-        // TODO: Refactor to common structure
-        // BigInt(userTx.approvalData.minimumApprovalAmount)
-        BigInt(userTx.estimate.fromAmount) //  fromAmount in estimate
+        userTx.approvalData.allowanceTarget,
+        BigInt(userTx.approvalData.minimumApprovalAmount)
       ]),
-      // TODO: Refactor to common structure
-      // fromUserRequestId: userTx.activeRouteId // userTx.id
-      fromUserRequestId: userTx.id // userTx.id
+      fromUserRequestId: userTx.activeRouteId
     } as Call)
   }
 
   calls.push({
-    // TODO: Refactor to common structure
-    // to: userTx.txTarget,
-    to: userTx.transactionRequest.to,
-    // TODO: Refactor to common structure
-    // value: BigInt(userTx.value),
-    value: BigInt(userTx.transactionRequest.value),
-    // TODO: Refactor to common structure
-    // data: userTx.txData,
-    data: userTx.transactionRequest.data,
-    fromUserRequestId: userTx.id
+    to: userTx.txTarget,
+    value: BigInt(userTx.value),
+    data: userTx.txData,
+    fromUserRequestId: userTx.activeRouteId
   } as Call)
 
   return [
     {
-      // TODO: Refactor to common structure
-      // id: userTx.activeRouteId,
-      id: userTx.id,
+      id: userTx.activeRouteId,
       action: {
         kind: 'calls' as const,
         calls
@@ -260,9 +241,7 @@ const buildSwapAndBridgeUserRequests = async (
         isSignAction: true,
         networkId,
         accountAddr: account.addr,
-        // TODO: Refactor to common structure
-        // activeRouteId: userTx.activeRouteId,
-        activeRouteId: userTx.id,
+        activeRouteId: userTx.activeRouteId,
         isSwapAndBridgeCall: true
       }
     } as SignUserRequest

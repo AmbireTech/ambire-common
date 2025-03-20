@@ -248,7 +248,6 @@ export type SwapAndBridgeUserTx = {
     feesInUsd: number
     asset?: SwapAndBridgeToToken
   }
-  approvalData: SwapAndBridgeTxApprovalData | null
 }
 
 export type SocketAPIUserTxApprovalData = {
@@ -256,6 +255,12 @@ export type SocketAPIUserTxApprovalData = {
   approvalTokenAddress: string
   minimumApprovalAmount: string
   owner: string
+}
+
+export type SwapAndBridgeApproval = {
+  allowanceTarget: string
+  approvalTokenAddress: string
+  minimumApprovalAmount: string
 }
 
 export type SwapAndBridgeTxApprovalData = {
@@ -268,6 +273,19 @@ export type SwapAndBridgeTxApprovalData = {
 export type SocketAPISendTransactionRequest = {
   activeRouteId: number
   approvalData: SocketAPIUserTxApprovalData | null
+  chainId: number
+  totalUserTx: number
+  txData: string
+  txTarget: string
+  txType: 'eth_sendTransaction'
+  userTxIndex: number
+  userTxType: 'fund-movr' | 'dex-swap'
+  value: string
+}
+
+export type SwapAndBridgeSendTransactionRequest = {
+  activeRouteId: string
+  approvalData: SwapAndBridgeTxApprovalData | null
   chainId: number
   totalUserTx: number
   txData: string

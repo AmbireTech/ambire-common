@@ -22,6 +22,7 @@ import {
   SocketRouteStatus,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeSendTransactionRequest,
   SwapAndBridgeStep,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
@@ -120,9 +121,7 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
             step.estimate.gasCosts[0].token.chainId
           )
         : undefined
-    },
-    // TODO:
-    approvalData: null
+    }
   }))
 
 const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridgeRoute => ({
@@ -146,6 +145,34 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   // errorMessage: undefined
   rawRoute: route
 })
+
+const normalizeLiFiStepToSwapAndBridgeSendTransactionRequest = (
+  parentStep: LiFiStep
+): SwapAndBridgeSendTransactionRequest => {
+  const a = {
+    activeRouteId: parentStep.id,
+    approvalData:
+      parentStep.action.fromToken.address === ZERO_ADDRESS
+        ? null // No approval needed fo native tokens
+        : {
+            allowanceTarget: parentStep.estimate.approvalAddress,
+            approvalTokenAddress: parentStep.action.fromToken.address,
+            minimumApprovalAmount: parentStep.estimate.fromAmount,
+            owner: ''
+          },
+    chainId: parentStep.action.fromChainId,
+    totalUserTx: 1,
+    txData: parentStep.transactionRequest?.data,
+    txTarget: parentStep.transactionRequest?.to,
+    txType: 'eth_sendTransaction',
+    userTxIndex: 0,
+    // TODO:
+    userTxType: 'dex-swap',
+    value: parentStep.transactionRequest?.value
+  }
+
+  return a
+}
 
 export class LiFiAPI {
   #fetch: Fetch
@@ -403,10 +430,10 @@ export class LiFiAPI {
     toAssetAddress: string
     // TODO: Refine types
     route: SwapAndBridgeRoute
-  }) {
+  }): Promise<SwapAndBridgeSendTransactionRequest> {
     const body = JSON.stringify(route.rawRoute.steps[0])
 
-    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
+    const response = await this.#handleResponse<LiFiStep>({
       fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {
         method: 'POST',
         headers: this.#headers,
@@ -415,7 +442,7 @@ export class LiFiAPI {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return response
+    return normalizeLiFiStepToSwapAndBridgeSendTransactionRequest(response)
   }
 
   async getRouteStatus({

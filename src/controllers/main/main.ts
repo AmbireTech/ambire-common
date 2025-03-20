@@ -1535,9 +1535,7 @@ export class MainController extends EventEmitter {
         }
 
         const network = this.networks.networks.find(
-          // TODO: Refactor to common structure
-          // (n) => Number(n.chainId) === transaction!.chainId
-          (n) => Number(n.chainId) === transaction!.transactionRequest.chainId
+          (n) => Number(n.chainId) === transaction!.chainId
         )!
 
         // TODO: Consider refining the error handling in here, because this
