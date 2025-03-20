@@ -1371,7 +1371,7 @@ export class SignAccountOpController extends EventEmitter {
             this.accountState,
             this.accountOp,
             this.#network,
-            [], // empty as .feeCall is included
+            [this.selectedOption.token],
             this.provider,
             this.bundlerSwitcher,
             () => {},

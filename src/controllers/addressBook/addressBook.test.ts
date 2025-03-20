@@ -12,9 +12,11 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { AddressBookController } from './addressBook'
 
 const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 
 let errors = 0
 
@@ -63,7 +65,7 @@ const providers = Object.fromEntries(
 describe('AddressBookController', () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     (net) => {
       providersCtrl.setProvider(net)
@@ -75,16 +77,19 @@ describe('AddressBookController', () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
     () => {},
     () => {}
   )
-  const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const addressBookController = new AddressBookController(
-    storage,
+    storageCtrl,
     accountsCtrl,
     selectedAccountCtrl
   )

@@ -25,6 +25,7 @@ import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
 
 const windowManager = {
@@ -97,8 +98,9 @@ describe('AccountAdder', () => {
   let accountAdder: AccountAdderController
   const storage: Storage = produceMemoryStore()
   let providersCtrl: ProvidersController
+  const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
     (net) => {
       providersCtrl.setProvider(net)
@@ -111,7 +113,7 @@ describe('AccountAdder', () => {
   providersCtrl.providers = providers
 
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -121,7 +123,7 @@ describe('AccountAdder', () => {
   beforeEach(() => {
     accountAdder = new AccountAdderController({
       accounts: accountsCtrl,
-      keystore: new KeystoreController(storage, {}, windowManager),
+      keystore: new KeystoreController(storageCtrl, {}, windowManager),
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,

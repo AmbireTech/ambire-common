@@ -1,8 +1,4 @@
-import { Account } from '../../interfaces/account'
 import {
-  CashbackStatus,
-  CashbackStatusByAccount,
-  LegacyCashbackStatus,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
@@ -160,9 +156,7 @@ const stripPortfolioState = (portfolioState: AccountState) => {
 }
 
 export const isNetworkReady = (networkData: NetworkState | undefined) => {
-  return (
-    networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
-  )
+  return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
 const calculateTokenArray = (
@@ -205,8 +199,9 @@ export function calculateSelectedAccountPortfolio(
   accountPortfolio: SelectedAccountPortfolio | null,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp?: boolean
-) {
+  hasSignAccountOp: boolean,
+  isPreviousStateSatisfactory: boolean
+): SelectedAccountPortfolio {
   const now = Date.now()
   const shouldShowPartialResult =
     portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
@@ -230,7 +225,7 @@ export function calculateSelectedAccountPortfolio(
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
       pending: pendingStateSelectedAccount
-    } as SelectedAccountPortfolio
+    }
   }
 
   let selectedAccountData = latestStateSelectedAccount
@@ -276,7 +271,7 @@ export function calculateSelectedAccountPortfolio(
     const networkData = selectedAccountData[network]
     const result = networkData?.result
 
-    if (networkData && result && (isNetworkReady(networkData) || shouldShowPartialResult)) {
+    if (networkData && result) {
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 
@@ -295,8 +290,14 @@ export function calculateSelectedAccountPortfolio(
       collections.push(...networkCollections)
     }
 
-    // The total balance and token list are affected by the defi positions
-    if (!isNetworkReady(networkData) || defiPositionsAccountState[network]?.isLoading) {
+    if (
+      // The network is not ready
+      !isNetworkReady(networkData) ||
+      // The networks is ready but the previous state isn't satisfactory and the network is still loading
+      (!isPreviousStateSatisfactory && networkData?.isLoading) ||
+      // The total balance and token list are affected by the defi positions
+      defiPositionsAccountState[network]?.isLoading
+    ) {
       isAllReady = false
     }
   })
@@ -318,49 +319,4 @@ export function calculateSelectedAccountPortfolio(
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)
   } as SelectedAccountPortfolio
-}
-
-// As of version 4.53.0, cashback status information has been introduced.
-// Previously, cashback statuses were stored as separate objects per account.
-// Now, they are normalized under a single structure for simplifying.
-// Migration is needed to transform existing data into the new format.
-export const migrateCashbackStatusToNewFormat = (
-  existingStatuses: Record<
-    Account['addr'],
-    CashbackStatus | LegacyCashbackStatus | null | undefined
-  >
-): CashbackStatusByAccount => {
-  return Object.fromEntries(
-    Object.entries(existingStatuses).map(([accountId, status]) => {
-      if (typeof status === 'string') {
-        return [accountId, status as CashbackStatus]
-      }
-
-      if (typeof status === 'object' && status !== null) {
-        const { cashbackWasZeroAt, firstCashbackReceivedAt, firstCashbackSeenAt } = status
-
-        if (cashbackWasZeroAt && firstCashbackReceivedAt === null && firstCashbackSeenAt === null) {
-          return [accountId, 'no-cashback']
-        }
-
-        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt === null) {
-          return [accountId, 'unseen-cashback']
-        }
-
-        if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt) {
-          return [accountId, 'seen-cashback']
-        }
-      }
-
-      return [accountId, 'seen-cashback']
-    })
-  )
-}
-
-export const needsCashbackStatusMigration = (
-  cashbackStatusByAccount: Record<Account['addr'], CashbackStatus | LegacyCashbackStatus>
-) => {
-  return Object.values(cashbackStatusByAccount).some(
-    (value) => typeof value === 'object' && value !== null && 'cashbackWasZeroAt' in value
-  )
 }
