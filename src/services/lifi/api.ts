@@ -351,7 +351,9 @@ export class LiFiAPI {
       options: {
         slippage: '1',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
-        allowDestinationCall: 'false'
+        // These two flags ensure we have NO transaction on the destination chain
+        allowDestinationCall: 'true',
+        allowSwitchChain: 'false'
       }
     })
 
