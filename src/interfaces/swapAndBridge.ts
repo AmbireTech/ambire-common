@@ -351,7 +351,11 @@ export type SocketAPISupportedChain = {
   explorers: string[]
 }
 
-export type CachedSupportedChains = { lastFetched: number; data: SocketAPISupportedChain[] }
+export type CachedSupportedChains = { lastFetched: number; data: SwapAndBridgeSupportedChain[] }
+
+export interface SwapAndBridgeSupportedChain {
+  chainId: number
+}
 
 type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`

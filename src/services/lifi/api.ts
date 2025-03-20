@@ -1,7 +1,7 @@
 import { getAddress } from 'ethers'
 
 import {
-  ExtendedChain,
+  ExtendedChain as LiFiExtendedChain,
   LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
@@ -24,6 +24,7 @@ import {
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
+  SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
@@ -285,20 +286,19 @@ export class LiFiAPI {
     return responseBody
   }
 
-  async getSupportedChains(): Promise<ExtendedChain[]> {
+  async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
     const url = `${this.#baseUrl}/chains?chainTypes=EVM`
 
-    const response = await this.#handleResponse<{ chains: ExtendedChain[] }>({
+    const response = await this.#handleResponse<{ chains: LiFiExtendedChain[] }>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response.chains.map((c) => ({ ...c, chainId: c.id }))
+    return response.chains.map((c) => ({ chainId: c.id }))
   }
 
   async getToTokenList({
-    fromChainId,
     toChainId
   }: {
     fromChainId: number
@@ -356,7 +356,6 @@ export class LiFiAPI {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isSmartAccount,
     sort,
     isOG
   }: {
@@ -398,7 +397,6 @@ export class LiFiAPI {
     }
 
     const url = `${this.#baseUrl}/advanced/routes`
-
     const response = await this.#handleResponse<LiFiRoutesResponse>({
       fetchPromise: this.#fetch(url, {
         headers: this.#headers,

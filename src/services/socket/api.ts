@@ -11,6 +11,7 @@ import {
   SocketAPISupportedChain,
   SocketAPIToken,
   SocketRouteStatus,
+  SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
@@ -155,7 +156,7 @@ export class SocketAPI {
     return responseBody.result
   }
 
-  async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
+  async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
     const response = await this.#handleResponse<SocketAPISupportedChain[]>({
@@ -164,7 +165,11 @@ export class SocketAPI {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response.filter((c) => c.sendingEnabled && c.receivingEnabled)
+    return response
+      .filter((c) => c.sendingEnabled && c.receivingEnabled)
+      .map(({ chainId }) => ({
+        chainId
+      }))
   }
 
   async getToTokenList({
