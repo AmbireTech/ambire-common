@@ -65,4 +65,10 @@ export abstract class BaseAccount {
   shouldBroadcastCallsSeparately(op: AccountOp): boolean {
     return false
   }
+
+  // can the account type use the receiving amount after the estimation
+  // to pay the fee. Smart accounts can but EOA / 7702 EOAs cannot
+  // as paying in native means broadcasting as an EOA - you have to
+  // have the native before broadcast
+  abstract canUseReceivingNativeForFee(): boolean
 }

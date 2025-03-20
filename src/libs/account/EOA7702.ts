@@ -102,4 +102,8 @@ export class EOA7702 extends BaseAccount {
   shouldSignAuthorization(broadcastOption: string): boolean {
     return !this.accountState.isSmarterEoa && broadcastOption === BROADCAST_OPTIONS.byBundler
   }
+
+  canUseReceivingNativeForFee(): boolean {
+    return false
+  }
 }
