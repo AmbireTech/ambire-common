@@ -1146,6 +1146,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
       try {
         status = await this.#serviceProviderAPI.getRouteStatus({
+          fromChainId: activeRoute.route.fromChainId,
+          toChainId: activeRoute.route.toChainId,
+          bridge: activeRoute.route.usedBridgeNames?.[0],
           activeRouteId: activeRoute.activeRouteId,
           userTxIndex: activeRoute.userTxIndex,
           txHash: activeRoute.userTxHash!

@@ -5,6 +5,7 @@ import {
   LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
+  StatusResponse as LiFiRouteStatusResponse,
   Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
@@ -22,6 +23,7 @@ import {
   SocketRouteStatus,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatus,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
@@ -136,9 +138,9 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   fromAmount: route.fromAmount,
   toAmount: route.toAmount,
   // TODO: Make optional?
-  usedBridgeNames: [],
+  usedBridgeNames: [route.steps[0].toolDetails.name],
   // TODO: Make optional?
-  usedDexName: '',
+  usedDexName: route.steps[0].toolDetails.name,
   totalUserTx: 1,
   totalGasFeesInUsd: +(route.gasCostUSD || 0),
   userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
@@ -146,8 +148,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   receivedValueInUsd: +route.toAmountUSD,
   inputValueInUsd: +route.fromAmountUSD,
   outputValueInUsd: +route.toAmountUSD,
-  serviceTime: +route.toAmountMin,
-  maxServiceTime: +route.toAmountMin,
+  serviceTime: route.steps[0].estimate.executionDuration,
   // errorMessage: undefined
   rawRoute: route
 })
@@ -427,27 +428,43 @@ export class LiFiAPI {
   }
 
   async getRouteStatus({
-    activeRouteId,
-    userTxIndex,
-    txHash
+    txHash,
+    fromChainId,
+    toChainId,
+    bridge
   }: {
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
     txHash: string
+    fromChainId: number
+    toChainId: number
+    bridge?: string
   }) {
-    const params = new URLSearchParams({
-      activeRouteId: activeRouteId.toString(),
-      userTxIndex: userTxIndex.toString(),
-      txHash
-    })
-    const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
+    // TODO: Swaps have no status check
+    if (!bridge) return 'completed'
 
-    const response = await this.#handleResponse<SocketRouteStatus>({
+    const params = new URLSearchParams({
+      txHash,
+      bridge,
+      fromChain: fromChainId.toString(),
+      toChain: toChainId.toString()
+    })
+    const url = `${this.#baseUrl}/v1/status?${params.toString()}`
+
+    const response = await this.#handleResponse<LiFiRouteStatusResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
 
-    return response
+    const statuses: { [key in LiFiRouteStatusResponse['status']]: SwapAndBridgeRouteStatus } = {
+      DONE: 'completed',
+      FAILED: null,
+      INVALID: null,
+      NOT_FOUND: null,
+      PENDING: 'ready'
+    }
+
+    return statuses[response.status]
   }
 
   async updateActiveRoute(

@@ -89,7 +89,6 @@ export interface SwapAndBridgeRoute {
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
-  maxServiceTime: number
   errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
 }
@@ -327,6 +326,8 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
 }
 
 export type SocketRouteStatus = 'ready' | 'completed' | null
+
+export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | null
 
 export type SocketAPISupportedChain = {
   chainId: number
