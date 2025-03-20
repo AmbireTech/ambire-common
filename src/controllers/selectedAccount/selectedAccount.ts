@@ -247,13 +247,16 @@ export class SelectedAccountController extends EventEmitter {
       (action) => action.type === 'accountOp'
     )
 
+    const isLoadingFromScratch = this.portfolio === DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       latestStateSelectedAccountWithDefiPositions,
       pendingStateSelectedAccountWithDefiPositions,
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp
+      hasSignAccountOp,
+      !isLoadingFromScratch
     )
 
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
@@ -263,19 +266,11 @@ export class SelectedAccountController extends EventEmitter {
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
-
-    if (
-      // Fully loaded
-      newSelectedAccountPortfolio.isReadyToVisualize ||
-      // Has tokens to show
-      (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length) ||
-      // There is a simulation
-      !!newSelectedAccountPortfolio.networkSimulatedAccountOp
-    ) {
+    if (newSelectedAccountPortfolio.isReadyToVisualize) {
       this.portfolio = newSelectedAccountPortfolio
-      this.#updatePortfolioErrors(true)
     }
 
+    this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 
     if (!skipUpdate) {
@@ -413,7 +408,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isReadyToVisualize
+      (!this.portfolio.isReadyToVisualize && this.portfolio === DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
@@ -431,7 +426,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
-      providers: this.#providers.providers
+      providers: this.#providers.providers,
+      isAllReady: this.portfolio.isAllReady
     })
 
     this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]
