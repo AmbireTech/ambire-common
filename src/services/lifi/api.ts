@@ -199,19 +199,10 @@ export class LiFiAPI {
     }
   }
 
+  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     // Li.Fi’s v1 API doesn't have a dedicated health endpoint
     return true
-
-    try {
-      const response = await this.#fetch(`${this.#baseUrl}/health`, { headers: this.#headers })
-      if (!response.ok) return false
-
-      const body = await response.json()
-      return !!body.ok
-    } catch {
-      return false
-    }
   }
 
   async updateHealth() {
@@ -230,9 +221,9 @@ export class LiFiAPI {
   }
 
   /**
-   * Processes Socket API responses and throws custom errors for various
-   * failures, including handling the API's unique response structure.
+   * Processes LiFi API responses and throws custom errors for various failures
    */
+  // eslint-disable-next-line class-methods-use-this
   async #handleResponse<T>({
     fetchPromise,
     errorPrefix
@@ -256,7 +247,7 @@ export class LiFiAPI {
       throw new SwapAndBridgeProviderApiError(error)
     }
 
-    let responseBody: SocketAPIResponse<T>
+    let responseBody: T
     try {
       responseBody = await response.json()
     } catch (e: any) {
@@ -266,22 +257,10 @@ export class LiFiAPI {
     }
 
     if (!response.ok) {
-      // API returns 2 types of errors, a generic one, on the top level:
-      const genericErrorMessage = responseBody?.message?.error || 'no message'
-      // ... and a detailed one, nested in the `details` object:
-      const specificError = responseBody?.message?.details?.error?.message
-      const specificErrorMessage = specificError ? `, details: <${specificError}>` : ''
-      const specificErrorCode = responseBody?.message?.details?.error?.code
-      const specificErrorCodeMessage = specificErrorCode ? `, code: <${specificErrorCode}>` : ''
-      const error = `${errorPrefix} Our service provider upstream error: <${genericErrorMessage}>${specificErrorMessage}${specificErrorCodeMessage}`
+      const message = JSON.stringify(responseBody)
+      const error = `${errorPrefix} Our service provider upstream error: <${message}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
-
-    // Always attempt to update health status (if needed) when a response was
-    // successful, in case the API was previously unhealthy (to recover).
-    // Do not wait on purpose, to not block or delay the response
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    // this.updateHealthIfNeeded()
 
     return responseBody
   }
