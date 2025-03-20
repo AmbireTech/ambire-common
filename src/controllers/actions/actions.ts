@@ -287,36 +287,46 @@ export class ActionsController extends EventEmitter {
   async openActionWindow() {
     await this.actionWindow.focusWindowPromise
     await this.actionWindow.openWindowPromise
-    if (this.actionWindow.windowProps) {
-      this.focusActionWindow()
-    } else {
-      try {
-        this.actionWindow.openWindowPromise = this.#windowManager.open().finally(() => {
-          this.actionWindow.openWindowPromise = undefined
-        })
-        this.actionWindow.windowProps = await this.actionWindow.openWindowPromise
-        this.emitUpdate()
-      } catch (err) {
-        console.error('Error opening action window:', err)
-      }
+    const isFocusedSuccessfully = await this.focusActionWindow()
+
+    if (isFocusedSuccessfully) return
+    // Open a new action window if there is no action window opened
+    // or it cannot be focused
+
+    try {
+      this.actionWindow.openWindowPromise = this.#windowManager.open().finally(() => {
+        this.actionWindow.openWindowPromise = undefined
+      })
+      this.actionWindow.windowProps = await this.actionWindow.openWindowPromise
+      this.emitUpdate()
+    } catch (err) {
+      console.error('Error opening action window:', err)
     }
   }
 
-  async focusActionWindow() {
+  async focusActionWindow(): Promise<boolean> {
     await this.actionWindow.focusWindowPromise
     await this.actionWindow.openWindowPromise
     if (!this.visibleActionsQueue.length || !this.currentAction || !this.actionWindow.windowProps)
-      return
+      return false
+
+    let isFocusedSuccessfully = false
+
     try {
-      this.actionWindow.focusWindowPromise = this.#windowManager
-        .focus(this.actionWindow.windowProps)
-        .finally(() => {
-          this.actionWindow.focusWindowPromise = undefined
-        })
+      this.actionWindow.focusWindowPromise = this.#windowManager.focus(
+        this.actionWindow.windowProps
+      )
+      await this.actionWindow.focusWindowPromise
+      isFocusedSuccessfully = true
+
       this.emitUpdate()
     } catch (err) {
       console.error('Error focusing action window:', err)
+    } finally {
+      this.actionWindow.focusWindowPromise = undefined
     }
+
+    return isFocusedSuccessfully
   }
 
   closeActionWindow() {
