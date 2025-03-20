@@ -153,9 +153,7 @@ const stripPortfolioState = (portfolioState: AccountState) => {
 }
 
 export const isNetworkReady = (networkData: NetworkState | undefined) => {
-  return (
-    networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
-  )
+  return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
 const calculateTokenArray = (
@@ -198,8 +196,9 @@ export function calculateSelectedAccountPortfolio(
   accountPortfolio: SelectedAccountPortfolio | null,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp?: boolean
-) {
+  hasSignAccountOp: boolean,
+  isPreviousStateSatisfactory: boolean
+): SelectedAccountPortfolio {
   const now = Date.now()
   const shouldShowPartialResult =
     portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
@@ -223,7 +222,7 @@ export function calculateSelectedAccountPortfolio(
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
       pending: pendingStateSelectedAccount
-    } as SelectedAccountPortfolio
+    }
   }
 
   let selectedAccountData = latestStateSelectedAccount
@@ -269,7 +268,7 @@ export function calculateSelectedAccountPortfolio(
     const networkData = selectedAccountData[network]
     const result = networkData?.result
 
-    if (networkData && result && (isNetworkReady(networkData) || shouldShowPartialResult)) {
+    if (networkData && result) {
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 
@@ -288,8 +287,14 @@ export function calculateSelectedAccountPortfolio(
       collections.push(...networkCollections)
     }
 
-    // The total balance and token list are affected by the defi positions
-    if (!isNetworkReady(networkData) || defiPositionsAccountState[network]?.isLoading) {
+    if (
+      // The network is not ready
+      !isNetworkReady(networkData) ||
+      // The networks is ready but the previous state isn't satisfactory and the network is still loading
+      (!isPreviousStateSatisfactory && networkData?.isLoading) ||
+      // The total balance and token list are affected by the defi positions
+      defiPositionsAccountState[network]?.isLoading
+    ) {
       isAllReady = false
     }
   })

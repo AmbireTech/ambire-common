@@ -32,7 +32,7 @@ export interface SelectedAccountPortfolio {
    * the value of isReadyToVisualize will be true.
    */
   isReadyToVisualize: boolean
-  /** True after all networks have loaded */
+  /** True after all networks have initially loaded. May be true even if a network is loading (e.g. during an interval update). */
   isAllReady: boolean
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   latest: SelectedAccountPortfolioState

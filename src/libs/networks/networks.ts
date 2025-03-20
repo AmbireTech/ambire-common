@@ -69,6 +69,15 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
   return result
 }
 
+/**
+ * Fetches detailed network information from an RPC provider.
+ * Used when adding a new network, updating network info, or when the RPC provider is changed,
+ * And once every 24 hours for custom networks.
+ *
+ * - Checks smart account (SA) support, singleton contract, and state override capabilities.
+ * - Determines if the network supports ERC-4337 and Account Abstraction.
+ * - Fetches additional metadata from external sources (e.g., CoinGecko).
+ */
 export async function getNetworkInfo(
   fetch: Fetch,
   rpcUrl: string,
@@ -198,6 +207,11 @@ export async function getNetworkInfo(
   provider.destroy()
 }
 
+/**
+ * Determines supported features for a network based on its properties.
+ *
+ * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
+ */
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
   networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
