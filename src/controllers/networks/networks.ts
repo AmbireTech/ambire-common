@@ -232,10 +232,10 @@ export class NetworksController extends EventEmitter {
       })
 
       // Step 3: Ensure predefined networks are marked correctly and handle special cases
-      let predefinedNetworkIds = Object.keys(updatedNetworks)
+      let predefinedChainIds = Object.keys(updatedNetworks)
 
-      if (!predefinedNetworkIds.length) {
-        predefinedNetworkIds = predefinedNetworks.map((network) => network.chainId.toString())
+      if (!predefinedChainIds.length) {
+        predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
       }
 
       Object.keys(updatedNetworks).forEach((chainId: string) => {
@@ -244,7 +244,7 @@ export class NetworksController extends EventEmitter {
         // If a predefined network is removed by the relayer, mark it as custom
         // and remove the predefined flag
         // Update the hasRelayer flag to false just in case
-        if (!predefinedNetworkIds.includes(network.chainId.toString()) && network.predefined) {
+        if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
           updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
         }
 
