@@ -72,7 +72,7 @@ export class DomainsController extends EventEmitter {
    * Resolves the ENS and UD names for an address if such exist.
    */
   async reverseLookup(address: string, emitUpdate = true) {
-    if (!('ethereum' in this.#providers)) {
+    if (!('1' in this.#providers)) {
       this.emitError({
         error: new Error('domains.reverseLookup: Ethereum provider is not available'),
         message: 'The RPC provider for Ethereum is not available.',
@@ -95,7 +95,7 @@ export class DomainsController extends EventEmitter {
     let ensName = null
 
     try {
-      ensName = (await reverseLookupEns(checksummedAddress, this.#providers.ethereum)) || null
+      ensName = (await reverseLookupEns(checksummedAddress, this.#providers['1'])) || null
     } catch (e) {
       console.error('ENS reverse lookup unexpected error', e)
     }

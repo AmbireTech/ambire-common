@@ -70,7 +70,7 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
-  dashboardNetworkFilter: bigint | null = null
+  dashboardNetworkFilter: bigint | string | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -488,8 +488,8 @@ export class SelectedAccountController extends EventEmitter {
     return this.#cashbackStatusByAccount[this.account.addr]
   }
 
-  setDashboardNetworkFilter(chainId: bigint | null) {
-    this.dashboardNetworkFilter = chainId
+  setDashboardNetworkFilter(networkFilter: bigint | string | null) {
+    this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
   }
 

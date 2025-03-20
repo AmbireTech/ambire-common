@@ -38,6 +38,7 @@ export class StorageController {
       await this.#clearHumanizerMetaObjectFromStorage() // As of version v4.34.0
       await this.#migrateTokenPreferences() // As of version 4.51.0
       await this.#migrateCashbackStatusToNewFormat() // As of version 4.53.0
+      await this.#migrateNetworkIdToChainId()
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -240,17 +241,17 @@ export class StorageController {
     const migrateKeys = <T>(obj: Record<string, T>) => {
       return Object.fromEntries(
         Object.entries(obj).map(([networkId, value]) => {
-          const chainId = networkIdToChainId[networkId]
+          const chainId: any = networkIdToChainId[networkId]
           return chainId ? [chainId, value] : [networkId, value]
         })
       )
     }
 
     const migratedPreviousHints = {
-      learnedTokens: migrateKeys(previousHints.learnedTokens),
-      learnedNfts: migrateKeys(previousHints.learnedNfts),
+      learnedTokens: migrateKeys(previousHints.learnedTokens || {}),
+      learnedNfts: migrateKeys(previousHints.learnedNfts || {}),
       fromExternalAPI: Object.fromEntries(
-        Object.entries(previousHints.fromExternalAPI).map(([networkAndAccountKey, value]) => {
+        Object.entries(previousHints.fromExternalAPI || {}).map(([networkAndAccountKey, value]) => {
           const [networkId, accountAddr] = networkAndAccountKey.split(':')
           const chainId = networkIdToChainId[networkId]
           return chainId ? [`${chainId}:${accountAddr}`, value] : [networkAndAccountKey, value]
@@ -283,7 +284,13 @@ export class StorageController {
       ])
     )
 
+    const migratedNetworks = Object.fromEntries(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
+    )
+
     await Promise.all([
+      this.#storage.set('networks', migratedNetworks),
       this.#storage.set('previousHints', migratedPreviousHints),
       this.#storage.set('customTokens', migratedCustomTokens),
       this.#storage.set('tokenPreferences', migratedTokenPreferences),
