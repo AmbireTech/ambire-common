@@ -54,4 +54,8 @@ export class V1 extends BaseAccount {
     if (feeOption.paidBy !== this.getAccount().addr) return BROADCAST_OPTIONS.byOtherEOA
     return BROADCAST_OPTIONS.byRelayer
   }
+
+  canUseReceivingNativeForFee(): boolean {
+    return true
+  }
 }

@@ -84,4 +84,8 @@ export class V2 extends BaseAccount {
       broadcastOption === BROADCAST_OPTIONS.byOtherEOA
     )
   }
+
+  canUseReceivingNativeForFee(): boolean {
+    return true
+  }
 }

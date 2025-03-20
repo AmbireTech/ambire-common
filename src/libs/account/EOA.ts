@@ -77,4 +77,8 @@ export class EOA extends BaseAccount {
   shouldBroadcastCallsSeparately(op: AccountOp): boolean {
     return op.calls.length > 1
   }
+
+  canUseReceivingNativeForFee(): boolean {
+    return false
+  }
 }
