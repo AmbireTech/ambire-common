@@ -71,6 +71,8 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
+  #isPortfolioLoadingFromScratch = true
+
   dashboardNetworkFilter: NetworkId | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
@@ -214,6 +216,7 @@ export class SelectedAccountController extends EventEmitter {
   resetSelectedAccountPortfolio(skipUpdate?: boolean) {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
+    this.#isPortfolioLoadingFromScratch = true
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -247,8 +250,6 @@ export class SelectedAccountController extends EventEmitter {
       (action) => action.type === 'accountOp'
     )
 
-    const isLoadingFromScratch = this.portfolio === DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
-
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       latestStateSelectedAccountWithDefiPositions,
       pendingStateSelectedAccountWithDefiPositions,
@@ -256,7 +257,7 @@ export class SelectedAccountController extends EventEmitter {
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
       hasSignAccountOp,
-      !isLoadingFromScratch
+      this.#isPortfolioLoadingFromScratch
     )
 
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
@@ -266,10 +267,11 @@ export class SelectedAccountController extends EventEmitter {
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
-    if (newSelectedAccountPortfolio.isReadyToVisualize) {
-      this.portfolio = newSelectedAccountPortfolio
+    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
+      this.#isPortfolioLoadingFromScratch = false
     }
 
+    this.portfolio = newSelectedAccountPortfolio
     this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 
@@ -408,7 +410,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      (!this.portfolio.isReadyToVisualize && this.portfolio === DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
+      !this.portfolio.isReadyToVisualize
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
