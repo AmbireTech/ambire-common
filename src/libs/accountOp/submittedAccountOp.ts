@@ -1,4 +1,5 @@
 import { TransactionReceipt, ZeroAddress } from 'ethers'
+
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -50,19 +51,19 @@ export interface SubmittedAccountOp extends AccountOp {
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Transaction'
+  return identifiedBy && identifiedBy.type === 'Transaction'
 }
 
 export function isIdentifiedByUserOpHash(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'UserOperation'
+  return identifiedBy && identifiedBy.type === 'UserOperation'
 }
 
 export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Relayer'
+  return identifiedBy && identifiedBy.type === 'Relayer'
 }
 
 export function isIdentifiedByMultipleTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'MultipleTxns'
+  return identifiedBy && identifiedBy.type === 'MultipleTxns'
 }
 
 export function getDappIdentifier(op: SubmittedAccountOp) {
