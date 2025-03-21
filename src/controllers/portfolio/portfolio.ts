@@ -7,6 +7,7 @@ import { Network, NetworkId } from '../../interfaces/network'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
+import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
@@ -81,6 +82,8 @@ export class PortfolioController extends EventEmitter {
 
   #velcroUrl: string
 
+  #batchedVelcroDiscovery: Function
+
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
   } = {}
@@ -131,6 +134,30 @@ export class PortfolioController extends EventEmitter {
     this.#accounts = accounts
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
+    this.#batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+
+          return { url, queueSegment }
+        })
+      },
+      {
+        timeoutSettings: {
+          timeoutAfter: 3000,
+          timeoutErrorMessage: 'Velcro discovery timed out'
+        },
+        dedupeByKeys: ['networkId', 'accountAddr']
+      }
+    )
 
     this.#initialLoadPromise = this.#load()
   }
@@ -352,7 +379,13 @@ export class PortfolioController extends EventEmitter {
     ) {
       this.#portfolioLibs.set(
         key,
-        new Portfolio(this.#fetch, providers[network.id], network, this.#velcroUrl)
+        new Portfolio(
+          this.#fetch,
+          providers[network.id],
+          network,
+          this.#velcroUrl,
+          this.#batchedVelcroDiscovery
+        )
       )
     }
     return this.#portfolioLibs.get(key)!
