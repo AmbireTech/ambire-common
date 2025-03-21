@@ -80,6 +80,7 @@ const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBrid
             )
           : undefined
       },
+      serviceTime: parentStep.estimate.executionDuration,
       minAmountOut: step.estimate.toAmountMin,
       protocol: {
         name: step.toolDetails.name,
@@ -110,6 +111,7 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
       fromAmount: step.estimate.fromAmount,
       toAmount: step.estimate.toAmount,
       swapSlippage: step.action.slippage,
+      serviceTime: parentStep.estimate.executionDuration,
       protocol: {
         displayName: step.toolDetails.name,
         icon: step.toolDetails.logoURI,

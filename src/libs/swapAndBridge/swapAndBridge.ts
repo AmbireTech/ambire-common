@@ -9,6 +9,7 @@ import {
   SocketAPIBridgeUserTx,
   SocketAPIStep,
   SocketAPIUserTx,
+  SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
@@ -266,7 +267,10 @@ export const getIsNetworkSupported = (
   return supportedChainIds.includes(network.chainId)
 }
 
-const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
+const getActiveRoutesForAccount = (
+  accountAddress: string,
+  activeRoutes: SwapAndBridgeActiveRoute[]
+) => {
   return activeRoutes.filter(
     (r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress
   )

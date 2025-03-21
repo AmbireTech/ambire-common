@@ -214,6 +214,7 @@ export type SwapAndBridgeStep = {
     feesInUsd: number
     asset?: SwapAndBridgeToToken
   }
+  serviceTime?: number
   minAmountOut: string
   protocol: {
     name: string
@@ -239,6 +240,7 @@ export type SwapAndBridgeUserTx = {
   fromAmount: string
   toAmount: string
   swapSlippage?: number
+  serviceTime?: number
   protocol: {
     displayName: string
     icon: string
@@ -318,10 +320,11 @@ export type ActiveRoute = {
 }
 
 export type SwapAndBridgeActiveRoute = {
+  sender: string
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
-  route: Omit<SwapAndBridgeQuote['selectedRoute'], 'serviceTime' | 'maxServiceTime'> & {
+  route: SwapAndBridgeRoute & {
     createdAt: string
     updatedAt: string
     routeStatus: string
