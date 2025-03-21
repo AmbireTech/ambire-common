@@ -463,7 +463,7 @@ export class LiFiAPI {
       FAILED: null,
       INVALID: null,
       NOT_FOUND: null,
-      PENDING: 'ready'
+      PENDING: null
     }
 
     return statuses[response.status]
