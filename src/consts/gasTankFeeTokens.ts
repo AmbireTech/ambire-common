@@ -377,6 +377,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
+    address: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
+    symbol: 'cake',
+    networkId: 'binance-smart-chain',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/12632/standard/pancakeswap-cake-logo_%281%29.png?1696512440'
+  },
+  {
     address: '0x049d68029688eAbF473097a2fC38ef61633A3C7A',
     symbol: 'usdt',
     chainId: 250n,

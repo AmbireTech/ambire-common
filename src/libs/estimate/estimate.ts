@@ -34,7 +34,7 @@ export async function getEstimation(
   errorCallback: Function
 ): Promise<FullEstimation | Error> {
   const ambireEstimation = ambireEstimateGas(
-    baseAcc.getAccount(),
+    baseAcc,
     accountState,
     op,
     network,

@@ -197,7 +197,7 @@ export function calculateSelectedAccountPortfolio(
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
   hasSignAccountOp: boolean,
-  isPreviousStateSatisfactory: boolean
+  isLoadingFromScratch: boolean
 ): SelectedAccountPortfolio {
   const now = Date.now()
   const shouldShowPartialResult =
@@ -291,7 +291,7 @@ export function calculateSelectedAccountPortfolio(
       // The network is not ready
       !isNetworkReady(networkData) ||
       // The networks is ready but the previous state isn't satisfactory and the network is still loading
-      (!isPreviousStateSatisfactory && networkData?.isLoading) ||
+      (isLoadingFromScratch && networkData?.isLoading) ||
       // The total balance and token list are affected by the defi positions
       defiPositionsAccountState[network]?.isLoading
     ) {

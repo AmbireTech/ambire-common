@@ -4,6 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 
@@ -267,4 +268,16 @@ export function getProbableCallData(
   }
 
   return estimationCallData
+}
+
+export function getBroadcastGas(baseAcc: BaseAccount, op: AccountOp): bigint {
+  const calldata = baseAcc.getBroadcastCalldata(op)
+  if (calldata === '0x') return 0n
+
+  const FIXED_OVERHEAD = 21000n
+  const bytes = Buffer.from(baseAcc.getBroadcastCalldata(op).substring(2))
+  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
+  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+  return txDataGas + FIXED_OVERHEAD
 }
