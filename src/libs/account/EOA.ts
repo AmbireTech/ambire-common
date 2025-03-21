@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
+import { Hex } from '../../interfaces/hex'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
@@ -80,5 +81,9 @@ export class EOA extends BaseAccount {
 
   canUseReceivingNativeForFee(): boolean {
     return false
+  }
+
+  getBroadcastCalldata(): Hex {
+    return '0x'
   }
 }

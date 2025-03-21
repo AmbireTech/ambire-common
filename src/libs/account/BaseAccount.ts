@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
@@ -71,4 +72,16 @@ export abstract class BaseAccount {
   // as paying in native means broadcasting as an EOA - you have to
   // have the native before broadcast
   abstract canUseReceivingNativeForFee(): boolean
+
+  // when using the ambire estimation, the broadcast gas is not included
+  // so smart accounts that broadacast with EOAs/relayer do not have the
+  // additional broadcast gas included
+  //
+  // Additionally, 7702 EOAs that use the ambire estimation suffer from
+  // the same problem as they do broadcast by themselves by only
+  // the smart account contract gas is calculated
+  //
+  // we return the calldata specific for each account to allow
+  // the estimation to calculate it correctly
+  abstract getBroadcastCalldata(accountOp: AccountOp): Hex
 }

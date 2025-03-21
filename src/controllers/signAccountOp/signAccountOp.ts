@@ -14,7 +14,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -48,8 +47,7 @@ import {
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
-  GasRecommendation,
-  getProbableCallData
+  GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -289,25 +287,6 @@ export class SignAccountOpController extends EventEmitter {
   // check if speeds are set for the given identifier
   hasSpeeds(identifier: string) {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
-  }
-
-  getCallDataAdditionalByNetwork(): bigint {
-    // no additional call data is required for arbitrum as the bytes are already
-    // added in the calculation for the L1 fee
-    if (this.#network.chainId === ARBITRUM_CHAIN_ID || !isSmartAccount(this.account)) return 0n
-
-    const estimationCallData = getProbableCallData(
-      this.account,
-      this.accountOp,
-      this.accountState,
-      this.#network
-    )
-    const FIXED_OVERHEAD = 21000n
-    const bytes = Buffer.from(estimationCallData.substring(2))
-    const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
-    const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
-    const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
-    return txDataGas + FIXED_OVERHEAD
   }
 
   get errors(): string[] {
@@ -986,21 +965,14 @@ export class SignAccountOpController extends EventEmitter {
           })
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-        } else if (
-          broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
-          broadcastOption === BROADCAST_OPTIONS.bySelf7702
-        ) {
+        } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          const additionalCallData =
-            broadcastOption === BROADCAST_OPTIONS.byOtherEOA
-              ? this.getCallDataAdditionalByNetwork()
-              : 0n
-          simulatedGasLimit = this.gasUsed + additionalCallData
+          simulatedGasLimit = this.gasUsed
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed
+          simulatedGasLimit = this.gasUsed + option.gasUsed
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
