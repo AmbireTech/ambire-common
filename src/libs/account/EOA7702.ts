@@ -1,9 +1,12 @@
 /* eslint-disable class-methods-use-this */
-import { ZeroAddress } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
-import { AccountOp } from '../accountOp/accountOp'
+import { Hex } from '../../interfaces/hex'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
 
@@ -56,7 +59,8 @@ export class EOA7702 extends BaseAccount {
           return estimation.providerEstimation.gasUsed
 
         // trust the ambire estimaton as it's more precise
-        return estimation.ambireEstimation.gasUsed
+        // but also add the broadcast gas as it's not included in the ambire estimate
+        return estimation.ambireEstimation.gasUsed + getBroadcastGas(this, options.op)
       }
 
       // if calls are only 1, use the provider if set
@@ -105,5 +109,10 @@ export class EOA7702 extends BaseAccount {
 
   canUseReceivingNativeForFee(): boolean {
     return false
+  }
+
+  getBroadcastCalldata(accountOp: AccountOp): Hex {
+    const ambireAccount = new Interface(AmbireAccount.abi)
+    return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)]) as Hex
   }
 }

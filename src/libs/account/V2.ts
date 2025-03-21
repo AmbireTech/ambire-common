@@ -1,11 +1,16 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ZeroAddress } from 'ethers'
-import { AccountOp } from '../accountOp/accountOp'
+import { Interface, ZeroAddress } from 'ethers'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import { Hex } from '../../interfaces/hex'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
+import { getSpoof } from './account'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
@@ -55,15 +60,16 @@ export class V2 extends BaseAccount {
   ): bigint {
     if (estimation.error || !estimation.ambireEstimation) return 0n
 
+    const ambireBroaddcastGas = getBroadcastGas(this, options.op)
+    const ambireGas = ambireBroaddcastGas + estimation.ambireEstimation.gasUsed
+
     // no 4337 => use ambireEstimation
-    if (!this.network.erc4337.enabled) return estimation.ambireEstimation.gasUsed
+    if (!this.network.erc4337.enabled) return ambireGas
 
     // has 4337 => use the bundler if it doesn't have an error
-    if (!estimation.bundlerEstimation) return estimation.ambireEstimation.gasUsed
+    if (!estimation.bundlerEstimation) return ambireGas
     const bundlerGasUsed = BigInt(estimation.bundlerEstimation.callGasLimit)
-    return bundlerGasUsed > estimation.ambireEstimation.gasUsed
-      ? bundlerGasUsed
-      : estimation.ambireEstimation.gasUsed
+    return bundlerGasUsed > ambireGas ? bundlerGasUsed : ambireGas
   }
 
   getBroadcastOption(
@@ -87,5 +93,23 @@ export class V2 extends BaseAccount {
 
   canUseReceivingNativeForFee(): boolean {
     return true
+  }
+
+  getBroadcastCalldata(accountOp: AccountOp): Hex {
+    if (this.accountState.isDeployed) {
+      const ambireAccount = new Interface(AmbireAccount.abi)
+      return ambireAccount.encodeFunctionData('executeBySender', [
+        getSignableCalls(accountOp)
+      ]) as Hex
+    }
+
+    // deployAndExecuteMultiple is the worst case
+    const ambireFactory = new Interface(AmbireFactory.abi)
+    return ambireFactory.encodeFunctionData('deployAndExecute', [
+      this.account.creation!.bytecode,
+      this.account.creation!.salt,
+      getSignableCalls(accountOp),
+      getSpoof(this.account)
+    ]) as Hex
   }
 }
