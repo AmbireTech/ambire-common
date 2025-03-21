@@ -901,7 +901,7 @@ export class SignAccountOpController extends EventEmitter {
 
         for (const [speed, speedValue] of Object.entries(this.bundlerGasPrices as GasSpeeds)) {
           const simulatedGasLimit =
-            BigInt(estimation.bundlerEstimation.callGasLimit) +
+            BigInt(this.gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
             BigInt(option.gasUsed)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
