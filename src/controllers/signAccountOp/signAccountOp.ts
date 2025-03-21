@@ -335,11 +335,19 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    if (this.#blockGasLimit && this.gasUsed > this.#blockGasLimit) {
+    if (
+      this.#blockGasLimit &&
+      this.selectedOption &&
+      this.selectedOption.gasUsed > this.#blockGasLimit
+    ) {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
 
-    if (this.#network.predefined && this.gasUsed > 500000000n) {
+    if (
+      this.#network.predefined &&
+      this.selectedOption &&
+      this.selectedOption.gasUsed > 500000000n
+    ) {
       errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
@@ -674,15 +682,6 @@ export class SignAccountOpController extends EventEmitter {
         }
       }
 
-      const initialGasUsed = this.gasUsed
-      if (this.estimation && this.selectedOption) {
-        this.gasUsed = this.baseAccount.getGasUsed(this.estimation, {
-          feeToken: this.selectedOption.token,
-          op: this.accountOp
-        })
-      }
-      const hasGasUsedChanged = initialGasUsed !== this.gasUsed
-
       // calculate the fee speeds if either there are no feeSpeeds
       // or any of properties for update is requested
       if (
@@ -690,7 +689,8 @@ export class SignAccountOpController extends EventEmitter {
         Array.isArray(calls) ||
         gasPrices ||
         estimation ||
-        hasGasUsedChanged ||
+        this.paidBy ||
+        this.feeTokenResult ||
         bundlerGasPrices
       ) {
         this.#updateFeeSpeeds()
@@ -888,8 +888,13 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      // each available fee option should declare it's estimation method
+      // get the gas used for each payment option
+      const gasUsed = this.baseAccount.getGasUsed(estimation, {
+        feeToken: option.token,
+        op: this.accountOp
+      })
 
+      // each available fee option should declare it's estimation method
       const broadcastOption = this.baseAccount.getBroadcastOption(option, {
         op: this.accountOp
       })
@@ -901,7 +906,7 @@ export class SignAccountOpController extends EventEmitter {
 
         for (const [speed, speedValue] of Object.entries(this.bundlerGasPrices as GasSpeeds)) {
           const simulatedGasLimit =
-            BigInt(this.gasUsed) +
+            BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
             BigInt(option.gasUsed)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
@@ -956,7 +961,7 @@ export class SignAccountOpController extends EventEmitter {
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
-          simulatedGasLimit = this.gasUsed
+          simulatedGasLimit = gasUsed
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
@@ -968,11 +973,11 @@ export class SignAccountOpController extends EventEmitter {
         } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          simulatedGasLimit = this.gasUsed
+          simulatedGasLimit = gasUsed
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = this.gasUsed + option.gasUsed
+          simulatedGasLimit = gasUsed + option.gasUsed
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,
