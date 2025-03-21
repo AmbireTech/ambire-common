@@ -13,6 +13,13 @@ import { BaseAccount } from './BaseAccount'
 // this class describes an EOA that CAN transition to 7702
 // even if it is YET to transition to 7702
 export class EOA7702 extends BaseAccount {
+  // when doing the 7702 activator, we should add the additional gas required
+  // for the authorization list:
+  // PER_EMPTY_ACCOUNT_COST: 25000
+  // access list storage key: 1900
+  // access list address: 2400
+  ACTIVATOR_GAS_USED = 29300n
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
@@ -73,12 +80,15 @@ export class EOA7702 extends BaseAccount {
 
       // txn type 4 from here: not smarter with a batch, we need the bundler
       if (!estimation.bundlerEstimation) return 0n
-      return BigInt(estimation.bundlerEstimation.callGasLimit)
+      return BigInt(estimation.bundlerEstimation.callGasLimit) + this.ACTIVATOR_GAS_USED
     }
 
     // if we're paying in tokens, we're using the bundler
     if (!estimation.bundlerEstimation) return 0n
-    return BigInt(estimation.bundlerEstimation.callGasLimit)
+
+    return this.accountState.isSmarterEoa
+      ? BigInt(estimation.bundlerEstimation.callGasLimit)
+      : BigInt(estimation.bundlerEstimation.callGasLimit) + this.ACTIVATOR_GAS_USED
   }
 
   getBroadcastOption(
