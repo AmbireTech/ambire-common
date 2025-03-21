@@ -223,7 +223,7 @@ const networks: Network[] = [
     id: 'binance-smart-chain',
     name: 'Binance Smart Chain',
     nativeAssetSymbol: 'BNB',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Binance Coin',
     rpcUrls: ['https://invictus.ambire.com/binance-smart-chain'],
     selectedRpcUrl: 'https://invictus.ambire.com/binance-smart-chain',

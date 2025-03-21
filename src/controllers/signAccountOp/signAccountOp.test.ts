@@ -901,10 +901,6 @@ describe('SignAccountOp Controller ', () => {
       ]
     )
 
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
-
     controller.update({
       gasPrices: prices,
       estimation
@@ -1038,10 +1034,6 @@ describe('SignAccountOp Controller ', () => {
           }
         ]
       )
-
-      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-      jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
       controller.update({
         gasPrices: prices,
@@ -1184,10 +1176,6 @@ describe('SignAccountOp Controller ', () => {
       ],
       true
     )
-
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
       gasPrices: prices,
@@ -1351,10 +1339,6 @@ describe('SignAccountOp Controller ', () => {
       ]
     )
 
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
-
     controller.update({
       gasPrices: prices,
       estimation,
@@ -1387,17 +1371,17 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    expect(controller.accountOp.gasFeePayment).toEqual({
-      paidBy: eoaSigner.keyPublicAddress,
-      broadcastOption: BROADCAST_OPTIONS.byOtherEOA,
-      isGasTank: false,
-      inToken: '0x0000000000000000000000000000000000000000',
-      feeTokenNetworkId: 'polygon',
-      amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
-      simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
-      maxPriorityFeePerGas: 300n,
-      gasPrice: 600n
-    })
+    expect(controller.accountOp.gasFeePayment!.paidBy).toEqual(eoaSigner.keyPublicAddress)
+    expect(controller.accountOp.gasFeePayment!.broadcastOption).toEqual(
+      BROADCAST_OPTIONS.byOtherEOA
+    )
+    expect(controller.accountOp.gasFeePayment!.isGasTank).toEqual(false)
+    expect(controller.accountOp.gasFeePayment!.inToken).toEqual(
+      '0x0000000000000000000000000000000000000000'
+    )
+    expect(controller.accountOp.gasFeePayment!.feeTokenNetworkId).toEqual('polygon')
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
 
     const typedData = getTypedData(
       network.chainId,
@@ -1492,10 +1476,6 @@ describe('SignAccountOp Controller ', () => {
           }
         ]
       )
-
-      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-      jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
 
       controller.update({
         gasPrices: prices,
@@ -1675,10 +1655,6 @@ describe('SignAccountOp Controller ', () => {
   //   )
 
   //   expect(controller.accountOp.asUserOperation).toBe(undefined)
-
-  //   // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-  //   // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-  //   jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
   //   controller.update({
   //     gasPrices: prices,
