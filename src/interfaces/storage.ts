@@ -14,6 +14,7 @@ import { CashbackStatusByAccount } from './selectedAccount'
 import { ActiveRoute } from './swapAndBridge'
 
 export type StorageProps = {
+  passedMigrations: string[]
   migrations: string[]
   networks: { [key: string]: Network }
   accounts: Account[]
