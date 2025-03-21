@@ -388,7 +388,7 @@ export class SocketAPI {
     return response
   }
 
-  async updateActiveRoute(
+  async getActiveRoute(
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
   ): Promise<SocketAPIActiveRoutes> {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
@@ -420,7 +420,11 @@ export class SocketAPI {
     }
   }
 
-  async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  async getNextRouteUserTx({
+    activeRouteId
+  }: {
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+  }) {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
 

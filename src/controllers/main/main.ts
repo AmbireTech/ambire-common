@@ -1501,7 +1501,10 @@ export class MainController extends EventEmitter {
           })
           this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
 
-          transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
+          transaction = await this.swapAndBridge.getNextRouteUserTx({
+            activeRouteId: activeRoute.activeRouteId,
+            route: activeRoute
+          })
 
           if (transaction) {
             const network = this.networks.networks.find(

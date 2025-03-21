@@ -16,7 +16,9 @@ const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTx
 }
 
 const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?: Network[]) => {
-  const steps = getQuoteRouteSteps(route.route.userTxs)
+  // TODO: Migrate Socket to SwapAndBridgeStep
+  // const steps = getQuoteRouteSteps(route.route.userTxs)
+  const steps = route.route.steps
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol

@@ -16,11 +16,9 @@ import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIActiveRoutes,
-  SocketAPIQuote,
-  SocketAPIResponse,
   SocketAPISendTransactionRequest,
   SocketAPIToken,
-  SocketRouteStatus,
+  SwapAndBridgeActiveRoutes,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -35,12 +33,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import {
-  AMBIRE_FEE_TAKER_ADDRESSES,
-  FEE_PERCENT,
-  NULL_ADDRESS,
-  ZERO_ADDRESS
-} from '../socket/constants'
+import { FEE_PERCENT, NULL_ADDRESS, ZERO_ADDRESS } from '../socket/constants'
 
 const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
   addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
@@ -66,81 +59,92 @@ const normalizeLiFiTokenToSwapAndBridgeToToken = (
 }
 
 const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] =>
-  parentStep.includedSteps.map((step: LiFiIncludedStep, index: number) => ({
-    chainId: step.action.fromChainId,
-    fromAmount: step.action.fromAmount,
-    fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
-      step.action.fromToken,
-      step.action.fromChainId
-    ),
-    gasFees: {
-      gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-      gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-      feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-      asset: step.estimate.gasCosts?.[0]?.token
-        ? normalizeLiFiTokenToSwapAndBridgeToToken(
-            step.estimate.gasCosts[0].token,
-            step.estimate.gasCosts[0].token.chainId
-          )
-        : undefined
-    },
-    minAmountOut: step.estimate.toAmountMin,
-    protocol: {
-      name: step.toolDetails.name,
-      displayName: step.toolDetails.name,
-      icon: step.toolDetails.logoURI
-    },
-    swapSlippage: step.action.slippage,
-    toAmount: step.estimate.toAmount,
-    toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(step.action.toToken, step.action.toChainId),
-    type: step.type === 'swap' ? 'swap' : 'middleware',
-    userTxIndex: index
-  }))
+  parentStep.includedSteps
+    // Picks only steps that need to be visualized / displayed
+    .filter(({ type }) => ['swap', 'cross'].includes(type))
+    .map((step: LiFiIncludedStep, index: number) => ({
+      chainId: step.action.fromChainId,
+      fromAmount: step.action.fromAmount,
+      fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
+        step.action.fromToken,
+        step.action.fromChainId
+      ),
+      gasFees: {
+        gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
+        gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
+        feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
+        asset: step.estimate.gasCosts?.[0]?.token
+          ? normalizeLiFiTokenToSwapAndBridgeToToken(
+              step.estimate.gasCosts[0].token,
+              step.estimate.gasCosts[0].token.chainId
+            )
+          : undefined
+      },
+      minAmountOut: step.estimate.toAmountMin,
+      protocol: {
+        name: step.toolDetails.name,
+        displayName: step.toolDetails.name,
+        icon: step.toolDetails.logoURI
+      },
+      swapSlippage: step.action.slippage,
+      toAmount: step.estimate.toAmount,
+      toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(step.action.toToken, step.action.toChainId),
+      type: step.type === 'swap' ? 'swap' : 'middleware',
+      userTxIndex: index
+    }))
 
 const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBridgeUserTx[] =>
-  parentStep.includedSteps.map((step: LiFiIncludedStep, index: number) => ({
-    // TODO: Check if correct
-    userTxType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
-    userTxIndex: index,
-    // TODO: Check if correct
-    txType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
-    fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
-      step.action.fromToken,
-      step.action.fromChainId
-    ),
-    toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(step.action.toToken, step.action.toChainId),
-    chainId: step.action.fromChainId,
-    fromAmount: step.estimate.fromAmount,
-    toAmount: step.estimate.toAmount,
-    swapSlippage: step.action.slippage,
-    protocol: {
-      displayName: step.toolDetails.name,
-      icon: step.toolDetails.logoURI,
-      name: step.toolDetails.name
-    },
-    minAmountOut: step.estimate.toAmountMin,
-    gasFees: {
-      gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-      gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-      feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-      asset: step.estimate.gasCosts?.[0]?.token
-        ? normalizeLiFiTokenToSwapAndBridgeToToken(
-            step.estimate.gasCosts[0].token,
-            step.estimate.gasCosts[0].token.chainId
-          )
-        : undefined
-    }
-  }))
+  parentStep.includedSteps
+    // Picks only steps that need to be visualized / displayed
+    .filter(({ type }) => ['swap', 'cross'].includes(type))
+    .map((step: LiFiIncludedStep, index: number) => ({
+      userTxType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
+      userTxIndex: index,
+      txType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
+      fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
+        step.action.fromToken,
+        step.action.fromChainId
+      ),
+      toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(step.action.toToken, step.action.toChainId),
+      chainId: step.action.fromChainId,
+      fromAmount: step.estimate.fromAmount,
+      toAmount: step.estimate.toAmount,
+      swapSlippage: step.action.slippage,
+      protocol: {
+        displayName: step.toolDetails.name,
+        icon: step.toolDetails.logoURI,
+        name: step.toolDetails.name
+      },
+      minAmountOut: step.estimate.toAmountMin,
+      gasFees: {
+        gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
+        gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
+        feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
+        asset: step.estimate.gasCosts?.[0]?.token
+          ? normalizeLiFiTokenToSwapAndBridgeToToken(
+              step.estimate.gasCosts[0].token,
+              step.estimate.gasCosts[0].token.chainId
+            )
+          : undefined
+      }
+    }))
 
-const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridgeRoute => ({
+const normalizeLiFiRouteToSwapAndBridgeRoute = (
+  route: LiFiRoute,
+  userAddress: string
+): SwapAndBridgeRoute => ({
   routeId: route.id,
+  fromChainId: route.fromChainId,
+  toChainId: route.toChainId,
+  userAddress,
   isOnlySwapRoute: !route.containsSwitchChain,
   fromAmount: route.fromAmount,
   toAmount: route.toAmount,
-  // TODO: Make optional?
-  usedBridgeNames: [route.steps[0].toolDetails.name],
-  // TODO: Make optional?
-  usedDexName: route.steps[0].toolDetails.name,
+  // Single txn flow would always result only 1 LiFi (parent) step
+  currentUserTxIndex: 0,
+  ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
+    ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
+    : { usedDexName: route.steps[0].toolDetails.name }),
   totalUserTx: 1,
   totalGasFeesInUsd: +(route.gasCostUSD || 0),
   userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
@@ -150,36 +154,33 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (route: LiFiRoute): SwapAndBridge
   outputValueInUsd: +route.toAmountUSD,
   serviceTime: route.steps[0].estimate.executionDuration,
   // errorMessage: undefined
-  rawRoute: route
+  rawRoute: route,
+  sender: route.fromAddress
 })
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   parentStep: LiFiStep
-): SwapAndBridgeSendTxRequest => {
-  const a = {
-    activeRouteId: parentStep.id,
-    approvalData:
-      parentStep.action.fromToken.address === ZERO_ADDRESS
-        ? null // No approval needed fo native tokens
-        : {
-            allowanceTarget: parentStep.estimate.approvalAddress,
-            approvalTokenAddress: parentStep.action.fromToken.address,
-            minimumApprovalAmount: parentStep.estimate.fromAmount,
-            owner: ''
-          },
-    chainId: parentStep.action.fromChainId,
-    totalUserTx: 1,
-    txData: parentStep.transactionRequest?.data,
-    txTarget: parentStep.transactionRequest?.to,
-    txType: 'eth_sendTransaction',
-    userTxIndex: 0,
-    // TODO:
-    userTxType: 'dex-swap',
-    value: parentStep.transactionRequest?.value
-  }
-
-  return a
-}
+): SwapAndBridgeSendTxRequest => ({
+  // Route ID is the string before the colon, then it's the step index
+  activeRouteId: parentStep.id.split(':')[0],
+  approvalData:
+    parentStep.action.fromToken.address === ZERO_ADDRESS
+      ? null // No approval needed fo native tokens
+      : {
+          allowanceTarget: parentStep.estimate.approvalAddress,
+          approvalTokenAddress: parentStep.action.fromToken.address,
+          minimumApprovalAmount: parentStep.estimate.fromAmount,
+          owner: ''
+        },
+  chainId: parentStep.action.fromChainId,
+  totalUserTx: 1,
+  txData: parentStep.transactionRequest?.data,
+  txTarget: parentStep.transactionRequest?.to,
+  txType: 'eth_sendTransaction',
+  userTxIndex: 0,
+  userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
+  value: parentStep.transactionRequest?.value
+})
 
 export class LiFiAPI {
   #fetch: Fetch
@@ -284,7 +285,6 @@ export class LiFiAPI {
     fromChainId: number
     toChainId: number
   }): Promise<SwapAndBridgeToToken[]> {
-    // TODO: Figure out a way to pull only a shortlist
     const params = new URLSearchParams({
       chains: toChainId.toString(),
       chainTypes: 'EVM'
@@ -387,7 +387,7 @@ export class LiFiAPI {
     })
 
     const selectedRoute = response.routes[0]
-      ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0])
+      ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0], userAddress)
       : undefined
     const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0]
       ? response.routes[0].steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep)
@@ -400,17 +400,17 @@ export class LiFiAPI {
       toChainId,
       selectedRoute,
       selectedRouteSteps,
-      routes: response.routes.map(normalizeLiFiRouteToSwapAndBridgeRoute)
+      routes: response.routes.map((r) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
     }
   }
 
   async startRoute({
     route
   }: {
-    fromChainId: number
-    toChainId: number
-    fromAssetAddress: string
-    toAssetAddress: string
+    fromChainId?: number
+    toChainId?: number
+    fromAssetAddress?: string
+    toAssetAddress?: string
     route: SwapAndBridgeRoute
   }): Promise<SwapAndBridgeSendTxRequest> {
     const body = JSON.stringify((route.rawRoute as LiFiRoute).steps[0])
@@ -449,7 +449,7 @@ export class LiFiAPI {
       fromChain: fromChainId.toString(),
       toChain: toChainId.toString()
     })
-    const url = `${this.#baseUrl}/v1/status?${params.toString()}`
+    const url = `${this.#baseUrl}/status?${params.toString()}`
 
     const response = await this.#handleResponse<LiFiRouteStatusResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
@@ -467,47 +467,25 @@ export class LiFiAPI {
     return statuses[response.status]
   }
 
-  async updateActiveRoute(
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-  ): Promise<SocketAPIActiveRoutes> {
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPIActiveRoutes>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to update the active route.'
-    })
-
-    return {
-      ...response,
-      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
-      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
-      toAsset: normalizeIncomingSocketToken(response.toAsset),
-      toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
-      userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
-        ...userTx,
-        ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
-        toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-        ...('steps' in userTx && {
-          steps: userTx.steps.map((step) => ({
-            ...step,
-            fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-            toAsset: normalizeIncomingSocketToken(step.toAsset)
-          }))
-        })
-      }))
-    }
+  // eslint-disable-next-line class-methods-use-this
+  getActiveRoute({
+    activeRouteId,
+    routes = []
+  }: {
+    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
+    routes?: SwapAndBridgeRoute[]
+  }): SwapAndBridgeActiveRoutes | undefined {
+    console.log('activeRouteId', routes, activeRouteId)
+    // LiFi has no concept for retrieving active routes from the API
+    return routes.find((r) => r.routeId === activeRouteId)
   }
 
-  async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to start the next step.'
-    })
-
-    return response
+  async getNextRouteUserTx({
+    route
+  }: {
+    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    route: SwapAndBridgeRoute
+  }) {
+    return this.startRoute({ route })
   }
 }

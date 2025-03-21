@@ -75,6 +75,10 @@ export interface SocketAPIRoute {
 
 export interface SwapAndBridgeRoute {
   routeId: string
+  currentUserTxIndex: number
+  fromChainId: number
+  toChainId: number
+  userAddress: string
   isOnlySwapRoute: boolean
   fromAmount: string
   toAmount: string
@@ -84,6 +88,7 @@ export interface SwapAndBridgeRoute {
   totalGasFeesInUsd: number
   // TODO: Deprecate userTxs
   userTxs: SwapAndBridgeUserTx[]
+  sender?: string
   steps: SwapAndBridgeStep[]
   receivedValueInUsd: number
   inputValueInUsd: number
@@ -299,6 +304,24 @@ export type ActiveRoute = {
   userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   userTxHash: string | null
   route: Omit<SocketAPIQuote['selectedRoute'], 'serviceTime' | 'maxServiceTime'> & {
+    createdAt: string
+    updatedAt: string
+    routeStatus: string
+    fromChainId: number
+    toChainId: number
+    currentUserTxIndex: number
+    transactionData: { txHash: string }[] | null
+    userAddress: string
+  }
+  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
+  error?: string
+}
+
+export type SwapAndBridgeActiveRoute = {
+  activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
+  userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
+  userTxHash: string | null
+  route: Omit<SwapAndBridgeQuote['selectedRoute'], 'serviceTime' | 'maxServiceTime'> & {
     createdAt: string
     updatedAt: string
     routeStatus: string

@@ -15,7 +15,9 @@ import {
   SocketAPIRoute,
   SocketAPISendTransactionRequest,
   SocketRouteStatus,
+  SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
+  SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
@@ -116,7 +118,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #serviceProviderAPI: SocketAPI | LiFiAPI
 
-  #activeRoutes: ActiveRoute[] = []
+  #activeRoutes: SwapAndBridgeActiveRoute[] = []
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -233,7 +235,10 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
+    // TODO: In the storage, not the FULL active route is saved, LiFi can't retrieve
+    // active route data from the API = resulting missing props
+    // this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
+    this.activeRoutes = []
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', () => {
@@ -337,7 +342,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return this.#activeRoutes
   }
 
-  set activeRoutes(value: ActiveRoute[]) {
+  set activeRoutes(value: SwapAndBridgeActiveRoute[]) {
     this.#activeRoutes = value
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('swapAndBridgeActiveRoutes', value)
@@ -1220,7 +1225,11 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#initialLoadPromise
 
     try {
-      const route = await this.#serviceProviderAPI.updateActiveRoute(activeRoute.activeRouteId)
+      const route = await this.#serviceProviderAPI.getActiveRoute({
+        activeRouteId: activeRoute.activeRouteId,
+        routes: this.quote?.routes
+      })
+
       this.activeRoutes.push({
         ...activeRoute,
         routeStatus: 'ready',
@@ -1246,8 +1255,8 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updateActiveRoute(
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId'],
-    activeRoute?: Partial<ActiveRoute>,
+    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId'],
+    activeRoute?: Partial<SwapAndBridgeActiveRoute>,
     forceUpdateRoute?: boolean
   ) {
     const currentActiveRoutes = [...this.activeRoutes]
@@ -1258,7 +1267,10 @@ export class SwapAndBridgeController extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
-          route = await this.#serviceProviderAPI.updateActiveRoute(activeRouteId)
+          route = await this.#serviceProviderAPI.getActiveRoute({
+            activeRouteId,
+            routes: this.activeRoutes
+          })
           this.updateActiveRoute(activeRouteId, { route })
         })()
       }
