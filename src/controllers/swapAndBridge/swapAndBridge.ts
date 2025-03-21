@@ -1139,7 +1139,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
-    const fetchAndUpdateRoute = async (activeRoute: ActiveRoute) => {
+    const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SocketRouteStatus = null
       const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
         op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
@@ -1443,6 +1443,8 @@ export class SwapAndBridgeController extends EventEmitter {
   get banners() {
     if (!this.#selectedAccount.account) return []
 
+    // FIXME: After the first route status call, route gets "undefined"
+    // console.log('activeRoutesForSelectedAccount', this.activeRoutes)
     const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
       this.#selectedAccount.account.addr,
       this.activeRoutes
