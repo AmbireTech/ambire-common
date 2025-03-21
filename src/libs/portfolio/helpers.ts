@@ -200,7 +200,7 @@ export const getPinnedGasTankTokens = (
       (pinnedToken) =>
         (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
         pinnedToken.address === token.address &&
-        pinnedToken.chainId === token.network
+        pinnedToken.chainId.toString() === token.chainId.toString()
     )
 
     if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
