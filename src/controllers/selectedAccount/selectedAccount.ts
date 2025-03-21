@@ -260,13 +260,17 @@ export class SelectedAccountController extends EventEmitter {
       this.#isPortfolioLoadingFromScratch
     )
 
+    // Reset the loading timestamp if the portfolio is ready
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = null
     }
 
+    // Set the loading timestamp when the portfolio starts loading
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
+
+    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
     if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
       this.#isPortfolioLoadingFromScratch = false
     }
