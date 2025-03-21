@@ -17,6 +17,7 @@ import {
   SocketRouteStatus,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
+  SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
@@ -1127,10 +1128,16 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  async getNextRouteUserTx(activeRouteId: number) {
+  async getNextRouteUserTx({
+    activeRouteId,
+    route
+  }: {
+    activeRouteId: number
+    route: SwapAndBridgeRoute
+  }) {
     try {
-      const route = await this.#serviceProviderAPI.getNextRouteUserTx(activeRouteId)
-      return route
+      const response = await this.#serviceProviderAPI.getNextRouteUserTx({ activeRouteId, route })
+      return response
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
       throw new EmittableError({ error, level: 'minor', message })
