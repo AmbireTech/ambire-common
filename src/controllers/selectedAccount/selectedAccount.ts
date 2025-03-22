@@ -71,6 +71,8 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
+  #isPortfolioLoadingFromScratch = true
+
   dashboardNetworkFilter: NetworkId | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
@@ -214,6 +216,7 @@ export class SelectedAccountController extends EventEmitter {
   resetSelectedAccountPortfolio(skipUpdate?: boolean) {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
+    this.#isPortfolioLoadingFromScratch = true
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -253,29 +256,27 @@ export class SelectedAccountController extends EventEmitter {
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp
+      hasSignAccountOp,
+      this.#isPortfolioLoadingFromScratch
     )
 
+    // Reset the loading timestamp if the portfolio is ready
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = null
     }
 
+    // Set the loading timestamp when the portfolio starts loading
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
 
-    if (
-      // Fully loaded
-      newSelectedAccountPortfolio.isReadyToVisualize ||
-      // Has tokens to show
-      (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length) ||
-      // There is a simulation
-      !!newSelectedAccountPortfolio.networkSimulatedAccountOp
-    ) {
-      this.portfolio = newSelectedAccountPortfolio
-      this.#updatePortfolioErrors(true)
+    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
+    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
+      this.#isPortfolioLoadingFromScratch = false
     }
 
+    this.portfolio = newSelectedAccountPortfolio
+    this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 
     if (!skipUpdate) {
@@ -431,7 +432,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
-      providers: this.#providers.providers
+      providers: this.#providers.providers,
+      isAllReady: this.portfolio.isAllReady
     })
 
     this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]

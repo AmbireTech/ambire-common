@@ -160,11 +160,13 @@ const addPortfolioError = (
 export const getNetworksWithPortfolioErrorErrors = ({
   networks,
   selectedAccountLatest,
-  providers
+  providers,
+  isAllReady
 }: {
   networks: Network[]
   selectedAccountLatest: SelectedAccountPortfolioState
   providers: RPCProviders
+  isAllReady: boolean
 }): SelectedAccountBalanceError[] => {
   let errors: SelectedAccountBalanceError[] = []
 
@@ -188,7 +190,9 @@ export const getNetworksWithPortfolioErrorErrors = ({
     }
 
     if (portfolioForNetwork?.isLoading) {
-      errors = addPortfolioError(errors, networkName, 'loading-too-long')
+      // Add an error if the network is preventing the portfolio from going ready
+      // Otherwise skip the network
+      if (!isAllReady) errors = addPortfolioError(errors, networkName, 'loading-too-long')
       return
     }
 

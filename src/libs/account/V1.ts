@@ -1,11 +1,17 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { Interface } from 'ethers'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
-import { AccountOp } from '../accountOp/accountOp'
+import { Hex } from '../../interfaces/hex'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
 import { BaseAccount } from './BaseAccount'
+import { getSpoof } from './account'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
@@ -38,12 +44,15 @@ export class V1 extends BaseAccount {
     const providerGasUsed = estimation.providerEstimation
       ? estimation.providerEstimation.gasUsed
       : 0n
+
+    const ambireBroaddcastGas = getBroadcastGas(this, options.op)
+    const ambireGas = ambireBroaddcastGas + estimation.ambireEstimation.gasUsed
+
     // use ambireEstimation.gasUsed in all cases except Arbitrum when
     // the provider gas is more than the ambire gas
-    return this.network.chainId === ARBITRUM_CHAIN_ID &&
-      providerGasUsed > estimation.ambireEstimation.gasUsed
+    return this.network.chainId === ARBITRUM_CHAIN_ID && providerGasUsed > ambireGas
       ? providerGasUsed
-      : estimation.ambireEstimation.gasUsed
+      : ambireGas
   }
 
   getBroadcastOption(
@@ -54,5 +63,27 @@ export class V1 extends BaseAccount {
   ): string {
     if (feeOption.paidBy !== this.getAccount().addr) return BROADCAST_OPTIONS.byOtherEOA
     return BROADCAST_OPTIONS.byRelayer
+  }
+
+  canUseReceivingNativeForFee(): boolean {
+    return true
+  }
+
+  getBroadcastCalldata(accountOp: AccountOp): Hex {
+    if (this.accountState.isDeployed) {
+      const ambireAccount = new Interface(AmbireAccount.abi)
+      return ambireAccount.encodeFunctionData('executeBySender', [
+        getSignableCalls(accountOp)
+      ]) as Hex
+    }
+
+    // deployAndExecuteMultiple is the worst case
+    const ambireFactory = new Interface(AmbireFactory.abi)
+    return ambireFactory.encodeFunctionData('deployAndExecute', [
+      this.account.creation!.bytecode,
+      this.account.creation!.salt,
+      getSignableCalls(accountOp),
+      getSpoof(this.account)
+    ]) as Hex
   }
 }
