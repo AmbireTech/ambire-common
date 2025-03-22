@@ -3,11 +3,12 @@ import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
@@ -48,7 +49,7 @@ export function getNonceDiscrepancyFailure(
 }
 
 export async function ambireEstimateGas(
-  account: Account,
+  baseAcc: BaseAccount,
   accountState: AccountOnchainState,
   op: AccountOp,
   network: Network,
@@ -56,6 +57,7 @@ export async function ambireEstimateGas(
   feeTokens: TokenResult[],
   nativeToCheck: string[]
 ): Promise<AmbireEstimation | Error> {
+  const account = baseAcc.getAccount()
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
 
   // only the activator call is added here as there are cases where it's needed
@@ -130,10 +132,27 @@ export async function ambireEstimateGas(
   const feeTokenOptions: FeePaymentOption[] = feeTokens.map(
     (token: TokenResult | GasTankTokenResult, key: number) => {
       // We are using 'availableAmount' here, because it's possible the 'amount' to contains pending top up amount as well
-      const availableAmount =
+      let availableAmount =
         token.flags.onGasTank && 'availableAmount' in token
           ? token.availableAmount || token.amount
           : feeTokenOutcomes[key].amount
+
+      // if the token is native and the account type cannot pay for the
+      // transaction with the receiving amount from the estimation,
+      // override the amount to the original, in-account amount.
+      //
+      // This isn't true when the amount is decreasing, though
+      // We should subtract the amount if it's less the one he
+      // currently owns as send all of native and paying in native
+      // is impossible
+      if (
+        !token.flags.onGasTank &&
+        token.address === ZeroAddress &&
+        !baseAcc.canUseReceivingNativeForFee() &&
+        feeTokenOutcomes[key].amount > token.amount
+      )
+        availableAmount = token.amount
+
       return {
         paidBy: account.addr,
         availableAmount,

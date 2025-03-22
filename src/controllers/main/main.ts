@@ -1157,13 +1157,13 @@ export class MainController extends EventEmitter {
     // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
-    const isAllReady = latestStateKeys.every((networkId) => {
-      return isNetworkReady(latestState[networkId])
+    const isAllLoaded = latestStateKeys.every((networkId) => {
+      return isNetworkReady(latestState[networkId]) && !latestState[networkId]?.isLoading
     })
 
     // Set isOffline back to false if the portfolio is loading.
     // This is done to prevent the UI from flashing the offline error
-    if (!latestStateKeys.length || !isAllReady) {
+    if (!latestStateKeys.length || !isAllLoaded) {
       // Skip unnecessary updates
       if (!this.isOffline) return
 

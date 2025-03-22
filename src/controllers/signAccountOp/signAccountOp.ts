@@ -16,7 +16,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { NetworksController } from '../networks/networks'
@@ -51,8 +50,7 @@ import {
 import {
   Gas1559Recommendation,
   GasPriceRecommendation,
-  GasRecommendation,
-  getProbableCallData
+  GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { hasRelayerSupport } from '../../libs/networks/networks'
@@ -333,25 +331,6 @@ export class SignAccountOpController extends EventEmitter {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
   }
 
-  getCallDataAdditionalByNetwork(): bigint {
-    // no additional call data is required for arbitrum as the bytes are already
-    // added in the calculation for the L1 fee
-    if (this.#network.chainId === ARBITRUM_CHAIN_ID || !isSmartAccount(this.account)) return 0n
-
-    const estimationCallData = getProbableCallData(
-      this.account,
-      this.accountOp,
-      this.accountState,
-      this.#network
-    )
-    const FIXED_OVERHEAD = 21000n
-    const bytes = Buffer.from(estimationCallData.substring(2))
-    const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
-    const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
-    const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
-    return txDataGas + FIXED_OVERHEAD
-  }
-
   get errors(): string[] {
     const errors: string[] = []
 
@@ -387,11 +366,19 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    if (this.#blockGasLimit && this.gasUsed > this.#blockGasLimit) {
+    if (
+      this.#blockGasLimit &&
+      this.selectedOption &&
+      this.selectedOption.gasUsed > this.#blockGasLimit
+    ) {
       errors.push('Transaction reverted with estimation too high: above block limit')
     }
 
-    if (this.#network.predefined && this.gasUsed > 500000000n) {
+    if (
+      this.#network.predefined &&
+      this.selectedOption &&
+      this.selectedOption.gasUsed > 500000000n
+    ) {
       errors.push('Unreasonably high estimation. This transaction will probably fail')
     }
 
@@ -745,23 +732,15 @@ export class SignAccountOpController extends EventEmitter {
         }
       }
 
-      const initialGasUsed = this.gasUsed
-      if (this.estimation.estimation && this.selectedOption) {
-        this.gasUsed = this.baseAccount.getGasUsed(this.estimation.estimation, {
-          feeToken: this.selectedOption.token,
-          op: this.accountOp
-        })
-      }
-      const hasGasUsedChanged = initialGasUsed !== this.gasUsed
-
       // calculate the fee speeds if either there are no feeSpeeds
       // or any of properties for update is requested
       if (
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(calls) ||
         gasPrices ||
+        this.paidBy ||
+        this.feeTokenResult ||
         hasNewEstimation ||
-        hasGasUsedChanged ||
         bundlerGasPrices
       ) {
         this.#updateFeeSpeeds()
@@ -959,8 +938,13 @@ export class SignAccountOpController extends EventEmitter {
         return
       }
 
-      // each available fee option should declare it's estimation method
+      // get the gas used for each payment option
+      const gasUsed = this.baseAccount.getGasUsed(estimation, {
+        feeToken: option.token,
+        op: this.accountOp
+      })
 
+      // each available fee option should declare it's estimation method
       const broadcastOption = this.baseAccount.getBroadcastOption(option, {
         op: this.accountOp
       })
@@ -972,7 +956,7 @@ export class SignAccountOpController extends EventEmitter {
 
         for (const [speed, speedValue] of Object.entries(this.bundlerGasPrices as GasSpeeds)) {
           const simulatedGasLimit =
-            BigInt(estimation.bundlerEstimation.callGasLimit) +
+            BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
             BigInt(option.gasUsed)
           const gasPrice = BigInt(speedValue.maxFeePerGas)
@@ -1027,7 +1011,7 @@ export class SignAccountOpController extends EventEmitter {
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
-          simulatedGasLimit = this.gasUsed
+          simulatedGasLimit = gasUsed
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
@@ -1036,21 +1020,14 @@ export class SignAccountOpController extends EventEmitter {
           })
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-        } else if (
-          broadcastOption === BROADCAST_OPTIONS.byOtherEOA ||
-          broadcastOption === BROADCAST_OPTIONS.bySelf7702
-        ) {
+        } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          const additionalCallData =
-            broadcastOption === BROADCAST_OPTIONS.byOtherEOA
-              ? this.getCallDataAdditionalByNetwork()
-              : 0n
-          simulatedGasLimit = this.gasUsed + additionalCallData
+          simulatedGasLimit = gasUsed
           amount = simulatedGasLimit * gasPrice + option.addedNative
         } else {
           // Relayer
-          simulatedGasLimit = this.gasUsed + this.getCallDataAdditionalByNetwork() + option.gasUsed
+          simulatedGasLimit = gasUsed + option.gasUsed
           amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             gasPrice,

@@ -5,6 +5,7 @@ import { Network } from '../../interfaces/network'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   fetchTxnId,
+  isIdentifiedByUserOpHash,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
@@ -399,7 +400,7 @@ export class ActivityController extends EventEmitter {
               if (receipt) {
                 // if this is an user op, we have to check the logs
                 let isSuccess: boolean | undefined
-                if (accountOp.identifiedBy.type === 'UserOperation') {
+                if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
                   const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
                   if (userOpEventLog) isSuccess = userOpEventLog.success
                 }
