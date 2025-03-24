@@ -15,7 +15,6 @@ import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderAp
 import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SocketAPIToken,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
@@ -32,20 +31,6 @@ import {
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, NULL_ADDRESS, ZERO_ADDRESS } from '../socket/constants'
-
-const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
-
-const normalizeIncomingSocketTokenAddress = (address: string) =>
-  // incoming token addresses from Socket are all lowercased
-  getAddress(
-    // native token addresses come as null address instead of the zero address
-    convertNullAddressToZeroAddressIfNeeded(address)
-  )
-export const normalizeIncomingSocketToken = (token: SocketAPIToken) => ({
-  ...token,
-  address: normalizeIncomingSocketTokenAddress(token.address)
-})
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
   token: LiFiToken,
