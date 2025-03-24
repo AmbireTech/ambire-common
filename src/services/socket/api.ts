@@ -85,6 +85,8 @@ const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (
 }
 
 export class SocketAPI {
+  id: 'socket' = 'socket'
+
   #fetch: Fetch
 
   #baseUrl = 'https://api.socket.tech/v2'

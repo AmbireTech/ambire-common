@@ -319,6 +319,7 @@ export type ActiveRoute = {
 }
 
 export type SwapAndBridgeActiveRoute = {
+  serviceProviderId: 'socket' | 'lifi'
   sender: string
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']

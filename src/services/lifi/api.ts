@@ -166,6 +166,8 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
 })
 
 export class LiFiAPI {
+  id: 'lifi' = 'lifi'
+
   #fetch: Fetch
 
   #baseUrl = 'https://li.quest/v1'

@@ -230,9 +230,13 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    // TODO: If active routes for a different service provider than the current
-    // one are present, strip them out
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
+    // Service provider may have changed since the last time the user interacted
+    // with the Swap & Bridge. So strip out cached active routes that were NOT
+    // made by the current service provider, because they are NOT compatible.
+    this.activeRoutes = this.activeRoutes.filter(
+      (r) => r.serviceProviderId === this.#serviceProviderAPI.id
+    )
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', () => {
@@ -1221,11 +1225,11 @@ export class SwapAndBridgeController extends EventEmitter {
     try {
       let route = this.quote?.routes.find((r) => r.routeId === activeRouteId.toString())
       if (this.#serviceProviderAPI instanceof SocketAPI) {
-        // TODO: Fix type mismatch
         route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId.toString())
       }
 
       this.activeRoutes.push({
+        serviceProviderId: this.#serviceProviderAPI.id,
         activeRouteId: activeRouteId.toString(),
         userTxIndex,
         routeStatus: 'ready',
