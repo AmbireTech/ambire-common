@@ -93,9 +93,9 @@ export async function fetchFrontRanTxnId(
   foundTxnId: string,
   network: Network,
   counter = 0
-) {
+): Promise<string> {
   // try to find the probably front ran txn id 5 times and if it can't,
-  // return the already found it. It could've really failed
+  // return the already found one. It could've really failed
   if (counter >= 5) return foundTxnId
 
   const userOpHash = identifiedBy.identifier
