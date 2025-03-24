@@ -1,5 +1,3 @@
-import { getAddress } from 'ethers'
-
 import {
   ExtendedChain as LiFiExtendedChain,
   LiFiStep,
@@ -30,7 +28,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { FEE_PERCENT, NULL_ADDRESS, ZERO_ADDRESS } from '../socket/constants'
+import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
   token: LiFiToken,
@@ -324,10 +322,10 @@ export class LiFiAPI {
     sort,
     isOG
   }: {
-    fromAsset: TokenResult
+    fromAsset: TokenResult | null
     fromChainId: number
     fromTokenAddress: string
-    toAsset: SwapAndBridgeToToken
+    toAsset: SwapAndBridgeToToken | null
     toChainId: number
     toTokenAddress: string
     fromAmount: bigint
@@ -336,6 +334,15 @@ export class LiFiAPI {
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
   }): Promise<SwapAndBridgeQuote> {
+    if (!fromAsset)
+      throw new SwapAndBridgeProviderApiError(
+        'Quote requested, but missing required params. Error details: <from token details are missing>'
+      )
+    if (!toAsset)
+      throw new SwapAndBridgeProviderApiError(
+        'Quote requested, but missing required params. Error details: <to token details are missing>'
+      )
+
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
