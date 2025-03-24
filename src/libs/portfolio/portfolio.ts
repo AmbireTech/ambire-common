@@ -106,7 +106,7 @@ export class Portfolio {
           return baseCurrencies.map((baseCurrency) => {
             const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
             const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-              .map((x) => x.data.networkId)
+              .map((x) => x.data.chainId)
               .join(',')}&accounts=${queueSegment
               .map((x) => x.data.accountAddr)
               .join(',')}&baseCurrency=${baseCurrency}`
@@ -118,7 +118,7 @@ export class Portfolio {
             timeoutAfter: 3000,
             timeoutErrorMessage: `Velcro discovery timed out on ${network.name}`
           },
-          dedupeByKeys: ['networkId', 'accountAddr']
+          dedupeByKeys: ['chainId', 'accountAddr']
         }
       )
     }

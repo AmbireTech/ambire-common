@@ -640,7 +640,7 @@ export class ActivityController extends EventEmitter {
     if (!acc) return null
 
     // if the broadcasting account is a smart account, it means relayer
-    // broadcast => it's in this.#accountsOps[acc.addr][networkId]
+    // broadcast => it's in this.#accountsOps[acc.addr][chainId]
     // disregard erc-4337 txns as they shouldn't have an RBF
     const isSA = isSmartAccount(acc)
     if (isSA) {
