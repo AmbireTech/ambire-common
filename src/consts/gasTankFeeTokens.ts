@@ -379,7 +379,7 @@ export default [
   {
     address: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
     symbol: 'cake',
-    networkId: 'binance-smart-chain',
+    chainId: 56n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/12632/standard/pancakeswap-cake-logo_%281%29.png?1696512440'
   },

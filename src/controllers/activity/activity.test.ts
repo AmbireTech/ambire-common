@@ -20,7 +20,7 @@ import { SignedMessage } from './types'
 
 const INIT_PARAMS = {
   account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  network: 'ethereum'
+  chainId: 1n
 }
 
 const ACCOUNTS = [
@@ -219,7 +219,7 @@ describe('Activity Controller ', () => {
         currentPage: 0,
         maxPages: 1
       })
-      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
+      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
     })
