@@ -2,10 +2,11 @@ import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
+  fetchFrontRanTxnId,
   fetchTxnId,
+  isIdentifiedByUserOpHash,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
@@ -18,6 +19,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
@@ -92,7 +94,7 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
  * Older items are trimmed, keeping the most recent ones.
  */
 export class ActivityController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #fetch: Fetch
 
@@ -133,7 +135,7 @@ export class ActivityController extends EventEmitter {
   #callRelayer: Function
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     callRelayer: Function,
     accounts: AccountsController,
@@ -395,11 +397,26 @@ export class ActivityController extends EventEmitter {
             this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
 
             try {
-              const receipt = await provider.getTransactionReceipt(txnId)
+              let receipt = await provider.getTransactionReceipt(txnId)
               if (receipt) {
+                // if the status is a failure and it's an userOp, it means it
+                // could've been front ran. We need to make sure we find the
+                // transaction that has succeeded
+                if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                  const frontRanTxnId = await fetchFrontRanTxnId(
+                    accountOp.identifiedBy,
+                    txnId,
+                    network
+                  )
+                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId =
+                    frontRanTxnId
+                  receipt = await provider.getTransactionReceipt(frontRanTxnId)
+                  if (!receipt) return
+                }
+
                 // if this is an user op, we have to check the logs
                 let isSuccess: boolean | undefined
-                if (accountOp.identifiedBy.type === 'UserOperation') {
+                if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
                   const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
                   if (userOpEventLog) isSuccess = userOpEventLog.success
                 }

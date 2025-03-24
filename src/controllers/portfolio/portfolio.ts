@@ -4,10 +4,10 @@ import { Account, AccountId, AccountOnchainState } from '../../interfaces/accoun
 import { Fetch } from '../../interfaces/fetch'
 import { Network, NetworkId } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
-import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
+import batcher from '../../libs/portfolio/batcher'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
@@ -33,12 +33,12 @@ import {
   TemporaryTokens,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { migrateTokenPreferences } from '../../libs/portfolio/migrations/tokenPreferences'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -74,13 +74,15 @@ export class PortfolioController extends EventEmitter {
 
   #portfolioLibs: Map<string, Portfolio>
 
-  #storage: Storage
+  #storage: StorageController
 
   #fetch: Fetch
 
   #callRelayer: Function
 
   #velcroUrl: string
+
+  #batchedVelcroDiscovery: Function
 
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
@@ -110,7 +112,7 @@ export class PortfolioController extends EventEmitter {
   #initialLoadPromise: Promise<void>
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     providers: ProvidersController,
     networks: NetworksController,
@@ -132,6 +134,30 @@ export class PortfolioController extends EventEmitter {
     this.#accounts = accounts
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
+    this.#batchedVelcroDiscovery = batcher(
+      fetch,
+      (queue) => {
+        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+        return baseCurrencies.map((baseCurrency) => {
+          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+
+          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+            .map((x) => x.data.networkId)
+            .join(',')}&accounts=${queueSegment
+            .map((x) => x.data.accountAddr)
+            .join(',')}&baseCurrency=${baseCurrency}`
+
+          return { url, queueSegment }
+        })
+      },
+      {
+        timeoutSettings: {
+          timeoutAfter: 3000,
+          timeoutErrorMessage: 'Velcro discovery timed out'
+        },
+        dedupeByKeys: ['networkId', 'accountAddr']
+      }
+    )
 
     this.#initialLoadPromise = this.#load()
   }
@@ -140,28 +166,16 @@ export class PortfolioController extends EventEmitter {
     try {
       await this.#networks.initialLoadPromise
       await this.#accounts.initialLoadPromise
-      const storageTokenPreferences = await this.#storage.get('tokenPreferences', [])
-      const storageCustomTokens = await this.#storage.get('customTokens', [])
 
-      const { tokenPreferences, customTokens, shouldUpdateStorage } = migrateTokenPreferences(
-        storageTokenPreferences,
-        storageCustomTokens
-      )
-
-      this.tokenPreferences = tokenPreferences
-      this.customTokens = customTokens
-
-      if (shouldUpdateStorage) {
-        await this.#storage.set('tokenPreferences', this.tokenPreferences)
-        await this.#storage.set('customTokens', this.customTokens)
-      }
+      this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
+      this.customTokens = await this.#storage.get('customTokens', [])
 
       this.#previousHints = await this.#storage.get('previousHints', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
           Array.isArray(networksWithAssets[key]) &&
-          networksWithAssets[key].every((item: any) => typeof item === 'string')
+          (networksWithAssets[key] as any).every((item: any) => typeof item === 'string')
       )
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
@@ -365,7 +379,13 @@ export class PortfolioController extends EventEmitter {
     ) {
       this.#portfolioLibs.set(
         key,
-        new Portfolio(this.#fetch, providers[network.id], network, this.#velcroUrl)
+        new Portfolio(
+          this.#fetch,
+          providers[network.id],
+          network,
+          this.#velcroUrl,
+          this.#batchedVelcroDiscovery
+        )
       )
     }
     return this.#portfolioLibs.get(key)!
@@ -581,6 +601,10 @@ export class PortfolioController extends EventEmitter {
       )
 
       accountState[network.id] = {
+        // We cache the previously simulated AccountOps
+        // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
+        // This allows us to identify any differences between the two.
+        accountOps: portfolioProps?.simulation?.accountOps,
         isReady: true,
         isLoading: false,
         errors: result.errors,
@@ -591,6 +615,7 @@ export class PortfolioController extends EventEmitter {
           total: getTotal(processedTokens)
         }
       }
+
       this.emitUpdate()
       return true
     } catch (e: any) {
@@ -780,13 +805,6 @@ export class PortfolioController extends EventEmitter {
               this.#previousHints = updatedStoragePreviousHints
               await this.#storage.set('previousHints', updatedStoragePreviousHints)
             }
-          }
-
-          // We cache the previously simulated AccountOps
-          // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
-          // This allows us to identify any differences between the two.
-          if (currentAccountOps) {
-            pendingState[network.id]!.accountOps = currentAccountOps
           }
         }
 

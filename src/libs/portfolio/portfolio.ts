@@ -93,30 +93,40 @@ export class Portfolio {
     fetch: Fetch,
     provider: Provider | JsonRpcProvider,
     network: Network,
-    velcroUrl?: string
+    velcroUrl?: string,
+    customBatcher?: Function
   ) {
-    this.batchedVelcroDiscovery = batcher(
-      fetch,
-      (queue) => {
-        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-        return baseCurrencies.map((baseCurrency) => {
-          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-            .map((x) => x.data.networkId)
-            .join(',')}&accounts=${queueSegment
-            .map((x) => x.data.accountAddr)
-            .join(',')}&baseCurrency=${baseCurrency}`
-          return { queueSegment, url }
-        })
-      },
-      {
-        timeoutAfter: 3000,
-        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
-      }
-    )
+    if (customBatcher) {
+      this.batchedVelcroDiscovery = customBatcher
+    } else {
+      this.batchedVelcroDiscovery = batcher(
+        fetch,
+        (queue) => {
+          const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+          return baseCurrencies.map((baseCurrency) => {
+            const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+            const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+              .map((x) => x.data.networkId)
+              .join(',')}&accounts=${queueSegment
+              .map((x) => x.data.accountAddr)
+              .join(',')}&baseCurrency=${baseCurrency}`
+            return { queueSegment, url }
+          })
+        },
+        {
+          timeoutSettings: {
+            timeoutAfter: 3000,
+            timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+          },
+          dedupeByKeys: ['networkId', 'accountAddr']
+        }
+      )
+    }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
-      timeoutAfter: 3000,
-      timeoutErrorMessage: `Cena request timed out on ${network.id}`
+      timeoutSettings: {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Cena request timed out on ${network.id}`
+      }
     })
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
@@ -168,13 +178,13 @@ export class Portfolio {
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
             : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
           message: errorMesssage,
-          level: 'critical'
+          level: isLastUpdateTooOld ? 'critical' : 'silent'
         })
       } else {
         errors.push({
           name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
           message: errorMesssage,
-          level: 'silent'
+          level: 'critical'
         })
       }
 

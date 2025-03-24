@@ -9,14 +9,16 @@ const humanizeEstimationOrBroadcastError = (
 
   const checkAgainst = reason || originalError?.error?.message || originalError?.message
 
-  BROADCAST_OR_ESTIMATION_ERRORS.forEach((error) => {
-    const isMatching = error.reasons.some((errorReason) =>
-      checkAgainst.toLowerCase().includes(errorReason.toLowerCase())
-    )
-    if (!isMatching) return
+  if (checkAgainst) {
+    BROADCAST_OR_ESTIMATION_ERRORS.forEach((error) => {
+      const isMatching = error.reasons.some((errorReason) =>
+        checkAgainst.toLowerCase().includes(errorReason.toLowerCase())
+      )
+      if (!isMatching) return
 
-    message = `${prefix !== '' ? `${prefix} ` : ''}${error.message}`
-  })
+      message = `${prefix !== '' ? `${prefix} ` : ''}${error.message}`
+    })
+  }
 
   return message
 }

@@ -1,9 +1,11 @@
 import { TransactionReceipt, ZeroAddress } from 'ethers'
+
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
 
@@ -50,19 +52,19 @@ export interface SubmittedAccountOp extends AccountOp {
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Transaction'
+  return identifiedBy && identifiedBy.type === 'Transaction'
 }
 
 export function isIdentifiedByUserOpHash(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'UserOperation'
+  return identifiedBy && identifiedBy.type === 'UserOperation'
 }
 
 export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Relayer'
+  return identifiedBy && identifiedBy.type === 'Relayer'
 }
 
 export function isIdentifiedByMultipleTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'MultipleTxns'
+  return identifiedBy && identifiedBy.type === 'MultipleTxns'
 }
 
 export function getDappIdentifier(op: SubmittedAccountOp) {
@@ -84,6 +86,32 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
 
   // if no BroadcastedButNotConfirmed, get the last one
   return { call: op.calls[op.calls.length - 1], callIndex: op.calls.length - 1 }
+}
+
+export async function fetchFrontRanTxnId(
+  identifiedBy: AccountOpIdentifiedBy,
+  foundTxnId: string,
+  network: Network,
+  counter = 0
+): Promise<string> {
+  // try to find the probably front ran txn id 5 times and if it can't,
+  // return the already found one. It could've really failed
+  if (counter >= 5) return foundTxnId
+
+  const userOpHash = identifiedBy.identifier
+  const bundler = identifiedBy.bundler
+    ? getBundlerByName(identifiedBy.bundler)
+    : getDefaultBundler(network)
+  const bundlerResult = await bundler.getStatus(network, userOpHash)
+  if (
+    !bundlerResult.transactionHash ||
+    bundlerResult.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
+  ) {
+    await wait(2000)
+    return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1)
+  }
+
+  return bundlerResult.transactionHash
 }
 
 export async function fetchTxnId(

@@ -9,7 +9,6 @@ import {
   CashbackStatusByAccount,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
-import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
@@ -24,8 +23,6 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
-  migrateCashbackStatusToNewFormat,
-  needsCashbackStatusMigration,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -39,6 +36,7 @@ import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -53,7 +51,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 }
 
 export class SelectedAccountController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #accounts: AccountsController
 
@@ -72,6 +70,8 @@ export class SelectedAccountController extends EventEmitter {
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 
   portfolioStartedLoadingAtTimestamp: number | null = null
+
+  #isPortfolioLoadingFromScratch = true
 
   dashboardNetworkFilter: NetworkId | null = null
 
@@ -92,7 +92,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
-  constructor({ storage, accounts }: { storage: Storage; accounts: AccountsController }) {
+  constructor({ storage, accounts }: { storage: StorageController; accounts: AccountsController }) {
     super()
 
     this.#storage = storage
@@ -105,19 +105,8 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    let cashbackStatusByAccountTemp = await this.#storage.get('cashbackStatusByAccount', {})
-
-    if (needsCashbackStatusMigration(cashbackStatusByAccountTemp)) {
-      cashbackStatusByAccountTemp = migrateCashbackStatusToNewFormat(cashbackStatusByAccountTemp)
-      this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
-      await this.#storage.set('cashbackStatusByAccount', cashbackStatusByAccountTemp)
-    } else {
-      this.#cashbackStatusByAccount = cashbackStatusByAccountTemp
-    }
-
-    const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
-
-    this.account = selectedAccount || null
+    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
 
     this.emitUpdate()
@@ -227,6 +216,7 @@ export class SelectedAccountController extends EventEmitter {
   resetSelectedAccountPortfolio(skipUpdate?: boolean) {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
+    this.#isPortfolioLoadingFromScratch = true
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -266,25 +256,27 @@ export class SelectedAccountController extends EventEmitter {
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp
+      hasSignAccountOp,
+      this.#isPortfolioLoadingFromScratch
     )
 
+    // Reset the loading timestamp if the portfolio is ready
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = null
     }
 
+    // Set the loading timestamp when the portfolio starts loading
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
 
-    if (
-      newSelectedAccountPortfolio.isReadyToVisualize ||
-      (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
-    ) {
-      this.portfolio = newSelectedAccountPortfolio
-      this.#updatePortfolioErrors(true)
+    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
+    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
+      this.#isPortfolioLoadingFromScratch = false
     }
 
+    this.portfolio = newSelectedAccountPortfolio
+    this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 
     if (!skipUpdate) {
@@ -440,7 +432,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
-      providers: this.#providers.providers
+      providers: this.#providers.providers,
+      isAllReady: this.portfolio.isAllReady
     })
 
     this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]

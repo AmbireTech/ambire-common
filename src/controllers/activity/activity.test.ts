@@ -13,6 +13,7 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -115,10 +116,11 @@ let selectedAccountCtrl: SelectedAccountController
 let networksCtrl: NetworksController
 
 const storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 
 const prepareTest = async () => {
   const controller = new ActivityController(
-    storage,
+    storageCtrl,
     fetch,
     callRelayer,
     accountsCtrl,
@@ -141,7 +143,7 @@ const prepareTest = async () => {
 
 const prepareSignedMessagesTest = async () => {
   const controller = new ActivityController(
-    storage,
+    storageCtrl,
     fetch,
     callRelayer,
     accountsCtrl,
@@ -155,11 +157,7 @@ const prepareSignedMessagesTest = async () => {
 
   await controller.filterSignedMessages(sessionId, INIT_PARAMS)
 
-  return {
-    controller,
-    storage,
-    sessionId
-  }
+  return { controller, sessionId }
 }
 
 describe('Activity Controller ', () => {
@@ -167,10 +165,10 @@ describe('Activity Controller ', () => {
   // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
   // errors
   beforeAll(async () => {
-    await storage.set('accounts', ACCOUNTS)
+    await storageCtrl.set('accounts', ACCOUNTS)
 
     networksCtrl = new NetworksController(
-      storage,
+      storageCtrl,
       fetch,
       (net) => {
         providersCtrl.setProvider(net)
@@ -182,14 +180,17 @@ describe('Activity Controller ', () => {
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},
       () => {},
       () => {}
     )
-    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+    selectedAccountCtrl = new SelectedAccountController({
+      storage: storageCtrl,
+      accounts: accountsCtrl
+    })
 
     await selectedAccountCtrl.initialLoadPromise
     await selectedAccountCtrl.setAccount(ACCOUNTS[1])
@@ -198,8 +199,8 @@ describe('Activity Controller ', () => {
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
-    await storage.remove('accountsOps')
-    await storage.remove('signedMessages')
+    await storageCtrl.remove('accountsOps')
+    await storageCtrl.remove('signedMessages')
   })
 
   describe('AccountsOps', () => {
@@ -493,7 +494,7 @@ describe('Activity Controller ', () => {
       await selectedAccountCtrl.setAccount(ACCOUNTS[0])
       await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
       const controller = new ActivityController(
-        storage,
+        storageCtrl,
         fetch,
         callRelayer,
         accountsCtrl,
@@ -742,7 +743,7 @@ describe('Activity Controller ', () => {
   })
   test('removeAccountData', async () => {
     const controller = new ActivityController(
-      storage,
+      storageCtrl,
       fetch,
       callRelayer,
       accountsCtrl,
