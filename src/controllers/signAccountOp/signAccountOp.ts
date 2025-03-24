@@ -215,6 +215,11 @@ export class SignAccountOpController extends EventEmitter {
 
   #traceCall: Function
 
+  shouldSignAuth: {
+    type: 'V2Deploy' | '7702'
+    text: string
+  } | null = null
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -1303,7 +1308,16 @@ export class SignAccountOpController extends EventEmitter {
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
     const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
-    const shouldSignDeployAuth = this.baseAccount.shouldSignDeployAuth(BROADCAST_OPTIONS.byBundler)
+    const shouldSignDeployAuth = this.baseAccount.shouldSignDeployAuth(broadcastOption)
+
+    // tell the FE where we are
+    if (shouldSignDeployAuth) {
+      this.shouldSignAuth = {
+        type: 'V2Deploy',
+        text: 'Step 1/2 preparing account'
+      }
+    }
+
     if (
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
@@ -1407,6 +1421,10 @@ export class SignAccountOpController extends EventEmitter {
 
           // after signing is complete, go to paymaster mode
           if (isUsingPaymaster) {
+            this.shouldSignAuth = {
+              type: 'V2Deploy',
+              text: 'Step 2/2 signing transaction'
+            }
             this.status = { type: SigningStatus.WaitingForPaymaster }
             this.emitUpdate()
           }
