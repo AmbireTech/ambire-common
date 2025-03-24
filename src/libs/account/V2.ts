@@ -3,12 +3,20 @@
 import { Interface, ZeroAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Hex } from '../../interfaces/hex'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
-import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import {
+  BundlerStateOverride,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { privSlot } from '../proxyDeploy/deploy'
+import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
 
@@ -112,5 +120,18 @@ export class V2 extends BaseAccount {
       getSignableCalls(accountOp),
       getSpoof(this.account)
     ]) as Hex
+  }
+
+  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
+    if (this.accountState.isDeployed || !!userOp.factory) return undefined
+
+    return {
+      [this.account.addr]: {
+        code: AmbireAccount.binRuntime,
+        stateDiff: {
+          [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
+        }
+      }
+    }
   }
 }

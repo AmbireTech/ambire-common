@@ -1,13 +1,20 @@
 /* eslint-disable class-methods-use-this */
 import { Interface, ZeroAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { Hex } from '../../interfaces/hex'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
-import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import {
+  BundlerStateOverride,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes an EOA that CAN transition to 7702
@@ -125,5 +132,17 @@ export class EOA7702 extends BaseAccount {
   getBroadcastCalldata(accountOp: AccountOp): Hex {
     const ambireAccount = new Interface(AmbireAccount.abi)
     return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)]) as Hex
+  }
+
+  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
+    if (this.accountState.isSmarterEoa || !!userOp.eip7702Auth) return undefined
+
+    // if EOA without eip7702Auth, make it look like a smart account so we could
+    // do the estimation
+    return {
+      [this.account.addr]: {
+        code: AmbireAccount7702.binRuntime
+      }
+    }
   }
 }

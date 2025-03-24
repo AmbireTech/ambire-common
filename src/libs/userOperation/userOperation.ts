@@ -145,9 +145,8 @@ export function getUserOperation(
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
-  if (!accountState.isEOA && !accountState.isDeployed) {
+  if (entryPointSig) {
     if (!account.creation) throw new Error('Account creation properties are missing')
-    if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 
     const factoryInterface = new Interface(AmbireFactory.abi)
     userOp.factory = account.creation.factoryAddr
