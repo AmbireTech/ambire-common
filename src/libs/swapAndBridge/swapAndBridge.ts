@@ -110,30 +110,6 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
   return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
-  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
-    if (tx.userTxType === 'fund-movr') {
-      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
-    }
-    if (tx.userTxType === 'dex-swap') {
-      stepsAcc.push({
-        chainId: tx.chainId,
-        fromAmount: tx.fromAmount,
-        fromAsset: tx.fromAsset,
-        gasFees: tx.gasFees,
-        minAmountOut: tx.minAmountOut,
-        protocol: tx.protocol,
-        swapSlippage: tx.swapSlippage,
-        toAmount: tx.toAmount,
-        toAsset: tx.toAsset,
-        type: 'swap',
-        userTxIndex: tx.userTxIndex
-      })
-    }
-    return stepsAcc
-  }, [])
-}
-
 const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
   const serviceTimes: number[] = []
 
@@ -310,6 +286,5 @@ export {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  getQuoteRouteSteps,
   addCustomTokensIfNeeded
 }

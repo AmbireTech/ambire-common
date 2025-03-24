@@ -5,15 +5,10 @@ import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
 import {
-  ActiveRoute,
   CachedSupportedChains,
   CachedTokenListKey,
   CachedToTokenLists,
   SocketApiBridgeStep,
-  SocketAPIBridgeUserTx,
-  SocketAPIQuote,
-  SocketAPIRoute,
-  SocketAPISendTransactionRequest,
   SocketRouteStatus,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
@@ -34,7 +29,6 @@ import {
   getActiveRoutesForAccount,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
-  getQuoteRouteSteps,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -1035,10 +1029,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
           if (alreadySelectedRoute) {
             routeToSelect = alreadySelectedRoute
-            routeToSelectSteps =
-              this.#serviceProviderAPI instanceof SocketAPI
-                ? getQuoteRouteSteps(alreadySelectedRoute.userTxs)
-                : alreadySelectedRoute.steps
+            routeToSelectSteps = alreadySelectedRoute.steps
           } else {
             let bestRoute = routes[0]
             if (this.#serviceProviderAPI instanceof SocketAPI) {
@@ -1048,10 +1039,7 @@ export class SwapAndBridgeController extends EventEmitter {
                   : routes[routes.length - 1] // API returns fastest... last
             }
             routeToSelect = bestRoute
-            routeToSelectSteps =
-              this.#serviceProviderAPI instanceof SocketAPI
-                ? getQuoteRouteSteps(bestRoute.userTxs)
-                : bestRoute.steps
+            routeToSelectSteps = bestRoute.steps
           }
 
           this.quote = {
@@ -1132,7 +1120,7 @@ export class SwapAndBridgeController extends EventEmitter {
     activeRouteId,
     route
   }: {
-    activeRouteId: number
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
     route: SwapAndBridgeRoute
   }) {
     try {
@@ -1206,7 +1194,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  selectRoute(route: SocketAPIRoute) {
+  selectRoute(route: SwapAndBridgeRoute) {
     if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
     if (
       ![
@@ -1217,10 +1205,7 @@ export class SwapAndBridgeController extends EventEmitter {
       return
 
     this.quote.selectedRoute = route
-    this.quote.selectedRouteSteps =
-      this.#serviceProviderAPI instanceof SocketAPI
-        ? getQuoteRouteSteps(route.userTxs)
-        : route.steps
+    this.quote.selectedRouteSteps = route.steps
 
     this.#emitUpdateIfNeeded()
   }
@@ -1229,8 +1214,8 @@ export class SwapAndBridgeController extends EventEmitter {
     activeRouteId,
     userTxIndex
   }: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
+    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   }) {
     await this.#initialLoadPromise
 
@@ -1267,7 +1252,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   updateActiveRoute(
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId'],
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId'],
     activeRoute?: Partial<SwapAndBridgeActiveRoute>,
     forceUpdateRoute?: boolean
   ) {
@@ -1300,7 +1285,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  removeActiveRoute(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']) {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
     // Purposely not using `this.#emitUpdateIfNeeded()` here, as this should always emit to update banners

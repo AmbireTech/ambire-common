@@ -15,8 +15,8 @@ import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderAp
 import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SocketAPISendTransactionRequest,
   SocketAPIToken,
+  SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -433,8 +433,8 @@ export class LiFiAPI {
     toChainId,
     bridge
   }: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
+    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
     txHash: string
     fromChainId: number
     toChainId: number
@@ -479,7 +479,7 @@ export class LiFiAPI {
   async getNextRouteUserTx({
     route
   }: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
     route: SwapAndBridgeRoute
   }) {
     // LiFi has no concept for retrieving next route user tx from the API, since

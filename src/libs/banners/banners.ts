@@ -4,8 +4,8 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
-import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+import { ActiveRoute, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
   if (isBridgeTxn) {
@@ -15,10 +15,12 @@ const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTx
   return routeStatus === 'completed' ? 'Swapped' : 'Swap'
 }
 
-const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?: Network[]) => {
-  // TODO: Migrate Socket to SwapAndBridgeStep
-  // const steps = getQuoteRouteSteps(route.route.userTxs)
-  const steps = route.route.steps
+const getBridgeBannerText = (
+  route: SwapAndBridgeActiveRoute,
+  isBridgeTxn: boolean,
+  networks?: Network[]
+) => {
+  const { steps } = route.route
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol

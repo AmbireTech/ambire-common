@@ -31,7 +31,10 @@ import { RPCProvider } from '../../interfaces/provider'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
-import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
+import {
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeSendTxRequest
+} from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import {
@@ -1479,12 +1482,12 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, 'last', actionExecutionType)
   }
 
-  async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
+  async buildSwapAndBridgeUserRequest(activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
         if (!this.selectedAccount.account) return
-        let transaction: SocketAPISendTransactionRequest | null | undefined = null
+        let transaction: SwapAndBridgeSendTxRequest | null | undefined = null
 
         const activeRoute = this.swapAndBridge.activeRoutes.find(
           (r) => r.activeRouteId === activeRouteId
@@ -1721,7 +1724,7 @@ export class MainController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: number) {
+  removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
         r.id

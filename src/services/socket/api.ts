@@ -8,11 +8,16 @@ import {
   SocketAPIQuote,
   SocketAPIResponse,
   SocketAPISendTransactionRequest,
+  SocketAPIStep,
   SocketAPISupportedChain,
   SocketAPIToken,
+  SocketAPIUserTx,
   SocketRouteStatus,
   SwapAndBridgeActiveRoute,
+  SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeSendTxRequest,
+  SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
@@ -52,6 +57,32 @@ const normalizeOutgoingSocketToken = (token: SocketAPIToken) => ({
   ...token,
   address: normalizeOutgoingSocketTokenAddress(token.address)
 })
+
+const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (
+  userTxs: SocketAPIUserTx[]
+): SwapAndBridgeStep[] => {
+  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
+    if (tx.userTxType === 'fund-movr') {
+      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
+    }
+    if (tx.userTxType === 'dex-swap') {
+      stepsAcc.push({
+        chainId: tx.chainId,
+        fromAmount: tx.fromAmount,
+        fromAsset: tx.fromAsset,
+        gasFees: tx.gasFees,
+        minAmountOut: tx.minAmountOut,
+        protocol: tx.protocol,
+        swapSlippage: tx.swapSlippage,
+        toAmount: tx.toAmount,
+        toAsset: tx.toAsset,
+        type: 'swap',
+        userTxIndex: tx.userTxIndex
+      })
+    }
+    return stepsAcc
+  }, [])
+}
 
 export class SocketAPI {
   #fetch: Fetch
@@ -257,7 +288,7 @@ export class SocketAPI {
     isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
-  }): Promise<SocketAPIQuote> {
+  }): Promise<SwapAndBridgeQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
@@ -294,6 +325,7 @@ export class SocketAPI {
       toAsset: normalizeIncomingSocketToken(response.toAsset),
       routes: response.routes.map((route) => ({
         ...route,
+        steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs),
         userTxs: route.userTxs.map((userTx) => ({
           ...userTx,
           ...('fromAsset' in userTx && {
@@ -363,7 +395,7 @@ export class SocketAPI {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return response
+    return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 
   async getRouteStatus({
@@ -371,8 +403,8 @@ export class SocketAPI {
     userTxIndex,
     txHash
   }: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
+    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
     txHash: string
   }) {
     const params = new URLSearchParams({
@@ -407,6 +439,7 @@ export class SocketAPI {
       fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
       toAsset: normalizeIncomingSocketToken(response.toAsset),
       toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
+      steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(response.userTxs),
       userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
         ...userTx,
         ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
@@ -425,7 +458,7 @@ export class SocketAPI {
   async getNextRouteUserTx({
     activeRouteId
   }: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
+    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   }) {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
@@ -435,6 +468,6 @@ export class SocketAPI {
       errorPrefix: 'Unable to start the next step.'
     })
 
-    return response
+    return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 }
