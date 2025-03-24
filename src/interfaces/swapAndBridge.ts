@@ -203,7 +203,6 @@ export interface SocketApiBridgeStep {
 
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
-// TODO: Strip out the ones that are not used
 export type SwapAndBridgeStep = {
   chainId: number
   fromAmount: string
