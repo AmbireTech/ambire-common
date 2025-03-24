@@ -6,6 +6,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
 import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
@@ -22,6 +23,61 @@ describe('Networks Controller', () => {
       () => {},
       () => {}
     )
+  })
+
+  test('should initialize with predefined networks if storage is empty', async () => {
+    await networksController.initialLoadPromise // Wait for load to complete
+
+    expect(networksController.networks.length).toEqual(predefinedNetworks.length)
+  })
+
+  test.only('should merge relayer networks correctly, including custom "unichain" network', async () => {
+    // Add a custom network "unichain" to the predefined networks
+    const customNetwork = {
+      chainId: 130n,
+      name: 'UniChain',
+      nativeAssetSymbol: 'UNI',
+      nativeAssetName: 'UniChain Token',
+      rpcUrls: ['https://unichain.rpc.url-2'],
+      explorerUrl: 'https://unichain.explorer',
+      selectedRpcUrl: 'https://unichain.rpc.url-2',
+      erc4337: {
+        enabled: false,
+        hasPaymaster: false
+      },
+      rpcNoStateOverride: false,
+      feeOptions: {
+        is1559: false
+      },
+      isSAEnabled: false,
+      areContractsDeployed: false,
+      features: [],
+      hasRelayer: false,
+      hasSingleton: false,
+      platformId: 'unichain',
+      nativeAssetId: '1234',
+      predefined: false,
+      has7702: false
+    }
+    const networksBeforeUpdate = [...predefinedNetworks, customNetwork]
+
+    const finalNetworks = networksBeforeUpdate.reduce(
+      (acc: { [key: string]: typeof customNetwork }, network) => {
+        acc[network.chainId.toString()] = network as typeof customNetwork
+        return acc
+      },
+      {}
+    )
+
+    const updatedNetworks = await networksController.mergeRelayerNetworks(
+      finalNetworks,
+      finalNetworks
+    )
+
+    // Ensure the merged networks contain "unichain" and other relayer networks
+    expect(updatedNetworks).toHaveProperty('130')
+    expect(updatedNetworks['130'].rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
+    expect(updatedNetworks['130'].predefined).toBe(true) // Ensure "unichain" details are correct
   })
 
   test('should update network preferences', (done) => {

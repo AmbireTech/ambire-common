@@ -135,7 +135,7 @@ export class NetworksController extends EventEmitter {
     )
 
     // Step 4: Merge the networks from the Relayer
-    finalNetworks = await this.#mergeRelayerNetworks(finalNetworks, networksInStorage)
+    finalNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
 
     this.#networks = finalNetworks
     this.emitUpdate()
@@ -155,7 +155,7 @@ export class NetworksController extends EventEmitter {
     const finalNetworks = { ...this.#networks }
 
     // Process updates (merge Relayer data and apply rules)
-    const updatedNetworks = await this.#mergeRelayerNetworks(finalNetworks, networksInStorage)
+    const updatedNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
 
     // Finalize updates
     this.#networks = updatedNetworks
@@ -184,7 +184,7 @@ export class NetworksController extends EventEmitter {
    * 7. Applies special handling for networks like Odyssey.
    *
    */
-  async #mergeRelayerNetworks(
+  async mergeRelayerNetworks(
     finalNetworks: { [key: string]: Network },
     networksInStorage: { [key: string]: Network }
   ): Promise<{ [key: string]: Network }> {
@@ -263,8 +263,9 @@ export class NetworksController extends EventEmitter {
   /**
    * Updates network features asynchronously if needed.
    */
-  #updateNetworkFeatures(finalNetworks: { [key: string]: Network }) {
-    Object.values(finalNetworks).forEach((network) => {
+  async #updateNetworkFeatures(finalNetworks: { [key: string]: Network }) {
+    const updatePromises = Object.values(finalNetworks).map(async (network) => {
+      console.log('network ', network.name)
       if (network.isSAEnabled) return
 
       if (
@@ -301,6 +302,8 @@ export class NetworksController extends EventEmitter {
         network
       )
     })
+
+    await Promise.all(updatePromises)
   }
 
   async setNetworkToAddOrUpdate(
