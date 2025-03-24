@@ -296,7 +296,7 @@ export class ActionsController extends EventEmitter {
             customSize:
               this.currentAction?.type === 'accountOp'
                 ? {
-                    width: 960,
+                    width: 720,
                     height: 800
                   }
                 : undefined
