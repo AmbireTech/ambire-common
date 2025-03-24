@@ -1225,20 +1225,25 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#emitUpdateIfNeeded()
   }
 
-  async addActiveRoute(activeRoute: {
+  async addActiveRoute({
+    activeRouteId,
+    userTxIndex
+  }: {
     activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
     userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
   }) {
     await this.#initialLoadPromise
 
     try {
-      const route = await this.#serviceProviderAPI.getActiveRoute({
-        activeRouteId: activeRoute.activeRouteId,
-        routes: this.quote?.routes
-      })
+      let route = this.quote?.routes.find((r) => r.routeId === activeRouteId.toString())
+      if (this.#serviceProviderAPI instanceof SocketAPI) {
+        // TODO: Fix type mismatch
+        route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId.toString())
+      }
 
       this.activeRoutes.push({
-        ...activeRoute,
+        activeRouteId: activeRouteId.toString(),
+        userTxIndex,
         routeStatus: 'ready',
         userTxHash: null,
         route
@@ -1274,10 +1279,9 @@ export class SwapAndBridgeController extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
-          route = await this.#serviceProviderAPI.getActiveRoute({
-            activeRouteId,
-            routes: this.activeRoutes
-          })
+          if (this.#serviceProviderAPI instanceof SocketAPI) {
+            route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId)
+          }
           this.updateActiveRoute(activeRouteId, { route })
         })()
       }

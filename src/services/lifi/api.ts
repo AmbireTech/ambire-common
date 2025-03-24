@@ -15,10 +15,8 @@ import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderAp
 import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SocketAPIActiveRoutes,
   SocketAPISendTransactionRequest,
   SocketAPIToken,
-  SwapAndBridgeActiveRoutes,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -469,17 +467,13 @@ export class LiFiAPI {
     return statuses[response.status]
   }
 
+  /**
+   * NOT SUPPORTED: LiFi has no concept for retrieving active routes from the API.
+   * @deprecated
+   */
   // eslint-disable-next-line class-methods-use-this
-  getActiveRoute({
-    activeRouteId,
-    routes = []
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-    routes?: SwapAndBridgeRoute[]
-  }): SwapAndBridgeActiveRoutes | undefined {
-    console.log('activeRouteId', routes, activeRouteId)
-    // LiFi has no concept for retrieving active routes from the API
-    return routes.find((r) => r.routeId === activeRouteId)
+  getActiveRoute() {
+    return Promise.resolve(null)
   }
 
   async getNextRouteUserTx({

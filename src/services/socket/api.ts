@@ -11,6 +11,8 @@ import {
   SocketAPISupportedChain,
   SocketAPIToken,
   SocketRouteStatus,
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeRoute,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
@@ -389,8 +391,8 @@ export class SocketAPI {
   }
 
   async getActiveRoute(
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-  ): Promise<SocketAPIActiveRoutes> {
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
+  ): Promise<SwapAndBridgeRoute> {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
