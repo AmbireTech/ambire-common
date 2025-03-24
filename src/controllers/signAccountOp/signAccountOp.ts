@@ -1303,7 +1303,13 @@ export class SignAccountOpController extends EventEmitter {
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
     const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
-    if (broadcastOption === BROADCAST_OPTIONS.byBundler && isUsingPaymaster && !usesOneTimeNonce) {
+    const shouldSignDeployAuth = this.baseAccount.shouldSignDeployAuth(BROADCAST_OPTIONS.byBundler)
+    if (
+      broadcastOption === BROADCAST_OPTIONS.byBundler &&
+      isUsingPaymaster &&
+      !usesOneTimeNonce &&
+      !shouldSignDeployAuth
+    ) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }
@@ -1383,7 +1389,7 @@ export class SignAccountOpController extends EventEmitter {
           shouldReestimate = true
         }
 
-        if (this.baseAccount.shouldSignDeployAuth(BROADCAST_OPTIONS.byBundler)) {
+        if (shouldSignDeployAuth) {
           const epActivatorTypedData = await getEntryPointAuthorization(
             this.account.addr,
             this.#network.chainId,
@@ -1398,6 +1404,12 @@ export class SignAccountOpController extends EventEmitter {
           )
           if (!this.accountOp.meta) this.accountOp.meta = {}
           this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
+
+          // after signing is complete, go to paymaster mode
+          if (isUsingPaymaster) {
+            this.status = { type: SigningStatus.WaitingForPaymaster }
+            this.emitUpdate()
+          }
 
           shouldReestimate = true
         }
