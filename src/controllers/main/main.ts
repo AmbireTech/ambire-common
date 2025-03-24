@@ -397,7 +397,7 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      serviceProviderAPI: lifiAPI,
+      serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
       storage: this.#storage,
       actions: this.actions
     })
