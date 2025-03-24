@@ -1065,7 +1065,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
-    const chainId = 127n
+    const chainId = 137n
     const network = networks.find((n) => n.chainId === chainId)!
     network.erc4337.enabled = false
     const feePaymentOptions = [
