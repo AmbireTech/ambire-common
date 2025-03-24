@@ -8,8 +8,8 @@ import { getRpcProvider } from '../../services/provider'
 import { getUpdatedHints } from './helpers'
 import { Portfolio } from './portfolio'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')
-const polygon = networks.find((x) => x.id === 'polygon')
+const ethereum = networks.find((x) => x.chainId === 1n)
+const polygon = networks.find((x) => x.chainId === 137n)
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
@@ -31,7 +31,7 @@ const getTokens = async () => {
 describe('Portfolio helpers', () => {
   test('getUpdatedHints', async () => {
     const tokens = await getTokens()
-    const key = `ethereum:${TEST_ACCOUNT_ADDRESS}`
+    const key = `1:${TEST_ACCOUNT_ADDRESS}`
 
     const updatedHints = getUpdatedHints(
       {
@@ -41,10 +41,10 @@ describe('Portfolio helpers', () => {
       },
       tokens,
       [],
-      'ethereum',
+      1n,
       {
         learnedTokens: {
-          ethereum: {
+          '1': {
             [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]: null
           }
         },
@@ -66,6 +66,6 @@ describe('Portfolio helpers', () => {
     expect(updatedHints.fromExternalAPI[key]?.erc20s).toContain(
       '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'
     )
-    expect(updatedHints.learnedTokens.ethereum[LEARNED_TOKEN_WITH_BALANCE_ADDRESS]).toBeDefined()
+    expect(updatedHints.learnedTokens['1'][LEARNED_TOKEN_WITH_BALANCE_ADDRESS]).toBeDefined()
   })
 })

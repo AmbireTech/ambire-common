@@ -33,7 +33,7 @@ describe('Networks Controller', () => {
     let checkComplete = false
     networksController.onUpdate(() => {
       if (networksController.statuses.updateNetwork === 'SUCCESS' && !checkComplete) {
-        const modifiedNetwork = networksController.networks.find(({ id }) => id === 'ethereum')
+        const modifiedNetwork = networksController.networks.find(({ chainId }) => chainId === 1n)
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
         expect(modifiedNetwork?.rpcUrls).toEqual([
           'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
@@ -102,7 +102,7 @@ describe('Networks Controller', () => {
         if (noUpdate !== null) return
 
         checks++
-        const sei = networksController.networks.find((net) => net.id === 'sei')
+        const sei = networksController.networks.find((n) => n.chainId === 1329n)
         expect(sei).not.toBe(null)
         expect(sei).not.toBe(undefined)
 
@@ -130,7 +130,7 @@ describe('Networks Controller', () => {
 
       // test to see if updateNetwork is working
       if (checks === 4) {
-        const sei = networksController.networks.find((net) => net.id === 'sei')
+        const sei = networksController.networks.find((n) => n.chainId === 1329n)
         expect(sei?.areContractsDeployed).toBe(true)
         done()
       }
@@ -182,7 +182,6 @@ describe('Networks Controller', () => {
   //       expect(fantomNetwork).not.toBe(null)
   //       expect(fantomNetwork?.chainId).toBe(250n)
   //       expect(fantomNetwork?.name).toBe('Fantom')
-  //       expect(fantomNetwork?.id).toBe('fantom')
   //       expect(fantomNetwork?.nativeAssetSymbol).toBe('FTM')
 
   //       // fantom does not have the entry point

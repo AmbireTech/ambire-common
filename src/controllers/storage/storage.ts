@@ -38,6 +38,7 @@ export class StorageController {
       await this.#clearHumanizerMetaObjectFromStorage() // As of version v4.34.0
       await this.#migrateTokenPreferences() // As of version 4.51.0
       await this.#migrateCashbackStatusToNewFormat() // As of version 4.53.0
+      await this.#migrateNetworkIdToChainId()
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -51,14 +52,24 @@ export class StorageController {
   // This function migrates the data from the old NetworkPreferences to the new structure
   // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
   async #migrateNetworkPreferencesToNetworks() {
-    const [networks, networkPreferences] = await Promise.all([
+    const [passedMigrations, networks, networkPreferences] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
       this.#storage.get('networks', {}),
       this.#storage.get('networkPreferences')
     ])
+
+    if (passedMigrations.includes('migrateNetworkPreferencesToNetworks')) return
+
     if (!Object.keys(networks).length && networkPreferences) {
       const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences)
-      await this.#storage.set('networks', migratedNetworks)
-      await this.#storage.remove('networkPreferences')
+
+      await Promise.all([
+        this.#storage.set('passedMigrations', [
+          ...new Set([...passedMigrations, 'migrateNetworkPreferencesToNetworks'])
+        ]),
+        this.#storage.set('networks', migratedNetworks),
+        this.#storage.remove('networkPreferences')
+      ])
     }
   }
 
@@ -67,11 +78,14 @@ export class StorageController {
   // This change requires a migration due to the introduction of a new controller, AccountsController,
   // which now manages both accounts and their preferences.
   async #migrateAccountPreferencesToAccounts() {
-    const [accounts, accountPreferences] = await Promise.all([
+    const [passedMigrations, accounts, accountPreferences] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
       this.#storage.get('accounts', []),
       this.#storage.get('accountPreferences')
     ])
     if (!accountPreferences) return
+
+    if (passedMigrations.includes('migrateAccountPreferencesToAccounts')) return
 
     const migratedAccounts = getUniqueAccountsArray(
       accounts.map((a: any) => {
@@ -86,15 +100,26 @@ export class StorageController {
       })
     )
 
-    await this.#storage.set('accounts', migratedAccounts)
-    await this.#storage.remove('accountPreferences')
+    await Promise.all([
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateAccountPreferencesToAccounts'])
+      ]),
+      this.#storage.set('accounts', migratedAccounts),
+      this.#storage.remove('accountPreferences')
+    ])
   }
 
   // As of version v4.33.0, user can change the HD path when importing a seed.
   // Migration is needed because previously the HD path was not stored,
   // and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.
   async #migrateKeystoreSeedsWithoutHdPathTemplate() {
-    const keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
+    const [passedMigrations, keystoreSeeds] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('keystoreSeeds', [])
+    ])
+
+    if (passedMigrations.includes('migrateKeystoreSeedsWithoutHdPathTemplate')) return
+
     if (!getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) return
 
     const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
@@ -102,17 +127,26 @@ export class StorageController {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     }))
 
-    await this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
+    await Promise.all([
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateKeystoreSeedsWithoutHdPathTemplate'])
+      ]),
+      this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
+    ])
   }
 
   // As of version 4.33.0, we no longer store the key preferences in a separate object called keyPreferences in the storage.
   // Migration is needed because each preference (like key label)
   // is now part of the Key interface and managed by the KeystoreController.
   async #migrateKeyPreferencesToKeystoreKeys() {
-    const [keyPreferences, keystoreKeys] = await Promise.all([
+    const [passedMigrations, keyPreferences, keystoreKeys] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
       this.#storage.get('keyPreferences', []),
       this.#storage.get('keystoreKeys', [])
     ])
+
+    if (passedMigrations.includes('migrateKeyPreferencesToKeystoreKeys')) return
+
     const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
 
     if (!shouldMigrateKeyPreferencesToKeystoreKeys) return
@@ -127,13 +161,24 @@ export class StorageController {
       return key
     })
 
-    await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
-    await this.#storage.remove('keyPreferences')
+    await Promise.all([
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateKeyPreferencesToKeystoreKeys'])
+      ]),
+      this.#storage.set('keystoreKeys', migratedKeystoreKeys),
+      this.#storage.remove('keyPreferences')
+    ])
   }
 
   // As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
   async #migrateKeyMetaNullToKeyMetaCreatedAt() {
-    const keystoreKeys = await this.#storage.get('keystoreKeys', [])
+    const [passedMigrations, keystoreKeys] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('keystoreKeys', [])
+    ])
+
+    if (passedMigrations.includes('migrateKeyMetaNullToKeyMetaCreatedAt')) return
+
     const migratedKeystoreKeys = keystoreKeys.map((key) => {
       if (!key.meta) return { ...key, meta: { createdAt: null } } as StoredKey
       if (!key.meta.createdAt)
@@ -141,7 +186,12 @@ export class StorageController {
 
       return key
     })
-    await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
+    await Promise.all([
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateKeyMetaNullToKeyMetaCreatedAt'])
+      ]),
+      this.#storage.set('keystoreKeys', migratedKeystoreKeys)
+    ])
   }
 
   // As of version v4.34.0 HumanizerMetaV2 in storage is no longer needed. It was
@@ -156,7 +206,12 @@ export class StorageController {
   // Now, they are normalized under a single structure for simplifying.
   // Migration is needed to transform existing data into the new format.
   async #migrateCashbackStatusToNewFormat() {
-    const cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    const [passedMigrations, cashbackStatusByAccount] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('cashbackStatusByAccount', {})
+    ])
+
+    if (passedMigrations.includes('migrateCashbackStatusToNewFormat')) return
 
     const migratedCashbackStatusByAccount = Object.fromEntries(
       Object.entries(cashbackStatusByAccount).map(([accountId, status]) => {
@@ -191,27 +246,129 @@ export class StorageController {
         return [accountId, 'seen-cashback']
       })
     )
-    await this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
+    await Promise.all([
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateCashbackStatusToNewFormat'])
+      ]),
+      this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
+    ])
   }
 
   // As of version 4.51.0, migrate legacy token preferences to token preferences and custom tokens
   async #migrateTokenPreferences() {
-    const tokenPreferences = await this.#storage.get('tokenPreferences', [])
+    const [passedMigrations, tokenPreferences] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('tokenPreferences', [])
+    ])
+
+    if (passedMigrations.includes('migrateTokenPreferences')) return
 
     if (
       (tokenPreferences as LegacyTokenPreference[]).some(
         ({ symbol, decimals }) => !!symbol || !!decimals
       )
     ) {
-      await this.#storage.set(
-        'tokenPreferences',
-        migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
+      await Promise.all([
+        this.#storage.set('passedMigrations', [
+          ...new Set([...passedMigrations, 'migrateTokenPreferences'])
+        ]),
+        this.#storage.set(
+          'tokenPreferences',
+          migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
+        ),
+        this.#storage.set(
+          'customTokens',
+          migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
+        )
+      ])
+    }
+  }
+
+  async #migrateNetworkIdToChainId() {
+    const [
+      passedMigrations,
+      networks,
+      previousHints,
+      customTokens,
+      tokenPreferences,
+      networksWithAssetsByAccount,
+      networksWithPositionsByAccounts
+    ] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('networks', {}),
+      this.#storage.get('previousHints', []),
+      this.#storage.get('customTokens', []),
+      this.#storage.get('tokenPreferences', []),
+      this.#storage.get('networksWithAssetsByAccount', {}),
+      this.#storage.get('networksWithPositionsByAccounts', {})
+    ])
+
+    if (!Object.keys(networks).length) return
+
+    if (passedMigrations.includes('migrateNetworkIdToChainId')) return
+
+    const networkIdToChainId = Object.fromEntries(
+      Object.values(networks).map(({ id, chainId }: any) => [id as string, chainId as bigint])
+    )
+
+    const migrateKeys = <T>(obj: Record<string, T>) =>
+      Object.fromEntries(
+        Object.entries(obj).map(([networkId, value]) => [networkIdToChainId[networkId], value])
       )
-      await this.#storage.set(
-        'customTokens',
-        migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
+
+    const migratedPreviousHints = {
+      learnedTokens: migrateKeys(previousHints.learnedTokens || {}),
+      learnedNfts: migrateKeys(previousHints.learnedNfts || {}),
+      fromExternalAPI: Object.fromEntries(
+        Object.entries(previousHints.fromExternalAPI || {}).map(([networkAndAccountKey, value]) => {
+          const [networkId, accountAddr] = networkAndAccountKey.split(':')
+          const chainId = networkIdToChainId[networkId]
+          return chainId ? [`${chainId}:${accountAddr}`, value] : [networkAndAccountKey, value]
+        })
       )
     }
+
+    const migratedCustomTokens = customTokens.map(({ networkId, ...rest }: any) => ({
+      ...rest,
+      chainId: networkIdToChainId[networkId]
+    }))
+
+    const migratedTokenPreferences: { address: string; chainId: string; isHidden?: boolean }[] =
+      tokenPreferences.map(({ networkId, ...rest }: any) => ({
+        ...rest,
+        chainId: networkIdToChainId[networkId]
+      }))
+
+    const migratedNetworksWithAssetsByAccount = Object.fromEntries(
+      Object.entries(networksWithAssetsByAccount).map(([accountId, assetsState]) => [
+        accountId,
+        migrateKeys(assetsState)
+      ])
+    )
+
+    const migratedNetworksWithPositionsByAccounts = Object.fromEntries(
+      Object.entries(networksWithPositionsByAccounts).map(([accountId, networksWithPositions]) => [
+        accountId,
+        migrateKeys(networksWithPositions)
+      ])
+    )
+
+    const migratedNetworks = Object.fromEntries(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
+    )
+
+    await Promise.all([
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
+      ]),
+      this.#storage.set('networks', migratedNetworks),
+      this.#storage.set('previousHints', migratedPreviousHints),
+      this.#storage.set('customTokens', migratedCustomTokens),
+      this.#storage.set('tokenPreferences', migratedTokenPreferences),
+      this.#storage.set('networksWithAssetsByAccount', migratedNetworksWithAssetsByAccount),
+      this.#storage.set('networksWithPositionsByAccounts', migratedNetworksWithPositionsByAccounts)
+    ])
   }
 
   async get<K extends keyof StorageProps | string | undefined>(

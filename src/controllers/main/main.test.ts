@@ -115,7 +115,7 @@ describe('Main Controller ', () => {
       meta: {
         isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        networkId: 'ethereum'
+        chainId: 1n
       }
     }
     // @TODO test if nonce is correctly set
@@ -146,7 +146,7 @@ describe('Main Controller ', () => {
       meta: {
         isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        networkId: 'ethereum'
+        chainId: 1n
       }
     }
     await controller.removeUserRequest(req.id)
@@ -360,7 +360,7 @@ describe('Main Controller ', () => {
   })
 
   test('should check if network features get displayed correctly for ethereum', async () => {
-    const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth?.features.length).toBe(3)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
@@ -382,11 +382,11 @@ describe('Main Controller ', () => {
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
     await controller.networks.updateNetwork({ areContractsDeployed: false }, 1n)
 
-    const eth2 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth2 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth2.areContractsDeployed).toEqual(false)
     await controller.setContractsDeployedToTrueIfDeployed(eth2)
 
-    const eth3 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth3 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth3.areContractsDeployed).toEqual(true)
   })
   describe('throwBroadcastAccountOp', () => {
@@ -436,7 +436,7 @@ describe('Main Controller ', () => {
       const error = new InnerCallFailureError(
         '   transfer amount exceeds balance   ',
         [],
-        networks.find((net) => net.id === 'base')!
+        networks.find((n) => n.chainId === 8453n)!
       )
 
       try {

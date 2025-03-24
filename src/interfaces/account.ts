@@ -50,7 +50,7 @@ export interface AccountOnchainState {
 
 export type AccountStates = {
   [accountId: string]: {
-    [networkId: string]: AccountOnchainState
+    [chainId: string]: AccountOnchainState
   }
 }
 

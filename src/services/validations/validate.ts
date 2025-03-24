@@ -176,52 +176,6 @@ const validateSendTransferAmount = (
   return { success: true, message: '' }
 }
 
-const validateSendNftAddress = (
-  address: string,
-  selectedAcc: any,
-  addressConfirmed: any,
-  isRecipientAddressUnknown: boolean,
-  isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  metadata: any,
-  selectedNetwork: any,
-  network: any,
-  isUDAddress: boolean,
-  isEnsAddress: boolean,
-  isRecipientDomainResolving: boolean
-): ValidateReturnType => {
-  const isValidAddr = validateSendTransferAddress(
-    address,
-    selectedAcc,
-    addressConfirmed,
-    isRecipientAddressUnknown,
-    isRecipientHumanizerKnownTokenOrSmartContract,
-    isUDAddress,
-    isEnsAddress,
-    isRecipientDomainResolving
-  )
-  if (!isValidAddr.success) return isValidAddr
-
-  if (
-    metadata &&
-    selectedAcc &&
-    metadata.owner?.address.toLowerCase() !== selectedAcc.toLowerCase()
-  ) {
-    return {
-      success: false,
-      message: "The NFT you're trying to send is not owned by you!"
-    }
-  }
-
-  if (selectedNetwork && network && selectedNetwork.id !== network) {
-    return {
-      success: false,
-      message: 'The selected network is not the correct one.'
-    }
-  }
-
-  return { success: true, message: '' }
-}
-
 const isValidCode = (code: string) => code.length === 6
 
 const isValidPassword = (password: string) => password.length >= 8
@@ -238,7 +192,6 @@ export {
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount,
-  validateSendNftAddress,
   isValidCode,
   isValidPassword,
   isValidURL

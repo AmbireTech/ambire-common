@@ -19,7 +19,7 @@ import {
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -101,7 +101,7 @@ export class AccountAdderController extends EventEmitter {
 
   linkedAccountsLoading: boolean = false
 
-  networksWithAccountStateError: NetworkId[] = []
+  networksWithAccountStateError: bigint[] = []
 
   #derivedAccounts: DerivedAccount[] = []
 
@@ -676,8 +676,10 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  removeNetworkData(id: Network['id']) {
-    this.networksWithAccountStateError = this.networksWithAccountStateError.filter((x) => x !== id)
+  removeNetworkData(chainId: bigint) {
+    this.networksWithAccountStateError = this.networksWithAccountStateError.filter(
+      (n) => n !== chainId
+    )
     this.emitUpdate()
   }
 
@@ -792,22 +794,22 @@ export class AccountAdderController extends EventEmitter {
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: NetworkId]: Network } = {}
+    const networkLookup: { [key: string]: Network } = {}
     this.#networks.networks.forEach((network) => {
-      networkLookup[network.id] = network
+      networkLookup[network.chainId.toString()] = network
     })
 
-    const promises = Object.keys(this.#providers.providers).map(async (providerKey: NetworkId) => {
-      const network = networkLookup[providerKey]
+    const promises = Object.keys(this.#providers.providers).map(async (chainId: string) => {
+      const network = networkLookup[chainId]
       if (network) {
         const accountState = await getAccountState(
-          this.#providers.providers[providerKey],
+          this.#providers.providers[chainId],
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          console.error('accountAdder: failed to get account state on ', providerKey)
-          if (this.networksWithAccountStateError.includes(providerKey)) return
-          this.networksWithAccountStateError.push(providerKey)
+          console.error('accountAdder: failed to get account state on ', chainId)
+          if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
+          this.networksWithAccountStateError.push(BigInt(chainId))
         })
 
         if (!accountState) return
@@ -843,13 +845,13 @@ export class AccountAdderController extends EventEmitter {
 
     // Preserve the original order of networks based on usedOnNetworks
     const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
-      const networkIdsA = a.account.usedOnNetworks.map((network) => network.id)
-      const networkIdsB = b.account.usedOnNetworks.map((network) => network.id)
+      const chainIdsA = a.account.usedOnNetworks.map((network) => network.chainId)
+      const chainIdsB = b.account.usedOnNetworks.map((network) => network.chainId)
       const networkIndexA = this.#networks.networks.findIndex((network) =>
-        networkIdsA.includes(network.id)
+        chainIdsA.includes(network.chainId)
       )
       const networkIndexB = this.#networks.networks.findIndex((network) =>
-        networkIdsB.includes(network.id)
+        chainIdsB.includes(network.chainId)
       )
       return networkIndexA - networkIndexB
     })

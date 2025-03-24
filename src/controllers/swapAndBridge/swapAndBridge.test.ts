@@ -51,7 +51,7 @@ const notificationManager = {
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const storage: Storage = produceMemoryStore()
@@ -136,7 +136,7 @@ const PORTFOLIO_TOKENS = [
     amount: 2110000n,
     decimals: 6,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-    networkId: 'optimism',
+    chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
     symbol: 'USDT',
     name: 'Tether'
@@ -146,7 +146,7 @@ const PORTFOLIO_TOKENS = [
     amount: 1852n,
     decimals: 8,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
-    networkId: 'base',
+    chainId: 8453n,
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
     symbol: 'cbBTC',
     name: 'Coinbase wrapped BTC'
@@ -156,7 +156,7 @@ const PORTFOLIO_TOKENS = [
     amount: 11756728636013018n,
     decimals: 8,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-    networkId: 'optimism',
+    chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
     symbol: 'ETH',
     name: 'Ether'

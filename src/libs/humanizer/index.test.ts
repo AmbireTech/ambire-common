@@ -18,7 +18,7 @@ const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: 'ethereum',
+  chainId: 1n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,
@@ -287,7 +287,7 @@ describe('TypedMessages', () => {
       accountAddr: accountOp.accountAddr,
       content: tmTemplate,
       signature: null,
-      networkId: 'ethereum'
+      chainId: 1n
     }
 
     const expectedVisualizations = [

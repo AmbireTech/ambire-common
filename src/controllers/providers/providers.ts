@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -36,16 +36,16 @@ export class ProvidersController extends EventEmitter {
   }
 
   setProvider(network: Network) {
-    const provider = this.providers[network.id]
+    const provider = this.providers[network.chainId.toString()]
 
     // Only update the RPC if the new RPC is different from the current one or if there is no RPC for this network yet.
     if (!provider || provider?._getConnection().url !== network.selectedRpcUrl) {
-      const oldRPC = this.providers[network.id]
+      const oldRPC = this.providers[network.chainId.toString()]
 
       // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC it will keep trying to reconnect forever.
       if (oldRPC) oldRPC.destroy()
 
-      this.providers[network.id] = getRpcProvider(
+      this.providers[network.chainId.toString()] = getRpcProvider(
         network.rpcUrls,
         network.chainId,
         network.selectedRpcUrl
@@ -53,19 +53,19 @@ export class ProvidersController extends EventEmitter {
     }
   }
 
-  updateProviderIsWorking(networkId: NetworkId, isWorking: boolean) {
-    if (!this.providers[networkId]) return
-    if (this.providers[networkId].isWorking === isWorking) return
+  updateProviderIsWorking(chainId: bigint, isWorking: boolean) {
+    if (!this.providers[chainId.toString()]) return
+    if (this.providers[chainId.toString()].isWorking === isWorking) return
 
-    this.providers[networkId].isWorking = isWorking
+    this.providers[chainId.toString()].isWorking = isWorking
     this.emitUpdate()
   }
 
-  removeProvider(networkId: NetworkId) {
-    if (!this.providers[networkId]) return
+  removeProvider(chainId: bigint) {
+    if (!this.providers[chainId.toString()]) return
 
-    this.providers[networkId]?.destroy()
-    delete this.providers[networkId]
+    this.providers[chainId.toString()]?.destroy()
+    delete this.providers[chainId.toString()]
     this.emitUpdate()
   }
 

@@ -51,8 +51,7 @@ export function is4337Enabled(hasBundlerSupport: boolean, network?: Network): bo
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter(
-    (networkId) =>
-      typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking
+    (chainId) => typeof providers[chainId].isWorking === 'boolean' && !providers[chainId].isWorking
   )
 }
 
@@ -216,7 +215,7 @@ export async function getNetworkInfo(
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
   networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
-  network: Network | undefined
+  network?: Network
 ): NetworkFeature[] {
   const features: NetworkFeature[] = [
     {

@@ -95,7 +95,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
   const accountOp = parse(stringify(_accountOp))
   const humanizerOptions: HumanizerOptions = {
     ...options,
-    networkId: accountOp.networkId
+    chainId: accountOp.chainId
   }
 
   let currentCalls: IrCall[] = accountOp.calls

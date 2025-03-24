@@ -5,7 +5,6 @@ import {
   AddNetworkRequestParams,
   ChainId,
   Network,
-  NetworkId,
   NetworkInfo,
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
@@ -43,7 +42,7 @@ export class NetworksController extends EventEmitter {
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
-  #onRemoveNetwork: (id: NetworkId) => void
+  #onRemoveNetwork: (chainId: bigint) => void
 
   /** Callback that gets called when adding or updating network */
   #onAddOrUpdateNetwork: (network: Network) => void
@@ -56,7 +55,7 @@ export class NetworksController extends EventEmitter {
     fetch: Fetch,
     relayerUrl: string,
     onAddOrUpdateNetwork: (network: Network) => void,
-    onRemoveNetwork: (id: NetworkId) => void
+    onRemoveNetwork: (chainId: bigint) => void
   ) {
     super()
     this.#storage = storage
@@ -105,13 +104,12 @@ export class NetworksController extends EventEmitter {
    *
    * This method performs the following steps:
    * 1. Retrieves the latest network configurations from storage.
-   * 2. Converts the network structure from [key: NetworkId] to [key: chainId].
-   * 3. If no networks are found in storage, sets predefined networks and emits an update.
-   * 4. Merges the networks from the Relayer with the stored networks.
-   * 5. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
-   * 6. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
-   * 7. Updates the networks in storage.
-   * 8. Asynchronously updates network features if needed.
+   * 2. If no networks are found in storage, sets predefined networks and emits an update.
+   * 3. Merges the networks from the Relayer with the stored networks.
+   * 4. Ensures predefined networks are marked correctly and handles special cases (e.g., Odyssey network).
+   * 5. Sorts networks with predefined ones first, followed by custom networks, ordered by chainId.
+   * 6. Updates the networks in storage.
+   * 7. Asynchronously updates network features if needed.
    *
    * This method ensures that the application has the most up-to-date network configurations,
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
@@ -199,9 +197,7 @@ export class NetworksController extends EventEmitter {
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
-        const storedNetwork = Object.values(networksInStorage).find(
-          (net) => net.chainId === chainId
-        )
+        const storedNetwork = Object.values(networksInStorage).find((n) => n.chainId === chainId)
 
         if (!storedNetwork) {
           updatedNetworks[chainId.toString()] = {
@@ -225,7 +221,6 @@ export class NetworksController extends EventEmitter {
           updatedNetworks[chainId.toString()] = {
             ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
             ...relayerNetwork,
-            id: storedNetwork?.id || relayerNetwork.id,
             rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
           }
         } else {
@@ -237,10 +232,10 @@ export class NetworksController extends EventEmitter {
       })
 
       // Step 3: Ensure predefined networks are marked correctly and handle special cases
-      let predefinedNetworkIds = Object.keys(updatedNetworks)
+      let predefinedChainIds = Object.keys(updatedNetworks)
 
-      if (!predefinedNetworkIds.length) {
-        predefinedNetworkIds = predefinedNetworks.map((network) => network.chainId.toString())
+      if (!predefinedChainIds.length) {
+        predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
       }
 
       Object.keys(updatedNetworks).forEach((chainId: string) => {
@@ -249,7 +244,7 @@ export class NetworksController extends EventEmitter {
         // If a predefined network is removed by the relayer, mark it as custom
         // and remove the predefined flag
         // Update the hasRelayer flag to false just in case
-        if (!predefinedNetworkIds.includes(network.chainId.toString()) && network.predefined) {
+        if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
           updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
         }
 
@@ -349,10 +344,8 @@ export class NetworksController extends EventEmitter {
     }
 
     const chainIds = this.networks.map((net) => net.chainId)
-    const ids = this.networks.map((n) => n.id)
-    const networkId = network.name.toLowerCase()
     // make sure the id and chainId of the network are unique
-    if (ids.indexOf(networkId) !== -1 || chainIds.indexOf(BigInt(network.chainId)) !== -1) {
+    if (chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
         level: 'major',
@@ -366,7 +359,6 @@ export class NetworksController extends EventEmitter {
     // @ts-ignore
     delete info.feeOptions
     this.#networks[network.chainId.toString()] = {
-      id: networkId,
       ...network,
       ...info,
       feeOptions,
@@ -486,7 +478,7 @@ export class NetworksController extends EventEmitter {
 
     if (!this.#networks[chainId.toString()]) return
     delete this.#networks[chainId.toString()]
-    this.#onRemoveNetwork(chainId.toString())
+    this.#onRemoveNetwork(chainId)
     await this.#storage.set('networks', this.#networks)
     this.emitUpdate()
   }

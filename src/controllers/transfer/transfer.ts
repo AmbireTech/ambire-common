@@ -130,7 +130,7 @@ export class TransferController extends EventEmitter {
 
     if (
       prevSelectedToken?.address !== token?.address ||
-      prevSelectedToken?.networkId !== token?.networkId
+      prevSelectedToken?.chainId !== token?.chainId
     ) {
       if (!token.priceIn.length) {
         this.amountFieldMode = 'token'
@@ -444,9 +444,9 @@ export class TransferController extends EventEmitter {
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
       this.#networks
-        .filter((n) => n.id !== 'ethereum')
-        .map(({ id }) => id)
-        .includes(this.selectedToken.networkId || 'ethereum')
+        .filter((n) => n.chainId !== 1n)
+        .map(({ chainId }) => chainId)
+        .includes(this.selectedToken.chainId || 1n)
 
     this.emitUpdate()
   }

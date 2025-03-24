@@ -9,15 +9,16 @@ import {
 import { Account, AccountId, AccountPreferences } from './account'
 import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
-import { Network, NetworkId } from './network'
+import { Network } from './network'
 import { CashbackStatusByAccount } from './selectedAccount'
 import { ActiveRoute } from './swapAndBridge'
 
 export type StorageProps = {
+  passedMigrations: string[]
   migrations: string[]
   networks: { [key: string]: Network }
   accounts: Account[]
-  networkPreferences?: { [key: NetworkId]: Partial<Network> }
+  networkPreferences?: { [key: string]: Partial<Network> }
   accountPreferences?: { [key: AccountId]: AccountPreferences }
   networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
   networksWithPositionsByAccounts: NetworksWithPositionsByAccounts

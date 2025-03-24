@@ -1,6 +1,5 @@
 import { BUNDLER } from '../consts/bundlers'
 
-export type NetworkId = string
 export type ChainId = bigint
 
 export interface Erc4337settings {
@@ -51,17 +50,11 @@ export interface NetworkFeature {
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
-// NetworkId is a string: this is our internal identifier for the network
-// chainId is a number and is the chainID used for replay protection (EIP-155)
-// we need this distinction because:
-// 1) it's easier to work with the string identifier, for example if we have an object segmented by networks it's easier to debug with string IDs
-// 2) multiple distinct networks may (rarely) run the same chainId
 export interface Network {
-  id: NetworkId
+  chainId: bigint
   name: string
   nativeAssetSymbol: string
   nativeAssetName: string
-  chainId: bigint
   rpcUrls: string[]
   explorerUrl: string
   selectedRpcUrl: string
@@ -87,9 +80,6 @@ export interface Network {
   predefinedConfigVersion?: number
   // Last time the network details were updated from the rpc for custom and no SA networks
   lastUpdatedNetworkInfo?: number
-  // When we migrate from custom to predefined network from relayer, we need to store the custom network name
-  // for future migration of other storages by this id
-  customNetworkId?: string
   has7702: boolean
   allowForce4337?: boolean
 }
