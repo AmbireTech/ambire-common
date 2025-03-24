@@ -4,7 +4,9 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { isSmartAccount } from '../../libs/account/account'
 import {
+  fetchFrontRanTxnId,
   fetchTxnId,
+  isIdentifiedByUserOpHash,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
@@ -42,7 +44,7 @@ export interface Filters {
 
 interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
-  [accountAddr: string]: { [chainId: string]: SubmittedAccountOp[] }
+  [key: string]: { [key: string]: SubmittedAccountOp[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -402,11 +404,27 @@ export class ActivityController extends EventEmitter {
                 ].txnId = txnId
 
                 try {
-                  const receipt = await provider.getTransactionReceipt(txnId)
+                  let receipt = await provider.getTransactionReceipt(txnId)
                   if (receipt) {
+                    // if the status is a failure and it's an userOp, it means it
+                    // could've been front ran. We need to make sure we find the
+                    // transaction that has succeeded
+                    if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                      const frontRanTxnId = await fetchFrontRanTxnId(
+                        accountOp.identifiedBy,
+                        txnId,
+                        network
+                      )
+                      this.#accountsOps[selectedAccount][network.chainId.toString()][
+                        accountOpIndex
+                      ].txnId = frontRanTxnId
+                      receipt = await provider.getTransactionReceipt(frontRanTxnId)
+                      if (!receipt) return
+                    }
+
                     // if this is an user op, we have to check the logs
                     let isSuccess: boolean | undefined
-                    if (accountOp.identifiedBy.type === 'UserOperation') {
+                    if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
                       const userOpEventLog = parseLogs(
                         receipt.logs,
                         accountOp.identifiedBy.identifier
@@ -522,21 +540,23 @@ export class ActivityController extends EventEmitter {
 
   async hideBanner({
     addr,
-    network,
+    chainId,
     timestamp
   }: {
     addr: string
-    network: string
+    chainId: bigint
     timestamp: number
   }) {
     await this.#initialLoadPromise
 
     // shouldn't happen
     if (!this.#accountsOps[addr]) return
-    if (!this.#accountsOps[addr][network]) return
+    if (!this.#accountsOps[addr][chainId.toString()]) return
 
     // find the op we want to update
-    const op = this.#accountsOps[addr][network].find((accOp) => accOp.timestamp === timestamp)
+    const op = this.#accountsOps[addr][chainId.toString()].find(
+      (accOp) => accOp.timestamp === timestamp
+    )
     if (!op) return
 
     // update by reference
@@ -620,16 +640,16 @@ export class ActivityController extends EventEmitter {
     if (!acc) return null
 
     // if the broadcasting account is a smart account, it means relayer
-    // broadcast => it's in this.#accountsOps[acc.addr][chainId]
+    // broadcast => it's in this.#accountsOps[acc.addr][networkId]
     // disregard erc-4337 txns as they shouldn't have an RBF
     const isSA = isSmartAccount(acc)
     if (isSA) {
-      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][chainId.toString()])
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][chainId.toString(0)])
         return null
-      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][chainId.toString()][0].status!))
+      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][chainId.toString(0)][0].status!))
         return null
 
-      return this.#accountsOps[acc.addr][chainId.toString()][0]
+      return this.#accountsOps[acc.addr][chainId.toString(0)][0]
     }
 
     // if the account is an EOA, we have to go through all the smart accounts
