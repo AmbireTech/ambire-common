@@ -230,10 +230,9 @@ export class SwapAndBridgeController extends EventEmitter {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    // TODO: In the storage, not the FULL active route is saved, LiFi can't retrieve
-    // active route data from the API = resulting missing props
-    // this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
-    this.activeRoutes = []
+    // TODO: If active routes for a different service provider than the current
+    // one are present, strip them out
+    this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', () => {
@@ -1118,10 +1117,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async getNextRouteUserTx({
     activeRouteId,
-    route
+    activeRoute: { route }
   }: {
     activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    route: SwapAndBridgeRoute
+    activeRoute: SwapAndBridgeActiveRoute
   }) {
     try {
       const response = await this.#serviceProviderAPI.getNextRouteUserTx({ activeRouteId, route })

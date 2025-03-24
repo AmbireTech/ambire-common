@@ -1506,7 +1506,7 @@ export class MainController extends EventEmitter {
 
           transaction = await this.swapAndBridge.getNextRouteUserTx({
             activeRouteId: activeRoute.activeRouteId,
-            route: activeRoute
+            activeRoute
           })
 
           if (transaction) {
