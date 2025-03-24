@@ -123,14 +123,14 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
-  if (!minServiceTime) return 7000
+  if (!minServiceTime) return 30000
 
-  if (minServiceTime < 60) return 5000
-  if (minServiceTime <= 180) return 6000
-  if (minServiceTime <= 300) return 8000
-  if (minServiceTime <= 600) return 12000
+  if (minServiceTime < 60) return 15000
+  if (minServiceTime <= 180) return 20000
+  if (minServiceTime <= 300) return 30000
+  if (minServiceTime <= 600) return 60000
 
-  return 15000
+  return 30000
 }
 
 // If you have approval that has not been spent (in some smart contracts), the transaction may revert
