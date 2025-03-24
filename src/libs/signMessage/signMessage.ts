@@ -621,7 +621,11 @@ export async function getEIP712Signature(
 }
 
 // get the typedData for the first ERC-4337 deploy txn
-export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
+export async function getEntryPointAuthorization(
+  addr: AccountId,
+  chainId: bigint,
+  nonce: bigint
+): Promise<TypedMessage> {
   const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
   return getTypedData(chainId, addr, hexlify(hash))
 }

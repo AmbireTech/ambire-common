@@ -56,9 +56,12 @@ import { humanizeAccountOp } from '../../libs/humanizer'
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { GetOptions, Price, TokenResult } from '../../libs/portfolio'
 import {
+  adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
   getAuthorizationHash,
+  getEIP712Signature,
+  getEntryPointAuthorization,
   getExecuteSignature,
   getTypedData,
   wrapStandard,
@@ -1376,6 +1379,25 @@ export class SignAccountOpController extends EventEmitter {
               getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
             )
           )
+
+          shouldReestimate = true
+        }
+
+        if (this.baseAccount.shouldSignDeployAuth(BROADCAST_OPTIONS.byBundler)) {
+          const epActivatorTypedData = await getEntryPointAuthorization(
+            this.account.addr,
+            this.#network.chainId,
+            this.accountState.nonce
+          )
+          const epSignature = await getEIP712Signature(
+            epActivatorTypedData,
+            this.account,
+            this.accountState,
+            signer,
+            this.#network
+          )
+          if (!this.accountOp.meta) this.accountOp.meta = {}
+          this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
 
           shouldReestimate = true
         }

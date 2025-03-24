@@ -95,4 +95,9 @@ export abstract class BaseAccount {
   getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
     return undefined
   }
+
+  // this is specific for v2 accounts
+  shouldSignDeployAuth(broadcastOption: string): boolean {
+    return false
+  }
 }

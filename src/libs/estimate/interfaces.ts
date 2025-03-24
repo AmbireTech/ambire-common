@@ -76,6 +76,7 @@ export interface ProviderEstimation {
 
 export interface AmbireEstimation {
   gasUsed: bigint
+  deploymentGas: bigint
   feePaymentOptions: FeePaymentOption[]
   ambireAccountNonce: number
   flags: EstimationFlags
