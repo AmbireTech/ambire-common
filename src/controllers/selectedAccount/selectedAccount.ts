@@ -451,8 +451,8 @@ export class SelectedAccountController extends EventEmitter {
 
     if (
       !this.#accounts.accountStates[this.account.addr] ||
-      !this.#accounts.accountStates[this.account.addr].ethereum ||
-      !this.#accounts.accountStates[this.account.addr].ethereum.isV2
+      !this.#accounts.accountStates[this.account.addr]['1'] ||
+      !this.#accounts.accountStates[this.account.addr]['1'].isV2
     )
       return []
 

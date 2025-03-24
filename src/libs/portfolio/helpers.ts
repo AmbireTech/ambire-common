@@ -19,11 +19,11 @@ import {
 } from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
-  avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
-  moonriver: '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
-  arbitrum: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
-  polygon: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
-  optimism: '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
+  '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
+  '1285': '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
+  '42161': '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+  '137': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  '10': '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
 }
 
 export function overrideSymbol(address: string, chainId: bigint, symbol: string) {

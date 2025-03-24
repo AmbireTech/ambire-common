@@ -31,7 +31,7 @@ const getTokens = async () => {
 describe('Portfolio helpers', () => {
   test('getUpdatedHints', async () => {
     const tokens = await getTokens()
-    const key = `ethereum:${TEST_ACCOUNT_ADDRESS}`
+    const key = `1:${TEST_ACCOUNT_ADDRESS}`
 
     const updatedHints = getUpdatedHints(
       {
@@ -44,7 +44,7 @@ describe('Portfolio helpers', () => {
       1n,
       {
         learnedTokens: {
-          ethereum: {
+          '1': {
             [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]: null
           }
         },
@@ -66,6 +66,6 @@ describe('Portfolio helpers', () => {
     expect(updatedHints.fromExternalAPI[key]?.erc20s).toContain(
       '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'
     )
-    expect(updatedHints.learnedTokens.ethereum[LEARNED_TOKEN_WITH_BALANCE_ADDRESS]).toBeDefined()
+    expect(updatedHints.learnedTokens['1'][LEARNED_TOKEN_WITH_BALANCE_ADDRESS]).toBeDefined()
   })
 })

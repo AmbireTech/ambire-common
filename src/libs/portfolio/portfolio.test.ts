@@ -145,7 +145,7 @@ describe('Portfolio', () => {
       simulation: {
         accountOps: [accountOp],
         account,
-        state: accountStates[accountOp.accountAddr].ethereum
+        state: accountStates[accountOp.accountAddr]['1']
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
