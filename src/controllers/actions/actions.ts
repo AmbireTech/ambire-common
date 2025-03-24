@@ -14,7 +14,6 @@ import { WindowManager, WindowProps } from '../../interfaces/window'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
-import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter/eventEmitter'
 // Kind of inevitable, the AccountsController has SelectedAccountController, which has ActionsController
 // eslint-disable-next-line import/no-cycle
@@ -244,31 +243,13 @@ export class ActionsController extends EventEmitter {
 
   setCurrentActionById(actionId: Action['id']) {
     const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
-    if (!action) {
-      const entryPointAction = this.visibleActionsQueue.find(
-        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-      )
-
-      if (entryPointAction) this.#setCurrentAction(entryPointAction)
-
-      return
-    }
-
+    if (!action) return
     this.#setCurrentAction(action)
   }
 
   setCurrentActionByIndex(actionIndex: number) {
     const action = this.visibleActionsQueue[actionIndex]
-
-    if (!action) {
-      const entryPointAction = this.visibleActionsQueue.find(
-        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-      )
-      if (entryPointAction) this.#setCurrentAction(entryPointAction)
-
-      return
-    }
-
+    if (!action) return
     this.#setCurrentAction(action)
   }
 

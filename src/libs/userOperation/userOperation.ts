@@ -185,29 +185,6 @@ export function shouldIncludeActivatorCall(
   )
 }
 
-// if the account is v2 and the network is 4337 and the account hasn't
-// authorized the entry point, he should be asked to do so
-//
-// addition: if the account is the 0.7.0 one
-export function shouldAskForEntryPointAuthorization(
-  network: Network,
-  account: Account,
-  accountState: AccountOnchainState,
-  alreadySigned: boolean
-) {
-  if (alreadySigned) return false
-
-  return (
-    account.creation &&
-    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
-    accountState.isV2 &&
-    !accountState.isSmarterEoa &&
-    !accountState.isDeployed &&
-    network.erc4337.enabled &&
-    !accountState.isErc4337Enabled
-  )
-}
-
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
 
 export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
