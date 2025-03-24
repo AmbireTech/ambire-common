@@ -129,7 +129,7 @@ describe('Transfer Controller', () => {
     transferController.update({ selectedToken: xwalletOnEthereum })
 
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
-    expect(transferController.selectedToken?.chainId).toBe('ethereum')
+    expect(transferController.selectedToken?.chainId).toBe(1n)
   })
 
   test('should set amount', () => {
