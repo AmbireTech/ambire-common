@@ -56,6 +56,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Transaction underpriced'],
     message: 'it is underpriced. Please select a higher transaction speed and try again.'
   },
+  {
+    reasons: ['Insufficient ETH for transaction calls'],
+    message:
+      'you need more ETH in your account for this transaction. Some smart contracts require additional ETH to execute.'
+  },
   // Smart Accounts
   {
     reasons: ['Sponsorship failed.'],
