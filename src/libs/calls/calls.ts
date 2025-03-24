@@ -3,8 +3,8 @@ import { AbiCoder, Interface, ZeroAddress } from 'ethers'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { NetworkId } from '../../interfaces/network'
+import { networks } from '../../consts/networks'
+import { Network } from '../../interfaces/network'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 
@@ -49,37 +49,34 @@ export function getFeeCall(feeToken: TokenResult): Call {
 
 export function decodeFeeCall(
   { to, value, data }: Call,
-  networkId: NetworkId
+  network: Network
 ): {
   address: string
   amount: bigint
   isGasTank: boolean
+  network: Network
 } {
   if (to === FEE_COLLECTOR) {
     if (data === '0x') {
       return {
         address: ZeroAddress,
         amount: value,
-        isGasTank: false
+        isGasTank: false,
+        network
       }
     }
 
-    const [, amount, symbol] = abiCoder.decode(['string', 'uint256', 'string'], data)
-    const { address } =
-      gasTankFeeTokens.find(
-        ({ symbol: tSymbol, networkId: tNetworkId }) =>
-          tSymbol.toLowerCase() === symbol.toLowerCase() && tNetworkId === networkId
-      ) || {}
+    const [, amount] = abiCoder.decode(['string', 'uint256', 'string'], data)
 
-    if (!address)
-      throw new Error(
-        `Unable to find gas tank fee token for symbol ${symbol} and network ${networkId}`
-      )
-
+    // USDC is the only token in the gas tank.
+    // It's hard-coded this way as the gas tank can be used
+    // on multiple networks and some of them have a different
+    // amount of decimals. (e.g. Binance Smart Chain)
     return {
       amount,
-      address,
-      isGasTank: true
+      address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      isGasTank: true,
+      network: networks.find(({ chainId }) => chainId === 1n)!
     }
   }
 
@@ -87,6 +84,7 @@ export function decodeFeeCall(
   return {
     amount,
     address: to,
-    isGasTank: false
+    isGasTank: false,
+    network
   }
 }
