@@ -7,7 +7,6 @@ import { RPCProvider } from '../../interfaces/provider'
 import {
   ActiveRoute,
   SocketAPIBridgeUserTx,
-  SocketAPIStep,
   SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest,
@@ -105,18 +104,17 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
   // Fine for not having both icon props, because this would fallback to the
   // icon discovery method used for the portfolio tokens
   const icon = ''
-  const logoURI = ''
 
   return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
+const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]) => {
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
     r.route.userTxs.forEach((tx) => {
-      if ((tx as SocketAPIBridgeUserTx).serviceTime) {
-        serviceTimes.push((tx as SocketAPIBridgeUserTx).serviceTime)
+      if (tx.serviceTime) {
+        serviceTimes.push(tx.serviceTime)
       }
     })
   )

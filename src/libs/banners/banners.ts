@@ -4,10 +4,13 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
-import { ActiveRoute, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
-const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
+const getBridgeActionText = (
+  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
+  isBridgeTxn: boolean
+) => {
   if (isBridgeTxn) {
     return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
   }
@@ -45,13 +48,13 @@ const getBridgeBannerText = (
 }
 
 export const getBridgeBanners = (
-  activeRoutes: ActiveRoute[],
+  activeRoutes: SwapAndBridgeActiveRoute[],
   accountOpActions: AccountOpAction[],
   networks: Network[]
 ): Banner[] => {
-  const isBridgeTxn = (route: ActiveRoute) =>
+  const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
     route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-  const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
+  const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
         (call) =>
@@ -174,7 +177,7 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
 }
 
 const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
+  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
   chainId: bigint,
   nonSwapAndBridgeTxns: number,
   networks: Network[]
@@ -216,7 +219,7 @@ export const getAccountOpBanners = ({
   selectedAccount: string
   accounts: Account[]
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: ActiveRoute[]
+  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []

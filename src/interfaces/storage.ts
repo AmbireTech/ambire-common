@@ -11,7 +11,7 @@ import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network, NetworkId } from './network'
 import { CashbackStatusByAccount } from './selectedAccount'
-import { ActiveRoute } from './swapAndBridge'
+import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 export type StorageProps = {
   migrations: string[]
@@ -37,7 +37,7 @@ export type StorageProps = {
   onboardingState?: object
   phishingDetection: StoredPhishingDetection
   selectedAccount: string | null
-  swapAndBridgeActiveRoutes: ActiveRoute[]
+  swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
   termsState?: object
 }
 
