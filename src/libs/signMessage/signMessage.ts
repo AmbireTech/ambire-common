@@ -678,7 +678,7 @@ export function get7702Sig(
   signature: EIP7702Signature
 ): EIP7702Auth {
   return {
-    contractAddress: implementation,
+    address: implementation,
     chainId: toBeHex(chainId) as Hex,
     nonce: toBeHex(nonce) as Hex,
     r: signature.r,
