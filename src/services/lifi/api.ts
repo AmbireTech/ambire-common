@@ -356,19 +356,17 @@ export class LiFiAPI {
       options: {
         slippage: '1',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
-        integrator: 'ambire-extension',
+        integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
         allowDestinationCall: 'true',
-        allowSwitchChain: 'false'
+        allowSwitchChain: 'false',
+        // LiFi fee is from 0 to 1, so normalize it by dividing by 100
+        fee: (FEE_PERCENT / 100).toString() as string | undefined
       }
     }
 
-    const shouldIncludeConvenienceFee = !isOG
-    if (shouldIncludeConvenienceFee) {
-      // TODO: Enable convenience fee
-      // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-      // body.options.fee = (FEE_PERCENT / 100).toString()
-    }
+    const shouldRemoveConvenienceFee = isOG
+    if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
     const response = await this.#handleResponse<LiFiRoutesResponse>({
