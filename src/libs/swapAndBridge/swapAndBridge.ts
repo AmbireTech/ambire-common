@@ -110,7 +110,7 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
-    r.route.userTxs.forEach((tx) => {
+    r.route?.userTxs.forEach((tx) => {
       if (tx.serviceTime) {
         serviceTimes.push(tx.serviceTime)
       }
@@ -244,7 +244,7 @@ const getActiveRoutesForAccount = (
   activeRoutes: SwapAndBridgeActiveRoute[]
 ) => {
   return activeRoutes.filter(
-    (r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress
+    (r) => getAddress(r.route?.sender || r.route?.userAddress || '') === accountAddress
   )
 }
 
