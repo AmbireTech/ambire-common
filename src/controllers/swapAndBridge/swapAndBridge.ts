@@ -55,7 +55,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { randomId } from '../../libs/humanizer/utils'
 import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -79,6 +79,7 @@ export enum SwapAndBridgeFormStatus {
   FetchingRoutes = 'fetching-routes',
   NoRoutesFound = 'no-routes-found',
   InvalidRouteSelected = 'invalid-route-selected',
+  ReadyToEstimate = 'ready-to-estimate',
   ReadyToSubmit = 'ready-to-submit'
 }
 
@@ -335,6 +336,12 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
+
+    if (
+      !this.signAccountOpController ||
+      this.signAccountOpController.status?.type !== SigningStatus.ReadyToSign
+    )
+      return SwapAndBridgeFormStatus.ReadyToEstimate
 
     return SwapAndBridgeFormStatus.ReadyToSubmit
   }
@@ -1125,7 +1132,11 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async getRouteStartUserTx() {
-    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
+    if (
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
+    )
+      return
 
     try {
       const routeResult = await this.#socketAPI.startRoute({
@@ -1217,6 +1228,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (
       ![
         SwapAndBridgeFormStatus.ReadyToSubmit,
+        SwapAndBridgeFormStatus.ReadyToEstimate,
         SwapAndBridgeFormStatus.InvalidRouteSelected
       ].includes(this.formStatus)
     )
@@ -1542,7 +1554,8 @@ export class SwapAndBridgeController extends EventEmitter {
       randomId(), // the account op and the action are fabricated
       accountOp,
       () => {
-        return this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit
+        // TODO<oneClickSwap>
+        return true
       },
       undefined,
       false
