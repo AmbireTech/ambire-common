@@ -397,7 +397,9 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
+      // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
+      // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
+      serviceProviderAPI: lifiAPI,
       storage: this.#storage,
       actions: this.actions
     })
