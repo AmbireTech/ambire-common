@@ -1,8 +1,8 @@
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SocketAPIQuote,
   SocketAPISendTransactionRequest,
-  SocketAPIToken
+  SocketAPIToken,
+  SwapAndBridgeQuote
 } from '../../interfaces/swapAndBridge'
 
 /* eslint-disable class-methods-use-this */
@@ -471,7 +471,7 @@ export class SocketAPIMock {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    route: SocketAPIQuote['selectedRoute']
+    route: SwapAndBridgeQuote['selectedRoute']
   }) {
     return {
       userTxType: 'fund-movr',
@@ -482,7 +482,7 @@ export class SocketAPIMock {
       chainId: fromChainId,
       totalUserTx: 2,
       userTxIndex: 0,
-      activeRouteId: 4338463,
+      activeRouteId: '4338463',
       value: '0x316bf7320e95',
       approvalData: {
         minimumApprovalAmount: '10000',
