@@ -9,6 +9,7 @@ import {
   CachedTokenListKey,
   CachedToTokenLists,
   SocketApiBridgeStep,
+  SocketAPIBridgeUserTx,
   SocketRouteStatus,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
@@ -855,7 +856,8 @@ export class SwapAndBridgeController extends EventEmitter {
       const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
 
       if (this.quote) {
-        const isFromAmountSame = this.quote.selectedRoute.fromAmount === bigintFromAmount.toString()
+        const isFromAmountSame =
+          this.quote.selectedRoute?.fromAmount === bigintFromAmount.toString()
         const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
         const isFromAddressSame = this.quote.fromAsset.address === this.fromSelectedToken!.address
         const isToNetworkSame = this.quote.toChainId === this.toChainId
@@ -918,9 +920,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
                 if (!bridgeTx) return route
 
-                const bridgeStep = bridgeTx.steps.find((s) => s.type === 'bridge') as
-                  | SocketApiBridgeStep
-                  | undefined
+                const bridgeStep = (bridgeTx as unknown as SocketAPIBridgeUserTx).steps.find(
+                  (s) => s.type === 'bridge'
+                ) as SocketApiBridgeStep | undefined
 
                 if (!bridgeStep) return route
                 if (bridgeStep.protocolFees.amount === '0') return route
@@ -1019,12 +1021,12 @@ export class SwapAndBridgeController extends EventEmitter {
             if (!this.quote) return false
 
             // Because we only have routes with unique bridges (bridging case)
-            const selectedRouteUsedBridge = this.quote.selectedRoute.usedBridgeNames?.[0]
+            const selectedRouteUsedBridge = this.quote.selectedRoute?.usedBridgeNames?.[0]
             if (selectedRouteUsedBridge)
               return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
 
             // Assuming to only have routes with unique DEXes (swapping case)
-            const selectedRouteUsedDex = this.quote.selectedRoute.usedDexName
+            const selectedRouteUsedDex = this.quote.selectedRoute?.usedDexName
             if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
 
             return false // should never happen, but just in case of bad data
@@ -1148,6 +1150,9 @@ export class SwapAndBridgeController extends EventEmitter {
       if (activeRoute.routeStatus === 'completed') return
 
       try {
+        // should never happen
+        if (!activeRoute.route) throw new Error('Route data is missing.')
+
         status = await this.#serviceProviderAPI.getRouteStatus({
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
@@ -1381,7 +1386,7 @@ export class SwapAndBridgeController extends EventEmitter {
     opStatus: SubmittedAccountOp['status']
   ) {
     const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
-    if (!activeRoute) return
+    if (!activeRoute || !activeRoute.route) return
 
     let shouldUpdateActiveRouteStatus = false
 
@@ -1442,8 +1447,6 @@ export class SwapAndBridgeController extends EventEmitter {
   get banners() {
     if (!this.#selectedAccount.account) return []
 
-    // FIXME: After the first route status call, route gets "undefined"
-    // console.log('activeRoutesForSelectedAccount', this.activeRoutes)
     const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
       this.#selectedAccount.account.addr,
       this.activeRoutes

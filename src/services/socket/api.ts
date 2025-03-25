@@ -357,7 +357,7 @@ export class SocketAPI {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    route: SocketAPIQuote['selectedRoute']
+    route?: SwapAndBridgeQuote['selectedRoute']
   }) {
     const params = {
       fromChainId,
@@ -367,7 +367,7 @@ export class SocketAPI {
       includeFirstTxDetails: true,
       route: {
         ...route,
-        userTxs: route.userTxs.map((userTx) => ({
+        userTxs: route?.userTxs.map((userTx) => ({
           ...userTx,
           // @ts-ignore fromAsset exists on one of the two userTx sub-types
           fromAsset: userTx?.fromAsset ? normalizeOutgoingSocketToken(userTx.fromAsset) : undefined,

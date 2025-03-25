@@ -405,9 +405,9 @@ export class LiFiAPI {
     toChainId?: number
     fromAssetAddress?: string
     toAssetAddress?: string
-    route: SwapAndBridgeRoute
+    route?: SwapAndBridgeRoute
   }): Promise<SwapAndBridgeSendTxRequest> {
-    const body = JSON.stringify((route.rawRoute as LiFiRoute).steps[0])
+    const body = JSON.stringify((route?.rawRoute as LiFiRoute).steps[0])
 
     const response = await this.#handleResponse<LiFiStep>({
       fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {

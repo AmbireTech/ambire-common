@@ -324,7 +324,7 @@ export type SwapAndBridgeActiveRoute = {
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
-  route: SwapAndBridgeRoute & {
+  route?: SwapAndBridgeRoute & {
     createdAt: string
     updatedAt: string
     routeStatus: string
