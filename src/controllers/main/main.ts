@@ -6,7 +6,6 @@ import { getAddress, getBigInt } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { BUNDLER } from '../../consts/bundlers'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
@@ -57,11 +56,8 @@ import {
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
-import { decodeError } from '../../libs/errorDecoder'
-import { ErrorType } from '../../libs/errorDecoder/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
@@ -84,8 +80,6 @@ import {
   buildMintVestingRequest,
   buildTransferUserRequest
 } from '../../libs/transfer/userRequest'
-import { getDefaultBundler } from '../../services/bundlers/getBundler'
-import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
@@ -202,12 +196,6 @@ export class MainController extends EventEmitter {
   userRequests: UserRequest[] = []
 
   userRequestWaitingAccountSwitch: UserRequest[] = []
-
-  // network => GasRecommendation[]
-  gasPrices: { [key: string]: GasRecommendation[] } = {}
-
-  // network => BundlerGasPrice
-  bundlerGasPrices: { [key: string]: { speeds: GasSpeeds; bundler: BUNDLER } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -647,8 +635,6 @@ export class MainController extends EventEmitter {
     )
 
     this.emitUpdate()
-
-    this.updateSignAccountOpGasPrice()
   }
 
   async handleSignAndBroadcastAccountOp() {
@@ -696,6 +682,7 @@ export class MainController extends EventEmitter {
     if (!this.signAccountOp) return
 
     this.feePayerKey = null
+    this.signAccountOp.reset()
     this.signAccountOp = null
     this.signAccOpInitError = null
 
@@ -2024,100 +2011,6 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updateGasPrice(options?: { emitLevelOnFailure?: ErrorRef['level'] }) {
-    const { emitLevelOnFailure = 'silent' } = options ?? {}
-    await this.#initialLoadPromise
-
-    // if there's no signAccountOp initialized, we don't want to fetch gas
-    const accOp = this.signAccountOp?.accountOp ?? null
-    if (!accOp) return undefined
-
-    const network = this.networks.networks.find((net) => net.id === accOp.networkId)
-    if (!network) return undefined // shouldn't happen
-
-    const account = this.accounts.accounts.find((x) => x.addr === accOp.accountAddr)
-    if (!account) return undefined // shouldn't happen
-
-    const bundler = this.signAccountOp
-      ? this.signAccountOp.bundlerSwitcher.getBundler()
-      : getDefaultBundler(network)
-    const bundlerFetch = async () => {
-      return (
-        bundler
-          // no error emits here as most of the time estimation/signing
-          // will work even if this fails
-          .fetchGasPrices(network, () => {})
-          .catch((e) => {
-            this.emitError({
-              level: 'silent',
-              message: "Failed to fetch the bundler's gas price",
-              error: e
-            })
-          })
-      )
-    }
-    const [gasPriceData, bundlerGas] = await Promise.all([
-      getGasPriceRecommendations(this.providers.providers[network.id], network).catch((e) => {
-        // Don't display additional errors if the estimation hasn't initially loaded
-        // or there is an estimation error
-        if (
-          !this.signAccountOp?.estimation.isLoadingOrFailed() ||
-          this.signAccountOp.estimation.estimationRetryError
-        )
-          return null
-
-        const { type } = decodeError(e)
-
-        let message = `We couldn't retrieve the latest network fee information.${
-          // Display this part of the message only if the user can broadcast.
-          this.signAccountOp.readyToSign
-            ? ' If you experience issues broadcasting please select a higher fee speed.'
-            : ''
-        }`
-
-        if (type === ErrorType.ConnectivityError) {
-          message = 'Network connection issue prevented us from retrieving the current network fee.'
-        }
-
-        this.emitError({
-          level: emitLevelOnFailure,
-          message,
-          error: new Error(`Failed to fetch gas price on ${network.id}: ${e?.message}`)
-        })
-        return null
-      }),
-      bundlerFetch()
-    ])
-
-    if (gasPriceData && gasPriceData.gasPrice) this.gasPrices[network.id] = gasPriceData.gasPrice
-    if (bundlerGas)
-      this.bundlerGasPrices[network.id] = { speeds: bundlerGas, bundler: bundler.getName() }
-
-    return {
-      blockGasLimit: gasPriceData?.blockGasLimit
-    }
-  }
-
-  async updateSignAccountOpGasPrice(options?: { emitLevelOnFailure?: ErrorRef['level'] }) {
-    if (!this.signAccountOp) return
-    const { emitLevelOnFailure } = options ?? {}
-
-    const accOp = this.signAccountOp.accountOp
-    const gasData = await this.#updateGasPrice({ emitLevelOnFailure })
-
-    // there's a chance signAccountOp gets destroyed between the time
-    // the first "if (!this.signAccountOp) return" is performed and
-    // the time we get here. To prevent issues, we check one more time
-    if (!this.signAccountOp) return
-
-    this.signAccountOp.update({
-      gasPrices: this.gasPrices[accOp.networkId] || null,
-      bundlerGasPrices: this.bundlerGasPrices[accOp.networkId],
-      blockGasLimit: gasData && gasData.blockGasLimit ? gasData.blockGasLimit : undefined
-    })
-    this.emitUpdate()
-  }
-
   /**
    * There are 4 ways to broadcast an AccountOp:
    *   1. For basic accounts (EOA), there is only one way to do that. After
@@ -2306,7 +2199,7 @@ export class MainController extends EventEmitter {
           if (switcher.canSwitch(account, humanReadable)) {
             switcher.switch()
             this.signAccountOp.simulate()
-            this.#updateGasPrice()
+            this.signAccountOp.gasPrice.fetch()
             retryMsg = 'Broadcast failed because bundler was down. Please try again'
           }
         }
@@ -2519,7 +2412,7 @@ export class MainController extends EventEmitter {
       } else if (originalMessage.includes('underpriced')) {
         message =
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
-        this.updateSignAccountOpGasPrice()
+        this.signAccountOp?.gasPrice.fetch()
         if (this.signAccountOp) this.signAccountOp.simulate()
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
@@ -2538,7 +2431,7 @@ export class MainController extends EventEmitter {
         })
       }
       if (message.includes('the selected fee is too low')) {
-        this.updateSignAccountOpGasPrice()
+        this.signAccountOp?.gasPrice.fetch()
       }
     }
 

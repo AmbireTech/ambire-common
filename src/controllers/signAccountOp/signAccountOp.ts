@@ -81,6 +81,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
@@ -213,6 +214,8 @@ export class SignAccountOpController extends EventEmitter {
 
   estimation: EstimationController
 
+  gasPrice: GasPriceController
+
   #traceCall: Function
 
   shouldSignAuth: {
@@ -276,6 +279,10 @@ export class SignAccountOpController extends EventEmitter {
       },
       noStateUpdateStatuses
     )
+    this.gasPrice = new GasPriceController(network, provider, this.bundlerSwitcher, () => ({
+      estimation: this.estimation,
+      readyToSign: this.readyToSign
+    }))
     this.#traceCall = traceCall
 
     this.#load()
@@ -287,8 +294,16 @@ export class SignAccountOpController extends EventEmitter {
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
     })
+    this.gasPrice.onUpdate(() => {
+      this.update({
+        gasPrices: this.gasPrice.gasPrices[this.#network.id] || null,
+        bundlerGasPrices: this.gasPrice.bundlerGasPrices[this.#network.id],
+        blockGasLimit: this.gasPrice.blockGasLimit
+      })
+    })
 
     this.simulate(true)
+    this.gasPrice.fetch()
   }
 
   learnTokensFromCalls() {
@@ -816,6 +831,7 @@ export class SignAccountOpController extends EventEmitter {
 
   reset() {
     this.estimation.reset()
+    this.gasPrice.reset()
     this.gasPrices = undefined
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null

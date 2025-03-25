@@ -92,7 +92,6 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     // Not needed for benzin
     hasRelayer: false,
     rpcNoStateOverride: false, // TODO
-    reestimateOn: 0,
     areContractsDeployed: false, // TODO
     features: [],
     feeOptions: { is1559: false },

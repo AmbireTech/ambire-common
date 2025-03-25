@@ -74,7 +74,6 @@ export interface Network {
   platformId: string
   nativeAssetId: string
   iconUrls?: string[]
-  reestimateOn?: number
   isOptimistic?: boolean
   flagged?: boolean
   predefined: boolean
