@@ -23,7 +23,7 @@ const getBridgeBannerText = (
   isBridgeTxn: boolean,
   networks?: Network[]
 ) => {
-  const { steps } = route.route
+  const steps = route.route?.steps || []
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
@@ -41,10 +41,14 @@ const getBridgeBannerText = (
   }
 
   const stepsIndexText = `(step ${
-    route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
-  } of ${route.route.totalUserTx})`
+    route.routeStatus === 'completed'
+      ? route.route?.totalUserTx
+      : (route.route?.currentUserTxIndex || 0) + 1
+  } of ${route.route?.totalUserTx || 'unknown'})`
 
-  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : ''}`
+  return `${actionText} ${assetsText}${
+    (route.route?.totalUserTx || 0) > 1 ? ` ${stepsIndexText}` : ''
+  }`
 }
 
 export const getBridgeBanners = (
@@ -53,7 +57,7 @@ export const getBridgeBanners = (
   networks: Network[]
 ): Banner[] => {
   const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
-    route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+    route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
@@ -136,7 +140,7 @@ export const getBridgeBanners = (
               meta: { activeRouteIds: [r.activeRouteId] }
             },
             {
-              label: r.route.currentUserTxIndex >= 1 ? 'Proceed to Next Step' : 'Open',
+              label: (r.route?.currentUserTxIndex || 0) >= 1 ? 'Proceed to Next Step' : 'Open',
               actionName: 'proceed-bridge',
               meta: { activeRouteId: r.activeRouteId }
             }
@@ -184,12 +188,12 @@ const getAccountOpBannerText = (
 ) => {
   const swapsAndBridges: string[] = []
   const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return BigInt(route.route.fromChainId) === chainId
+    return route.route && BigInt(route.route.fromChainId) === chainId
   })
 
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+      const isBridgeTxn = !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
       const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
