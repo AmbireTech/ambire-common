@@ -5,8 +5,6 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  ActiveRoute,
-  SocketAPIBridgeUserTx,
   SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest,
@@ -179,7 +177,7 @@ const buildSwapAndBridgeUserRequests = async (
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
-) => {
+): Promise<SignUserRequest[]> => {
   const calls: Call[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
@@ -219,7 +217,7 @@ const buildSwapAndBridgeUserRequests = async (
         activeRouteId: userTx.activeRouteId,
         isSwapAndBridgeCall: true
       }
-    } as SignUserRequest
+    }
   ]
 }
 
