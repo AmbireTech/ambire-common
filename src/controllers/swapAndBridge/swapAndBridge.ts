@@ -910,7 +910,7 @@ export class SwapAndBridgeController extends EventEmitter {
           let routes = quoteResult.routes || []
 
           try {
-            if (this.#serviceProviderAPI instanceof SocketAPI) {
+            if (this.#serviceProviderAPI.id === 'socket') {
               routes = routes.map((route) => {
                 if (!route.userTxs) return route
 
@@ -1037,7 +1037,7 @@ export class SwapAndBridgeController extends EventEmitter {
             routeToSelectSteps = alreadySelectedRoute.steps
           } else {
             let bestRoute = routes[0]
-            if (this.#serviceProviderAPI instanceof SocketAPI) {
+            if (this.#serviceProviderAPI.id === 'socket') {
               bestRoute =
                 this.routePriority === 'output'
                   ? routes[0] // API returns highest output first
@@ -1232,7 +1232,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     try {
       let route = this.quote?.routes.find((r) => r.routeId === activeRouteId.toString())
-      if (this.#serviceProviderAPI instanceof SocketAPI) {
+      if (this.#serviceProviderAPI.id === 'socket') {
         route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId.toString())
       }
 
@@ -1278,7 +1278,7 @@ export class SwapAndBridgeController extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
-          if (this.#serviceProviderAPI instanceof SocketAPI) {
+          if (this.#serviceProviderAPI.id === 'socket') {
             // @ts-ignore TODO: types mismatch by a bit, align types better
             route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId)
           }

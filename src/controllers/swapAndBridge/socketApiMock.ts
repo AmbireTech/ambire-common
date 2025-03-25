@@ -7,6 +7,8 @@ import {
 
 /* eslint-disable class-methods-use-this */
 export class SocketAPIMock {
+  id = 'socket'
+
   #fetch: Fetch
 
   #baseUrl = 'https://api.socket.tech/v2'
@@ -898,6 +900,10 @@ export class SocketAPIMock {
         chainAgnosticId: null
       }
     }
+  }
+
+  getActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+    return this.updateActiveRoute(activeRouteId)
   }
 
   async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {

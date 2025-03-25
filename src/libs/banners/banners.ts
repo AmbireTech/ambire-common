@@ -24,6 +24,8 @@ const getBridgeBannerText = (
   networks?: Network[]
 ) => {
   const steps = route.route?.steps || []
+  if (!steps[0]) return '' // should never happen
+
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
