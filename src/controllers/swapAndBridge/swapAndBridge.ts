@@ -1129,7 +1129,10 @@ export class SwapAndBridgeController extends EventEmitter {
     activeRoute: SwapAndBridgeActiveRoute
   }) {
     try {
-      const response = await this.#serviceProviderAPI.getNextRouteUserTx({ activeRouteId, route })
+      const response = await this.#serviceProviderAPI.getNextRouteUserTx({
+        activeRouteId,
+        route: route as SwapAndBridgeRoute // TODO: type cast might not be needed?
+      })
       return response
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
@@ -1233,14 +1236,17 @@ export class SwapAndBridgeController extends EventEmitter {
         route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId.toString())
       }
 
-      this.activeRoutes.push({
-        serviceProviderId: this.#serviceProviderAPI.id,
-        activeRouteId: activeRouteId.toString(),
-        userTxIndex,
-        routeStatus: 'ready',
-        userTxHash: null,
-        route
-      })
+      if (route) {
+        this.activeRoutes.push({
+          serviceProviderId: this.#serviceProviderAPI.id,
+          activeRouteId: activeRouteId.toString(),
+          userTxIndex,
+          routeStatus: 'ready',
+          userTxHash: null,
+          // @ts-ignore TODO: types mismatch by a bit, align types better
+          route
+        })
+      }
 
       // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
       // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
@@ -1273,6 +1279,7 @@ export class SwapAndBridgeController extends EventEmitter {
         ;(async () => {
           let route = currentActiveRoutes[activeRouteIndex].route
           if (this.#serviceProviderAPI instanceof SocketAPI) {
+            // @ts-ignore TODO: types mismatch by a bit, align types better
             route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId)
           }
           this.updateActiveRoute(activeRouteId, { route })

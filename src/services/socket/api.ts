@@ -61,6 +61,7 @@ const normalizeOutgoingSocketToken = (token: SocketAPIToken) => ({
 const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (
   userTxs: SocketAPIUserTx[]
 ): SwapAndBridgeStep[] => {
+  // @ts-ignore TODO: Types mismatch for this legacy Socket normalization
   return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
     if (tx.userTxType === 'fund-movr') {
       tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
@@ -325,6 +326,7 @@ export class SocketAPI {
       ...response,
       fromAsset: normalizeIncomingSocketToken(response.fromAsset),
       toAsset: normalizeIncomingSocketToken(response.toAsset),
+      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
       routes: response.routes.map((route) => ({
         ...route,
         steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs),
@@ -442,6 +444,7 @@ export class SocketAPI {
       toAsset: normalizeIncomingSocketToken(response.toAsset),
       toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
       steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(response.userTxs),
+      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
       userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
         ...userTx,
         ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
