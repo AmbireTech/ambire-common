@@ -1726,7 +1726,7 @@ export class MainController extends EventEmitter {
   removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
-        r.id
+        r.id as string
       )
     )
 
