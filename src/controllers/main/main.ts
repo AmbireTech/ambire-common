@@ -2,7 +2,7 @@
 /* eslint-disable no-await-in-loop */
 
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, ZeroAddress } from 'ethers'
+import { getAddress, getBigInt } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -730,26 +730,6 @@ export class MainController extends EventEmitter {
     const account = this.accounts.accounts.find((acc) => acc.addr === accountOp?.accountAddr)
     if (!account) return
 
-    const accountState = await this.accounts.getOrFetchAccountOnChainState(account.addr, network.id)
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.keystore.getAccountKeys(account),
-      network
-    )
-    const networkFeeTokens =
-      this.portfolio.getLatestPortfolioState(accountOp.accountAddr)?.[accountOp.networkId]?.result
-        ?.feeTokens ?? []
-
-    // calculate the gasLimit so it doesn't revert
-    const estimationOrError =
-      this.signAccountOp.estimation.estimation ?? (this.signAccountOp.estimation.error as Error)
-    const gasUsed = baseAcc.getGasUsed(estimationOrError, {
-      // the fee token is always native for the trace call
-      feeToken: networkFeeTokens.find((tok) => tok.address === ZeroAddress) as TokenResult,
-      op: accountOp
-    })
-
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
     // it should be cleared to prevent the previous interval from changing the status
     // to `SlowPendingResponse` for the newer `traceCall` invocation.
@@ -777,18 +757,11 @@ export class MainController extends EventEmitter {
     try {
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
       const provider = this.providers.providers[network.id]
-      let gasPrice = this.gasPrices[network.id]
-      if (!gasPrice) {
-        await this.#updateGasPrice()
-        gasPrice = this.gasPrices[network.id]
-      }
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
         provider,
         state,
-        gasUsed,
-        gasPrice,
         !network.rpcNoStateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)

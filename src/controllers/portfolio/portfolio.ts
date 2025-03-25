@@ -602,6 +602,10 @@ export class PortfolioController extends EventEmitter {
       )
 
       accountState[network.id] = {
+        // We cache the previously simulated AccountOps
+        // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
+        // This allows us to identify any differences between the two.
+        accountOps: portfolioProps?.simulation?.accountOps,
         isReady: true,
         isLoading: false,
         errors: result.errors,
@@ -612,6 +616,7 @@ export class PortfolioController extends EventEmitter {
           total: getTotal(processedTokens)
         }
       }
+
       this.emitUpdate()
       return true
     } catch (e: any) {
@@ -801,13 +806,6 @@ export class PortfolioController extends EventEmitter {
               this.#previousHints = updatedStoragePreviousHints
               await this.#storage.set('previousHints', updatedStoragePreviousHints)
             }
-          }
-
-          // We cache the previously simulated AccountOps
-          // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
-          // This allows us to identify any differences between the two.
-          if (currentAccountOps) {
-            pendingState[network.id]!.accountOps = currentAccountOps
           }
         }
 

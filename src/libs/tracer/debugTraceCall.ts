@@ -10,7 +10,6 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
-import { GasRecommendation } from '../gasPrice/gasPrice'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
@@ -52,8 +51,6 @@ export async function debugTraceCall(
   op: AccountOp,
   provider: JsonRpcProvider,
   accountState: AccountOnchainState,
-  gasUsed: bigint,
-  gasPrices: GasRecommendation[],
   supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
@@ -76,11 +73,6 @@ export async function debugTraceCall(
       op.calls.map(callToTuple)
     ]
   ]
-  const fast = gasPrices.find((gas: any) => gas.name === 'fast')
-  if (!fast) return { tokens: [], nfts: [] }
-
-  const gasPrice =
-    'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
 
   const params = getFunctionParams(account, op, accountState)
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
@@ -89,9 +81,7 @@ export async function debugTraceCall(
         to: params.to,
         value: toQuantity(params.value.toString()),
         data: params.data,
-        from: params.from,
-        gasPrice: toQuantity(gasPrice.toString()),
-        gas: toQuantity(gasUsed.toString())
+        from: params.from
       },
       'latest',
       {
