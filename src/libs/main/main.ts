@@ -8,7 +8,6 @@ import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountOpsByNetwork } from '../actions/actions'
-import { adjustEntryPointAuthorization } from '../signMessage/signMessage'
 
 export const batchCallsFromUserRequests = ({
   accountAddr,
@@ -77,15 +76,13 @@ export const makeAccountOpAction = ({
   networkId,
   nonce,
   actionsQueue,
-  userRequests,
-  entryPointAuthorizationSignature
+  userRequests
 }: {
   account: Account
   networkId: string
   nonce: bigint | null
   actionsQueue: Action[]
   userRequests: UserRequest[]
-  entryPointAuthorizationSignature?: string
 }): AccountOpAction => {
   const accountOpAction = actionsQueue.find(
     (a) => a.type === 'accountOp' && a.id === `${account.addr}-${networkId}`
@@ -131,9 +128,6 @@ export const makeAccountOpAction = ({
       userRequests
     }),
     meta: {
-      entryPointAuthorization: entryPointAuthorizationSignature
-        ? adjustEntryPointAuthorization(entryPointAuthorizationSignature)
-        : undefined,
       paymasterService
     }
   }

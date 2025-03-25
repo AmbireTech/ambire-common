@@ -11,6 +11,15 @@ export interface BundlerEstimateResult {
   paymasterPostOpGasLimit: Hex
 }
 
+export interface BundlerStateOverride {
+  [accAddr: string]: {
+    code: string
+    stateDiff?: {
+      [key: string]: string
+    }
+  }
+}
+
 export interface EstimationFlags {
   hasNonceDiscrepancy?: boolean
   has4337NonceDiscrepancy?: boolean
@@ -67,6 +76,7 @@ export interface ProviderEstimation {
 
 export interface AmbireEstimation {
   gasUsed: bigint
+  deploymentGas: bigint
   feePaymentOptions: FeePaymentOption[]
   ambireAccountNonce: number
   flags: EstimationFlags

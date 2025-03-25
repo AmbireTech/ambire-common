@@ -621,24 +621,16 @@ export async function getEIP712Signature(
 }
 
 // get the typedData for the first ERC-4337 deploy txn
-export async function getEntryPointAuthorization(addr: AccountId, chainId: bigint, nonce: bigint) {
+export async function getEntryPointAuthorization(
+  addr: AccountId,
+  chainId: bigint,
+  nonce: bigint
+): Promise<TypedMessage> {
   const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
   return getTypedData(chainId, addr, hexlify(hash))
 }
 
-export function adjustEntryPointAuthorization(signature: string): string {
-  let entryPointSig = signature
-
-  // if thet signature is wrapepd in magicBytes because of eip-6492, unwrap it
-  if (signature.endsWith(magicBytes)) {
-    const coder = new AbiCoder()
-    const decoded = coder.decode(
-      ['address', 'bytes', 'bytes'],
-      signature.substring(0, signature.length - magicBytes.length)
-    )
-    entryPointSig = decoded[2]
-  }
-
+export function adjustEntryPointAuthorization(entryPointSig: string): string {
   // since normally when we sign an EIP-712 request, we wrap it in Unprotected,
   // we adjust the entry point authorization signature so we could execute a txn
   return wrapStandard(entryPointSig.substring(0, entryPointSig.length - 2))
