@@ -57,7 +57,7 @@ export const getBridgeBanners = (
   networks: Network[]
 ): Banner[] => {
   const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
-    route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+    !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
