@@ -1474,6 +1474,12 @@ export class SwapAndBridgeController extends EventEmitter {
     }, 0)
   }
 
+  destroySignAccountOp() {
+    if (!this.signAccountOpController) return
+    this.signAccountOpController.reset()
+    this.signAccountOpController = null
+  }
+
   async initSignAccountOp() {
     // shouldn't happen ever
     if (!this.#selectedAccount.account) return
@@ -1524,7 +1530,6 @@ export class SwapAndBridgeController extends EventEmitter {
     // exception would be if the quote has changed but maybe we should
     // destroy the sign account op instead of updating it as its made
     // to work with a single account op
-    console.log('yes, init done')
     this.signAccountOpController = new SignAccountOpController(
       this.#accounts,
       this.#networks,
@@ -1538,8 +1543,17 @@ export class SwapAndBridgeController extends EventEmitter {
       accountOp,
       () => {
         return this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit
-      }
+      },
+      undefined,
+      false
     )
+
+    this.emitUpdate()
+
+    // propagate updates from signAccountOp here
+    this.signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
   }
 
   toJSON() {

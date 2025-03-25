@@ -222,6 +222,8 @@ export class SignAccountOpController extends EventEmitter {
     text: string
   } | null = null
 
+  shouldSimulateOnLoad: boolean = true
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -234,7 +236,8 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
-    traceCall?: Function
+    traceCall?: Function,
+    shouldSimulateOnLoad?: boolean
   ) {
     super()
 
@@ -282,6 +285,7 @@ export class SignAccountOpController extends EventEmitter {
       estimation: this.estimation,
       readyToSign: this.readyToSign
     }))
+    this.shouldSimulateOnLoad = !!shouldSimulateOnLoad
 
     this.#load()
   }
@@ -300,7 +304,7 @@ export class SignAccountOpController extends EventEmitter {
       })
     })
 
-    this.simulate(true)
+    this.shouldSimulateOnLoad ? this.simulate(true) : this.estimate()
     this.gasPrice.fetch()
   }
 
@@ -339,6 +343,8 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
+
+    // we can set a default paidBy and feeToken here if they aren't any set
   }
 
   #setGasFeePayment() {
@@ -810,9 +816,9 @@ export class SignAccountOpController extends EventEmitter {
 
     if (
       this.isInitialized &&
-      this.accountOp?.signingKeyAddr &&
-      this.accountOp?.signingKeyType &&
-      this.accountOp?.gasFeePayment
+      this.accountOp.signingKeyAddr &&
+      this.accountOp.signingKeyType &&
+      this.accountOp.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 
@@ -1169,11 +1175,11 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get feeToken(): string | null {
-    return this.accountOp?.gasFeePayment?.inToken || null
+    return this.accountOp.gasFeePayment?.inToken || null
   }
 
   get feePaidBy(): string | null {
-    return this.accountOp?.gasFeePayment?.paidBy || null
+    return this.accountOp.gasFeePayment?.paidBy || null
   }
 
   get accountKeyStoreKeys(): Key[] {
@@ -1294,12 +1300,12 @@ export class SignAccountOpController extends EventEmitter {
     // by changing the status to InProgress. Check update() for more info
     this.status = { type: SigningStatus.InProgress }
 
-    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
+    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (!this.accountOp?.gasFeePayment || !this.selectedOption) {
+    if (!this.accountOp.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
