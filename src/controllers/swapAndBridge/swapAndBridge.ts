@@ -1237,7 +1237,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = getQuoteRouteSteps(route.userTxs)
 
-    this.#emitUpdateIfNeeded()
+    this.destroySignAccountOp()
+    this.emitUpdate()
   }
 
   async addActiveRoute(activeRoute: {
