@@ -668,13 +668,19 @@ export class MainController extends EventEmitter {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
+    return this.handleBroadcast(this.signAccountOp)
+  }
+
+  async handleBroadcast(signAccountOp: SignAccountOpController) {
     return this.withStatus(
       'broadcastSignedAccountOp',
       async () => {
         // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp().finally(() => {
-          this.#signAccountOpBroadcastPromise = undefined
-        })
+        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp(signAccountOp).finally(
+          () => {
+            this.#signAccountOpBroadcastPromise = undefined
+          }
+        )
         return this.#signAccountOpBroadcastPromise
       },
       true
@@ -2027,11 +2033,11 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async #broadcastSignedAccountOp() {
-    const accountOp = this.signAccountOp?.accountOp
-    const estimation = this.signAccountOp?.estimation.estimation
-    const actionId = this.signAccountOp?.fromActionId
-    const bundlerSwitcher = this.signAccountOp?.bundlerSwitcher
+  async #broadcastSignedAccountOp(signAccountOp: SignAccountOpController) {
+    const accountOp = signAccountOp.accountOp
+    const estimation = signAccountOp.estimation.estimation
+    const actionId = signAccountOp.fromActionId
+    const bundlerSwitcher = signAccountOp.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
     if (
@@ -2045,7 +2051,7 @@ export class MainController extends EventEmitter {
       !accountOp.gasFeePayment
     ) {
       const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ message })
+      return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
     const provider = this.providers.providers[accountOp.networkId]
@@ -2055,18 +2061,18 @@ export class MainController extends EventEmitter {
     if (!provider) {
       const networkName = network?.name || `network with id ${accountOp.networkId}`
       const message = `Provider for ${networkName} not found. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ message })
+      return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
     if (!account) {
       const addr = shortenAddress(accountOp.accountAddr, 13)
       const message = `Account with address ${addr} not found. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ message })
+      return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
     if (!network) {
       const message = `Network with id ${accountOp.networkId} not found. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ message })
+      return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -2104,6 +2110,7 @@ export class MainController extends EventEmitter {
       // @precaution
       if (nonce instanceof Error) {
         return this.throwBroadcastAccountOp({
+          signAccountOp,
           message: 'RPC error. Please try again',
           accountState
         })
@@ -2113,6 +2120,7 @@ export class MainController extends EventEmitter {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
         if (feePayerKey instanceof Error) {
           return await this.throwBroadcastAccountOp({
+            signAccountOp,
             message: feePayerKey.message,
             accountState
           })
@@ -2126,7 +2134,7 @@ export class MainController extends EventEmitter {
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
           : 1
-        if (txnLength > 1) this.signAccountOp?.update({ signedTransactionsCount: 0 })
+        if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: 0 })
         for (let i = 0; i < txnLength; i++) {
           const currentNonce = nonce + i
           const rawTxn = await buildRawTransaction(
@@ -2141,7 +2149,7 @@ export class MainController extends EventEmitter {
           )
           const signedTxn = await signer.signRawTransaction(rawTxn)
           multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
-          if (txnLength > 1) this.signAccountOp?.update({ signedTransactionsCount: i + 1 })
+          if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
         }
         transactionRes = {
           nonce,
@@ -2167,10 +2175,10 @@ export class MainController extends EventEmitter {
             }
           }
         } else {
-          return await this.throwBroadcastAccountOp({ error, accountState })
+          return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
-        this.signAccountOp?.update({ signedTransactionsCount: null })
+        signAccountOp.update({ signedTransactionsCount: null })
       }
     }
     // Smart account, the ERC-4337 way
@@ -2179,7 +2187,7 @@ export class MainController extends EventEmitter {
       if (!userOperation) {
         const accAddr = shortenAddress(accountOp.accountAddr, 13)
         const message = `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${accAddr}`
-        return this.throwBroadcastAccountOp({ message, accountState })
+        return this.throwBroadcastAccountOp({ signAccountOp, message, accountState })
       }
 
       // broadcast through bundler's service
@@ -2193,21 +2201,22 @@ export class MainController extends EventEmitter {
         // if the signAccountOp is still active (it should be)
         // try to switch the bundler and ask the user to try again
         // TODO: explore more error case where we switch the bundler
-        if (this.signAccountOp) {
+        if (signAccountOp) {
           const decodedError = bundler.decodeBundlerError(e)
           const humanReadable = getHumanReadableBroadcastError(decodedError)
-          const switcher = this.signAccountOp.bundlerSwitcher
-          this.signAccountOp.updateStatus(SigningStatus.ReadyToSign)
+          const switcher = signAccountOp.bundlerSwitcher
+          signAccountOp.updateStatus(SigningStatus.ReadyToSign)
 
           if (switcher.canSwitch(account, humanReadable)) {
             switcher.switch()
-            this.signAccountOp.simulate()
-            this.signAccountOp.gasPrice.fetch()
+            signAccountOp.simulate()
+            signAccountOp.gasPrice.fetch()
             retryMsg = 'Broadcast failed because bundler was down. Please try again'
           }
         }
 
         return this.throwBroadcastAccountOp({
+          signAccountOp,
           error: e,
           accountState,
           provider,
@@ -2217,6 +2226,7 @@ export class MainController extends EventEmitter {
       }
       if (!userOperationHash) {
         return this.throwBroadcastAccountOp({
+          signAccountOp,
           message: 'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
         })
       }
@@ -2262,12 +2272,13 @@ export class MainController extends EventEmitter {
           }
         }
       } catch (error: any) {
-        return this.throwBroadcastAccountOp({ error, accountState, isRelayer: true })
+        return this.throwBroadcastAccountOp({ signAccountOp, error, accountState, isRelayer: true })
       }
     }
 
     if (!transactionRes)
       return this.throwBroadcastAccountOp({
+        signAccountOp,
         message: 'No transaction response received after being broadcasted.'
       })
 
@@ -2382,6 +2393,7 @@ export class MainController extends EventEmitter {
   // Technically this is an anti-pattern, but it's the only way to
   // test the error handling in the method.
   protected throwBroadcastAccountOp({
+    signAccountOp,
     message: humanReadableMessage,
     error: _err,
     accountState,
@@ -2389,6 +2401,7 @@ export class MainController extends EventEmitter {
     provider = undefined,
     network = undefined
   }: {
+    signAccountOp: SignAccountOpController
     message?: string
     error?: Error
     accountState?: AccountOnchainState
@@ -2405,7 +2418,9 @@ export class MainController extends EventEmitter {
         message =
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         isReplacementFeeLow = true
-        if (this.signAccountOp) this.signAccountOp.simulate()
+        if (signAccountOp) {
+          signAccountOp.shouldSimulateOnLoad ? signAccountOp.simulate() : signAccountOp.estimate()
+        }
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
           !accountState?.isV2
@@ -2415,8 +2430,10 @@ export class MainController extends EventEmitter {
       } else if (originalMessage.includes('underpriced')) {
         message =
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
-        this.signAccountOp?.gasPrice.fetch()
-        if (this.signAccountOp) this.signAccountOp.simulate()
+        if (signAccountOp) {
+          signAccountOp.gasPrice.fetch()
+          signAccountOp.shouldSimulateOnLoad ? signAccountOp.simulate() : signAccountOp.estimate()
+        }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
@@ -2430,17 +2447,19 @@ export class MainController extends EventEmitter {
       // add it to the failedPaymasters to disable it until a top-up is made
       if (message.includes(insufficientPaymasterFunds) && provider && network) {
         failedPaymasters.addInsufficientFunds(provider, network).then(() => {
-          if (this.signAccountOp) this.signAccountOp.simulate()
+          if (signAccountOp) {
+            signAccountOp.shouldSimulateOnLoad ? signAccountOp.simulate() : signAccountOp.estimate()
+          }
         })
       }
       if (message.includes('the selected fee is too low')) {
-        this.signAccountOp?.gasPrice.fetch()
+        signAccountOp.gasPrice.fetch()
       }
     }
 
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
+    signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
 
     return Promise.reject(
