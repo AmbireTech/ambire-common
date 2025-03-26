@@ -1,4 +1,4 @@
-import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
+import { isReasonValid } from '../errorDecoder/helpers'
 import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { ErrorHumanizerError } from './types'
 
@@ -8,26 +8,24 @@ function getGenericMessageFromType(
   messagePrefix: string,
   lastResortMessage: string
 ): string {
-  const reasonString = getErrorCodeStringFromReason(reason ?? '')
-  const messageSuffixNoSupport = `${reasonString}\n`
-  const messageSuffix = `${messageSuffixNoSupport}Please try again or contact Ambire support for assistance.`
+  const supportSuffix = ' Please try again or contact Ambire support for assistance.'
   const origin = errorType?.split('Error')?.[0] || ''
 
   switch (errorType) {
     case ErrorType.RelayerError:
     case ErrorType.RpcError:
-      return `${messagePrefix} of an unknown error (Origin: ${origin} call).${messageSuffix}`
+      return `${messagePrefix} of an unknown error (Origin: ${origin} call).${supportSuffix}`
     case ErrorType.PaymasterError:
-      return `${messagePrefix} of a Paymaster Error.${messageSuffix}`
+      return `${messagePrefix} of a Paymaster Error.${supportSuffix}`
     case ErrorType.BundlerError:
-      return `${messagePrefix} it's invalid.${messageSuffixNoSupport}`
+      return `${messagePrefix} it's invalid.`
     case ErrorType.CodeError:
     case ErrorType.UnknownError:
-      return `${messagePrefix} of an unknown error.${messageSuffix}`
+      return `${messagePrefix} of an unknown error.${supportSuffix}`
     case ErrorType.InnerCallFailureError:
-      return reasonString
-        ? `${messagePrefix} it will revert onchain.${messageSuffixNoSupport}`
-        : `${messagePrefix} it will revert onchain with reason unknown.${messageSuffix}`
+      return isReasonValid(reason)
+        ? `${messagePrefix} it will revert onchain.`
+        : `${messagePrefix} it will revert onchain with reason unknown.${supportSuffix}`
     // I don't think we should say anything else for this case
     case ErrorType.UserRejectionError:
       return 'Transaction rejected.'
@@ -35,7 +33,7 @@ function getGenericMessageFromType(
     case ErrorType.CustomError:
     case ErrorType.PanicError:
     case ErrorType.RevertError:
-      return `${messagePrefix} of a contract error.${messageSuffixNoSupport}`
+      return `${messagePrefix} of a contract error.`
     default:
       return lastResortMessage
   }

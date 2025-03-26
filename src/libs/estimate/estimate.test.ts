@@ -932,8 +932,9 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'Transaction cannot be sent because it will revert onchain. Error code: Insufficient ETH for transaction calls\n'
+      'Transaction cannot be sent because it will revert onchain.'
     )
+    expect((response as Error).cause).toBe('Insufficient ETH for transaction calls')
   })
 
   it('[ERC-4337]:Optimism | not deployed | should result in an error as transfer amount of erc-20 token exceed balance', async () => {
@@ -1117,8 +1118,9 @@ describe('estimate', () => {
     )
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'Transaction cannot be sent because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
+      'Transaction cannot be sent because it will revert onchain.'
     )
+    expect((response as Error).cause).toBe('Insufficient POL for transaction calls')
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {

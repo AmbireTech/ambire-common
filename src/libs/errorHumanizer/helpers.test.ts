@@ -22,17 +22,17 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(messageWithCode).toBe(
-      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call). Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call). Please try again or contact Ambire support for assistance.`
     )
     expect(messageWithoutCode).toBe(
-      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call).\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call). Please try again or contact Ambire support for assistance.`
     )
   })
   it('Relayer error', () => {
     const message = getGenericMessageFromType(ErrorType.RelayerError, null, MESSAGE_PREFIX, '')
 
     expect(message).toBe(
-      `${MESSAGE_PREFIX} of an unknown error (Origin: Relayer call).\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: Relayer call). Please try again or contact Ambire support for assistance.`
     )
   })
   it('Null error type', () => {
@@ -56,7 +56,7 @@ describe('Generic error fallbacks work', () => {
       const message = getGenericMessageFromType(type, reason, MESSAGE_PREFIX, '')
 
       expect(message).toBe(
-        `${MESSAGE_PREFIX} of an unknown error. Error code: TypeError\nPlease try again or contact Ambire support for assistance.`
+        `${MESSAGE_PREFIX} of an unknown error. Please try again or contact Ambire support for assistance.`
       )
     }
 
@@ -70,9 +70,7 @@ describe('Generic error fallbacks work', () => {
       ''
     )
 
-    expect(message).toBe(
-      `${MESSAGE_PREFIX} it will revert onchain. Error code: The contract reverted\n`
-    )
+    expect(message).toBe(`${MESSAGE_PREFIX} it will revert onchain.`)
   })
   it('Innercall failure error with no reason', () => {
     const message = getGenericMessageFromType(
@@ -83,7 +81,7 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(message).toBe(
-      `${MESSAGE_PREFIX} it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} it will revert onchain with reason unknown. Please try again or contact Ambire support for assistance.`
     )
   })
 })
