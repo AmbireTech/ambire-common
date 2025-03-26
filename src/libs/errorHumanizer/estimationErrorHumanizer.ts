@@ -6,7 +6,7 @@ import { ESTIMATION_ERRORS } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
-export const MESSAGE_PREFIX = 'Transaction cannot be sent because of'
+export const MESSAGE_PREFIX = 'Transaction cannot be sent because'
 
 const LAST_RESORT_ERROR_MESSAGE =
   'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
