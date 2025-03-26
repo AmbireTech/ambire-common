@@ -58,7 +58,8 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['Insufficient ETH for transaction calls'],
-    message: 'Insufficient ETH to cover the gas costs'
+    message:
+      "you don't have enough ETH to cover the gas costs for this transaction. Please add more ETH to your account."
   },
   // Smart Accounts
   {
