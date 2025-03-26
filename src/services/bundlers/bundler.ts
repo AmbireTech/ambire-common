@@ -145,6 +145,7 @@ export abstract class Bundler {
 
   // use this request to check if the bundler supports the network
   static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
+    if (chainId === 146n) return true
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200
