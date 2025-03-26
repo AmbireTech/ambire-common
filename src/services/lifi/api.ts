@@ -345,6 +345,10 @@ export class LiFiAPI {
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
 
+    // 1% slippage on stable swaps and 3.5% on others
+    const isStableSwap = fromAsset.decimals === 6 && toAsset.decimals === 6
+    const slippage = isStableSwap ? '0.01' : '0.035'
+
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
@@ -354,7 +358,7 @@ export class LiFiAPI {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage: '0.05', // this means 5%
+        slippage,
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
