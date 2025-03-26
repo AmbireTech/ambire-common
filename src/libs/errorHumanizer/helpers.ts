@@ -60,7 +60,7 @@ const getHumanReadableErrorMessage = (
       )
       if (!isMatching) return
 
-      message = `${messagePrefix} ${error.message}`
+      message = `${messagePrefix ? `${messagePrefix} ` : ''}${error.message}`
     })
   }
 
