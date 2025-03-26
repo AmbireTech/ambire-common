@@ -13,7 +13,7 @@ import {
   getToken,
   getTokenWithChain
 } from '../../utils'
-import AcrossModule from './'
+import AcrossModule from '.'
 
 const transactions = [
   // bridge via depositV3
@@ -37,7 +37,7 @@ const transactions = [
 ]
 const accountOp: AccountOp = {
   accountAddr: '0x6969174FD72466430a46e18234D0b530c9FD5f49',
-  networkId: 'arbitrum',
+  chainId: 42161n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,

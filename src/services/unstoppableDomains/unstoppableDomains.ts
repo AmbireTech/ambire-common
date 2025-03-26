@@ -8,11 +8,11 @@ const resolution = new Resolution({
     uns: {
       locations: {
         Layer1: {
-          url: networks.find((x) => x.id === 'ethereum')?.rpcUrls?.[0] || '',
+          url: networks.find((n) => n.chainId === 1n)?.rpcUrls?.[0] || '',
           network: 'mainnet'
         },
         Layer2: {
-          url: networks.find((x) => x.id === 'polygon')?.rpcUrls?.[0] || '',
+          url: networks.find((n) => n.chainId === 137n)?.rpcUrls?.[0] || '',
           network: 'polygon-mainnet'
         }
       }

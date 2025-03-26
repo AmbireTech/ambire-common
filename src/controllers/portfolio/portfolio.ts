@@ -2,7 +2,7 @@ import { getAddress, ZeroAddress } from 'ethers'
 
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -56,13 +56,9 @@ export class PortfolioController extends EventEmitter {
   // regardless of whether it succeeds or fails.
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
   // the response of the latest call to be overwritten by a slower previous call.
-  #queue: {
-    [accountId: string]: {
-      [networkId: NetworkId]: Promise<void>
-    }
-  }
+  #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
 
-  #toBeLearnedTokens: { [network in NetworkId]: string[] }
+  #toBeLearnedTokens: { [chainId: string]: string[] }
 
   customTokens: CustomToken[] = []
 
@@ -142,7 +138,7 @@ export class PortfolioController extends EventEmitter {
           const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
 
           const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-            .map((x) => x.data.networkId)
+            .map((x) => x.data.chainId)
             .join(',')}&accounts=${queueSegment
             .map((x) => x.data.accountAddr)
             .join(',')}&baseCurrency=${baseCurrency}`
@@ -155,7 +151,7 @@ export class PortfolioController extends EventEmitter {
           timeoutAfter: 3000,
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
-        dedupeByKeys: ['networkId', 'accountAddr']
+        dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
 
@@ -192,12 +188,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #updatePortfolioOnTokenChange(networkId: NetworkId, selectedAccountAddr?: string) {
+  async #updatePortfolioOnTokenChange(chainId: bigint, selectedAccountAddr?: string) {
     // As this function currently only updates the portfolio we can skip it altogether
     // if skipPortfolioUpdate is set to true
     if (!selectedAccountAddr) return
 
-    const networkData = this.#networks.networks.find(({ id }) => id === networkId)
+    const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
     await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
       forceUpdate: true
     })
@@ -210,9 +206,9 @@ export class PortfolioController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
     const isTokenAlreadyAdded = this.customTokens.some(
-      ({ address, networkId }) =>
+      ({ address, chainId }) =>
         address.toLowerCase() === customToken.address.toLowerCase() &&
-        networkId === customToken.networkId
+        chainId === customToken.chainId
     )
 
     if (isTokenAlreadyAdded) return
@@ -220,7 +216,7 @@ export class PortfolioController extends EventEmitter {
     this.customTokens.push(customToken)
 
     if (shouldUpdatePortfolio) {
-      await this.#updatePortfolioOnTokenChange(customToken.networkId, selectedAccountAddr)
+      await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
     }
 
     await this.#storage.set('customTokens', this.customTokens)
@@ -236,11 +232,11 @@ export class PortfolioController extends EventEmitter {
       (token) =>
         !(
           token.address.toLowerCase() === customToken.address.toLowerCase() &&
-          token.networkId === customToken.networkId
+          token.chainId === customToken.chainId
         )
     )
     const existingPreference = this.tokenPreferences.some(
-      (pref) => pref.address === customToken.address && pref.networkId === customToken.networkId
+      (pref) => pref.address === customToken.address && pref.chainId === customToken.chainId
     )
 
     // Delete custom token preference if it exists
@@ -250,7 +246,7 @@ export class PortfolioController extends EventEmitter {
     } else {
       this.emitUpdate()
       if (shouldUpdatePortfolio) {
-        await this.#updatePortfolioOnTokenChange(customToken.networkId, selectedAccountAddr)
+        await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
       }
       await this.#storage.set('customTokens', this.customTokens)
     }
@@ -264,9 +260,9 @@ export class PortfolioController extends EventEmitter {
     await this.#initialLoadPromise
 
     const existingPreference = this.tokenPreferences.find(
-      ({ address, networkId }) =>
+      ({ address, chainId }) =>
         address.toLowerCase() === tokenPreference.address.toLowerCase() &&
-        networkId === tokenPreference.networkId
+        chainId === tokenPreference.chainId
     )
 
     // Push the token as hidden
@@ -275,8 +271,8 @@ export class PortfolioController extends EventEmitter {
       // Remove the token preference if the user decides to show it again
     } else if (existingPreference.isHidden) {
       this.tokenPreferences = this.tokenPreferences.filter(
-        ({ address, networkId }) =>
-          !(address === tokenPreference.address && networkId === tokenPreference.networkId)
+        ({ address, chainId }) =>
+          !(address === tokenPreference.address && chainId === tokenPreference.chainId)
       )
     } else {
       // Should happen only after migration
@@ -285,7 +281,7 @@ export class PortfolioController extends EventEmitter {
 
     this.emitUpdate()
     if (shouldUpdatePortfolio) {
-      await this.#updatePortfolioOnTokenChange(tokenPreference.networkId, selectedAccountAddr)
+      await this.#updatePortfolioOnTokenChange(tokenPreference.chainId, selectedAccountAddr)
     }
     await this.#storage.set('tokenPreferences', this.tokenPreferences)
   }
@@ -321,10 +317,10 @@ export class PortfolioController extends EventEmitter {
     if (error) accountState[network]!.criticalError = error
   }
 
-  removeNetworkData(networkId: NetworkId) {
+  removeNetworkData(chainId: bigint) {
     for (const accountState of [this.#latest, this.#pending]) {
       for (const accountId of Object.keys(accountState)) {
-        delete accountState[accountId][networkId]
+        delete accountState[accountId][chainId.toString()]
       }
     }
     this.emitUpdate()
@@ -334,40 +330,40 @@ export class PortfolioController extends EventEmitter {
   overridePendingResults(accountOp: AccountOp) {
     if (
       this.#pending[accountOp.accountAddr] &&
-      this.#pending[accountOp.accountAddr][accountOp.networkId] &&
+      this.#pending[accountOp.accountAddr][accountOp.chainId.toString()] &&
       this.#latest[accountOp.accountAddr] &&
-      this.#latest[accountOp.accountAddr][accountOp.networkId]
+      this.#latest[accountOp.accountAddr][accountOp.chainId.toString()]
     ) {
-      this.#pending[accountOp.accountAddr][accountOp.networkId]!.result =
-        this.#latest[accountOp.accountAddr][accountOp.networkId]!.result
+      this.#pending[accountOp.accountAddr][accountOp.chainId.toString()]!.result =
+        this.#latest[accountOp.accountAddr][accountOp.chainId.toString()]!.result
       this.emitUpdate()
     }
   }
 
   async updateTokenValidationByStandard(
-    token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
+    token: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
     accountId: AccountId
   ) {
     await this.#initialLoadPromise
-    if (this.validTokens.erc20[`${token.address}-${token.networkId}`] === true) return
+    if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
 
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
-      this.#providers.providers[token.networkId]
+      this.#providers.providers[token.chainId.toString()]
     )) as [boolean, string]
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
-      [`${token.address}-${token.networkId}`]: isValid
+      [`${token.address}-${token.chainId}`]: isValid
     }
 
     this.emitUpdate()
   }
 
-  initializePortfolioLibIfNeeded(accountId: AccountId, networkId: NetworkId, network: Network) {
+  initializePortfolioLibIfNeeded(accountId: AccountId, chainId: bigint, network: Network) {
     const providers = this.#providers.providers
-    const key = `${networkId}:${accountId}`
+    const key = `${chainId}:${accountId}`
     // Initialize a new Portfolio lib if:
     // 1. It does not exist in the portfolioLibs map
     // 2. The network RPC URL has changed
@@ -375,13 +371,13 @@ export class PortfolioController extends EventEmitter {
       !this.#portfolioLibs.has(key) ||
       this.#portfolioLibs.get(key)?.network?.selectedRpcUrl !==
         // eslint-disable-next-line no-underscore-dangle
-        providers[network.id]?._getConnection().url
+        providers[network.chainId.toString()]?._getConnection().url
     ) {
       this.#portfolioLibs.set(
         key,
         new Portfolio(
           this.#fetch,
-          providers[network.id],
+          providers[network.chainId.toString()],
           network,
           this.#velcroUrl,
           this.#batchedVelcroDiscovery
@@ -391,24 +387,26 @@ export class PortfolioController extends EventEmitter {
     return this.#portfolioLibs.get(key)!
   }
 
-  async getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string) {
-    const network = this.#networks.networks.find((x) => x.id === networkId)
+  async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
+    const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
     if (!network) throw new Error('network not found')
 
-    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, networkId, network)
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
 
     const temporaryTokensToFetch =
-      (this.temporaryTokens[network.id] &&
-        this.temporaryTokens[network.id].result?.tokens.filter(
+      (this.temporaryTokens[network.chainId.toString()] &&
+        this.temporaryTokens[network.chainId.toString()].result?.tokens.filter(
           (x) => x.address !== additionalHint
         )) ||
       []
 
-    this.temporaryTokens[network.id] = {
+    this.temporaryTokens[network.chainId.toString()] = {
       isLoading: false,
       errors: [],
-      result: this.temporaryTokens[network.id] && this.temporaryTokens[network.id].result
+      result:
+        this.temporaryTokens[network.chainId.toString()] &&
+        this.temporaryTokens[network.chainId.toString()].result
     }
     this.emitUpdate()
 
@@ -418,7 +416,7 @@ export class PortfolioController extends EventEmitter {
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
-      this.temporaryTokens[network.id] = {
+      this.temporaryTokens[network.chainId.toString()] = {
         isLoading: false,
         errors: [],
         result: {
@@ -433,8 +431,8 @@ export class PortfolioController extends EventEmitter {
         message: "Error while executing the 'get' function in the portfolio library.",
         error: e
       })
-      this.temporaryTokens[network.id].isLoading = false
-      this.temporaryTokens[network.id].errors.push(e)
+      this.temporaryTokens[network.chainId.toString()].isLoading = false
+      this.temporaryTokens[network.chainId.toString()].errors.push(e)
       this.emitUpdate()
       return false
     }
@@ -476,8 +474,9 @@ export class PortfolioController extends EventEmitter {
       .flat()
       .map((t: any) => ({
         ...t,
+        chainId: BigInt(t.chainId || 1),
         symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
-        flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
+        flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
 
     accountState.rewards = {
@@ -496,10 +495,11 @@ export class PortfolioController extends EventEmitter {
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount || 0),
+      chainId: BigInt(t.chainId || 1),
       availableAmount: BigInt(t.availableAmount || 0),
       cashback: BigInt(t.cashback || 0),
       saved: BigInt(t.saved || 0),
-      flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
+      flags: getFlags(res.data, 'gasTank', t.chainId, t.address)
     }))
 
     accountState.gasTank = {
@@ -549,23 +549,23 @@ export class PortfolioController extends EventEmitter {
       pending: this.#pending
     }
     const accountState = stateKeys[blockTag][accountId]
-    if (!accountState[network.id]) {
+    if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
       // and portfolio will not be updated
-      accountState[network.id] = { isLoading: false, isReady: false, errors: [] }
+      accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
     const canSkipUpdate = this.#getCanSkipUpdate(
-      accountState[network.id],
+      accountState[network.chainId.toString()],
       forceUpdate,
       maxDataAgeMs
     )
 
     if (canSkipUpdate) return false
 
-    this.#setNetworkLoading(accountId, blockTag, network.id, true)
+    this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
     this.emitUpdate()
 
-    const state = accountState[network.id]!
+    const state = accountState[network.chainId.toString()]!
     const hasNonZeroTokens = !!Object.values(
       this.#networksWithAssetsByAccounts?.[accountId] || {}
     ).some(Boolean)
@@ -580,7 +580,8 @@ export class PortfolioController extends EventEmitter {
 
       const hasError = result.errors.some((e) => e.level !== 'silent')
       const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
-      let lastSuccessfulUpdate = accountState[network.id]?.result?.lastSuccessfulUpdate || 0
+      let lastSuccessfulUpdate =
+        accountState[network.chainId.toString()]?.result?.lastSuccessfulUpdate || 0
 
       // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
@@ -600,7 +601,7 @@ export class PortfolioController extends EventEmitter {
         this.customTokens
       )
 
-      accountState[network.id] = {
+      accountState[network.chainId.toString()] = {
         // We cache the previously simulated AccountOps
         // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
         // This allows us to identify any differences between the two.
@@ -653,7 +654,7 @@ export class PortfolioController extends EventEmitter {
     network?: Network,
     simulation?: {
       accountOps: { [key: string]: AccountOp[] }
-      states: { [networId: NetworkId]: AccountOnchainState }
+      states: { [chainId: string]: AccountOnchainState }
     },
     opts?: { forceUpdate?: boolean; maxDataAgeMs?: number }
   ) {
@@ -674,20 +675,24 @@ export class PortfolioController extends EventEmitter {
     await Promise.all([
       updateAdditionalPortfolioIfNeeded,
       ...networks.map(async (network) => {
-        const key = `${network.id}:${accountId}`
+        const key = `${network.chainId}:${accountId}`
 
-        const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
+        const portfolioLib = this.initializePortfolioLibIfNeeded(
+          accountId,
+          network.chainId,
+          network
+        )
 
-        const currentAccountOps = simulation?.accountOps[network.id]?.filter(
+        const currentAccountOps = simulation?.accountOps[network.chainId.toString()]?.filter(
           (op) => op.accountAddr === accountId
         )
-        const state = simulation?.states?.[network.id]
-        const simulatedAccountOps = pendingState[network.id]?.accountOps
+        const state = simulation?.states?.[network.chainId.toString()]
+        const simulatedAccountOps = pendingState[network.chainId.toString()]?.accountOps
 
-        if (!this.#queue?.[accountId]?.[network.id])
+        if (!this.#queue?.[accountId]?.[network.chainId.toString()])
           this.#queue[accountId] = {
             ...this.#queue[accountId],
-            [network.id]: Promise.resolve()
+            [network.chainId.toString()]: Promise.resolve()
           }
 
         const updatePromise = async (): Promise<void> => {
@@ -707,22 +712,27 @@ export class PortfolioController extends EventEmitter {
           const additionalErc20Hints = [
             ...Object.keys(
               (this.#previousHints?.learnedTokens &&
-                this.#previousHints?.learnedTokens[network.id]) ??
+                this.#previousHints?.learnedTokens[network.chainId.toString()]) ??
                 {}
             ),
-            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.id]) ?? []),
+            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.chainId.toString()]) ??
+              []),
             ...this.customTokens
-              .filter(({ networkId, standard }) => networkId === network.id && standard === 'ERC20')
+              .filter(
+                ({ chainId, standard }) => chainId === network.chainId && standard === 'ERC20'
+              )
               .map(({ address }) => address),
             // We have to add the token preferences to ensure that the user can always see all hidden tokens
             // in settings, regardless of the selected account
             ...this.tokenPreferences
-              .filter(({ networkId }) => networkId === network.id)
+              .filter(({ chainId }) => chainId === network.chainId)
               .map(({ address }) => address)
           ]
           // TODO: Add custom ERC721 tokens to the hints
           const additionalErc721Hints = Object.fromEntries(
-            Object.entries(this.#previousHints?.learnedNfts?.[network.id] || {}).map(([k, v]) => [
+            Object.entries(
+              this.#previousHints?.learnedNfts?.[network.chainId.toString()] || {}
+            ).map(([k, v]) => [
               getAddress(k),
               { isKnown: false, tokens: v.map((i) => i.toString()) }
             ])
@@ -771,16 +781,16 @@ export class PortfolioController extends EventEmitter {
           if (
             isSuccessfulLatestUpdate &&
             !areAccountOpsChanged &&
-            accountState[network.id]?.result
+            accountState[network.chainId.toString()]?.result
           ) {
-            const networkResult = accountState[network.id]!.result
+            const networkResult = accountState[network.chainId.toString()]!.result
             const readyToLearnTokens = getTokensReadyToLearn(
-              this.#toBeLearnedTokens[network.id],
+              this.#toBeLearnedTokens[network.chainId.toString()],
               networkResult!.tokens
             )
 
             if (readyToLearnTokens.length) {
-              await this.learnTokens(readyToLearnTokens, network.id)
+              await this.learnTokens(readyToLearnTokens, network.chainId)
             }
 
             // Either a valid response or there is no external API to fetch hints from
@@ -792,7 +802,7 @@ export class PortfolioController extends EventEmitter {
                 networkResult!.hintsFromExternalAPI || null,
                 networkResult!.tokens,
                 networkResult!.tokenErrors,
-                network.id,
+                network.chainId,
                 this.#previousHints,
                 key,
                 this.customTokens,
@@ -809,12 +819,14 @@ export class PortfolioController extends EventEmitter {
         }
 
         // Chain the new updatePromise to the current queue
-        this.#queue[accountId][network.id] = this.#queue[accountId][network.id]
+        this.#queue[accountId][network.chainId.toString()] = this.#queue[accountId][
+          network.chainId.toString()
+        ]
           .then(updatePromise)
           .catch(() => updatePromise())
 
         // Ensure the method waits for the entire queue to resolve
-        await this.#queue[accountId][network.id]
+        await this.#queue[accountId][network.chainId.toString()]
       })
     ])
 
@@ -822,8 +834,8 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  markSimulationAsBroadcasted(accountId: string, networkId: string) {
-    const simulation = this.#pending[accountId][networkId]?.accountOps?.[0]
+  markSimulationAsBroadcasted(accountId: string, chainId: bigint) {
+    const simulation = this.#pending[accountId][chainId.toString()]?.accountOps?.[0]
 
     if (!simulation) return
 
@@ -832,11 +844,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  addTokensToBeLearned(tokenAddresses: string[], networkId: NetworkId) {
+  addTokensToBeLearned(tokenAddresses: string[], chainId: bigint) {
     if (!tokenAddresses.length) return false
-    if (!this.#toBeLearnedTokens[networkId]) this.#toBeLearnedTokens[networkId] = []
+    if (!this.#toBeLearnedTokens[chainId.toString()])
+      this.#toBeLearnedTokens[chainId.toString()] = []
 
-    let networkToBeLearnedTokens = this.#toBeLearnedTokens[networkId]
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[chainId.toString()]
 
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
 
@@ -855,19 +868,19 @@ export class PortfolioController extends EventEmitter {
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
-    this.#toBeLearnedTokens[networkId] = networkToBeLearnedTokens
+    this.#toBeLearnedTokens[chainId.toString()] = networkToBeLearnedTokens
     return true
   }
 
   // Learn new tokens from humanizer and debug_traceCall
   // return: whether new tokens have been learned
-  async learnTokens(tokenAddresses: string[] | undefined, networkId: NetworkId): Promise<boolean> {
+  async learnTokens(tokenAddresses: string[] | undefined, chainId: bigint): Promise<boolean> {
     if (!tokenAddresses) return false
 
     if (!this.#previousHints.learnedTokens) this.#previousHints.learnedTokens = {}
 
     let networkLearnedTokens: PreviousHintsStorage['learnedTokens'][''] =
-      this.#previousHints.learnedTokens[networkId] || {}
+      this.#previousHints.learnedTokens[chainId.toString()] || {}
 
     const alreadyLearned = Object.keys(networkLearnedTokens).map((addr) => getAddress(addr))
 
@@ -897,19 +910,16 @@ export class PortfolioController extends EventEmitter {
       )
     }
 
-    this.#previousHints.learnedTokens[networkId] = networkLearnedTokens
+    this.#previousHints.learnedTokens[chainId.toString()] = networkLearnedTokens
     await this.#storage.set('previousHints', this.#previousHints)
     return true
   }
 
-  async learnNfts(
-    nftsData: [string, bigint[]][] | undefined,
-    networkId: NetworkId
-  ): Promise<boolean> {
+  async learnNfts(nftsData: [string, bigint[]][] | undefined, chainId: bigint): Promise<boolean> {
     if (!nftsData?.length) return false
     if (!this.#previousHints.learnedNfts) this.#previousHints.learnedNfts = {}
     const networkLearnedNfts: PreviousHintsStorage['learnedNfts'][''] =
-      this.#previousHints.learnedNfts[networkId] || {}
+      this.#previousHints.learnedNfts[chainId.toString()] || {}
 
     const newAddrToId = nftsData.map(([addr, ids]) => ids.map((id) => `${addr}:${id}`)).flat()
     const alreadyLearnedAddrToId = Object.entries(networkLearnedNfts)
@@ -922,7 +932,7 @@ export class PortfolioController extends EventEmitter {
       else networkLearnedNfts[addr] = Array.from(new Set([...ids, ...networkLearnedNfts[addr]]))
     })
 
-    this.#previousHints.learnedNfts[networkId] = networkLearnedNfts
+    this.#previousHints.learnedNfts[chainId.toString()] = networkLearnedNfts
     await this.#storage.set('previousHints', this.#previousHints)
     return true
   }
@@ -933,7 +943,7 @@ export class PortfolioController extends EventEmitter {
     delete this.#networksWithAssetsByAccounts[address]
 
     this.#networks.networks.forEach((network) => {
-      const key = `${network.id}:${address}`
+      const key = `${network.chainId}:${address}`
 
       if (key in this.#previousHints.fromExternalAPI) {
         delete this.#previousHints.fromExternalAPI[key]

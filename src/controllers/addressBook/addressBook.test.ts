@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -59,7 +60,7 @@ const MOCK_ACCOUNTS: Account[] = [
 storage.set('accounts', MOCK_ACCOUNTS)
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 describe('AddressBookController', () => {
@@ -67,6 +68,7 @@ describe('AddressBookController', () => {
   const networksCtrl = new NetworksController(
     storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
