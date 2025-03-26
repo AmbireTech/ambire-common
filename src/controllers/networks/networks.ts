@@ -265,7 +265,6 @@ export class NetworksController extends EventEmitter {
    */
   async #updateNetworkFeatures(finalNetworks: { [key: string]: Network }) {
     const updatePromises = Object.values(finalNetworks).map(async (network) => {
-      console.log('network ', network.name)
       if (network.isSAEnabled) return
 
       if (
