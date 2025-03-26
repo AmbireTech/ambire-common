@@ -476,7 +476,7 @@ export class SignAccountOpController extends EventEmitter {
                   }`
                 : ''
             }`,
-            code: 'INSUFFICIENT_FUNDS_SA'
+            code: isSA ? 'INSUFFICIENT_FUNDS_SA' : 'INSUFFICIENT_FUNDS'
           })
         } else {
           errors.push({
