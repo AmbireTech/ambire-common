@@ -56,11 +56,24 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Transaction underpriced'],
     message: 'it is underpriced. Please select a higher transaction speed and try again.'
   },
+  // TODO: Figure out a more elegant way to handle errors with dynamic messages
   {
     reasons: ['Insufficient ETH for transaction calls'],
-    message:
-      "you don't have enough ETH to cover the gas costs for this transaction. Please add more ETH to your account."
+    message: "you don't have enough ETH to cover the gas costs for this transaction."
   },
+  {
+    reasons: ['Insufficient AVAX for transaction calls'],
+    message: "you don't have enough AVAX to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient BNB for transaction calls'],
+    message: "you don't have enough BNB to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient POL for transaction calls'],
+    message: "you don't have enough POL to cover the gas costs for this transaction."
+  },
+  // End of TODO
   // Smart Accounts
   {
     reasons: ['Sponsorship failed.'],

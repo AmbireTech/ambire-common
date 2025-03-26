@@ -932,7 +932,7 @@ describe('estimate', () => {
 
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      "The transaction will fail because you don't have enough ETH to cover the gas costs for this transaction. Please add more ETH to your account."
+      "The transaction will fail because you don't have enough ETH to cover the gas costs for this transaction."
     )
   })
 
@@ -1117,7 +1117,7 @@ describe('estimate', () => {
     )
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
-      'The transaction will fail because it will revert onchain. Error code: Insufficient POL for transaction calls\n'
+      "The transaction will fail because you don't have enough POL to cover the gas costs for this transaction."
     )
   })
 
