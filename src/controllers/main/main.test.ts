@@ -461,7 +461,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because of an unknown error. Please try again or contact Ambire support for assistance.'
+          'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
         )
         expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
         expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
