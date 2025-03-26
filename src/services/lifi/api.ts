@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -354,7 +354,7 @@ export class LiFiAPI {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage: '1',
+        slippage: '0.05', // this means 5%
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
