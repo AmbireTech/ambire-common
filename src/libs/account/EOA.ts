@@ -21,8 +21,14 @@ export class EOA extends BaseAccount {
 
   ambireEstimation?: AmbireEstimation | Error
 
-  getEstimationCriticalError(estimation: FullEstimation): Error | null {
-    if (estimation.provider instanceof Error) return estimation.provider
+  getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
+    const numberOfCalls = op.calls.length
+    if (numberOfCalls === 1) {
+      if (estimation.provider instanceof Error) return estimation.provider
+    }
+    if (numberOfCalls > 1) {
+      if (estimation.ambire instanceof Error) return estimation.ambire
+    }
     return null
   }
 
