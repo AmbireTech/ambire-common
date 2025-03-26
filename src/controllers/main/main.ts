@@ -66,7 +66,7 @@ import {
   getHumanReadableEstimationError
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
+import { getEstimation } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -105,7 +105,6 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
-import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
@@ -255,6 +254,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     socketApiKey,
     lifiApiKey,
     keystoreSigners,
@@ -352,7 +352,7 @@ export class MainController extends EventEmitter {
       storage: this.#storage,
       windowManager: this.#windowManager
     })
-    const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    // const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
     const lifiAPI = new LiFiAPI({ apiKey: lifiApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
