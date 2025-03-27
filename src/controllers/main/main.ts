@@ -63,7 +63,7 @@ import {
   getHumanReadableEstimationError
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
+import { getEstimation } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -767,8 +767,7 @@ export class MainController extends EventEmitter {
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network,
-        accountOp
+        network
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -1187,8 +1186,7 @@ export class MainController extends EventEmitter {
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData,
-      this.signAccountOp?.accountOp
+      networkData
     )
 
     await this.portfolio.updateSelectedAccount(
@@ -2316,8 +2314,7 @@ export class MainController extends EventEmitter {
     const accOpsForSimulation = getAccountOpsForSimulation(
       this.accounts.accounts.find((acc) => acc.addr === op.accountAddr)!,
       this.actions.visibleActionsQueue,
-      network,
-      op
+      network
     )
     return this.portfolio.updateSelectedAccount(
       op.accountAddr,

@@ -148,8 +148,7 @@ export const makeAccountOpAction = ({
 export const getAccountOpsForSimulation = (
   account: Account,
   visibleActionsQueue: Action[],
-  network?: Network,
-  op?: AccountOp | null
+  network?: Network
 ):
   | {
       [key: string]: AccountOp[]
@@ -157,13 +156,9 @@ export const getAccountOpsForSimulation = (
   | undefined => {
   const isSmart = isSmartAccount(account)
 
-  // if there's an op and the account is either smart or the network supports
-  // state override, we pass it along. We do not support simulation for
-  // EOAs on networks without state override (but it works for SA)
-  if (op && (isSmart || (network && !network.rpcNoStateOverride)))
-    return { [op.chainId.toString()]: [op] }
+  // Simulation isn't supported by EOAs if the network doesn't support state override
+  if (!isSmart && (!network || network.rpcNoStateOverride)) return undefined
 
-  if (isSmart) return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || undefined
-
-  return undefined
+  // Simulate all account ops for the account
+  return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || undefined
 }
