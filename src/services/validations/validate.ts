@@ -58,7 +58,6 @@ const validateSendTransferAddress = (
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
@@ -89,7 +88,6 @@ const validateSendTransferAddress = (
   if (
     isRecipientAddressUnknown &&
     !addressConfirmed &&
-    !isUDAddress &&
     !isEnsAddress &&
     !isRecipientDomainResolving
   ) {
@@ -103,10 +101,10 @@ const validateSendTransferAddress = (
   if (
     isRecipientAddressUnknown &&
     !addressConfirmed &&
-    (isUDAddress || isEnsAddress) &&
+    isEnsAddress &&
     !isRecipientDomainResolving
   ) {
-    const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
+    const name = 'Ethereum Name Service'
     return {
       success: false,
       message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
