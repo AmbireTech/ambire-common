@@ -4,7 +4,7 @@ import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
 import { CustomToken, TokenPreference } from './customToken'
@@ -19,30 +19,28 @@ import {
 } from './interfaces'
 
 const usdcEMapping: { [key: string]: string } = {
-  avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
-  moonriver: '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
-  arbitrum: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
-  polygon: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
-  optimism: '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
+  '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
+  '1285': '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
+  '42161': '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+  '137': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  '10': '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
 }
 
-export function overrideSymbol(address: string, networkId: string, symbol: string) {
+export function overrideSymbol(address: string, chainId: bigint, symbol: string) {
   // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
-  if (usdcEMapping[networkId] && usdcEMapping[networkId].toLowerCase() === address.toLowerCase()) {
+  if (
+    usdcEMapping[chainId.toString()] &&
+    usdcEMapping[chainId.toString()].toLowerCase() === address.toLowerCase()
+  ) {
     return 'USDC.E'
   }
 
   return symbol
 }
 
-export function getFlags(
-  networkData: any,
-  networkId: NetworkId,
-  tokenNetwork: NetworkId,
-  address: string
-) {
-  const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(networkId)
-  const onGasTank = networkId === 'gasTank'
+export function getFlags(networkData: any, chainId: string, tokenChainId: bigint, address: string) {
+  const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId)
+  const onGasTank = chainId === 'gasTank'
 
   let rewardsType = null
   if (networkData?.xWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
@@ -53,7 +51,7 @@ export function getFlags(
   const foundFeeToken = gasTankFeeTokens.find(
     (t) =>
       t.address.toLowerCase() === address.toLowerCase() &&
-      (isRewardsOrGasTank ? t.networkId === tokenNetwork : t.networkId === networkId)
+      (isRewardsOrGasTank ? t.chainId === tokenChainId : t.chainId.toString() === chainId)
   )
 
   const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
@@ -61,7 +59,7 @@ export function getFlags(
     address === ZeroAddress ||
     // disable if not in gas tank
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
-    networkId === 'gasTank'
+    chainId === 'gasTank'
 
   return {
     onGasTank,
@@ -72,7 +70,7 @@ export function getFlags(
 }
 
 export const validateERC20Token = async (
-  token: { address: string; networkId: NetworkId },
+  token: { address: string; chainId: bigint },
   accountId: string,
   provider: RPCProvider
 ) => {
@@ -157,15 +155,15 @@ export const addHiddenTokenValueToTotal = (
 
 export const getAccountPortfolioTotal = (
   accountPortfolio: AccountState,
-  excludeNetworks: Network['id'][] = [],
+  excludeNetworks: string[] = [],
   excludeHiddenTokens = true
 ) => {
   if (!accountPortfolio) return 0
 
-  return Object.keys(accountPortfolio).reduce((acc, key) => {
-    if (excludeNetworks.includes(key)) return acc
+  return Object.keys(accountPortfolio).reduce((acc, chainId) => {
+    if (excludeNetworks.includes(chainId)) return acc
 
-    const networkData = accountPortfolio[key]
+    const networkData = accountPortfolio[chainId]
     const tokenList = networkData?.result?.tokens || []
     let networkTotalAmountUSD = networkData?.result?.total.usd || 0
 
@@ -202,7 +200,7 @@ export const getPinnedGasTankTokens = (
       (pinnedToken) =>
         (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
         pinnedToken.address === token.address &&
-        pinnedToken.networkId === token.network
+        pinnedToken.chainId.toString() === token.chainId.toString()
     )
 
     if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
@@ -211,7 +209,7 @@ export const getPinnedGasTankTokens = (
         symbol: token.symbol.toUpperCase(),
         name: token.name,
         amount: 0n,
-        networkId: correspondingPinnedToken.networkId,
+        chainId: correspondingPinnedToken.chainId,
         decimals: token.decimals,
         priceIn: [
           {
@@ -246,11 +244,11 @@ export const stripExternalHintsAPIResponse = (
 }
 
 const getLowercaseAddressArrayForNetwork = (
-  array: { address: string; networkId?: NetworkId }[],
-  networkId: NetworkId
+  array: { address: string; chainId?: bigint }[],
+  chainId: bigint
 ) =>
   array
-    .filter((item) => !networkId || item.networkId === networkId)
+    .filter((item) => !chainId || item.chainId === chainId)
     .map((item) => item.address.toLowerCase())
 
 /**
@@ -265,7 +263,7 @@ export function getUpdatedHints(
   latestHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null,
   tokens: TokenResult[],
   tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
-  networkId: NetworkId,
+  chainId: bigint,
   storagePreviousHints: PreviousHintsStorage,
   key: string,
   customTokens: CustomToken[],
@@ -278,7 +276,7 @@ export function getUpdatedHints(
 
   const { learnedTokens, learnedNfts } = previousHints
   const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || []
-  const networkLearnedTokens = learnedTokens[networkId] || {}
+  const networkLearnedTokens = learnedTokens[chainId.toString()] || {}
 
   // The keys in learnedTokens are addresses of tokens
   const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
@@ -310,17 +308,14 @@ export function getUpdatedHints(
     // Lowercase all addresses outside of the loop for better performance
     const lowercaseNetworkPinnedTokenAddresses = getLowercaseAddressArrayForNetwork(
       PINNED_TOKENS,
-      networkId
+      chainId
     )
-    const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, networkId)
-    const lowercaseTokenPreferences = getLowercaseAddressArrayForNetwork(
-      tokenPreferences,
-      networkId
-    )
+    const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, chainId)
+    const lowercaseTokenPreferences = getLowercaseAddressArrayForNetwork(tokenPreferences, chainId)
     const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n)
     const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(
       networkTokensWithBalance,
-      networkId
+      chainId
     )
     const lowercaseERC20HintsFromExternalAPI = latestERC20HintsFromExternalAPI.map((hint) =>
       hint.toLowerCase()
@@ -338,7 +333,7 @@ export function getUpdatedHints(
           (errorToken) => errorToken.toLowerCase() === lowercaseAddress
         )
       ) {
-        delete learnedTokens[networkId][lowercaseAddress]
+        delete learnedTokens[chainId.toString()][lowercaseAddress]
         // eslint-disable-next-line no-continue
         continue
       }
@@ -360,7 +355,7 @@ export function getUpdatedHints(
         // Don't set the timestamp back to null if the account doesn't have balance for the token
         // as learnedTokens aren't account specific and one account can have balance for the token
         // while other don't
-        learnedTokens[networkId][address] = Date.now().toString()
+        learnedTokens[chainId.toString()][address] = Date.now().toString()
       }
     }
   }
@@ -410,7 +405,7 @@ export const tokenFilter = (
   if (token.amount > 0 || token.address === ZeroAddress) return true
 
   const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
-    return pinnedToken.networkId === network.id && pinnedToken.address === token.address
+    return pinnedToken.chainId === network.chainId && pinnedToken.address === token.address
   })
 
   // make the comparison to lowercase as otherwise, it doesn't work
@@ -447,7 +442,9 @@ export const processTokens = (
     const isGasTankOrRewards = token.flags.onGasTank || token.flags.rewardsType
 
     const preference = tokenPreferences?.find((tokenPreference) => {
-      return tokenPreference.address === token.address && tokenPreference.networkId === network.id
+      return (
+        tokenPreference.address === token.address && tokenPreference.chainId === network.chainId
+      )
     })
 
     if (preference) {
@@ -458,7 +455,7 @@ export const processTokens = (
       !isGasTankOrRewards &&
       !!customTokens.find(
         (customToken) =>
-          customToken.address === token.address && customToken.networkId === network.id
+          customToken.address === token.address && customToken.chainId === network.chainId
       )
 
     if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))

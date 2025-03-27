@@ -268,14 +268,16 @@ const getAccountsInfo = async (
   accounts: Account[]
 ): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex][accIndex]]
         })
       )
     ]

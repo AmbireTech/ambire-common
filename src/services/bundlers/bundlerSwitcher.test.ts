@@ -6,8 +6,8 @@ import { Account } from '../../interfaces/account'
 import { BundlerSwitcher } from './bundlerSwitcher'
 import { DevBundlerSwitcher } from './DevBundlerSwitcher'
 
-const base = networks.find((net) => net.id === 'base')!
-const avalanche = networks.find((net) => net.id === 'avalanche')!
+const base = networks.find((n) => n.chainId === 8453n)!
+const avalanche = networks.find((n) => n.chainId === 43114n)!
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',

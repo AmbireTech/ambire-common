@@ -53,7 +53,8 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
   'aevo.xyz',
   'socialscan.io',
   'tally.xyz',
-  'questn.com'
+  'questn.com',
+  'taskon.xyz'
 ]
 
 /**
@@ -678,7 +679,7 @@ export function get7702Sig(
   signature: EIP7702Signature
 ): EIP7702Auth {
   return {
-    contractAddress: implementation,
+    address: implementation,
     chainId: toBeHex(chainId) as Hex,
     nonce: toBeHex(nonce) as Hex,
     r: signature.r,

@@ -2,7 +2,7 @@ import '@nomicfoundation/hardhat-chai-matchers'
 
 import { expect } from 'chai'
 import { Contract, MaxUint256, solidityPackedKeccak256 } from 'ethers'
-import { ethers, network } from 'hardhat'
+import { ethers } from 'hardhat'
 
 import { ERC20 } from '../../src/libs/humanizer/const/abis'
 

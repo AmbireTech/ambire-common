@@ -21,7 +21,7 @@ import { StorageController } from '../storage/storage'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const storage: Storage = produceMemoryStore()
@@ -30,6 +30,7 @@ const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController(
   storageCtrl,
   fetch,
+  relayerUrl,
   (net) => {
     providersCtrl.setProvider(net)
   },
@@ -206,53 +207,49 @@ describe('SelectedAccount Controller', () => {
 
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
-      providersCtrl.updateProviderIsWorking('ethereum', false)
-      jest
-        .spyOn(portfolioCtrl, 'getNetworksWithAssets')
-        .mockImplementation(() => ({ ethereum: true }))
+      providersCtrl.updateProviderIsWorking(1n, false)
+      jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({ '1': true }))
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
       ).toBeDefined()
-      providersCtrl.updateProviderIsWorking('ethereum', true)
+      providersCtrl.updateProviderIsWorking(1n, true)
     })
     it("An RPC banner is displayed when it's not working and we still don't know if the user has assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
-      providersCtrl.updateProviderIsWorking('ethereum', false)
+      providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({}))
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
       ).toBeDefined()
-      providersCtrl.updateProviderIsWorking('ethereum', true)
+      providersCtrl.updateProviderIsWorking(1n, true)
     })
     it("No RPC banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       jest
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
-        .mockImplementation(() => ({ polygon: true, ethereum: false }))
-      providersCtrl.updateProviderIsWorking('ethereum', false)
+        .mockImplementation(() => ({ '137': true, '1': false }))
+      providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
       ).toBeUndefined()
-      providersCtrl.updateProviderIsWorking('ethereum', true)
+      providersCtrl.updateProviderIsWorking(1n, true)
     })
     it("A portfolio error banners isn't displayed when there is an RPC error banner", async () => {
-      jest
-        .spyOn(portfolioCtrl, 'getNetworksWithAssets')
-        .mockImplementation(() => ({ ethereum: true }))
+      jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({ '1': true }))
       selectedAccountCtrl.resetSelectedAccountPortfolio()
       await portfolioCtrl.updateSelectedAccount(accountAddr)
 
       await waitSelectedAccCtrlPortfolioAllReady()
 
-      selectedAccountCtrl.portfolio.latest.ethereum!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.latest.ethereum!.result!.lastSuccessfulUpdate = 0
-      providersCtrl.updateProviderIsWorking('ethereum', false)
+      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       // A portfolio error banner isn't displayed when there is an RPC error banner
@@ -263,7 +260,7 @@ describe('SelectedAccount Controller', () => {
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'portfolio-critical')
       ).not.toBeDefined()
 
-      providersCtrl.updateProviderIsWorking('ethereum', true)
+      providersCtrl.updateProviderIsWorking(1n, true)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       // The portfolio error banner is displayed when there isn't an RPC error banner
@@ -280,13 +277,13 @@ describe('SelectedAccount Controller', () => {
       await waitSelectedAccCtrlPortfolioAllReady()
 
       // There is a critical error but lastSuccessfulUpdate is less than 10 minutes ago
-      selectedAccountCtrl.portfolio.latest.ethereum!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
       await forceBannerRecalculation()
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
       // There is a critical error and lastSuccessfulUpdate is more than 10 minutes ago
-      selectedAccountCtrl.portfolio.latest.ethereum!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
       await forceBannerRecalculation()
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
@@ -298,7 +295,7 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
       jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        ethereum: {
+        '1': {
           positionsByProvider: [],
           isLoading: false,
           updatedAt: 0,
@@ -306,7 +303,7 @@ describe('SelectedAccount Controller', () => {
         }
       }))
       jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({
-        ethereum: ['AAVE v3', 'Uniswap V3']
+        '1': ['AAVE v3', 'Uniswap V3']
       }))
       await defiPositionsCtrl.updatePositions()
       await waitNextControllerUpdate(selectedAccountCtrl)
@@ -321,7 +318,7 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
       jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        ethereum: {
+        '1': {
           positionsByProvider: [],
           isLoading: false,
           updatedAt: 0,
@@ -331,7 +328,7 @@ describe('SelectedAccount Controller', () => {
       // This mocks the case where we have fetched the positions but the user has none
       // and there is a critical error but we don't want to show the banner
       jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({
-        ethereum: []
+        '1': []
       }))
       await defiPositionsCtrl.updatePositions()
       await waitNextControllerUpdate(selectedAccountCtrl)
@@ -346,7 +343,7 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
       jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
-        ethereum: {
+        '1': {
           positionsByProvider: [],
           isLoading: false,
           updatedAt: 0,
