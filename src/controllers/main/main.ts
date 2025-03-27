@@ -58,6 +58,12 @@ import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/bro
 import { getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
+<<<<<<< HEAD
+=======
+import { getEstimation } from '../../libs/estimate/estimate'
+import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { humanizeAccountOp } from '../../libs/humanizer'
+>>>>>>> 674e9a887f0f2889ee067b450a2541ad1825dabd
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
@@ -755,8 +761,7 @@ export class MainController extends EventEmitter {
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network,
-        accountOp
+        network
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -1175,8 +1180,7 @@ export class MainController extends EventEmitter {
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData,
-      this.signAccountOp?.accountOp
+      networkData
     )
 
     await this.portfolio.updateSelectedAccount(
