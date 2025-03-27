@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -37,7 +38,7 @@ describe('AccountsController', () => {
     }
   ]
   const providers = Object.fromEntries(
-    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
 
   let providersCtrl: ProvidersController
@@ -45,6 +46,7 @@ describe('AccountsController', () => {
   const networksCtrl = new NetworksController(
     storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },

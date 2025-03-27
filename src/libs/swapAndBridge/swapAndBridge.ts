@@ -173,7 +173,7 @@ const buildRevokeApprovalIfNeeded = async (
 
 const buildSwapAndBridgeUserRequests = async (
   userTx: SwapAndBridgeSendTxRequest,
-  networkId: string,
+  chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
@@ -212,7 +212,7 @@ const buildSwapAndBridgeUserRequests = async (
       },
       meta: {
         isSignAction: true,
-        networkId,
+        chainId,
         accountAddr: account.addr,
         activeRouteId: userTx.activeRouteId,
         isSwapAndBridgeCall: true
@@ -278,9 +278,9 @@ const addCustomTokensIfNeeded = ({
 }
 
 export {
+  addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
-  getActiveRoutesUpdateInterval,
-  addCustomTokensIfNeeded
+  getActiveRoutesUpdateInterval
 }

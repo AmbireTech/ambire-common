@@ -32,14 +32,14 @@ import {
   ProviderEstimation
 } from './interfaces'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')!
+const ethereum = networks.find((x) => x.chainId === 1n)!
 ethereum.areContractsDeployed = true
-const optimism = networks.find((x) => x.id === 'optimism')
-const arbitrum = networks.find((x) => x.id === 'arbitrum')!
+const optimism = networks.find((x) => x.chainId === 10n)
+const arbitrum = networks.find((x) => x.chainId === 42161n)!
 arbitrum.areContractsDeployed = true
-const avalanche = networks.find((x) => x.id === 'avalanche')!
+const avalanche = networks.find((x) => x.chainId === 43114n)!
 avalanche.areContractsDeployed = true
-const polygon = networks.find((x) => x.id === 'polygon')
+const polygon = networks.find((x) => x.chainId === 137n)
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
@@ -144,7 +144,7 @@ const feeTokens = [
     amount: 1n,
     symbol: 'ETH',
     name: 'Ethereum',
-    networkId: 'ethereum',
+    chainId: 1n,
     decimals: 18,
     priceIn: [],
     flags: {
@@ -159,7 +159,7 @@ const feeTokens = [
     amount: 1n,
     symbol: 'USDT',
     name: 'Tether',
-    networkId: 'ethereum',
+    chainId: 1n,
     decimals: 6,
     priceIn: [],
     flags: {
@@ -174,7 +174,7 @@ const feeTokens = [
     amount: 1n,
     symbol: 'USDC',
     name: 'USD Coin',
-    networkId: 'ethereum',
+    chainId: 1n,
     decimals: 6,
     priceIn: [],
     flags: {
@@ -191,7 +191,7 @@ const feeTokens = [
 //     address: '0x0000000000000000000000000000000000000000',
 //     amount: 1n,
 //     symbol: 'AVAX',
-//     networkId: 'avalanche',
+//     chainId: 43114n,
 //     decimals: 18,
 //     priceIn: [],
 //     flags: {
@@ -205,7 +205,7 @@ const feeTokens = [
 //     address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
 //     amount: 1n,
 //     symbol: 'USDC',
-//     networkId: 'avalanche',
+//     chainId: 43114n,
 //     decimals: 6,
 //     priceIn: [],
 //     flags: {
@@ -220,18 +220,20 @@ const feeTokens = [
 const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex][accIndex]]
         })
       )
     ]
@@ -308,7 +310,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: null,
       signature: null,
       calls: [call],
@@ -316,7 +318,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][ethereum.id]
+    const accountState = accountStates[EOAAccount.addr][ethereum.chainId.toString()]
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -370,7 +372,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'polygon',
+      chainId: 137n,
       nonce: null,
       signature: null,
       calls: [call],
@@ -378,7 +380,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const accountState = accountStates[EOAAccount.addr][polygon.chainId.toString()]
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -447,7 +449,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'polygon',
+      chainId: 137n,
       nonce: null,
       signature: null,
       calls: [call],
@@ -455,7 +457,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const accountState = accountStates[EOAAccount.addr][polygon.chainId.toString()]
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -506,7 +508,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'polygon',
+      chainId: 137n,
       nonce: null,
       signature: null,
       calls: [call],
@@ -514,7 +516,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][polygon.id]
+    const accountState = accountStates[EOAAccount.addr][polygon.chainId.toString()]
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -545,7 +547,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
@@ -554,11 +556,11 @@ describe('estimate', () => {
 
     const portfolioResponse = await portfolio.get('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
     const nativeToken = portfolioResponse.tokens.find(
-      (tok) => tok.address === ZeroAddress && tok.networkId === ethereum.id
+      (tok) => tok.address === ZeroAddress && tok.chainId === ethereum.chainId
     )
 
     const accountStates = await getAccountsInfo([v1Acc])
-    const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const accountState = accountStates[v1Acc.addr][ethereum.chainId.toString()]
     const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -607,7 +609,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: 1n, data: '0x' }],
@@ -615,7 +617,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
-    const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const accountState = accountStates[v1Acc.addr][ethereum.chainId.toString()]
     const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -648,7 +650,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: 1n,
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
@@ -656,7 +658,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
-    const accountState = accountStates[viewOnlyAcc.addr][ethereum.id]
+    const accountState = accountStates[viewOnlyAcc.addr][ethereum.chainId.toString()]
     const baseAcc = getBaseAccount(viewOnlyAcc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -712,7 +714,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
@@ -720,7 +722,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
-    const accountState = accountStates[accountOptimismv1.addr][optimism.id]
+    const accountState = accountStates[accountOptimismv1.addr][optimism.chainId.toString()]
     const baseAcc = getBaseAccount(accountOptimismv1, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -755,7 +757,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'arbitrum',
+      chainId: 42161n,
       nonce: await v2AccAbi.nonce(),
       signature: spoofSig,
       calls: [
@@ -769,7 +771,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr][arbitrum.id]
+    const accountState = accountStates[deprycatedV2.addr][arbitrum.chainId.toString()]
     const baseAcc = getBaseAccount(deprycatedV2, accountState, [], arbitrum)
     const response = await getEstimation(
       baseAcc,
@@ -804,14 +806,14 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce: 6n, // corrupt the nonce
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
-    const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -850,7 +852,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
@@ -861,7 +863,7 @@ describe('estimate', () => {
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
-    const accountState = accountStates[smartAcc.addr][optimism.id]
+    const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
     const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -905,7 +907,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
@@ -916,7 +918,7 @@ describe('estimate', () => {
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
-    const accountState = accountStates[smartAcc.addr][optimism.id]
+    const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
     const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -951,7 +953,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce: 0n,
       signature: '0x',
       calls: [
@@ -968,7 +970,7 @@ describe('estimate', () => {
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
-    const accountState = accountStates[smartAcc.addr][optimism.id]
+    const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
     const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -997,14 +999,14 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
-    const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -1043,14 +1045,14 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'optimism',
+      chainId: 10n,
       nonce,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
-    const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+    const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
 
     // corrupt the nonce to be lower
     accountState.erc4337Nonce = 6n
@@ -1095,14 +1097,14 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: polygon.id,
+      chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
       calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr][polygon.id]
+    const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
     const baseAcc = getBaseAccount(deprycatedV2, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -1128,14 +1130,14 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: polygon.id,
+      chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
       calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr][polygon.id]
+    const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
 
     const baseAcc = getBaseAccount(
       { ...deprycatedV2, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
@@ -1167,7 +1169,7 @@ describe('estimate', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: 1n,
       signature: '0x',
       calls: [{ to, value: BigInt(0), data: expiredData }],
@@ -1175,7 +1177,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
-    const accountState = accountStates[v1Acc.addr][ethereum.id]
+    const accountState = accountStates[v1Acc.addr][ethereum.chainId.toString()]
     const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,

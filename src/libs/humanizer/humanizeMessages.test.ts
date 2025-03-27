@@ -86,7 +86,7 @@ describe('typed message tests', () => {
     messageTemplate = {
       fromActionId: 'randomActionId',
       accountAddr: address1,
-      networkId: 'ethereum',
+      chainId: 1n,
       signature: null,
       content: {
         kind: 'typedMessage',

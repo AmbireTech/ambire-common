@@ -106,7 +106,7 @@ export async function getNFTs(
   const mapToken = (token: any) => {
     return {
       name: token.name,
-      networkId: network.id,
+      chainId: network.chainId,
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
@@ -221,7 +221,7 @@ export async function getTokens(
   const mapToken = (token: any, address: string) => {
     return {
       amount: token.amount,
-      networkId: network.id,
+      chainId: network.chainId,
       decimals: Number(token.decimals),
       name:
         address === '0x0000000000000000000000000000000000000000'
@@ -230,9 +230,9 @@ export async function getTokens(
       symbol:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
-          : overrideSymbol(address, network.id, token.symbol),
+          : overrideSymbol(address, network.chainId, token.symbol),
       address,
-      flags: getFlags({}, network.id, network.id, address)
+      flags: getFlags({}, network.chainId.toString(), network.chainId, address)
     } as TokenResult
   }
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)

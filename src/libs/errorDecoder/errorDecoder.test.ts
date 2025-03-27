@@ -20,8 +20,8 @@ import { DecodedError, ErrorType } from './types'
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
 
-const base = networks.find((net) => net.id === 'base')!
-const avalanche = networks.find((net) => net.id === 'avalanche')!
+const base = networks.find((n) => n.chainId === 8453n)!
+const avalanche = networks.find((n) => n.chainId === 43114n)!
 
 export const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
