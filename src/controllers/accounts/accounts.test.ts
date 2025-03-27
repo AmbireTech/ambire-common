@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -9,6 +10,7 @@ import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { AccountsController } from './accounts'
 
 describe('AccountsController', () => {
@@ -36,13 +38,15 @@ describe('AccountsController', () => {
     }
   ]
   const providers = Object.fromEntries(
-    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
 
   let providersCtrl: ProvidersController
+  const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -55,9 +59,9 @@ describe('AccountsController', () => {
 
   let accountsCtrl: AccountsController
   test('should init AccountsController', async () => {
-    await storage.set('accounts', accounts)
+    await storageCtrl.set('accounts', accounts)
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},

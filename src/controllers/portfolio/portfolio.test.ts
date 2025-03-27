@@ -18,6 +18,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { PortfolioController } from './portfolio'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
@@ -25,20 +26,22 @@ const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
-  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.id].isWorking = true
+  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.chainId.toString()].isWorking = true
 })
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex][accIndex]]
         })
       )
     ]
@@ -133,11 +136,13 @@ const emptyAccount = {
 
 const prepareTest = () => {
   const storage = produceMemoryStore()
-  storage.set('accounts', [account, account2, account3, account4, emptyAccount])
+  const storageCtrl = new StorageController(storage)
+  storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -148,7 +153,7 @@ const prepareTest = () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -156,7 +161,7 @@ const prepareTest = () => {
     () => {}
   )
   const controller = new PortfolioController(
-    storage,
+    storageCtrl,
     fetch,
     providersCtrl,
     networksCtrl,
@@ -165,7 +170,7 @@ const prepareTest = () => {
     velcroUrl
   )
 
-  return { storage, controller }
+  return { storageCtrl, controller }
 }
 
 describe('Portfolio Controller ', () => {
@@ -178,17 +183,17 @@ describe('Portfolio Controller ', () => {
       137
     ])
 
-    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers.ethereum)
+    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1'])
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
-      ethereum: [
+      '1': [
         {
           accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
           signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
           gasLimit: null,
           gasFeePayment: null,
-          networkId: 'ethereum',
+          chainId: 1n,
           nonce,
           signature: '0x',
           calls
@@ -198,24 +203,28 @@ describe('Portfolio Controller ', () => {
   }
 
   test('Previous tokens are persisted in the storage', async () => {
-    const { controller, storage } = prepareTest()
+    const { controller, storageCtrl } = prepareTest()
     await controller.updateSelectedAccount(account2.addr)
-    const storagePreviousHints = await storage.get('previousHints', {})
-    const ethereumHints = storagePreviousHints.fromExternalAPI[`ethereum:${account2.addr}`]
-    const polygonHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
-    const optimismHints = storagePreviousHints.fromExternalAPI[`polygon:${account2.addr}`]
+    const storagePreviousHints = await storageCtrl.get('previousHints', {
+      fromExternalAPI: {},
+      learnedTokens: {},
+      learnedNfts: {}
+    })
+    const ethereumHints = storagePreviousHints.fromExternalAPI[`1:${account2.addr}`]
+    const polygonHints = storagePreviousHints.fromExternalAPI[`137:${account2.addr}`]
+    const optimismHints = storagePreviousHints.fromExternalAPI[`137:${account2.addr}`]
 
     // Controller persists tokens having balance for the current account.
     // @TODO - here we can enhance the test to cover one more scenarios:
     //  #1) Does the account really have amount for the persisted tokens.
-    expect(ethereumHints.erc20s.length).toBeGreaterThan(0)
-    expect(polygonHints.erc20s.length).toBeGreaterThan(0)
-    expect(optimismHints.erc20s.length).toBeGreaterThan(0)
+    expect(ethereumHints?.erc20s?.length).toBeGreaterThan(0)
+    expect(polygonHints?.erc20s?.length).toBeGreaterThan(0)
+    expect(optimismHints?.erc20s?.length).toBeGreaterThan(0)
   })
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
     const { controller } = prepareTest()
-    const ethereum = networks.find((network) => network.id === 'ethereum')
+    const ethereum = networks.find((network) => network.chainId === 1n)
 
     // Here's how we test if account updates are queued correctly.
     // First, we know that `updateSelectedAccount()` calls the `updatePortfolioState()` method twice for each account and network.
@@ -310,10 +319,10 @@ describe('Portfolio Controller ', () => {
 
       const latestState = controller.getLatestPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      )?.ethereum!
+      )?.['1']!
       const pendingState = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      )?.ethereum!
+      )?.['1']!
       expect(latestState.isReady).toEqual(true)
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
       expect(latestState.result?.collections?.length).toBeGreaterThan(0)
@@ -331,12 +340,12 @@ describe('Portfolio Controller ', () => {
         if (!pendingState1?.isReady) {
           pendingState1 = controller.getPendingPortfolioState(
             '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-          )?.ethereum
+          )?.['1']
         }
         if (pendingState1?.isReady) {
           if (
-            controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-              ?.ethereum?.result?.updateStarted !== pendingState1.result.updateStarted
+            controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.['1']
+              ?.result?.updateStarted !== pendingState1.result.updateStarted
           )
             done()
         }
@@ -353,10 +362,10 @@ describe('Portfolio Controller ', () => {
       controller.onUpdate(() => {
         const latestState = controller.getLatestPortfolioState(
           '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        )?.ethereum
+        )?.['1']
         const pendingState = controller.getPendingPortfolioState(
           '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        )?.ethereum
+        )?.['1']
         if (latestState?.isReady && pendingState?.isReady) {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
@@ -393,7 +402,7 @@ describe('Portfolio Controller ', () => {
       controller.onUpdate(() => {
         const pendingState = controller.getPendingPortfolioState(
           '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        ).ethereum!
+        )['1']!
         const collection = pendingState.result?.collections?.find(
           (c: CollectionResult) => c.symbol === 'NFT Fiesta'
         )
@@ -420,11 +429,11 @@ describe('Portfolio Controller ', () => {
     //   let pendingState2: any
     //   controller.onUpdate(() => {
     //     if (!pendingState1?.isReady) {
-    //       pendingState1 = controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.ethereum
+    //       pendingState1 = controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.['1']
     //       return
     //     }
     //     if (pendingState1?.isReady) {
-    //       pendingState2 = controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.ethereum
+    //       pendingState2 = controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.['1']
     //     }
     //     if (pendingState1.result?.updateStarted < pendingState2.result?.updateStarted) {
     //       done()
@@ -447,13 +456,13 @@ describe('Portfolio Controller ', () => {
         if (!pendingState1?.isReady) {
           pendingState1 = controller.getPendingPortfolioState(
             '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-          )?.ethereum
+          )?.['1']
           return
         }
         if (pendingState1?.isReady) {
           pendingState2 = controller.getPendingPortfolioState(
             '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-          )?.ethereum
+          )?.['1']
         }
         if (pendingState1.result?.updateStarted < pendingState2.result?.updateStarted) {
           done()
@@ -490,7 +499,7 @@ describe('Portfolio Controller ', () => {
       })
       const pendingState1 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      ).ethereum!
+      )['1']!
 
       await controller.updateSelectedAccount(
         account.addr,
@@ -505,7 +514,7 @@ describe('Portfolio Controller ', () => {
       )
       const pendingState2 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      ).ethereum!
+      )['1']!
 
       expect(pendingState2.result?.updateStarted).toBeGreaterThan(
         pendingState1.result?.updateStarted!
@@ -523,11 +532,11 @@ describe('Portfolio Controller ', () => {
       })
       const pendingState1 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      ).ethereum!
+      )['1']!
 
       const accountOp2 = await getAccountOp()
       // Change the address
-      accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
+      accountOp2['1'][0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp2,
@@ -535,7 +544,7 @@ describe('Portfolio Controller ', () => {
       })
       const pendingState2 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      ).ethereum!
+      )['1']!
 
       expect(pendingState2.result?.updateStarted).toBeGreaterThan(
         pendingState1.result?.updateStarted!
@@ -551,15 +560,15 @@ describe('Portfolio Controller ', () => {
         emptyAccount.addr,
         // we pass a network here, just because the portfolio is trying to perform a call to an undefined network,
         // and it throws a silent error
-        networks.find((network) => network.id === 'ethereum'),
+        networks.find((network) => network.chainId === 1n),
         undefined,
         { forceUpdate: true }
       )
 
-      PINNED_TOKENS.filter((token) => token.networkId === 'ethereum').forEach((pinnedToken) => {
+      PINNED_TOKENS.filter((token) => token.chainId === 1n).forEach((pinnedToken) => {
         const token = controller
           .getLatestPortfolioState(emptyAccount.addr)
-          .ethereum?.result?.tokens.find((t) => t.address === pinnedToken.address)
+          ['1']?.result?.tokens.find((t) => t.address === pinnedToken.address)
 
         expect(token).toBeTruthy()
       })
@@ -575,7 +584,7 @@ describe('Portfolio Controller ', () => {
       const gasTankResult = controller.getLatestPortfolioState(account.addr).gasTank
         ?.result as PortfolioGasTankResult
 
-      controller.getLatestPortfolioState(account.addr).ethereum?.result?.tokens.forEach((token) => {
+      controller.getLatestPortfolioState(account.addr)['1']?.result?.tokens.forEach((token) => {
         expect(token.amount > 0)
       })
       gasTankResult.gasTankTokens.forEach((token) => {
@@ -587,7 +596,7 @@ describe('Portfolio Controller ', () => {
   describe('Gas Tank with USDC token', () => {
     const usdcTokenAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     const foundUsdcToken = PINNED_TOKENS.find(
-      (token) => token.address === usdcTokenAddress && token.networkId === 'ethereum'
+      (token) => token.address === usdcTokenAddress && token.chainId === 1n
     )
 
     test('USDC gas tank token is set in a smart account with no tokens', async () => {
@@ -637,7 +646,7 @@ describe('Portfolio Controller ', () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
 
-      await controller.learnTokens([BANANA_TOKEN_ADDR], 'ethereum')
+      await controller.learnTokens([BANANA_TOKEN_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
@@ -645,7 +654,7 @@ describe('Portfolio Controller ', () => {
 
       const token = controller
         .getLatestPortfolioState(account.addr)
-        .ethereum?.result?.tokens.find((tk) => tk.address === BANANA_TOKEN_ADDR)
+        ['1']?.result?.tokens.find((tk) => tk.address === BANANA_TOKEN_ADDR)
 
       expect(token).toBeTruthy()
     })
@@ -653,24 +662,24 @@ describe('Portfolio Controller ', () => {
     test('Learned tokens to avoid persisting non-ERC20 tokens', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
-      const { storage, controller } = prepareTest()
+      const { storageCtrl, controller } = prepareTest()
 
-      await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 'ethereum')
+      await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
       })
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
 
-      expect(previousHintsStorage.learnedTokens?.ethereum).not.toHaveProperty(SMART_CONTRACT_ADDR)
+      expect(previousHintsStorage.learnedTokens?.['1']).not.toHaveProperty(SMART_CONTRACT_ADDR)
     })
 
     test('Portfolio should filter out ER20 tokens that mimic native tokens (same symbol and amount)', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = prepareTest()
 
-      await controller.learnTokens([ERC_20_MATIC_ADDR], 'polygon')
+      await controller.learnTokens([ERC_20_MATIC_ADDR], 137n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
@@ -678,7 +687,7 @@ describe('Portfolio Controller ', () => {
 
       const hasErc20Matic = controller
         .getLatestPortfolioState(account.addr)
-        .polygon!.result!.tokens.find((token) => token.address === ERC_20_MATIC_ADDR)
+        ['137']!.result!.tokens.find((token) => token.address === ERC_20_MATIC_ADDR)
 
       expect(hasErc20Matic).toBeFalsy()
     })
@@ -689,7 +698,7 @@ describe('Portfolio Controller ', () => {
 
       const customToken = {
         address: ERC_20_MATIC_ADDR,
-        networkId: 'polygon',
+        chainId: 137n,
         standard: 'ERC20'
       } as const
 
@@ -697,19 +706,19 @@ describe('Portfolio Controller ', () => {
 
       const hasErc20Matic = controller
         .getLatestPortfolioState(account.addr)
-        .polygon!.result!.tokens.find((token) => token.address === ERC_20_MATIC_ADDR)
+        ['137']!.result!.tokens.find((token) => token.address === ERC_20_MATIC_ADDR)
 
       expect(hasErc20Matic).toBeFalsy()
     })
 
     test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
-      const { storage, controller } = prepareTest()
+      const { storageCtrl, controller } = prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
 
       const firstTokenOnEth = controller
         .getLatestPortfolioState(account.addr)
-        .ethereum?.result?.tokens.find(
+        ['1']?.result?.tokens.find(
           (token) =>
             token.amount > 0n &&
             token.address !== ZeroAddress &&
@@ -718,22 +727,22 @@ describe('Portfolio Controller ', () => {
         )
 
       // Learn a token discovered by velcro
-      await controller.learnTokens([firstTokenOnEth!.address], 'ethereum')
+      await controller.learnTokens([firstTokenOnEth!.address], 1n)
 
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         forceUpdate: true
       })
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const firstTokenOnEthInLearned =
-        previousHintsStorage.learnedTokens.ethereum[firstTokenOnEth!.address]
+        previousHintsStorage.learnedTokens['1'][firstTokenOnEth!.address]
 
       // Expect the timestamp to be null
       expect(firstTokenOnEthInLearned).toBeNull()
     })
     test('To be learned token is returned from portfolio and not passed to learnedTokens (as it is without balance)', async () => {
-      const { storage, controller } = prepareTest()
-      const ethereum = networks.find((network) => network.id === 'ethereum')!
+      const { storageCtrl, controller } = prepareTest()
+      const ethereum = networks.find((network) => network.chainId === 1n)!
       const clonedEthereum = structuredClone(ethereum)
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
@@ -746,10 +755,7 @@ describe('Portfolio Controller ', () => {
       // but will be stored in fromExternalAPI.
       clonedEthereum.hasRelayer = false
 
-      await controller.addTokensToBeLearned(
-        ['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'],
-        'ethereum'
-      )
+      await controller.addTokensToBeLearned(['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'], 1n)
 
       await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
         forceUpdate: true
@@ -757,23 +763,23 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account.addr)
-        .ethereum?.result?.tokens.find(
+        ['1']?.result?.tokens.find(
           (token) => token.address === '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'
         )
 
       expect(toBeLearnedToken).toBeTruthy()
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const tokenInLearnedTokens =
-        previousHintsStorage.learnedTokens?.ethereum &&
-        previousHintsStorage.learnedTokens?.ethereum[toBeLearnedToken!.address]
+        previousHintsStorage.learnedTokens?.['1'] &&
+        previousHintsStorage.learnedTokens?.['1'][toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeFalsy()
     })
 
     test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
-      const { storage, controller } = prepareTest()
-      const polygon = networks.find((network) => network.id === 'polygon')!
+      const { storageCtrl, controller } = prepareTest()
+      const polygon = networks.find((network) => network.chainId === 137n)!
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
       // 2. retrieve the token from portfolio and check if it is found.
@@ -786,10 +792,7 @@ describe('Portfolio Controller ', () => {
       const clonedEthereum = structuredClone(polygon)
       clonedEthereum.hasRelayer = false
 
-      await controller.addTokensToBeLearned(
-        ['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'],
-        'polygon'
-      )
+      await controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
 
       await controller.updateSelectedAccount(account2.addr, clonedEthereum, undefined, {
         forceUpdate: true
@@ -797,15 +800,15 @@ describe('Portfolio Controller ', () => {
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account2.addr)
-        .polygon?.result?.tokens.find(
+        ['137']?.result?.tokens.find(
           (token) =>
             token.address === '0xc2132D05D31c914a87C6611C10748AEb04B58e8F' && token.amount > 0n
         )
       expect(toBeLearnedToken).toBeTruthy()
 
-      const previousHintsStorage = await storage.get('previousHints', {})
+      const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const tokenInLearnedTokens =
-        previousHintsStorage.learnedTokens?.polygon[toBeLearnedToken!.address]
+        previousHintsStorage.learnedTokens?.['137'][toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeTruthy()
     })
@@ -818,7 +821,9 @@ describe('Portfolio Controller ', () => {
       networks.forEach((network) => {
         const nativeToken = controller
           .getLatestPortfolioState(account.addr)
-          [network.id]?.result?.tokens.find((token) => token.address === ZeroAddress)
+          [network.chainId.toString()]?.result?.tokens.find(
+            (token) => token.address === ZeroAddress
+          )
 
         expect(nativeToken).toBeTruthy()
       })
@@ -829,11 +834,11 @@ describe('Portfolio Controller ', () => {
     const { controller } = prepareTest()
     const token = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum'
+      chainId: 1n
     }
     const tokenERC1155 = {
       address: '0xEBba467eCB6b21239178033189CeAE27CA12EaDf',
-      networkId: 'arbitrum'
+      chainId: 42161n
     }
 
     await controller.updateTokenValidationByStandard(token, account.addr)
@@ -841,9 +846,9 @@ describe('Portfolio Controller ', () => {
 
     controller.onUpdate(() => {
       const tokenIsValid =
-        controller.validTokens.erc20[`${token.address}-${token.networkId}`] === true
+        controller.validTokens.erc20[`${token.address}-${token.chainId}`] === true
       const tokenIsNotValid =
-        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.networkId}`] === false
+        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.chainId}`] === false
       expect(tokenIsNotValid).toBeFalsy()
       expect(tokenIsValid).toBeTruthy()
     })
@@ -854,22 +859,21 @@ describe('Portfolio Controller ', () => {
 
     const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum',
+      chainId: 1n,
       standard: 'ERC20'
     } as const
 
     await controller.addCustomToken(customToken, account.addr, true)
 
     const tokenIsSet = controller.customTokens.find(
-      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+      (token) => token.address === customToken.address && token.chainId === customToken.chainId
     )
 
     const getCustomTokenFromPortfolio = () => {
       return controller
         .getLatestPortfolioState(account.addr)
-        .ethereum?.result?.tokens.find(
-          (token) =>
-            token.address === customToken.address && token.networkId === customToken.networkId
+        ['1']?.result?.tokens.find(
+          (token) => token.address === customToken.address && token.chainId === customToken.chainId
         )
     }
 
@@ -879,7 +883,7 @@ describe('Portfolio Controller ', () => {
     await controller.removeCustomToken(customToken, account.addr, true)
 
     const tokenIsRemoved = controller.customTokens.find(
-      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+      (token) => token.address === customToken.address && token.chainId === customToken.chainId
     )
     expect(tokenIsRemoved).toBeFalsy()
     expect(getCustomTokenFromPortfolio()).toBeFalsy()
@@ -889,14 +893,14 @@ describe('Portfolio Controller ', () => {
     const { controller } = prepareTest()
     const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
-      networkId: 'ethereum',
+      chainId: 1n,
       standard: 'ERC20'
     } as const
 
     await controller.addCustomToken(customToken, account.addr)
 
     const tokenIsSet = controller.customTokens.find(
-      (token) => token.address === customToken.address && token.networkId === customToken.networkId
+      (token) => token.address === customToken.address && token.chainId === customToken.chainId
     )
 
     expect(tokenIsSet).toEqual(customToken)
@@ -912,7 +916,7 @@ describe('Portfolio Controller ', () => {
     const matchingTokens = controller.customTokens.filter(
       (token) =>
         token.address.toLowerCase() === customToken.address.toLowerCase() &&
-        token.networkId === customToken.networkId
+        token.chainId === customToken.chainId
     )
 
     expect(matchingTokens.length).toBe(1)
@@ -923,17 +927,17 @@ describe('Portfolio Controller ', () => {
 
     const preference = {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-      networkId: 'ethereum'
+      chainId: 1n
     }
 
     await controller.toggleHideToken(preference, account.addr, true)
 
     const hiddenToken = controller
       .getLatestPortfolioState(account.addr)
-      .ethereum?.result?.tokens.find(
+      ['1']?.result?.tokens.find(
         (token) =>
           token.address === preference.address &&
-          token.networkId === preference.networkId &&
+          token.chainId === preference.chainId &&
           token.flags.isHidden
       )
     expect(hiddenToken).toBeTruthy()
@@ -943,14 +947,13 @@ describe('Portfolio Controller ', () => {
 
     const preference = {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-      networkId: 'ethereum'
+      chainId: 1n
     }
 
     await controller.toggleHideToken(preference, account.addr)
 
     const tokenInPreferences = controller.tokenPreferences.find(
-      ({ address, networkId }) =>
-        address === preference.address && networkId === preference.networkId
+      ({ address, chainId }) => address === preference.address && chainId === preference.chainId
     )
 
     expect(tokenInPreferences).toBeTruthy()
@@ -959,8 +962,7 @@ describe('Portfolio Controller ', () => {
     await controller.toggleHideToken(preference, account.addr)
 
     const tokenInPreferencesAfterDelete = controller.tokenPreferences.find(
-      ({ address, networkId }) =>
-        address === preference.address && networkId === preference.networkId
+      ({ address, chainId }) => address === preference.address && chainId === preference.chainId
     )
 
     expect(tokenInPreferencesAfterDelete).toBeFalsy()
@@ -970,7 +972,7 @@ describe('Portfolio Controller ', () => {
 
     await controller.updateSelectedAccount(account.addr)
 
-    const lastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr).ethereum?.result
+    const lastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
       ?.lastSuccessfulUpdate
 
     expect(lastSuccessfulUpdate).toBeTruthy()
@@ -983,8 +985,8 @@ describe('Portfolio Controller ', () => {
       })
     await controller.updateSelectedAccount(account.addr)
 
-    const newLastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr).ethereum
-      ?.result?.lastSuccessfulUpdate
+    const newLastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
+      ?.lastSuccessfulUpdate
 
     // Last successful update should not change if the update fails
     expect(lastSuccessfulUpdate).toEqual(newLastSuccessfulUpdate)
@@ -993,8 +995,8 @@ describe('Portfolio Controller ', () => {
       forceUpdate: true
     })
 
-    const newLastSuccessfulUpdate2 = controller.getLatestPortfolioState(account.addr).ethereum
-      ?.result?.lastSuccessfulUpdate
+    const newLastSuccessfulUpdate2 = controller.getLatestPortfolioState(account.addr)['1']?.result
+      ?.lastSuccessfulUpdate
 
     // Last successful update should reset on a force update
     expect(lastSuccessfulUpdate).not.toEqual(newLastSuccessfulUpdate2)

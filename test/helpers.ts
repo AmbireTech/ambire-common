@@ -121,17 +121,27 @@ function getSignerKey(validatorAddr: any, validatorData: any) {
 function produceMemoryStore(): Storage {
   const storage = new Map()
 
+  const formatValue = (value: any, defaultValue?: any) => {
+    try {
+      return typeof value === 'string' ? parse(value) : value
+    } catch (error) {
+      return typeof value === 'string' ? value : defaultValue
+    }
+  }
+
   return {
-    get: (key, defaultValue): any => {
+    get: (key?: string, defaultValue?: any): any => {
+      if (!key) {
+        return Object.fromEntries(
+          Object.entries(Object.fromEntries(storage)).map(([k, value]) => [k, formatValue(value)])
+        )
+      }
+
       const serialized = storage.get(key)
 
       if (!serialized) return defaultValue
 
-      try {
-        return typeof serialized === 'string' ? parse(serialized) : serialized
-      } catch (error) {
-        return typeof serialized === 'string' ? serialized : defaultValue
-      }
+      return formatValue(serialized, defaultValue)
     },
     set: (key, value) => {
       storage.set(key, typeof value === 'string' ? value : stringify(value))
@@ -258,14 +268,16 @@ const getAccountsInfo = async (
   accounts: Account[]
 ): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex][accIndex]]
         })
       )
     ]

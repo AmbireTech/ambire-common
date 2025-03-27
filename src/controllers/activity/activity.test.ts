@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -13,12 +14,13 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
 const INIT_PARAMS = {
   account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  network: 'ethereum'
+  chainId: 1n
 }
 
 const ACCOUNTS = [
@@ -66,7 +68,7 @@ const SUBMITTED_ACCOUNT_OP = {
     simulatedGasLimit: 1n,
     gasPrice: 1n
   },
-  networkId: 'ethereum',
+  chainId: 1n,
   nonce: 225n,
   signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
   calls: [
@@ -97,14 +99,14 @@ const SIGNED_MESSAGE: SignedMessage = {
     message: '0x123456'
   },
   signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-  networkId: 'ethereum'
+  chainId: 1n
 }
 
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
-  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.id].isWorking = true
+  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.chainId.toString()].isWorking = true
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
@@ -115,10 +117,11 @@ let selectedAccountCtrl: SelectedAccountController
 let networksCtrl: NetworksController
 
 const storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 
 const prepareTest = async () => {
   const controller = new ActivityController(
-    storage,
+    storageCtrl,
     fetch,
     callRelayer,
     accountsCtrl,
@@ -141,7 +144,7 @@ const prepareTest = async () => {
 
 const prepareSignedMessagesTest = async () => {
   const controller = new ActivityController(
-    storage,
+    storageCtrl,
     fetch,
     callRelayer,
     accountsCtrl,
@@ -155,11 +158,7 @@ const prepareSignedMessagesTest = async () => {
 
   await controller.filterSignedMessages(sessionId, INIT_PARAMS)
 
-  return {
-    controller,
-    storage,
-    sessionId
-  }
+  return { controller, sessionId }
 }
 
 describe('Activity Controller ', () => {
@@ -167,11 +166,12 @@ describe('Activity Controller ', () => {
   // Otherwise account states will be fetched in every tests and the RPC may timeout or throw
   // errors
   beforeAll(async () => {
-    await storage.set('accounts', ACCOUNTS)
+    await storageCtrl.set('accounts', ACCOUNTS)
 
     networksCtrl = new NetworksController(
-      storage,
+      storageCtrl,
       fetch,
+      relayerUrl,
       (net) => {
         providersCtrl.setProvider(net)
       },
@@ -182,14 +182,17 @@ describe('Activity Controller ', () => {
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},
       () => {},
       () => {}
     )
-    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+    selectedAccountCtrl = new SelectedAccountController({
+      storage: storageCtrl,
+      accounts: accountsCtrl
+    })
 
     await selectedAccountCtrl.initialLoadPromise
     await selectedAccountCtrl.setAccount(ACCOUNTS[1])
@@ -198,8 +201,8 @@ describe('Activity Controller ', () => {
   // Clear activity storage after each test
   // but keep accounts, providers etc.
   afterEach(async () => {
-    await storage.remove('accountsOps')
-    await storage.remove('signedMessages')
+    await storageCtrl.remove('accountsOps')
+    await storageCtrl.remove('signedMessages')
   })
 
   describe('AccountsOps', () => {
@@ -216,7 +219,7 @@ describe('Activity Controller ', () => {
         currentPage: 0,
         maxPages: 1
       })
-      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
+      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
     })
@@ -237,7 +240,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'ethereum',
+          chainId: 1n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -266,7 +269,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'ethereum',
+          chainId: 1n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -295,7 +298,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'optimism',
+          chainId: 10n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -324,7 +327,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'optimism',
+          chainId: 10n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -354,7 +357,7 @@ describe('Activity Controller ', () => {
         sessionId,
         {
           account: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
-          network: 'optimism'
+          chainId: 10n
         },
         { fromPage: 1, itemsPerPage: 1 }
       )
@@ -375,7 +378,7 @@ describe('Activity Controller ', () => {
               simulatedGasLimit: 1n,
               gasPrice: 1n
             },
-            networkId: 'optimism',
+            chainId: 10n,
             nonce: 225n,
             signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
             calls: [
@@ -414,7 +417,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -458,7 +461,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -493,7 +496,7 @@ describe('Activity Controller ', () => {
       await selectedAccountCtrl.setAccount(ACCOUNTS[0])
       await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
       const controller = new ActivityController(
-        storage,
+        storageCtrl,
         fetch,
         callRelayer,
         accountsCtrl,
@@ -507,7 +510,7 @@ describe('Activity Controller ', () => {
 
       await controller.filterAccountsOps(sessionId, {
         account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        network: 'ethereum'
+        chainId: 1n
       })
 
       const accountOp = {
@@ -522,7 +525,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -552,7 +555,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -599,7 +602,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -659,7 +662,7 @@ describe('Activity Controller ', () => {
         },
 
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-        networkId: 'ethereum'
+        chainId: 1n
       }
 
       await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
@@ -698,7 +701,7 @@ describe('Activity Controller ', () => {
         sessionId,
         {
           account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'optimism'
+          chainId: 10n
         },
         { fromPage: 1, itemsPerPage: 1 }
       )
@@ -742,7 +745,7 @@ describe('Activity Controller ', () => {
   })
   test('removeAccountData', async () => {
     const controller = new ActivityController(
-      storage,
+      storageCtrl,
       fetch,
       callRelayer,
       accountsCtrl,

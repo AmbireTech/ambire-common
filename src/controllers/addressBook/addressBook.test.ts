@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -12,9 +13,11 @@ import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { AddressBookController } from './addressBook'
 
 const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 
 let errors = 0
 
@@ -57,14 +60,15 @@ const MOCK_ACCOUNTS: Account[] = [
 storage.set('accounts', MOCK_ACCOUNTS)
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 describe('AddressBookController', () => {
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -75,16 +79,19 @@ describe('AddressBookController', () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
     () => {},
     () => {}
   )
-  const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl
+  })
   const addressBookController = new AddressBookController(
-    storage,
+    storageCtrl,
     accountsCtrl,
     selectedAccountCtrl
   )

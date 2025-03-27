@@ -2,7 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { velcroUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -15,10 +15,11 @@ import { getRpcProvider } from '../../services/provider'
 import { Contacts } from '../addressBook/addressBook'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')
-const polygon = networks.find((x) => x.id === 'polygon')
+const ethereum = networks.find((x) => x.chainId === 1n)
+const polygon = networks.find((x) => x.chainId === 137n)
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
@@ -48,13 +49,16 @@ const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUr
 let transferController: TransferController
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 let providersCtrl: ProvidersController
+const storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController(
-  produceMemoryStore(),
+  storageCtrl,
   fetch,
+  relayerUrl,
   (net) => {
     providersCtrl.setProvider(net)
   },
@@ -111,7 +115,7 @@ describe('Transfer Controller', () => {
   test('should show SW warning', async () => {
     const tokens = await getTokens()
     const polOnPolygon = tokens.find(
-      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 137n
     )
 
     transferController.update({ selectedToken: polOnPolygon })
@@ -119,13 +123,11 @@ describe('Transfer Controller', () => {
   })
   test('should change selected token', async () => {
     const tokens = await getTokens()
-    const xwalletOnEthereum = tokens.find(
-      (t) => t.address === XWALLET_ADDRESS && t.networkId === 'ethereum'
-    )
+    const xwalletOnEthereum = tokens.find((t) => t.address === XWALLET_ADDRESS && t.chainId === 1n)
     transferController.update({ selectedToken: xwalletOnEthereum })
 
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
-    expect(transferController.selectedToken?.networkId).toBe('ethereum')
+    expect(transferController.selectedToken?.chainId).toBe(1n)
   })
 
   test('should set amount', () => {
@@ -181,8 +183,7 @@ describe('Transfer Controller', () => {
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
     const zeroAmountToken = tokens.find(
-      (t) =>
-        t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.networkId === 'ethereum'
+      (t) => t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.chainId === 1n
     )
     transferController.update({ selectedToken: zeroAmountToken })
     expect(transferController.selectedToken?.address).not.toBe(zeroAmountToken?.address)
@@ -190,8 +191,7 @@ describe('Transfer Controller', () => {
   test("should accept a token that doesn't have amount but has amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
     const nativeToken = tokens.find(
-      (t) =>
-        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 1n
     )
     nativeToken!.amountPostSimulation = 10n
     transferController.update({ selectedToken: nativeToken })

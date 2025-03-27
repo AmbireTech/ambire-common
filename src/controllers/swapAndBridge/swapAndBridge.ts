@@ -1,11 +1,9 @@
-/* eslint-disable no-await-in-loop */
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import {
   ActiveRoute,
   CachedSupportedChains,
@@ -49,6 +47,8 @@ import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+/* eslint-disable no-await-in-loop */
+import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' // ...
@@ -109,7 +109,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #invite: InviteController
 
-  #storage: Storage
+  #storage: StorageController
 
   #socketAPI: SocketAPI
 
@@ -198,7 +198,7 @@ export class SwapAndBridgeController extends EventEmitter {
     networks: NetworksController
     activity: ActivityController
     socketAPI: SocketAPI
-    storage: Storage
+    storage: StorageController
     actions: ActionsController
     invite: InviteController
   }) {
@@ -252,7 +252,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList.find(
       (t) =>
         t.address === this.fromSelectedToken?.address &&
-        t.networkId === this.fromSelectedToken?.networkId &&
+        t.chainId === this.fromSelectedToken?.chainId &&
         getIsTokenEligibleForSwapAndBridge(t)
     )
 
@@ -351,7 +351,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return !!this.portfolioTokenList.find(
       (token: TokenResult) =>
         token.address === this.toSelectedToken!.address &&
-        token.networkId === toSelectedTokenNetwork.id
+        token.chainId === toSelectedTokenNetwork.chainId
     )
   }
 
@@ -556,10 +556,9 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     if (fromSelectedToken) {
-      const isFromNetworkChanged =
-        this.fromSelectedToken?.networkId !== fromSelectedToken?.networkId
+      const isFromNetworkChanged = this.fromSelectedToken?.chainId !== fromSelectedToken?.chainId
       if (isFromNetworkChanged) {
-        const network = this.#networks.networks.find((n) => n.id === fromSelectedToken.networkId)
+        const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
           // Don't update the selected token programmatically if the user
@@ -640,7 +639,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
       (t) =>
         t.address === this.fromSelectedToken?.address &&
-        t.networkId === this.fromSelectedToken?.networkId
+        t.chainId === this.fromSelectedToken?.chainId
     )
 
     const shouldUpdateFromSelectedToken =
@@ -728,13 +727,13 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!toTokenNetwork) throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
 
     const additionalTokensFromPortfolio = this.portfolioTokenList
-      .filter((t) => t.networkId === toTokenNetwork.id)
+      .filter((t) => t.chainId === toTokenNetwork.chainId)
       .filter((token) => !toTokenList.some((t) => t.address === token.address))
       .map((t) => convertPortfolioTokenToSocketAPIToken(t, Number(toTokenNetwork.chainId)))
 
     this.#toTokenList = sortTokenListResponse(
       [...toTokenList, ...additionalTokensFromPortfolio],
-      this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
+      this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
     )
 
     if (!this.toSelectedToken) {
@@ -798,7 +797,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.#toTokenList = sortTokenListResponse(
       nextTokenList,
-      this.portfolioTokenList.filter((t) => t.networkId === toTokenNetwork.id)
+      this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
     )
 
     this.#emitUpdateIfNeeded()
@@ -818,7 +817,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromSelectedToken = this.portfolioTokenList.find(
       (token: TokenResult) =>
         token.address === this.toSelectedToken!.address &&
-        token.networkId === toSelectedTokenNetwork.id
+        token.chainId === toSelectedTokenNetwork.chainId
     )!
     this.fromAmount = '' // Reset fromAmount as it may no longer be valid for the new fromSelectedToken
     // Reverses the from and to chain ids, since their format is the same
@@ -939,7 +938,7 @@ export class SwapAndBridgeController extends EventEmitter {
               const tokenToPayFeeWith = this.portfolioTokenList.find((t) => {
                 return (
                   t.address === normalizedProtocolFeeToken.address &&
-                  t.networkId === protocolFeeTokenNetwork.id
+                  t.chainId === protocolFeeTokenNetwork.chainId
                 )
               })
 

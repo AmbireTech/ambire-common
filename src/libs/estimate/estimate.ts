@@ -7,7 +7,6 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { AccountOp } from '../accountOp/accountOp'
 import { TokenResult } from '../portfolio'
 import { ambireEstimateGas } from './ambireEstimation'
-import { estimateEachCallSeparately } from './callGasUsedEstimation'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateWithRetries } from './estimateWithRetries'
 import { FullEstimation, FullEstimationSummary } from './interfaces'
@@ -34,7 +33,7 @@ export async function getEstimation(
   errorCallback: Function
 ): Promise<FullEstimation | Error> {
   const ambireEstimation = ambireEstimateGas(
-    baseAcc.getAccount(),
+    baseAcc,
     accountState,
     op,
     network,
@@ -60,12 +59,11 @@ export async function getEstimation(
     network,
     feeTokens
   )
-  const perCallEstimation = estimateEachCallSeparately(baseAcc, op, network, provider)
 
   const estimations = await estimateWithRetries<
     [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
   >(
-    () => [ambireEstimation, bundlerEstimation, providerEstimation, perCallEstimation],
+    () => [ambireEstimation, bundlerEstimation, providerEstimation],
     'estimation-deployless',
     errorCallback,
     12000
@@ -83,7 +81,7 @@ export async function getEstimation(
     flags: {}
   }
 
-  const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
+  const criticalError = baseAcc.getEstimationCriticalError(fullEstimation, op)
   if (criticalError) return criticalError
 
   // TODO: if the bundler is the preferred method of estimation, re-estimate

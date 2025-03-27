@@ -6,7 +6,7 @@ import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
+import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import {
   getNativeToCheckFromEOAs,
   produceMemoryStore,
@@ -18,7 +18,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
@@ -36,17 +35,18 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const errorCallback = () => {}
 
 const createAccountOp = (
   account: Account,
-  networkId: NetworkId = 'ethereum'
+  chainId: bigint = 1n
 ): {
   op: AccountOp
   nativeToCheck: Account[]
@@ -81,7 +81,7 @@ const createAccountOp = (
       amount: 1n,
       symbol: 'ETH',
       name: 'Ether',
-      networkId: 'ethereum',
+      chainId: 1n,
       decimals: 18,
       priceIn: [],
       flags: {
@@ -99,7 +99,7 @@ const createAccountOp = (
     signingKeyType: null,
     gasLimit: null,
     gasFeePayment: null,
-    networkId,
+    chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
     accountOpToExecuteBefore: null,
@@ -132,7 +132,7 @@ const createEOAAccountOp = (account: Account) => {
       amount: 1n,
       symbol: 'ETH',
       name: 'Ether',
-      networkId: 'ethereum',
+      chainId: 1n,
       decimals: 18,
       priceIn: [],
       flags: {
@@ -150,7 +150,7 @@ const createEOAAccountOp = (account: Account) => {
     signingKeyType: null,
     gasLimit: null,
     gasFeePayment: null,
-    networkId: 'ethereum',
+    chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
     accountOpToExecuteBefore: null,
@@ -265,7 +265,7 @@ const nativeFeeToken: TokenResult = {
   symbol: 'ETH',
   name: 'Ether',
   amount: 1000n,
-  networkId: 'ethereum',
+  chainId: 1n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -280,7 +280,7 @@ const nativeFeeToken: TokenResult = {
 //   address: '0x0000000000000000000000000000000000000000',
 //   symbol: 'AVAX',
 //   amount: 1000n,
-//   networkId: 'avalanche',
+//   chainId: 43114n,
 //   decimals: Number(18),
 //   priceIn: [{ baseCurrency: 'usd', price: 100 }],
 //   flags: {
@@ -296,7 +296,7 @@ const nativeFeeTokenPolygon: TokenResult = {
   symbol: 'POL',
   name: 'Polygon Ecosystem Token',
   amount: 1000n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -312,7 +312,7 @@ const gasTankToken: TokenResult = {
   symbol: 'POL',
   name: 'Polygon Ecosystem Token',
   amount: 323871237812612123123n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -325,7 +325,7 @@ const gasTankToken: TokenResult = {
 
 const usdcFeeToken: TokenResult = {
   amount: 54409383n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(6),
   priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
   symbol: 'USDC',
@@ -361,8 +361,9 @@ const init = async (
   updateWholePortfolio?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
-  await storage.set('accounts', [account])
-  const keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
+  const storageCtrl = new StorageController(storage)
+  await storageCtrl.set('accounts', [account])
+  const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
@@ -381,8 +382,9 @@ const init = async (
 
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -393,7 +395,7 @@ const init = async (
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -406,7 +408,7 @@ const init = async (
   await providersCtrl.initialLoadPromise
 
   const portfolio = new PortfolioController(
-    storage,
+    storageCtrl,
     fetch,
     providersCtrl,
     networksCtrl,
@@ -415,7 +417,7 @@ const init = async (
     velcroUrl
   )
   const { op, nativeToCheck, feeTokens } = accountOp
-  const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
+  const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
@@ -423,7 +425,7 @@ const init = async (
     return null
   }
   const noStateUpdateStatuses: any[] = []
-  const accountState = accountsCtrl.accountStates[account.addr][network.id]
+  const accountState = accountsCtrl.accountStates[account.addr][network.chainId.toString()]
   const baseAcc = getBaseAccount(account, accountState, keystore.getAccountKeys(account), network)
   const prices =
     gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
@@ -441,11 +443,11 @@ const init = async (
       errorCallback
     ))
 
-  if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
-    portfolio!.getLatestPortfolioState(account.addr)[op.networkId]!.result!.tokens = [
+  if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
+    portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
         amount: 1n,
-        networkId: op.networkId,
+        chainId: op.chainId,
         decimals: Number(18),
         symbol: 'ETH',
         name: 'Ether',
@@ -460,7 +462,7 @@ const init = async (
       },
       {
         amount: 54409383n,
-        networkId: op.networkId,
+        chainId: op.chainId,
         decimals: Number(6),
         symbol: 'USDC',
         name: 'USD Coin',
@@ -524,7 +526,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -599,7 +601,7 @@ describe('SignAccountOp Controller ', () => {
       broadcastOption: BROADCAST_OPTIONS.bySelf,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
-      feeTokenNetworkId: 'ethereum',
+      feeTokenChainId: 1n,
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
       maxPriorityFeePerGas: 300n,
@@ -622,7 +624,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -706,7 +708,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -779,7 +781,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
-    const networkId = 'polygon'
+    const chainId = 137n
     const feePaymentOptions = [
       {
         paidBy: smartAccount.addr,
@@ -791,7 +793,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -812,7 +814,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdt',
           name: 'USD Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [
             {
@@ -838,7 +840,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdc',
           name: 'USD Coin',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [
             {
@@ -855,10 +857,10 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const network = networks.find((net) => net.id === networkId)!
+    const network = networks.find((n) => n.chainId === chainId)!
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.id),
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
         provider: {
@@ -897,10 +899,6 @@ describe('SignAccountOp Controller ', () => {
         }
       ]
     )
-
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
       gasPrices: prices,
@@ -967,14 +965,14 @@ describe('SignAccountOp Controller ', () => {
     suppressConsoleBeforeEach()
 
     test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
-      const networkId = 'polygon'
-      const network = networks.find((net) => net.id === networkId)!
+      const chainId = 137n
+      const network = networks.find((n) => n.chainId === chainId)!
       const feeTokenResult = {
         address: usdcFeeToken.address,
         amount: 1n,
         symbol: 'usdc',
         name: 'USD Coin',
-        networkId: 'polygon',
+        chainId: 137n,
         decimals: 6,
         // we make the priceIn empty for this test
         priceIn: [],
@@ -996,7 +994,7 @@ describe('SignAccountOp Controller ', () => {
       ]
       const { controller, estimation, prices } = await init(
         smartAccount,
-        createAccountOp(smartAccount, network.id),
+        createAccountOp(smartAccount, network.chainId),
         eoaSigner,
         {
           provider: {
@@ -1036,10 +1034,6 @@ describe('SignAccountOp Controller ', () => {
         ]
       )
 
-      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-      jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
-
       controller.update({
         gasPrices: prices,
         estimation,
@@ -1071,8 +1065,8 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
-    const networkId = 'polygon'
-    const network = networks.find((net) => net.id === networkId)!
+    const chainId = 137n
+    const network = networks.find((n) => n.chainId === chainId)!
     network.erc4337.enabled = false
     const feePaymentOptions = [
       {
@@ -1085,7 +1079,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1106,7 +1100,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdt',
           name: 'USD Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [],
           flags: {
@@ -1127,7 +1121,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'usdc',
           name: 'USD Coin',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 6,
           priceIn: [],
           flags: {
@@ -1141,7 +1135,7 @@ describe('SignAccountOp Controller ', () => {
     ]
     const { controller, estimation, prices } = await init(
       e2esmartAccount,
-      createAccountOp(e2esmartAccount, network.id),
+      createAccountOp(e2esmartAccount, network.chainId),
       eoaSigner,
       {
         provider: {
@@ -1181,10 +1175,6 @@ describe('SignAccountOp Controller ', () => {
       ],
       true
     )
-
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
       gasPrices: prices,
@@ -1240,7 +1230,7 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions but 1 feeSpeed as both feePaymentOptions are EOA', async () => {
-    const network = networks.find((net) => net.id === 'polygon')!
+    const network = networks.find((n) => n.chainId === 137n)!
     const feePaymentOptions = [
       {
         paidBy: eoaAccount.addr,
@@ -1252,7 +1242,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1273,7 +1263,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1294,7 +1284,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'POL',
           name: 'Polygon Ecosystem Token',
-          networkId: 'polygon',
+          chainId: 137n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1308,7 +1298,7 @@ describe('SignAccountOp Controller ', () => {
     ]
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.id),
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
         provider: {
@@ -1348,10 +1338,6 @@ describe('SignAccountOp Controller ', () => {
       ]
     )
 
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
-
     controller.update({
       gasPrices: prices,
       estimation,
@@ -1384,17 +1370,17 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    expect(controller.accountOp.gasFeePayment).toEqual({
-      paidBy: eoaSigner.keyPublicAddress,
-      broadcastOption: BROADCAST_OPTIONS.byOtherEOA,
-      isGasTank: false,
-      inToken: '0x0000000000000000000000000000000000000000',
-      feeTokenNetworkId: 'polygon',
-      amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
-      simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
-      maxPriorityFeePerGas: 300n,
-      gasPrice: 600n
-    })
+    expect(controller.accountOp.gasFeePayment!.paidBy).toEqual(eoaSigner.keyPublicAddress)
+    expect(controller.accountOp.gasFeePayment!.broadcastOption).toEqual(
+      BROADCAST_OPTIONS.byOtherEOA
+    )
+    expect(controller.accountOp.gasFeePayment!.isGasTank).toEqual(false)
+    expect(controller.accountOp.gasFeePayment!.inToken).toEqual(
+      '0x0000000000000000000000000000000000000000'
+    )
+    expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
 
     const typedData = getTypedData(
       network.chainId,
@@ -1424,7 +1410,7 @@ describe('SignAccountOp Controller ', () => {
     suppressConsoleBeforeEach()
 
     test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
-      const network = networks.find((net) => net.id === 'polygon')!
+      const network = networks.find((n) => n.chainId === 137n)!
       const feePaymentOptions = [
         {
           paidBy: eoaAccount.addr,
@@ -1436,7 +1422,7 @@ describe('SignAccountOp Controller ', () => {
             amount: 1n,
             symbol: 'POL',
             name: 'Polygon Ecosystem Token',
-            networkId: 'polygon',
+            chainId: 137n,
             decimals: 18,
             priceIn: [],
             flags: {
@@ -1450,7 +1436,7 @@ describe('SignAccountOp Controller ', () => {
       ]
       const { controller, estimation, prices } = await init(
         smartAccount,
-        createAccountOp(smartAccount, network.id),
+        createAccountOp(smartAccount, network.chainId),
         eoaSigner,
         {
           provider: {
@@ -1490,10 +1476,6 @@ describe('SignAccountOp Controller ', () => {
         ]
       )
 
-      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-      jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
-
       controller.update({
         gasPrices: prices,
         estimation,
@@ -1528,7 +1510,7 @@ describe('SignAccountOp Controller ', () => {
           amount: 1n,
           symbol: 'eth',
           name: 'Ether',
-          networkId: 'ethereum',
+          chainId: 1n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -1622,7 +1604,7 @@ describe('SignAccountOp Controller ', () => {
   //   const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
   //   const userOp = getUserOperation(
   //     trezorSlot7v24337Deployed,
-  //     accountStates[accOp.accountAddr][accOp.networkId],
+  //     accountStates[accOp.accountAddr][accOp.chainId],
   //     accOp
   //   )
   //   userOp.verificationGasLimit = toBeHex(6000n)
@@ -1672,10 +1654,6 @@ describe('SignAccountOp Controller ', () => {
   //   )
 
   //   expect(controller.accountOp.asUserOperation).toBe(undefined)
-
-  //   // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-  //   // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-  //   jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
   //   controller.update({
   //     gasPrices: prices,

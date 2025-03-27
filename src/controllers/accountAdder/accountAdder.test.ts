@@ -25,6 +25,7 @@ import { AccountsController } from '../accounts/accounts'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
 
 const windowManager = {
@@ -37,7 +38,7 @@ const windowManager = {
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const key1to11BasicAccPublicAddresses = Array.from(
@@ -97,9 +98,11 @@ describe('AccountAdder', () => {
   let accountAdder: AccountAdderController
   const storage: Storage = produceMemoryStore()
   let providersCtrl: ProvidersController
+  const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -111,7 +114,7 @@ describe('AccountAdder', () => {
   providersCtrl.providers = providers
 
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -121,7 +124,7 @@ describe('AccountAdder', () => {
   beforeEach(() => {
     accountAdder = new AccountAdderController({
       accounts: accountsCtrl,
-      keystore: new KeystoreController(storage, {}, windowManager),
+      keystore: new KeystoreController(storageCtrl, {}, windowManager),
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,
