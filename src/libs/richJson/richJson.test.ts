@@ -52,7 +52,7 @@ describe('bigintJson', () => {
         signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 6n,
         signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
         calls: [

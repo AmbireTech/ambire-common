@@ -14,7 +14,7 @@ import { getUserOperation } from './userOperation'
 
 const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
-const optimism = networks.find((net) => net.id === 'optimism')!
+const optimism = networks.find((n) => n.chainId === 10n)!
 
 const smartAccDeployed: Account = {
   addr: '0xcb2dF90Fb6b22A87Ce22A0D36f2EcA8ED1DD1A8b',
@@ -46,7 +46,7 @@ describe('User Operation tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('10'), data: '0x' }],
@@ -54,13 +54,13 @@ describe('User Operation tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-      accountStates[smartAccDeployed.addr][optimism.id].isDeployed = false
+      accountStates[smartAccDeployed.addr][optimism.chainId.toString()].isDeployed = false
       const userOp = getUserOperation(
         smartAccDeployed,
-        accountStates[smartAccDeployed.addr][optimism.id],
+        accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
         opOptimism,
         'pimlico',
         '0x0001'
@@ -77,7 +77,7 @@ describe('User Operation tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('10'), data: '0x' }],
@@ -85,12 +85,12 @@ describe('User Operation tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
       const userOp = getUserOperation(
         smartAccDeployed,
-        accountStates[smartAccDeployed.addr][optimism.id],
+        accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
         opOptimism,
         'pimlico',
         '0x0001'
@@ -107,7 +107,7 @@ describe('User Operation tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('10'), data: '0x' }],
@@ -115,13 +115,13 @@ describe('User Operation tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-      accountStates[smartAccDeployed.addr][optimism.id].isErc4337Enabled = false
+      accountStates[smartAccDeployed.addr][optimism.chainId.toString()].isErc4337Enabled = false
       const userOp = getUserOperation(
         smartAccDeployed,
-        accountStates[smartAccDeployed.addr][optimism.id],
+        accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
         opOptimism,
         'pimlico'
       )

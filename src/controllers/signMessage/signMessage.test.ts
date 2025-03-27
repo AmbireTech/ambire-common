@@ -55,7 +55,7 @@ class InternalSigner {
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const account: Account = {
@@ -88,7 +88,7 @@ const messageToSign: Message = {
   content: { kind: 'message', message: '0x74657374' },
   accountAddr: account.addr,
   signature: null,
-  networkId: 'ethereum'
+  chainId: 1n
 }
 
 describe('SignMessageController', () => {
@@ -109,6 +109,7 @@ describe('SignMessageController', () => {
     networksCtrl = new NetworksController(
       storageCtrl,
       fetch,
+      relayerUrl,
       (net) => {
         providersCtrl.setProvider(net)
       },
@@ -204,7 +205,7 @@ describe('SignMessageController', () => {
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest', [
-      messageToSign.networkId
+      messageToSign.chainId
     ])
 
     await signMessageController.sign()
