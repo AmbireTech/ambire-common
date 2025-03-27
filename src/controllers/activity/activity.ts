@@ -42,7 +42,7 @@ export interface Filters {
   chainId?: bigint
 }
 
-interface InternalAccountsOps {
+export interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
 }

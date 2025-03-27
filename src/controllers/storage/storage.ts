@@ -292,7 +292,9 @@ export class StorageController {
       customTokens,
       tokenPreferences,
       networksWithAssetsByAccount,
-      networksWithPositionsByAccounts
+      networksWithPositionsByAccounts,
+      accountsOps,
+      signedMessages
     ] = await Promise.all([
       this.#storage.get('passedMigrations', []),
       this.#storage.get('networks', {}),
@@ -300,7 +302,9 @@ export class StorageController {
       this.#storage.get('customTokens', []),
       this.#storage.get('tokenPreferences', []),
       this.#storage.get('networksWithAssetsByAccount', {}),
-      this.#storage.get('networksWithPositionsByAccounts', {})
+      this.#storage.get('networksWithPositionsByAccounts', {}),
+      this.#storage.get('accountsOps', {}),
+      this.#storage.get('signedMessages', {})
     ])
 
     if (!Object.keys(networks).length) return
@@ -353,6 +357,35 @@ export class StorageController {
       ])
     )
 
+    const migratedAccountsOps = Object.fromEntries(
+      Object.entries(accountsOps).map(([accountId, opsByNetwork]) => [
+        accountId,
+        Object.fromEntries(
+          Object.entries(opsByNetwork).map(([networkId, ops]) => {
+            const chainId = networkIdToChainId[networkId]
+            return [
+              chainId,
+              // eslint-disable-next-line @typescript-eslint/no-shadow
+              ops.map(({ networkId, ...rest }: any) => ({
+                ...rest,
+                chainId // Migrate networkId inside SubmittedAccountOp
+              }))
+            ]
+          })
+        )
+      ])
+    )
+
+    const migratedSignedMessages = Object.fromEntries(
+      Object.entries(signedMessages).map(([accountId, messages]) => [
+        accountId,
+        messages.map(({ networkId, ...rest }: any) => ({
+          ...rest,
+          chainId: networkIdToChainId[networkId] ?? networkId // Migrate networkId inside SignedMessage
+        }))
+      ])
+    )
+
     const migratedNetworks = Object.fromEntries(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
@@ -367,7 +400,9 @@ export class StorageController {
       this.#storage.set('customTokens', migratedCustomTokens),
       this.#storage.set('tokenPreferences', migratedTokenPreferences),
       this.#storage.set('networksWithAssetsByAccount', migratedNetworksWithAssetsByAccount),
-      this.#storage.set('networksWithPositionsByAccounts', migratedNetworksWithPositionsByAccounts)
+      this.#storage.set('networksWithPositionsByAccounts', migratedNetworksWithPositionsByAccounts),
+      this.#storage.set('accountsOps', migratedAccountsOps),
+      this.#storage.set('signedMessages', migratedSignedMessages)
     ])
   }
 

@@ -1,5 +1,7 @@
+import { SignedMessage } from '../controllers/activity/types'
 // eslint-disable-next-line import/no-cycle
 import { StoredPhishingDetection } from '../controllers/phishing/phishing'
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
 import {
@@ -20,6 +22,8 @@ export type StorageProps = {
   accounts: Account[]
   networkPreferences?: { [key: string]: Partial<Network> }
   accountPreferences?: { [key: AccountId]: AccountPreferences }
+  accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
+  signedMessages: { [key: AccountId]: SignedMessage[] }
   networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
   networksWithPositionsByAccounts: NetworksWithPositionsByAccounts
   tokenPreferences: TokenPreference[]
