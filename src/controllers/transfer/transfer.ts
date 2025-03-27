@@ -22,7 +22,6 @@ const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
   ensAddress: '',
-  udAddress: '',
   isDomainResolving: false
 }
 
@@ -194,7 +193,6 @@ export class TransferController extends EventEmitter {
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccountData) {
-      const isUDAddress = !!this.addressState.udAddress
       const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
@@ -203,7 +201,6 @@ export class TransferController extends EventEmitter {
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isUDAddress,
         isEnsAddress,
         this.addressState.isDomainResolving,
         this.isSWWarningVisible,
@@ -261,9 +258,7 @@ export class TransferController extends EventEmitter {
   }
 
   get recipientAddress() {
-    return (
-      this.addressState.ensAddress || this.addressState.udAddress || this.addressState.fieldValue
-    )
+    return this.addressState.ensAddress || this.addressState.fieldValue
   }
 
   update({
