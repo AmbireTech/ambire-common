@@ -60,17 +60,20 @@ export class StorageController {
 
     if (passedMigrations.includes('migrateNetworkPreferencesToNetworks')) return
 
+    const storageUpdates = [
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateNetworkPreferencesToNetworks'])
+      ])
+    ]
+
     if (!Object.keys(networks).length && networkPreferences) {
       const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences)
 
-      await Promise.all([
-        this.#storage.set('passedMigrations', [
-          ...new Set([...passedMigrations, 'migrateNetworkPreferencesToNetworks'])
-        ]),
-        this.#storage.set('networks', migratedNetworks),
-        this.#storage.remove('networkPreferences')
-      ])
+      storageUpdates.push(this.#storage.set('networks', migratedNetworks))
+      storageUpdates.push(this.#storage.remove('networkPreferences'))
     }
+
+    await Promise.all(storageUpdates)
   }
 
   // As of version 4.25.0, a new Account interface has been introduced,
@@ -83,30 +86,32 @@ export class StorageController {
       this.#storage.get('accounts', []),
       this.#storage.get('accountPreferences')
     ])
-    if (!accountPreferences) return
 
     if (passedMigrations.includes('migrateAccountPreferencesToAccounts')) return
 
-    const migratedAccounts = getUniqueAccountsArray(
-      accounts.map((a: any) => {
-        return {
-          ...a,
-          // @ts-ignore
-          preferences: this.#storage.accountPreferences[a.addr] || {
-            label: DEFAULT_ACCOUNT_LABEL,
-            pfp: a.addr
-          }
-        }
-      })
-    )
-
-    await Promise.all([
+    const storageUpdates = [
       this.#storage.set('passedMigrations', [
         ...new Set([...passedMigrations, 'migrateAccountPreferencesToAccounts'])
-      ]),
-      this.#storage.set('accounts', migratedAccounts),
-      this.#storage.remove('accountPreferences')
-    ])
+      ])
+    ]
+    if (accountPreferences) {
+      const migratedAccounts = getUniqueAccountsArray(
+        accounts.map((a: any) => {
+          return {
+            ...a,
+            // @ts-ignore
+            preferences: this.#storage.accountPreferences[a.addr] || {
+              label: DEFAULT_ACCOUNT_LABEL,
+              pfp: a.addr
+            }
+          }
+        })
+      )
+      storageUpdates.push(this.#storage.set('accounts', migratedAccounts))
+      storageUpdates.push(this.#storage.remove('accountPreferences'))
+    }
+
+    await Promise.all(storageUpdates)
   }
 
   // As of version v4.33.0, user can change the HD path when importing a seed.
@@ -120,19 +125,22 @@ export class StorageController {
 
     if (passedMigrations.includes('migrateKeystoreSeedsWithoutHdPathTemplate')) return
 
-    if (!getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) return
-
-    const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
-      seed,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-    }))
-
-    await Promise.all([
+    const storageUpdates = [
       this.#storage.set('passedMigrations', [
         ...new Set([...passedMigrations, 'migrateKeystoreSeedsWithoutHdPathTemplate'])
-      ]),
-      this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
-    ])
+      ])
+    ]
+
+    if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
+      const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
+        seed,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      }))
+
+      storageUpdates.push(this.#storage.set('keystoreSeeds', migratedKeystoreSeeds))
+    }
+
+    await Promise.all(storageUpdates)
   }
 
   // As of version 4.33.0, we no longer store the key preferences in a separate object called keyPreferences in the storage.
@@ -147,27 +155,29 @@ export class StorageController {
 
     if (passedMigrations.includes('migrateKeyPreferencesToKeystoreKeys')) return
 
-    const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
-
-    if (!shouldMigrateKeyPreferencesToKeystoreKeys) return
-
-    const migratedKeystoreKeys = keystoreKeys.map((key) => {
-      if (key.label) return key
-
-      const keyPref = keyPreferences.find((k) => k.addr === key.addr && k.type === key.type)
-
-      if (keyPref) return { ...key, label: keyPref.label }
-
-      return key
-    })
-
-    await Promise.all([
+    const storageUpdates = [
       this.#storage.set('passedMigrations', [
         ...new Set([...passedMigrations, 'migrateKeyPreferencesToKeystoreKeys'])
-      ]),
-      this.#storage.set('keystoreKeys', migratedKeystoreKeys),
-      this.#storage.remove('keyPreferences')
-    ])
+      ])
+    ]
+    const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
+
+    if (shouldMigrateKeyPreferencesToKeystoreKeys) {
+      const migratedKeystoreKeys = keystoreKeys.map((key) => {
+        if (key.label) return key
+
+        const keyPref = keyPreferences.find((k) => k.addr === key.addr && k.type === key.type)
+
+        if (keyPref) return { ...key, label: keyPref.label }
+
+        return key
+      })
+
+      storageUpdates.push(this.#storage.set('keystoreKeys', migratedKeystoreKeys))
+      storageUpdates.push(this.#storage.remove('keyPreferences'))
+    }
+
+    await Promise.all(storageUpdates)
   }
 
   // As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
@@ -263,25 +273,31 @@ export class StorageController {
 
     if (passedMigrations.includes('migrateTokenPreferences')) return
 
+    const storageUpdates = [
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateTokenPreferences'])
+      ])
+    ]
+
     if (
       (tokenPreferences as LegacyTokenPreference[]).some(
         ({ symbol, decimals }) => !!symbol || !!decimals
       )
     ) {
-      await Promise.all([
-        this.#storage.set('passedMigrations', [
-          ...new Set([...passedMigrations, 'migrateTokenPreferences'])
-        ]),
+      storageUpdates.push(
         this.#storage.set(
           'tokenPreferences',
           migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
-        ),
+        )
+      )
+      storageUpdates.push(
         this.#storage.set(
           'customTokens',
           migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
         )
-      ])
+      )
     }
+    await Promise.all(storageUpdates)
   }
 
   async #migrateNetworkIdToChainId() {
@@ -307,12 +323,18 @@ export class StorageController {
       this.#storage.get('signedMessages', {})
     ])
 
-    if (!Object.keys(networks).length) return
-
     if (passedMigrations.includes('migrateNetworkIdToChainId')) return
 
+    if (!Object.keys(networks).length) {
+      await this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
+      ])
+
+      return
+    }
+
     const networkIdToChainId = Object.fromEntries(
-      Object.values(networks).map(({ id, chainId }: any) => [id as string, chainId as bigint])
+      Object.values(networks).map(({ id, chainId }: any) => [id, chainId as bigint])
     )
 
     const migrateKeys = <T>(obj: Record<string, T>) =>
@@ -381,7 +403,7 @@ export class StorageController {
         accountId,
         messages.map(({ networkId, ...rest }: any) => ({
           ...rest,
-          chainId: networkIdToChainId[networkId] ?? networkId // Migrate networkId inside SignedMessage
+          chainId: networkIdToChainId[networkId] // Migrate networkId inside SignedMessage
         }))
       ])
     )
