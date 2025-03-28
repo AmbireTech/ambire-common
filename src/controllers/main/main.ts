@@ -394,6 +394,7 @@ export class MainController extends EventEmitter {
       }
     )
     this.swapAndBridge = new SwapAndBridgeController({
+      accounts: this.accounts,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,

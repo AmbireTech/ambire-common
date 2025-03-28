@@ -1,6 +1,7 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
+import { AccountsController } from 'controllers/accounts/accounts'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
@@ -18,7 +19,7 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
-import { isSmartAccount } from '../../libs/account/account'
+import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
@@ -186,7 +187,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
+  #accounts: AccountsController
+
   constructor({
+    accounts,
     selectedAccount,
     networks,
     activity,
@@ -195,6 +199,7 @@ export class SwapAndBridgeController extends EventEmitter {
     actions,
     invite
   }: {
+    accounts: AccountsController
     selectedAccount: SelectedAccountController
     networks: NetworksController
     activity: ActivityController
@@ -204,6 +209,7 @@ export class SwapAndBridgeController extends EventEmitter {
     invite: InviteController
   }) {
     super()
+    this.#accounts = accounts
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -889,7 +895,13 @@ export class SwapAndBridgeController extends EventEmitter {
           toTokenAddress: this.toSelectedToken!.address,
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
-          isSmartAccount: isSmartAccount(this.#selectedAccount.account),
+          isSmartAccount: !isBasicAccount(
+            this.#selectedAccount.account,
+            await this.#accounts.getOrFetchAccountOnChainState(
+              this.#selectedAccount.account.addr,
+              BigInt(this.toChainId!)
+            )
+          ),
           sort: this.routePriority,
           isOG: this.#invite.isOG
         })

@@ -29,6 +29,7 @@ import {
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
+import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
   token: LiFiToken,
@@ -322,6 +323,7 @@ export class LiFiAPI {
     fromAmount,
     userAddress,
     sort,
+    isSmartAccount,
     isOG
   }: {
     fromAsset: TokenResult | null
@@ -344,6 +346,20 @@ export class LiFiAPI {
       throw new SwapAndBridgeProviderApiError(
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
+
+    // if the from asset is disabled, we don't return routes
+    // currently, stETH is disabled because returned routes for it
+    // always end up in a failure
+    if (disabledAssetSymbols.indexOf(fromAsset.symbol) !== -1) {
+      return {
+        fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
+        fromChainId,
+        toAsset,
+        toChainId,
+        selectedRouteSteps: [],
+        routes: []
+      }
+    }
 
     // 1% slippage on stable swaps and 3.5% on others
     const isStableSwap = fromAsset.decimals === 6 && toAsset.decimals === 6
@@ -382,6 +398,14 @@ export class LiFiAPI {
       errorPrefix: 'Unable to fetch the quote.'
     })
 
+    const routes = response.routes
+      .map((r: LiFiRoute) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
+      .filter((r: LiFiRoute) => {
+        return (
+          !isSmartAccount || !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
+        )
+      })
+
     const selectedRoute = response.routes[0]
       ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0], userAddress)
       : undefined
@@ -396,7 +420,7 @@ export class LiFiAPI {
       toChainId,
       selectedRoute,
       selectedRouteSteps,
-      routes: response.routes.map((r) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
+      routes
     }
   }
 
