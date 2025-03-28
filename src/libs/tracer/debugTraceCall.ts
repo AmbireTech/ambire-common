@@ -17,7 +17,7 @@ const NFT_COLLECTION_LIMIT = 100
 // if it's SA, make the data execute or deployAndExecute,
 // set the spoof+addr and pass all the calls
 function getFunctionParams(account: Account, op: AccountOp, accountState: AccountOnchainState) {
-  if (!account.creation) {
+  if (isBasicAccount(account, accountState) && op.calls.length === 1) {
     const call = op.calls[0]
     return {
       to: call.to,
@@ -27,20 +27,31 @@ function getFunctionParams(account: Account, op: AccountOp, accountState: Accoun
     }
   }
 
+  if (isBasicAccount(account, accountState)) {
+    const saAbi = new Interface(AmbireAccount.abi)
+    const callData = saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
+    return {
+      to: account.addr,
+      value: 0,
+      data: callData,
+      from: DEPLOYLESS_SIMULATION_FROM
+    }
+  }
+
   const saAbi = new Interface(AmbireAccount.abi)
   const factoryAbi = new Interface(AmbireFactory.abi)
   const callData = accountState.isDeployed
     ? saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
     : factoryAbi.encodeFunctionData('deployAndExecute', [
-        account.creation.bytecode,
-        account.creation.salt,
+        account.creation!.bytecode,
+        account.creation!.salt,
         getSignableCalls(op),
         getSpoof(account)
       ])
 
   return {
     from: DEPLOYLESS_SIMULATION_FROM,
-    to: accountState.isDeployed ? account.addr : account.creation.factoryAddr,
+    to: accountState.isDeployed ? account.addr : account.creation!.factoryAddr,
     value: 0,
     data: callData
   }
