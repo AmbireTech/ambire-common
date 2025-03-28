@@ -1317,6 +1317,16 @@ export class SwapAndBridgeController extends EventEmitter {
         if (activeRouteRoute) {
           activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.length
         }
+      } else if (activeRoute?.userTxHash) {
+        // Mark all source destination actions as completed
+        // when the transaction is mined
+        const activeRouteRoute = currentActiveRoutes[activeRouteIndex].route
+
+        if (activeRouteRoute) {
+          activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.filter(
+            (tx) => tx.userTxType === 'dex-swap'
+          ).length
+        }
       }
 
       this.activeRoutes = currentActiveRoutes
