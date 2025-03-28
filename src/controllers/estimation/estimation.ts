@@ -105,10 +105,10 @@ export class EstimationController extends EventEmitter {
     this.emitUpdate()
 
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
-    const network = this.#networks.networks.find((net) => net.id === op.networkId)!
+    const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       op.accountAddr,
-      op.networkId
+      op.chainId
     )
     const baseAcc = getBaseAccount(
       account,
@@ -122,8 +122,8 @@ export class EstimationController extends EventEmitter {
     // NOTE: at some point we should check all the "?" signs below and if
     // an error pops out, we should notify the user about it
     const networkFeeTokens =
-      this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.networkId]?.result?.feeTokens ??
-      []
+      this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
+        ?.feeTokens ?? []
     const gasTankResult = this.#portfolio.getLatestPortfolioState(op.accountAddr)?.gasTank?.result
     const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
       ? gasTankResult.gasTankTokens
@@ -196,7 +196,7 @@ export class EstimationController extends EventEmitter {
       (this.estimation.flags.hasNonceDiscrepancy || this.estimation.flags.has4337NonceDiscrepancy)
     )
       // silenly continuing on error here as the flags are more like app helpers
-      this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.networkId]).catch((e) => e)
+      this.#accounts.updateAccountState(op.accountAddr, 'pending', [op.chainId]).catch((e) => e)
 
     this.hasEstimated = true
     this.emitUpdate()

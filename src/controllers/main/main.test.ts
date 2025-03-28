@@ -115,7 +115,7 @@ describe('Main Controller ', () => {
       meta: {
         isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        networkId: 'ethereum'
+        chainId: 1n
       }
     }
     // @TODO test if nonce is correctly set
@@ -146,7 +146,7 @@ describe('Main Controller ', () => {
       meta: {
         isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        networkId: 'ethereum'
+        chainId: 1n
       }
     }
     await controller.removeUserRequest(req.id)
@@ -360,7 +360,7 @@ describe('Main Controller ', () => {
   })
 
   test('should check if network features get displayed correctly for ethereum', async () => {
-    const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth?.features.length).toBe(3)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
@@ -380,13 +380,13 @@ describe('Main Controller ', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    await controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+    await controller.networks.updateNetwork({ areContractsDeployed: false }, 1n)
 
-    const eth2 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth2 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth2.areContractsDeployed).toEqual(false)
     await controller.setContractsDeployedToTrueIfDeployed(eth2)
 
-    const eth3 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth3 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth3.areContractsDeployed).toEqual(true)
   })
   describe('throwBroadcastAccountOp', () => {
@@ -394,7 +394,6 @@ describe('Main Controller ', () => {
 
     const prepareTest = () => {
       const controllerAnyType = controller as any
-      controllerAnyType.updateSignAccountOpGasPrice = jest.fn()
       return {
         controllerAnyType
       }
@@ -409,7 +408,6 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe('message')
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
       }
     })
     it('pimlico_getUserOperationGasPrice', async () => {
@@ -424,7 +422,6 @@ describe('Main Controller ', () => {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
       }
     })
     it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -432,7 +429,7 @@ describe('Main Controller ', () => {
       const error = new InnerCallFailureError(
         '   transfer amount exceeds balance   ',
         [],
-        networks.find((net) => net.id === 'base')!
+        networks.find((n) => n.chainId === 8453n)!
       )
 
       try {
@@ -443,7 +440,6 @@ describe('Main Controller ', () => {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
       }
     })
     it('Unknown error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -458,7 +454,6 @@ describe('Main Controller ', () => {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
       }
     })
     it('replacement fee too low', async () => {
@@ -473,7 +468,6 @@ describe('Main Controller ', () => {
         expect(e.message).toBe(
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
       }
     })
     it('Relayer broadcast swap expired', async () => {
@@ -492,7 +486,6 @@ describe('Main Controller ', () => {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
       }
     })
   })

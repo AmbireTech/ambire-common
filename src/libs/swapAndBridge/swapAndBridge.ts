@@ -230,7 +230,7 @@ const getSwapAndBridgeCalls = async (
 
 const buildSwapAndBridgeUserRequests = async (
   userTx: SocketAPISendTransactionRequest,
-  networkId: string,
+  chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
@@ -244,7 +244,7 @@ const buildSwapAndBridgeUserRequests = async (
       },
       meta: {
         isSignAction: true,
-        networkId,
+        chainId,
         accountAddr: account.addr,
         activeRouteId: userTx.activeRouteId,
         isSwapAndBridgeCall: true

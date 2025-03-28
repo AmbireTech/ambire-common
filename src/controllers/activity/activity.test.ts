@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -19,7 +20,7 @@ import { SignedMessage } from './types'
 
 const INIT_PARAMS = {
   account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  network: 'ethereum'
+  chainId: 1n
 }
 
 const ACCOUNTS = [
@@ -67,7 +68,7 @@ const SUBMITTED_ACCOUNT_OP = {
     simulatedGasLimit: 1n,
     gasPrice: 1n
   },
-  networkId: 'ethereum',
+  chainId: 1n,
   nonce: 225n,
   signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
   calls: [
@@ -98,14 +99,14 @@ const SIGNED_MESSAGE: SignedMessage = {
     message: '0x123456'
   },
   signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-  networkId: 'ethereum'
+  chainId: 1n
 }
 
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
-  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.id].isWorking = true
+  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.chainId.toString()].isWorking = true
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
@@ -170,6 +171,7 @@ describe('Activity Controller ', () => {
     networksCtrl = new NetworksController(
       storageCtrl,
       fetch,
+      relayerUrl,
       (net) => {
         providersCtrl.setProvider(net)
       },
@@ -217,7 +219,7 @@ describe('Activity Controller ', () => {
         currentPage: 0,
         maxPages: 1
       })
-      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
+      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
     })
@@ -238,7 +240,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'ethereum',
+          chainId: 1n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -267,7 +269,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'ethereum',
+          chainId: 1n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -296,7 +298,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'optimism',
+          chainId: 10n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -325,7 +327,7 @@ describe('Activity Controller ', () => {
             simulatedGasLimit: 1n,
             gasPrice: 1n
           },
-          networkId: 'optimism',
+          chainId: 10n,
           nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
@@ -355,7 +357,7 @@ describe('Activity Controller ', () => {
         sessionId,
         {
           account: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
-          network: 'optimism'
+          chainId: 10n
         },
         { fromPage: 1, itemsPerPage: 1 }
       )
@@ -376,7 +378,7 @@ describe('Activity Controller ', () => {
               simulatedGasLimit: 1n,
               gasPrice: 1n
             },
-            networkId: 'optimism',
+            chainId: 10n,
             nonce: 225n,
             signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
             calls: [
@@ -415,7 +417,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -459,7 +461,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -508,7 +510,7 @@ describe('Activity Controller ', () => {
 
       await controller.filterAccountsOps(sessionId, {
         account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        network: 'ethereum'
+        chainId: 1n
       })
 
       const accountOp = {
@@ -523,7 +525,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -553,7 +555,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -600,7 +602,7 @@ describe('Activity Controller ', () => {
           simulatedGasLimit: 1n,
           gasPrice: 1n
         },
-        networkId: 'ethereum',
+        chainId: 1n,
         nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
@@ -660,7 +662,7 @@ describe('Activity Controller ', () => {
         },
 
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-        networkId: 'ethereum'
+        chainId: 1n
       }
 
       await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
@@ -699,7 +701,7 @@ describe('Activity Controller ', () => {
         sessionId,
         {
           account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          network: 'optimism'
+          chainId: 10n
         },
         { fromPage: 1, itemsPerPage: 1 }
       )

@@ -20,8 +20,8 @@ import { DecodedError, ErrorType } from './types'
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
 
-const base = networks.find((net) => net.id === 'base')!
-const avalanche = networks.find((net) => net.id === 'avalanche')!
+const base = networks.find((n) => n.chainId === 8453n)!
+const avalanche = networks.find((n) => n.chainId === 43114n)!
 
 export const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
@@ -377,7 +377,7 @@ describe('Error decoders work', () => {
     expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
     const humanized = getHumanReadableEstimationError(decodedError)
     expect(humanized.message).toBe(
-      `The transaction will fail because it will revert onchain. Error code: Insufficient ${base.nativeAssetSymbol} for transaction calls\n`
+      "The transaction will fail because you don't have enough ETH to cover the gas costs for this transaction."
     )
 
     const sameErrorOnAvax = new InnerCallFailureError(
@@ -392,7 +392,7 @@ describe('Error decoders work', () => {
     )
     const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
     expect(humanizedAvax.message).toBe(
-      `The transaction will fail because it will revert onchain. Error code: Insufficient ${avalanche.nativeAssetSymbol} for transaction calls\n`
+      "The transaction will fail because you don't have enough AVAX to cover the gas costs for this transaction."
     )
   })
   it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {

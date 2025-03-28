@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -51,7 +52,7 @@ const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
     accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
     isSignAction: true,
     isWalletSendCalls: false,
-    networkId: 'optimism',
+    chainId: 10n,
     paymasterService: undefined
   },
   session: { name: '', icon: '', origin: '' },
@@ -85,7 +86,7 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
     ],
     gasFeePayment: {
       amount: 7936n,
-      feeTokenNetworkId: SIGN_ACCOUNT_OP_REQUEST.meta.networkId,
+      feeTokenChainId: SIGN_ACCOUNT_OP_REQUEST.meta.chainId,
       gasPrice: 1101515n,
       inToken: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
       isGasTank: false,
@@ -96,7 +97,7 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
     },
     gasLimit: null,
     meta: {},
-    networkId: SIGN_ACCOUNT_OP_REQUEST.meta.networkId,
+    chainId: SIGN_ACCOUNT_OP_REQUEST.meta.chainId,
     nonce: 2n,
     signature: '',
     signingKeyAddr: '',
@@ -157,7 +158,7 @@ describe('Actions Controller', () => {
     }
   ]
   const providers = Object.fromEntries(
-    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
 
   let providersCtrl: ProvidersController
@@ -165,6 +166,7 @@ describe('Actions Controller', () => {
   const networksCtrl = new NetworksController(
     storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -327,7 +329,6 @@ describe('Actions Controller', () => {
       action: { kind: 'benzin' },
       meta: {
         isSignAction: true,
-        networkId: '',
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         chainId: 1n
       }

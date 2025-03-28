@@ -222,7 +222,7 @@ export const getAccountOpBanners = ({
   if (account?.creation) {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
       actions.forEach((action) => {
-        const network = networks.filter((n) => n.id === netId)[0]
+        const network = networks.filter((n) => n.chainId.toString() === netId)[0]
         const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
           const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
             (route) => route.activeRouteId === call.fromUserRequestId
@@ -266,7 +266,7 @@ export const getAccountOpBanners = ({
     })
   } else {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
-      const network = networks.filter((n) => n.id === netId)[0]
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
       const nonSwapAndBridgeTxns = actions.reduce((prev, action) => {
         action.accountOp.calls.forEach((call) => {
           const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(

@@ -28,8 +28,8 @@ const transactions: { [key: string]: Array<IrCall> } = {
 describe('privileges', () => {
   const accountOp: AccountOp = {
     accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-    networkId: 'ethereum',
-    // networkId: 'polygon',
+    chainId: 1n,
+    // chainId: 137n,
     // this may not be defined, in case the user has not picked a key yet
     signingKeyAddr: null,
     signingKeyType: null,

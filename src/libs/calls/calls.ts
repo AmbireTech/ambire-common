@@ -4,7 +4,6 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { NetworkId } from '../../interfaces/network'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
 
@@ -49,7 +48,7 @@ export function getFeeCall(feeToken: TokenResult): Call {
 
 export function decodeFeeCall(
   { to, value, data }: Call,
-  networkId: NetworkId
+  chainId: bigint
 ): {
   address: string
   amount: bigint
@@ -67,13 +66,13 @@ export function decodeFeeCall(
     const [, amount, symbol] = abiCoder.decode(['string', 'uint256', 'string'], data)
     const { address } =
       gasTankFeeTokens.find(
-        ({ symbol: tSymbol, networkId: tNetworkId }) =>
-          tSymbol.toLowerCase() === symbol.toLowerCase() && tNetworkId === networkId
+        ({ symbol: tSymbol, chainId: tChainId }) =>
+          tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === chainId
       ) || {}
 
     if (!address)
       throw new Error(
-        `Unable to find gas tank fee token for symbol ${symbol} and network ${networkId}`
+        `Unable to find gas tank fee token for symbol ${symbol} and network with id ${chainId}`
       )
 
     return {

@@ -87,9 +87,12 @@ async function estimate(
     'estimation-bundler',
     errorCallback
   )
+  const foundError = Array.isArray(estimation)
+    ? estimation.find((res) => res instanceof Error)
+    : null
   return {
     gasPrice,
-    estimation,
+    estimation: foundError ?? estimation,
     nonFatalErrors
   }
 }
