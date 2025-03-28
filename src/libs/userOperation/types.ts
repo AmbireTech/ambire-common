@@ -1,3 +1,4 @@
+import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
 import { Call } from '../accountOp/types'
@@ -40,15 +41,7 @@ export interface UserOperation {
   // which bundler is responsible for submitting and fetching info
   // about this userOp
   bundler: BUNDLER
-  eip7702Auth?: {
-    contractAddress: Hex
-    chainId: Hex
-    nonce: Hex
-    r: Hex
-    s: Hex
-    v: Hex
-    yParity: Hex
-  }
+  eip7702Auth?: EIP7702Auth
 }
 
 export interface UserOperationEventData {

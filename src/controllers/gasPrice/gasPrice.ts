@@ -44,6 +44,8 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
+    console.log('fetching gas price')
+
     const bundler = this.#bundlerSwitcher.getBundler()
 
     const [gasPriceData, bundlerGas] = await Promise.all([
@@ -72,7 +74,7 @@ export class GasPriceController extends EventEmitter {
         this.emitError({
           level: emitLevelOnFailure,
           message,
-          error: new Error(`Failed to fetch gas price on ${this.#network.id}: ${e?.message}`)
+          error: new Error(`Failed to fetch gas price on ${this.#network.name}: ${e?.message}`)
         })
         return null
       }),
@@ -90,11 +92,15 @@ export class GasPriceController extends EventEmitter {
     ])
 
     if (gasPriceData) {
-      if (gasPriceData.gasPrice) this.gasPrices[this.#network.id] = gasPriceData.gasPrice
+      if (gasPriceData.gasPrice)
+        this.gasPrices[this.#network.chainId.toString()] = gasPriceData.gasPrice
       this.blockGasLimit = gasPriceData.blockGasLimit
     }
     if (bundlerGas)
-      this.bundlerGasPrices[this.#network.id] = { speeds: bundlerGas, bundler: bundler.getName() }
+      this.bundlerGasPrices[this.#network.chainId.toString()] = {
+        speeds: bundlerGas,
+        bundler: bundler.getName()
+      }
 
     this.emitUpdate()
 

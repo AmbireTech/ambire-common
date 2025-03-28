@@ -32,7 +32,7 @@ export abstract class BaseAccount {
 
   // each implementation should declare when an estimation failure is critical
   // and we should display it to the user
-  abstract getEstimationCriticalError(estimation: FullEstimation): Error | null
+  abstract getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null
 
   abstract supportsBundlerEstimation(): boolean
 

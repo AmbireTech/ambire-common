@@ -24,7 +24,7 @@ import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
-import { AddNetworkRequestParams, Network, NetworkId } from '../../interfaces/network'
+import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
 import { EstimationStatus } from '../estimation/types'
@@ -252,12 +252,13 @@ export class MainController extends EventEmitter {
     this.networks = new NetworksController(
       this.#storage,
       this.fetch,
+      relayerUrl,
       async (network: Network) => {
         this.providers.setProvider(network)
-        await this.reloadSelectedAccount({ networkId: network.id })
+        await this.reloadSelectedAccount({ chainId: network.chainId })
       },
-      (networkId: NetworkId) => {
-        this.providers.removeProvider(networkId)
+      (chainId: bigint) => {
+        this.providers.removeProvider(chainId)
       }
     )
     this.featureFlags = new FeatureFlagsController(this.networks)
@@ -586,7 +587,7 @@ export class MainController extends EventEmitter {
       return null
     }
 
-    const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
+    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
 
     if (
       !this.selectedAccount.account ||
@@ -607,7 +608,8 @@ export class MainController extends EventEmitter {
     // it could happen that the user inits a userRequest with an old
     // accountState and therefore caching the old nonce in the accountOp.
     // we make sure the latest nonce is set when initing signAccountOp
-    const state = this.accounts.accountStates?.[accountOp.accountAddr]?.[accountOp.networkId]
+    const state =
+      this.accounts.accountStates?.[accountOp.accountAddr]?.[accountOp.chainId.toString()]
     if (state) accountOp.nonce = state.nonce
 
     this.signAccOpInitError = null
@@ -620,9 +622,9 @@ export class MainController extends EventEmitter {
       this.portfolio,
       this.#externalSignerControllers,
       this.selectedAccount.account,
-      this.accounts.accountStates[this.selectedAccount.account.addr][network.id],
+      this.accounts.accountStates[this.selectedAccount.account.addr][network.chainId.toString()],
       network,
-      this.providers.providers[network.id],
+      this.providers.providers[network.chainId.toString()],
       actionId,
       accountOp,
       () => {
@@ -698,10 +700,10 @@ export class MainController extends EventEmitter {
     const accountOp = this.signAccountOp.accountOp
     if (!accountOp) return
 
-    const network = this.networks.networks.find((net) => net.id === accountOp.networkId)
+    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
     if (!network) return
 
-    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp?.accountAddr)
+    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)
     if (!account) return
 
     // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
@@ -729,8 +731,8 @@ export class MainController extends EventEmitter {
     this.#traceCallTimeoutId = timeoutId
 
     try {
-      const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.networkId]
-      const provider = this.providers.providers[network.id]
+      const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+      const provider = this.providers.providers[network.chainId.toString()]
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
@@ -738,13 +740,12 @@ export class MainController extends EventEmitter {
         state,
         !network.rpcNoStateOverride
       )
-      const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.id)
-      const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.id)
+      const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
+      const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network,
-        accountOp
+        network
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -770,7 +771,7 @@ export class MainController extends EventEmitter {
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: new Error(`Debug trace call error on ${network.id}: ${e.message}`)
+        error: new Error(`Debug trace call error on ${network.name}: ${e.message}`)
       })
     }
 
@@ -781,21 +782,21 @@ export class MainController extends EventEmitter {
 
   async handleSignMessage() {
     const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const networkId = this.signMessage.messageToSign?.networkId
+    const chainId = this.signMessage.messageToSign?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
-      accountAddr && networkId && !this.accounts.accountStates?.[accountAddr]?.[networkId]
+      accountAddr && chainId && !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
     if (shouldForceUpdateAndWaitForAccountState)
-      await this.accounts.updateAccountState(accountAddr, 'latest', [networkId])
+      await this.accounts.updateAccountState(accountAddr, 'latest', [chainId])
 
     const isAccountStateStillMissing =
-      !accountAddr || !networkId || !this.accounts.accountStates?.[accountAddr]?.[networkId]
+      !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
     if (isAccountStateStillMissing) {
       const message =
         'Unable to sign the message. During the preparation step, required account data failed to get received. Please try again later or contact Ambire support.'
       const error = new Error(
-        `The account state of ${accountAddr} is missing for the network with id ${networkId}.`
+        `The account state of ${accountAddr} is missing for the network with id ${chainId}.`
       )
       return this.emitError({ level: 'major', message, error })
     }
@@ -925,12 +926,12 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (network.areContractsDeployed) return
 
-    const provider = this.providers.providers[network.id]
+    const provider = this.providers.providers[network.chainId.toString()]
     if (!provider) return
 
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
-    await this.networks.updateNetwork({ areContractsDeployed: true }, network.id)
+    await this.networks.updateNetwork({ areContractsDeployed: true }, network.chainId)
   }
 
   #removeAccountKeyData(address: Account['addr']) {
@@ -994,7 +995,7 @@ export class MainController extends EventEmitter {
 
   async #ensureAccountInfo(
     accountAddr: AccountId,
-    networkId: NetworkId
+    chainId: bigint
   ): Promise<{ hasAccountInfo: true } | { hasAccountInfo: false; errorMessage: string }> {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
@@ -1005,16 +1006,17 @@ export class MainController extends EventEmitter {
       }
     }
     // If this still didn't work, re-load
-    if (!this.accounts.accountStates[accountAddr]?.[networkId])
-      await this.accounts.updateAccountState(accountAddr, 'pending', [networkId])
+    if (!this.accounts.accountStates[accountAddr]?.[chainId.toString()])
+      await this.accounts.updateAccountState(accountAddr, 'pending', [chainId])
     // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
-    if (!this.accounts.accountStates[accountAddr]?.[networkId]) {
-      const network = this.networks.networks.find((n) => n.id === networkId)
-      const networkName = network ? network.name : networkId[0].toUpperCase() + networkId.slice(1)
+    if (!this.accounts.accountStates[accountAddr]?.[chainId.toString()]) {
+      const network = this.networks.networks.find((n) => n.chainId === chainId)
 
       return {
         hasAccountInfo: false,
-        errorMessage: `We couldn't complete your last action because we couldn't retrieve your account information for ${networkName}. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
+        errorMessage: `We couldn't complete your last action because we couldn't retrieve your account information for ${
+          network?.name || chainId
+        }. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
       }
     }
 
@@ -1023,11 +1025,11 @@ export class MainController extends EventEmitter {
     }
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, networkId: NetworkId): Call[] {
+  #batchCallsFromUserRequests(accountAddr: AccountId, chainId: bigint): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
       (uCalls: Call[], req) => {
-        if (req.meta.networkId === networkId && req.meta.accountAddr === accountAddr) {
+        if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
           const { calls } = req.action as Calls
           calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
         }
@@ -1037,10 +1039,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount(options?: { forceUpdate?: boolean; networkId?: NetworkId }) {
-    const { forceUpdate = true, networkId } = options || {}
-    const networkToUpdate = networkId
-      ? this.networks.networks.find((n) => n.id === networkId)
+  async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainId?: bigint }) {
+    const { forceUpdate = true, chainId } = options || {}
+    const networkToUpdate = chainId
+      ? this.networks.networks.find((n) => n.chainId === chainId)
       : undefined
     if (!this.selectedAccount.account) return
 
@@ -1056,7 +1058,7 @@ export class MainController extends EventEmitter {
         ? this.accounts.updateAccountState(
             this.selectedAccount.account.addr,
             'pending',
-            networkId ? [networkId] : undefined
+            chainId ? [chainId] : undefined
           )
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
@@ -1064,7 +1066,7 @@ export class MainController extends EventEmitter {
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
-      this.defiPositions.updatePositions({ networkId })
+      this.defiPositions.updatePositions({ chainId })
     ])
   }
 
@@ -1080,8 +1082,8 @@ export class MainController extends EventEmitter {
     // come in the same tick. Otherwise the UI may flash the wrong error.
     const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
     const latestStateKeys = Object.keys(latestState)
-    const isAllLoaded = latestStateKeys.every((networkId) => {
-      return isNetworkReady(latestState[networkId]) && !latestState[networkId]?.isLoading
+    const isAllLoaded = latestStateKeys.every((chainId) => {
+      return isNetworkReady(latestState[chainId]) && !latestState[chainId]?.isLoading
     })
 
     // Set isOffline back to false if the portfolio is loading.
@@ -1095,14 +1097,14 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const allPortfolioNetworksHaveErrors = latestStateKeys.every((networkId) => {
-      const state = latestState[networkId]
+    const allPortfolioNetworksHaveErrors = latestStateKeys.every((chainId) => {
+      const state = latestState[chainId]
 
       return !!state?.criticalError
     })
 
-    const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((networkId) => {
-      const provider = this.providers.providers[networkId]
+    const allNetworkRpcsAreDown = Object.keys(this.providers.providers).every((chainId) => {
+      const provider = this.providers.providers[chainId]
       const isWorking = provider.isWorking
 
       return typeof isWorking === 'boolean' && !isWorking
@@ -1127,15 +1129,14 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
-    const signAccountOpNetworkId = this.signAccountOp?.accountOp.networkId
+    const signAccountOpChainId = this.signAccountOp?.accountOp.chainId
     const networkData =
-      network || this.networks.networks.find((n) => n.id === signAccountOpNetworkId)
+      network || this.networks.networks.find((n) => n.chainId === signAccountOpChainId)
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData,
-      this.signAccountOp?.accountOp
+      networkData
     )
 
     await this.portfolio.updateSelectedAccount(
@@ -1214,7 +1215,7 @@ export class MainController extends EventEmitter {
           isSignAction: true,
           isWalletSendCalls,
           accountAddr,
-          networkId: network.id,
+          chainId: network.chainId,
           paymasterService
         },
         dappPromise
@@ -1222,7 +1223,7 @@ export class MainController extends EventEmitter {
 
       const accountState = await this.accounts.getOrFetchAccountOnChainState(
         accountAddr,
-        network.id
+        network.chainId
       )
       if (isBasicAccount(this.selectedAccount.account, accountState)) {
         const otherUserRequestFromSameDapp = this.userRequests.find(
@@ -1260,7 +1261,7 @@ export class MainController extends EventEmitter {
         meta: {
           isSignAction: true,
           accountAddr: msgAddress,
-          networkId: network.id
+          chainId: network.chainId
         },
         dappPromise
       } as SignUserRequest
@@ -1320,7 +1321,7 @@ export class MainController extends EventEmitter {
         meta: {
           isSignAction: true,
           accountAddr: msgAddress,
-          networkId: network.id
+          chainId: network.chainId
         },
         dappPromise
       } as SignUserRequest
@@ -1383,7 +1384,7 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(
       buildSwitchAccountUserRequest({
         nextUserRequest: userRequest,
-        networkId: network.id,
+        chainId: network.chainId,
         selectedAccountAddr: userRequest.meta.accountAddr,
         session: dappPromise.session,
         dappPromise
@@ -1456,7 +1457,7 @@ export class MainController extends EventEmitter {
                 this.selectedAccount.account,
                 await this.accounts.getOrFetchAccountOnChainState(
                   this.selectedAccount.account.addr,
-                  network.id
+                  network.chainId
                 )
               )
             ) {
@@ -1490,12 +1491,12 @@ export class MainController extends EventEmitter {
         // swallows errors and doesn't provide any feedback to the user.
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
-          network.id,
+          network.chainId,
           this.selectedAccount.account,
-          this.providers.providers[network.id],
+          this.providers.providers[network.chainId.toString()],
           await this.accounts.getOrFetchAccountOnChainState(
             this.selectedAccount.account.addr,
-            network.id
+            network.chainId
           )
         )
 
@@ -1590,7 +1591,7 @@ export class MainController extends EventEmitter {
       const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
 
       if (
-        isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.networkId]) &&
+        isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
         userRequest.meta.isSwapAndBridgeCall
       ) {
         this.removeUserRequest(userRequest.meta.activeRouteId)
@@ -1606,7 +1607,7 @@ export class MainController extends EventEmitter {
   rejectSignAccountOpCall(callId: string) {
     if (!this.signAccountOp) return
 
-    const { calls, networkId, accountAddr } = this.signAccountOp.accountOp
+    const { calls, chainId, accountAddr } = this.signAccountOp.accountOp
 
     const requestId = calls.find((c) => c.id === callId)?.fromUserRequestId
     if (requestId) {
@@ -1623,8 +1624,8 @@ export class MainController extends EventEmitter {
         } else {
           const accountOpAction = makeAccountOpAction({
             account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
-            networkId,
-            nonce: this.accounts.accountStates[accountAddr][networkId].nonce,
+            chainId,
+            nonce: this.accounts.accountStates[accountAddr][chainId.toString()].nonce,
             userRequests: this.userRequests,
             actionsQueue: this.actions.actionsQueue
           })
@@ -1683,7 +1684,7 @@ export class MainController extends EventEmitter {
       // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
-      const accountInfo = await this.#ensureAccountInfo(meta.accountAddr, meta.networkId)
+      const accountInfo = await this.#ensureAccountInfo(meta.accountAddr, meta.chainId)
       if (!accountInfo.hasAccountInfo) {
         // Reject request if we couldn't load the account and account state for the request
         req.dappPromise?.reject(
@@ -1701,7 +1702,7 @@ export class MainController extends EventEmitter {
           level: 'major',
           message: accountInfo.errorMessage,
           error: new Error(
-            `Couldn't retrieve account information for ${meta.networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network.`
+            `Couldn't retrieve account information for network with id ${meta.chainId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network.`
           )
         })
       }
@@ -1712,13 +1713,13 @@ export class MainController extends EventEmitter {
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = await this.accounts.getOrFetchAccountOnChainState(
         meta.accountAddr,
-        meta.networkId
+        meta.chainId
       )
-      const network = this.networks.networks.find((n) => n.id === meta.networkId)!
+      const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const accountOpAction = makeAccountOpAction({
         account,
-        networkId: meta.networkId,
+        chainId: meta.chainId,
         nonce: accountState.nonce,
         userRequests: this.userRequests,
         actionsQueue: this.actions.actionsQueue
@@ -1796,7 +1797,7 @@ export class MainController extends EventEmitter {
     // update the pending stuff to be signed
     const { action, meta } = req
     if (action.kind === 'calls') {
-      const network = this.networks.networks.find((net) => net.id === meta.networkId)!
+      const network = this.networks.networks.find((net) => net.chainId === meta.chainId)!
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
       if (!account)
         throw new Error(
@@ -1804,7 +1805,7 @@ export class MainController extends EventEmitter {
         )
 
       const accountOpIndex = this.actions.actionsQueue.findIndex(
-        (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.networkId}`
+        (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.chainId}`
       )
       const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
         | AccountOpAction
@@ -1822,7 +1823,7 @@ export class MainController extends EventEmitter {
 
       accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
         meta.accountAddr,
-        meta.networkId
+        meta.chainId
       )
       if (accountOpAction.accountOp.calls.length) {
         this.actions.addOrUpdateAction(accountOpAction)
@@ -1834,7 +1835,7 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.destroySignAccOp()
         }
-        this.actions.removeAction(`${meta.accountAddr}-${meta.networkId}`, shouldOpenNextRequest)
+        this.actions.removeAction(`${meta.accountAddr}-${meta.chainId}`, shouldOpenNextRequest)
         if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
@@ -1873,13 +1874,13 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetwork(id: NetworkId) {
-    const chainId = this.networks.networks.find((net) => net.id === id)?.chainId
-    await this.networks.removeNetwork(id)
-    this.portfolio.removeNetworkData(id)
-    this.defiPositions.removeNetworkData(id)
-    this.accountAdder.removeNetworkData(id)
-    this.activity.removeNetworkData(id)
+  async removeNetwork(chainId: bigint) {
+    await this.networks.removeNetwork(chainId)
+
+    this.portfolio.removeNetworkData(chainId)
+    this.defiPositions.removeNetworkData(chainId)
+    this.accountAdder.removeNetworkData(chainId)
+    this.activity.removeNetworkData(chainId)
 
     // disable 7702 if the network removed was oddysey
     if (chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', false)
@@ -1894,7 +1895,7 @@ export class MainController extends EventEmitter {
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
-    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
+    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
 
     if (!network) return
 
@@ -1903,7 +1904,6 @@ export class MainController extends EventEmitter {
       isSignAction: true,
       accountAddr: accountOp.accountAddr,
       chainId: network.chainId,
-      networkId: '',
       txnId: null,
       userOpHash: null
     }
@@ -2045,12 +2045,12 @@ export class MainController extends EventEmitter {
       return this.throwBroadcastAccountOp({ message })
     }
 
-    const provider = this.providers.providers[accountOp.networkId]
+    const provider = this.providers.providers[accountOp.chainId.toString()]
     const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)
-    const network = this.networks.networks.find((n) => n.id === accountOp.networkId)
+    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
 
     if (!provider) {
-      const networkName = network?.name || `network with id ${accountOp.networkId}`
+      const networkName = network?.name || `network with id ${accountOp.chainId}`
       const message = `Provider for ${networkName} not found. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ message })
     }
@@ -2062,13 +2062,13 @@ export class MainController extends EventEmitter {
     }
 
     if (!network) {
-      const message = `Network with id ${accountOp.networkId} not found. ${contactSupportPrompt}`
+      const message = `Network with id ${accountOp.chainId} not found. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ message })
     }
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
       accountOp.accountAddr,
-      accountOp.networkId
+      accountOp.chainId
     )
     const baseAcc = getBaseAccount(
       account,
@@ -2240,11 +2240,11 @@ export class MainController extends EventEmitter {
         const additionalRelayerNetwork = relayerAdditionalNetworks.find(
           (net) => net.chainId === network.chainId
         )
-        const relayerNetworkId = additionalRelayerNetwork
-          ? additionalRelayerNetwork.name
-          : accountOp.networkId
+        const relayerChainId = additionalRelayerNetwork
+          ? additionalRelayerNetwork.chainId
+          : accountOp.chainId
         const response = await this.callRelayer(
-          `/identity/${accountOp.accountAddr}/${relayerNetworkId}/submit`,
+          `/identity/${accountOp.accountAddr}/${relayerChainId}/submit`,
           'POST',
           body
         )
@@ -2268,7 +2268,7 @@ export class MainController extends EventEmitter {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    this.portfolio.markSimulationAsBroadcasted(account.addr, network.id)
+    this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,

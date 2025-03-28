@@ -30,10 +30,10 @@ export const getAccountOpsByNetwork = (
   if (!accountOps.length) return undefined
 
   return accountOps.reduce((acc: any, accountOp) => {
-    const { networkId } = accountOp
-    if (!acc[networkId]) acc[networkId] = []
+    const { chainId } = accountOp
+    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
 
-    acc[networkId].push(accountOp)
+    acc[chainId.toString()].push(accountOp)
     return acc
   }, {})
 }
@@ -47,9 +47,9 @@ export const getAccountOpActionsByNetwork = (
   ).filter((action) => action.accountOp.accountAddr === accountAddr)
 
   const actionsByNetwork = accountOpActions.reduce((acc: any, accountOpAction) => {
-    const { networkId } = accountOpAction.accountOp
-    if (!acc[networkId]) acc[networkId] = []
-    acc[networkId].push(accountOpAction)
+    const { chainId } = accountOpAction.accountOp
+    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
+    acc[chainId.toString()].push(accountOpAction)
     return acc
   }, {})
   return actionsByNetwork

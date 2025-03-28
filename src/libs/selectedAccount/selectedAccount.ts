@@ -25,15 +25,15 @@ export const updatePortfolioStateWithDefiPositions = (
   if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
     return portfolioAccountState
 
-  Object.keys(portfolioAccountState).forEach((networkId) => {
-    const networkState = portfolioAccountState[networkId]
+  Object.keys(portfolioAccountState).forEach((chainId) => {
+    const networkState = portfolioAccountState[chainId]
 
-    if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
+    if (!networkState?.result || defiPositionsAccountState[chainId]?.isLoading) return
 
     const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
 
-    const positions = defiPositionsAccountState[networkId] || {}
+    const positions = defiPositionsAccountState[chainId] || {}
 
     positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
       if (posByProv.type === 'liquidity-pool') {
@@ -48,7 +48,7 @@ export const updatePortfolioStateWithDefiPositions = (
             const tokenInPortfolio = tokens.find((t) => {
               return (
                 t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
-                t.networkId === networkId &&
+                t.chainId.toString() === chainId &&
                 !t.flags.rewardsType &&
                 !t.flags.onGasTank
               )
@@ -102,7 +102,7 @@ export const updatePortfolioStateWithDefiPositions = (
                 address: a.protocolAsset!.address,
                 symbol: a.protocolAsset!.symbol,
                 name: a.protocolAsset!.name,
-                networkId,
+                chainId: BigInt(chainId),
                 flags: {
                   canTopUpGasTank: false,
                   isFeeToken: false,
@@ -122,9 +122,9 @@ export const updatePortfolioStateWithDefiPositions = (
     })
 
     // eslint-disable-next-line no-param-reassign
-    portfolioAccountState[networkId]!.result!.total.usd = networkBalance
+    portfolioAccountState[chainId]!.result!.total.usd = networkBalance
     // eslint-disable-next-line no-param-reassign
-    portfolioAccountState[networkId]!.result!.tokens = tokens
+    portfolioAccountState[chainId]!.result!.tokens = tokens
   })
 
   return portfolioAccountState
@@ -133,12 +133,12 @@ export const updatePortfolioStateWithDefiPositions = (
 const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
-  Object.keys(portfolioState).forEach((networkId) => {
-    const networkState = portfolioState[networkId]
+  Object.keys(portfolioState).forEach((chainId) => {
+    const networkState = portfolioState[chainId]
     if (!networkState) return
 
     if (!networkState.result) {
-      strippedState[networkId] = networkState
+      strippedState[chainId] = networkState
       return
     }
 
@@ -146,10 +146,7 @@ const stripPortfolioState = (portfolioState: AccountState) => {
     const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
       networkState.result
 
-    strippedState[networkId] = {
-      ...networkState,
-      result
-    }
+    strippedState[chainId] = { ...networkState, result }
   })
 
   return strippedState
@@ -160,12 +157,12 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
 }
 
 const calculateTokenArray = (
-  networkId: string,
+  chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
   isPendingValid: boolean
 ) => {
-  if (networkId === 'gasTank' || networkId === 'rewards') {
+  if (chainId === 'gasTank' || chainId === 'rewards') {
     return latestTokens
   }
   // If the pending state is older or there are no pending tokens
