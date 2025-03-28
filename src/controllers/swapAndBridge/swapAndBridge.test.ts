@@ -171,6 +171,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
+      accounts: accountsCtrl,
       activity: activityCtrl,
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
