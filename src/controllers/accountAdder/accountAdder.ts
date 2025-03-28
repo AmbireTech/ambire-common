@@ -112,6 +112,8 @@ export class AccountAdderController extends EventEmitter {
   // leading to unpredictable behavior on the AccountAdderScreen
   #alreadyImportedAccountsOnControllerInit: Account[] = []
 
+  #addAccountsOnKeystoreReady: boolean = false
+
   constructor({
     accounts,
     keystore,
@@ -133,6 +135,17 @@ export class AccountAdderController extends EventEmitter {
     this.#networks = networks
     this.#providers = providers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#keystore.onUpdate(async () => {
+      if (keystore.isReadyToStoreKeys && this.#addAccountsOnKeystoreReady) {
+        this.#addAccountsOnKeystoreReady = false
+        const readyToAddKeys = this.retrieveInternalKeysOfSelectedAccounts()
+
+        await this.addAccounts(this.selectedAccounts, {
+          internal: readyToAddKeys,
+          external: []
+        })
+      }
+    })
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -270,13 +283,16 @@ export class AccountAdderController extends EventEmitter {
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
   }) {
+    console.log('init 1')
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
-
+    console.log('init 2')
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
+    console.log('init 3')
     this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
+    console.log('init 4')
     this.isInitialized = true
     this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
@@ -549,16 +565,9 @@ export class AccountAdderController extends EventEmitter {
   ) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
-
-    if (!accounts.length) {
-      return this.emitError({
-        level: 'minor',
-        message:
-          'Trying to add accounts, but no accounts are selected. Please select at least one account.',
-        error: new Error(
-          'accountAdder: requested method `addAccounts`, but the accounts param is empty'
-        )
-      })
+    if (!this.#keystore.isReadyToStoreKeys) {
+      this.#addAccountsOnKeystoreReady = true
+      return
     }
 
     this.addAccountsStatus = 'LOADING'
@@ -642,6 +651,64 @@ export class AccountAdderController extends EventEmitter {
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     this.addAccountsStatus = 'INITIAL'
     await this.forceEmitUpdate()
+  }
+
+  async addNextAvailableAccount() {
+    console.log('addNextAvailableAccount')
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    console.log('addNextAvailableAccount 1')
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    console.log('addNextAvailableAccount 2')
+
+    let currentPage: number = this.page
+    let isAccountAlreadyAdded: boolean
+    let nextAccount: AccountWithNetworkMeta | undefined
+
+    const findNextAccount = async () => {
+      if (this.#keyIterator!.subType === 'private-key') {
+        nextAccount = this.accountsOnPage.find(
+          ({ isLinked, account }) => !isLinked && !isSmartAccount(account)
+        )?.account
+
+        isAccountAlreadyAdded =
+          !!nextAccount &&
+          !!this.#accounts.accounts.find(
+            // eslint-disable-next-line @typescript-eslint/no-loop-func
+            (a) => a.addr === nextAccount!.addr
+          )
+      } else {
+        do {
+          // eslint-disable-next-line no-await-in-loop
+          await this.setPage({ page: currentPage })
+
+          nextAccount = this.accountsOnPage.find(
+            ({ isLinked, account }) => !isLinked && !isSmartAccount(account)
+          )?.account
+
+          if (!nextAccount) break
+
+          isAccountAlreadyAdded = !!this.#accounts.accounts.find(
+            // eslint-disable-next-line @typescript-eslint/no-loop-func
+            (a) => a.addr === nextAccount!.addr
+          )
+
+          currentPage++
+        } while (isAccountAlreadyAdded)
+      }
+
+      if (!isAccountAlreadyAdded && nextAccount) {
+        this.selectAccount(nextAccount)
+      }
+    }
+
+    await findNextAccount()
+
+    const readyToAddKeys = this.retrieveInternalKeysOfSelectedAccounts()
+
+    await this.addAccounts(this.selectedAccounts, {
+      internal: readyToAddKeys,
+      external: []
+    })
   }
 
   async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {

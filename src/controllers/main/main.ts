@@ -14,12 +14,7 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
-import {
-  Account,
-  AccountId,
-  AccountOnchainState,
-  AccountWithNetworkMeta
-} from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -63,10 +58,9 @@ import {
   getHumanReadableEstimationError
 } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
+import { getEstimation } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
@@ -145,7 +139,6 @@ const STATUS_WRAPPED_METHODS = {
   handleAccountAdderInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   buildSwapAndBridgeUserRequest: 'INITIAL',
-  importSmartAccountFromSavedSeed: 'INITIAL',
   selectAccount: 'INITIAL'
 } as const
 
@@ -530,81 +523,6 @@ export class MainController extends EventEmitter {
     // will block the UI until these are resolved.
     this.reloadSelectedAccount({ forceUpdate: false })
     this.emitUpdate()
-  }
-
-  async importSmartAccountFromSavedSeed(seed?: string) {
-    await this.withStatus(
-      'importSmartAccountFromSavedSeed',
-      async () => {
-        if (this.accountAdder.isInitialized) this.accountAdder.reset()
-        if (seed && !this.keystore.hasKeystoreSavedSeed) {
-          await this.keystore.addSeed({ seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
-        }
-
-        const savedSeed = await this.keystore.getSavedSeed()
-        if (!savedSeed) {
-          throw new EmittableError({
-            message:
-              'Failed to retrieve saved seed phrase from keystore. Please try again or contact Ambire support if the issue persists.',
-            level: 'major',
-            error: new Error('failed to retrieve saved seed phrase from keystore')
-          })
-        }
-
-        const keyIterator = new KeyIterator(savedSeed.seed)
-        await this.accountAdder.init({
-          keyIterator,
-          hdPathTemplate: savedSeed.hdPathTemplate,
-          pageSize: 1,
-          shouldGetAccountsUsedOnNetworks: false,
-          shouldSearchForLinkedAccounts: false
-        })
-
-        let currentPage: number = 1
-        let isAccountAlreadyAdded: boolean
-        let nextSmartAccount: AccountWithNetworkMeta | undefined
-
-        const findNextSmartAccount = async () => {
-          do {
-            await this.accountAdder.setPage({ page: currentPage })
-
-            nextSmartAccount = this.accountAdder.accountsOnPage.find(
-              ({ isLinked, account }) => !isLinked && isSmartAccount(account)
-            )?.account
-
-            if (!nextSmartAccount) break
-
-            isAccountAlreadyAdded = !!this.accounts.accounts.find(
-              // eslint-disable-next-line @typescript-eslint/no-loop-func
-              (a) => a.addr === nextSmartAccount!.addr
-            )
-
-            currentPage++
-          } while (isAccountAlreadyAdded)
-        }
-
-        await findNextSmartAccount()
-
-        if (!nextSmartAccount) {
-          throw new EmittableError({
-            message:
-              'Internal error while looking for account to add. Please start the process all over again and if the issue persists contact Ambire support.',
-            level: 'major',
-            error: new Error('Internal error: Failed to find a smart account to add')
-          })
-        }
-
-        this.accountAdder.selectAccount(nextSmartAccount)
-
-        const readyToAddKeys = this.accountAdder.retrieveInternalKeysOfSelectedAccounts()
-
-        await this.accountAdder.addAccounts(this.accountAdder.selectedAccounts, {
-          internal: readyToAddKeys,
-          external: []
-        })
-      },
-      true
-    )
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
