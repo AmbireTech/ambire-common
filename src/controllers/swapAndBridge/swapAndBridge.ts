@@ -1502,15 +1502,15 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.fromSelectedToken) return
 
     const fromToken = this.fromSelectedToken as TokenResult
-    const network = this.#networks.networks.find((net) => net.id === fromToken.networkId)
+    const network = this.#networks.networks.find((net) => net.chainId === fromToken.chainId)
 
     // shouldn't happen ever
     if (!network) return
 
-    const provider = this.#providers.providers[network.id]
+    const provider = this.#providers.providers[network.chainId.toString()]
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       this.#selectedAccount.account.addr,
-      network.id
+      network.chainId
     )
     const userTxn = await this.getRouteStartUserTx()
 
@@ -1527,7 +1527,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )
     const accountOp = {
       accountAddr: this.#selectedAccount.account.addr,
-      networkId: network.id,
+      chainId: network.chainId,
       signingKeyAddr: null,
       signingKeyType: null,
       gasLimit: null,

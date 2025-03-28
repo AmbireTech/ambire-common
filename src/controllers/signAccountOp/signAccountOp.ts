@@ -245,7 +245,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
-    this.accountState = accounts.accountStates[account.addr][network.id]
+    this.accountState = accounts.accountStates[account.addr][network.chainId.toString()]
     this.baseAccount = getBaseAccount(
       account,
       this.accountState,
