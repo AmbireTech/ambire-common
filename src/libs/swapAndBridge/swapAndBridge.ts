@@ -201,7 +201,7 @@ const buildSwapAndBridgeUserRequests = async (
     value: BigInt(userTx.value),
     data: userTx.txData,
     fromUserRequestId: userTx.activeRouteId
-  } as Call)
+  })
 
   return [
     {

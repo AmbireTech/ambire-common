@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -142,26 +142,39 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   parentStep: LiFiStep
-): SwapAndBridgeSendTxRequest => ({
-  // Route ID is the string before the colon, then it's the step index
-  activeRouteId: parentStep.id.split(':')[0],
-  approvalData:
-    parentStep.action.fromToken.address === ZERO_ADDRESS
-      ? null // No approval needed fo native tokens
-      : {
-          allowanceTarget: parentStep.estimate.approvalAddress,
-          approvalTokenAddress: parentStep.action.fromToken.address,
-          minimumApprovalAmount: parentStep.estimate.fromAmount,
-          owner: ''
-        },
-  chainId: parentStep.action.fromChainId,
-  txData: parentStep.transactionRequest?.data,
-  txTarget: parentStep.transactionRequest?.to,
-  txType: 'eth_sendTransaction',
-  userTxIndex: 0,
-  userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
-  value: parentStep.transactionRequest?.value
-})
+): SwapAndBridgeSendTxRequest => {
+  if (
+    !parentStep.transactionRequest ||
+    typeof parentStep.transactionRequest.data !== 'string' ||
+    typeof parentStep.transactionRequest.to !== 'string' ||
+    typeof parentStep.transactionRequest.value !== 'string'
+  ) {
+    throw new SwapAndBridgeProviderApiError(
+      'Unable to start the route. Error details: <missing transaction request data>'
+    )
+  }
+
+  return {
+    // Route ID is the string before the colon, then it's the step index
+    activeRouteId: parentStep.id.split(':')[0],
+    approvalData:
+      parentStep.action.fromToken.address === ZERO_ADDRESS
+        ? null // No approval needed fo native tokens
+        : {
+            allowanceTarget: parentStep.estimate.approvalAddress,
+            approvalTokenAddress: parentStep.action.fromToken.address,
+            minimumApprovalAmount: parentStep.estimate.fromAmount,
+            owner: ''
+          },
+    chainId: parentStep.action.fromChainId,
+    txData: parentStep.transactionRequest.data,
+    txTarget: parentStep.transactionRequest.to,
+    txType: 'eth_sendTransaction',
+    userTxIndex: 0,
+    userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
+    value: parentStep.transactionRequest.value
+  }
+}
 
 export class LiFiAPI {
   id: 'lifi' = 'lifi'
@@ -397,7 +410,7 @@ export class LiFiAPI {
 
     const routes = response.routes
       .map((r: LiFiRoute) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
-      .filter((r: LiFiRoute) => {
+      .filter((r: SwapAndBridgeRoute) => {
         return (
           !isSmartAccount || !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
         )
