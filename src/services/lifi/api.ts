@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -371,10 +371,6 @@ export class LiFiAPI {
       }
     }
 
-    // 1% slippage on stable swaps and 3.5% on others
-    const isStableSwap = fromAsset.decimals === 6 && toAsset.decimals === 6
-    const slippage = isStableSwap ? '0.01' : '0.035'
-
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
@@ -384,7 +380,7 @@ export class LiFiAPI {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage,
+        slippage: '0.005',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
