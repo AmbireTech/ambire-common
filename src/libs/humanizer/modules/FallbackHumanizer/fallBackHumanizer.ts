@@ -85,7 +85,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
     }
     if (call.value) {
       if (call.data !== '0x') visualization.push(getLabel('and'))
-      visualization.push(getAction('Sending'), getToken(ZeroAddress, call.value))
+      visualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
       if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
     }
 
