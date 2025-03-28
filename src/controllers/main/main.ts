@@ -4,6 +4,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, isAddress } from 'ethers'
 
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
@@ -765,12 +766,21 @@ export class MainController extends EventEmitter {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       const provider = this.providers.providers[network.chainId.toString()]
+      const stateOverride =
+        accountOp.calls.length > 1 && isBasicAccount(account, state)
+          ? {
+              [account.addr]: {
+                code: AmbireAccount7702.binRuntime
+              }
+            }
+          : undefined
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
         provider,
         state,
-        !network.rpcNoStateOverride
+        !network.rpcNoStateOverride,
+        stateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
