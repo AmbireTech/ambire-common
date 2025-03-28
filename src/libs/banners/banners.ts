@@ -42,15 +42,7 @@ const getBridgeBannerText = (
     }
   }
 
-  const stepsIndexText = `(step ${
-    route.routeStatus === 'completed'
-      ? route.route?.totalUserTx
-      : (route.route?.currentUserTxIndex || 0) + 1
-  } of ${route.route?.totalUserTx || 'unknown'})`
-
-  return `${actionText} ${assetsText}${
-    (route.route?.totalUserTx || 0) > 1 ? ` ${stepsIndexText}` : ''
-  }`
+  return `${actionText} ${assetsText}`
 }
 
 export const getBridgeBanners = (

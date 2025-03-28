@@ -84,7 +84,6 @@ export interface SwapAndBridgeRoute {
   toAmount: string
   usedBridgeNames?: string[]
   usedDexName?: string
-  totalUserTx: number
   totalGasFeesInUsd: number
   // TODO: Deprecate userTxs
   userTxs: SwapAndBridgeUserTx[]
@@ -291,7 +290,6 @@ export type SwapAndBridgeSendTxRequest = {
   activeRouteId: string
   approvalData: SwapAndBridgeTxApprovalData | null
   chainId: number
-  totalUserTx: number
   txData: string
   txTarget: string
   txType: 'eth_sendTransaction'
@@ -341,7 +339,6 @@ export type SwapAndBridgeActiveRoute = {
 export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
   userAddress: string
-  totalUserTx: number
   userTxs: SocketAPIUserTx[]
   fromAssetAddress: string
   toAssetAddress: string

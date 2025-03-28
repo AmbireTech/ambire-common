@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -124,12 +124,10 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   isOnlySwapRoute: !route.containsSwitchChain,
   fromAmount: route.fromAmount,
   toAmount: route.toAmount,
-  // Single txn flow would always result only 1 LiFi (parent) step
   currentUserTxIndex: 0,
   ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
     ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
     : { usedDexName: route.steps[0].toolDetails.name }),
-  totalUserTx: 1,
   totalGasFeesInUsd: +(route.gasCostUSD || 0),
   userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
   steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
@@ -157,7 +155,6 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
           owner: ''
         },
   chainId: parentStep.action.fromChainId,
-  totalUserTx: 1,
   txData: parentStep.transactionRequest?.data,
   txTarget: parentStep.transactionRequest?.to,
   txType: 'eth_sendTransaction',

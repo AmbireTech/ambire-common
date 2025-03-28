@@ -1,7 +1,7 @@
+import { AccountsController } from 'controllers/accounts/accounts'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
-import { AccountsController } from 'controllers/accounts/accounts'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Network } from '../../interfaces/network'
@@ -1308,6 +1308,17 @@ export class SwapAndBridgeController extends EventEmitter {
       } else {
         currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex] }
       }
+
+      if (activeRoute?.routeStatus === 'completed') {
+        // Change the currentUserTxIndex to the length of the userTxs array
+        // a.k.a. all transactions are completed
+        const activeRouteRoute = currentActiveRoutes[activeRouteIndex].route
+
+        if (activeRouteRoute) {
+          activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.length
+        }
+      }
+
       this.activeRoutes = currentActiveRoutes
 
       this.#emitUpdateIfNeeded()
@@ -1415,14 +1426,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // force update the active route status if the route is of type 'swap'
     if (isSwap) shouldUpdateActiveRouteStatus = true
-
-    // force update the active route status if the last tx of a 'bridge' is of type 'swap'
-    if (activeRoute.route.currentUserTxIndex + 1 === activeRoute.route.totalUserTx) {
-      const tx = activeRoute.route.userTxs[activeRoute.route.currentUserTxIndex]
-      if (!tx) return
-
-      if (tx.userTxType === 'dex-swap') shouldUpdateActiveRouteStatus = true
-    }
 
     // force update the active route with an error message if the tx fails (for both swap and bridge)
     if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected)
