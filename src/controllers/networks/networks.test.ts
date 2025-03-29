@@ -77,7 +77,7 @@ describe('Networks Controller', () => {
     // Ensure the merged networks contain "unichain" and other relayer networks
     expect(updatedNetworks).toHaveProperty('130')
     expect(updatedNetworks['130'].rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
-    expect(updatedNetworks['130'].predefined).toBe(true) // Ensure "unichain" details are correct
+    expect(updatedNetworks['130'].predefined).toBe(false) // "unichain" is no longer a relayer network
   })
 
   test('should update network preferences', (done) => {
