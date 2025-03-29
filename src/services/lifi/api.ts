@@ -46,7 +46,7 @@ const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBrid
     .filter(({ type }) => ['swap', 'cross'].includes(type))
     .map((step: LiFiIncludedStep, index: number) => ({
       chainId: step.action.fromChainId,
-      fromAmount: step.action.fromAmount,
+      fromAmount: parentStep.action.fromAmount,
       fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
         step.action.fromToken,
         step.action.fromChainId
