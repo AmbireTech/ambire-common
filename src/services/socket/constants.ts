@@ -1,3 +1,5 @@
+import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 // Some services (like Socket) use the null token address to represent the
 // native token as the ZERO_ADDRESS is not standard for it.
@@ -15,17 +17,16 @@ const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
   name: 'Ambire Wallet',
   symbol: 'WALLET',
   decimals: 18,
-  logoURI: 'https://media.socket.tech/tokens/all/WALLET',
   icon: '' // will fallback to get the icon from the same place as the portfolio
 }
 
-export const AMBIRE_WALLET_TOKEN_ON_ETHEREUM = {
+export const AMBIRE_WALLET_TOKEN_ON_ETHEREUM: SwapAndBridgeToToken = {
   chainId: 1,
   address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
   ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
 }
 
-export const AMBIRE_WALLET_TOKEN_ON_BASE = {
+export const AMBIRE_WALLET_TOKEN_ON_BASE: SwapAndBridgeToToken = {
   chainId: 8453,
   address: '0x0BbbEad62f7647AE8323d2cb243A0DB74B7C2b80',
   ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
