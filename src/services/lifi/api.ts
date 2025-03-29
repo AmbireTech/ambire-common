@@ -333,7 +333,6 @@ export class LiFiAPI {
     fromAmount,
     userAddress,
     sort,
-    isSmartAccount,
     isOG
   }: {
     fromAsset: TokenResult | null
@@ -407,9 +406,7 @@ export class LiFiAPI {
     const routes = response.routes
       .map((r: LiFiRoute) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
       .filter((r: SwapAndBridgeRoute) => {
-        return (
-          !isSmartAccount || !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
-        )
+        return !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
       })
 
     const selectedRoute = response.routes[0]
