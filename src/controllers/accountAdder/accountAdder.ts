@@ -107,10 +107,7 @@ export class AccountAdderController extends EventEmitter {
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
-  // This prevents the recalculation of getters that use accounts during the execution of addAccounts.
-  // Without this, the controller incorrectly identifies newly added accounts as those from a previous session,
-  // leading to unpredictable behavior on the AccountAdderScreen
-  #alreadyImportedAccountsOnControllerInit: Account[] = []
+  #alreadyImportedAccounts: Account[] = []
 
   #addAccountsOnKeystoreReady: boolean = false
 
@@ -145,6 +142,22 @@ export class AccountAdderController extends EventEmitter {
           external: []
         })
       }
+    })
+
+    this.#accounts.onUpdate(() => {
+      if (!this.isInitialized) return
+      if (this.addAccountsStatus !== 'INITIAL') return
+
+      this.#alreadyImportedAccounts = this.#accounts.accounts
+
+      // to keep the readyToAddAccounts up to date because they are used in the account-personalize screen
+      this.readyToAddAccounts = this.readyToAddAccounts.map((a) => {
+        const updatedAccount = this.#accounts.accounts.find((acc) => acc.addr === a.addr)
+
+        return updatedAccount || a
+      })
+
+      this.emitUpdate()
     })
   }
 
@@ -242,7 +255,7 @@ export class AccountAdderController extends EventEmitter {
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#alreadyImportedAccountsOnControllerInit,
+        alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
         keyIteratorType: this.#keyIterator?.type
@@ -283,18 +296,14 @@ export class AccountAdderController extends EventEmitter {
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
   }) {
-    console.log('init 1')
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
-    console.log('init 2')
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
-    console.log('init 3')
     this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
-    console.log('init 4')
     this.isInitialized = true
-    this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
+    this.#alreadyImportedAccounts = this.#accounts.accounts
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
 
@@ -654,54 +663,33 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async addNextAvailableAccount() {
-    console.log('addNextAvailableAccount')
     if (!this.isInitialized) return this.#throwNotInitialized()
-    console.log('addNextAvailableAccount 1')
+
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
-    console.log('addNextAvailableAccount 2')
 
     let currentPage: number = this.page
-    let isAccountAlreadyAdded: boolean
     let nextAccount: AccountWithNetworkMeta | undefined
 
-    const findNextAccount = async () => {
-      if (this.#keyIterator!.subType === 'private-key') {
-        nextAccount = this.accountsOnPage.find(
-          ({ isLinked, account }) => !isLinked && !isSmartAccount(account)
-        )?.account
+    while (true) {
+      // Load the accounts for the current page
+      // eslint-disable-next-line no-await-in-loop
+      await this.setPage({ page: currentPage })
 
-        isAccountAlreadyAdded =
-          !!nextAccount &&
-          !!this.#accounts.accounts.find(
-            // eslint-disable-next-line @typescript-eslint/no-loop-func
-            (a) => a.addr === nextAccount!.addr
-          )
-      } else {
-        do {
-          // eslint-disable-next-line no-await-in-loop
-          await this.setPage({ page: currentPage })
+      nextAccount = this.accountsOnPage.find(
+        ({ isLinked, account }) =>
+          !isLinked &&
+          !isSmartAccount(account) &&
+          !this.#accounts.accounts.some((a) => a.addr === account.addr)
+      )?.account
 
-          nextAccount = this.accountsOnPage.find(
-            ({ isLinked, account }) => !isLinked && !isSmartAccount(account)
-          )?.account
-
-          if (!nextAccount) break
-
-          isAccountAlreadyAdded = !!this.#accounts.accounts.find(
-            // eslint-disable-next-line @typescript-eslint/no-loop-func
-            (a) => a.addr === nextAccount!.addr
-          )
-
-          currentPage++
-        } while (isAccountAlreadyAdded)
-      }
-
-      if (!isAccountAlreadyAdded && nextAccount) {
+      if (nextAccount) {
         this.selectAccount(nextAccount)
+        break
       }
-    }
 
-    await findNextAccount()
+      // If no account found on the page, move to the next page
+      currentPage++
+    }
 
     const readyToAddKeys = this.retrieveInternalKeysOfSelectedAccounts()
 
