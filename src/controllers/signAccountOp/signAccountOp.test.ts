@@ -5,6 +5,7 @@ import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { parseEther } from 'ethers'
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -22,12 +23,14 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { EstimationController } from '../estimation/estimation'
+import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { FeeSpeed } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
 const providers = Object.fromEntries(
@@ -219,7 +222,6 @@ const init = async (
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   const accountState = accountsCtrl.accountStates[account.addr][network.chainId.toString()]
-  const estimation = estimationOrMock
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
     portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
@@ -264,7 +266,12 @@ const init = async (
     portfolio,
     () => {}
   )
-  estimationController.estimation = estimation
+  estimationController.estimation = estimationOrMock
+  estimationController.hasEstimated = true
+  estimationController.status = EstimationStatus.Success
+  estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
+    ? estimationOrMock.ambireEstimation.feePaymentOptions
+    : estimationOrMock.providerEstimation!.feePaymentOptions
   const bundlerSwitcher = new BundlerSwitcher(
     network,
     () => {
@@ -299,7 +306,7 @@ const init = async (
     gasPrices: gasPricesOrMock[network.chainId.toString()]
   })
 
-  return { controller, estimation }
+  return { controller }
 }
 
 describe('SignAccountOp Controller ', () => {
@@ -312,7 +319,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
+          amount: parseEther('1'),
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,
@@ -375,7 +382,8 @@ describe('SignAccountOp Controller ', () => {
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
-      paidBy: eoaAccount.addr
+      paidBy: eoaAccount.addr,
+      speed: FeeSpeed.Fast
     })
 
     await controller.sign()
