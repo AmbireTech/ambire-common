@@ -112,7 +112,7 @@ export enum FeeSpeed {
   Ape = 'ape'
 }
 
-type SpeedCalc = {
+export type SpeedCalc = {
   type: FeeSpeed
   amount: bigint
   simulatedGasLimit: bigint
