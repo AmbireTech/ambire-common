@@ -4,10 +4,13 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Action, Banner } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
-import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
-const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
+const getBridgeActionText = (
+  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
+  isBridgeTxn: boolean
+) => {
   if (isBridgeTxn) {
     return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
   }
@@ -15,8 +18,14 @@ const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTx
   return routeStatus === 'completed' ? 'Swapped' : 'Swap'
 }
 
-const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?: Network[]) => {
-  const steps = getQuoteRouteSteps(route.route.userTxs)
+const getBridgeBannerText = (
+  route: SwapAndBridgeActiveRoute,
+  isBridgeTxn: boolean,
+  networks?: Network[]
+) => {
+  const steps = route.route?.steps || []
+  if (!steps[0]) return '' // should never happen
+
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
@@ -33,21 +42,17 @@ const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?
     }
   }
 
-  const stepsIndexText = `(step ${
-    route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
-  } of ${route.route.totalUserTx})`
-
-  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : ''}`
+  return `${actionText} ${assetsText}`
 }
 
 export const getBridgeBanners = (
-  activeRoutes: ActiveRoute[],
+  activeRoutes: SwapAndBridgeActiveRoute[],
   accountOpActions: AccountOpAction[],
   networks: Network[]
 ): Banner[] => {
-  const isBridgeTxn = (route: ActiveRoute) =>
-    route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-  const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
+  const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
+    !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+  const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
         (call) =>
@@ -129,7 +134,7 @@ export const getBridgeBanners = (
               meta: { activeRouteIds: [r.activeRouteId] }
             },
             {
-              label: r.route.currentUserTxIndex >= 1 ? 'Proceed to Next Step' : 'Open',
+              label: (r.route?.currentUserTxIndex || 0) >= 1 ? 'Proceed to Next Step' : 'Open',
               actionName: 'proceed-bridge',
               meta: { activeRouteId: r.activeRouteId }
             }
@@ -170,19 +175,19 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
 }
 
 const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
+  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
   chainId: bigint,
   nonSwapAndBridgeTxns: number,
   networks: Network[]
 ) => {
   const swapsAndBridges: string[] = []
   const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return BigInt(route.route.fromChainId) === chainId
+    return route.route && BigInt(route.route.fromChainId) === chainId
   })
 
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+      const isBridgeTxn = !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
       const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
@@ -212,7 +217,7 @@ export const getAccountOpBanners = ({
   selectedAccount: string
   accounts: Account[]
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: ActiveRoute[]
+  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []

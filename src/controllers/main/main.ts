@@ -4,6 +4,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
@@ -31,7 +32,10 @@ import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
-import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
+import {
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeSendTxRequest
+} from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import {
@@ -90,7 +94,6 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
-import { SocketAPI } from '../../services/socket/api'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -119,6 +122,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 /* eslint-disable no-underscore-dangle */
+import { LiFiAPI } from '../../services/lifi/api'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
@@ -233,7 +237,9 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     socketApiKey,
+    lifiApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -244,6 +250,7 @@ export class MainController extends EventEmitter {
     relayerUrl: string
     velcroUrl: string
     socketApiKey: string
+    lifiApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -329,7 +336,8 @@ export class MainController extends EventEmitter {
       storage: this.#storage,
       windowManager: this.#windowManager
     })
-    const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    // const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    const lifiAPI = new LiFiAPI({ apiKey: lifiApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -369,11 +377,14 @@ export class MainController extends EventEmitter {
       }
     )
     this.swapAndBridge = new SwapAndBridgeController({
+      accounts: this.accounts,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      socketAPI,
+      // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
+      // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
+      serviceProviderAPI: lifiAPI,
       storage: this.#storage,
       actions: this.actions
     })
@@ -743,12 +754,21 @@ export class MainController extends EventEmitter {
     try {
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       const provider = this.providers.providers[network.chainId.toString()]
+      const stateOverride =
+        accountOp.calls.length > 1 && isBasicAccount(account, state)
+          ? {
+              [account.addr]: {
+                code: AmbireAccount7702.binRuntime
+              }
+            }
+          : undefined
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
         provider,
         state,
-        !network.rpcNoStateOverride
+        !network.rpcNoStateOverride,
+        stateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
@@ -1462,12 +1482,12 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, 'last', actionExecutionType)
   }
 
-  async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
+  async buildSwapAndBridgeUserRequest(activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
         if (!this.selectedAccount.account) return
-        let transaction: SocketAPISendTransactionRequest | null | undefined = null
+        let transaction: SwapAndBridgeSendTxRequest | null | undefined = null
 
         const activeRoute = this.swapAndBridge.activeRoutes.find(
           (r) => r.activeRouteId === activeRouteId
@@ -1484,7 +1504,10 @@ export class MainController extends EventEmitter {
           })
           this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
 
-          transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
+          transaction = await this.swapAndBridge.getNextRouteUserTx({
+            activeRouteId: activeRoute.activeRouteId,
+            activeRoute
+          })
 
           if (transaction) {
             const network = this.networks.networks.find(
@@ -1700,10 +1723,10 @@ export class MainController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: number) {
+  removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
-        r.id
+        r.id as string
       )
     )
 
