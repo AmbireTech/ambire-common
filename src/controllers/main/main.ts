@@ -1505,6 +1505,14 @@ export class MainController extends EventEmitter {
           (r) => r.activeRouteId === activeRouteId
         )
 
+        // learn the receiving token
+        if (this.swapAndBridge.toSelectedToken && this.swapAndBridge.toChainId) {
+          this.portfolio.addTokensToBeLearned(
+            [this.swapAndBridge.toSelectedToken.address],
+            BigInt(this.swapAndBridge.toChainId)
+          )
+        }
+
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
         }
