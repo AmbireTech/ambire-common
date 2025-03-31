@@ -105,6 +105,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'the slippage tolerance was exceeded.'
   },
   {
+    // another slippage error but this time with a prompt for the user to
+    // try and change the from amount. @Li.Fi. errors
+    reasons: ['0x275c273c'],
+    message: 'the slippage tolerance was exceeded. Please try changing the from amount.'
+  },
+  {
     reasons: ['80'],
     message:
       "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation."
@@ -215,8 +221,8 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
 ]
 
 export {
-  BROADCAST_OR_ESTIMATION_ERRORS,
   BROADCAST_ERRORS,
+  BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds
 }

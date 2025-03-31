@@ -46,7 +46,7 @@ const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBrid
     .filter(({ type }) => ['swap', 'cross'].includes(type))
     .map((step: LiFiIncludedStep, index: number) => ({
       chainId: step.action.fromChainId,
-      fromAmount: step.action.fromAmount,
+      fromAmount: parentStep.action.fromAmount,
       fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
         step.action.fromToken,
         step.action.fromChainId
@@ -333,7 +333,6 @@ export class LiFiAPI {
     fromAmount,
     userAddress,
     sort,
-    isSmartAccount,
     isOG
   }: {
     fromAsset: TokenResult | null
@@ -407,9 +406,7 @@ export class LiFiAPI {
     const routes = response.routes
       .map((r: LiFiRoute) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
       .filter((r: SwapAndBridgeRoute) => {
-        return (
-          !isSmartAccount || !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
-        )
+        return !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
       })
 
     const selectedRoute = response.routes[0]
