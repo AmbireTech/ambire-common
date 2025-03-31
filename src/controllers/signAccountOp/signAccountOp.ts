@@ -119,6 +119,7 @@ export type SpeedCalc = {
   amountFormatted: string
   amountUsd: string
   gasPrice: bigint
+  disabled: boolean
   maxPriorityFeePerGas?: bigint
 }
 
@@ -165,7 +166,7 @@ export class SignAccountOpController extends EventEmitter {
 
   feeTokenResult: TokenResult | null = null
 
-  selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
+  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
   selectedOption: FeePaymentOption | undefined = undefined
 
@@ -905,6 +906,21 @@ export class SignAccountOpController extends EventEmitter {
     return !this.isInitialized || !this.gasPrices
   }
 
+  #selectDefaultFeeSpeed(identifier: string) {
+    // Don't update the fee speed if the user has changed the default one
+    if (this.selectedFeeSpeed !== FeeSpeed.Fast) return
+
+    const speeds = this.feeSpeeds[identifier]
+
+    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
+      this.selectedFeeSpeed = FeeSpeed.Fast
+    }
+
+    const fastestEnabledSpeed = [...speeds].reverse().find(({ disabled }) => !disabled)
+
+    this.selectedFeeSpeed = fastestEnabledSpeed?.type || FeeSpeed.Slow
+  }
+
   #updateFeeSpeeds() {
     if (!this.estimation || this.estimation instanceof Error || !this.gasPrices) return
 
@@ -971,12 +987,14 @@ export class SignAccountOpController extends EventEmitter {
             amountFormatted: formatUnits(amount, Number(option.token.decimals)),
             amountUsd: getTokenUsdAmount(option.token, amount),
             gasPrice,
-            maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
+            maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas),
+            disabled: (this.selectedOption?.availableAmount || 0n) < amount
           })
         }
 
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier] = speeds
+        this.#selectDefaultFeeSpeed(identifier)
         return
       }
 
@@ -1040,10 +1058,12 @@ export class SignAccountOpController extends EventEmitter {
           amountFormatted: formatUnits(amount, Number(option.token.decimals)),
           amountUsd: getTokenUsdAmount(option.token, amount),
           gasPrice,
-          maxPriorityFeePerGas
+          maxPriorityFeePerGas,
+          disabled: (this.selectedOption?.availableAmount || 0n) < amount
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)
+        this.#selectDefaultFeeSpeed(identifier)
       })
     })
   }
