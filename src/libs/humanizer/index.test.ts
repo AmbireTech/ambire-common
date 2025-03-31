@@ -224,7 +224,7 @@ describe('Humanizer main function', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
-        getAction('Sending'),
+        getAction('Send'),
         getToken('0x0000000000000000000000000000000000000000', 1000000000000000000n),
         getLabel('to'),
         getAddressVisualization('0xc4ce03b36f057591b2a360d773edb9896255051e'),

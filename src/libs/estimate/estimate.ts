@@ -68,6 +68,7 @@ export async function getEstimation(
     errorCallback,
     12000
   )
+
   // this is only if we hit a timeout 5 consecutive times
   if (estimations instanceof Error) return estimations
 
