@@ -232,7 +232,7 @@ export class NetworksController extends EventEmitter {
       })
 
       // Step 3: Ensure predefined networks are marked correctly and handle special cases
-      let predefinedChainIds = Object.keys(updatedNetworks)
+      let predefinedChainIds = Object.keys(relayerNetworks)
 
       if (!predefinedChainIds.length) {
         predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
