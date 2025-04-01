@@ -294,7 +294,7 @@ export class ActionsController extends EventEmitter {
         this.actionWindow.openWindowPromise = this.#windowManager
           .open({
             customSize:
-              this.currentAction?.type === 'accountOp'
+              this.currentAction?.type === 'accountOp' || this.currentAction?.type === 'signMessage'
                 ? {
                     width: 720,
                     height: 800
