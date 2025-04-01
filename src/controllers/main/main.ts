@@ -48,7 +48,6 @@ import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
   getDappIdentifier,
-  pollTxnId,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
@@ -2151,7 +2150,7 @@ export class MainController extends EventEmitter {
 
     this.actions.removeAction(actionId)
 
-    // handle wallet_sendCalls before pollTxnId as 1) it's faster
+    // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
@@ -2176,12 +2175,7 @@ export class MainController extends EventEmitter {
     }
 
     // Note: this may take a while!
-    const txnId = await pollTxnId(
-      submittedAccountOp.identifiedBy,
-      network,
-      this.fetch,
-      this.callRelayer
-    )
+    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
