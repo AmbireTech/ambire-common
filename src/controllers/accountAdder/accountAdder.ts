@@ -97,6 +97,8 @@ export class AccountAdderController extends EventEmitter {
   // represents the status of the operation, needed managing UI state
   addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
+  addedAccountsFromCurrentSession: Account[] = []
+
   accountsLoading: boolean = false
 
   linkedAccountsLoading: boolean = false
@@ -111,13 +113,18 @@ export class AccountAdderController extends EventEmitter {
 
   #addAccountsOnKeystoreReady: boolean = false
 
+  #onAddAccountsSuccessCallback: () => Promise<void>
+
+  #onAddAccountsSuccessCallbackPromise?: Promise<void>
+
   constructor({
     accounts,
     keystore,
     networks,
     providers,
     relayerUrl,
-    fetch
+    fetch,
+    onAddAccountsSuccessCallback
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -125,6 +132,7 @@ export class AccountAdderController extends EventEmitter {
     providers: ProvidersController
     relayerUrl: string
     fetch: Fetch
+    onAddAccountsSuccessCallback: () => Promise<void>
   }) {
     super()
     this.#accounts = accounts
@@ -132,6 +140,7 @@ export class AccountAdderController extends EventEmitter {
     this.#networks = networks
     this.#providers = providers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
     this.#keystore.onUpdate(async () => {
       if (keystore.isReadyToStoreKeys && this.#addAccountsOnKeystoreReady) {
         this.#addAccountsOnKeystoreReady = false
@@ -148,16 +157,7 @@ export class AccountAdderController extends EventEmitter {
       if (!this.isInitialized) return
       if (this.addAccountsStatus !== 'INITIAL') return
 
-      this.#alreadyImportedAccounts = this.#accounts.accounts
-
-      // to keep the readyToAddAccounts up to date because they are used in the account-personalize screen
-      this.readyToAddAccounts = this.readyToAddAccounts.map((a) => {
-        const updatedAccount = this.#accounts.accounts.find((acc) => acc.addr === a.addr)
-
-        return updatedAccount || a
-      })
-
-      this.emitUpdate()
+      this.updateStateWithTheLatestFromAccounts()
     })
   }
 
@@ -561,6 +561,34 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
+  updateStateWithTheLatestFromAccounts() {
+    this.#alreadyImportedAccounts = [...this.#accounts.accounts]
+
+    // keep the addedAccountsFromCurrentSession up to date with the accounts from accountsCtrl
+    this.addedAccountsFromCurrentSession = this.addedAccountsFromCurrentSession.map((a) => {
+      const updatedAccount = this.#accounts.accounts.find((acc) => acc.addr === a.addr)
+
+      return updatedAccount || a
+    })
+
+    this.#derivedAccounts = this.#derivedAccounts.map((derivedAcc) => {
+      const updatedAccount = this.#accounts.accounts.find(
+        (acc) => acc.addr === derivedAcc.account.addr
+      )
+
+      if (updatedAccount) {
+        return {
+          ...derivedAcc,
+          account: { ...derivedAcc.account, ...updatedAccount }
+        }
+      }
+
+      return derivedAcc
+    })
+
+    this.emitUpdate()
+  }
+
   /**
    * Triggers the process of adding accounts via the AccountAdder flow by
    * creating identity for the smart accounts (if needed) on the Relayer.
@@ -640,7 +668,9 @@ export class AccountAdderController extends EventEmitter {
 
     this.readyToAddAccounts = [
       ...accounts.map((x, i) => {
-        const alreadyImportedAcc = this.#accounts.accounts.find((a) => a.addr === x.account.addr)
+        const alreadyImportedAcc = this.#alreadyImportedAccounts.find(
+          (a) => a.addr === x.account.addr
+        )
 
         return {
           ...x.account,
@@ -648,14 +678,26 @@ export class AccountAdderController extends EventEmitter {
           // re-importing the same account via different key type(s) would reset them.
           preferences: alreadyImportedAcc
             ? alreadyImportedAcc.preferences
-            : getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i),
           newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
         }
       })
     ]
     this.readyToAddKeys = readyToAddKeys
+    this.addedAccountsFromCurrentSession = [
+      ...this.addedAccountsFromCurrentSession,
+      ...this.readyToAddAccounts
+    ]
+    this.selectedAccounts = []
+    this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
+      this.#onAddAccountsSuccessCallbackPromise = undefined
+    })
+    await this.#onAddAccountsSuccessCallbackPromise
+
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
+
+    this.updateStateWithTheLatestFromAccounts()
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     this.addAccountsStatus = 'INITIAL'

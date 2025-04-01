@@ -131,7 +131,6 @@ import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
-  onAccountAdderSuccess: 'INITIAL',
   signAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
@@ -324,7 +323,18 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       providers: this.providers,
       relayerUrl,
-      fetch: this.fetch
+      fetch: this.fetch,
+      /**
+       * callback that gets triggered as a finalization step of adding new
+       * accounts via the AccountAdderController.
+       *
+       * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
+       * changes are reflected for view-only accounts as well. Because the
+       * view-only accounts import flow bypasses the AccountAdder, this method
+       * won't click for them. Their on add success flow continues in the
+       * MAIN_CONTROLLER_ADD_VIEW_ONLY_ACCOUNTS action case.
+       */
+      onAddAccountsSuccessCallback: this.#onAccountAdderSuccess.bind(this)
     })
     this.addressBook = new AddressBookController(this.#storage, this.accounts, this.selectedAccount)
     this.signMessage = new SignMessageController(
@@ -433,48 +443,6 @@ export class MainController extends EventEmitter {
     this.defiPositions.updatePositions()
     this.updateSelectedAccountPortfolio()
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-    /**
-     * Listener that gets triggered as a finalization step of adding new
-     * accounts via the AccountAdder controller flow.
-     *
-     * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
-     * changes are reflected for view-only accounts as well. Because the
-     * view-only accounts import flow bypasses the AccountAdder, this method
-     * won't click for them. Their on add success flow continues in the
-     * MAIN_CONTROLLER_ADD_VIEW_ONLY_ACCOUNTS action case.
-     */
-    const onAccountAdderSuccess = () => {
-      if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
-
-      return this.withStatus(
-        'onAccountAdderSuccess',
-        async () => {
-          // Add accounts first, because some of the next steps have validation
-          // if accounts exists.
-          await this.accounts.addAccounts(this.accountAdder.readyToAddAccounts)
-
-          // Then add keys, because some of the next steps could have validation
-          // if keys exists. Should be separate (not combined in Promise.all,
-          // since firing multiple keystore actions is not possible
-          // (the #wrapKeystoreAction listens for the first one to finish and
-          // skips the parallel one, if one is requested).
-
-          await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-          await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-
-          // Update the saved seed `hdPathTemplate` if accounts were added from
-          // the saved seed, so when user opts in to "Import a new Smart Account
-          // from the saved Seed Phrase" the next account is derived based
-          // on the latest `hdPathTemplate` chosen in the AccountAdder.
-          if (this.accountAdder.isInitializedWithSavedSeed)
-            this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
-          if (this.keystore.hasKeystoreTempSeed)
-            this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
-        },
-        true
-      )
-    }
-    this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
@@ -523,6 +491,30 @@ export class MainController extends EventEmitter {
     // will block the UI until these are resolved.
     this.reloadSelectedAccount({ forceUpdate: false })
     this.emitUpdate()
+  }
+
+  async #onAccountAdderSuccess() {
+    // Add accounts first, because some of the next steps have validation
+    // if accounts exists.
+    await this.accounts.addAccounts(this.accountAdder.readyToAddAccounts)
+
+    // Then add keys, because some of the next steps could have validation
+    // if keys exists. Should be separate (not combined in Promise.all,
+    // since firing multiple keystore actions is not possible
+    // (the #wrapKeystoreAction listens for the first one to finish and
+    // skips the parallel one, if one is requested).
+
+    await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+    await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+    // Update the saved seed `hdPathTemplate` if accounts were added from
+    // the saved seed, so when user opts in to "Import a new Smart Account
+    // from the saved Seed Phrase" the next account is derived based
+    // on the latest `hdPathTemplate` chosen in the AccountAdder.
+    if (this.accountAdder.isInitializedWithSavedSeed)
+      this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
+    if (this.keystore.hasKeystoreTempSeed)
+      this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {

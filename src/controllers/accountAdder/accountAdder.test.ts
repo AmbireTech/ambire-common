@@ -128,7 +128,8 @@ describe('AccountAdder', () => {
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,
-      fetch
+      fetch,
+      onAddAccountsSuccessCallback: () => Promise.resolve()
     })
   })
 

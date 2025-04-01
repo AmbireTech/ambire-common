@@ -277,7 +277,7 @@ describe('Main Controller ', () => {
         emitCounter++
         if (emitCounter === 2 && controller.isReady) await addAccounts()
 
-        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
+        if (controller.accountAdder.addAccountsStatus === 'SUCCESS') {
           expect(controller.accounts.accounts).toContainEqual({
             ...accountPendingCreation.account,
             newlyAdded: true,
