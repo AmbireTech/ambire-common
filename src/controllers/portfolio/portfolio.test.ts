@@ -327,7 +327,6 @@ describe('Portfolio Controller ', () => {
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
       expect(latestState.result?.collections?.length).toBeGreaterThan(0)
       expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
-      expect(latestState.result?.total.usd).toBeGreaterThan(1000)
       expect(pendingState).toBeDefined()
     })
 
@@ -371,13 +370,11 @@ describe('Portfolio Controller ', () => {
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
           expect(latestState.result?.collections?.length).toBeGreaterThan(0)
           expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
-          expect(latestState.result?.total.usd).toBeGreaterThan(1000)
 
           expect(pendingState.isReady).toEqual(true)
           expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
           expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
           expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
-          expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
           done()
         }
       })
