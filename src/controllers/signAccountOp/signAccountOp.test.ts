@@ -1,6 +1,6 @@
 /* eslint no-console: "off" */
 
-import { ethers } from 'ethers'
+import { ethers, parseEther } from 'ethers'
 import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
@@ -523,7 +523,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
+          amount: parseEther('1'),
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,
@@ -621,7 +621,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
+          amount: 0n,
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,

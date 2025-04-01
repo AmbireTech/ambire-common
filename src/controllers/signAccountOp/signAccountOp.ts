@@ -923,6 +923,7 @@ export class SignAccountOpController extends EventEmitter {
       this.rbfAccountOps[feePaymentOption.paidBy]
     )
     const speeds = this.feeSpeeds[identifier]
+    if (!speeds) return
 
     // set fast if available
     if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
