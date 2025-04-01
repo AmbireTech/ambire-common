@@ -187,11 +187,10 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
+  constructor({ fetch }: { fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
-      'x-lifi-api-key': apiKey,
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }
