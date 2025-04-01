@@ -690,7 +690,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#setDefaults()
 
       if (this.estimation && this.paidBy && this.feeTokenResult) {
-        this.selectedOption = this.availableFeeOptions.find(
+        const selectedOption = this.availableFeeOptions.find(
           (option) =>
             option.paidBy === this.paidBy &&
             option.token.address === this.feeTokenResult!.address &&
@@ -698,6 +698,13 @@ export class SignAccountOpController extends EventEmitter {
               this.feeTokenResult!.symbol.toLocaleLowerCase() &&
             option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
         )
+        // <Bobby>: trigger setting the real default speed just before
+        // setting the first selectedOption. This way we know all the
+        // necessary information like available amount for the selected
+        // option so we could calculate the fee speed if he doesn't have
+        // enough for fast but has enough for slow/medium
+        if (selectedOption) this.#setDefaultFeeSpeed(selectedOption)
+        this.selectedOption = selectedOption
       }
 
       if (
@@ -906,18 +913,25 @@ export class SignAccountOpController extends EventEmitter {
     return !this.isInitialized || !this.gasPrices
   }
 
-  #selectDefaultFeeSpeed(identifier: string) {
-    // Don't update the fee speed if the user has changed the default one
-    if (this.selectedFeeSpeed !== FeeSpeed.Fast) return
+  #setDefaultFeeSpeed(feePaymentOption: FeePaymentOption) {
+    // don't update if an option is already set
+    if (this.selectedOption) return
 
+    const identifier = getFeeSpeedIdentifier(
+      feePaymentOption,
+      this.account.addr,
+      this.rbfAccountOps[feePaymentOption.paidBy]
+    )
     const speeds = this.feeSpeeds[identifier]
 
+    // set fast if available
     if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
       this.selectedFeeSpeed = FeeSpeed.Fast
+      return
     }
 
+    // set at least slow
     const fastestEnabledSpeed = [...speeds].reverse().find(({ disabled }) => !disabled)
-
     this.selectedFeeSpeed = fastestEnabledSpeed?.type || FeeSpeed.Slow
   }
 
@@ -988,13 +1002,12 @@ export class SignAccountOpController extends EventEmitter {
             amountUsd: getTokenUsdAmount(option.token, amount),
             gasPrice,
             maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas),
-            disabled: (this.selectedOption?.availableAmount || 0n) < amount
+            disabled: (option.availableAmount || 0n) < amount
           })
         }
 
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier] = speeds
-        this.#selectDefaultFeeSpeed(identifier)
         return
       }
 
@@ -1059,11 +1072,10 @@ export class SignAccountOpController extends EventEmitter {
           amountUsd: getTokenUsdAmount(option.token, amount),
           gasPrice,
           maxPriorityFeePerGas,
-          disabled: (this.selectedOption?.availableAmount || 0n) < amount
+          disabled: option.availableAmount < amount
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)
-        this.#selectDefaultFeeSpeed(identifier)
       })
     })
   }
