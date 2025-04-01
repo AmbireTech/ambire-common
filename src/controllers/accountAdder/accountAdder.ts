@@ -335,6 +335,7 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
     this.isInitializedWithSavedSeed = false
+    this.addedAccountsFromCurrentSession = []
 
     this.emitUpdate()
   }
