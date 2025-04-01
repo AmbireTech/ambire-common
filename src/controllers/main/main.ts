@@ -403,7 +403,10 @@ export class MainController extends EventEmitter {
       // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
       serviceProviderAPI: lifiAPI,
       storage: this.#storage,
-      actions: this.actions
+      actions: this.actions,
+      portfolioUpdate: () => {
+        this.updateSelectedAccountPortfolio(true)
+      }
     })
     this.domains = new DomainsController(this.providers.providers)
 
