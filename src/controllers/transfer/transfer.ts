@@ -5,7 +5,7 @@ import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { TransferUpdate } from '../../interfaces/transfer'
+import { PersistedTransferUpdate, TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
@@ -15,6 +15,7 @@ import { validateSendTransferAddress, validateSendTransferAmount } from '../../s
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -39,10 +40,24 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
+// TODO - document versioning
+const PERSIST_STORAGE_KEY = 'transferState-v1'
+const ALLOWED_PERSIST_KEYS: (keyof PersistedTransferUpdate)[] = [
+  'amount',
+  'amountFieldMode',
+  'addressState',
+  'isSWWarningAgreed',
+  'isRecipientAddressUnknownAgreed',
+  'isTopUp',
+  'selectedToken'
+]
+
 export class TransferController extends EventEmitter {
   #storage: Storage
 
   #networks: Network[] = []
+
+  #portfolio: SelectedAccountPortfolio
 
   #addressBookContacts: Contacts = []
 
@@ -77,11 +92,14 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #persistedState: PersistedTransferUpdate = {}
+
   constructor(
     storage: Storage,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: Account,
-    networks: Network[]
+    networks: Network[],
+    portfolio: SelectedAccountPortfolio
   ) {
     super()
 
@@ -89,6 +107,7 @@ export class TransferController extends EventEmitter {
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccountData = selectedAccountData
     this.#networks = networks
+    this.#portfolio = portfolio
 
     this.#initialLoadPromise = this.#load()
     this.emitUpdate()
@@ -100,7 +119,62 @@ export class TransferController extends EventEmitter {
       false
     )
 
-    this.emitUpdate()
+    await this.#hydrate()
+  }
+
+  async #hydrate() {
+    const persistedState = await this.#storage.get(PERSIST_STORAGE_KEY, {})
+    this.#persistedState = persistedState
+
+    console.log('Hydrate:', persistedState)
+
+    if (persistedState.selectedToken) {
+      const portfolioToken = this.#portfolio.tokens.find(
+        (token) =>
+          token.address === persistedState.selectedToken.address &&
+          token.networkId === persistedState.selectedToken.networkId
+      )
+
+      persistedState.selectedToken = portfolioToken
+    }
+
+    console.log('Hydrate (normalized):', persistedState)
+
+    await this.update(persistedState, true)
+  }
+
+  #persist(updateInput: TransferUpdate) {
+    console.log('Persist (latest input):', updateInput)
+    const definedOnly: PersistedTransferUpdate = Object.fromEntries(
+      ALLOWED_PERSIST_KEYS.map((key) => [key, updateInput[key]]).filter(
+        ([, value]) => value !== undefined
+      )
+    )
+
+    this.#persistedState = {
+      ...this.#persistedState,
+      ...definedOnly,
+      ...(definedOnly.selectedToken && {
+        selectedToken: {
+          address: definedOnly.selectedToken.address,
+          networkId: definedOnly.selectedToken.networkId
+        }
+      }),
+      ...(definedOnly.addressState && {
+        addressState: {
+          ...this.#persistedState.addressState,
+          ...definedOnly.addressState
+        }
+      })
+    }
+
+    console.log('Persist:', this.#persistedState)
+
+    this.#storage.set(PERSIST_STORAGE_KEY, this.#persistedState)
+  }
+
+  #clearPersistedState() {
+    this.#storage.remove(PERSIST_STORAGE_KEY)
   }
 
   get shouldSkipTransactionQueuedModal() {
@@ -185,6 +259,7 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
+    this.#clearPersistedState()
     this.emitUpdate()
   }
 
@@ -266,19 +341,27 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  update({
-    selectedAccountData,
-    humanizerInfo,
-    selectedToken,
-    amount,
-    addressState,
-    isSWWarningAgreed,
-    isRecipientAddressUnknownAgreed,
-    isTopUp,
-    networks,
-    contacts,
-    amountFieldMode
-  }: TransferUpdate) {
+  async update(updateInput: TransferUpdate, isHydrate?: boolean) {
+    // If we're hydrating, we can safely skip waiting for #initialLoadPromise,
+    // since #load() already loads the necessary storage values and triggers update() with the persisted input.
+    // Otherwise, this.#initialLoadPromise may never resolve, because #load() calls update(),
+    // while update() is waiting for #load() to resolve.
+    if (!isHydrate) await this.#initialLoadPromise
+
+    const {
+      selectedAccountData,
+      humanizerInfo,
+      selectedToken,
+      amount,
+      addressState,
+      isSWWarningAgreed,
+      isRecipientAddressUnknownAgreed,
+      isTopUp,
+      networks,
+      contacts,
+      amountFieldMode
+    } = updateInput
+
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -302,12 +385,12 @@ export class TransferController extends EventEmitter {
     if (selectedToken) {
       this.selectedToken = selectedToken
     }
+    if (amountFieldMode) {
+      this.amountFieldMode = amountFieldMode
+    }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#setAmount(amount)
-    }
-    if (amountFieldMode) {
-      this.amountFieldMode = amountFieldMode
     }
 
     if (addressState) {
@@ -335,6 +418,7 @@ export class TransferController extends EventEmitter {
       this.#setSWWarningVisibleIfNeeded()
     }
 
+    this.#persist(updateInput)
     this.emitUpdate()
   }
 
