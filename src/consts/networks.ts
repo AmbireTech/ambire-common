@@ -29,7 +29,7 @@ const networks: Network[] = [
     name: 'Polygon',
     nativeAssetSymbol: 'POL',
     has7702: false,
-    nativeAssetName: 'Polygon Network Token',
+    nativeAssetName: 'Polygon',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
     rpcNoStateOverride: false,
@@ -56,7 +56,7 @@ const networks: Network[] = [
     disableEstimateGas: true
   },
   {
-    name: 'Optimism',
+    name: 'OP Mainnet',
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
@@ -240,6 +240,37 @@ const networks: Network[] = [
     predefined: true,
     disableEstimateGas: true,
     wrappedAddr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+  },
+  {
+    name: 'Mantle',
+    nativeAssetSymbol: 'MNT',
+    has7702: false,
+    nativeAssetName: 'Mantle',
+    rpcUrls: ['https://invictus.ambire.com/mantle'],
+    selectedRpcUrl: 'https://invictus.ambire.com/mantle',
+    rpcNoStateOverride: false,
+    chainId: 5000n,
+    explorerUrl: 'https://mantlescan.xyz/',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true,
+      hasBundlerSupport: true
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: 'mantle',
+    nativeAssetId: 'mantle',
+    hasSingleton: true,
+    isOptimistic: true,
+    features: [],
+    feeOptions: {
+      is1559: true,
+      minBaseFeeEqualToLastBlock: true
+    },
+    predefined: true,
+    disableEstimateGas: true,
+    wrappedAddr: '0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8'
   }
 ]
 export { networks }

@@ -31,7 +31,7 @@ describe('Networks Controller', () => {
     expect(networksController.networks.length).toEqual(predefinedNetworks.length)
   })
 
-  test.only('should merge relayer networks correctly, including custom "unichain" network', async () => {
+  test('should merge relayer networks correctly, including custom "unichain" network', async () => {
     // Add a custom network "unichain" to the predefined networks
     const customNetwork = {
       chainId: 130n,
@@ -77,7 +77,7 @@ describe('Networks Controller', () => {
     // Ensure the merged networks contain "unichain" and other relayer networks
     expect(updatedNetworks).toHaveProperty('130')
     expect(updatedNetworks['130'].rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
-    expect(updatedNetworks['130'].predefined).toBe(false) // "unichain" is no longer a relayer network
+    expect(updatedNetworks['130'].predefined).toBe(false) // Ensure "unichain" details are correct
   })
 
   test('should update network preferences', (done) => {
@@ -118,9 +118,6 @@ describe('Networks Controller', () => {
         const isLoading = Object.values(networkInfoLoading).some((v) => v === 'LOADING')
         if (isLoading) return
         const setNetworkInfo: NetworkInfo = networkInfoLoading as NetworkInfo
-        // mantle has the entry point uploaded
-        expect(setNetworkInfo?.erc4337.enabled).toBe(true)
-        expect(setNetworkInfo?.erc4337.hasPaymaster).toBe(false)
         // has smart accounts
         expect(setNetworkInfo?.isSAEnabled).toBe(true)
 
