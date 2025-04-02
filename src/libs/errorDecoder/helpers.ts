@@ -45,7 +45,7 @@ const isReasonValid = (reason: string | null): boolean => {
 /**
  * Counts the number of valid Unicode numbers and letters in a string.
  */
-const countValidUnicodeCharacters = (str: string): number => {
+const countUnicodeLettersAndNumbers = (str: string): number => {
   let validCount = 0
   for (let i = 0; i < str.length; i++) {
     const char = str.charAt(i)
@@ -71,7 +71,7 @@ const formatReason = (reason: string): string => {
     const decodedString = toUtf8String(trimmedReason)
 
     // Return the decoded string if it contains valid Unicode letters
-    return countValidUnicodeCharacters(decodedString) > 0 ? decodedString : trimmedReason
+    return countUnicodeLettersAndNumbers(decodedString) > 0 ? decodedString : trimmedReason
   } catch {
     return trimmedReason
   }
@@ -111,5 +111,6 @@ export {
   getErrorCodeStringFromReason,
   isReasonValid,
   getDataFromError,
-  formatReason
+  formatReason,
+  countUnicodeLettersAndNumbers
 }
