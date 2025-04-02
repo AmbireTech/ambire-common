@@ -44,8 +44,6 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
-    console.log('fetching gas price')
-
     const bundler = this.#bundlerSwitcher.getBundler()
 
     const [gasPriceData, bundlerGas] = await Promise.all([

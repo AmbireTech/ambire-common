@@ -377,8 +377,9 @@ describe('Error decoders work', () => {
     expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
     const humanized = getHumanReadableEstimationError(decodedError)
     expect(humanized.message).toBe(
-      "The transaction will fail because you don't have enough ETH to cover the gas costs for this transaction."
+      "Transaction cannot be sent because you don't have enough ETH to cover the gas costs for this transaction."
     )
+    expect(humanized.cause).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
 
     const sameErrorOnAvax = new InnerCallFailureError(
       '0x',
@@ -392,7 +393,10 @@ describe('Error decoders work', () => {
     )
     const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
     expect(humanizedAvax.message).toBe(
-      "The transaction will fail because you don't have enough AVAX to cover the gas costs for this transaction."
+      "Transaction cannot be sent because you don't have enough AVAX to cover the gas costs for this transaction."
+    )
+    expect(humanizedAvax.cause).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
     )
   })
   it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {

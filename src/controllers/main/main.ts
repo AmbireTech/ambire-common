@@ -48,7 +48,6 @@ import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
   getDappIdentifier,
-  pollTxnId,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
@@ -229,7 +228,6 @@ export class MainController extends EventEmitter {
     velcroUrl,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     socketApiKey,
-    lifiApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -240,7 +238,6 @@ export class MainController extends EventEmitter {
     relayerUrl: string
     velcroUrl: string
     socketApiKey: string
-    lifiApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -327,7 +324,7 @@ export class MainController extends EventEmitter {
       windowManager: this.#windowManager
     })
     // const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
-    const lifiAPI = new LiFiAPI({ apiKey: lifiApiKey, fetch: this.fetch })
+    const lifiAPI = new LiFiAPI({ fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -376,7 +373,10 @@ export class MainController extends EventEmitter {
       // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
       serviceProviderAPI: lifiAPI,
       storage: this.#storage,
-      actions: this.actions
+      actions: this.actions,
+      portfolioUpdate: () => {
+        this.updateSelectedAccountPortfolio(true)
+      }
     })
     this.domains = new DomainsController(this.providers.providers)
 
@@ -1455,6 +1455,14 @@ export class MainController extends EventEmitter {
           (r) => r.activeRouteId === activeRouteId
         )
 
+        // learn the receiving token
+        if (this.swapAndBridge.toSelectedToken && this.swapAndBridge.toChainId) {
+          this.portfolio.addTokensToBeLearned(
+            [this.swapAndBridge.toSelectedToken.address],
+            BigInt(this.swapAndBridge.toChainId)
+          )
+        }
+
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
         }
@@ -1949,7 +1957,7 @@ export class MainController extends EventEmitter {
 
     this.actions.removeAction(actionId)
 
-    // handle wallet_sendCalls before pollTxnId as 1) it's faster
+    // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
@@ -1974,12 +1982,7 @@ export class MainController extends EventEmitter {
     }
 
     // Note: this may take a while!
-    const txnId = await pollTxnId(
-      submittedAccountOp.identifiedBy,
-      network,
-      this.fetch,
-      this.callRelayer
-    )
+    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {

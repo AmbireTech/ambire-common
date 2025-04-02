@@ -1,6 +1,6 @@
 /* eslint-disable class-methods-use-this */
 import { ZeroAddress } from 'ethers'
-import { Warning } from '../../interfaces/signAccountOp'
+import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -220,27 +220,27 @@ export class EstimationController extends EventEmitter {
         id: 'estimation-retry',
         title: this.estimationRetryError.message,
         text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
-        promptBeforeSign: false,
-        displayBeforeSign: true
+        promptBeforeSign: false
       })
     }
 
     return warnings
   }
 
-  get errors(): string[] {
-    const errors: string[] = []
+  get errors(): SignAccountOpError[] {
+    const errors: SignAccountOpError[] = []
 
     if (this.isLoadingOrFailed() && this.estimationRetryError) {
       // If there is a successful estimation we should show this as a warning
       // as the user can use the old estimation to broadcast
-      errors.push(
-        `${this.estimationRetryError.message} ${
+      errors.push({
+        title: `${this.estimationRetryError.message} ${
           this.error
             ? 'We will continue retrying, but please check your internet connection.'
             : 'Automatically retrying in a few seconds. Please wait...'
-        }`
-      )
+        }`,
+        code: 'ESTIMATION_ERROR'
+      })
 
       return errors
     }
@@ -248,7 +248,10 @@ export class EstimationController extends EventEmitter {
     if (!this.isInitialized()) return []
 
     if (this.error) {
-      errors.push(this.error.message)
+      errors.push({
+        title: this.error.message,
+        code: 'ESTIMATION_ERROR'
+      })
     }
 
     return errors

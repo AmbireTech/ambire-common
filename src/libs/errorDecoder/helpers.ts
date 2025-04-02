@@ -59,7 +59,7 @@ const formatReason = (reason: string): string => {
   }
 }
 
-const getErrorCodeStringFromReason = (reason: string, withSpace = true): string => {
+const getErrorCodeStringFromReason = (reason?: string, withSpace = true): string => {
   if (!reason || !isReasonValid(reason)) return ''
 
   const truncatedReason = reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
