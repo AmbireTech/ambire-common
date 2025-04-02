@@ -21,7 +21,7 @@ export interface TransferUpdate {
 
 export type PersistedTransferUpdate = Omit<
   TransferUpdate,
-  'humanizerInfo' | 'contacts' | 'selectedAccountData' | 'networks' | 'selectedToken'
+  'humanizerInfo' | 'contacts' | 'selectedAccountData' | 'networks' | 'selectedToken' | 'isTopUp'
 > & {
   selectedToken?: {
     address: string

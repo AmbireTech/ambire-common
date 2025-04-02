@@ -48,7 +48,6 @@ const ALLOWED_PERSIST_KEYS: (keyof PersistedTransferUpdate)[] = [
   'addressState',
   'isSWWarningAgreed',
   'isRecipientAddressUnknownAgreed',
-  'isTopUp',
   'selectedToken'
 ]
 
@@ -99,7 +98,8 @@ export class TransferController extends EventEmitter {
     humanizerInfo: HumanizerMeta,
     selectedAccountData: Account,
     networks: Network[],
-    portfolio: SelectedAccountPortfolio
+    portfolio: SelectedAccountPortfolio,
+    shouldHydrate: boolean
   ) {
     super()
 
@@ -109,17 +109,17 @@ export class TransferController extends EventEmitter {
     this.#networks = networks
     this.#portfolio = portfolio
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load(shouldHydrate)
     this.emitUpdate()
   }
 
-  async #load() {
+  async #load(shouldHydrate: boolean) {
     this.#shouldSkipTransactionQueuedModal = await this.#storage.get(
       'shouldSkipTransactionQueuedModal',
       false
     )
 
-    await this.#hydrate()
+    if (shouldHydrate) await this.#hydrate()
   }
 
   async #hydrate() {
@@ -140,7 +140,7 @@ export class TransferController extends EventEmitter {
 
     console.log('Hydrate (normalized):', persistedState)
 
-    await this.update(persistedState, true)
+    await this.update(persistedState, { isHydrate: true, shouldPersist: true })
   }
 
   #persist(updateInput: TransferUpdate) {
@@ -174,6 +174,8 @@ export class TransferController extends EventEmitter {
   }
 
   #clearPersistedState() {
+    console.log('Clear persisted state')
+    this.#persistedState = {}
     this.#storage.remove(PERSIST_STORAGE_KEY)
   }
 
@@ -341,7 +343,11 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  async update(updateInput: TransferUpdate, isHydrate?: boolean) {
+  async update(
+    updateInput: TransferUpdate,
+    options?: { isHydrate?: boolean; shouldPersist?: boolean }
+  ) {
+    const { isHydrate, shouldPersist } = options || { isHydrate: false, shouldPersist: true }
     // If we're hydrating, we can safely skip waiting for #initialLoadPromise,
     // since #load() already loads the necessary storage values and triggers update() with the persisted input.
     // Otherwise, this.#initialLoadPromise may never resolve, because #load() calls update(),
@@ -416,9 +422,10 @@ export class TransferController extends EventEmitter {
     if (typeof isTopUp === 'boolean') {
       this.isTopUp = isTopUp
       this.#setSWWarningVisibleIfNeeded()
+      this.#clearPersistedState()
     }
 
-    this.#persist(updateInput)
+    if (shouldPersist && !this.isTopUp) this.#persist(updateInput)
     this.emitUpdate()
   }
 
