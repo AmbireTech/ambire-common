@@ -6,11 +6,13 @@ import { isSmartAccount } from '../../libs/account/account'
 import {
   fetchFrontRanTxnId,
   fetchTxnId,
+  isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import wait from '../../utils/wait'
 /* eslint-disable import/no-extraneous-dependencies */
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
@@ -568,15 +570,6 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #throwNotInitialized() {
-    this.emitError({
-      level: 'major',
-      message:
-        "Looks like your activity couldn't be processed. Retry, or contact support if issue persists.",
-      error: new Error('activity: controller not initialized')
-    })
-  }
-
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return []
@@ -677,6 +670,48 @@ export class ActivityController extends EventEmitter {
     if (!this.#signedMessages[account]) return null
 
     return this.#signedMessages[account].find(filter)
+  }
+
+  // return a txn id only if we have certainty that this is the final txn id:
+  // EOA broadcast: 100% certainty on broadcast
+  // Relayer | Bundler broadcast: once we have a receipt as there could be
+  // front running or txnId replacement issues
+  async getConfirmedTxId(
+    submittedAccountOp: SubmittedAccountOp,
+    counter = 0
+  ): Promise<string | undefined> {
+    if (
+      !this.#accountsOps[submittedAccountOp.accountAddr] ||
+      !this.#accountsOps[submittedAccountOp.accountAddr][submittedAccountOp.chainId.toString()]
+    )
+      return undefined
+
+    const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr][
+      submittedAccountOp.chainId.toString()
+    ].find((op) => op.identifiedBy === submittedAccountOp.identifiedBy)
+    // shouldn't happen
+    if (!activityAccountOp) return undefined
+
+    if (
+      !isIdentifiedByUserOpHash(activityAccountOp.identifiedBy) &&
+      !isIdentifiedByRelayer(activityAccountOp.identifiedBy)
+    )
+      return activityAccountOp.txnId
+
+    // @frontrunning
+    if (
+      activityAccountOp.status === AccountOpStatus.Pending ||
+      activityAccountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
+    ) {
+      // if the receipt cannot be confirmed after a lot of retries, continue on
+      if (counter >= 30) return activityAccountOp.txnId
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      await wait(1000)
+      return this.getConfirmedTxId(submittedAccountOp, counter + 1)
+    }
+
+    return activityAccountOp.txnId
   }
 
   toJSON() {

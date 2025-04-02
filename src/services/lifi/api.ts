@@ -28,7 +28,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
+import { ZERO_ADDRESS } from '../socket/constants'
 import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
@@ -187,11 +187,10 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
+  constructor({ fetch }: { fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
-      'x-lifi-api-key': apiKey,
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }
@@ -333,6 +332,7 @@ export class LiFiAPI {
     fromAmount,
     userAddress,
     sort,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isOG
   }: {
     fromAsset: TokenResult | null
@@ -384,14 +384,20 @@ export class LiFiAPI {
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
         allowDestinationCall: 'false',
-        allowSwitchChain: 'false',
+        allowSwitchChain: 'false'
+        // <Bobby>:
+        // Li.Fi. fee is not controlled by the front end, it's controlled
+        // from the Li.Fi. dashboard. It means we cannot set it from here so
+        // commenting out this code. Currently, we have a 25 BPS set for each
+        // swap & bridge no matter if OG mode is on or not
+        //
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        fee: (FEE_PERCENT / 100).toString() as string | undefined
+        // fee: (FEE_PERCENT / 100).toString() as string | undefined
       }
     }
 
-    const shouldRemoveConvenienceFee = isOG
-    if (shouldRemoveConvenienceFee) delete body.options.fee
+    // const shouldRemoveConvenienceFee = isOG
+    // if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
     const response = await this.#handleResponse<LiFiRoutesResponse>({

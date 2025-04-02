@@ -207,6 +207,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   signAccountOpController: SignAccountOpController | null = null
 
+  #portfolioUpdate: Function
+
   constructor({
     accounts,
     keystore,
@@ -219,7 +221,8 @@ export class SwapAndBridgeController extends EventEmitter {
     serviceProviderAPI,
     storage,
     actions,
-    invite
+    invite,
+    portfolioUpdate
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -233,6 +236,7 @@ export class SwapAndBridgeController extends EventEmitter {
     storage: StorageController
     actions: ActionsController
     invite: InviteController
+    portfolioUpdate?: Function
   }) {
     super()
     this.#accounts = accounts
@@ -240,6 +244,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
+    this.#portfolioUpdate = portfolioUpdate || (() => {})
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -1240,6 +1245,7 @@ export class SwapAndBridgeController extends EventEmitter {
           },
           true
         )
+        this.#portfolioUpdate()
       } else if (status === 'ready') {
         this.updateActiveRoute(
           activeRoute.activeRouteId,

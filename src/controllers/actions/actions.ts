@@ -272,9 +272,19 @@ export class ActionsController extends EventEmitter {
       this.focusActionWindow()
     } else {
       try {
-        this.actionWindow.openWindowPromise = this.#windowManager.open().finally(() => {
-          this.actionWindow.openWindowPromise = undefined
-        })
+        this.actionWindow.openWindowPromise = this.#windowManager
+          .open({
+            customSize:
+              this.currentAction?.type === 'accountOp' || this.currentAction?.type === 'signMessage'
+                ? {
+                    width: 720,
+                    height: 800
+                  }
+                : undefined
+          })
+          .finally(() => {
+            this.actionWindow.openWindowPromise = undefined
+          })
         this.actionWindow.windowProps = await this.actionWindow.openWindowPromise
         this.emitUpdate()
       } catch (err) {

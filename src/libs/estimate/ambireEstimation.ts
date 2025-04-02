@@ -1,4 +1,5 @@
 import { ZeroAddress } from 'ethers'
+
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
@@ -27,12 +28,9 @@ export function getInnerCallFailure(
 ): Error | null {
   if (estimationOp.success) return null
 
-  const error = getHumanReadableEstimationError(
+  return getHumanReadableEstimationError(
     new InnerCallFailureError(estimationOp.err, calls, network, portfolioNativeValue)
   )
-  return new Error(error.message, {
-    cause: 'CALLS_FAILURE'
-  })
 }
 
 // the outcomeNonce should always be equal to the nonce in accountOp + 1
