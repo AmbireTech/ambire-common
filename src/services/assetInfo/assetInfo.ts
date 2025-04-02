@@ -1,7 +1,6 @@
-import { JsonRpcProvider } from 'ethers'
-
 import { Network } from '../../interfaces/network'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
+import { getRpcProvider } from '../provider'
 
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
 const scheduledActions: {
@@ -14,7 +13,8 @@ const scheduledActions: {
 } = {}
 
 export async function executeBatchedFetch(network: Network): Promise<void> {
-  const provider = new JsonRpcProvider(network.selectedRpcUrl || network.rpcUrls[0])
+  const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
+  const provider = getRpcProvider([rpcUrl], network.chainId)
   const allAddresses =
     Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||
     []
