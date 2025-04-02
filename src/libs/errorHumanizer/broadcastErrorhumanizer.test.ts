@@ -56,5 +56,6 @@ describe('Broadcast errors are humanized', () => {
     expect(humanizedError.message).toBe(
       `${PREFIX}of an unknown error (Origin: Relayer call). Error code: the hamsters have stopped running\nPlease try again or contact Ambire support for assistance.`
     )
+    expect(humanizedError.cause).toBe('the hamsters have stopped running')
   })
 })
