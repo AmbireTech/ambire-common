@@ -78,7 +78,7 @@ export class AccountAdderController extends EventEmitter {
   page: number = DEFAULT_PAGE
 
   /* The number of accounts to be displayed on a single page */
-  pageSize: number = DEFAULT_PAGE_SIZE
+  pageSize: number = this.subType === 'private-key' ? 1 : 5
 
   /* State to indicate the page requested fails to load (and the reason why) */
   pageError: null | string = null
@@ -96,6 +96,8 @@ export class AccountAdderController extends EventEmitter {
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
   addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
+
+  selectNextAccountStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
   addedAccountsFromCurrentSession: Account[] = []
 
@@ -284,30 +286,28 @@ export class AccountAdderController extends EventEmitter {
   async init({
     keyIterator,
     page,
-    pageSize,
     hdPathTemplate,
     shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
     shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
   }: {
     keyIterator: KeyIterator | null
     page?: number
-    pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
   }) {
+    await this.reset()
     this.#keyIterator = keyIterator
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
     this.page = page || DEFAULT_PAGE
-    this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
     this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
     this.isInitialized = true
-    this.#alreadyImportedAccounts = this.#accounts.accounts
+    this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
 
-    this.emitUpdate()
+    await this.forceEmitUpdate()
   }
 
   get type() {
@@ -318,7 +318,7 @@ export class AccountAdderController extends EventEmitter {
     return this.#keyIterator?.subType
   }
 
-  reset() {
+  async reset() {
     this.#keyIterator = null
     this.selectedAccounts = []
     this.page = DEFAULT_PAGE
@@ -337,7 +337,7 @@ export class AccountAdderController extends EventEmitter {
     this.isInitializedWithSavedSeed = false
     this.addedAccountsFromCurrentSession = []
 
-    this.emitUpdate()
+    await this.forceEmitUpdate()
   }
 
   async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
@@ -506,6 +506,8 @@ export class AccountAdderController extends EventEmitter {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
+    if (page === this.page && this.#derivedAccounts.length) return
+
     this.page = page
     this.pageError = null
     this.#derivedAccounts = []
@@ -605,6 +607,7 @@ export class AccountAdderController extends EventEmitter {
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
     if (!this.#keystore.isReadyToStoreKeys) {
       this.#addAccountsOnKeystoreReady = true
+      this.emitUpdate()
       return
     }
 
@@ -705,10 +708,13 @@ export class AccountAdderController extends EventEmitter {
     await this.forceEmitUpdate()
   }
 
-  async addNextAvailableAccount() {
+  async selectNextAccount() {
     if (!this.isInitialized) return this.#throwNotInitialized()
 
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
+    this.selectNextAccountStatus = 'LOADING'
+    await this.forceEmitUpdate()
 
     let currentPage: number = this.page
     let nextAccount: AccountWithNetworkMeta | undefined
@@ -733,13 +739,11 @@ export class AccountAdderController extends EventEmitter {
       // If no account found on the page, move to the next page
       currentPage++
     }
+    this.selectNextAccountStatus = 'SUCCESS'
+    await this.forceEmitUpdate()
 
-    const readyToAddKeys = this.retrieveInternalKeysOfSelectedAccounts()
-
-    await this.addAccounts(this.selectedAccounts, {
-      internal: readyToAddKeys,
-      external: []
-    })
+    this.selectNextAccountStatus = 'INITIAL'
+    await this.forceEmitUpdate()
   }
 
   async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {
