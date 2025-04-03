@@ -37,7 +37,13 @@ interface PermitDetails {
   nonce: bigint
 }
 
-const getPermitData = (permit: PermitDetails, spender: string) => {
+interface PermitGist {
+  token: string
+  amount: bigint
+  spender: string
+}
+
+const getPermitData = (permit: PermitDetails, spender: string): PermitGist => {
   return { token: permit.token, amount: permit.amount, spender }
 }
 
@@ -50,18 +56,17 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
       tm.domain.verifyingContract.toLowerCase()
     )
   ) {
-    const messageType = tm?.types?.PermitSingle?.[0]?.type
+    const messageType = tm?.types?.PermitSingle?.[0]?.type || tm?.types?.PermitBatch?.[0]?.type
     if (!['PermitDetails', 'PermitDetails[]'].includes(messageType))
       return { fullVisualization: [] }
 
-    const permits =
+    const permits: PermitGist[] =
       messageType === 'PermitDetails'
         ? [getPermitData(tm.message.details, tm.message.spender)]
-        : [
-            tm.message.details.map((permitDetails: PermitDetails) =>
-              getPermitData(permitDetails, tm.message.spender)
-            )
-          ]
+        : tm.message.details.map((permitDetails: PermitDetails) =>
+            getPermitData(permitDetails, tm.message.spender)
+          )
+
     if (!permits.length) return { fullVisualization: [] }
 
     const permitVisualizations = permits
