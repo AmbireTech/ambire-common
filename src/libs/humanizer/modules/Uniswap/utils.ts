@@ -126,7 +126,7 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
       }
       // because of this https://www.codeslaw.app/contracts/ethereum/0x66a9893cc07d91d95644aedd05d03f95e1dba8af?file=src%2Fpkgs%2Funiversal-router%2Flib%2Fv4-periphery%2Fsrc%2Flibraries%2FActionConstants.sol&start=11&end=13
       // we can mash two swaps into one
-      if (calls.map(isSwap).length === 2) {
+      if (calls.filter(isSwap).length === 2) {
         const indexesOfSwaps = calls
           .map((call, index: number) => (isSwap(call) ? index : -1))
           .filter((index: number) => index !== -1)
