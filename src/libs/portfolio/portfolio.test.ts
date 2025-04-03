@@ -46,7 +46,7 @@ describe('Portfolio', () => {
   const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
   const ethereum = networks.find((n) => n.chainId === 1n)
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
-  const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
+  const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
   const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
