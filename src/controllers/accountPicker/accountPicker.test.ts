@@ -26,7 +26,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
-import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
+import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
 
 const windowManager = {
   event: new EventEmitter(),
@@ -94,8 +94,8 @@ const basicAccount: Account = {
   }
 }
 
-describe('AccountAdder', () => {
-  let accountAdder: AccountAdderController
+describe('AccountPicker', () => {
+  let accountPicker: AccountPickerController
   const storage: Storage = produceMemoryStore()
   let providersCtrl: ProvidersController
   const storageCtrl = new StorageController(storage)
@@ -122,7 +122,7 @@ describe('AccountAdder', () => {
     () => {}
   )
   beforeEach(() => {
-    accountAdder = new AccountAdderController({
+    accountPicker = new AccountPickerController({
       accounts: accountsCtrl,
       keystore: new KeystoreController(storageCtrl, {}, windowManager),
       networks: networksCtrl,
@@ -136,26 +136,26 @@ describe('AccountAdder', () => {
   test('should initialize', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
-    await accountAdder.init({ keyIterator, hdPathTemplate })
+    await accountPicker.init({ keyIterator, hdPathTemplate })
 
-    expect(accountAdder.page).toEqual(DEFAULT_PAGE)
-    expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
-    expect(accountAdder.isInitialized).toBeTruthy()
-    expect(accountAdder.isInitializedWithSavedSeed).toBeFalsy()
-    expect(accountAdder.selectedAccounts).toEqual([])
-    expect(accountAdder.hdPathTemplate).toEqual(hdPathTemplate)
-    expect(accountAdder.shouldGetAccountsUsedOnNetworks).toBeTruthy()
-    expect(accountAdder.shouldSearchForLinkedAccounts).toBeTruthy()
+    expect(accountPicker.page).toEqual(DEFAULT_PAGE)
+    expect(accountPicker.pageSize).toEqual(DEFAULT_PAGE_SIZE)
+    expect(accountPicker.isInitialized).toBeTruthy()
+    expect(accountPicker.isInitializedWithSavedSeed).toBeFalsy()
+    expect(accountPicker.selectedAccounts).toEqual([])
+    expect(accountPicker.hdPathTemplate).toEqual(hdPathTemplate)
+    expect(accountPicker.shouldGetAccountsUsedOnNetworks).toBeTruthy()
+    expect(accountPicker.shouldSearchForLinkedAccounts).toBeTruthy()
   })
 
   describe('Negative tests', () => {
     suppressConsoleBeforeEach()
-    test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
-      const unsubscribe = accountAdder.onError(() => {
-        const notInitializedErrorsCount = accountAdder.emittedErrors.filter(
+    test('should throw if AccountPicker controller method is requested, but the controller was not initialized beforehand', (done) => {
+      const unsubscribe = accountPicker.onError(() => {
+        const notInitializedErrorsCount = accountPicker.emittedErrors.filter(
           (e) =>
             e.error.message ===
-            'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+            'accountPicker: requested a method of the AccountPicker controller, but the controller was not initialized'
         ).length
 
         if (notInitializedErrorsCount === 4) {
@@ -165,16 +165,16 @@ describe('AccountAdder', () => {
         }
       })
 
-      accountAdder.setPage({ page: 1 })
-      accountAdder.selectAccount(basicAccount)
-      accountAdder.deselectAccount(basicAccount)
-      accountAdder.addAccounts([], { internal: [], external: [] })
+      accountPicker.setPage({ page: 1 })
+      accountPicker.selectAccount(basicAccount)
+      accountPicker.deselectAccount(basicAccount)
+      accountPicker.addAccounts([], { internal: [], external: [] })
     })
 
-    test('should throw if AccountAdder controller gets initialized, but the keyIterator is missing', (done) => {
-      const unsubscribe = accountAdder.onError(() => {
-        const missingKeyIteratorError = accountAdder.emittedErrors.find(
-          (e) => e.error.message === 'accountAdder: missing keyIterator'
+    test('should throw if AccountPicker controller gets initialized, but the keyIterator is missing', (done) => {
+      const unsubscribe = accountPicker.onError(() => {
+        const missingKeyIteratorError = accountPicker.emittedErrors.find(
+          (e) => e.error.message === 'accountPicker: missing keyIterator'
         )
 
         if (missingKeyIteratorError) {
@@ -184,42 +184,42 @@ describe('AccountAdder', () => {
         }
       })
 
-      accountAdder.init({ keyIterator: null, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
+      accountPicker.init({ keyIterator: null, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
     })
   })
 
   test('should retrieve one smart account and one basic account on every slot (per page)', async () => {
     const PAGE_SIZE = 11
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       pageSize: PAGE_SIZE,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false
     })
-    accountAdder.setPage({ page: 1 })
+    accountPicker.setPage({ page: 1 })
 
     return new Promise((resolve) => {
       let emitCounter = 0
-      const unsubscribe = accountAdder.onUpdate(() => {
+      const unsubscribe = accountPicker.onUpdate(() => {
         emitCounter++
 
         // Trigger when the accountsLoading resolves (first emit gets skipped, because it's the initial state)
-        if (emitCounter > 1 && !accountAdder.accountsLoading) {
+        if (emitCounter > 1 && !accountPicker.accountsLoading) {
           // There should be one basic and one smart account on each slot, meaning
           // there should be PAGE_SIZE * 2 accounts on the page (without the linked ones)
-          const allAccountsExceptLinked = accountAdder.accountsOnPage.filter((x) => !x.isLinked)
+          const allAccountsExceptLinked = accountPicker.accountsOnPage.filter((x) => !x.isLinked)
           expect(allAccountsExceptLinked).toHaveLength(PAGE_SIZE * 2)
 
           // Check the Basic Addresses retrieved
-          const basicAccountAddressesOnPage = accountAdder.accountsOnPage
+          const basicAccountAddressesOnPage = accountPicker.accountsOnPage
             .filter((x) => !isSmartAccount(x.account))
             .map((x) => x.account.addr)
           expect(basicAccountAddressesOnPage).toHaveLength(PAGE_SIZE)
           expect(basicAccountAddressesOnPage).toEqual(key1to11BasicAccPublicAddresses)
 
           // Check the Smart Addresses retrieved
-          const smartAccountAddressesOnPage = accountAdder.accountsOnPage.filter((x) =>
+          const smartAccountAddressesOnPage = accountPicker.accountsOnPage.filter((x) =>
             isSmartAccount(x.account)
           )
           expect(smartAccountAddressesOnPage).toHaveLength(PAGE_SIZE)
@@ -251,23 +251,23 @@ describe('AccountAdder', () => {
 
   test('should start the searching for linked accounts', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       pageSize: 4,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false
     })
 
-    accountAdder.setPage({ page: 1 })
+    accountPicker.setPage({ page: 1 })
 
     return new Promise((resolve) => {
       let emitCounter = 0
-      const unsubscribe = accountAdder.onUpdate(() => {
+      const unsubscribe = accountPicker.onUpdate(() => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         emitCounter++
 
-        if (accountAdder.linkedAccountsLoading) {
-          expect(accountAdder.linkedAccountsLoading).toBe(true)
+        if (accountPicker.linkedAccountsLoading) {
+          expect(accountPicker.linkedAccountsLoading).toBe(true)
           unsubscribe()
           resolve(null)
         }
@@ -277,16 +277,16 @@ describe('AccountAdder', () => {
 
   test('should find linked accounts', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false
     })
-    await accountAdder.setPage({ page: 1 })
+    await accountPicker.setPage({ page: 1 })
 
-    expect(accountAdder.linkedAccountsLoading).toBe(false)
-    const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(({ isLinked }) => isLinked)
+    expect(accountPicker.linkedAccountsLoading).toBe(false)
+    const linkedAccountsOnPage = accountPicker.accountsOnPage.filter(({ isLinked }) => isLinked)
 
     const accountsOnSlot1 = linkedAccountsOnPage
       .filter(({ slot }) => slot === 1)
@@ -307,78 +307,78 @@ describe('AccountAdder', () => {
 
   test('should be able to select and then deselect an account', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false
     })
-    await accountAdder.setPage({ page: 1 })
+    await accountPicker.setPage({ page: 1 })
 
-    accountAdder.selectAccount(basicAccount)
-    const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
+    accountPicker.selectAccount(basicAccount)
+    const selectedAccountAddr = accountPicker.selectedAccounts.map((a) => a.account.addr)
     expect(selectedAccountAddr).toContain(basicAccount.addr)
 
-    accountAdder.deselectAccount(basicAccount)
-    expect(accountAdder.selectedAccounts).toHaveLength(0)
+    accountPicker.deselectAccount(basicAccount)
+    expect(accountPicker.selectedAccounts).toHaveLength(0)
   })
 
   test('should NOT be able to select the same account more than once', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false
     })
-    await accountAdder.setPage({ page: 1 })
+    await accountPicker.setPage({ page: 1 })
 
-    accountAdder.selectAccount(basicAccount)
-    accountAdder.selectAccount(basicAccount)
-    accountAdder.selectAccount(basicAccount)
+    accountPicker.selectAccount(basicAccount)
+    accountPicker.selectAccount(basicAccount)
+    accountPicker.selectAccount(basicAccount)
 
-    expect(accountAdder.selectedAccounts).toHaveLength(1)
-    const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
+    expect(accountPicker.selectedAccounts).toHaveLength(1)
+    const selectedAccountAddr = accountPicker.selectedAccounts.map((a) => a.account.addr)
     expect(selectedAccountAddr).toContain(basicAccount.addr)
   })
 
   test('should be able to select all the keys of a selected basic account (always one key)', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false
     })
-    await accountAdder.setPage({ page: 1 })
+    await accountPicker.setPage({ page: 1 })
 
-    accountAdder.selectAccount(basicAccount)
+    accountPicker.selectAccount(basicAccount)
 
-    expect(accountAdder.selectedAccounts[0].accountKeys).toHaveLength(1)
-    const keyAddr = accountAdder.selectedAccounts[0].accountKeys[0].addr
-    const keyIndex = accountAdder.selectedAccounts[0].accountKeys[0].index
+    expect(accountPicker.selectedAccounts[0].accountKeys).toHaveLength(1)
+    const keyAddr = accountPicker.selectedAccounts[0].accountKeys[0].addr
+    const keyIndex = accountPicker.selectedAccounts[0].accountKeys[0].index
     expect(keyAddr).toEqual(basicAccount.addr)
     expect(keyIndex).toEqual(0)
   })
 
   test('should be able to select all the keys of a selected smart account (derived key)', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false
     })
-    await accountAdder.setPage({ page: 1 })
+    await accountPicker.setPage({ page: 1 })
 
-    const firstSmartAccount = accountAdder.accountsOnPage.find(
+    const firstSmartAccount = accountPicker.accountsOnPage.find(
       (x) => x.slot === 1 && isSmartAccount(x.account)
     )
-    if (firstSmartAccount) accountAdder.selectAccount(firstSmartAccount.account)
+    if (firstSmartAccount) accountPicker.selectAccount(firstSmartAccount.account)
 
-    expect(accountAdder.selectedAccounts[0].accountKeys)
+    expect(accountPicker.selectedAccounts[0].accountKeys)
       // Might contain other keys too, but this one should be in there,
       // since that's the derived used only for smart account key
       .toContainEqual({
@@ -390,25 +390,25 @@ describe('AccountAdder', () => {
 
   test('should retrieve all internal keys selected 1) basic accounts and 2) smart accounts', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
-    await accountAdder.init({
+    await accountPicker.init({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false
     })
-    await accountAdder.setPage({ page: 1 })
+    await accountPicker.setPage({ page: 1 })
 
-    accountAdder.selectAccount(basicAccount)
-    const firstSmartAccount = accountAdder.accountsOnPage.find(
+    accountPicker.selectAccount(basicAccount)
+    const firstSmartAccount = accountPicker.accountsOnPage.find(
       (x) => x.slot === 1 && isSmartAccount(x.account)
     )
-    const secondSmartAccount = accountAdder.accountsOnPage.find(
+    const secondSmartAccount = accountPicker.accountsOnPage.find(
       (x) => x.slot === 2 && isSmartAccount(x.account)
     )
-    if (firstSmartAccount) accountAdder.selectAccount(firstSmartAccount.account)
-    if (secondSmartAccount) accountAdder.selectAccount(secondSmartAccount.account)
+    if (firstSmartAccount) accountPicker.selectAccount(firstSmartAccount.account)
+    if (secondSmartAccount) accountPicker.selectAccount(secondSmartAccount.account)
 
-    const internalKeys = accountAdder.retrieveInternalKeysOfSelectedAccounts()
+    const internalKeys = accountPicker.retrieveInternalKeysOfSelectedAccounts()
 
     expect(internalKeys).toHaveLength(3)
     const firstKey = internalKeys.filter((k) => k.privateKey === key1PrivateKey)[0]
@@ -446,7 +446,7 @@ describe('AccountAdder', () => {
     test(`should derive correctly ${label}`, async () => {
       const keyIterator = new KeyIterator(process.env.SEED)
       const pageSize = 5
-      await accountAdder.init({
+      await accountPicker.init({
         keyIterator,
         hdPathTemplate: value,
         pageSize,
@@ -455,8 +455,8 @@ describe('AccountAdder', () => {
       })
 
       // Checks page 1 Basic Accounts
-      await accountAdder.setPage({ page: 1 })
-      const basicAccountsOnFirstPage = accountAdder.accountsOnPage.filter(
+      await accountPicker.setPage({ page: 1 })
+      const basicAccountsOnFirstPage = accountPicker.accountsOnPage.filter(
         (x) => !isSmartAccount(x.account)
       )
       const key1to5BasicAccPublicAddresses = Array.from(
@@ -469,8 +469,8 @@ describe('AccountAdder', () => {
       })
 
       // Checks page 2 Basic Accounts
-      await accountAdder.setPage({ page: 2 })
-      const basicAccountsOnSecondPage = accountAdder.accountsOnPage.filter(
+      await accountPicker.setPage({ page: 2 })
+      const basicAccountsOnSecondPage = accountPicker.accountsOnPage.filter(
         (x) => !isSmartAccount(x.account)
       )
       const key6to10BasicAccPublicAddresses = Array.from(

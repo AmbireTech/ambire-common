@@ -138,7 +138,7 @@ export type KeystoreSignerType = {
 /**
  * The keys that are ready to be added to the user's keystore (by the Main Controller).
  * They are needed as an intermediate step during the accounts import flow
- * (for the accounts that were just imported by the AccountAdder Controller).
+ * (for the accounts that were just imported by the AccountPicker Controller).
  */
 export type ReadyToAddKeys = {
   internal: {

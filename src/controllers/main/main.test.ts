@@ -254,11 +254,11 @@ describe('Main Controller ', () => {
       const keyIterator = new KeyIterator(
         '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
       )
-      await controller.accountAdder.init({
+      await controller.accountPicker.init({
         keyIterator,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
-      await controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+      await controller.accountPicker.addAccounts([accountPendingCreation]).catch(console.error)
     }
 
     let emitCounter = 0
@@ -277,7 +277,7 @@ describe('Main Controller ', () => {
         emitCounter++
         if (emitCounter === 2 && controller.isReady) await addAccounts()
 
-        if (controller.accountAdder.addAccountsStatus === 'SUCCESS') {
+        if (controller.accountPicker.addAccountsStatus === 'SUCCESS') {
           expect(controller.accounts.accounts).toContainEqual({
             ...accountPendingCreation.account,
             newlyAdded: true,

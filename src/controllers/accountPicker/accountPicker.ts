@@ -45,13 +45,13 @@ const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 
 /**
- * Account Adder Controller
+ * Account Picker Controller
  * is responsible for listing accounts that can be selected for adding, and for
  * adding (creating) identity for the smart accounts (if needed) on the Relayer.
  * It uses a KeyIterator interface allow iterating all the keys in a specific
  * underlying store such as a hardware device or an object holding a seed.
  */
-export class AccountAdderController extends EventEmitter {
+export class AccountPickerController extends EventEmitter {
   #callRelayer: Function
 
   #accounts: AccountsController
@@ -286,12 +286,14 @@ export class AccountAdderController extends EventEmitter {
   async init({
     keyIterator,
     page,
+    pageSize,
     hdPathTemplate,
     shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
     shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
   }: {
     keyIterator: KeyIterator | null
     page?: number
+    pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
@@ -300,6 +302,7 @@ export class AccountAdderController extends EventEmitter {
     this.keyIterator = keyIterator
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
     this.page = page || DEFAULT_PAGE
+    if (pageSize) this.pageSize = pageSize
     this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
     this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
     this.isInitialized = true
@@ -354,7 +357,7 @@ export class AccountAdderController extends EventEmitter {
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
-      console.error(`accountAdder: account ${account.addr} was not found in the accountsOnPage.`)
+      console.error(`accountPicker: account ${account.addr} was not found in the accountsOnPage.`)
       return []
     }
 
@@ -466,7 +469,7 @@ export class AccountAdderController extends EventEmitter {
       return this.emitError({
         level: 'major',
         message: 'This account cannot be deselected. Please reload and try again.',
-        error: new Error('accountAdder: account not found. Cannot deselect.')
+        error: new Error('accountPicker: account not found. Cannot deselect.')
       })
     }
   }
@@ -593,9 +596,9 @@ export class AccountAdderController extends EventEmitter {
   }
 
   /**
-   * Triggers the process of adding accounts via the AccountAdder flow by
+   * Triggers the process of adding accounts via the AccountPicker flow by
    * creating identity for the smart accounts (if needed) on the Relayer.
-   * Then the `onAccountAdderSuccess` listener in the Main Controller gets
+   * Then the `onAccountPickerSuccess` listener in the Main Controller gets
    * triggered, which uses the `readyToAdd...` properties to further set
    * the newly added accounts data (like preferences, keys and others)
    */
@@ -767,7 +770,7 @@ export class AccountAdderController extends EventEmitter {
     await this.addAccounts([{ ...selectedAccount, account: { ...emailSmartAccount, email } }])
   }
 
-  // updates the account adder state so the main ctrl receives the readyToAddAccounts
+  // updates the account picker state so the main ctrl receives the readyToAddAccounts
   // that should be added to the storage of the app
   async addExistingEmailAccounts(accounts: Account[]) {
     // There is no need to call the addAccounts method in order to add that
@@ -789,7 +792,7 @@ export class AccountAdderController extends EventEmitter {
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
-      console.error('accountAdder: missing keyIterator')
+      console.error('accountPicker: missing keyIterator')
       return []
     }
 
@@ -909,7 +912,7 @@ export class AccountAdderController extends EventEmitter {
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          console.error('accountAdder: failed to get account state on ', chainId)
+          console.error('accountPicker: failed to get account state on ', chainId)
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
           this.networksWithAccountStateError.push(BigInt(chainId))
         })
@@ -1074,7 +1077,7 @@ export class AccountAdderController extends EventEmitter {
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
       error: new Error(
-        'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+        'accountPicker: requested a method of the AccountPicker controller, but the controller was not initialized'
       )
     })
   }
@@ -1084,7 +1087,7 @@ export class AccountAdderController extends EventEmitter {
       level: 'major',
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-      error: new Error('accountAdder: missing keyIterator')
+      error: new Error('accountPicker: missing keyIterator')
     })
   }
 
@@ -1093,7 +1096,7 @@ export class AccountAdderController extends EventEmitter {
       level: 'major',
       message:
         'Retrieving internal keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
-      error: new Error('accountAdder: missing retrieveInternalKeys method')
+      error: new Error('accountPicker: missing retrieveInternalKeys method')
     })
   }
 
@@ -1102,7 +1105,7 @@ export class AccountAdderController extends EventEmitter {
       level: 'major',
       message:
         'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
-      error: new Error('accountAdder: missing hdPathTemplate')
+      error: new Error('accountPicker: missing hdPathTemplate')
     })
   }
 
@@ -1119,4 +1122,4 @@ export class AccountAdderController extends EventEmitter {
   }
 }
 
-export default AccountAdderController
+export default AccountPickerController

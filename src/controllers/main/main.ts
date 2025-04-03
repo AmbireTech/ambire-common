@@ -102,7 +102,7 @@ import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
-import { AccountAdderController } from '../accountAdder/accountAdder'
+import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
 import {
   AccountOpAction,
@@ -137,8 +137,8 @@ const STATUS_WRAPPED_METHODS = {
   signAccountOp: 'INITIAL',
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
-  handleAccountAdderInitLedger: 'INITIAL',
-  handleAccountAdderInitLattice: 'INITIAL',
+  handleAccountPickerInitLedger: 'INITIAL',
+  handleAccountPickerInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   buildSwapAndBridgeUserRequest: 'INITIAL',
   selectAccount: 'INITIAL'
@@ -176,7 +176,7 @@ export class MainController extends EventEmitter {
 
   providers: ProvidersController
 
-  accountAdder: AccountAdderController
+  accountPicker: AccountPickerController
 
   portfolio: PortfolioController
 
@@ -321,7 +321,7 @@ export class MainController extends EventEmitter {
       providers: this.providers
     })
     this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
-    this.accountAdder = new AccountAdderController({
+    this.accountPicker = new AccountPickerController({
       accounts: this.accounts,
       keystore: this.keystore,
       networks: this.networks,
@@ -330,15 +330,15 @@ export class MainController extends EventEmitter {
       fetch: this.fetch,
       /**
        * callback that gets triggered as a finalization step of adding new
-       * accounts via the AccountAdderController.
+       * accounts via the AccountPickerController.
        *
        * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
        * changes are reflected for view-only accounts as well. Because the
-       * view-only accounts import flow bypasses the AccountAdder, this method
+       * view-only accounts import flow bypasses the AccountPicker, this method
        * won't click for them. Their on add success flow continues in the
        * MAIN_CONTROLLER_ADD_VIEW_ONLY_ACCOUNTS action case.
        */
-      onAddAccountsSuccessCallback: this.#onAccountAdderSuccess.bind(this)
+      onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
     })
     this.addressBook = new AddressBookController(this.#storage, this.accounts, this.selectedAccount)
     this.signMessage = new SignMessageController(
@@ -504,12 +504,12 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #onAccountAdderSuccess() {
+  async #onAccountPickerSuccess() {
     // Add accounts first, because some of the next steps have validation
     // if accounts exists.
-    await this.accounts.addAccounts(this.accountAdder.readyToAddAccounts)
+    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
 
-    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountAdder.keyIterator)) {
+    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator)) {
       await this.keystore.persistTempSeed()
     }
     // Then add keys, because some of the next steps could have validation
@@ -518,17 +518,17 @@ export class MainController extends EventEmitter {
     // (the #wrapKeystoreAction listens for the first one to finish and
     // skips the parallel one, if one is requested).
 
-    await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-    await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+    await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
+    await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
 
     // Update the saved seed `hdPathTemplate` if accounts were added from
     // the saved seed, so when user opts in to "Import a new Smart Account
     // from the saved Seed Phrase" the next account is derived based
-    // on the latest `hdPathTemplate` chosen in the AccountAdder.
-    if (this.accountAdder.isInitializedWithSavedSeed)
-      this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
+    // on the latest `hdPathTemplate` chosen in the AccountPicker.
+    if (this.accountPicker.isInitializedWithSavedSeed)
+      this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountPicker.hdPathTemplate)
     if (this.keystore.hasKeystoreTempSeed)
-      this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountAdder.hdPathTemplate)
+      this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountPicker.hdPathTemplate)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
@@ -800,10 +800,10 @@ export class MainController extends EventEmitter {
     })
   }
 
-  async #handleAccountAdderInitLedger(
+  async #handleAccountPickerInitLedger(
     LedgerKeyIterator: any // TODO: KeyIterator type mismatch
   ) {
-    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+    if (this.accountPicker.isInitialized) this.accountPicker.reset()
 
     try {
       const ledgerCtrl = this.#externalSignerControllers.ledger
@@ -830,25 +830,27 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      await this.accountAdder.init({ keyIterator, hdPathTemplate })
+      await this.accountPicker.init({ keyIterator, hdPathTemplate })
 
-      return await this.accountAdder.setPage({ page: 1 })
+      return await this.accountPicker.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
     }
   }
 
-  async handleAccountAdderInitLedger(LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */) {
-    await this.withStatus('handleAccountAdderInitLedger', async () =>
-      this.#handleAccountAdderInitLedger(LedgerKeyIterator)
+  async handleAccountPickerInitLedger(
+    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    await this.withStatus('handleAccountPickerInitLedger', async () =>
+      this.#handleAccountPickerInitLedger(LedgerKeyIterator)
     )
   }
 
-  async #handleAccountAdderInitLattice(
+  async #handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
-    if (this.accountAdder.isInitialized) this.accountAdder.reset()
+    if (this.accountPicker.isInitialized) this.accountPicker.reset()
 
     try {
       const latticeCtrl = this.#externalSignerControllers.lattice
@@ -862,23 +864,23 @@ export class MainController extends EventEmitter {
       await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
       const { walletSDK } = latticeCtrl
-      await this.accountAdder.init({
+      await this.accountPicker.init({
         keyIterator: new LatticeKeyIterator({ walletSDK }),
         hdPathTemplate
       })
 
-      return await this.accountAdder.setPage({ page: 1 })
+      return await this.accountPicker.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
     }
   }
 
-  async handleAccountAdderInitLattice(
+  async handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
-    await this.withStatus('handleAccountAdderInitLattice', async () =>
-      this.#handleAccountAdderInitLattice(LatticeKeyIterator)
+    await this.withStatus('handleAccountPickerInitLattice', async () =>
+      this.#handleAccountPickerInitLattice(LatticeKeyIterator)
     )
   }
 
@@ -2017,7 +2019,7 @@ export class MainController extends EventEmitter {
 
     this.portfolio.removeNetworkData(chainId)
     this.defiPositions.removeNetworkData(chainId)
-    this.accountAdder.removeNetworkData(chainId)
+    this.accountPicker.removeNetworkData(chainId)
     this.activity.removeNetworkData(chainId)
 
     // disable 7702 if the network removed was oddysey
