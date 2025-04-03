@@ -170,13 +170,21 @@ describe('Error decoders work', () => {
       expect(decodedError.reason).toBe('transfer amount exceeds balance')
       expect(decodedError.data).toBe('transfer amount exceeds balance')
     })
-    it("Error doesn't gets overwritten by Panic/Revert if it is panic or revert", async () => {
+    it("Error doesn't get overwritten by Panic/Revert if it is panic or revert", async () => {
       const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA, [], base)
       const decodedError = decodeError(error)
 
       expect(decodedError.type).toEqual(ErrorType.RevertError)
       expect(decodedError.reason).toBe('Test message')
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
+    })
+    it('Should preserve custom error data as reason when handling InnerCallFailureError containing a custom error', () => {
+      const customErrorData =
+        '0x275c273c00000000000000000000000000000000000000000000000000000000000000190000000000000000000000000000000000000000000000000000000000000018'
+      const error = new InnerCallFailureError(customErrorData, [], base)
+      const decodedError = decodeError(error)
+      expect(decodedError.type).toEqual(ErrorType.InnerCallFailureError)
+      expect(decodedError.reason).toBe(customErrorData)
     })
   })
   describe('CustomErrorHandler', () => {
