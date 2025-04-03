@@ -62,7 +62,7 @@ export class AccountAdderController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #keyIterator?: KeyIterator | null
+  keyIterator?: KeyIterator | null
 
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 
@@ -260,20 +260,20 @@ export class AccountAdderController extends EventEmitter {
         alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
-        keyIteratorType: this.#keyIterator?.type
+        keyIteratorType: this.keyIterator?.type
       })
     }))
   }
 
   async #isKeyIteratorInitializedWithTheSavedSeed() {
-    if (this.#keyIterator?.subType !== 'seed') return false
+    if (this.keyIterator?.subType !== 'seed') return false
 
     if (!this.#keystore.hasKeystoreSavedSeed) return false
 
     const savedSeed = await this.#keystore.getSavedSeed()
     if (!savedSeed) return false
 
-    return !!this.#keyIterator?.isSeedMatching?.(savedSeed.seed)
+    return !!this.keyIterator?.isSeedMatching?.(savedSeed.seed)
   }
 
   async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
@@ -297,8 +297,8 @@ export class AccountAdderController extends EventEmitter {
     shouldGetAccountsUsedOnNetworks?: boolean
   }) {
     await this.reset()
-    this.#keyIterator = keyIterator
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    this.keyIterator = keyIterator
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
     this.page = page || DEFAULT_PAGE
     this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
     this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
@@ -311,15 +311,15 @@ export class AccountAdderController extends EventEmitter {
   }
 
   get type() {
-    return this.#keyIterator?.type
+    return this.keyIterator?.type
   }
 
   get subType() {
-    return this.#keyIterator?.subType
+    return this.keyIterator?.subType
   }
 
   async reset() {
-    this.#keyIterator = null
+    this.keyIterator = null
     this.selectedAccounts = []
     this.page = DEFAULT_PAGE
     this.pageSize = DEFAULT_PAGE_SIZE
@@ -406,7 +406,7 @@ export class AccountAdderController extends EventEmitter {
 
   selectAccount(_account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
     // Needed, because linked accounts could have multiple keys (basic accounts),
     // and therefore - same linked account could be found on different slots.
@@ -455,7 +455,7 @@ export class AccountAdderController extends EventEmitter {
 
   deselectAccount(account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
     const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
 
@@ -481,12 +481,12 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    if (!this.#keyIterator?.retrieveInternalKeys) {
+    if (!this.keyIterator?.retrieveInternalKeys) {
       this.#throwMissingKeyIteratorRetrieveInternalKeysMethod()
       return []
     }
 
-    return this.#keyIterator?.retrieveInternalKeys(
+    return this.keyIterator?.retrieveInternalKeys(
       this.selectedAccounts,
       this.hdPathTemplate,
       this.#keystore.keys
@@ -504,7 +504,7 @@ export class AccountAdderController extends EventEmitter {
 
   async setPage({ page = this.page }: { page: number }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
     if (page === this.page && this.#derivedAccounts.length) return
 
@@ -526,7 +526,7 @@ export class AccountAdderController extends EventEmitter {
     try {
       this.#derivedAccounts = await this.#deriveAccounts()
 
-      if (this.#keyIterator?.type === 'internal' && this.#keyIterator?.subType === 'private-key') {
+      if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
         const usedAccounts = accountsOnPageWithoutTheLinked.filter(
           (acc) => acc.account.usedOnNetworks.length
@@ -604,7 +604,7 @@ export class AccountAdderController extends EventEmitter {
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
   ) {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
     if (!this.#keystore.isReadyToStoreKeys) {
       this.#addAccountsOnKeystoreReady = true
       this.emitUpdate()
@@ -711,7 +711,7 @@ export class AccountAdderController extends EventEmitter {
   async selectNextAccount() {
     if (!this.isInitialized) return this.#throwNotInitialized()
 
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
     this.selectNextAccountStatus = 'LOADING'
     await this.forceEmitUpdate()
@@ -752,9 +752,9 @@ export class AccountAdderController extends EventEmitter {
       accountKeys: [recoveryKey]
     } = selectedAccount
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    const keyPublicAddress: string = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
+    const keyPublicAddress: string = (await this.keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
 
     const emailSmartAccount = await getEmailAccount(
       {
@@ -787,8 +787,8 @@ export class AccountAdderController extends EventEmitter {
 
   async #deriveAccounts(): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
-    // called - there is a check if the #keyIterator exists.
-    if (!this.#keyIterator) {
+    // called - there is a check if the keyIterator exists.
+    if (!this.keyIterator) {
       console.error('accountAdder: missing keyIterator')
       return []
     }
@@ -806,7 +806,7 @@ export class AccountAdderController extends EventEmitter {
     // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
     // accounts out of the private key (with another approach - salt and
     // extra entropy) was creating confusion.
-    const shouldRetrieveSmartAccountIndices = this.#keyIterator.type !== 'private-key'
+    const shouldRetrieveSmartAccountIndices = this.keyIterator.type !== 'private-key'
     if (shouldRetrieveSmartAccountIndices) {
       // Indices for the smart accounts.
       indicesToRetrieve.push({
@@ -818,7 +818,7 @@ export class AccountAdderController extends EventEmitter {
     // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
     // for Trezor, because it fires a confirmation popup for each call.
-    const combinedBasicAndSmartAccKeys = await this.#keyIterator.retrieve(
+    const combinedBasicAndSmartAccKeys = await this.keyIterator.retrieve(
       indicesToRetrieve,
       this.hdPathTemplate
     )

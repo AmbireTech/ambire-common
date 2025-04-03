@@ -509,6 +509,9 @@ export class MainController extends EventEmitter {
     // if accounts exists.
     await this.accounts.addAccounts(this.accountAdder.readyToAddAccounts)
 
+    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountAdder.keyIterator)) {
+      await this.keystore.persistTempSeed()
+    }
     // Then add keys, because some of the next steps could have validation
     // if keys exists. Should be separate (not combined in Promise.all,
     // since firing multiple keystore actions is not possible

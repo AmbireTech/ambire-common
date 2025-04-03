@@ -80,10 +80,6 @@ export type Action =
       meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
     }
   | {
-      label: 'Check'
-      actionName: 'confirm-temp-seed'
-    }
-  | {
       label: 'Open'
       actionName: 'open-first-cashback-modal'
     }

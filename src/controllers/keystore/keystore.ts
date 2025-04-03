@@ -10,12 +10,12 @@ import {
   publicKeyByPrivateKey
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
-import { Account } from 'interfaces/account'
 import scrypt from 'scrypt-js'
 
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
-import { Banner } from '../../interfaces/banner'
+import { Account } from '../../interfaces/account'
+import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   ExternalKey,
   InternalKey,
@@ -46,7 +46,6 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
-  moveTempSeedToKeystoreSeeds: 'INITIAL',
   deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
@@ -95,10 +94,6 @@ export class KeystoreController extends EventEmitter {
 
   #keystoreSeeds: KeystoreSeed[] = []
 
-  // when importing a seed, save it temporary here before deciding
-  // whether to place it in #keystoreSeeds or delete it
-  //
-  // this should be done only if there isn't a saved seed already
   #tempSeed: KeystoreSeed | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
@@ -175,6 +170,10 @@ export class KeystoreController extends EventEmitter {
 
   get isUnlocked() {
     return !!this.#mainKey
+  }
+
+  get hasTempSeed() {
+    return !!this.#tempSeed
   }
 
   async getKeyStoreUid() {
@@ -428,7 +427,7 @@ export class KeystoreController extends EventEmitter {
     }
   }
 
-  async addSeedToTemp({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
+  async addTempSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -438,12 +437,7 @@ export class KeystoreController extends EventEmitter {
         error: new Error('keystore: hd path to temp seed incorrect')
       })
 
-    const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
-      seed,
-      seedPassphrase
-    )
-
-    this.#tempSeed = { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate }
+    this.#tempSeed = { seed, seedPassphrase, hdPathTemplate }
 
     this.emitUpdate()
   }
@@ -453,7 +447,7 @@ export class KeystoreController extends EventEmitter {
     if (shouldUpdate) this.emitUpdate()
   }
 
-  async #moveTempSeedToKeystoreSeeds() {
+  async persistTempSeed() {
     if (this.#mainKey === null)
       throw new EmittableError({
         message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
@@ -482,15 +476,9 @@ export class KeystoreController extends EventEmitter {
       })
     }
 
-    this.#keystoreSeeds.push(this.#tempSeed)
-    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+    await this.addSeed(this.#tempSeed)
     this.#tempSeed = null
     this.emitUpdate()
-  }
-
-  async moveTempSeedToKeystoreSeeds() {
-    await this.#initialLoadPromise
-    await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds())
   }
 
   async #addSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
@@ -499,7 +487,12 @@ export class KeystoreController extends EventEmitter {
       seedPassphrase
     )
 
-    this.#keystoreSeeds.push({ seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate })
+    this.#keystoreSeeds = Array.from(
+      new Set([
+        ...this.#keystoreSeeds,
+        { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate }
+      ])
+    )
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
@@ -701,6 +694,12 @@ export class KeystoreController extends EventEmitter {
       seed: decrypted.seed,
       seedPassphrase: decrypted.seedPassphrase
     })
+  }
+
+  async sendTempSeedToUi() {
+    if (!this.#tempSeed) return
+
+    this.#windowManager.sendWindowUiMessage({ tempSeed: this.#tempSeed })
   }
 
   async #getPrivateKey(keyAddress: string): Promise<string> {
@@ -925,26 +924,6 @@ export class KeystoreController extends EventEmitter {
     return !!this.#tempSeed
   }
 
-  get banners(): Banner[] {
-    if (!this.#tempSeed) return []
-
-    return [
-      {
-        id: 'tempSeed',
-        type: 'warning',
-        category: 'temp-seed-not-confirmed',
-        title: 'You have an unsaved imported seed',
-        text: '',
-        actions: [
-          {
-            label: 'Check',
-            actionName: 'confirm-temp-seed'
-          }
-        ]
-      }
-    ]
-  }
-
   getAccountKeys(acc: Account): Key[] {
     return this.keys.filter((key) => acc.associatedKeys.includes(key.addr))
   }
@@ -967,6 +946,12 @@ export class KeystoreController extends EventEmitter {
     return feePayerKey
   }
 
+  isKeyIteratorInitializedWithTempSeed(keyIterator?: KeyIterator | null) {
+    if (!this.#tempSeed || !keyIterator || keyIterator.subType !== 'seed') return false
+
+    return !!keyIterator.isSeedMatching && keyIterator.isSeedMatching(this.#tempSeed.seed)
+  }
+
   toJSON() {
     return {
       ...this,
@@ -976,7 +961,7 @@ export class KeystoreController extends EventEmitter {
       hasPasswordSecret: this.hasPasswordSecret,
       hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
-      banners: this.banners
+      hasTempSeed: this.hasTempSeed
     }
   }
 }
