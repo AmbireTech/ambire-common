@@ -124,6 +124,23 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
           calls[i]![3].value! > calls[j]![2].value! ? calls[i]![3].value : calls[j]![2].value
         calls.splice(j, 1)
       }
+      // because of this https://www.codeslaw.app/contracts/ethereum/0x66a9893cc07d91d95644aedd05d03f95e1dba8af?file=src%2Fpkgs%2Funiversal-router%2Flib%2Fv4-periphery%2Fsrc%2Flibraries%2FActionConstants.sol&start=11&end=13
+      // we can mash two swaps into one
+      if (calls.map(isSwap).length === 2) {
+        const indexesOfSwaps = calls
+          .map((call, index: number) => (isSwap(call) ? index : -1))
+          .filter((index: number) => index !== -1)
+        const indexOfFirstCall = indexesOfSwaps[0]
+        const indexOfSecondCall = indexesOfSwaps[1]
+        if (
+          calls[indexOfFirstCall][3].value === 0n &&
+          calls[indexOfSecondCall][1].value === BigInt(`0x8${'0'.repeat(63)}`) &&
+          calls[indexOfFirstCall][3].address === calls[indexOfSecondCall][1].address
+        ) {
+          calls[indexOfFirstCall][3] = calls[indexOfSecondCall][3]
+          calls.splice(indexOfSecondCall, 1)
+        }
+      }
     }
   }
   return originalCallsLength === calls.length ? joinWithAndLabel(calls) : uniReduce(calls)
