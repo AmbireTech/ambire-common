@@ -1,4 +1,4 @@
-import { PERMIT_2_ADDRESS } from '../../../consts/addresses'
+import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
@@ -54,7 +54,9 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
   const visualizations: HumanizerVisualization[] = []
   if (
     tm?.domain?.verifyingContract &&
-    tm.domain.verifyingContract.toLowerCase() === PERMIT_2_ADDRESS.toLowerCase()
+    [PERMIT_2_ADDRESS.toLowerCase(), PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(
+      tm.domain.verifyingContract.toLowerCase()
+    )
   ) {
     if (tm?.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
       visualizations.push(
