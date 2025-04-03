@@ -28,14 +28,18 @@ export class EstimationController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  // this is mainly for the bundler switcher but in general
-  // if the estimation wants to know the status of the outside
-  // controller, this is the function to set up intiially
+  /**
+   * this is mainly for the bundler switcher but in general
+   * if the estimation wants to know the status of the outside
+   * controller, this is the function to set up intiially
+   */
   #getOutsideControllerStatus: Function = () => {}
 
-  // this is mainly for the bundler switcher but in general
-  // if the estimation wants to know on which statuses in should
-  // disregard updates, this is the place
+  /**
+   * this is mainly for the bundler switcher but in general
+   * if the estimation wants to know the status of the outside
+   * controller, this is the function to set up intiially
+   */
   #outsideControllerNoUpdateStatuses: any[] = []
 
   status: EstimationStatus = EstimationStatus.Initial
@@ -44,8 +48,10 @@ export class EstimationController extends EventEmitter {
 
   error: Error | null = null
 
-  // a boolean to understand if the estimation has been performed
-  // at least one indicating clearly that all other are re-estimates
+  /**
+   * a boolean to understand if the estimation has been performed
+   * at least one indicating clearly that all other are re-estimates
+   */
   hasEstimated: boolean = false
 
   estimationRetryError: ErrorRef | null = null
@@ -202,12 +208,16 @@ export class EstimationController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // it's initialized if it has estimated at least once
+  /**
+   * it's initialized if it has estimated at least once
+   */
   isInitialized() {
     return this.hasEstimated
   }
 
-  // has it estimated at least once without a failure
+  /**
+   * has it estimated at least once without a failure
+   */
   isLoadingOrFailed() {
     return !this.hasEstimated || !!this.error
   }
@@ -238,8 +248,7 @@ export class EstimationController extends EventEmitter {
           this.error
             ? 'We will continue retrying, but please check your internet connection.'
             : 'Automatically retrying in a few seconds. Please wait...'
-        }`,
-        code: 'ESTIMATION_ERROR'
+        }`
       })
 
       return errors
@@ -250,7 +259,10 @@ export class EstimationController extends EventEmitter {
     if (this.error) {
       errors.push({
         title: this.error.message,
-        code: 'ESTIMATION_ERROR'
+        code:
+          typeof this.error.cause === 'string' && this.error.cause.length
+            ? this.error.cause
+            : 'ESTIMATION_ERROR'
       })
     }
 
