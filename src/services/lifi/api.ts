@@ -28,7 +28,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { ZERO_ADDRESS } from '../socket/constants'
+import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
@@ -384,15 +384,9 @@ export class LiFiAPI {
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
         allowDestinationCall: 'false',
-        allowSwitchChain: 'false'
-        // <Bobby>:
-        // Li.Fi. fee is not controlled by the front end, it's controlled
-        // from the Li.Fi. dashboard. It means we cannot set it from here so
-        // commenting out this code. Currently, we have a 25 BPS set for each
-        // swap & bridge no matter if OG mode is on or not
-        //
+        allowSwitchChain: 'false',
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        // fee: (FEE_PERCENT / 100).toString() as string | undefined
+        fee: (FEE_PERCENT / 100).toString() as string | undefined
       }
     }
 
