@@ -314,7 +314,14 @@ export class PortfolioController extends EventEmitter {
     const accountState = states[stateKey][accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (error) accountState[network]!.criticalError = error
+    if (error)
+      accountState[network]!.criticalError = {
+        message:
+          error?.message || 'Error while executing the get function in the portfolio library.',
+        simulationErrorMsg: error?.simulationErrorMsg,
+        stack: error?.stack,
+        name: error?.name
+      }
   }
 
   removeNetworkData(chainId: bigint) {
@@ -626,7 +633,16 @@ export class PortfolioController extends EventEmitter {
         error: e
       })
       state.isLoading = false
-      state.criticalError = e
+      // Convert the error to an object because the portfolio state is cloned
+      // using structuredClone() which doesn't preserve custom error properties
+      // like simulationErrorMsg
+      state.criticalError = {
+        message: e?.message || 'Error while executing the get function in the portfolio library.',
+        simulationErrorMsg: e?.simulationErrorMsg,
+        stack: e?.stack,
+        name: e?.name
+      }
+
       if (forceUpdate && state.result) {
         // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
         // is likely expecting a change in the portfolio.

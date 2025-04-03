@@ -1,6 +1,6 @@
 /* eslint no-console: "off" */
 
-import { ethers } from 'ethers'
+import { ethers, parseEther } from 'ethers'
 import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
@@ -523,7 +523,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
+          amount: parseEther('1'),
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,
@@ -621,7 +621,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 1n,
+          amount: 0n,
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,
@@ -1054,7 +1054,7 @@ describe('SignAccountOp Controller ', () => {
 
       const errors = controller.errors
       expect(errors.length).toBe(1)
-      expect(errors[0]).toBe(
+      expect(errors[0].title).toBe(
         `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
       )
       expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
@@ -1487,7 +1487,7 @@ describe('SignAccountOp Controller ', () => {
 
       const errors = controller.errors
       expect(errors.length).toBe(1)
-      expect(errors[0]).toBe(
+      expect(errors[0].title).toBe(
         'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC and others'
       )
 

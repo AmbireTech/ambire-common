@@ -4,6 +4,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt, isAddress } from 'ethers'
 
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { BUNDLER } from '../../consts/bundlers'
@@ -26,7 +27,10 @@ import { RPCProvider } from '../../interfaces/provider'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
-import { SocketAPISendTransactionRequest } from '../../interfaces/swapAndBridge'
+import {
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeSendTxRequest
+} from '../../interfaces/swapAndBridge'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import {
@@ -39,7 +43,6 @@ import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
   getDappIdentifier,
-  pollTxnId,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
@@ -93,9 +96,9 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { getDefaultBundler } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
+import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
-import { SocketAPI } from '../../services/socket/api'
 import { getIsViewOnly } from '../../utils/accounts'
 import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
@@ -243,6 +246,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     socketApiKey,
     keystoreSigners,
     externalSignerControllers,
@@ -350,7 +354,8 @@ export class MainController extends EventEmitter {
       storage: this.#storage,
       windowManager: this.#windowManager
     })
-    const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    // const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
+    const lifiAPI = new LiFiAPI({ fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
@@ -390,13 +395,19 @@ export class MainController extends EventEmitter {
       }
     )
     this.swapAndBridge = new SwapAndBridgeController({
+      accounts: this.accounts,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      socketAPI,
+      // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
+      // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
+      serviceProviderAPI: lifiAPI,
       storage: this.#storage,
-      actions: this.actions
+      actions: this.actions,
+      portfolioUpdate: () => {
+        this.updateSelectedAccountPortfolio(true)
+      }
     })
     this.domains = new DomainsController(this.providers.providers)
 
@@ -665,20 +676,28 @@ export class MainController extends EventEmitter {
       const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)!
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       const provider = this.providers.providers[network.chainId.toString()]
+      const stateOverride =
+        accountOp.calls.length > 1 && isBasicAccount(account, state)
+          ? {
+              [account.addr]: {
+                code: AmbireAccount7702.binRuntime
+              }
+            }
+          : undefined
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
         provider,
         state,
-        !network.rpcNoStateOverride
+        !network.rpcNoStateOverride,
+        stateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network,
-        accountOp
+        network
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -1097,8 +1116,7 @@ export class MainController extends EventEmitter {
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData,
-      this.signAccountOp?.accountOp
+      networkData
     )
 
     await this.portfolio.updateSelectedAccount(
@@ -1386,16 +1404,24 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, 'last', actionExecutionType)
   }
 
-  async buildSwapAndBridgeUserRequest(activeRouteId?: number) {
+  async buildSwapAndBridgeUserRequest(activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
         if (!this.selectedAccount.account) return
-        let transaction: SocketAPISendTransactionRequest | null | undefined = null
+        let transaction: SwapAndBridgeSendTxRequest | null | undefined = null
 
         const activeRoute = this.swapAndBridge.activeRoutes.find(
           (r) => r.activeRouteId === activeRouteId
         )
+
+        // learn the receiving token
+        if (this.swapAndBridge.toSelectedToken && this.swapAndBridge.toChainId) {
+          this.portfolio.addTokensToBeLearned(
+            [this.swapAndBridge.toSelectedToken.address],
+            BigInt(this.swapAndBridge.toChainId)
+          )
+        }
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           transaction = await this.swapAndBridge.getRouteStartUserTx()
@@ -1408,7 +1434,10 @@ export class MainController extends EventEmitter {
           })
           this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
 
-          transaction = await this.swapAndBridge.getNextRouteUserTx(activeRoute.activeRouteId)
+          transaction = await this.swapAndBridge.getNextRouteUserTx({
+            activeRouteId: activeRoute.activeRouteId,
+            activeRoute
+          })
 
           if (transaction) {
             const network = this.networks.networks.find(
@@ -1625,10 +1654,10 @@ export class MainController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: number) {
+  removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
-        r.id
+        r.id as string
       )
     )
 
@@ -2032,7 +2061,7 @@ export class MainController extends EventEmitter {
 
     this.actions.removeAction(actionId)
 
-    // handle wallet_sendCalls before pollTxnId as 1) it's faster
+    // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
@@ -2057,12 +2086,7 @@ export class MainController extends EventEmitter {
     }
 
     // Note: this may take a while!
-    const txnId = await pollTxnId(
-      submittedAccountOp.identifiedBy,
-      network,
-      this.fetch,
-      this.callRelayer
-    )
+    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
@@ -2226,8 +2250,7 @@ export class MainController extends EventEmitter {
     const accOpsForSimulation = getAccountOpsForSimulation(
       this.accounts.accounts.find((acc) => acc.addr === op.accountAddr)!,
       this.actions.visibleActionsQueue,
-      network,
-      op
+      network
     )
     return this.portfolio.updateSelectedAccount(
       op.accountAddr,

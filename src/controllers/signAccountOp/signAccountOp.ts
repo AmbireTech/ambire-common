@@ -25,7 +25,11 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
+import {
+  SignAccountOpError,
+  TraceCallDiscoveryStatus,
+  Warning
+} from '../../interfaces/signAccountOp'
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 /* eslint-disable no-restricted-syntax */
@@ -108,13 +112,14 @@ export enum FeeSpeed {
   Ape = 'ape'
 }
 
-type SpeedCalc = {
+export type SpeedCalc = {
   type: FeeSpeed
   amount: bigint
   simulatedGasLimit: bigint
   amountFormatted: string
   amountUsd: string
   gasPrice: bigint
+  disabled: boolean
   maxPriorityFeePerGas?: bigint
 }
 
@@ -161,7 +166,7 @@ export class SignAccountOpController extends EventEmitter {
 
   feeTokenResult: TokenResult | null = null
 
-  selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
+  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
   selectedOption: FeePaymentOption | undefined = undefined
 
@@ -289,22 +294,21 @@ export class SignAccountOpController extends EventEmitter {
     return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
   }
 
-  get errors(): string[] {
-    const errors: string[] = []
+  get errors(): SignAccountOpError[] {
+    const errors: SignAccountOpError[] = []
 
     const isEstimationLoadingOrFailed = !this.estimation || this.estimation?.error
 
     if (isEstimationLoadingOrFailed && this.estimationRetryError) {
       // If there is a successful estimation we should show this as a warning
       // as the user can use the old estimation to broadcast
-
-      errors.push(
-        `${this.estimationRetryError.message} ${
+      errors.push({
+        title: `${this.estimationRetryError.message} ${
           this.estimation?.error
             ? 'We will continue retrying, but please check your internet connection.'
             : 'Automatically retrying in a few seconds. Please wait...'
         }`
-      )
+      })
     }
 
     if (!this.isInitialized) return errors
@@ -314,9 +318,11 @@ export class SignAccountOpController extends EventEmitter {
 
     // This must be the first error check!
     if (isAmbireV1AndNetworkNotSupported) {
-      errors.push(
-        'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
-      )
+      errors.push({
+        title:
+          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.',
+        code: 'V1_UNSUPPORTED_NETWORK'
+      })
 
       // Don't show any other errors
       return errors
@@ -324,15 +330,21 @@ export class SignAccountOpController extends EventEmitter {
 
     // if there's an estimation error, show it
     if (this.estimation?.error) {
-      errors.push(this.estimation.error.message)
+      const cause = this.estimation.error.cause
+      errors.push({
+        title: this.estimation.error.message,
+        code: typeof cause === 'string' && cause.length ? cause : 'ESTIMATION_ERROR'
+      })
     }
 
     const areGasPricesLoading = typeof this.gasPrices === 'undefined'
 
     if (!areGasPricesLoading && !this.gasPrices?.length) {
-      errors.push(
-        'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
-      )
+      errors.push({
+        title:
+          'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.',
+        code: 'GAS_PRICE_UNAVAILABLE'
+      })
     }
 
     if (
@@ -340,7 +352,10 @@ export class SignAccountOpController extends EventEmitter {
       this.selectedOption &&
       this.selectedOption.gasUsed > this.#blockGasLimit
     ) {
-      errors.push('Transaction reverted with estimation too high: above block limit')
+      errors.push({
+        title: 'The transaction gas limit exceeds the network block gas limit.',
+        code: 'GAS_LIMIT_EXCEEDED'
+      })
     }
 
     if (
@@ -348,17 +363,26 @@ export class SignAccountOpController extends EventEmitter {
       this.selectedOption &&
       this.selectedOption.gasUsed > 500000000n
     ) {
-      errors.push('Unreasonably high estimation. This transaction will probably fail')
+      errors.push({
+        title: 'Unreasonably high estimation. This transaction will probably fail',
+        code: 'UNREASONABLY_HIGH_ESTIMATION'
+      })
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
     if (!this.isSponsored && !this.availableFeeOptions.length)
-      errors.push(ERRORS.eoaInsufficientFunds)
+      errors.push({
+        title: 'Insufficient funds to cover the fee.',
+        code: 'INSUFFICIENT_FUNDS'
+      })
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
-      errors.push('Please select a signer to sign the transaction.')
+      errors.push({
+        title: 'Please select a signer to sign the transaction.',
+        code: 'NO_SIGNER'
+      })
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
     const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
@@ -367,9 +391,11 @@ export class SignAccountOpController extends EventEmitter {
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
     if (!this.isSponsored && !currentPortfolioNetworkNative)
-      errors.push(
-        'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
-      )
+      errors.push({
+        title:
+          'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.',
+        code: 'NO_NATIVE_TOKEN'
+      })
 
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
     // 2) selectedOption and 3) gasSpeeds for selectedOption => return an error
@@ -385,7 +411,10 @@ export class SignAccountOpController extends EventEmitter {
         this.rbfAccountOps[this.selectedOption.paidBy]
       )
       if (this.hasSpeeds(identifier))
-        errors.push('Please select a token and an account for paying the gas fee.')
+        errors.push({
+          title: 'Please select a token and an account for paying the gas fee.',
+          code: 'NO_GAS_FEE_PAYMENT'
+        })
     }
 
     if (
@@ -440,26 +469,30 @@ export class SignAccountOpController extends EventEmitter {
             .map(({ symbol }) => symbol.toUpperCase())
             .join(', ')
 
-          errors.push(
-            `${ERRORS.eoaInsufficientFunds}${
+          errors.push({
+            title: `${ERRORS.eoaInsufficientFunds}${
               isSA
                 ? ` Available fee options: USDC in Gas Tank, ${gasTokenNames}${
                     skippedTokensCount ? ' and others' : ''
                   }`
                 : ''
-            }`
-          )
+            }`,
+            code: isSA ? 'INSUFFICIENT_FUNDS_SA' : 'INSUFFICIENT_FUNDS'
+          })
         } else {
-          errors.push(
-            isSA
+          errors.push({
+            title: isSA
               ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-              : ERRORS.eoaInsufficientFunds
-          )
+              : ERRORS.eoaInsufficientFunds,
+            code: isSA ? 'INSUFFICIENT_FUNDS_SA' : 'INSUFFICIENT_FUNDS'
+          })
         }
       } else {
-        errors.push(
-          'The selected speed is not available due to insufficient funds. Please select a slower speed.'
-        )
+        errors.push({
+          title:
+            'The selected speed is not available due to insufficient funds. Please select a slower speed.',
+          code: 'FEE_SPEED_UNAVAILABLE'
+        })
       }
     }
 
@@ -478,13 +511,16 @@ export class SignAccountOpController extends EventEmitter {
       )
       if (!this.hasSpeeds(identifier)) {
         if (!this.feeTokenResult?.priceIn.length) {
-          errors.push(
-            `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
-          )
+          errors.push({
+            title: `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`,
+            code: 'MISSING_FEE_TOKEN_PRICE'
+          })
         } else {
-          errors.push(
-            'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
-          )
+          errors.push({
+            title:
+              'Unable to estimate the transaction fee. Please try changing the fee token or contact support.',
+            code: 'FEE_SPEEDS_UNAVAILABLE'
+          })
         }
       }
     }
@@ -534,10 +570,20 @@ export class SignAccountOpController extends EventEmitter {
     if (this.estimationRetryError && !!this.estimation && !this.estimation.error) {
       warnings.push({
         id: 'estimation-retry',
-        title: this.estimationRetryError.message,
-        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
-        promptBeforeSign: false,
-        displayBeforeSign: true
+        title: `${this.estimationRetryError.message} You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...`,
+        promptBeforeSign: false
+      })
+    }
+    if (
+      this.estimation?.bundlerEstimation?.nonFatalErrors?.find(
+        (err) => err.cause === '4337_ESTIMATION'
+      )
+    ) {
+      warnings.push({
+        id: 'bundler-failure',
+        title:
+          'Smart account fee options are temporarily unavailable. You can pay fee with a Basic account or try again later',
+        promptBeforeSign: false
       })
     }
 
@@ -644,7 +690,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#setDefaults()
 
       if (this.estimation && this.paidBy && this.feeTokenResult) {
-        this.selectedOption = this.availableFeeOptions.find(
+        const selectedOption = this.availableFeeOptions.find(
           (option) =>
             option.paidBy === this.paidBy &&
             option.token.address === this.feeTokenResult!.address &&
@@ -652,6 +698,13 @@ export class SignAccountOpController extends EventEmitter {
               this.feeTokenResult!.symbol.toLocaleLowerCase() &&
             option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
         )
+        // <Bobby>: trigger setting the real default speed just before
+        // setting the first selectedOption. This way we know all the
+        // necessary information like available amount for the selected
+        // option so we could calculate the fee speed if he doesn't have
+        // enough for fast but has enough for slow/medium
+        if (selectedOption) this.#setDefaultFeeSpeed(selectedOption)
+        this.selectedOption = selectedOption
       }
 
       if (
@@ -860,6 +913,29 @@ export class SignAccountOpController extends EventEmitter {
     return !this.isInitialized || !this.gasPrices
   }
 
+  #setDefaultFeeSpeed(feePaymentOption: FeePaymentOption) {
+    // don't update if an option is already set
+    if (this.selectedOption) return
+
+    const identifier = getFeeSpeedIdentifier(
+      feePaymentOption,
+      this.account.addr,
+      this.rbfAccountOps[feePaymentOption.paidBy]
+    )
+    const speeds = this.feeSpeeds[identifier]
+    if (!speeds) return
+
+    // set fast if available
+    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
+      this.selectedFeeSpeed = FeeSpeed.Fast
+      return
+    }
+
+    // set at least slow
+    const fastestEnabledSpeed = [...speeds].reverse().find(({ disabled }) => !disabled)
+    this.selectedFeeSpeed = fastestEnabledSpeed?.type || FeeSpeed.Slow
+  }
+
   #updateFeeSpeeds() {
     if (!this.estimation || this.estimation instanceof Error || !this.gasPrices) return
 
@@ -926,7 +1002,8 @@ export class SignAccountOpController extends EventEmitter {
             amountFormatted: formatUnits(amount, Number(option.token.decimals)),
             amountUsd: getTokenUsdAmount(option.token, amount),
             gasPrice,
-            maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
+            maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas),
+            disabled: (option.availableAmount || 0n) < amount
           })
         }
 
@@ -995,7 +1072,8 @@ export class SignAccountOpController extends EventEmitter {
           amountFormatted: formatUnits(amount, Number(option.token.decimals)),
           amountUsd: getTokenUsdAmount(option.token, amount),
           gasPrice,
-          maxPriorityFeePerGas
+          maxPriorityFeePerGas,
+          disabled: option.availableAmount < amount
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier].push(feeSpeed)

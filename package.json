@@ -1,5 +1,5 @@
 {
-  "version": "2.48.3",
+  "version": "2.49.1",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -13,6 +13,7 @@
     "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix"
   },
   "dependencies": {
+    "@lifi/types": "^17.7.1",
     "aes-js": "^3.1.2",
     "dotenv": "^16.3.1",
     "eth-crypto": "^2.6.0",
@@ -29,7 +30,6 @@
     "@ethersproject/abstract-signer": "^5.7.0",
     "@types/uuid": "9.0.0",
     "@types/validator": "^13.7.0",
-    "@unstoppabledomains/resolution": "^9.2.2",
     "@walletconnect/client": "^1.7.1",
     "bip44-constants": "^128.0.0",
     "ethereumjs-util": "^7.1.3",
