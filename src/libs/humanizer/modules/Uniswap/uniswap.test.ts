@@ -14,7 +14,7 @@ import {
   getRecipientText,
   getToken
 } from '../../utils'
-import { uniswapHumanizer } from '.'
+import { uniswapHumanizer } from './'
 
 const transactions = {
   firstBatch: [
@@ -278,7 +278,7 @@ describe('uniswap', () => {
     expect(irCalls.length).toEqual(expectedVisualization.length)
     compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
   })
-  test.only('swap calls (second one takes funds from contract)', () => {
+  test('swap calls (second one takes funds from contract)', () => {
     // this is the sentinel value the tested logic is written for
     // https://www.codeslaw.app/contracts/ethereum/0x66a9893cc07d91d95644aedd05d03f95e1dba8af?file=src%2Fpkgs%2Funiversal-router%2Flib%2Fv4-periphery%2Fsrc%2Flibraries%2FActionConstants.sol&start=11&end=13
     // https://www.codeslaw.app/contracts/bnbchain/0x1A0A18AC4BECDDbd6389559687d1A73d8927E416?file=contracts%2Flibraries%2FConstants.sol&start=9&end=11
