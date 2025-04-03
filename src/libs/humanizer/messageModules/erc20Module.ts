@@ -23,23 +23,5 @@ export const erc20Module: HumanizerTypedMessageModule = (message: Message) => {
       ].filter((x) => x) as HumanizerVisualization[]
     }
   }
-  if (
-    tm.types.PermitSingle &&
-    tm.primaryType === 'PermitSingle' &&
-    tm?.message?.spender &&
-    tm?.message?.details?.token &&
-    tm?.message?.details?.amount &&
-    tm?.message?.details?.expiration
-  ) {
-    return {
-      fullVisualization: [
-        getAction('Approve'),
-        getAddressVisualization(tm.message.spender),
-        getLabel('to use'),
-        getToken(tm.message.details.token, BigInt(tm.message.details.amount)),
-        getDeadline(tm.message.details.expiration)
-      ]
-    }
-  }
   return { fullVisualization: [] }
 }
