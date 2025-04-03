@@ -219,7 +219,7 @@ export class EstimationController extends EventEmitter {
    * has it estimated at least once without a failure
    */
   isLoadingOrFailed() {
-    return !this.hasEstimated || !!this.error
+    return this.status === EstimationStatus.Loading || !!this.error
   }
 
   calculateWarnings() {
@@ -230,6 +230,19 @@ export class EstimationController extends EventEmitter {
         id: 'estimation-retry',
         title: this.estimationRetryError.message,
         text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
+        promptBeforeSign: false
+      })
+    }
+
+    if (
+      this.estimation?.bundlerEstimation?.nonFatalErrors?.find(
+        (err) => err.cause === '4337_ESTIMATION'
+      )
+    ) {
+      warnings.push({
+        id: 'bundler-failure',
+        title:
+          'Smart account fee options are temporarily unavailable. You can pay fee with a Basic account or try again later',
         promptBeforeSign: false
       })
     }
@@ -275,5 +288,6 @@ export class EstimationController extends EventEmitter {
     this.hasEstimated = false
     this.status = EstimationStatus.Initial
     this.estimationRetryError = null
+    this.availableFeeOptions = []
   }
 }
