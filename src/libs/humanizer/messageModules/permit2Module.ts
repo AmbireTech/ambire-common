@@ -40,11 +40,10 @@ interface PermitDetails {
 interface PermitGist {
   token: string
   amount: bigint
-  spender: string
 }
 
-const getPermitData = (permit: PermitDetails, spender: string): PermitGist => {
-  return { token: permit.token, amount: permit.amount, spender }
+const getPermitData = (permit: PermitDetails): PermitGist => {
+  return { token: permit.token, amount: permit.amount }
 }
 
 export const permit2Module: HumanizerTypedMessageModule = (message: Message) => {
@@ -62,16 +61,14 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
 
     const permits: PermitGist[] =
       messageType === 'PermitDetails'
-        ? [getPermitData(tm.message.details, tm.message.spender)]
-        : tm.message.details.map((permitDetails: PermitDetails) =>
-            getPermitData(permitDetails, tm.message.spender)
-          )
+        ? [getPermitData(tm.message.details)]
+        : tm.message.details.map((permitDetails: PermitDetails) => getPermitData(permitDetails))
 
     if (!permits.length) return { fullVisualization: [] }
 
     const permitVisualizations = permits
-      .map(({ token, amount, spender }) => [
-        getAddressVisualization(spender),
+      .map(({ token, amount }) => [
+        getAddressVisualization(tm.message.spender),
         getLabel('to use'),
         getToken(token, amount),
         getLabel('and')
