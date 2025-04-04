@@ -81,7 +81,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -290,6 +290,9 @@ export class SignAccountOpController extends EventEmitter {
         bundlerGasPrices: this.gasPrice.bundlerGasPrices[this.#network.chainId.toString()],
         blockGasLimit: this.gasPrice.blockGasLimit
       })
+    })
+    this.gasPrice.onError((error: ErrorRef) => {
+      this.emitError(error)
     })
 
     this.simulate(true)
