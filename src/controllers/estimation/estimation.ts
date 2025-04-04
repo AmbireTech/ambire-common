@@ -197,8 +197,8 @@ export class EstimationController extends EventEmitter {
   /**
    * has it estimated at least once without a failure
    */
-  isLoadingOrFailed() {
-    return this.status === EstimationStatus.Loading || !!this.error
+  isLoadingOrFailed(): boolean {
+    return this.status === EstimationStatus.Loading || this.error instanceof Error
   }
 
   calculateWarnings() {
