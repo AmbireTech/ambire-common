@@ -18,13 +18,3 @@ export interface TransferUpdate {
   isTopUp?: boolean
   amountFieldMode?: 'token' | 'fiat'
 }
-
-export type PersistedTransferUpdate = Omit<
-  TransferUpdate,
-  'humanizerInfo' | 'contacts' | 'selectedAccountData' | 'networks' | 'selectedToken' | 'isTopUp'
-> & {
-  selectedToken?: {
-    address: string
-    networkId: string
-  }
-}

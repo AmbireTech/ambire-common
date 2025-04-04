@@ -5,7 +5,7 @@ import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
-import { PersistedTransferUpdate, TransferUpdate } from '../../interfaces/transfer'
+import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
@@ -16,6 +16,7 @@ import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
+import { stringify } from '../../libs/richJson/richJson'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -41,15 +42,28 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const HARD_CODED_CURRENCY = 'usd'
 
 // TODO - document versioning
+// TOOD - use extension version as a version key
 const PERSIST_STORAGE_KEY = 'transferState-v1'
-const ALLOWED_PERSIST_KEYS: (keyof PersistedTransferUpdate)[] = [
-  'amount',
-  'amountFieldMode',
-  'addressState',
-  'isSWWarningAgreed',
-  'isRecipientAddressUnknownAgreed',
-  'selectedToken'
-]
+
+type PersistedState = Partial<
+  Pick<
+    TransferController,
+    | 'amount'
+    | 'amountInFiat'
+    | 'amountFieldMode'
+    | 'addressState'
+    | 'isSWWarningVisible'
+    | 'isSWWarningAgreed'
+    | 'isRecipientAddressUnknown'
+    | 'isRecipientAddressUnknownAgreed'
+    | 'isRecipientHumanizerKnownTokenOrSmartContract'
+  >
+> & {
+  selectedToken?: {
+    address: string
+    networkId: string
+  }
+}
 
 export class TransferController extends EventEmitter {
   #storage: Storage
@@ -91,8 +105,6 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #persistedState: PersistedTransferUpdate = {}
-
   constructor(
     storage: Storage,
     humanizerInfo: HumanizerMeta,
@@ -123,59 +135,55 @@ export class TransferController extends EventEmitter {
   }
 
   async #hydrate() {
-    const persistedState = await this.#storage.get(PERSIST_STORAGE_KEY, {})
-    this.#persistedState = persistedState
+    const persistedState: PersistedState = await this.#storage.get(PERSIST_STORAGE_KEY, {})
+    const { selectedToken, ...rest } = persistedState
 
-    console.log('Hydrate:', persistedState)
-
-    if (persistedState.selectedToken) {
+    // Normalize selected token to TokenResult
+    if (selectedToken) {
       const portfolioToken = this.#portfolio.tokens.find(
         (token) =>
-          token.address === persistedState.selectedToken.address &&
-          token.networkId === persistedState.selectedToken.networkId
+          token.address === selectedToken.address && token.networkId === selectedToken.networkId
       )
 
-      persistedState.selectedToken = portfolioToken
+      if (portfolioToken) this.#selectedToken = portfolioToken
     }
 
-    console.log('Hydrate (normalized):', persistedState)
-
-    await this.update(persistedState, { isHydrate: true, shouldPersist: true })
+    Object.assign(this, rest)
+    console.log('HYDRATED STATE:', this.#selectedToken, this.toJSON())
   }
 
-  #persist(updateInput: TransferUpdate) {
-    console.log('Persist (latest input):', updateInput)
-    const definedOnly: PersistedTransferUpdate = Object.fromEntries(
-      ALLOWED_PERSIST_KEYS.map((key) => [key, updateInput[key]]).filter(
-        ([, value]) => value !== undefined
-      )
-    )
-
-    this.#persistedState = {
-      ...this.#persistedState,
-      ...definedOnly,
-      ...(definedOnly.selectedToken && {
-        selectedToken: {
-          address: definedOnly.selectedToken.address,
-          networkId: definedOnly.selectedToken.networkId
-        }
-      }),
-      ...(definedOnly.addressState && {
-        addressState: {
-          ...this.#persistedState.addressState,
-          ...definedOnly.addressState
-        }
-      })
+  get persistableState() {
+    const PERSISTED_FIELDS: PersistedState = {
+      amount: this.amount,
+      amountInFiat: this.amountInFiat,
+      amountFieldMode: this.amountFieldMode,
+      addressState: this.addressState,
+      isSWWarningVisible: this.isSWWarningVisible,
+      isSWWarningAgreed: this.isSWWarningAgreed,
+      isRecipientAddressUnknown: this.isRecipientAddressUnknown,
+      isRecipientAddressUnknownAgreed: this.isRecipientAddressUnknownAgreed,
+      isRecipientHumanizerKnownTokenOrSmartContract:
+        this.isRecipientHumanizerKnownTokenOrSmartContract
     }
 
-    console.log('Persist:', this.#persistedState)
+    // Normalized , as keeping complex structure (TokenResult) persisted in Storage may result in a run-time error,
+    // when we check the structure, but forget to update the storage.
+    if (this.#selectedToken) {
+      PERSISTED_FIELDS.selectedToken = {
+        address: this.#selectedToken.address,
+        networkId: this.#selectedToken.networkId
+      }
+    }
 
-    this.#storage.set(PERSIST_STORAGE_KEY, this.#persistedState)
+    return PERSISTED_FIELDS
+  }
+
+  #persist() {
+    console.log('PERSISTED STATE:', this.persistableState)
+    this.#storage.set(PERSIST_STORAGE_KEY, this.persistableState)
   }
 
   #clearPersistedState() {
-    console.log('Clear persisted state')
-    this.#persistedState = {}
     this.#storage.remove(PERSIST_STORAGE_KEY)
   }
 
@@ -343,16 +351,12 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  async update(
-    updateInput: TransferUpdate,
-    options?: { isHydrate?: boolean; shouldPersist?: boolean }
-  ) {
-    const { isHydrate, shouldPersist } = options || { isHydrate: false, shouldPersist: true }
-    // If we're hydrating, we can safely skip waiting for #initialLoadPromise,
-    // since #load() already loads the necessary storage values and triggers update() with the persisted input.
-    // Otherwise, this.#initialLoadPromise may never resolve, because #load() calls update(),
-    // while update() is waiting for #load() to resolve.
-    if (!isHydrate) await this.#initialLoadPromise
+  async update(updateInput: TransferUpdate, options: { shouldPersist?: boolean } = {}) {
+    const { shouldPersist = true } = options
+
+    await this.#initialLoadPromise
+
+    const prevState = stringify(this.persistableState)
 
     const {
       selectedAccountData,
@@ -391,12 +395,12 @@ export class TransferController extends EventEmitter {
     if (selectedToken) {
       this.selectedToken = selectedToken
     }
-    if (amountFieldMode) {
-      this.amountFieldMode = amountFieldMode
-    }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#setAmount(amount)
+    }
+    if (amountFieldMode) {
+      this.amountFieldMode = amountFieldMode
     }
 
     if (addressState) {
@@ -422,11 +426,19 @@ export class TransferController extends EventEmitter {
     if (typeof isTopUp === 'boolean') {
       this.isTopUp = isTopUp
       this.#setSWWarningVisibleIfNeeded()
-      this.#clearPersistedState()
     }
 
-    if (shouldPersist && !this.isTopUp) this.#persist(updateInput)
     this.emitUpdate()
+
+    if (shouldPersist) {
+      if (this.isTopUp) {
+        return this.#clearPersistedState()
+      }
+
+      const hasStateChange = prevState !== stringify(this.persistableState)
+
+      if (hasStateChange) this.#persist()
+    }
   }
 
   checkIsRecipientAddressUnknown() {
