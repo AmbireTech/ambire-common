@@ -104,7 +104,6 @@ export class GasPriceController extends EventEmitter {
 
     if (!this.gasPriceTimeout)
       this.gasPriceTimeout = createRecurringTimeout(() => this.fetch('major'), 12000)
-    this.gasPriceTimeout.stop()
     this.gasPriceTimeout.start()
   }
 
