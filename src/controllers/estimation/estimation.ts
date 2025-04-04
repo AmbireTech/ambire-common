@@ -1,5 +1,6 @@
 /* eslint-disable class-methods-use-this */
 import { ZeroAddress } from 'ethers'
+import { BundlerSwitcher } from 'services/bundlers/bundlerSwitcher'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -7,7 +8,6 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
-import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
@@ -28,20 +28,6 @@ export class EstimationController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  /**
-   * this is mainly for the bundler switcher but in general
-   * if the estimation wants to know the status of the outside
-   * controller, this is the function to set up intiially
-   */
-  #getOutsideControllerStatus: Function = () => {}
-
-  /**
-   * this is mainly for the bundler switcher but in general
-   * if the estimation wants to know the status of the outside
-   * controller, this is the function to set up intiially
-   */
-  #outsideControllerNoUpdateStatuses: any[] = []
-
   status: EstimationStatus = EstimationStatus.Initial
 
   estimation: FullEstimationSummary | null = null
@@ -58,14 +44,15 @@ export class EstimationController extends EventEmitter {
 
   availableFeeOptions: FeePaymentOption[] = []
 
+  #bundlerSwitcher: BundlerSwitcher
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
     networks: NetworksController,
     providers: ProvidersController,
     portfolio: PortfolioController,
-    getOutsideControllerStatus?: Function,
-    outsideControllerNoUpdateStatuses?: any[]
+    bundlerSwitcher: BundlerSwitcher
   ) {
     super()
     this.#keystore = keystore
@@ -73,9 +60,7 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#providers = providers
     this.#portfolio = portfolio
-    if (getOutsideControllerStatus) this.#getOutsideControllerStatus = getOutsideControllerStatus
-    if (outsideControllerNoUpdateStatuses)
-      this.#outsideControllerNoUpdateStatuses = outsideControllerNoUpdateStatuses
+    this.#bundlerSwitcher = bundlerSwitcher
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount): FeePaymentOption[] {
@@ -159,12 +144,6 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
-    // configure the bundler switcher for the network if any
-    const bundlerSwitcher = new BundlerSwitcher(
-      network,
-      this.#getOutsideControllerStatus,
-      this.#outsideControllerNoUpdateStatuses
-    )
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -173,7 +152,7 @@ export class EstimationController extends EventEmitter {
       this.#providers.providers[op.chainId.toString()],
       feeTokens,
       nativeToCheck,
-      bundlerSwitcher,
+      this.#bundlerSwitcher,
       (e: ErrorRef) => {
         if (!this) return
         this.estimationRetryError = e

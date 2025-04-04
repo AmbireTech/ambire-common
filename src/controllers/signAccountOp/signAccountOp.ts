@@ -257,13 +257,9 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
-    this.bundlerSwitcher = new BundlerSwitcher(
-      network,
-      () => {
-        return this.status ? this.status.type : null
-      },
-      noStateUpdateStatuses
-    )
+    this.bundlerSwitcher = new BundlerSwitcher(network, () => {
+      return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+    })
     this.provider = provider
     this.estimation = new EstimationController(
       keystore,
@@ -271,10 +267,7 @@ export class SignAccountOpController extends EventEmitter {
       networks,
       providers,
       portfolio,
-      () => {
-        return this.status ? this.status.type : null
-      },
-      noStateUpdateStatuses
+      this.bundlerSwitcher
     )
     this.gasPrice = new GasPriceController(network, provider, this.bundlerSwitcher, () => ({
       estimation: this.estimation,

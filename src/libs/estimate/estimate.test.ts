@@ -275,10 +275,9 @@ const trezorSlot6v2NotDeployed: Account = {
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
 
-const getSignAccountOpStatus = () => {
-  return null
+const areUpdatesForbidden = () => {
+  return false
 }
-const noStateUpdateStatuses: any[] = []
 
 describe('estimate', () => {
   it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
@@ -328,7 +327,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       [],
-      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
       errorCallback
     )
     expect(response instanceof Error).toBe(false)
@@ -390,7 +389,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       [],
-      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(polygon, areUpdatesForbidden),
       errorCallback
     )
 
@@ -467,7 +466,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       [],
-      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(polygon, areUpdatesForbidden),
       errorCallback
     )
 
@@ -526,7 +525,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       [],
-      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(polygon, areUpdatesForbidden),
       errorCallback
     )
 
@@ -570,7 +569,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
       errorCallback
     )
 
@@ -627,7 +626,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
       errorCallback
     )
 
@@ -668,7 +667,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
-      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
       errorCallback
     )
 
@@ -732,7 +731,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, accountOptimismv1),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -781,7 +780,7 @@ describe('estimate', () => {
       providerArbitrum,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(arbitrum, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(arbitrum, areUpdatesForbidden),
       errorCallback
     )
 
@@ -823,7 +822,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -873,7 +872,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -928,7 +927,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -981,7 +980,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -1017,7 +1016,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -1067,7 +1066,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-      new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(optimism, areUpdatesForbidden),
       errorCallback
     )
 
@@ -1115,7 +1114,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(polygon, areUpdatesForbidden),
       errorCallback
     )
     expect(response instanceof Error).toBe(true)
@@ -1155,7 +1154,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(polygon, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(polygon, areUpdatesForbidden),
       errorCallback
     )
     expect(response instanceof Error).toBe(true)
@@ -1189,7 +1188,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      new BundlerSwitcher(ethereum, getSignAccountOpStatus, noStateUpdateStatuses),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
       errorCallback
     )
 
