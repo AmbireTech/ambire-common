@@ -507,6 +507,13 @@ export class MainController extends EventEmitter {
   async #onAccountPickerSuccess() {
     // Add accounts first, because some of the next steps have validation
     // if accounts exists.
+    if (this.accountPicker.readyToRemoveAccounts) {
+      // eslint-disable-next-line no-restricted-syntax
+      for (const acc of this.accountPicker.readyToRemoveAccounts) {
+        await this.#removeAccount(acc.addr)
+      }
+    }
+
     await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
 
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator)) {
@@ -947,35 +954,37 @@ export class MainController extends EventEmitter {
     })
   }
 
-  async removeAccount(address: Account['addr']) {
-    await this.withStatus('removeAccount', async () => {
-      try {
-        this.#removeAccountKeyData(address)
-        // Remove account data from sub-controllers
-        await this.accounts.removeAccountData(address)
-        this.portfolio.removeAccountData(address)
-        await this.activity.removeAccountData(address)
-        this.actions.removeAccountData(address)
-        this.signMessage.removeAccountData(address)
-        this.defiPositions.removeAccountData(address)
+  async #removeAccount(address: Account['addr']) {
+    try {
+      this.#removeAccountKeyData(address)
+      // Remove account data from sub-controllers
+      this.accounts.removeAccountData(address)
+      this.portfolio.removeAccountData(address)
+      await this.activity.removeAccountData(address)
+      this.actions.removeAccountData(address)
+      this.signMessage.removeAccountData(address)
+      this.defiPositions.removeAccountData(address)
 
-        if (this.selectedAccount.account?.addr === address) {
-          await this.#selectAccount(this.accounts.accounts[0]?.addr)
-        }
-
-        if (this.signAccountOp?.account.addr === address) {
-          this.destroySignAccOp()
-        }
-
-        this.emitUpdate()
-      } catch (e: any) {
-        throw new EmittableError({
-          level: 'major',
-          message: 'Failed to remove account',
-          error: e || new Error('Failed to remove account')
-        })
+      if (this.selectedAccount.account?.addr === address) {
+        await this.#selectAccount(this.accounts.accounts[0]?.addr)
       }
-    })
+
+      if (this.signAccountOp?.account.addr === address) {
+        this.destroySignAccOp()
+      }
+
+      this.emitUpdate()
+    } catch (e: any) {
+      throw new EmittableError({
+        level: 'major',
+        message: 'Failed to remove account',
+        error: e || new Error('Failed to remove account')
+      })
+    }
+  }
+
+  async removeAccount(address: Account['addr']) {
+    await this.withStatus('removeAccount', async () => this.#removeAccount(address))
   }
 
   async #ensureAccountInfo(

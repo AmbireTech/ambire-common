@@ -83,11 +83,14 @@ export class AccountPickerController extends EventEmitter {
   /* State to indicate the page requested fails to load (and the reason why) */
   pageError: null | string = null
 
-  selectedAccounts: SelectedAccountForImport[] = []
+  selectedAccountsFromCurrentSession: SelectedAccountForImport[] = []
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
+
+  // Accounts that were selected in a previous session but are now deselected in the current one
+  readyToRemoveAccounts: Account[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -99,7 +102,7 @@ export class AccountPickerController extends EventEmitter {
 
   selectNextAccountStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
-  addedAccountsFromCurrentSession: Account[] = []
+  #addedAccountsFromCurrentSession: Account[] = []
 
   accountsLoading: boolean = false
 
@@ -113,11 +116,16 @@ export class AccountPickerController extends EventEmitter {
 
   #alreadyImportedAccounts: Account[] = []
 
-  #addAccountsOnKeystoreReady: boolean = false
+  #addAccountsOnKeystoreReady: {
+    accounts: SelectedAccountForImport[]
+    readyToAddKeys: ReadyToAddKeys
+  } | null = null
 
   #onAddAccountsSuccessCallback: () => Promise<void>
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
+
+  #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   constructor({
     accounts,
@@ -143,23 +151,27 @@ export class AccountPickerController extends EventEmitter {
     this.#providers = providers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
-    this.#keystore.onUpdate(async () => {
+    this.#keystore.onUpdate(() => {
       if (keystore.isReadyToStoreKeys && this.#addAccountsOnKeystoreReady) {
-        this.#addAccountsOnKeystoreReady = false
-        const readyToAddKeys = this.retrieveInternalKeysOfSelectedAccounts()
-
-        await this.addAccounts(this.selectedAccounts, {
-          internal: readyToAddKeys,
-          external: []
-        })
+        this.addAccounts(
+          this.#addAccountsOnKeystoreReady.accounts,
+          this.#addAccountsOnKeystoreReady.readyToAddKeys
+        )
+        this.#addAccountsOnKeystoreReady = null
       }
     })
 
     this.#accounts.onUpdate(() => {
-      if (!this.isInitialized) return
-      if (this.addAccountsStatus !== 'INITIAL') return
+      this.#debounceFunctionCalls(
+        'update-accounts',
+        () => {
+          if (!this.isInitialized) return
+          if (this.addAccountsStatus !== 'INITIAL') return
 
-      this.updateStateWithTheLatestFromAccounts()
+          this.#updateStateWithTheLatestFromAccounts()
+        },
+        20
+      )
     })
   }
 
@@ -265,6 +277,47 @@ export class AccountPickerController extends EventEmitter {
     }))
   }
 
+  get selectedAccounts(): SelectedAccountForImport[] {
+    const accountsAddrOnPage = this.#alreadyImportedAccounts.map((a) => a.addr)
+    const selectedAccountsFromPrevSession = this.accountsOnPage
+      .filter((a) => accountsAddrOnPage.includes(a.account.addr))
+      .map((a) => {
+        const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
+          (accOnPage) => accOnPage.account.addr === a.account.addr
+        )
+        const accountKeys = this.#getAccountKeys(a.account, accountsOnPageWithThisAcc)
+
+        return {
+          account: a.account,
+          isLinked: a.isLinked,
+          accountKeys: accountKeys.map((accKey) => ({
+            addr: accKey.account.addr,
+            slot: accKey.slot,
+            index: accKey.index
+          }))
+        } as SelectedAccountForImport
+      })
+
+    const nextSelectedAccount = [
+      ...selectedAccountsFromPrevSession,
+      ...this.selectedAccountsFromCurrentSession
+    ]
+
+    const readyToRemoveAccountsAddr = this.readyToRemoveAccounts.map((a) => a.addr)
+
+    return nextSelectedAccount.filter((a) => !readyToRemoveAccountsAddr.includes(a.account.addr))
+  }
+
+  get addedAccountsFromCurrentSession() {
+    return this.#addedAccountsFromCurrentSession
+  }
+
+  set addedAccountsFromCurrentSession(val: Account[]) {
+    this.#addedAccountsFromCurrentSession = Array.from(
+      new Map(val.map((account) => [account.addr, account])).values()
+    )
+  }
+
   async #isKeyIteratorInitializedWithTheSavedSeed() {
     if (this.keyIterator?.subType !== 'seed') return false
 
@@ -323,7 +376,7 @@ export class AccountPickerController extends EventEmitter {
 
   async reset() {
     this.keyIterator = null
-    this.selectedAccounts = []
+    this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
     this.pageSize = DEFAULT_PAGE_SIZE
     this.hdPathTemplate = undefined
@@ -343,13 +396,20 @@ export class AccountPickerController extends EventEmitter {
     await this.forceEmitUpdate()
   }
 
+  resetAccountsSelection() {
+    this.selectedAccountsFromCurrentSession = []
+    this.readyToRemoveAccounts = []
+
+    this.emitUpdate()
+  }
+
   async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
     this.hdPathTemplate = hdPathTemplate
 
     // Reset the currently selected accounts, because for the keys of these
     // accounts, as of v4.32.0, we don't store their hd path. When import
     // completes, only the latest hd path of the controller is stored.
-    this.selectedAccounts = []
+    this.selectedAccountsFromCurrentSession = []
 
     await this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
   }
@@ -439,19 +499,10 @@ export class AccountPickerController extends EventEmitter {
       }))
     }
 
-    const accountExists = this.selectedAccounts.some(
+    const accountExists = this.selectedAccountsFromCurrentSession.some(
       (x) => x.account.addr === nextSelectedAccount.account.addr
     )
-    if (accountExists) {
-      // If the account exists, replace it with the new one, to make sure
-      // the latest data is used. We could add one more sub-step to skip this,
-      // if we do a deep comparison, but that would probably be an overkill.
-      this.selectedAccounts = this.selectedAccounts.map((x) =>
-        x.account.addr === nextSelectedAccount.account.addr ? nextSelectedAccount : x
-      )
-    } else {
-      this.selectedAccounts.push(nextSelectedAccount)
-    }
+    if (!accountExists) this.selectedAccountsFromCurrentSession.push(nextSelectedAccount)
 
     this.emitUpdate()
   }
@@ -460,10 +511,20 @@ export class AccountPickerController extends EventEmitter {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
+    if (this.selectedAccounts.find((x) => x.account.addr === account.addr)) {
+      this.selectedAccountsFromCurrentSession = this.selectedAccountsFromCurrentSession.filter(
+        (a) => a.account.addr !== account.addr
+      )
+      const accountInAlreadyAddedAccounts = this.#alreadyImportedAccounts.find(
+        (a) => a.addr === account.addr
+      )
 
-    if (accIdx !== -1) {
-      this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
+      if (accountInAlreadyAddedAccounts) {
+        const accountInReadyToRemoveAccounts = this.readyToRemoveAccounts.find(
+          (a) => a.addr === account.addr
+        )
+        if (!accountInReadyToRemoveAccounts) this.readyToRemoveAccounts.push(account)
+      }
       this.emitUpdate()
     } else {
       return this.emitError({
@@ -490,7 +551,7 @@ export class AccountPickerController extends EventEmitter {
     }
 
     return this.keyIterator?.retrieveInternalKeys(
-      this.selectedAccounts,
+      this.selectedAccountsFromCurrentSession,
       this.hdPathTemplate,
       this.#keystore.keys
     )
@@ -567,16 +628,16 @@ export class AccountPickerController extends EventEmitter {
     })
   }
 
-  updateStateWithTheLatestFromAccounts() {
+  #updateStateWithTheLatestFromAccounts() {
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
 
-    // keep the addedAccountsFromCurrentSession up to date with the accounts from accountsCtrl
-    this.addedAccountsFromCurrentSession = this.addedAccountsFromCurrentSession.map((a) => {
-      const updatedAccount = this.#accounts.accounts.find((acc) => acc.addr === a.addr)
-
-      return updatedAccount || a
-    })
-
+    this.addedAccountsFromCurrentSession = Array.from(
+      new Set([
+        ...(this.addedAccountsFromCurrentSession
+          .map((a) => this.#accounts.accounts.find((acc) => acc.addr === a.addr))
+          .filter(Boolean) as Account[])
+      ])
+    )
     this.#derivedAccounts = this.#derivedAccounts.map((derivedAcc) => {
       const updatedAccount = this.#accounts.accounts.find(
         (acc) => acc.addr === derivedAcc.account.addr
@@ -591,6 +652,12 @@ export class AccountPickerController extends EventEmitter {
 
       return derivedAcc
     })
+
+    const accountsAddr = this.#accounts.accounts.map((a) => a.addr)
+    this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter((a) =>
+      accountsAddr.includes(a.addr)
+    )
+    this.readyToAddAccounts = this.readyToAddAccounts.filter((a) => !accountsAddr.includes(a.addr))
 
     this.emitUpdate()
   }
@@ -609,7 +676,7 @@ export class AccountPickerController extends EventEmitter {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
     if (!this.#keystore.isReadyToStoreKeys) {
-      this.#addAccountsOnKeystoreReady = true
+      this.#addAccountsOnKeystoreReady = { accounts, readyToAddKeys }
       this.emitUpdate()
       return
     }
@@ -691,11 +758,12 @@ export class AccountPickerController extends EventEmitter {
       })
     ]
     this.readyToAddKeys = readyToAddKeys
+
     this.addedAccountsFromCurrentSession = [
       ...this.addedAccountsFromCurrentSession,
       ...this.readyToAddAccounts
     ]
-    this.selectedAccounts = []
+    this.selectedAccountsFromCurrentSession = []
     this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
       this.#onAddAccountsSuccessCallbackPromise = undefined
     })
@@ -704,7 +772,7 @@ export class AccountPickerController extends EventEmitter {
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
-    this.updateStateWithTheLatestFromAccounts()
+    this.#updateStateWithTheLatestFromAccounts()
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     this.addAccountsStatus = 'INITIAL'
@@ -1109,12 +1177,32 @@ export class AccountPickerController extends EventEmitter {
     })
   }
 
+  #debounceFunctionCalls(funcName: string, func: () => void, ms: number = 0) {
+    if (this.#shouldDebounceFlags[funcName]) return
+    this.#shouldDebounceFlags[funcName] = true
+
+    setTimeout(() => {
+      this.#shouldDebounceFlags[funcName] = false
+      try {
+        func()
+      } catch (error: any) {
+        this.emitError({
+          level: 'minor',
+          message: `The execution of ${funcName} in the AccountPickerController failed`,
+          error
+        })
+      }
+    }, ms)
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       // includes the getter in the stringified instance
       accountsOnPage: this.accountsOnPage,
+      selectedAccounts: this.selectedAccounts,
+      addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
       subType: this.subType,
       isPageLocked: this.isPageLocked

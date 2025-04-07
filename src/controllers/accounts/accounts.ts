@@ -188,7 +188,7 @@ export class AccountsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async removeAccountData(address: Account['addr']) {
+  removeAccountData(address: Account['addr']) {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]

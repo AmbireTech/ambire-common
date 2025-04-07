@@ -77,7 +77,7 @@ export type Action =
   | {
       label: 'Hide'
       actionName: 'hide-activity-banner'
-      meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
+      meta: { timestamp: number; addr: string; chainId: bigint; isHideStyle: boolean }
     }
   | {
       label: 'Open'
