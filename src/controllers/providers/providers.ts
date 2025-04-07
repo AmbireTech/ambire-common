@@ -43,7 +43,11 @@ export class ProvidersController extends EventEmitter {
       const oldRPC = this.providers[network.chainId.toString()]
 
       // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC it will keep trying to reconnect forever.
-      if (oldRPC) oldRPC.destroy()
+      try {
+        if (oldRPC) oldRPC.destroy()
+      } catch (e) {
+        // no need to do anything; try/catch is just in case a double destroy is attempted
+      }
 
       this.providers[network.chainId.toString()] = getRpcProvider(
         network.rpcUrls,

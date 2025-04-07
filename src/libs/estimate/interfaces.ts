@@ -26,6 +26,7 @@ export interface Erc4337GasLimits {
   gasPrice: GasSpeeds
   paymaster: AbstractPaymaster
   flags: EstimationFlags
+  feeCallType?: string
   // put here errors that are not fatal to the signing process
   // but reactable if known
   // example: bundler simulation fails because of incorrect 4337 nonce.
@@ -90,5 +91,5 @@ export interface FullEstimationSummary {
   providerEstimation?: ProviderEstimation
   ambireEstimation?: AmbireEstimation
   bundlerEstimation?: Erc4337GasLimits
-  error?: Error
+  flags: EstimationFlags
 }

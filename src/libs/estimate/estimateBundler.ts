@@ -143,6 +143,7 @@ export async function bundlerEstimate(
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
     getSignableCallsForBundlerEstimate(localOp)
   ])
+  const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {
     const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData
@@ -173,7 +174,8 @@ export async function bundlerEstimate(
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
         gasPrice: estimations.gasPrice as GasSpeeds,
         paymaster,
-        flags
+        flags,
+        feeCallType
       }
     }
 

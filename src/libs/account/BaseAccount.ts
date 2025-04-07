@@ -36,7 +36,7 @@ export abstract class BaseAccount {
   ): FeePaymentOption[]
 
   abstract getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     // all of the options below need to be passed. Each implementation
     // decides on its own which are actually important for it
     options: {
