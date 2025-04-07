@@ -247,6 +247,11 @@ export class AccountsController extends EventEmitter {
     return this.accountStates[addr][chainId.toString()]
   }
 
+  resetAccountsNewlyAddedState() {
+    this.accounts = this.accounts.map((a) => ({ ...a, newlyAdded: false }))
+    this.emitUpdate()
+  }
+
   toJSON() {
     return {
       ...this,
