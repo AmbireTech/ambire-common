@@ -58,7 +58,7 @@ type PersistedState = {
   > & {
     selectedToken?: {
       address: string
-      networkId: string
+      chainId: bigint
     }
   }
 }
@@ -168,7 +168,7 @@ export class TransferController extends EventEmitter {
     if (selectedToken) {
       const portfolioToken = this.#portfolio.tokens.find(
         (token) =>
-          token.address === selectedToken.address && token.networkId === selectedToken.networkId
+          token.address === selectedToken.address && token.chainId === selectedToken.chainId
       )
 
       if (portfolioToken) this.#selectedToken = portfolioToken
@@ -197,7 +197,7 @@ export class TransferController extends EventEmitter {
     if (this.#selectedToken) {
       PERSISTED_FIELDS.selectedToken = {
         address: this.#selectedToken.address,
-        networkId: this.#selectedToken.networkId
+        chainId: this.#selectedToken.chainId
       }
     }
 
