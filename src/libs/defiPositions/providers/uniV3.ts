@@ -12,11 +12,11 @@ export async function getUniV3Positions(
   provider: Provider | JsonRpcProvider,
   network: Network
 ): Promise<PositionsByProvider | null> {
-  const networkId = network.id
-  if (networkId && !UNISWAP_V3[networkId as keyof typeof UNISWAP_V3]) return null
+  const { chainId } = network
+  if (chainId && !UNISWAP_V3[chainId.toString() as keyof typeof UNISWAP_V3]) return null
 
   const { nonfungiblePositionManagerAddr, factoryAddr } =
-    UNISWAP_V3[networkId as keyof typeof UNISWAP_V3]
+    UNISWAP_V3[chainId.toString() as keyof typeof UNISWAP_V3]
 
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
@@ -103,7 +103,7 @@ export async function getUniV3Positions(
 
   return {
     providerName: 'Uniswap V3',
-    networkId,
+    chainId,
     type: 'liquidity-pool',
     positions
   }

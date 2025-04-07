@@ -1,8 +1,9 @@
-import { Interface, JsonRpcProvider, MaxUint256, solidityPackedKeccak256, toBeHex } from 'ethers'
+import { Interface, MaxUint256, solidityPackedKeccak256, toBeHex } from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
@@ -15,7 +16,7 @@ const ACCOUNT_ADDRESS = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
 
 // @TODO add minting and burning test
 describe('Debug tracecall detection for transactions', () => {
-  const provider = new JsonRpcProvider('https://invictus.ambire.com/optimism')
+  const provider = getRpcProvider(['https://invictus.ambire.com/optimism'], 10n)
   let account: Account
   let accountOp: AccountOp
   const nftIface: Interface = new Interface(ERC721)
@@ -44,7 +45,7 @@ describe('Debug tracecall detection for transactions', () => {
     }
     accountOp = {
       accountAddr: ACCOUNT_ADDRESS,
-      networkId: 'optimism',
+      chainId: 10n,
       signingKeyAddr: '"0x02be1F941b6B777D4c30f110E997704fFc26B379"',
       signingKeyType: 'internal',
       gasLimit: null,
@@ -145,17 +146,7 @@ describe('Debug tracecall detection for transactions', () => {
       }
     }
 
-    const res = await debugTraceCall(
-      account,
-      accountOp,
-      provider,
-      state,
-      // a lot of gas
-      100000000000000n,
-      [{ name: 'fast', gasPrice: 338318181550000000n }],
-      true,
-      overrideData
-    )
+    const res = await debugTraceCall(account, accountOp, provider, state, true, overrideData)
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe(NFT_ADDRESS)

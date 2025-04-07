@@ -8,14 +8,22 @@ import {
   SocketAPIQuote,
   SocketAPIResponse,
   SocketAPISendTransactionRequest,
+  SocketAPIStep,
   SocketAPISupportedChain,
   SocketAPIToken,
-  SocketRouteStatus
+  SocketAPIUserTx,
+  SocketRouteStatus,
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeQuote,
+  SwapAndBridgeRoute,
+  SwapAndBridgeSendTxRequest,
+  SwapAndBridgeStep,
+  SwapAndBridgeSupportedChain,
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
-  AMBIRE_WALLET_TOKEN_ON_BASE,
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
   FEE_PERCENT,
   NULL_ADDRESS,
@@ -50,7 +58,36 @@ const normalizeOutgoingSocketToken = (token: SocketAPIToken) => ({
   address: normalizeOutgoingSocketTokenAddress(token.address)
 })
 
+const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (
+  userTxs: SocketAPIUserTx[]
+): SwapAndBridgeStep[] => {
+  // @ts-ignore TODO: Types mismatch for this legacy Socket normalization
+  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
+    if (tx.userTxType === 'fund-movr') {
+      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
+    }
+    if (tx.userTxType === 'dex-swap') {
+      stepsAcc.push({
+        chainId: tx.chainId,
+        fromAmount: tx.fromAmount,
+        fromAsset: tx.fromAsset,
+        gasFees: tx.gasFees,
+        minAmountOut: tx.minAmountOut,
+        protocol: tx.protocol,
+        swapSlippage: tx.swapSlippage,
+        toAmount: tx.toAmount,
+        toAsset: tx.toAsset,
+        type: 'swap',
+        userTxIndex: tx.userTxIndex
+      })
+    }
+    return stepsAcc
+  }, [])
+}
+
 export class SocketAPI {
+  id: 'socket' = 'socket'
+
   #fetch: Fetch
 
   #baseUrl = 'https://api.socket.tech/v2'
@@ -155,7 +192,7 @@ export class SocketAPI {
     return responseBody.result
   }
 
-  async getSupportedChains(): Promise<SocketAPISupportedChain[]> {
+  async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
     const url = `${this.#baseUrl}/supported/chains`
 
     const response = await this.#handleResponse<SocketAPISupportedChain[]>({
@@ -165,19 +202,10 @@ export class SocketAPI {
     })
 
     return response
-  }
-
-  /**
-   * Since v4.41.0 we request the shortlist from Socket, which does not include
-   * the Ambire $WALLET token. So adding it manually on the supported chains.
-   */
-  static addCustomTokens({ chainId, tokens }: { chainId: number; tokens: SocketAPIToken[] }) {
-    const newTokens = [...tokens]
-
-    if (chainId === 1) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
-    if (chainId === 8453) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
-
-    return newTokens
+      .filter((c) => c.sendingEnabled && c.receivingEnabled)
+      .map(({ chainId }) => ({
+        chainId
+      }))
   }
 
   async getToTokenList({
@@ -186,7 +214,7 @@ export class SocketAPI {
   }: {
     fromChainId: number
     toChainId: number
-  }): Promise<SocketAPIToken[]> {
+  }): Promise<SwapAndBridgeToToken[]> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       toChainId: toChainId.toString(),
@@ -215,9 +243,9 @@ export class SocketAPI {
     if (toChainId === 1)
       response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
-    response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response })
+    response = response.map(normalizeIncomingSocketToken)
 
-    return response.map(normalizeIncomingSocketToken)
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: response })
   }
 
   async getToken({
@@ -226,7 +254,7 @@ export class SocketAPI {
   }: {
     address: string
     chainId: number
-  }): Promise<SocketAPIToken | null> {
+  }): Promise<SwapAndBridgeToToken | null> {
     const params = new URLSearchParams({
       address: address.toString(),
       chainId: chainId.toString()
@@ -263,7 +291,7 @@ export class SocketAPI {
     isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
-  }): Promise<SocketAPIQuote> {
+  }): Promise<SwapAndBridgeQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
@@ -298,8 +326,10 @@ export class SocketAPI {
       ...response,
       fromAsset: normalizeIncomingSocketToken(response.fromAsset),
       toAsset: normalizeIncomingSocketToken(response.toAsset),
+      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
       routes: response.routes.map((route) => ({
         ...route,
+        steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs),
         userTxs: route.userTxs.map((userTx) => ({
           ...userTx,
           ...('fromAsset' in userTx && {
@@ -329,7 +359,7 @@ export class SocketAPI {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    route: SocketAPIQuote['selectedRoute']
+    route?: SwapAndBridgeQuote['selectedRoute']
   }) {
     const params = {
       fromChainId,
@@ -339,7 +369,7 @@ export class SocketAPI {
       includeFirstTxDetails: true,
       route: {
         ...route,
-        userTxs: route.userTxs.map((userTx) => ({
+        userTxs: route?.userTxs.map((userTx) => ({
           ...userTx,
           // @ts-ignore fromAsset exists on one of the two userTx sub-types
           fromAsset: userTx?.fromAsset ? normalizeOutgoingSocketToken(userTx.fromAsset) : undefined,
@@ -369,7 +399,7 @@ export class SocketAPI {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return response
+    return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 
   async getRouteStatus({
@@ -377,8 +407,8 @@ export class SocketAPI {
     userTxIndex,
     txHash
   }: {
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-    userTxIndex: SocketAPISendTransactionRequest['userTxIndex']
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
+    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
     txHash: string
   }) {
     const params = new URLSearchParams({
@@ -396,9 +426,9 @@ export class SocketAPI {
     return response
   }
 
-  async updateActiveRoute(
-    activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
-  ): Promise<SocketAPIActiveRoutes> {
+  async getActiveRoute(
+    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
+  ): Promise<SwapAndBridgeRoute> {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 
@@ -413,6 +443,8 @@ export class SocketAPI {
       fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
       toAsset: normalizeIncomingSocketToken(response.toAsset),
       toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
+      steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(response.userTxs),
+      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
       userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
         ...userTx,
         ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
@@ -428,7 +460,11 @@ export class SocketAPI {
     }
   }
 
-  async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
+  async getNextRouteUserTx({
+    activeRouteId
+  }: {
+    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
+  }) {
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
 
@@ -437,6 +473,6 @@ export class SocketAPI {
       errorPrefix: 'Unable to start the next step.'
     })
 
-    return response
+    return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 }

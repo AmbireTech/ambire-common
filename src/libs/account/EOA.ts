@@ -21,8 +21,14 @@ export class EOA extends BaseAccount {
 
   ambireEstimation?: AmbireEstimation | Error
 
-  getEstimationCriticalError(estimation: FullEstimation): Error | null {
-    if (estimation.provider instanceof Error) return estimation.provider
+  getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
+    const numberOfCalls = op.calls.length
+    if (numberOfCalls === 1) {
+      if (estimation.provider instanceof Error) return estimation.provider
+    }
+    if (numberOfCalls > 1) {
+      if (estimation.ambire instanceof Error) return estimation.ambire
+    }
     return null
   }
 
@@ -45,13 +51,14 @@ export class EOA extends BaseAccount {
   }
 
   getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     options: {
       feeToken: TokenResult
       op: AccountOp
     }
   ): bigint {
-    if (estimation.error || !estimation.providerEstimation || !options.op) return 0n
+    const isError = estimation instanceof Error
+    if (isError || !estimation.providerEstimation || !options.op) return 0n
 
     const calls = options.op.calls
     if (calls.length === 1) {

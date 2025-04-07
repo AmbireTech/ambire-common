@@ -20,8 +20,8 @@ import { DecodedError, ErrorType } from './types'
 const TEST_MESSAGE_REVERT_DATA =
   '0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c54657374206d6573736167650000000000000000000000000000000000000000'
 
-const base = networks.find((net) => net.id === 'base')!
-const avalanche = networks.find((net) => net.id === 'avalanche')!
+const base = networks.find((n) => n.chainId === 8453n)!
+const avalanche = networks.find((n) => n.chainId === 43114n)!
 
 export const MockBundlerEstimationError = class extends Error {
   public constructor(public shortMessage?: string) {
@@ -170,13 +170,21 @@ describe('Error decoders work', () => {
       expect(decodedError.reason).toBe('transfer amount exceeds balance')
       expect(decodedError.data).toBe('transfer amount exceeds balance')
     })
-    it("Error doesn't gets overwritten by Panic/Revert if it is panic or revert", async () => {
+    it("Error doesn't get overwritten by Panic/Revert if it is panic or revert", async () => {
       const error = new InnerCallFailureError(TEST_MESSAGE_REVERT_DATA, [], base)
       const decodedError = decodeError(error)
 
       expect(decodedError.type).toEqual(ErrorType.RevertError)
       expect(decodedError.reason).toBe('Test message')
       expect(decodedError.data).toBe(TEST_MESSAGE_REVERT_DATA)
+    })
+    it('Should preserve custom error data as reason when handling InnerCallFailureError containing a custom error', () => {
+      const customErrorData =
+        '0x275c273c00000000000000000000000000000000000000000000000000000000000000190000000000000000000000000000000000000000000000000000000000000018'
+      const error = new InnerCallFailureError(customErrorData, [], base)
+      const decodedError = decodeError(error)
+      expect(decodedError.type).toEqual(ErrorType.InnerCallFailureError)
+      expect(decodedError.reason).toBe(customErrorData)
     })
   })
   describe('CustomErrorHandler', () => {
@@ -377,8 +385,9 @@ describe('Error decoders work', () => {
     expect(decodedError.reason).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
     const humanized = getHumanReadableEstimationError(decodedError)
     expect(humanized.message).toBe(
-      `The transaction will fail because it will revert onchain. Error code: Insufficient ${base.nativeAssetSymbol} for transaction calls\n`
+      "Transaction cannot be sent because you don't have enough ETH to cover the gas costs for this transaction."
     )
+    expect(humanized.cause).toBe(`Insufficient ${base.nativeAssetSymbol} for transaction calls`)
 
     const sameErrorOnAvax = new InnerCallFailureError(
       '0x',
@@ -392,7 +401,10 @@ describe('Error decoders work', () => {
     )
     const humanizedAvax = getHumanReadableEstimationError(decodedsameErrorOnAvax)
     expect(humanizedAvax.message).toBe(
-      `The transaction will fail because it will revert onchain. Error code: Insufficient ${avalanche.nativeAssetSymbol} for transaction calls\n`
+      "Transaction cannot be sent because you don't have enough AVAX to cover the gas costs for this transaction."
+    )
+    expect(humanizedAvax.cause).toBe(
+      `Insufficient ${avalanche.nativeAssetSymbol} for transaction calls`
     )
   })
   it('Should report transaction reverted with error unknown when error is 0x and the calls value is less or equal to the portfolio amount', async () => {

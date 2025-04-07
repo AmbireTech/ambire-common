@@ -56,6 +56,24 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Transaction underpriced'],
     message: 'it is underpriced. Please select a higher transaction speed and try again.'
   },
+  // TODO: Figure out a more elegant way to handle errors with dynamic messages
+  {
+    reasons: ['Insufficient ETH for transaction calls'],
+    message: "you don't have enough ETH to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient AVAX for transaction calls'],
+    message: "you don't have enough AVAX to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient BNB for transaction calls'],
+    message: "you don't have enough BNB to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient POL for transaction calls'],
+    message: "you don't have enough POL to cover the gas costs for this transaction."
+  },
+  // End of TODO
   // Smart Accounts
   {
     reasons: ['Sponsorship failed.'],
@@ -85,6 +103,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['INSUFFICIENT_OUTPUT_AMOUNT', 'return amount is not enough'],
     message: 'the slippage tolerance was exceeded.'
+  },
+  {
+    // another slippage error but this time with a prompt for the user to
+    // try and change the from amount. @Li.Fi. errors
+    reasons: ['0x275c273c'],
+    message: 'the slippage tolerance was exceeded. Please try changing the from amount.'
   },
   {
     reasons: ['80'],
@@ -197,8 +221,8 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
 ]
 
 export {
-  BROADCAST_OR_ESTIMATION_ERRORS,
   BROADCAST_ERRORS,
+  BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds
 }

@@ -5,15 +5,16 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  ActiveRoute,
-  SocketAPIBridgeUserTx,
-  SocketAPISendTransactionRequest,
-  SocketAPIStep,
-  SocketAPIToken,
   SocketAPIUserTx,
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { SignUserRequest } from '../../interfaces/userRequest'
+import {
+  AMBIRE_WALLET_TOKEN_ON_BASE,
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM
+} from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
@@ -41,7 +42,7 @@ export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  return tokenListResponse.sort((a: SocketAPIToken, b: SocketAPIToken) => {
+  return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
     const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
     const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
 
@@ -91,52 +92,27 @@ export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
   )
 }
 
-export const convertPortfolioTokenToSocketAPIToken = (
+export const convertPortfolioTokenToSwapAndBridgeToToken = (
   portfolioToken: TokenResult,
   chainId: number
-): SocketAPIToken => {
+): SwapAndBridgeToToken => {
   const { address, decimals, symbol } = portfolioToken
   // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
   const name = symbol
   // Fine for not having both icon props, because this would fallback to the
   // icon discovery method used for the portfolio tokens
   const icon = ''
-  const logoURI = ''
 
-  return { address, chainId, decimals, symbol, name, icon, logoURI }
+  return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
-  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
-    if (tx.userTxType === 'fund-movr') {
-      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
-    }
-    if (tx.userTxType === 'dex-swap') {
-      stepsAcc.push({
-        chainId: tx.chainId,
-        fromAmount: tx.fromAmount,
-        fromAsset: tx.fromAsset,
-        gasFees: tx.gasFees,
-        minAmountOut: tx.minAmountOut,
-        protocol: tx.protocol,
-        swapSlippage: tx.swapSlippage,
-        toAmount: tx.toAmount,
-        toAsset: tx.toAsset,
-        type: 'swap',
-        userTxIndex: tx.userTxIndex
-      })
-    }
-    return stepsAcc
-  }, [])
-}
-
-const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
+const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]) => {
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
-    r.route.userTxs.forEach((tx) => {
-      if ((tx as SocketAPIBridgeUserTx).serviceTime) {
-        serviceTimes.push((tx as SocketAPIBridgeUserTx).serviceTime)
+    r.route?.userTxs.forEach((tx) => {
+      if (tx.serviceTime) {
+        serviceTimes.push(tx.serviceTime)
       }
     })
   )
@@ -145,18 +121,19 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
-  if (!minServiceTime) return 7000
+  if (!minServiceTime) return 30000
 
-  if (minServiceTime < 60) return 5000
-  if (minServiceTime <= 180) return 6000
-  if (minServiceTime <= 300) return 8000
-  if (minServiceTime <= 600) return 12000
+  if (minServiceTime < 60) return 15000
+  if (minServiceTime <= 180) return 20000
+  if (minServiceTime <= 300) return 30000
+  if (minServiceTime <= 600) return 60000
 
-  return 15000
+  return 30000
 }
 
+// If you have approval that has not been spent (in some smart contracts), the transaction may revert
 const buildRevokeApprovalIfNeeded = async (
-  userTx: SocketAPISendTransactionRequest,
+  userTx: SwapAndBridgeSendTxRequest,
   account: Account,
   state: AccountOnchainState,
   provider: RPCProvider
@@ -195,12 +172,12 @@ const buildRevokeApprovalIfNeeded = async (
 }
 
 const buildSwapAndBridgeUserRequests = async (
-  userTx: SocketAPISendTransactionRequest,
-  networkId: string,
+  userTx: SwapAndBridgeSendTxRequest,
+  chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
-) => {
+): Promise<SignUserRequest[]> => {
   const calls: Call[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
@@ -224,7 +201,7 @@ const buildSwapAndBridgeUserRequests = async (
     value: BigInt(userTx.value),
     data: userTx.txData,
     fromUserRequestId: userTx.activeRouteId
-  } as Call)
+  })
 
   return [
     {
@@ -235,12 +212,12 @@ const buildSwapAndBridgeUserRequests = async (
       },
       meta: {
         isSignAction: true,
-        networkId,
+        chainId,
         accountAddr: account.addr,
         activeRouteId: userTx.activeRouteId,
         isSwapAndBridgeCall: true
       }
-    } as SignUserRequest
+    }
   ]
 }
 
@@ -262,16 +239,48 @@ export const getIsNetworkSupported = (
   return supportedChainIds.includes(network.chainId)
 }
 
-const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
+const getActiveRoutesForAccount = (
+  accountAddress: string,
+  activeRoutes: SwapAndBridgeActiveRoute[]
+) => {
   return activeRoutes.filter(
-    (r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress
+    (r) => getAddress(r.route?.sender || r.route?.userAddress || '') === accountAddress
   )
 }
 
+/**
+ * Since v4.41.0 we request the shortlist from our service provider, which might
+ * not include the Ambire $WALLET token. So adding it manually on the supported chains.
+ */
+const addCustomTokensIfNeeded = ({
+  tokens,
+  chainId
+}: {
+  tokens: SwapAndBridgeToToken[]
+  chainId: number
+}) => {
+  const newTokens = [...tokens]
+
+  if (chainId === 1) {
+    const shouldAddAmbireWalletToken = newTokens.every(
+      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_ETHEREUM.address
+    )
+    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+  }
+  if (chainId === 8453) {
+    const shouldAddAmbireWalletToken = newTokens.every(
+      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
+    )
+    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+  }
+
+  return newTokens
+}
+
 export {
+  addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
-  getActiveRoutesUpdateInterval,
-  getQuoteRouteSteps
+  getActiveRoutesUpdateInterval
 }

@@ -3,7 +3,6 @@ import { BICONOMY, PIMLICO } from './bundlers'
 
 const networks: Network[] = [
   {
-    id: 'ethereum',
     name: 'Ethereum',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -27,11 +26,10 @@ const networks: Network[] = [
     disableEstimateGas: true
   },
   {
-    id: 'polygon',
     name: 'Polygon',
     nativeAssetSymbol: 'POL',
     has7702: false,
-    nativeAssetName: 'Polygon Network Token',
+    nativeAssetName: 'Polygon',
     rpcUrls: ['https://invictus.ambire.com/polygon'],
     selectedRpcUrl: 'https://invictus.ambire.com/polygon',
     rpcNoStateOverride: false,
@@ -58,8 +56,7 @@ const networks: Network[] = [
     disableEstimateGas: true
   },
   {
-    id: 'optimism',
-    name: 'Optimism',
+    name: 'OP Mainnet',
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
@@ -94,7 +91,6 @@ const networks: Network[] = [
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
-    id: 'avalanche',
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
     has7702: false,
@@ -125,7 +121,6 @@ const networks: Network[] = [
     wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
   },
   {
-    id: 'arbitrum',
     name: 'Arbitrum',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -157,7 +152,6 @@ const networks: Network[] = [
     wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
   },
   {
-    id: 'base',
     name: 'Base',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -192,7 +186,6 @@ const networks: Network[] = [
     wrappedAddr: '0x4200000000000000000000000000000000000006'
   },
   {
-    id: 'scroll',
     name: 'Scroll',
     nativeAssetSymbol: 'ETH',
     has7702: false,
@@ -220,7 +213,6 @@ const networks: Network[] = [
     wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
-    id: 'binance-smart-chain',
     name: 'Binance Smart Chain',
     nativeAssetSymbol: 'BNB',
     has7702: true,
@@ -248,6 +240,37 @@ const networks: Network[] = [
     predefined: true,
     disableEstimateGas: true,
     wrappedAddr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+  },
+  {
+    name: 'Mantle',
+    nativeAssetSymbol: 'MNT',
+    has7702: false,
+    nativeAssetName: 'Mantle',
+    rpcUrls: ['https://invictus.ambire.com/mantle'],
+    selectedRpcUrl: 'https://invictus.ambire.com/mantle',
+    rpcNoStateOverride: false,
+    chainId: 5000n,
+    explorerUrl: 'https://mantlescan.xyz/',
+    erc4337: {
+      enabled: true,
+      hasPaymaster: true,
+      hasBundlerSupport: true
+    },
+    isSAEnabled: true,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: 'mantle',
+    nativeAssetId: 'mantle',
+    hasSingleton: true,
+    isOptimistic: true,
+    features: [],
+    feeOptions: {
+      is1559: true,
+      minBaseFeeEqualToLastBlock: true
+    },
+    predefined: true,
+    disableEstimateGas: true,
+    wrappedAddr: '0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8'
   }
 ]
 export { networks }

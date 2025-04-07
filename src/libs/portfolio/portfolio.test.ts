@@ -21,18 +21,20 @@ import { StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId.toString(), result[netIndex][accIndex]]
         })
       )
     ]
@@ -42,9 +44,9 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 
 describe('Portfolio', () => {
   const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-  const ethereum = networks.find((x) => x.id === 'ethereum')
+  const ethereum = networks.find((n) => n.chainId === 1n)
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
-  const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
+  const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
   const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
@@ -111,7 +113,7 @@ describe('Portfolio', () => {
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       // fake sig, doesn't matter
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
@@ -143,7 +145,7 @@ describe('Portfolio', () => {
       simulation: {
         accountOps: [accountOp],
         account,
-        state: accountStates[accountOp.accountAddr].ethereum
+        state: accountStates[accountOp.accountAddr]['1']
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -177,7 +179,7 @@ describe('Portfolio', () => {
       signingKeyType: 'internal',
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'),
       signature: spoofSig,
       accountOpToExecuteBefore: null,
@@ -204,7 +206,7 @@ describe('Portfolio', () => {
       simulation: {
         accountOps: [accountOp],
         account,
-        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       }
     })
 
@@ -234,7 +236,7 @@ describe('Portfolio', () => {
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
@@ -260,7 +262,7 @@ describe('Portfolio', () => {
       simulation: {
         accountOps: [accountOp],
         account,
-        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -277,7 +279,7 @@ describe('Portfolio', () => {
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
@@ -303,7 +305,7 @@ describe('Portfolio', () => {
       simulation: {
         accountOps: [accountOp],
         account,
-        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'ETH')
@@ -320,7 +322,7 @@ describe('Portfolio', () => {
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: 0n,
       signature: '0x',
       calls: [
@@ -352,7 +354,7 @@ describe('Portfolio', () => {
         simulation: {
           accountOps: [accountOp],
           account,
-          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
         }
       })
       // should throw an error and never come here
@@ -369,7 +371,7 @@ describe('Portfolio', () => {
         simulation: {
           accountOps: [accountOp],
           account,
-          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
         }
       })
       // should throw an error and never come here
@@ -388,7 +390,7 @@ describe('Portfolio', () => {
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
@@ -416,7 +418,7 @@ describe('Portfolio', () => {
         simulation: {
           accountOps: [accountOp],
           account,
-          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
         }
       })
     } catch (e: any) {
@@ -431,7 +433,7 @@ describe('Portfolio', () => {
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
@@ -459,7 +461,7 @@ describe('Portfolio', () => {
         simulation: {
           accountOps: [accountOp],
           account,
-          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
         }
       })
     } catch (e: any) {
@@ -473,7 +475,7 @@ describe('Portfolio', () => {
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
@@ -505,7 +507,7 @@ describe('Portfolio', () => {
       simulation: {
         accountOps: [accountOp],
         account,
-        state: accountStates[accountOp.accountAddr][accountOp.networkId]
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
@@ -525,7 +527,7 @@ describe('Portfolio', () => {
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
@@ -554,7 +556,7 @@ describe('Portfolio', () => {
         simulation: {
           accountOps: [accountOp, secondAccountOp],
           account,
-          state: accountStates[accountOp.accountAddr][accountOp.networkId]
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
         }
       })
       // portfolio.get should revert and not come here

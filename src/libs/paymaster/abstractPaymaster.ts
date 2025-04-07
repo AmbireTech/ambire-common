@@ -19,6 +19,8 @@ export abstract class AbstractPaymaster {
 
   abstract shouldIncludePayment(): boolean
 
+  abstract getFeeCallType(feeTokens: TokenResult[]): string | undefined
+
   abstract getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined
 
   abstract getEstimationData(): PaymasterEstimationData | null

@@ -152,15 +152,13 @@ export class SignMessageController extends EventEmitter {
         )
       }
       const network = this.#networks.networks.find(
-        // @ts-ignore this.messageToSign is not null and it has a check
-        // but typescript malfunctions here
-        (n: Network) => n.id === this.messageToSign.networkId
+        (n: Network) => n.chainId === this.messageToSign!.chainId
       )
       if (!network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      const accountState = this.#accounts.accountStates[account.addr][network.id]
+      const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()]
       let signature
       // It is defined when messageToSign.content.kind === 'message'
       let hexMessage: string | undefined
@@ -215,7 +213,7 @@ export class SignMessageController extends EventEmitter {
 
       const verifyMessageParams = {
         network,
-        provider: this.#providers.providers[network?.id || 'ethereum'],
+        provider: this.#providers.providers[network?.chainId.toString() || '1'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
@@ -244,7 +242,7 @@ export class SignMessageController extends EventEmitter {
       this.signedMessage = {
         fromActionId: this.messageToSign.fromActionId,
         accountAddr: this.messageToSign.accountAddr,
-        networkId: this.messageToSign.networkId,
+        chainId: this.messageToSign.chainId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
         signature: getAppFormatted(signature, account, accountState),

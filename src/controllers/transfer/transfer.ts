@@ -24,7 +24,6 @@ const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
   ensAddress: '',
-  udAddress: '',
   isDomainResolving: false
 }
 
@@ -244,7 +243,7 @@ export class TransferController extends EventEmitter {
 
     if (
       prevSelectedToken?.address !== token?.address ||
-      prevSelectedToken?.networkId !== token?.networkId
+      prevSelectedToken?.chainId !== token?.chainId
     ) {
       if (!token.priceIn.length) {
         this.amountFieldMode = 'token'
@@ -309,7 +308,6 @@ export class TransferController extends EventEmitter {
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccountData) {
-      const isUDAddress = !!this.addressState.udAddress
       const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
@@ -318,7 +316,6 @@ export class TransferController extends EventEmitter {
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isUDAddress,
         isEnsAddress,
         this.addressState.isDomainResolving,
         this.isSWWarningVisible,
@@ -376,9 +373,7 @@ export class TransferController extends EventEmitter {
   }
 
   get recipientAddress() {
-    return (
-      this.addressState.ensAddress || this.addressState.udAddress || this.addressState.fieldValue
-    )
+    return this.addressState.ensAddress || this.addressState.fieldValue
   }
 
   async update(updateInput: TransferUpdate, options: { shouldPersist?: boolean } = {}) {
@@ -577,9 +572,9 @@ export class TransferController extends EventEmitter {
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
       this.#networks
-        .filter((n) => n.id !== 'ethereum')
-        .map(({ id }) => id)
-        .includes(this.selectedToken.networkId || 'ethereum')
+        .filter((n) => n.chainId !== 1n)
+        .map(({ chainId }) => chainId)
+        .includes(this.selectedToken.chainId || 1n)
 
     this.emitUpdate()
   }
