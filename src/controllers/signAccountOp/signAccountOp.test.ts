@@ -440,13 +440,16 @@ const init = async (
     ]
   }
 
+  const bundlerSwitcher = new BundlerSwitcher(network, () => {
+    return false
+  })
   const estimationController = new EstimationController(
     keystore,
     accountsCtrl,
     networksCtrl,
     providers,
     portfolio,
-    () => {}
+    bundlerSwitcher
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -454,13 +457,6 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const bundlerSwitcher = new BundlerSwitcher(
-    network,
-    () => {
-      return null
-    },
-    []
-  )
   const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => {
     return null
   })
@@ -526,6 +522,7 @@ describe('SignAccountOp Controller ', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 10000n,
           feePaymentOptions,
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
@@ -625,6 +622,7 @@ describe('SignAccountOp Controller ', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 10000n,
           feePaymentOptions,
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
@@ -710,6 +708,7 @@ describe('SignAccountOp Controller ', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 10000n,
           feePaymentOptions,
           ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
@@ -847,6 +846,7 @@ describe('SignAccountOp Controller ', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 50000n,
           feePaymentOptions,
           ambireAccountNonce: 0,
@@ -979,6 +979,7 @@ describe('Negative cases', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 50000n,
           feePaymentOptions,
           ambireAccountNonce: 0,
@@ -1119,6 +1120,7 @@ describe('Negative cases', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 50000n,
           feePaymentOptions,
           ambireAccountNonce: 0,
@@ -1278,6 +1280,7 @@ describe('Negative cases', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 10000n,
           feePaymentOptions,
           ambireAccountNonce: 0,
@@ -1417,6 +1420,7 @@ describe('Negative cases', () => {
           feePaymentOptions
         },
         ambireEstimation: {
+          deploymentGas: 0n,
           gasUsed: 10000n,
           feePaymentOptions,
           ambireAccountNonce: 0,
@@ -1506,6 +1510,7 @@ test('Signing [V1 with EOA payment]: working case', async () => {
         feePaymentOptions
       },
       ambireEstimation: {
+        deploymentGas: 0n,
         gasUsed: 10000n,
         feePaymentOptions,
         ambireAccountNonce: 0,

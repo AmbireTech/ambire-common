@@ -28,29 +28,23 @@ export class EstimationController extends EventEmitter {
 
   #portfolio: PortfolioController
 
-  // this is mainly for the bundler switcher but in general
-  // if the estimation wants to know the status of the outside
-  // controller, this is the function to set up intiially
-  #getOutsideControllerStatus: Function = () => {}
-
-  // this is mainly for the bundler switcher but in general
-  // if the estimation wants to know on which statuses in should
-  // disregard updates, this is the place
-  #outsideControllerNoUpdateStatuses: any[] = []
-
   status: EstimationStatus = EstimationStatus.Initial
 
   estimation: FullEstimationSummary | null = null
 
   error: Error | null = null
 
-  // a boolean to understand if the estimation has been performed
-  // at least one indicating clearly that all other are re-estimates
+  /**
+   * a boolean to understand if the estimation has been performed
+   * at least one indicating clearly that all other are re-estimates
+   */
   hasEstimated: boolean = false
 
   estimationRetryError: ErrorRef | null = null
 
   availableFeeOptions: FeePaymentOption[] = []
+
+  #bundlerSwitcher: BundlerSwitcher
 
   constructor(
     keystore: KeystoreController,
@@ -58,8 +52,7 @@ export class EstimationController extends EventEmitter {
     networks: NetworksController,
     provider: RPCProvider,
     portfolio: PortfolioController,
-    getOutsideControllerStatus?: Function,
-    outsideControllerNoUpdateStatuses?: any[]
+    bundlerSwitcher: BundlerSwitcher
   ) {
     super()
     this.#keystore = keystore
@@ -67,9 +60,7 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#provider = provider
     this.#portfolio = portfolio
-    if (getOutsideControllerStatus) this.#getOutsideControllerStatus = getOutsideControllerStatus
-    if (outsideControllerNoUpdateStatuses)
-      this.#outsideControllerNoUpdateStatuses = outsideControllerNoUpdateStatuses
+    this.#bundlerSwitcher = bundlerSwitcher
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount): FeePaymentOption[] {
@@ -153,12 +144,6 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
-    // configure the bundler switcher for the network if any
-    const bundlerSwitcher = new BundlerSwitcher(
-      network,
-      this.#getOutsideControllerStatus,
-      this.#outsideControllerNoUpdateStatuses
-    )
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -167,7 +152,7 @@ export class EstimationController extends EventEmitter {
       this.#provider,
       feeTokens,
       nativeToCheck,
-      bundlerSwitcher,
+      this.#bundlerSwitcher,
       (e: ErrorRef) => {
         if (!this) return
         this.estimationRetryError = e
@@ -202,14 +187,18 @@ export class EstimationController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // it's initialized if it has estimated at least once
+  /**
+   * it's initialized if it has estimated at least once
+   */
   isInitialized() {
     return this.hasEstimated
   }
 
-  // has it estimated at least once without a failure
-  isLoadingOrFailed() {
-    return !this.hasEstimated || !!this.error
+  /**
+   * has it estimated at least once without a failure
+   */
+  isLoadingOrFailed(): boolean {
+    return this.status === EstimationStatus.Loading || this.error instanceof Error
   }
 
   calculateWarnings() {
@@ -220,6 +209,19 @@ export class EstimationController extends EventEmitter {
         id: 'estimation-retry',
         title: this.estimationRetryError.message,
         text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
+        promptBeforeSign: false
+      })
+    }
+
+    if (
+      this.estimation?.bundlerEstimation?.nonFatalErrors?.find(
+        (err) => err.cause === '4337_ESTIMATION'
+      )
+    ) {
+      warnings.push({
+        id: 'bundler-failure',
+        title:
+          'Smart account fee options are temporarily unavailable. You can pay fee with a Basic account or try again later',
         promptBeforeSign: false
       })
     }
@@ -238,8 +240,7 @@ export class EstimationController extends EventEmitter {
           this.error
             ? 'We will continue retrying, but please check your internet connection.'
             : 'Automatically retrying in a few seconds. Please wait...'
-        }`,
-        code: 'ESTIMATION_ERROR'
+        }`
       })
 
       return errors
@@ -250,7 +251,10 @@ export class EstimationController extends EventEmitter {
     if (this.error) {
       errors.push({
         title: this.error.message,
-        code: 'ESTIMATION_ERROR'
+        code:
+          typeof this.error.cause === 'string' && this.error.cause.length
+            ? this.error.cause
+            : 'ESTIMATION_ERROR'
       })
     }
 
@@ -263,5 +267,6 @@ export class EstimationController extends EventEmitter {
     this.hasEstimated = false
     this.status = EstimationStatus.Initial
     this.estimationRetryError = null
+    this.availableFeeOptions = []
   }
 }

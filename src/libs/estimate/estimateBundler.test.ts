@@ -54,10 +54,9 @@ const smartAccDeployed: Account = {
   }
 }
 
-const getSignAccountOpStatus = () => {
+const areUpdatesForbidden = () => {
   return null
 }
-const noStateUpdateStatuses: any[] = []
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
 const errorCallback = () => {}
@@ -115,7 +114,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
+      const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
       const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
       const result = await bundlerEstimate(
@@ -177,7 +176,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
+      const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
       const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
       const result = await bundlerEstimate(
@@ -236,7 +235,7 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
+      const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
       const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
       const result = await bundlerEstimate(
@@ -269,13 +268,8 @@ describe('Bundler fallback tests', () => {
     }
   }
   class ExtendedBundlerSwitcher extends BundlerSwitcher {
-    constructor(
-      network: Network,
-      getStatus: Function,
-      noUpdateStatuses: any[],
-      usedBundlers: BUNDLER[] = []
-    ) {
-      super(network, getStatus, noUpdateStatuses)
+    constructor(network: Network, areUpdatesForbbiden: Function, usedBundlers: BUNDLER[] = []) {
+      super(network, areUpdatesForbbiden)
       this.bundler = new BrokenPimlico()
       // push pimlico as used so we could fallback to biconomy
       usedBundlers.forEach((bun) => this.usedBundlers.push(bun))
@@ -319,12 +313,7 @@ describe('Bundler fallback tests', () => {
         }
       }
     ]
-    const switcher = new ExtendedBundlerSwitcher(
-      base,
-      getSignAccountOpStatus,
-      noStateUpdateStatuses,
-      [PIMLICO]
-    )
+    const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO])
     const accountState = accountStates[smartAccDeployed.addr][base.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
     const result = await bundlerEstimate(
@@ -384,12 +373,7 @@ describe('Bundler fallback tests', () => {
         }
       }
     ]
-    const switcher = new ExtendedBundlerSwitcher(
-      base,
-      getSignAccountOpStatus,
-      noStateUpdateStatuses,
-      [PIMLICO, BICONOMY]
-    )
+    const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO, BICONOMY])
     const accountState = accountStates[smartAccDeployed.addr][base.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
     const result = await bundlerEstimate(

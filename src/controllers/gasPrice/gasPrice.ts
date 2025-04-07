@@ -50,20 +50,15 @@ export class GasPriceController extends EventEmitter {
       getGasPriceRecommendations(this.#provider, this.#network).catch((e) => {
         const signAccountOpState = this.#getSignAccountOpState()
         const estimation = signAccountOpState.estimation as EstimationController
-        const readyToSign = signAccountOpState.readyToSign as boolean
 
-        // Don't display additional errors if the estimation hasn't initially loaded
-        // or there is an estimation error
-        if (!estimation.isLoadingOrFailed() || estimation.estimationRetryError) return null
+        // if the gas price data has been fetched once successfully OR an estimation error
+        // is currently being displayed, do not emit another error
+        if (this.gasPrices[this.#network.chainId.toString()] || estimation.estimationRetryError)
+          return
 
         const { type } = decodeError(e)
 
-        let message = `We couldn't retrieve the latest network fee information.${
-          // Display this part of the message only if the user can broadcast.
-          readyToSign
-            ? ' If you experience issues broadcasting please select a higher fee speed.'
-            : ''
-        }`
+        let message = "We couldn't retrieve the latest network fee information."
 
         if (type === ErrorType.ConnectivityError) {
           message = 'Network connection issue prevented us from retrieving the current network fee.'
@@ -104,7 +99,6 @@ export class GasPriceController extends EventEmitter {
 
     if (!this.gasPriceTimeout)
       this.gasPriceTimeout = createRecurringTimeout(() => this.fetch('major'), 12000)
-    this.gasPriceTimeout.stop()
     this.gasPriceTimeout.start()
   }
 
