@@ -22,7 +22,9 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
  * If it's set, get it. If not, use pimlico
  */
 export function getDefaultBundler(network: Network): Bundler {
-  if (network.chainId === 146n) return getBundlerByName(BICONOMY)
+  // hardcode biconomy for Gnosis and Sonic as they support state override
+  if (network.chainId === 100n || network.chainId === 146n) return getBundlerByName(BICONOMY)
+
   const bundlerName = network.erc4337.defaultBundler ? network.erc4337.defaultBundler : PIMLICO
   return getBundlerByName(bundlerName)
 }

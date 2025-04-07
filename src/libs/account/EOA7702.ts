@@ -1,13 +1,19 @@
 /* eslint-disable class-methods-use-this */
 import { Interface, ZeroAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
+import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import { Hex } from '../../interfaces/hex'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
-import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import {
+  BundlerStateOverride,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 
 // this class describes an EOA that CAN transition to 7702
@@ -61,10 +67,8 @@ export class EOA7702 extends BaseAccount {
     const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
     if (isNative) {
       if (this.accountState.isSmarterEoa) {
-        // arbitrum's gasLimit is special as the gasPrice is contained in it as well.
-        // that's why it's better to trust the provider's estimation instead of ours
-        if (this.network.chainId === ARBITRUM_CHAIN_ID && estimation.providerEstimation)
-          return estimation.providerEstimation.gasUsed
+        // paying in native + smartEOA makes the provider estimation more accurate
+        if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed
 
         // trust the ambire estimaton as it's more precise
         // but also add the broadcast gas as it's not included in the ambire estimate
@@ -125,5 +129,17 @@ export class EOA7702 extends BaseAccount {
   getBroadcastCalldata(accountOp: AccountOp): Hex {
     const ambireAccount = new Interface(AmbireAccount.abi)
     return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)]) as Hex
+  }
+
+  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
+    if (this.accountState.isSmarterEoa || !!userOp.eip7702Auth) return undefined
+
+    // if EOA without eip7702Auth, make it look like a smart account so we could
+    // do the estimation
+    return {
+      [this.account.addr]: {
+        code: AmbireAccount7702.binRuntime
+      }
+    }
   }
 }

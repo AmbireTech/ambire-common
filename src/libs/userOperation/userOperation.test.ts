@@ -92,8 +92,7 @@ describe('User Operation tests', () => {
         smartAccDeployed,
         accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
         opOptimism,
-        'pimlico',
-        '0x0001'
+        'pimlico'
       )
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')

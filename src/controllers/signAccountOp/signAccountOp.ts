@@ -60,9 +60,12 @@ import { humanizeAccountOp } from '../../libs/humanizer'
 import { hasRelayerSupport } from '../../libs/networks/networks'
 import { GetOptions, Price, TokenResult } from '../../libs/portfolio'
 import {
+  adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
   getAuthorizationHash,
+  getEIP712Signature,
+  getEntryPointAuthorization,
   getExecuteSignature,
   getTypedData,
   wrapStandard,
@@ -219,6 +222,11 @@ export class SignAccountOpController extends EventEmitter {
   gasPrice: GasPriceController
 
   #traceCall: Function
+
+  shouldSignAuth: {
+    type: 'V2Deploy' | '7702'
+    text: string
+  } | null = null
 
   constructor(
     accounts: AccountsController,
@@ -1377,7 +1385,22 @@ export class SignAccountOpController extends EventEmitter {
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
     const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
-    if (broadcastOption === BROADCAST_OPTIONS.byBundler && isUsingPaymaster && !usesOneTimeNonce) {
+    const shouldSignDeployAuth = this.baseAccount.shouldSignDeployAuth(broadcastOption)
+
+    // tell the FE where we are
+    if (shouldSignDeployAuth) {
+      this.shouldSignAuth = {
+        type: 'V2Deploy',
+        text: 'Step 1/2 preparing account'
+      }
+    }
+
+    if (
+      broadcastOption === BROADCAST_OPTIONS.byBundler &&
+      isUsingPaymaster &&
+      !usesOneTimeNonce &&
+      !shouldSignDeployAuth
+    ) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
       this.status = { type: SigningStatus.InProgress }
@@ -1453,6 +1476,35 @@ export class SignAccountOpController extends EventEmitter {
               getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
             )
           )
+
+          shouldReestimate = true
+        }
+
+        if (shouldSignDeployAuth) {
+          const epActivatorTypedData = await getEntryPointAuthorization(
+            this.account.addr,
+            this.#network.chainId,
+            this.accountState.nonce
+          )
+          const epSignature = await getEIP712Signature(
+            epActivatorTypedData,
+            this.account,
+            this.accountState,
+            signer,
+            this.#network
+          )
+          if (!this.accountOp.meta) this.accountOp.meta = {}
+          this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
+
+          // after signing is complete, go to paymaster mode
+          if (isUsingPaymaster) {
+            this.shouldSignAuth = {
+              type: 'V2Deploy',
+              text: 'Step 2/2 signing transaction'
+            }
+            this.status = { type: SigningStatus.WaitingForPaymaster }
+            this.emitUpdate()
+          }
 
           shouldReestimate = true
         }

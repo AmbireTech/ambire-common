@@ -74,10 +74,6 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { parse } from '../../libs/richJson/richJson'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import {
-  adjustEntryPointAuthorization,
-  getEntryPointAuthorization
-} from '../../libs/signMessage/signMessage'
-import {
   buildSwapAndBridgeUserRequests,
   getActiveRoutesForAccount
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -87,10 +83,6 @@ import {
   buildMintVestingRequest,
   buildTransferUserRequest
 } from '../../libs/transfer/userRequest'
-import {
-  ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-  shouldAskForEntryPointAuthorization
-} from '../../libs/userOperation/userOperation'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import shortenAddress from '../../utils/shortenAddress'
@@ -101,11 +93,9 @@ import {
   AccountOpAction,
   ActionExecutionType,
   ActionPosition,
-  ActionsController,
-  SignMessageAction
+  ActionsController
 } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
-import { SignedMessage } from '../activity/types'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
@@ -810,29 +800,6 @@ export class MainController extends EventEmitter {
     clearTimeout(timeoutId)
   }
 
-  handleSignMessageCallbacks(signedMessage: SignedMessage) {
-    if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      const accountOpAction = makeAccountOpAction({
-        account: this.accounts.accounts.filter((a) => a.addr === signedMessage.accountAddr)[0],
-        chainId: signedMessage.chainId,
-        nonce:
-          this.accounts.accountStates[signedMessage.accountAddr][signedMessage.chainId.toString()]
-            .nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
-
-      if (signedMessage.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-        accountOpAction.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(
-          signedMessage.signature as string
-        )
-      }
-
-      this.actions.addOrUpdateAction(accountOpAction, 'first')
-    }
-  }
-
   async handleSignMessage() {
     const accountAddr = this.signMessage.messageToSign?.accountAddr
     const chainId = this.signMessage.messageToSign?.chainId
@@ -859,11 +826,6 @@ export class MainController extends EventEmitter {
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
-
-    // if an action is required after signing, enable it. Like:
-    // * accountOp after entry point sign
-    // * accountOp (if there is one) after 7702 authorization
-    this.handleSignMessageCallbacks(signedMessage)
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
@@ -1649,26 +1611,9 @@ export class MainController extends EventEmitter {
     }
   }
 
-  #handlePreReject(userRequest: UserRequest) {
-    // if the entry point signature is rejected, remove all the calls
-    // accumulated until now
-    if (userRequest.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID) {
-      this.userRequests = this.userRequests.filter(
-        (r) =>
-          !(
-            r.action.kind === 'calls' &&
-            r.meta.accountAddr === userRequest.meta.accountAddr &&
-            r.meta.chainId === userRequest.meta.chainId
-          )
-      )
-    }
-  }
-
   rejectUserRequest(err: string, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return
-
-    this.#handlePreReject(userRequest)
 
     // if the userRequest that is about to be removed is an approval request
     // find and remove the associated pending transaction request if there is any
@@ -1745,114 +1690,6 @@ export class MainController extends EventEmitter {
     }
   }
 
-  #focusPreUserRequestIfAnyAndDeleteOldRequest(
-    preActionFinder: Function,
-    newReq: UserRequest
-  ): boolean {
-    const preAction = this.actions.visibleActionsQueue.find((a) => preActionFinder(a))
-    if (preAction) {
-      this.actions.setCurrentActionById(preAction.id)
-
-      // remove old user requests
-      const oldReq = this.userRequests.find(
-        (uReq) =>
-          uReq.action.kind === 'calls' &&
-          uReq.meta.accountAddr === newReq.meta.accountAddr &&
-          uReq.meta.chainId === newReq.meta.chainId
-      )
-      if (oldReq) this.userRequests.splice(this.userRequests.indexOf(oldReq), 1)
-
-      return true
-    }
-
-    return false
-  }
-
-  // The goal here is add a UserRequest before the main one takes places
-  // if we want to do so. Examplese:
-  // * SA with nonce 0 - enable entry point
-  // * BA - enable EIP-7702
-  async #addPreUserRequestIfAny(
-    req: UserRequest,
-    actionExecutionType: ActionExecutionType = 'open-action-window'
-  ): Promise<boolean> {
-    const { action, meta } = req
-
-    // allow preUser requests only before txns
-    // otherwise: meta.chainId is not reliable for some userRequests:
-    // benzin is one such type where chainId comes as ""
-    if (action.kind !== 'calls') return false
-
-    const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-    const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
-    const accountState = await this.accounts.getOrFetchAccountOnChainState(
-      meta.accountAddr,
-      meta.chainId
-    )
-
-    // smart account nonce 0: check for entry point auth
-    if (isSmartAccount(account)) {
-      // find me the accountOp for the network if any, it's always 1 for SA
-      const currentAccountOpAction = this.actions.actionsQueue.find(
-        (a) =>
-          a.type === 'accountOp' &&
-          a.accountOp.accountAddr === account.addr &&
-          a.accountOp.chainId === meta.chainId
-      ) as AccountOpAction | undefined
-
-      const entryPointAuthorizationMessageFromHistory = await this.activity.findMessage(
-        account.addr,
-        (message) =>
-          message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
-          message.chainId === meta.chainId
-      )
-
-      const hasAuthorized =
-        !!currentAccountOpAction?.accountOp?.meta?.entryPointAuthorization ||
-        !!entryPointAuthorizationMessageFromHistory
-
-      if (shouldAskForEntryPointAuthorization(network, account, accountState, hasAuthorized)) {
-        // check if entry point auth is already visible
-        // if it is, focus it and remove old call requests to it
-        const hasFocussed = this.#focusPreUserRequestIfAnyAndDeleteOldRequest(
-          (a: any) =>
-            a.id === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
-            (a as SignMessageAction).userRequest.meta.chainId === req.meta.chainId,
-          req
-        )
-        if (hasFocussed) return true
-
-        const typedMessageAction = await getEntryPointAuthorization(
-          req.meta.accountAddr,
-          network.chainId,
-          BigInt(accountState.nonce)
-        )
-        await this.addUserRequest(
-          {
-            id: ENTRY_POINT_AUTHORIZATION_REQUEST_ID,
-            action: typedMessageAction,
-            meta: {
-              isSignAction: true,
-              accountAddr: req.meta.accountAddr,
-              chainId: req.meta.chainId
-            },
-            session: req.session,
-            dappPromise: req?.dappPromise
-              ? { reject: req?.dappPromise?.reject, resolve: () => {} }
-              : undefined
-          } as SignUserRequest,
-          'first',
-          actionExecutionType
-        )
-
-        this.emitUpdate()
-        return true
-      }
-    }
-
-    return false
-  }
-
   async addUserRequest(
     req: UserRequest,
     actionPosition: ActionPosition = 'last',
@@ -1868,10 +1705,6 @@ export class MainController extends EventEmitter {
     } else {
       this.userRequests.push(req)
     }
-
-    // if SA nonce 0: might ask entry point auth
-    // if BA: might ask EIP-7702 auth
-    if (await this.#addPreUserRequestIfAny(req, actionExecutionType)) return
 
     const { id, action, meta } = req
     if (action.kind === 'calls') {
@@ -1915,24 +1748,12 @@ export class MainController extends EventEmitter {
       )
       const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
 
-      // search for msg only if it's a SA
-      const entryPointAuthorizationMessageFromHistory = isSmartAccount(account)
-        ? await this.activity.findMessage(
-            account.addr,
-            (message) =>
-              message.fromActionId === ENTRY_POINT_AUTHORIZATION_REQUEST_ID &&
-              message.chainId === network.chainId
-          )
-        : undefined
-
       const accountOpAction = makeAccountOpAction({
         account,
         chainId: meta.chainId,
         nonce: accountState.nonce,
         userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue,
-        entryPointAuthorizationSignature:
-          (entryPointAuthorizationMessageFromHistory?.signature as string) ?? undefined
+        actionsQueue: this.actions.actionsQueue
       })
       this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
       if (this.signAccountOp) {
