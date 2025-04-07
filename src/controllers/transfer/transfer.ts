@@ -41,12 +41,11 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
-// TODO - document versioning
-// TOOD - use extension version as a version key
-const PERSIST_STORAGE_KEY = 'transferState-v1'
+const PERSIST_STORAGE_KEY = 'transferState'
 
-type PersistedState = Partial<
-  Pick<
+type PersistedState = {
+  version: string
+  state: Pick<
     TransferController,
     | 'amount'
     | 'amountInFiat'
@@ -57,12 +56,24 @@ type PersistedState = Partial<
     | 'isRecipientAddressUnknown'
     | 'isRecipientAddressUnknownAgreed'
     | 'isRecipientHumanizerKnownTokenOrSmartContract'
-  >
-> & {
-  selectedToken?: {
-    address: string
-    networkId: string
+  > & {
+    selectedToken?: {
+      address: string
+      networkId: string
+    }
   }
+}
+
+export const hasPersistedState = async (storage: Storage, appVersion: string) => {
+  const persistedState: PersistedState = await storage.get(PERSIST_STORAGE_KEY)
+
+  if (!persistedState) return false
+
+  if (persistedState.version !== appVersion) {
+    return false
+  }
+
+  return !!Object.keys(persistedState.state)
 }
 
 export class TransferController extends EventEmitter {
@@ -105,13 +116,16 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #APP_VERSION: string
+
   constructor(
     storage: Storage,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: Account,
     networks: Network[],
     portfolio: SelectedAccountPortfolio,
-    shouldHydrate: boolean
+    shouldHydrate: boolean,
+    APP_VERSION: string
   ) {
     super()
 
@@ -120,6 +134,7 @@ export class TransferController extends EventEmitter {
     this.#selectedAccountData = selectedAccountData
     this.#networks = networks
     this.#portfolio = portfolio
+    this.#APP_VERSION = APP_VERSION
 
     this.#initialLoadPromise = this.#load(shouldHydrate)
     this.emitUpdate()
@@ -135,8 +150,20 @@ export class TransferController extends EventEmitter {
   }
 
   async #hydrate() {
-    const persistedState: PersistedState = await this.#storage.get(PERSIST_STORAGE_KEY, {})
-    const { selectedToken, ...rest } = persistedState
+    const persistedState: PersistedState = await this.#storage.get(PERSIST_STORAGE_KEY)
+
+    // Don't hydrate if no state was previously persisted.
+    if (!persistedState) return
+
+    // In case of a newer app version, we don't hydrate using the older persisted storage,
+    // as the storage interface may differ from the newly deployed code.
+    // This could result in a runtime error, so we prefer to play it safe.
+    if (persistedState.version !== this.#APP_VERSION) {
+      await this.#clearPersistedState()
+      return
+    }
+
+    const { selectedToken, ...rest } = persistedState.state
 
     // Normalize selected token to TokenResult
     if (selectedToken) {
@@ -153,7 +180,7 @@ export class TransferController extends EventEmitter {
   }
 
   get persistableState() {
-    const PERSISTED_FIELDS: PersistedState = {
+    const PERSISTED_FIELDS: PersistedState['state'] = {
       amount: this.amount,
       amountInFiat: this.amountInFiat,
       amountFieldMode: this.amountFieldMode,
@@ -166,8 +193,8 @@ export class TransferController extends EventEmitter {
         this.isRecipientHumanizerKnownTokenOrSmartContract
     }
 
-    // Normalized , as keeping complex structure (TokenResult) persisted in Storage may result in a run-time error,
-    // when we check the structure, but forget to update the storage.
+    // We prefer to keep TokenResult simplified in storage and normalize it back to the full object during hydration,
+    // to avoid some TokenResult fields (amount, flags) becoming obsolete while cached.
     if (this.#selectedToken) {
       PERSISTED_FIELDS.selectedToken = {
         address: this.#selectedToken.address,
@@ -180,11 +207,14 @@ export class TransferController extends EventEmitter {
 
   #persist() {
     console.log('PERSISTED STATE:', this.persistableState)
-    this.#storage.set(PERSIST_STORAGE_KEY, this.persistableState)
+    this.#storage.set(PERSIST_STORAGE_KEY, {
+      state: this.persistableState,
+      version: this.#APP_VERSION
+    })
   }
 
-  #clearPersistedState() {
-    this.#storage.remove(PERSIST_STORAGE_KEY)
+  async #clearPersistedState() {
+    await this.#storage.remove(PERSIST_STORAGE_KEY)
   }
 
   get shouldSkipTransactionQueuedModal() {
