@@ -84,7 +84,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -265,13 +265,9 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
-    this.bundlerSwitcher = new BundlerSwitcher(
-      network,
-      () => {
-        return this.status ? this.status.type : null
-      },
-      noStateUpdateStatuses
-    )
+    this.bundlerSwitcher = new BundlerSwitcher(network, () => {
+      return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+    })
     this.provider = provider
     this.estimation = new EstimationController(
       keystore,
@@ -279,10 +275,7 @@ export class SignAccountOpController extends EventEmitter {
       networks,
       providers,
       portfolio,
-      () => {
-        return this.status ? this.status.type : null
-      },
-      noStateUpdateStatuses
+      this.bundlerSwitcher
     )
     this.gasPrice = new GasPriceController(network, provider, this.bundlerSwitcher, () => ({
       estimation: this.estimation,
@@ -305,6 +298,9 @@ export class SignAccountOpController extends EventEmitter {
         bundlerGasPrices: this.gasPrice.bundlerGasPrices[this.#network.chainId.toString()],
         blockGasLimit: this.gasPrice.blockGasLimit
       })
+    })
+    this.gasPrice.onError((error: ErrorRef) => {
+      this.emitError(error)
     })
 
     this.simulate(true)

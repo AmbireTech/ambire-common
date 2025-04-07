@@ -440,13 +440,16 @@ const init = async (
     ]
   }
 
+  const bundlerSwitcher = new BundlerSwitcher(network, () => {
+    return false
+  })
   const estimationController = new EstimationController(
     keystore,
     accountsCtrl,
     networksCtrl,
     providers,
     portfolio,
-    () => {}
+    bundlerSwitcher
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -454,13 +457,6 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const bundlerSwitcher = new BundlerSwitcher(
-    network,
-    () => {
-      return null
-    },
-    []
-  )
   const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => {
     return null
   })
