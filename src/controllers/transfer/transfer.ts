@@ -40,8 +40,16 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
+// Here's how state persistence works:
+// 1. When we detect a state diff (e.g., transfer.update({...})), we save specific controller fields to storage.
+// 2. All state is stored under PERSIST_STORAGE_KEY and follows the PersistedState structure.
+// 3. When the controller loads for the first time, we hydrate it by loading the latest persisted state.
+// 4. If it's a Top-up, we skip persistence. Both Top-up and Send use the same controller,
+//    which can lead to state mix-up bugs.
+// 5. We store APP_VERSION in PersistedState.version. If a new version is deployed and it differs,
+//    we clear the persisted state and skip hydration.
+//    This avoids runtime errors caused by outdated state structures.
 const PERSIST_STORAGE_KEY = 'transferState'
-
 type PersistedState = {
   version: string
   state: Pick<
@@ -145,6 +153,7 @@ export class TransferController extends EventEmitter {
       false
     )
 
+    // Currently, we should not hydrate when it's a Top-up, but in the future, we may have other cases as well.
     if (shouldHydrate) await this.#hydrate()
   }
 
@@ -175,7 +184,6 @@ export class TransferController extends EventEmitter {
     }
 
     Object.assign(this, rest)
-    console.log('HYDRATED STATE:', this.#selectedToken, this.toJSON())
   }
 
   get persistableState() {
@@ -205,7 +213,7 @@ export class TransferController extends EventEmitter {
   }
 
   #persist() {
-    console.log('PERSISTED STATE:', this.persistableState)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set(PERSIST_STORAGE_KEY, {
       state: this.persistableState,
       version: this.#APP_VERSION
@@ -298,6 +306,7 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#clearPersistedState()
     this.emitUpdate()
   }
@@ -376,14 +385,8 @@ export class TransferController extends EventEmitter {
     return this.addressState.ensAddress || this.addressState.fieldValue
   }
 
-  async update(updateInput: TransferUpdate, options: { shouldPersist?: boolean } = {}) {
-    const { shouldPersist = true } = options
-
-    await this.#initialLoadPromise
-
-    const prevState = stringify(this.persistableState)
-
-    const {
+  async update(
+    {
       selectedAccountData,
       humanizerInfo,
       selectedToken,
@@ -395,7 +398,18 @@ export class TransferController extends EventEmitter {
       networks,
       contacts,
       amountFieldMode
-    } = updateInput
+    }: TransferUpdate,
+    options: { shouldPersist?: boolean } = {}
+  ) {
+    // When should we persist?
+    // Simply, when a field change is triggered by the user.
+    // If the change originates from useEffect - for instance, auto-selecting a token -
+    // we should not persist, as this would load the Send form every time the user opens the Dashboard.
+    const { shouldPersist = true } = options
+
+    await this.#initialLoadPromise
+
+    const prevState = stringify(this.persistableState)
 
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -462,6 +476,8 @@ export class TransferController extends EventEmitter {
 
       const hasStateChange = prevState !== stringify(this.persistableState)
 
+      // We persist only if the Transfer form fields have changed.
+      // Otherwise, we can't easily determine if the form is dirty or not.
       if (hasStateChange) this.#persist()
     }
   }
