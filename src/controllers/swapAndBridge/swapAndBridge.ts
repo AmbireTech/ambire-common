@@ -23,6 +23,8 @@ import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
+/* eslint-disable no-await-in-loop */
+import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -49,13 +51,11 @@ import { AccountOpAction, ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-/* eslint-disable no-await-in-loop */
-import { randomId } from '../../libs/humanizer/utils'
-import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
@@ -425,7 +425,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // reset only if there are no other instances opened/active
     if (!this.sessionIds.length) {
-      this.resetForm() // clear prev session form state
+      this.reset() // clear prev session form state
       // for each new session remove the completed activeRoutes from the previous session
       this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
       // remove activeRoutes errors from the previous session
@@ -493,7 +493,7 @@ export class SwapAndBridgeController extends EventEmitter {
   unloadScreen(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) {
-      this.resetForm(true)
+      this.reset(true)
       // Reset health to prevent the error state from briefly flashing
       // before the next health check resolves when the Swap & Bridge
       // screen is opened after a some time
@@ -660,18 +660,28 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   resetForm(shouldEmit?: boolean) {
-    this.fromChainId = 1
-    this.fromSelectedToken = null
+    // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
+    // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
+    // while resetting all other state related to the form.
     this.fromAmount = ''
     this.fromAmountInFiat = ''
     this.fromAmountFieldMode = 'token'
-    this.toChainId = 1
     this.toSelectedToken = null
     this.quote = null
     this.quoteRoutesStatuses = {}
+
+    if (shouldEmit) this.#emitUpdateIfNeeded()
+  }
+
+  reset(shouldEmit?: boolean) {
+    this.resetForm()
+    this.fromChainId = 1
+    this.fromSelectedToken = null
+    this.toChainId = 1
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
+    this.destroySignAccountOp()
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -1310,15 +1320,7 @@ export class SwapAndBridgeController extends EventEmitter {
         })
       }
 
-      // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
-      // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
-      // while resetting all other state related to the form.
-      this.fromAmount = ''
-      this.fromAmountInFiat = ''
-      this.fromAmountFieldMode = 'token'
-      this.toSelectedToken = null
-      this.quote = null
-      this.quoteRoutesStatuses = {}
+      this.resetForm()
 
       this.emitUpdate()
     } catch (error: any) {
@@ -1584,6 +1586,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   destroySignAccountOp() {
     if (!this.signAccountOpController) return
+    this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
     this.signAccountOpController.reset()
     this.signAccountOpController = null
   }
@@ -1608,6 +1611,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#selectedAccount.account.addr,
       network.chainId
     )
+
     const userTxn = await this.getRouteStartUserTx()
 
     // TODO:
