@@ -29,6 +29,11 @@ import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
 import { EstimationStatus } from '../estimation/types'
+import {
+  SIGN_ACCOUNT_OP_MAIN,
+  SIGN_ACCOUNT_OP_SWAP,
+  SignAccountOpType
+} from '../signAccountOp/helper'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -652,14 +657,19 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async handleSignAndBroadcastAccountOp() {
+  async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
+    const signAccountOp =
+      type === SIGN_ACCOUNT_OP_MAIN
+        ? this.signAccountOp
+        : this.swapAndBridge.signAccountOpController
+
     await this.withStatus(
       'signAccountOp',
       async () => {
-        const wasAlreadySigned = this.signAccountOp?.status?.type === SigningStatus.Done
+        const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
         if (wasAlreadySigned) return Promise.resolve()
 
-        if (!this.signAccountOp) {
+        if (!signAccountOp) {
           const message =
             'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
 
@@ -668,7 +678,7 @@ export class MainController extends EventEmitter {
         }
 
         // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpSigningPromise = this.signAccountOp.sign().finally(() => {
+        this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
           this.#signAccountOpSigningPromise = undefined
         })
 
@@ -678,21 +688,22 @@ export class MainController extends EventEmitter {
     )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
+    if (signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    return this.handleBroadcast(this.signAccountOp)
+    return this.handleBroadcast(signAccountOp, type)
   }
 
-  async handleBroadcast(signAccountOp: SignAccountOpController) {
+  async handleBroadcast(signAccountOp: SignAccountOpController, type: SignAccountOpType) {
     return this.withStatus(
       'broadcastSignedAccountOp',
       async () => {
         // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp(signAccountOp).finally(
-          () => {
-            this.#signAccountOpBroadcastPromise = undefined
-          }
-        )
+        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp(
+          signAccountOp,
+          type
+        ).finally(() => {
+          this.#signAccountOpBroadcastPromise = undefined
+        })
         return this.#signAccountOpBroadcastPromise
       },
       true
@@ -2058,7 +2069,7 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async #broadcastSignedAccountOp(signAccountOp: SignAccountOpController) {
+  async #broadcastSignedAccountOp(signAccountOp: SignAccountOpController, type: SignAccountOpType) {
     const accountOp = signAccountOp.accountOp
     const estimation = signAccountOp.estimation.estimation
     const actionId = signAccountOp.fromActionId
@@ -2366,11 +2377,20 @@ export class MainController extends EventEmitter {
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
 
-    await this.resolveAccountOpAction(
-      submittedAccountOp,
-      actionId,
-      isBasicAccountBroadcastingMultiple
-    )
+    // resolve dapp requests, open benzin and etc only if the main sign accountOp
+    if (type === SIGN_ACCOUNT_OP_MAIN) {
+      await this.resolveAccountOpAction(
+        submittedAccountOp,
+        actionId,
+        isBasicAccountBroadcastingMultiple
+      )
+    }
+    // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
+    // visualize the success page on the FE instead of resetting the form
+    if (type === SIGN_ACCOUNT_OP_SWAP) {
+      this.swapAndBridge.resetForm()
+      this.swapAndBridge.destroySignAccountOp()
+    }
 
     await this.#notificationManager.create({
       title:
@@ -2444,7 +2464,7 @@ export class MainController extends EventEmitter {
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         isReplacementFeeLow = true
         if (signAccountOp) {
-          signAccountOp.shouldSimulateOnLoad ? signAccountOp.simulate() : signAccountOp.estimate()
+          signAccountOp.simulate(false)
         }
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
         message = `Signer key not supported on this network.${
@@ -2457,7 +2477,7 @@ export class MainController extends EventEmitter {
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
         if (signAccountOp) {
           signAccountOp.gasPrice.fetch()
-          signAccountOp.shouldSimulateOnLoad ? signAccountOp.simulate() : signAccountOp.estimate()
+          signAccountOp.simulate(false)
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
@@ -2473,7 +2493,7 @@ export class MainController extends EventEmitter {
       if (message.includes(insufficientPaymasterFunds) && provider && network) {
         failedPaymasters.addInsufficientFunds(provider, network).then(() => {
           if (signAccountOp) {
-            signAccountOp.shouldSimulateOnLoad ? signAccountOp.simulate() : signAccountOp.estimate()
+            signAccountOp.simulate(false)
           }
         })
       }

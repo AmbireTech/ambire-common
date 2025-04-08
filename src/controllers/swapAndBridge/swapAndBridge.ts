@@ -1628,8 +1628,7 @@ export class SwapAndBridgeController extends EventEmitter {
         // TODO<oneClickSwap>
         return true
       },
-      undefined,
-      false
+      undefined
     )
 
     this.emitUpdate()

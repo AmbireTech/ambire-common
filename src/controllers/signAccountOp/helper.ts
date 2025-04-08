@@ -8,6 +8,10 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 
+export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
+export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
+export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap'
+
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
   accountAddr: string,
@@ -91,7 +95,7 @@ const getFeeTokenPriceUnavailableWarning = (
 
 export {
   getFeeSpeedIdentifier,
-  getTokenUsdAmount,
+  getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getFeeTokenPriceUnavailableWarning
+  getTokenUsdAmount
 }

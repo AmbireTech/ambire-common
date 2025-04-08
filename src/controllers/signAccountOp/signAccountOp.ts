@@ -227,8 +227,6 @@ export class SignAccountOpController extends EventEmitter {
     text: string
   } | null = null
 
-  shouldSimulateOnLoad: boolean = true
-
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -241,8 +239,7 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
-    traceCall?: Function,
-    shouldSimulateOnLoad?: boolean
+    traceCall?: Function
   ) {
     super()
 
@@ -283,7 +280,6 @@ export class SignAccountOpController extends EventEmitter {
       estimation: this.estimation,
       readyToSign: this.readyToSign
     }))
-    this.shouldSimulateOnLoad = !!shouldSimulateOnLoad
 
     this.#load()
   }
@@ -305,7 +301,7 @@ export class SignAccountOpController extends EventEmitter {
       this.emitError(error)
     })
 
-    this.shouldSimulateOnLoad ? this.simulate(true) : this.estimate()
+    this.simulate(true)
     this.gasPrice.fetch()
   }
 
@@ -1644,6 +1640,8 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       }
+
+      console.log('signed successfully')
 
       this.status = { type: SigningStatus.Done }
       this.signedAccountOp = structuredClone(this.accountOp)
