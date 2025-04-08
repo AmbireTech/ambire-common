@@ -100,9 +100,13 @@ export class KeystoreController extends EventEmitter {
 
   #keystoreKeys: StoredKey[] = []
 
+  #internalKeysToAddOnKeystoreReady: ReadyToAddKeys['internal'] = []
+
+  #externalKeysToAddOnKeystoreReady: ReadyToAddKeys['external'] = []
+
   keyStoreUid: string | null
 
-  isReadyToStoreKeys: boolean = false
+  #isReadyToStoreKeys: boolean = false
 
   errorMessage: string = ''
 
@@ -174,6 +178,21 @@ export class KeystoreController extends EventEmitter {
 
   get hasTempSeed() {
     return !!this.#tempSeed
+  }
+
+  get isReadyToStoreKeys() {
+    return this.#isReadyToStoreKeys
+  }
+
+  set isReadyToStoreKeys(val) {
+    this.#isReadyToStoreKeys = val
+
+    if (val && this.#internalKeysToAddOnKeystoreReady.length) {
+      this.#addKeys(this.#internalKeysToAddOnKeystoreReady)
+    }
+    if (val && this.#internalKeysToAddOnKeystoreReady.length) {
+      this.#addKeysExternallyStored(this.#externalKeysToAddOnKeystoreReady)
+    }
   }
 
   async getKeyStoreUid() {
@@ -541,6 +560,13 @@ export class KeystoreController extends EventEmitter {
 
     if (!keysToAdd.length) return
 
+    if (!this.isReadyToStoreKeys) {
+      this.#externalKeysToAddOnKeystoreReady = [
+        ...new Set([...this.#externalKeysToAddOnKeystoreReady, ...keysToAdd])
+      ]
+      return
+    }
+
     // Strip out keys with duplicated private keys. One unique key is enough.
     const uniqueKeys: { addr: Key['addr']; type: Key['type'] }[] = []
     const uniqueKeysToAdd = keysToAdd.filter(({ addr, type }) => {
@@ -583,6 +609,13 @@ export class KeystoreController extends EventEmitter {
   async #addKeys(keysToAdd: ReadyToAddKeys['internal']) {
     await this.#initialLoadPromise
     if (!keysToAdd.length) return
+    if (!this.isReadyToStoreKeys) {
+      this.#internalKeysToAddOnKeystoreReady = [
+        ...new Set([...this.#internalKeysToAddOnKeystoreReady, ...keysToAdd])
+      ]
+      return
+    }
+
     if (this.#mainKey === null)
       throw new EmittableError({
         message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,

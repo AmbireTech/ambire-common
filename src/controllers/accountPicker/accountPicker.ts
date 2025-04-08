@@ -116,11 +116,6 @@ export class AccountPickerController extends EventEmitter {
 
   #alreadyImportedAccounts: Account[] = []
 
-  #addAccountsOnKeystoreReady: {
-    accounts: SelectedAccountForImport[]
-    readyToAddKeys: ReadyToAddKeys
-  } | null = null
-
   #onAddAccountsSuccessCallback: () => Promise<void>
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
@@ -151,15 +146,6 @@ export class AccountPickerController extends EventEmitter {
     this.#providers = providers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
-    this.#keystore.onUpdate(() => {
-      if (keystore.isReadyToStoreKeys && this.#addAccountsOnKeystoreReady) {
-        this.addAccounts(
-          this.#addAccountsOnKeystoreReady.accounts,
-          this.#addAccountsOnKeystoreReady.readyToAddKeys
-        )
-        this.#addAccountsOnKeystoreReady = null
-      }
-    })
 
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
@@ -675,11 +661,6 @@ export class AccountPickerController extends EventEmitter {
   ) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
-    if (!this.#keystore.isReadyToStoreKeys) {
-      this.#addAccountsOnKeystoreReady = { accounts, readyToAddKeys }
-      this.emitUpdate()
-      return
-    }
 
     this.addAccountsStatus = 'LOADING'
     await this.forceEmitUpdate()

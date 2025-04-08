@@ -527,15 +527,6 @@ export class MainController extends EventEmitter {
 
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
-
-    // Update the saved seed `hdPathTemplate` if accounts were added from
-    // the saved seed, so when user opts in to "Import a new Smart Account
-    // from the saved Seed Phrase" the next account is derived based
-    // on the latest `hdPathTemplate` chosen in the AccountPicker.
-    if (this.accountPicker.isInitializedWithSavedSeed)
-      this.keystore.changeSavedSeedHdPathTemplateIfNeeded(this.accountPicker.hdPathTemplate)
-    if (this.keystore.hasKeystoreTempSeed)
-      this.keystore.changeTempSeedHdPathTemplateIfNeeded(this.accountPicker.hdPathTemplate)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
