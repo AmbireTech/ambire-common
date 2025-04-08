@@ -94,7 +94,7 @@ export class KeystoreController extends EventEmitter {
 
   #keystoreSeeds: KeystoreSeed[] = []
 
-  #tempSeed: KeystoreSeed | null = null
+  #tempSeed: Omit<KeystoreSeed, 'label'> | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -446,7 +446,7 @@ export class KeystoreController extends EventEmitter {
     }
   }
 
-  async addTempSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
+  async addTempSeed({ seed, seedPassphrase, hdPathTemplate }: Omit<KeystoreSeed, 'label'>) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -500,24 +500,32 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreSeed) {
+  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: Omit<KeystoreSeed, 'label'>) {
     const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
       seed,
       seedPassphrase
     )
 
-    this.#keystoreSeeds = Array.from(
-      new Set([
-        ...this.#keystoreSeeds,
-        { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate }
-      ])
-    )
+    const existingEntry = this.#keystoreSeeds.find((entry) => entry.seed === seedPhrase)
+    if (existingEntry) return
+
+    const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
+
+    const newEntry = {
+      label,
+      seed: seedPhrase,
+      seedPassphrase: passphrase,
+      hdPathTemplate
+    }
+
+    this.#keystoreSeeds.push(newEntry)
+
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
   }
 
-  async addSeed(keystoreSeed: KeystoreSeed) {
+  async addSeed(keystoreSeed: Omit<KeystoreSeed, 'label'>) {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
   }
 
@@ -562,8 +570,10 @@ export class KeystoreController extends EventEmitter {
 
     if (!this.isReadyToStoreKeys) {
       this.#externalKeysToAddOnKeystoreReady = [
-        ...new Set([...this.#externalKeysToAddOnKeystoreReady, ...keysToAdd])
+        ...this.#externalKeysToAddOnKeystoreReady,
+        ...keysToAdd
       ]
+
       return
     }
 
@@ -611,7 +621,8 @@ export class KeystoreController extends EventEmitter {
     if (!keysToAdd.length) return
     if (!this.isReadyToStoreKeys) {
       this.#internalKeysToAddOnKeystoreReady = [
-        ...new Set([...this.#internalKeysToAddOnKeystoreReady, ...keysToAdd])
+        ...this.#internalKeysToAddOnKeystoreReady,
+        ...keysToAdd
       ]
       return
     }
