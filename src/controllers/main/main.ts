@@ -231,8 +231,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    socketApiKey,
+    swapApiKey,
     keystoreSigners,
     externalSignerControllers,
     windowManager,
@@ -242,7 +241,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
-    socketApiKey: string
+    swapApiKey?: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -328,8 +327,8 @@ export class MainController extends EventEmitter {
       storage: this.#storage,
       windowManager: this.#windowManager
     })
-    // const socketAPI = new SocketAPI({ apiKey: socketApiKey, fetch: this.fetch })
-    const lifiAPI = new LiFiAPI({ fetch: this.fetch })
+    // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
+    const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.#storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,

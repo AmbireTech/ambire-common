@@ -187,12 +187,18 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ apiKey, fetch }: { apiKey?: string; fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
       Accept: 'application/json',
       'Content-Type': 'application/json'
+    }
+
+    // add the apiKey if specified only. Li Fi can function without an apiKey,
+    // it will just put a custom user rate limit
+    if (apiKey) {
+      this.#headers['x-lifi-api-key'] = apiKey
     }
   }
 
