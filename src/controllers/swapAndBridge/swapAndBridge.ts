@@ -681,6 +681,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
+    this.destroySignAccountOp()
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
