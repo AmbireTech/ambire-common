@@ -1641,8 +1641,6 @@ export class SignAccountOpController extends EventEmitter {
         )
       }
 
-      console.log('signed successfully')
-
       this.status = { type: SigningStatus.Done }
       this.signedAccountOp = structuredClone(this.accountOp)
       this.emitUpdate()

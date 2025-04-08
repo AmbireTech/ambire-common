@@ -1390,6 +1390,31 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * Find the next route in line and try to re-estimate with it
+   */
+  onEstimationFailure() {
+    if (!this.quote || !this.quote.selectedRoute) return
+
+    const routeId = this.quote.selectedRoute.routeId
+    let routeIndex = null
+    this.quote.routes.forEach((route, i) => {
+      if (route.routeId === routeId) {
+        this.quote!.routes.splice(i, 1)
+        routeIndex = i
+      }
+    })
+
+    // no routes available
+    if (routeIndex === null || !this.quote.routes[routeIndex]) {
+      this.quote.selectedRoute = undefined
+      this.quote.routes = []
+      return
+    }
+
+    this.selectRoute(this.quote.routes[routeIndex])
+  }
+
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
     op.calls.forEach((call) => {
