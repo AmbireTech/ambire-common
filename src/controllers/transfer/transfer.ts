@@ -410,6 +410,8 @@ export class TransferController extends EventEmitter {
     await this.#initialLoadPromise
 
     const prevState = stringify(this.persistableState)
+    const hasAccountChanged =
+      selectedAccountData && this.#selectedAccountData?.addr !== selectedAccountData.addr
 
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -425,9 +427,10 @@ export class TransferController extends EventEmitter {
       }
     }
     if (selectedAccountData) {
-      if (this.#selectedAccountData?.addr !== selectedAccountData.addr) {
+      if (hasAccountChanged) {
         this.#setAmount('')
         this.selectedToken = null
+        this.addressState = { ...DEFAULT_ADDRESS_STATE }
       }
       this.#selectedAccountData = selectedAccountData
     }
@@ -470,7 +473,7 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
 
     if (shouldPersist) {
-      if (this.isTopUp) {
+      if (this.isTopUp || hasAccountChanged) {
         return this.#clearPersistedState()
       }
 
