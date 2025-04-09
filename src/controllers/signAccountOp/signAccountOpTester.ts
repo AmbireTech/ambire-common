@@ -1,4 +1,4 @@
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -10,24 +10,22 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import { SignAccountOpController } from './signAccountOp'
 
 export class SignAccountOpTesterController extends SignAccountOpController {
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
-    providers: ProvidersController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accountState: AccountOnchainState,
     network: Network,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
+    shouldSimulate: boolean,
     traceCall: Function,
     estimateController: EstimationController,
     gasPriceController: GasPriceController
@@ -35,17 +33,16 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     super(
       accounts,
       networks,
-      providers,
       keystore,
       portfolio,
       externalSignerControllers,
       account,
-      accountState,
       network,
       provider,
       fromActionId,
       accountOp,
       isSignRequestStillActive,
+      shouldSimulate,
       traceCall
     )
 

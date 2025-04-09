@@ -1591,7 +1591,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
   destroySignAccountOp() {
     if (!this.signAccountOpController) return
-    this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
     this.signAccountOpController.reset()
     this.signAccountOpController = null
   }
@@ -1662,6 +1661,7 @@ export class SwapAndBridgeController extends EventEmitter {
         // TODO<oneClickSwap>
         return true
       },
+      false,
       undefined
     )
 

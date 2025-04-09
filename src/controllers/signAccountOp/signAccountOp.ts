@@ -239,6 +239,7 @@ export class SignAccountOpController extends EventEmitter {
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
+    shouldSimulate: boolean,
     traceCall?: Function
   ) {
     super()
@@ -281,10 +282,10 @@ export class SignAccountOpController extends EventEmitter {
       readyToSign: this.readyToSign
     }))
 
-    this.#load()
+    this.#load(shouldSimulate)
   }
 
-  #load() {
+  #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
     this.estimation.onUpdate(() => {
@@ -301,7 +302,7 @@ export class SignAccountOpController extends EventEmitter {
       this.emitError(error)
     })
 
-    this.simulate(true)
+    shouldSimulate ? this.simulate(true) : this.estimate()
     this.gasPrice.fetch()
   }
 

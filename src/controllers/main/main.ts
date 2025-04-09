@@ -647,6 +647,7 @@ export class MainController extends EventEmitter {
       () => {
         return this.isSignRequestStillActive
       },
+      true,
       () => {
         if (this.signAccountOp && this.signAccountOp.estimation.status === EstimationStatus.Success)
           this.traceCall()

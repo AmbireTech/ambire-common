@@ -22,7 +22,7 @@ import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import { MainController } from './main'
 
 // Public API key, shared by Socket, for testing purposes only
-const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
+const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
 const windowManager = {
   event: new EventEmitter(),
@@ -80,7 +80,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
@@ -211,7 +211,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -297,7 +297,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },

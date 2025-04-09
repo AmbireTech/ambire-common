@@ -403,8 +403,6 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  const accountState = accountsCtrl.accountStates[account.addr][network.chainId.toString()]
-
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
     portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
@@ -464,17 +462,16 @@ const init = async (
   const controller = new SignAccountOpTesterController(
     accountsCtrl,
     networksCtrl,
-    providersCtrl,
     keystore,
     portfolio,
     {},
     account,
-    accountState,
     network,
     provider,
     1,
     op,
     () => {},
+    true,
     () => {},
     estimationController,
     gasPriceController
