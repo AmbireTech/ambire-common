@@ -74,11 +74,9 @@ import {
 import { getGasUsed } from '../../libs/singleton/singleton'
 import {
   getActivatorCall,
-  getOneTimeNonce,
   getPackedUserOp,
   getUserOperation,
-  getUserOpHash,
-  shouldUseOneTimeNonce
+  getUserOpHash
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
@@ -1384,7 +1382,6 @@ export class SignAccountOpController extends EventEmitter {
     const estimation = this.estimation.estimation as FullEstimationSummary
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
-    const usesOneTimeNonce = shouldUseOneTimeNonce(this.accountState)
     const shouldSignDeployAuth = this.baseAccount.shouldSignDeployAuth(broadcastOption)
 
     // tell the FE where we are
@@ -1398,7 +1395,6 @@ export class SignAccountOpController extends EventEmitter {
     if (
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
-      !usesOneTimeNonce &&
       !shouldSignDeployAuth
     ) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
@@ -1546,28 +1542,9 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
         const ambireAccount = new Interface(AmbireAccount.abi)
-        if (usesOneTimeNonce) {
-          const signature = await getExecuteSignature(
-            this.#network,
-            this.accountOp,
-            this.accountState,
-            signer
-          )
-
-          // after signing has completed, we wait for the paymaster response
-          // so we tell the user
-          this.status = { type: SigningStatus.WaitingForPaymaster }
-          this.emitUpdate()
-
-          userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
-            [[getSignableCalls(this.accountOp), signature]]
-          ])
-          this.accountOp.signature = signature
-        } else {
-          userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
-            getSignableCalls(this.accountOp)
-          ])
-        }
+        userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
+          getSignableCalls(this.accountOp)
+        ])
 
         if (paymaster.isUsable()) {
           const response = await paymaster.call(
@@ -1584,7 +1561,6 @@ export class SignAccountOpController extends EventEmitter {
 
             userOperation.paymaster = paymasterData.paymaster
             userOperation.paymasterData = paymasterData.paymasterData
-            if (usesOneTimeNonce) userOperation.nonce = getOneTimeNonce(userOperation)
             this.accountOp.gasFeePayment.isSponsored = paymaster.isSponsored()
           } else {
             const errorResponse = response as PaymasterErrorReponse

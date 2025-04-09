@@ -114,12 +114,7 @@ export function getOneTimeNonce(userOperation: UserOperation) {
 }
 
 export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
-  if (accountState.isEOA) return '7702'
-  return accountState.isDeployed && !accountState.isErc4337Enabled ? 'activator' : 'standard'
-}
-
-export function shouldUseOneTimeNonce(accountState: AccountOnchainState): boolean {
-  return getRequestType(accountState) === 'activator'
+  return accountState.isEOA ? '7702' : 'standard'
 }
 
 export function getUserOperation(
