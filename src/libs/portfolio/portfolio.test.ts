@@ -230,7 +230,7 @@ describe('Portfolio', () => {
   })
 
   test('simulation works for EOAs', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
@@ -240,11 +240,7 @@ describe('Portfolio', () => {
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
-        await getSafeSendUSDTTransaction(
-          acc,
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          5259434n
-        )
+        await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
       ]
     }
     const account: Account = {
@@ -269,7 +265,7 @@ describe('Portfolio', () => {
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
     }
-    expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
+    expect(entry.amount - entry.amountPostSimulation).toBe(209434n)
   })
 
   test('simulation works for smart accounts imported as EOAs', async () => {
@@ -316,7 +312,7 @@ describe('Portfolio', () => {
   })
 
   test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
@@ -326,11 +322,7 @@ describe('Portfolio', () => {
       nonce: 0n,
       signature: '0x',
       calls: [
-        await getSafeSendUSDTTransaction(
-          acc,
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          5259434n
-        )
+        await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
       ]
     }
     const account = {
@@ -427,7 +419,7 @@ describe('Portfolio', () => {
   })
 
   test('simulation should revert with SV_WRONG_KEYS for an account that we pass a wrong associated key', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
@@ -437,11 +429,7 @@ describe('Portfolio', () => {
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
-        await getSafeSendUSDTTransaction(
-          acc,
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          5259434n
-        )
+        await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
       ]
     }
     const account: Account = {
