@@ -483,6 +483,9 @@ export class AccountPickerController extends EventEmitter {
       (x) => x.account.addr === nextSelectedAccount.account.addr
     )
     if (!accountExists) this.selectedAccountsFromCurrentSession.push(nextSelectedAccount)
+    this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter(
+      (a) => a.addr !== nextSelectedAccount.account.addr
+    )
 
     this.emitUpdate()
   }
