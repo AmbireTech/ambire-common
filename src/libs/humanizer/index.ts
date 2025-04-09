@@ -34,6 +34,7 @@ import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
 import { openSeaModule } from './modules/OpenSea'
+import PancakeModule from './modules/Pancake'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -64,6 +65,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   SocketModule,
   AcrossModule,
   OneInchModule,
+  PancakeModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,
