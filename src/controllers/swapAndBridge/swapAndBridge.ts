@@ -23,6 +23,7 @@ import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
+import { EstimationStatus } from '../estimation/types'
 /* eslint-disable no-await-in-loop */
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
@@ -56,7 +57,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -351,7 +352,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (
       !this.signAccountOpController ||
-      this.signAccountOpController.status?.type !== SigningStatus.ReadyToSign
+      this.signAccountOpController.estimation.status !== EstimationStatus.Success
     )
       return SwapAndBridgeFormStatus.ReadyToEstimate
 
