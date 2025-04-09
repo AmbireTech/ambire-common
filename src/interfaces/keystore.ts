@@ -111,7 +111,7 @@ export type InternalKey = {
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | string
+  type: 'trezor' | 'ledger' | 'lattice'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -143,17 +143,17 @@ export type KeystoreSignerType = {
  */
 export type ReadyToAddKeys = {
   internal: {
-    addr: Key['addr']
+    addr: InternalKey['addr']
     label: string
-    type: 'internal'
+    type: InternalKey['type']
     privateKey: string
-    dedicatedToOneSA: Key['dedicatedToOneSA']
+    dedicatedToOneSA: InternalKey['dedicatedToOneSA']
     meta: InternalKey['meta']
   }[]
   external: {
-    addr: Key['addr']
+    addr: ExternalKey['addr']
     label: string
-    type: Key['type']
+    type: ExternalKey['type']
     dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]

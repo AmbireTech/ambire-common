@@ -42,7 +42,7 @@ export const getPrivateKeyFromSeed = (
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
 export class KeyIterator implements KeyIteratorInterface {
-  type = 'internal'
+  type = 'internal' as 'internal'
 
   subType: 'seed' | 'private-key'
 

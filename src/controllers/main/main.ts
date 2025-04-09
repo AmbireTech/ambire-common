@@ -801,8 +801,6 @@ export class MainController extends EventEmitter {
   async #handleAccountPickerInitLedger(
     LedgerKeyIterator: any // TODO: KeyIterator type mismatch
   ) {
-    if (this.accountPicker.isInitialized) this.accountPicker.reset()
-
     try {
       const ledgerCtrl = this.#externalSignerControllers.ledger
       if (!ledgerCtrl) {
@@ -829,8 +827,6 @@ export class MainController extends EventEmitter {
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
       await this.accountPicker.init({ keyIterator, hdPathTemplate })
-
-      return await this.accountPicker.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })

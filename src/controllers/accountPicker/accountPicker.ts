@@ -68,8 +68,6 @@ export class AccountPickerController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  isInitializedWithSavedSeed: boolean = false
-
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
@@ -315,25 +313,18 @@ export class AccountPickerController extends EventEmitter {
     return !!this.keyIterator?.isSeedMatching?.(savedSeed.seed)
   }
 
-  async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
-    if (!this.isInitializedWithSavedSeed) return defaultHdPathTemplate
-
-    const savedSeed = await this.#keystore.getSavedSeed()
-    return savedSeed.hdPathTemplate || defaultHdPathTemplate
-  }
-
   async init({
     keyIterator,
+    hdPathTemplate,
     page,
     pageSize,
-    hdPathTemplate,
     shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
     shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
   }: {
     keyIterator: KeyIterator | null
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     page?: number
     pageSize?: number
-    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
   }) {
@@ -342,8 +333,7 @@ export class AccountPickerController extends EventEmitter {
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
     this.page = page || DEFAULT_PAGE
     if (pageSize) this.pageSize = pageSize
-    this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
-    this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
+    this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
@@ -376,7 +366,6 @@ export class AccountPickerController extends EventEmitter {
     this.networksWithAccountStateError = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
-    this.isInitializedWithSavedSeed = false
     this.addedAccountsFromCurrentSession = []
 
     await this.forceEmitUpdate()
@@ -390,12 +379,17 @@ export class AccountPickerController extends EventEmitter {
   }
 
   async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
-    this.hdPathTemplate = hdPathTemplate
+    if (this.hdPathTemplate === hdPathTemplate) return
 
+    this.hdPathTemplate = hdPathTemplate
     // Reset the currently selected accounts, because for the keys of these
     // accounts, as of v4.32.0, we don't store their hd path. When import
     // completes, only the latest hd path of the controller is stored.
     this.selectedAccountsFromCurrentSession = []
+    this.readyToRemoveAccounts = []
+    this.#derivedAccounts = []
+
+    this.emitUpdate()
 
     await this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
   }
@@ -780,7 +774,7 @@ export class AccountPickerController extends EventEmitter {
         ({ isLinked, account }) =>
           !isLinked &&
           !isSmartAccount(account) &&
-          !this.#accounts.accounts.some((a) => a.addr === account.addr)
+          !this.#alreadyImportedAccounts.some((a) => a.addr === account.addr)
       )?.account
 
       if (nextAccount) {
@@ -858,7 +852,7 @@ export class AccountPickerController extends EventEmitter {
     // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
     // accounts out of the private key (with another approach - salt and
     // extra entropy) was creating confusion.
-    const shouldRetrieveSmartAccountIndices = this.keyIterator.type !== 'private-key'
+    const shouldRetrieveSmartAccountIndices = this.keyIterator.subType !== 'private-key'
     if (shouldRetrieveSmartAccountIndices) {
       // Indices for the smart accounts.
       indicesToRetrieve.push({
@@ -889,7 +883,7 @@ export class AccountPickerController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (basic) account which is the key for the smart account
-      const account = getBasicAccount(smartAccKey, this.#accounts.accounts)
+      const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
@@ -897,7 +891,7 @@ export class AccountPickerController extends EventEmitter {
       smartAccountsPromises.push(
         getSmartAccount(
           [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
-          this.#accounts.accounts
+          this.#alreadyImportedAccounts
         )
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
@@ -924,7 +918,7 @@ export class AccountPickerController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey, this.#accounts.accounts)
+      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
@@ -1058,7 +1052,7 @@ export class AccountPickerController extends EventEmitter {
         return []
       }
 
-      const existingAccount = this.#accounts.accounts.find((acc) => acc.addr === addr)
+      const existingAccount = this.#alreadyImportedAccounts.find((acc) => acc.addr === addr)
       return [
         {
           account: {
