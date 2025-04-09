@@ -1551,7 +1551,7 @@ export class MainController extends EventEmitter {
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'open-action-window')
+            this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           } else {
             await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }
