@@ -30,6 +30,7 @@ import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperat
 import { ensModule } from './modules/ENS'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
+import GuildModule from './modules/Guild'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
@@ -74,6 +75,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   legendsModule,
   singletonFactory,
   ensModule,
+  GuildModule,
   openSeaModule,
   asciiModule,
   fallbackHumanizer,
