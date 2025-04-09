@@ -12,10 +12,12 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { UserOperation } from '../../libs/userOperation/types'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { NetworksController } from '../networks/networks'
@@ -58,6 +60,7 @@ import {
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { hasRelayerSupport } from '../../libs/networks/networks'
+import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, Price, TokenResult } from '../../libs/portfolio'
 import {
   adjustEntryPointAuthorization,
@@ -1345,6 +1348,87 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
+  async #getInitialUserOp(
+    shouldReestimate: boolean,
+    eip7702Auth?: EIP7702Auth
+  ): Promise<UserOperation> {
+    const gasFeePayment = this.accountOp.gasFeePayment!
+    let erc4337Estimation = this.estimation.estimation!.bundlerEstimation as Erc4337GasLimits
+
+    // do a reestimate if deemed needed
+    if (shouldReestimate) {
+      const newEstimate = await bundlerEstimate(
+        this.baseAccount,
+        this.accountState,
+        this.accountOp,
+        this.#network,
+        [this.selectedOption!.token],
+        this.provider,
+        this.bundlerSwitcher,
+        () => {},
+        eip7702Auth
+      )
+      if (!(newEstimate instanceof Error)) erc4337Estimation = newEstimate as Erc4337GasLimits
+    }
+
+    const userOperation = getUserOperation(
+      this.account,
+      this.accountState,
+      this.accountOp,
+      this.bundlerSwitcher.getBundler().getName(),
+      this.accountOp.meta?.entryPointAuthorization,
+      eip7702Auth
+    )
+    userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
+    userOperation.callGasLimit = toBeHex(
+      BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
+    )
+    userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
+    userOperation.paymasterVerificationGasLimit = erc4337Estimation.paymasterVerificationGasLimit
+    userOperation.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
+    userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
+    userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+
+    const ambireAccount = new Interface(AmbireAccount.abi)
+    userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
+      getSignableCalls(this.accountOp)
+    ])
+
+    return userOperation
+  }
+
+  async #getPaymasterUserOp(
+    userOperation: UserOperation,
+    paymaster: AbstractPaymaster
+  ): Promise<UserOperation> {
+    if (!paymaster.isUsable()) return userOperation
+
+    const localOp = { ...userOperation }
+    const response = await paymaster.call(this.account, this.accountOp, localOp, this.#network)
+
+    if (response.success) {
+      const paymasterData = response as PaymasterSuccessReponse
+      this.status = { type: SigningStatus.InProgress }
+      this.emitUpdate()
+
+      localOp.paymaster = paymasterData.paymaster
+      localOp.paymasterData = paymasterData.paymasterData
+      this.accountOp.gasFeePayment!.isSponsored = paymaster.isSponsored()
+    } else {
+      const errorResponse = response as PaymasterErrorReponse
+      this.emitError({
+        level: 'major',
+        message: errorResponse.message,
+        error: errorResponse.error
+      })
+      this.status = { type: SigningStatus.ReadyToSign }
+      this.emitUpdate()
+      this.estimate()
+    }
+
+    return localOp
+  }
+
   async sign() {
     if (!this.readyToSign) {
       const message = `Unable to sign the transaction. During the preparation step, the necessary transaction data was not received. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
@@ -1406,8 +1490,6 @@ export class SignAccountOpController extends EventEmitter {
     // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
 
-    const gasFeePayment = this.accountOp.gasFeePayment
-
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
 
     // just in-case: before signing begins, we delete the feeCall;
@@ -1446,7 +1528,7 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        let erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
+        const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
         const paymaster = erc4337Estimation.paymaster
         if (paymaster.shouldIncludePayment()) this.#addFeePayment()
@@ -1457,7 +1539,7 @@ export class SignAccountOpController extends EventEmitter {
         // native, it could result in low gas limit => txn price too low.
         // In both cases, we re-estimate before broadcast
         let shouldReestimate =
-          erc4337Estimation.feeCallType &&
+          !!erc4337Estimation.feeCallType &&
           paymaster.getFeeCallType([this.selectedOption.token]) !== erc4337Estimation.feeCallType
 
         // sign the 7702 authorization if needed
@@ -1505,76 +1587,8 @@ export class SignAccountOpController extends EventEmitter {
           shouldReestimate = true
         }
 
-        if (shouldReestimate) {
-          // we do another estimate here as signing the authorization changes entirely
-          // the needed gas for the userOp to go through
-          const newEstimate = await bundlerEstimate(
-            this.baseAccount,
-            this.accountState,
-            this.accountOp,
-            this.#network,
-            [this.selectedOption.token],
-            this.provider,
-            this.bundlerSwitcher,
-            () => {},
-            eip7702Auth
-          )
-          if (!(newEstimate instanceof Error)) erc4337Estimation = newEstimate as Erc4337GasLimits
-        }
-
-        const userOperation = getUserOperation(
-          this.account,
-          this.accountState,
-          this.accountOp,
-          this.bundlerSwitcher.getBundler().getName(),
-          this.accountOp.meta?.entryPointAuthorization,
-          eip7702Auth
-        )
-        userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
-        userOperation.callGasLimit = toBeHex(
-          BigInt(erc4337Estimation.callGasLimit) + this.selectedOption.gasUsed
-        )
-        userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
-        userOperation.paymasterVerificationGasLimit =
-          erc4337Estimation.paymasterVerificationGasLimit
-        userOperation.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
-        userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
-        userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
-
-        const ambireAccount = new Interface(AmbireAccount.abi)
-        userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
-          getSignableCalls(this.accountOp)
-        ])
-
-        if (paymaster.isUsable()) {
-          const response = await paymaster.call(
-            this.account,
-            this.accountOp,
-            userOperation,
-            this.#network
-          )
-
-          if (response.success) {
-            const paymasterData = response as PaymasterSuccessReponse
-            this.status = { type: SigningStatus.InProgress }
-            this.emitUpdate()
-
-            userOperation.paymaster = paymasterData.paymaster
-            userOperation.paymasterData = paymasterData.paymasterData
-            this.accountOp.gasFeePayment.isSponsored = paymaster.isSponsored()
-          } else {
-            const errorResponse = response as PaymasterErrorReponse
-            this.emitError({
-              level: 'major',
-              message: errorResponse.message,
-              error: errorResponse.error
-            })
-            this.status = { type: SigningStatus.ReadyToSign }
-            this.emitUpdate()
-            this.estimate()
-            return
-          }
-        }
+        const initialUserOp = await this.#getInitialUserOp(shouldReestimate, eip7702Auth)
+        const userOperation = await this.#getPaymasterUserOp(initialUserOp, paymaster)
 
         // query the application state from memory to understand if the user
         // hasn't actually rejected the request while waiting for the
