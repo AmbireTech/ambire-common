@@ -23,7 +23,6 @@ import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
-import { EstimationStatus } from '../estimation/types'
 /* eslint-disable no-await-in-loop */
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
@@ -50,6 +49,7 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -656,6 +656,8 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
     this.updateQuote()
+    this.destroySignAccountOp()
+    this.initSignAccountOp()
 
     this.#emitUpdateIfNeeded()
   }
@@ -1124,6 +1126,7 @@ export class SwapAndBridgeController extends EventEmitter {
           }
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
+        await this.initSignAccountOp()
       } catch (error: any) {
         const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
@@ -1276,7 +1279,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  selectRoute(route: SwapAndBridgeRoute) {
+  async selectRoute(route: SwapAndBridgeRoute) {
     if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
     if (
       ![
@@ -1292,6 +1295,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.destroySignAccountOp()
     this.emitUpdate()
+    await this.initSignAccountOp()
   }
 
   async addActiveRoute({
@@ -1396,7 +1400,7 @@ export class SwapAndBridgeController extends EventEmitter {
   /**
    * Find the next route in line and try to re-estimate with it
    */
-  onEstimationFailure() {
+  async onEstimationFailure() {
     if (!this.quote || !this.quote.selectedRoute) return
 
     const routeId = this.quote.selectedRoute.routeId
@@ -1415,7 +1419,7 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
-    this.selectRoute(this.quote.routes[routeIndex])
+    await this.selectRoute(this.quote.routes[routeIndex])
   }
 
   // update active route if needed on SubmittedAccountOp update
