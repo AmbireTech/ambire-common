@@ -1,5 +1,6 @@
 import { getCreate2Address, keccak256 } from 'ethers'
 
+import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -358,6 +359,7 @@ export class AccountPickerController extends EventEmitter {
     this.hdPathTemplate = undefined
     this.shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
     this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
+    this.pageError = null
 
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
@@ -772,6 +774,13 @@ export class AccountPickerController extends EventEmitter {
       // Load the accounts for the current page
       // eslint-disable-next-line no-await-in-loop
       await this.setPage({ page: currentPage })
+      if (this.pageError) {
+        throw new EmittableError({
+          message: this.pageError,
+          level: 'major',
+          error: new Error(this.pageError)
+        })
+      }
 
       nextAccount = this.accountsOnPage.find(
         ({ isLinked, account }) =>
