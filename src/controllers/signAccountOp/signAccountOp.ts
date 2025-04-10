@@ -16,9 +16,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { EstimationController } from '../estimation/estimation'
-import { EstimationStatus } from '../estimation/types'
-import { NetworksController } from '../networks/networks'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -27,6 +24,7 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Price } from '../../interfaces/assets'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -58,7 +56,7 @@ import {
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { hasRelayerSupport } from '../../libs/networks/networks'
-import { GetOptions, Price, TokenResult } from '../../libs/portfolio'
+import { GetOptions, TokenResult } from '../../libs/portfolio'
 import {
   adjustEntryPointAuthorization,
   get7702Sig,
@@ -82,9 +80,12 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
+import { EstimationController } from '../estimation/estimation'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import {
