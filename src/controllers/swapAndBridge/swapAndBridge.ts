@@ -491,7 +491,12 @@ export class SwapAndBridgeController extends EventEmitter {
     return `from-${this.fromChainId}-to-${this.toChainId}`
   }
 
-  unloadScreen(sessionId: string) {
+  unloadScreen(sessionId: string, forceUnload?: boolean) {
+    const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
+    const shouldPersistState = isFormDirty && !forceUnload && sessionId === 'popup'
+
+    if (shouldPersistState) return
+
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) {
       this.reset(true)
