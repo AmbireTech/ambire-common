@@ -22,7 +22,7 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
+import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -613,7 +613,7 @@ export class SignAccountOpController extends EventEmitter {
     paidBy?: string
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
-    signingKeyType?: Key['type']
+    signingKeyType?: InternalKey['type'] | ExternalKey['type']
     calls?: AccountOp['calls']
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }

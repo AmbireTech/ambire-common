@@ -190,7 +190,7 @@ export class KeystoreController extends EventEmitter {
     if (val && this.#internalKeysToAddOnKeystoreReady.length) {
       this.#addKeys(this.#internalKeysToAddOnKeystoreReady)
     }
-    if (val && this.#internalKeysToAddOnKeystoreReady.length) {
+    if (val && this.#externalKeysToAddOnKeystoreReady.length) {
       this.#addKeysExternallyStored(this.#externalKeysToAddOnKeystoreReady)
     }
   }

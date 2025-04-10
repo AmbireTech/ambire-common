@@ -138,6 +138,7 @@ const STATUS_WRAPPED_METHODS = {
   broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountPickerInitLedger: 'INITIAL',
+  handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   buildSwapAndBridgeUserRequest: 'INITIAL',
@@ -524,7 +525,6 @@ export class MainController extends EventEmitter {
     // since firing multiple keystore actions is not possible
     // (the #wrapKeystoreAction listens for the first one to finish and
     // skips the parallel one, if one is requested).
-
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
   }
@@ -841,11 +841,41 @@ export class MainController extends EventEmitter {
     )
   }
 
+  async #handleAccountPickerInitTrezor(
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    try {
+      const trezorCtrl = this.#externalSignerControllers.trezor
+
+      if (!trezorCtrl) {
+        const message =
+          'Could not initialize connection with your Trezor device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      const { walletSDK } = trezorCtrl
+      await this.accountPicker.init({
+        keyIterator: new TrezorKeyIterator({ walletSDK }),
+        hdPathTemplate
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitTrezor(
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+  ) {
+    await this.withStatus('handleAccountPickerInitTrezor', async () =>
+      this.#handleAccountPickerInitTrezor(TrezorKeyIterator)
+    )
+  }
+
   async #handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
-    if (this.accountPicker.isInitialized) this.accountPicker.reset()
-
     try {
       const latticeCtrl = this.#externalSignerControllers.lattice
       if (!latticeCtrl) {
@@ -862,8 +892,6 @@ export class MainController extends EventEmitter {
         keyIterator: new LatticeKeyIterator({ walletSDK }),
         hdPathTemplate
       })
-
-      return await this.accountPicker.setPage({ page: 1 })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
