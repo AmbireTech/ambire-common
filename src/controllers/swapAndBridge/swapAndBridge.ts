@@ -1171,12 +1171,12 @@ export class SwapAndBridgeController extends EventEmitter {
     }, nextTimeout)
   }
 
-  async getRouteStartUserTx() {
+  async getRouteStartUserTx(shouldThrowOnError = true): Promise<SwapAndBridgeSendTxRequest | null> {
     if (
       this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
       this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
     )
-      return
+      return null
 
     try {
       const routeResult = await this.#serviceProviderAPI.startRoute({
@@ -1189,8 +1189,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
       return routeResult
     } catch (error: any) {
-      const { message } = getHumanReadableSwapAndBridgeError(error)
-      throw new EmittableError({ error, level: 'minor', message })
+      if (shouldThrowOnError) {
+        const { message } = getHumanReadableSwapAndBridgeError(error)
+        throw new EmittableError({ error, level: 'minor', message })
+      }
+      return null
     }
   }
 
@@ -1616,12 +1619,19 @@ export class SwapAndBridgeController extends EventEmitter {
       network.chainId
     )
 
-    const userTxn = await this.getRouteStartUserTx()
+    const userTxn = await this.getRouteStartUserTx(false)
 
-    // TODO:
-    // if the provider returns an error, we cannot proceed
-    // maybe we should auto select a different route or something
-    if (!userTxn) return
+    // TODO<swap&bridge>: if auto select route is disabled,
+    // return the error instead
+    // Also, the below code is not working well and needs changes
+    //
+    // if no txn is provided because of a route failure (large slippage),
+    // auto select the next route and continue on
+    if (!userTxn) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.onEstimationFailure()
+      return
+    }
 
     const calls = await getSwapAndBridgeCalls(
       userTxn,
