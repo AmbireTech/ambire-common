@@ -58,7 +58,6 @@ const validateSendTransferAddress = (
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
@@ -89,7 +88,6 @@ const validateSendTransferAddress = (
   if (
     isRecipientAddressUnknown &&
     !addressConfirmed &&
-    !isUDAddress &&
     !isEnsAddress &&
     !isRecipientDomainResolving
   ) {
@@ -103,10 +101,10 @@ const validateSendTransferAddress = (
   if (
     isRecipientAddressUnknown &&
     !addressConfirmed &&
-    (isUDAddress || isEnsAddress) &&
+    isEnsAddress &&
     !isRecipientDomainResolving
   ) {
-    const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
+    const name = 'Ethereum Name Service'
     return {
       success: false,
       message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
@@ -176,52 +174,6 @@ const validateSendTransferAmount = (
   return { success: true, message: '' }
 }
 
-const validateSendNftAddress = (
-  address: string,
-  selectedAcc: any,
-  addressConfirmed: any,
-  isRecipientAddressUnknown: boolean,
-  isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  metadata: any,
-  selectedNetwork: any,
-  network: any,
-  isUDAddress: boolean,
-  isEnsAddress: boolean,
-  isRecipientDomainResolving: boolean
-): ValidateReturnType => {
-  const isValidAddr = validateSendTransferAddress(
-    address,
-    selectedAcc,
-    addressConfirmed,
-    isRecipientAddressUnknown,
-    isRecipientHumanizerKnownTokenOrSmartContract,
-    isUDAddress,
-    isEnsAddress,
-    isRecipientDomainResolving
-  )
-  if (!isValidAddr.success) return isValidAddr
-
-  if (
-    metadata &&
-    selectedAcc &&
-    metadata.owner?.address.toLowerCase() !== selectedAcc.toLowerCase()
-  ) {
-    return {
-      success: false,
-      message: "The NFT you're trying to send is not owned by you!"
-    }
-  }
-
-  if (selectedNetwork && network && selectedNetwork.id !== network) {
-    return {
-      success: false,
-      message: 'The selected network is not the correct one.'
-    }
-  }
-
-  return { success: true, message: '' }
-}
-
 const isValidCode = (code: string) => code.length === 6
 
 const isValidPassword = (password: string) => password.length >= 8
@@ -238,7 +190,6 @@ export {
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount,
-  validateSendNftAddress,
   isValidCode,
   isValidPassword,
   isValidURL

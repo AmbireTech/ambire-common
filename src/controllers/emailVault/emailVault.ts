@@ -1,5 +1,4 @@
 /* eslint-disable class-methods-use-this */
-/* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
 
 import { Banner } from '../../interfaces/banner'
@@ -11,7 +10,6 @@ import {
   SecretType
 } from '../../interfaces/emailVault'
 import { Fetch } from '../../interfaces/fetch'
-import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
@@ -19,6 +17,8 @@ import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
+/* eslint-disable no-await-in-loop */
+import { StorageController } from '../storage/storage'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -69,7 +69,7 @@ const STATUS_WRAPPED_METHODS = {
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
 export class EmailVaultController extends EventEmitter {
-  private storage: Storage
+  #storage: StorageController
 
   private initialLoadPromise: Promise<void>
 
@@ -110,7 +110,7 @@ export class EmailVaultController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     fetch: Fetch,
     relayerUrl: string,
     keyStore: KeystoreController,
@@ -119,7 +119,7 @@ export class EmailVaultController extends EventEmitter {
     super()
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
-    this.storage = storage
+    this.#storage = storage
     this.#emailVault = new EmailVault(fetch, relayerUrl)
     this.#keyStore = keyStore
     this.initialLoadPromise = this.load()
@@ -134,11 +134,11 @@ export class EmailVaultController extends EventEmitter {
     await wait(1)
     this.emitUpdate()
     const [emailVaultState, magicLinkKey, dismissedAt] = await Promise.all([
-      this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
+      this.#storage.get(EMAIL_VAULT_STORAGE_KEY, {
         email: {}
       }),
-      this.storage.get(MAGIC_LINK_STORAGE_KEY, {}),
-      this.storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
+      this.#storage.get(MAGIC_LINK_STORAGE_KEY, {}),
+      this.#storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
     ])
 
     this.emailVaultStates = emailVaultState
@@ -166,8 +166,8 @@ export class EmailVaultController extends EventEmitter {
 
     // store magicLinkKey and sessionKey
     await Promise.all([
-      this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
+      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+      this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
     ])
   }
 
@@ -231,7 +231,7 @@ export class EmailVaultController extends EventEmitter {
         confirmed: true
       }
       fn && (await fn())
-      this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
+      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
     } else {
       const originalErrorMessage = ev?.error?.message || ''
@@ -309,7 +309,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (emailVault) {
       this.emailVaultStates.email[email] = emailVault
-      await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
+      await this.#storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
       if (!existsSessionKey) {
         await this.#requestSessionKey(email)
       }
@@ -463,7 +463,7 @@ export class EmailVaultController extends EventEmitter {
     await this.#keyStore.removeSecret('password')
     await this.#keyStore.addSecret('password', newPassword, '', false)
 
-    await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
+    await this.#storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
     this.emitUpdate()
   }
 
@@ -587,8 +587,8 @@ export class EmailVaultController extends EventEmitter {
     this.#sessionKeys = {}
 
     await Promise.all([
-      this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
+      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+      this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
     ])
 
     this.emitUpdate()
@@ -603,7 +603,7 @@ export class EmailVaultController extends EventEmitter {
   dismissBanner() {
     this.#setupBannerDismissedAt = Date.now()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.storage.set(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
+    this.#storage.set(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
 
     this.emitUpdate()
   }

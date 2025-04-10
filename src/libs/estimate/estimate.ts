@@ -7,7 +7,6 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { AccountOp } from '../accountOp/accountOp'
 import { TokenResult } from '../portfolio'
 import { ambireEstimateGas } from './ambireEstimation'
-import { estimateEachCallSeparately } from './callGasUsedEstimation'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateWithRetries } from './estimateWithRetries'
 import { FullEstimation, FullEstimationSummary } from './interfaces'
@@ -34,7 +33,7 @@ export async function getEstimation(
   errorCallback: Function
 ): Promise<FullEstimation | Error> {
   const ambireEstimation = ambireEstimateGas(
-    baseAcc.getAccount(),
+    baseAcc,
     accountState,
     op,
     network,
@@ -60,16 +59,16 @@ export async function getEstimation(
     network,
     feeTokens
   )
-  const perCallEstimation = estimateEachCallSeparately(baseAcc, op, network, provider)
 
   const estimations = await estimateWithRetries<
     [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
   >(
-    () => [ambireEstimation, bundlerEstimation, providerEstimation, perCallEstimation],
+    () => [ambireEstimation, bundlerEstimation, providerEstimation],
     'estimation-deployless',
     errorCallback,
     12000
   )
+
   // this is only if we hit a timeout 5 consecutive times
   if (estimations instanceof Error) return estimations
 
@@ -83,7 +82,7 @@ export async function getEstimation(
     flags: {}
   }
 
-  const criticalError = baseAcc.getEstimationCriticalError(fullEstimation)
+  const criticalError = baseAcc.getEstimationCriticalError(fullEstimation, op)
   if (criticalError) return criticalError
 
   // TODO: if the bundler is the preferred method of estimation, re-estimate
@@ -96,11 +95,7 @@ export async function getEstimation(
   return fullEstimation
 }
 
-export function getEstimationSummary(estimation: FullEstimation | Error): FullEstimationSummary {
-  if (estimation instanceof Error) {
-    return { error: estimation }
-  }
-
+export function getEstimationSummary(estimation: FullEstimation): FullEstimationSummary {
   return {
     providerEstimation:
       estimation.provider && !(estimation.provider instanceof Error)
@@ -109,6 +104,7 @@ export function getEstimationSummary(estimation: FullEstimation | Error): FullEs
     ambireEstimation:
       estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
     bundlerEstimation:
-      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined
+      estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
+    flags: estimation.flags
   }
 }

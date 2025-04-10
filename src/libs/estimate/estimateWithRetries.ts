@@ -87,8 +87,6 @@ export async function estimateWithRetries<T>(
         counter + 1
       )
     }
-
-    return error
   }
 
   return result as T

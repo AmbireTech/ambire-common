@@ -18,9 +18,10 @@ import { ExternalKey, Key } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
+import { StorageController } from '../storage/storage'
 import { KeystoreController } from './keystore'
 
-export class InternalSigner {
+class InternalSigner {
   key
 
   privKey
@@ -100,8 +101,9 @@ const keyPublicAddress = new ethers.Wallet(privKey).address
 
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
+  const storageCtrl = new StorageController(storage)
   test('should initialize', () => {
-    keystore = new KeystoreController(storage, keystoreSigners, windowManager)
+    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
@@ -571,8 +573,13 @@ describe('import/export with pub key test', () => {
   let uid2: string
 
   beforeEach(async () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
-    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
+    const storage = produceMemoryStore()
+    const storage2 = produceMemoryStore()
+    const storageCtrl = new StorageController(storage)
+    const storageCtrl2 = new StorageController(storage2)
+
+    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
+    keystore2 = new KeystoreController(storageCtrl2, keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')

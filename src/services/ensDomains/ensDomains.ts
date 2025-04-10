@@ -41,7 +41,7 @@ export function isCorrectAddress(address: string) {
 async function resolveENSDomain(domain: string, bip44Item?: number[][]): Promise<string> {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return ''
-  const ethereum = networks.find((x) => x.id === 'ethereum')!
+  const ethereum = networks.find((n) => n.chainId === 1n)!
   const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
   const resolver = await provider.getResolver(normalizedDomainName)
   if (!resolver) return ''

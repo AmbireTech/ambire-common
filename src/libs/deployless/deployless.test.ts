@@ -1,8 +1,9 @@
-import { AbiCoder, concat, JsonRpcProvider, toBeHex } from 'ethers'
+import { AbiCoder, concat, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { addressOne } from '../../../test/config'
+import { getRpcProvider } from '../../services/provider'
 import { compile } from './compile'
 import { Deployless, DeploylessMode } from './deployless'
 
@@ -10,7 +11,7 @@ const helloWorld = compile('HelloWorld', {
   contractsFolder: 'test/contracts'
 })
 const deployErrBin = '0x6080604052348015600f57600080fd5b600080fdfe'
-const mainnetProvider = new JsonRpcProvider('https://rpc.ankr.com/eth')
+const mainnetProvider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
 let deployless: Deployless
 
 describe('Deployless', () => {
@@ -146,7 +147,14 @@ describe('Deployless', () => {
       await localDeployless.call('helloWorld', [], { blockTag: '0x1' })
     } catch (e: any) {
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
-      expect(e.info.error.message.includes('invalid opcode: SHR')).toBe(true)
+      const noSHR = 'invalid opcode: SHR'
+      const notActivated = 'EVM error: NotActivated'
+      const notAvailable = 'not available'
+      expect(
+        e.info.error.message.includes(noSHR) ||
+          e.info.error.message.includes(notActivated) ||
+          e.info.error.message.includes(notAvailable)
+      ).toBe(true)
     }
     try {
       await localDeployless.call('helloWorld', [], {
@@ -158,7 +166,8 @@ describe('Deployless', () => {
       // fails with out-of-gas when wrapped in the ProxyContract mode (or invalid opcode: SHL)
       expect(
         e.info.error.message.includes('out of gas') ||
-          e.info.error.message.includes('invalid opcode: SHL')
+          e.info.error.message.includes('invalid opcode: SHL') ||
+          e.info.error.message.includes('NotActivated')
       ).toBe(true)
     }
   })

@@ -16,10 +16,10 @@ export async function getAAVEPositions(
   provider: Provider | JsonRpcProvider,
   network: Network
 ): Promise<PositionsByProvider | null> {
-  const networkId = network.id
-  if (networkId && !AAVE_V3[networkId as keyof typeof AAVE_V3]) return null
+  const { chainId } = network
+  if (chainId && !AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]) return null
 
-  const { poolAddr } = AAVE_V3[networkId as keyof typeof AAVE_V3]
+  const { poolAddr } = AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]
 
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
@@ -181,7 +181,7 @@ export async function getAAVEPositions(
 
   return {
     providerName: 'AAVE v3',
-    networkId,
+    chainId,
     type: 'lending',
     positions: [position],
     positionInUSD: position.additionalData.positionInUSD

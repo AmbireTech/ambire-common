@@ -19,7 +19,7 @@ export const networks7702: Custom7702Settings = {
 }
 
 export interface EIP7702Auth {
-  contractAddress: Hex
+  address: Hex
   chainId: Hex
   nonce: Hex
   r: Hex

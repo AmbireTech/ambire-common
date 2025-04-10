@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -16,6 +17,7 @@ import { InviteController } from '../invite/invite'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
@@ -49,14 +51,16 @@ const notificationManager = {
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
 let providersCtrl: ProvidersController
 const networksCtrl = new NetworksController(
-  produceMemoryStore(),
+  storageCtrl,
   fetch,
+  relayerUrl,
   (net) => {
     providersCtrl.setProvider(net)
   },
@@ -68,14 +72,17 @@ const networksCtrl = new NetworksController(
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 const accountsCtrl = new AccountsController(
-  storage,
+  storageCtrl,
   providersCtrl,
   networksCtrl,
   () => {},
   () => {},
   () => {}
 )
-const selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
 
 const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
@@ -87,13 +94,13 @@ const actionsCtrl = new ActionsController({
 const inviteCtrl = new InviteController({
   relayerUrl: '',
   fetch,
-  storage
+  storage: storageCtrl
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
 const activityCtrl = new ActivityController(
-  storage,
+  storageCtrl,
   fetch,
   callRelayer,
   accountsCtrl,
@@ -129,7 +136,7 @@ const PORTFOLIO_TOKENS = [
     amount: 2110000n,
     decimals: 6,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-    networkId: 'optimism',
+    chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
     symbol: 'USDT',
     name: 'Tether'
@@ -139,7 +146,7 @@ const PORTFOLIO_TOKENS = [
     amount: 1852n,
     decimals: 8,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
-    networkId: 'base',
+    chainId: 8453n,
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
     symbol: 'cbBTC',
     name: 'Coinbase wrapped BTC'
@@ -149,7 +156,7 @@ const PORTFOLIO_TOKENS = [
     amount: 11756728636013018n,
     decimals: 8,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-    networkId: 'optimism',
+    chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
     symbol: 'ETH',
     name: 'Ether'
@@ -164,9 +171,10 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
+      accounts: accountsCtrl,
       activity: activityCtrl,
-      storage,
-      socketAPI: socketAPIMock as any,
+      storage: storageCtrl,
+      serviceProviderAPI: socketAPIMock as any,
       actions: actionsCtrl,
       invite: inviteCtrl
     })

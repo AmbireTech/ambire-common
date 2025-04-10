@@ -1,5 +1,4 @@
 import { Price } from '../../interfaces/assets'
-import { Network, NetworkId } from '../../interfaces/network'
 
 export enum AssetType {
   Liquidity,
@@ -41,7 +40,7 @@ export interface DeFiPositionsState {
 }
 
 export interface AccountState {
-  [networkId: string]: NetworkState
+  [chainId: string]: NetworkState
 }
 
 export interface ProviderError {
@@ -58,7 +57,7 @@ export interface NetworkState {
 }
 
 export type NetworksWithPositions = {
-  [networkId: NetworkId]: ProviderName[]
+  [chainId: string]: ProviderName[]
 }
 
 export type NetworksWithPositionsByAccounts = {
@@ -67,7 +66,7 @@ export type NetworksWithPositionsByAccounts = {
 
 export type PositionsByProvider = {
   providerName: ProviderName
-  networkId: Network['id']
+  chainId: bigint
   type: 'lending' | 'liquidity-pool'
   positions: Position[]
   positionInUSD?: number

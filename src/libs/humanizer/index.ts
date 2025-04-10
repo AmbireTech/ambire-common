@@ -1,5 +1,4 @@
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { parse, stringify } from '../richJson/richJson'
@@ -96,7 +95,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
   const accountOp = parse(stringify(_accountOp))
   const humanizerOptions: HumanizerOptions = {
     ...options,
-    networkId: accountOp.networkId
+    chainId: accountOp.chainId
   }
 
   let currentCalls: IrCall[] = accountOp.calls
@@ -126,11 +125,4 @@ const humanizeMessage = (_message: Message): IrMessage => {
   }
 }
 
-// As of version v4.34.0 HumanizerMetaV2 in storage is no longer needed. It was
-// used for persisting learnt data from async operations, triggered by the
-// humanization process.
-async function clearHumanizerMetaObjectFromStorage(storage: Storage) {
-  await storage.remove('HumanizerMetaV2')
-}
-
-export { humanizeAccountOp, humanizeMessage, clearHumanizerMetaObjectFromStorage }
+export { humanizeAccountOp, humanizeMessage }

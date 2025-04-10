@@ -1,6 +1,5 @@
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
-import { NetworkId } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
 import { AssetType } from '../defiPositions/types'
 
@@ -11,14 +10,14 @@ export interface GetOptionsSimulation {
 }
 export type TokenError = string | '0x'
 
-export type AccountAssetsState = { [networkId: NetworkId]: boolean }
+export type AccountAssetsState = { [chainId: string]: boolean }
 
 export type TokenResult = {
   symbol: string
   name: string
   decimals: number
   address: string
-  networkId: NetworkId
+  chainId: bigint
   amount: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
@@ -74,6 +73,7 @@ export interface Hints {
 export interface ExternalHintsAPIResponse extends Hints {
   lastUpdate: number
   networkId: string
+  chainId: number
   accountAddr: string
   prices: {
     [addr: string]: Price
@@ -166,11 +166,11 @@ export type NetworkState = {
 }
 
 export type AccountState = {
-  [networkId: string]: NetworkState | undefined
+  [chainId: string]: NetworkState | undefined
 }
 
 export type PortfolioControllerState = {
-  // accountId:networkId:NetworkState
+  // accountId:chainId:NetworkState
   [accountId: string]: AccountState
 }
 
@@ -187,14 +187,14 @@ export interface Limits {
 }
 
 export type PinnedTokens = {
-  networkId: NetworkId
+  chainId: bigint
   address: string
   onGasTank: boolean
   accountId?: AccountId
 }[]
 
 export type TemporaryTokens = {
-  [networkId: NetworkId]: {
+  [chainId: string]: {
     isLoading: boolean
     errors: { error: string; address: string }[]
     result: { tokens: PortfolioLibGetResult['tokens'] }
@@ -215,15 +215,15 @@ export interface GetOptions {
 }
 
 export interface PreviousHintsStorage {
-  learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
-  learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
+  learnedTokens: { [chainId: string]: { [tokenAddress: string]: string | null } }
+  learnedNfts: { [chainId: string]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: {
     [networkAndAccountKey: string]: GetOptions['previousHintsFromExternalAPI']
   }
 }
 
 export interface NetworkSimulatedAccountOp {
-  [networkId: NetworkId]: AccountOp
+  [chainId: string]: AccountOp
 }
 
 export type PendingAmounts = {
