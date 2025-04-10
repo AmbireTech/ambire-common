@@ -266,7 +266,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
-    await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret))
+    await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret), true)
   }
 
   async #addSecret(
@@ -349,8 +349,10 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-    await this.withStatus('addSecret', () =>
-      this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
+    await this.withStatus(
+      'addSecret',
+      () => this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked),
+      true
     )
   }
 
@@ -467,25 +469,6 @@ export class KeystoreController extends EventEmitter {
   }
 
   async persistTempSeed() {
-    if (this.#mainKey === null)
-      throw new EmittableError({
-        message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
-        level: 'major',
-        error: new Error('keystore: needs to be unlocked')
-      })
-
-    // Currently we support only one seed phrase to be added to the keystore
-    // this fist seed phrase will become the saved seed phrase of the wallet
-    if (this.#keystoreSeeds.length) {
-      throw new EmittableError({
-        message: 'You can have only one saved seed in the extension',
-        level: 'major',
-        error: new Error(
-          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
-        )
-      })
-    }
-
     if (!this.#tempSeed) {
       throw new EmittableError({
         message:
@@ -526,7 +509,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSeed(keystoreSeed: Omit<KeystoreSeed, 'label'>) {
-    await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed))
+    await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true)
   }
 
   async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
@@ -613,7 +596,11 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeysExternallyStored(keysToAdd: ExternalKey[]) {
-    await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd))
+    await this.withStatus(
+      'addKeysExternallyStored',
+      () => this.#addKeysExternallyStored(keysToAdd),
+      true
+    )
   }
 
   async #addKeys(keysToAdd: ReadyToAddKeys['internal']) {
@@ -678,7 +665,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeys(keysToAdd: ReadyToAddKeys['internal']) {
-    await this.withStatus('addKeys', () => this.#addKeys(keysToAdd))
+    await this.withStatus('addKeys', () => this.#addKeys(keysToAdd), true)
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
@@ -876,7 +863,7 @@ export class KeystoreController extends EventEmitter {
       } as KeystoreSeed
     }
 
-    return { seed: decryptedSeed, hdPathTemplate }
+    return { seed: decryptedSeed, seedPassphrase: '', hdPathTemplate }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
