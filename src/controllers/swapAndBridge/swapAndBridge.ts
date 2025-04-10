@@ -938,7 +938,6 @@ export class SwapAndBridgeController extends EventEmitter {
       }
       if (!options.skipPreviousQuoteRemoval) {
         if (this.quote) this.quote = null
-        this.destroySignAccountOp()
         this.quoteRoutesStatuses = {}
         this.#emitUpdateIfNeeded()
       }
@@ -1086,7 +1085,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
           if (!routes.length) {
             this.quote = null
-            this.destroySignAccountOp()
             return
           }
 
@@ -1142,7 +1140,6 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
         this.quoteRoutesStatuses = {}
-        this.destroySignAccountOp()
         this.#emitUpdateIfNeeded()
       }
       return
@@ -1599,8 +1596,6 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   destroySignAccountOp() {
-    // TODO: Delete
-    console.log('Debug: destroySignAccountOp')
     if (!this.signAccountOpController) return
     this.signAccountOpController.reset()
     this.signAccountOpController = null
@@ -1615,8 +1610,6 @@ export class SwapAndBridgeController extends EventEmitter {
     // continue from the point forward
     if (!this.fromSelectedToken) return
 
-    // TODO: Delete
-    console.log('Debug: initSignAccountOpIfNeeded', this.formStatus)
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate) return
 
     const fromToken = this.fromSelectedToken as TokenResult
