@@ -625,27 +625,35 @@ export class MainController extends EventEmitter {
 
     this.signAccOpInitError = null
 
-    this.signAccountOp = new SignAccountOpController(
-      this.accounts,
-      this.networks,
-      this.providers,
-      this.keystore,
-      this.portfolio,
-      this.#externalSignerControllers,
-      this.selectedAccount.account,
-      this.accounts.accountStates[this.selectedAccount.account.addr][network.chainId.toString()],
-      network,
-      this.providers.providers[network.chainId.toString()],
-      actionId,
-      accountOp,
-      () => {
-        return this.isSignRequestStillActive
-      },
-      () => {
-        if (this.signAccountOp && this.signAccountOp.estimation.status === EstimationStatus.Success)
-          this.traceCall()
-      }
-    )
+    // if there's no signAccountOp OR
+    // there is but there's a new actionId requested, rebuild it
+    if (!this.signAccountOp || this.signAccountOp.fromActionId !== actionId) {
+      this.destroySignAccOp()
+      this.signAccountOp = new SignAccountOpController(
+        this.accounts,
+        this.networks,
+        this.providers,
+        this.keystore,
+        this.portfolio,
+        this.#externalSignerControllers,
+        this.selectedAccount.account,
+        this.accounts.accountStates[this.selectedAccount.account.addr][network.chainId.toString()],
+        network,
+        this.providers.providers[network.chainId.toString()],
+        actionId,
+        accountOp,
+        () => {
+          return this.isSignRequestStillActive
+        },
+        () => {
+          if (
+            this.signAccountOp &&
+            this.signAccountOp.estimation.status === EstimationStatus.Success
+          )
+            this.traceCall()
+        }
+      )
+    }
 
     this.emitUpdate()
   }
