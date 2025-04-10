@@ -95,6 +95,7 @@ export interface SwapAndBridgeRoute {
   serviceTime: number
   errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
+  hasFailed?: boolean
 }
 
 export interface SocketAPISwapUserTx {

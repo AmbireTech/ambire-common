@@ -344,9 +344,10 @@ export class SwapAndBridgeController extends EventEmitter {
   get formStatus() {
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-    if (this.updateQuoteStatus !== 'INITIAL' && !this.quote)
+    if (this.updateQuoteStatus === 'LOADING' && !this.quote)
       return SwapAndBridgeFormStatus.FetchingRoutes
-    if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
+    if (!this.quote?.routes.filter((route) => !route.hasFailed).length)
+      return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
 
@@ -674,6 +675,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.fromAmountFieldMode = 'token'
     this.toSelectedToken = null
     this.quote = null
+    this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
@@ -937,7 +939,10 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       }
       if (!options.skipPreviousQuoteRemoval) {
-        if (this.quote) this.quote = null
+        if (this.quote) {
+          this.quote = null
+          this.updateQuoteStatus = 'LOADING'
+        }
         this.quoteRoutesStatuses = {}
         this.#emitUpdateIfNeeded()
       }
@@ -1422,10 +1427,24 @@ export class SwapAndBridgeController extends EventEmitter {
     if (routeIndex === null || !this.quote.routes[routeIndex]) {
       this.quote.selectedRoute = undefined
       this.quote.routes = []
+      this.emitUpdate()
       return
     }
 
     await this.selectRoute(this.quote.routes[routeIndex])
+  }
+
+  async markSelectedRouteAsFailed() {
+    if (!this.quote || !this.quote.selectedRoute) return
+
+    const routeId = this.quote.selectedRoute.routeId
+    this.quote.routes.forEach((route, i) => {
+      if (route.routeId === routeId) {
+        this.quote!.routes[i].hasFailed = true
+      }
+    })
+
+    this.emitUpdate()
   }
 
   // update active route if needed on SubmittedAccountOp update
