@@ -1,7 +1,6 @@
 // eslint-disable-next-line import/no-cycle
 import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
-import { AccountOp } from '../accountOp/accountOp'
 
 export const dappRequestMethodToActionKind = (method: DappProviderRequest['method']) => {
   if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'
@@ -17,25 +16,6 @@ export const dappRequestMethodToActionKind = (method: DappProviderRequest['metho
   if (['personal_sign'].includes(method)) return 'message'
   // method to camelCase
   return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase())
-}
-
-export const getAccountOpsByNetwork = (
-  accountAddr: string,
-  actions: Action[]
-): { [key: string]: AccountOp[] } | undefined => {
-  const accountOps = (actions.filter((a) => a.type === 'accountOp') as AccountOpAction[])
-    .map((a) => a.accountOp)
-    .filter((op) => op.accountAddr === accountAddr)
-
-  if (!accountOps.length) return undefined
-
-  return accountOps.reduce((acc: any, accountOp) => {
-    const { chainId } = accountOp
-    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
-
-    acc[chainId.toString()].push(accountOp)
-    return acc
-  }, {})
 }
 
 export const getAccountOpActionsByNetwork = (

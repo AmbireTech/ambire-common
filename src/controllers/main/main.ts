@@ -222,8 +222,6 @@ export class MainController extends EventEmitter {
 
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
-  #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
-
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
@@ -633,26 +631,34 @@ export class MainController extends EventEmitter {
 
     this.signAccOpInitError = null
 
-    this.signAccountOp = new SignAccountOpController(
-      this.accounts,
-      this.networks,
-      this.keystore,
-      this.portfolio,
-      this.#externalSignerControllers,
-      this.selectedAccount.account,
-      network,
-      this.providers.providers[network.chainId.toString()],
-      actionId,
-      accountOp,
-      () => {
-        return this.isSignRequestStillActive
-      },
-      true,
-      () => {
-        if (this.signAccountOp && this.signAccountOp.estimation.status === EstimationStatus.Success)
-          this.traceCall()
-      }
-    )
+    // if there's no signAccountOp OR
+    // there is but there's a new actionId requested, rebuild it
+    if (!this.signAccountOp || this.signAccountOp.fromActionId !== actionId) {
+      this.destroySignAccOp()
+      this.signAccountOp = new SignAccountOpController(
+        this.accounts,
+        this.networks,
+        this.keystore,
+        this.portfolio,
+        this.#externalSignerControllers,
+        this.selectedAccount.account,
+        network,
+        this.providers.providers[network.chainId.toString()],
+        actionId,
+        accountOp,
+        () => {
+          return this.isSignRequestStillActive
+        },
+        true,
+        () => {
+          if (
+            this.signAccountOp &&
+            this.signAccountOp.estimation.status === EstimationStatus.Success
+          )
+            this.traceCall()
+        }
+      )
+    }
 
     this.emitUpdate()
   }
@@ -690,24 +696,7 @@ export class MainController extends EventEmitter {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    return this.handleBroadcast(signAccountOp, type)
-  }
-
-  async handleBroadcast(signAccountOp: SignAccountOpController, type: SignAccountOpType) {
-    return this.withStatus(
-      'broadcastSignedAccountOp',
-      async () => {
-        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp(
-          signAccountOp,
-          type
-        ).finally(() => {
-          this.#signAccountOpBroadcastPromise = undefined
-        })
-        return this.#signAccountOpBroadcastPromise
-      },
-      true
-    )
+    this.#broadcastSignedAccountOp(signAccountOp, type)
   }
 
   destroySignAccOp() {
@@ -784,7 +773,7 @@ export class MainController extends EventEmitter {
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network
+        this.networks.networks
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -1168,14 +1157,10 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
-    const signAccountOpChainId = this.signAccountOp?.accountOp.chainId
-    const networkData =
-      network || this.networks.networks.find((n) => n.chainId === signAccountOpChainId)
-
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData
+      this.networks.networks
     )
 
     await this.portfolio.updateSelectedAccount(
@@ -1758,7 +1743,6 @@ export class MainController extends EventEmitter {
       }
 
       if (this.#signAccountOpSigningPromise) await this.#signAccountOpSigningPromise
-      if (this.#signAccountOpBroadcastPromise) await this.#signAccountOpBroadcastPromise
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -2000,23 +1984,16 @@ export class MainController extends EventEmitter {
       }
     }
 
-    // Note: this may take a while!
-    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
-
+    const dappHandlers = []
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        if (txnId) {
-          // If the call has a txnId, resolve the promise with it.
-          // This could happen when an EOA account is broadcasting multiple transactions.
-          uReq.dappPromise?.resolve({ hash: call.txnId || txnId })
-        } else {
-          uReq.dappPromise?.reject(
-            ethErrors.rpc.transactionRejected({
-              message: 'Transaction rejected by the bundler'
-            })
-          )
+        if (uReq.dappPromise) {
+          dappHandlers.push({
+            promise: uReq.dappPromise,
+            txnId: call.txnId
+          })
         }
 
         this.removeUserRequest(uReq.id, {
@@ -2030,6 +2007,27 @@ export class MainController extends EventEmitter {
         })
       }
     }
+
+    // emitting the removed user req
+    this.emitUpdate()
+
+    // this could take a while
+    // return the txnId to the dapp once it's confirmed as return a txId
+    // that could be front ran would cause bad UX on the dapp side
+    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
+    dappHandlers.forEach((handler) => {
+      if (txnId) {
+        // If the call has a txnId, resolve the promise with it.
+        // This could happen when an EOA account is broadcasting multiple transactions.
+        handler.promise.resolve({ hash: handler.txnId || txnId })
+      } else {
+        handler.promise.reject(
+          ethErrors.rpc.transactionRejected({
+            message: 'Transaction rejected by the bundler'
+          })
+        )
+      }
+    })
 
     this.emitUpdate()
   }
@@ -2155,7 +2153,7 @@ export class MainController extends EventEmitter {
       try {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
         if (feePayerKey instanceof Error) {
-          return await this.throwBroadcastAccountOp({
+          return this.throwBroadcastAccountOp({
             signAccountOp,
             message: feePayerKey.message,
             accountState
@@ -2211,7 +2209,7 @@ export class MainController extends EventEmitter {
             }
           }
         } else {
-          return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
+          return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
         signAccountOp.update({ signedTransactionsCount: null })
@@ -2404,7 +2402,6 @@ export class MainController extends EventEmitter {
           : 'The transaction was'
       } successfully signed and broadcast to the network.`
     })
-    return Promise.resolve(submittedAccountOp)
   }
 
   // ! IMPORTANT !
@@ -2467,11 +2464,9 @@ export class MainController extends EventEmitter {
           signAccountOp.simulate(false)
         }
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
-        message = `Signer key not supported on this network.${
-          !accountState?.isV2
-            ? 'You can add/change signers from the web wallet or contact support.'
-            : 'Please contact support.'
-        }`
+        message = accountState?.isV2
+          ? 'Broadcast failed because of a pending transaction. Please try again'
+          : 'Signer key not supported on this network'
       } else if (originalMessage.includes('underpriced')) {
         message =
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
@@ -2482,6 +2477,15 @@ export class MainController extends EventEmitter {
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
+      } else if (originalMessage.includes('user nonce') && isRelayer) {
+        if (this.signAccountOp) {
+          this.accounts
+            .updateAccountState(this.signAccountOp.accountOp.accountAddr, 'pending', [
+              this.signAccountOp.accountOp.chainId
+            ])
+            .then(() => this.signAccountOp?.simulate())
+            .catch((e) => e)
+        }
       }
     }
 
@@ -2507,9 +2511,11 @@ export class MainController extends EventEmitter {
     signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
 
-    return Promise.reject(
-      new EmittableError({ level: 'major', message, error: _err || new Error(message) })
-    )
+    this.emitError({
+      message,
+      level: 'major',
+      error: new Error(message)
+    })
   }
 
   get isSignRequestStillActive(): boolean {

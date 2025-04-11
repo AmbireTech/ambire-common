@@ -1,10 +1,7 @@
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Price } from '../../interfaces/assets'
 import { AccountOp } from '../accountOp/accountOp'
-
-export interface Price {
-  baseCurrency: string
-  price: number
-}
+import { AssetType } from '../defiPositions/types'
 
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
@@ -28,9 +25,9 @@ export type TokenResult = {
   flags: {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
+    defiTokenType?: AssetType
     canTopUpGasTank: boolean
     isFeeToken: boolean
-    isDefiToken?: boolean
     isHidden?: boolean
     isCustom?: boolean
   }

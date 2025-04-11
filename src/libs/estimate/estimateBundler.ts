@@ -127,6 +127,9 @@ export async function bundlerEstimate(
   const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.signature = getSigForCalculations()
 
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+    getSignableCallsForBundlerEstimate(localOp)
+  ])
   const paymaster = await paymasterFactory.create(op, userOp, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [

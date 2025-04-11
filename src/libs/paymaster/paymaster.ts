@@ -305,4 +305,8 @@ export class Paymaster extends AbstractPaymaster {
 
     throw new Error('Paymaster not configured. Please contact support')
   }
+
+  canAutoRetryOnFailure(): boolean {
+    return this.type === 'Ambire'
+  }
 }

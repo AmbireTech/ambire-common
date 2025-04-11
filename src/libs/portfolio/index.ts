@@ -4,7 +4,6 @@ import {
   CollectionResult,
   GasTankTokenResult,
   GetOptions,
-  Price,
   TokenResult
 } from './interfaces'
 import { Portfolio } from './portfolio'
@@ -12,7 +11,6 @@ import { Portfolio } from './portfolio'
 export { Portfolio }
 
 export type {
-  Price,
   TokenResult,
   ClaimableRewardsData,
   AddrVestingData,
