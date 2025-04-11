@@ -28,7 +28,6 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
-import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -83,6 +82,8 @@ import {
   buildMintVestingRequest,
   buildTransferUserRequest
 } from '../../libs/transfer/userRequest'
+/* eslint-disable no-underscore-dangle */
+import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import shortenAddress from '../../utils/shortenAddress'
@@ -101,6 +102,7 @@ import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
@@ -110,8 +112,6 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-/* eslint-disable no-underscore-dangle */
-import { LiFiAPI } from '../../services/lifi/api'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
@@ -761,7 +761,7 @@ export class MainController extends EventEmitter {
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network
+        this.networks.networks
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -1145,14 +1145,10 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
-    const signAccountOpChainId = this.signAccountOp?.accountOp.chainId
-    const networkData =
-      network || this.networks.networks.find((n) => n.chainId === signAccountOpChainId)
-
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData
+      this.networks.networks
     )
 
     await this.portfolio.updateSelectedAccount(
