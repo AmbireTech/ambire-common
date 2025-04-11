@@ -45,7 +45,7 @@ describe('Broadcast errors are humanized', () => {
     const humanizedError = getHumanReadableBroadcastError(error)
 
     expect(humanizedError.message).toBe(
-      `${PREFIX}the user nonce is too low. Is there a pending transaction? Please try broadcasting again.`
+      `${PREFIX}of a pending transaction. Please try broadcasting again.`
     )
   })
   it('Random relayer error is displayed to the user', () => {

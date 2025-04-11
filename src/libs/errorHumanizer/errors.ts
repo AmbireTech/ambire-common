@@ -92,8 +92,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['user nonce too low'],
-    message:
-      'the user nonce is too low. Is there a pending transaction? Please try broadcasting again.'
+    message: 'of a pending transaction. Please try broadcasting again.'
   },
   // dApp interactions
   {
