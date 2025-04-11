@@ -148,17 +148,20 @@ export const getAccountOpsForSimulation = (
     visibleActionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
   )
     .map((a) => a.accountOp)
-    .filter((op) => op.accountAddr === account.addr)
+    .filter((op) => {
+      if (op.accountAddr !== account.addr) return false
+
+      const networkData = networks.find((n) => n.chainId === op.chainId)
+
+      // We cannot simulate if the account isn't smart and the network's RPC doesn't support
+      // state override
+      return isSmart || (networkData && !networkData.rpcNoStateOverride)
+    })
 
   if (!accountOps.length) return undefined
 
   return accountOps.reduce((acc: any, accountOp) => {
     const { chainId } = accountOp
-    const networkData = networks.find((n) => n.chainId === chainId)
-
-    // We cannot simulate if the account isn't smart and the network's RPC doesn't support
-    // state override
-    if (!isSmart && (!networkData || networkData.rpcNoStateOverride)) return acc
 
     if (!acc[chainId.toString()]) acc[chainId.toString()] = []
 
