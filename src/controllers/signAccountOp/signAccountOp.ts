@@ -641,6 +641,27 @@ export class SignAccountOpController extends EventEmitter {
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
+    // if the portfolio detects a nonce discrepancy and the estimation is a Success,
+    // refetch the account state, resimulate and put the correct nonce in accountOp
+    const portfolioState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+    const pendingPortfolioState = portfolioState
+      ? portfolioState[this.accountOp.chainId.toString()]
+      : null
+    if (
+      this.estimation.status === EstimationStatus.Success &&
+      pendingPortfolioState &&
+      pendingPortfolioState.criticalError?.simulationErrorMsg &&
+      pendingPortfolioState.criticalError?.simulationErrorMsg.indexOf('nonce did not increment') !==
+        -1
+    ) {
+      const pendingAccountState = await this.#accounts.forceFetchPendingState(
+        this.accountOp.accountAddr,
+        this.accountOp.chainId
+      )
+      this.accountOp.nonce = pendingAccountState.nonce
+      await this.#portfolio.simulateAccountOp(this.accountOp)
+    }
+
     // if there's an estimation error, override the pending results
     if (this.estimation.status === EstimationStatus.Error) {
       this.#portfolio.overridePendingResults(this.accountOp)
