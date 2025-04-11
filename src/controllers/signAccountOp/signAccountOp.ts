@@ -1355,7 +1355,6 @@ export class SignAccountOpController extends EventEmitter {
     const gasFeePayment = this.accountOp.gasFeePayment!
     let erc4337Estimation = this.estimation.estimation!.bundlerEstimation as Erc4337GasLimits
 
-    // do a reestimate if deemed needed
     if (shouldReestimate) {
       const newEstimate = await bundlerEstimate(
         this.baseAccount,
@@ -1368,7 +1367,16 @@ export class SignAccountOpController extends EventEmitter {
         () => {},
         eip7702Auth
       )
-      if (!(newEstimate instanceof Error)) erc4337Estimation = newEstimate as Erc4337GasLimits
+
+      if (!(newEstimate instanceof Error)) {
+        erc4337Estimation = newEstimate as Erc4337GasLimits
+        gasFeePayment.gasPrice = BigInt(
+          erc4337Estimation.gasPrice[this.selectedFeeSpeed!].maxFeePerGas
+        )
+        gasFeePayment.maxPriorityFeePerGas = BigInt(
+          erc4337Estimation.gasPrice[this.selectedFeeSpeed!].maxPriorityFeePerGas
+        )
+      }
     }
 
     const userOperation = getUserOperation(
@@ -1398,35 +1406,43 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async #getPaymasterUserOp(
-    userOperation: UserOperation,
-    paymaster: AbstractPaymaster
-  ): Promise<UserOperation> {
-    if (!paymaster.isUsable()) return userOperation
+    originalUserOp: UserOperation,
+    paymaster: AbstractPaymaster,
+    eip7702Auth?: EIP7702Auth,
+    counter = 0
+  ): Promise<{
+    required: boolean
+    success?: boolean
+    userOp?: UserOperation
+    errorResponse?: PaymasterErrorReponse
+  }> {
+    if (!paymaster.isUsable()) return { required: false }
 
-    const localOp = { ...userOperation }
+    const localOp = { ...originalUserOp }
     const response = await paymaster.call(this.account, this.accountOp, localOp, this.#network)
 
     if (response.success) {
       const paymasterData = response as PaymasterSuccessReponse
-      this.status = { type: SigningStatus.InProgress }
-      this.emitUpdate()
-
       localOp.paymaster = paymasterData.paymaster
       localOp.paymasterData = paymasterData.paymasterData
-      this.accountOp.gasFeePayment!.isSponsored = paymaster.isSponsored()
-    } else {
-      const errorResponse = response as PaymasterErrorReponse
-      this.emitError({
-        level: 'major',
-        message: errorResponse.message,
-        error: errorResponse.error
-      })
-      this.status = { type: SigningStatus.ReadyToSign }
-      this.emitUpdate()
-      this.estimate()
+      return {
+        userOp: localOp,
+        required: true,
+        success: true
+      }
     }
 
-    return localOp
+    // auto-retry once if it was the ambire paymaster
+    if (paymaster.canAutoRetryOnFailure() && counter === 0) {
+      const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
+      return this.#getPaymasterUserOp(reestimatedUserOp, paymaster, eip7702Auth, counter + 1)
+    }
+
+    return {
+      required: true,
+      success: false,
+      errorResponse: response as PaymasterErrorReponse
+    }
   }
 
   async sign() {
@@ -1588,13 +1604,32 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         const initialUserOp = await this.#getInitialUserOp(shouldReestimate, eip7702Auth)
-        const userOperation = await this.#getPaymasterUserOp(initialUserOp, paymaster)
+        const paymasterInfo = await this.#getPaymasterUserOp(initialUserOp, paymaster, eip7702Auth)
+        if (paymasterInfo.required) {
+          if (paymasterInfo.success) {
+            this.accountOp.gasFeePayment.isSponsored = paymaster.isSponsored()
+            this.status = { type: SigningStatus.InProgress }
+            this.emitUpdate()
+          } else {
+            const errorResponse = paymasterInfo.errorResponse as PaymasterErrorReponse
+            this.emitError({
+              level: 'major',
+              message: errorResponse.message,
+              error: errorResponse.error
+            })
+            this.status = { type: SigningStatus.ReadyToSign }
+            this.emitUpdate()
+            this.estimate()
+            return
+          }
+        }
 
         // query the application state from memory to understand if the user
         // hasn't actually rejected the request while waiting for the
         // paymaster to respond
         if (!this.#isSignRequestStillActive()) return
 
+        const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
         if (userOperation.requestType === 'standard') {
           const typedData = getTypedData(
             this.#network.chainId,

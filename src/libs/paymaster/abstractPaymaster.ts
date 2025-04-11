@@ -29,6 +29,8 @@ export abstract class AbstractPaymaster {
 
   abstract isUsable(): boolean
 
+  abstract canAutoRetryOnFailure(): boolean
+
   abstract call(
     acc: Account,
     op: AccountOp,
