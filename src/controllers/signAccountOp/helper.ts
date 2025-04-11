@@ -1,10 +1,11 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
+import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
-import { Price, TokenResult } from '../../libs/portfolio'
+import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 

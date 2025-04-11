@@ -93,6 +93,7 @@ export const updatePortfolioStateWithDefiPositions = (
               networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
               // Get the price from defiPositions
               tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
+              tokenInPortfolio.flags.defiTokenType = a.type
             } else {
               const positionAsset: TokenResult = {
                 amount: a.amount,
@@ -108,7 +109,7 @@ export const updatePortfolioStateWithDefiPositions = (
                   isFeeToken: false,
                   onGasTank: false,
                   rewardsType: null,
-                  isDefiToken: true
+                  defiTokenType: a.type
                   // @BUG: defi positions tokens can't be hidden and can be added as custom
                   // because processTokens is called in the portfolio
                   // Issue: https://github.com/AmbireTech/ambire-app/issues/3971

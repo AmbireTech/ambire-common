@@ -1,4 +1,4 @@
-import { Price } from '../portfolio'
+import { Price } from '../../interfaces/assets'
 
 export enum AssetType {
   Liquidity,
