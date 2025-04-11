@@ -28,14 +28,24 @@ export type HD_PATH_TEMPLATE_TYPE =
 export interface DerivationOption {
   label: string
   value: HD_PATH_TEMPLATE_TYPE
+  description: string
 }
 
 export const DERIVATION_OPTIONS: DerivationOption[] = [
-  { label: 'BIP44 Standard (MetaMask, Trezor, Grid+)', value: BIP44_STANDARD_DERIVATION_TEMPLATE },
-  { label: 'BIP44 Ledger Live', value: BIP44_LEDGER_DERIVATION_TEMPLATE },
   {
-    label: 'Legacy (Ledger, MyEtherWallet, MyCrypto)',
-    value: LEGACY_POPULAR_DERIVATION_TEMPLATE
+    label: 'BIP44',
+    value: BIP44_STANDARD_DERIVATION_TEMPLATE,
+    description: 'BIP44 Standard: HDpath defined by the BIP44 protocol.'
+  },
+  {
+    label: 'Ledger Live',
+    value: BIP44_LEDGER_DERIVATION_TEMPLATE,
+    description: 'Ledger Live: Ledger official HD path.'
+  },
+  {
+    label: 'Ledger Legacy',
+    value: LEGACY_POPULAR_DERIVATION_TEMPLATE,
+    description: 'Ledger Legacy: HD path used by MEW / Mycrypto.'
   }
 ]
 
