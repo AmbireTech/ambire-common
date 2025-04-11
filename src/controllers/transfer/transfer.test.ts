@@ -17,6 +17,8 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
+import { AccountsController } from '../accounts/accounts'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -69,6 +71,20 @@ const networksCtrl = new NetworksController(
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
+const accountsCtrl = new AccountsController(
+  storageCtrl,
+  providersCtrl,
+  networksCtrl,
+  () => {},
+  () => {},
+  () => {}
+)
+
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
+
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
   const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
@@ -82,15 +98,18 @@ describe('Transfer Controller', () => {
       produceMemoryStore(),
       humanizerInfo as HumanizerMeta,
       PLACEHOLDER_SELECTED_ACCOUNT,
-      networksCtrl.networks
+      networksCtrl.networks,
+      selectedAccountCtrl.portfolio,
+      false,
+      '0.0.0'
     )
-    transferController.update({
+    await transferController.update({
       contacts: CONTACTS
     })
     expect(transferController.isInitialized).toBe(true)
   })
-  test('should set address state', () => {
-    transferController.update({
+  test('should set address state', async () => {
+    await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
@@ -103,7 +122,7 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(true)
   })
   test('should flag recipient address as a smart contract', async () => {
-    transferController.update({
+    await transferController.update({
       addressState: {
         fieldValue: XWALLET_ADDRESS,
         ensAddress: '',
@@ -118,32 +137,32 @@ describe('Transfer Controller', () => {
       (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 137n
     )
 
-    transferController.update({ selectedToken: polOnPolygon })
+    await transferController.update({ selectedToken: polOnPolygon })
     expect(transferController.isSWWarningVisible).toBe(true)
   })
   test('should change selected token', async () => {
     const tokens = await getTokens()
     const xwalletOnEthereum = tokens.find((t) => t.address === XWALLET_ADDRESS && t.chainId === 1n)
-    transferController.update({ selectedToken: xwalletOnEthereum })
+    await transferController.update({ selectedToken: xwalletOnEthereum })
 
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
     expect(transferController.selectedToken?.chainId).toBe(1n)
   })
 
-  test('should set amount', () => {
-    transferController.update({
+  test('should set amount', async () => {
+    await transferController.update({
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
   })
-  test('should set sw warning agreed', () => {
-    transferController.update({
+  test('should set sw warning agreed', async () => {
+    await transferController.update({
       isSWWarningAgreed: true
     })
     expect(transferController.isSWWarningAgreed).toBe(true)
   })
   test('should set validation form messages', async () => {
-    transferController.update({
+    await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
@@ -155,28 +174,28 @@ describe('Transfer Controller', () => {
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
 
     // Recipient address
-    transferController.update({
+    await transferController.update({
       isRecipientAddressUnknownAgreed: true
     })
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
     // Amount
-    transferController.update({
+    await transferController.update({
       amount: '0'
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(false)
 
-    transferController.update({
+    await transferController.update({
       amount: transferController.maxAmount
     })
-    transferController.update({
+    await transferController.update({
       amount: String(Number(transferController.amount) + 1)
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(false)
 
     // Reset
-    transferController.update({
+    await transferController.update({
       amount: transferController.maxAmount
     })
   })
@@ -185,7 +204,7 @@ describe('Transfer Controller', () => {
     const zeroAmountToken = tokens.find(
       (t) => t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.chainId === 1n
     )
-    transferController.update({ selectedToken: zeroAmountToken })
+    await transferController.update({ selectedToken: zeroAmountToken })
     expect(transferController.selectedToken?.address).not.toBe(zeroAmountToken?.address)
   })
   test("should accept a token that doesn't have amount but has amountPostSimulation for transfer", async () => {
@@ -194,12 +213,12 @@ describe('Transfer Controller', () => {
       (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 1n
     )
     nativeToken!.amountPostSimulation = 10n
-    transferController.update({ selectedToken: nativeToken })
+    await transferController.update({ selectedToken: nativeToken })
     expect(transferController.selectedToken).not.toBe(null)
   })
 
   test('should detect that the recipient is the fee collector', async () => {
-    transferController.update({
+    await transferController.update({
       addressState: {
         fieldValue: FEE_COLLECTOR,
         ensAddress: '',

@@ -194,6 +194,7 @@ export async function ambireEstimateGas(
 
   return {
     gasUsed,
+    deploymentGas: deployment.gasUsed,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     ambireAccountNonce: accountOp.success ? Number(outcomeNonce - 1n) : Number(outcomeNonce),
     flags

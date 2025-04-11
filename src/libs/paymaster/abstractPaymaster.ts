@@ -19,6 +19,8 @@ export abstract class AbstractPaymaster {
 
   abstract shouldIncludePayment(): boolean
 
+  abstract getFeeCallType(feeTokens: TokenResult[]): string | undefined
+
   abstract getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined
 
   abstract getEstimationData(): PaymasterEstimationData | null
@@ -26,6 +28,8 @@ export abstract class AbstractPaymaster {
   abstract isSponsored(): boolean
 
   abstract isUsable(): boolean
+
+  abstract canAutoRetryOnFailure(): boolean
 
   abstract call(
     acc: Account,

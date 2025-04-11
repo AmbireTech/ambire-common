@@ -98,7 +98,6 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
     // Not needed for benzin
     hasRelayer: false,
     rpcNoStateOverride: false, // TODO
-    reestimateOn: 0,
     areContractsDeployed: false, // TODO
     features: [],
     feeOptions: { is1559: false },
@@ -193,7 +192,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
   const hasSingleton = true
 
   // Coming from the RPC, only for the custom networks
-  // const reestimateOn
   // const flagged
   // const blockGasLimit
   // const force4337

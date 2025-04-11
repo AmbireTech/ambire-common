@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { AbiCoder, Contract, toBeHex } from 'ethers'
+import { AbiCoder, Contract, toBeHex, ZeroAddress } from 'ethers'
 
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -127,6 +127,23 @@ export class Paymaster extends AbstractPaymaster {
 
   shouldIncludePayment(): boolean {
     return this.type === 'Ambire' || this.type === 'ERC7677'
+  }
+
+  // get the fee call type used in the estimation
+  // we use this to understand whether we should re-estimate on broadcast
+  getFeeCallType(feeTokens: TokenResult[]): string | undefined {
+    if (!this.network) throw new Error('network not set, did you call init?')
+
+    if (this.type === 'Ambire') {
+      const feeToken = getFeeTokenForEstimate(feeTokens)
+      if (!feeToken) return undefined
+      if (feeToken.flags.onGasTank) return 'gasTank'
+      if (feeToken.address === ZeroAddress) return 'native'
+      return 'erc20'
+    }
+
+    if (this.type === 'ERC7677') return 'gasTank'
+    return undefined
   }
 
   getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined {
@@ -287,5 +304,9 @@ export class Paymaster extends AbstractPaymaster {
     if (this.type === 'ERC7677') return this.#erc7677Call(op, userOp, network)
 
     throw new Error('Paymaster not configured. Please contact support')
+  }
+
+  canAutoRetryOnFailure(): boolean {
+    return this.type === 'Ambire'
   }
 }

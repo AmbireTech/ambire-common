@@ -92,8 +92,7 @@ describe('User Operation tests', () => {
         smartAccDeployed,
         accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
         opOptimism,
-        'pimlico',
-        '0x0001'
+        'pimlico'
       )
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')
@@ -127,8 +126,8 @@ describe('User Operation tests', () => {
       )
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('activator')
-      expect(userOp.activatorCall).not.toBe(undefined)
+      expect(userOp.requestType).toBe('standard')
+      expect(userOp.activatorCall).toBe(undefined)
     })
   })
 })
