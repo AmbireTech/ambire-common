@@ -1132,6 +1132,7 @@ export class SwapAndBridgeController extends EventEmitter {
             selectedRouteSteps: routeToSelectSteps,
             routes
           }
+          this.destroySignAccountOp()
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
         await this.initSignAccountOpIfNeeded()
