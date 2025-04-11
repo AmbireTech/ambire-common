@@ -2480,7 +2480,7 @@ export class MainController extends EventEmitter {
     this.emitError({
       message,
       level: 'major',
-      error: new Error('failed to retrieve saved seed phrase from keystore')
+      error: new Error(message)
     })
   }
 
