@@ -144,6 +144,8 @@ export const noStateUpdateStatuses = [
 ]
 
 export class SignAccountOpController extends EventEmitter {
+  #accounts: AccountsController
+
   #keystore: KeystoreController
 
   #portfolio: PortfolioController
@@ -153,8 +155,6 @@ export class SignAccountOpController extends EventEmitter {
   account: Account
 
   baseAccount: BaseAccount
-
-  accountState: AccountOnchainState
 
   #network: Network
 
@@ -248,6 +248,7 @@ export class SignAccountOpController extends EventEmitter {
   ) {
     super()
 
+    this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
@@ -258,7 +259,6 @@ export class SignAccountOpController extends EventEmitter {
       keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
       network
     )
-    this.accountState = accountState
     this.#network = network
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
@@ -638,6 +638,27 @@ export class SignAccountOpController extends EventEmitter {
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
       this.accountOp.nonce = BigInt(estimation.ambireEstimation.ambireAccountNonce)
+      await this.#portfolio.simulateAccountOp(this.accountOp)
+    }
+
+    // if the portfolio detects a nonce discrepancy and the estimation is a Success,
+    // refetch the account state, resimulate and put the correct nonce in accountOp
+    const portfolioState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+    const pendingPortfolioState = portfolioState
+      ? portfolioState[this.accountOp.chainId.toString()]
+      : null
+    if (
+      this.estimation.status === EstimationStatus.Success &&
+      pendingPortfolioState &&
+      pendingPortfolioState.criticalError?.simulationErrorMsg &&
+      pendingPortfolioState.criticalError?.simulationErrorMsg.indexOf('nonce did not increment') !==
+        -1
+    ) {
+      const pendingAccountState = await this.#accounts.forceFetchPendingState(
+        this.accountOp.accountAddr,
+        this.accountOp.chainId
+      )
+      this.accountOp.nonce = pendingAccountState.nonce
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1355,11 +1376,15 @@ export class SignAccountOpController extends EventEmitter {
   ): Promise<UserOperation> {
     const gasFeePayment = this.accountOp.gasFeePayment!
     let erc4337Estimation = this.estimation.estimation!.bundlerEstimation as Erc4337GasLimits
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.accountOp.accountAddr,
+      this.accountOp.chainId
+    )
 
     if (shouldReestimate) {
       const newEstimate = await bundlerEstimate(
         this.baseAccount,
-        this.accountState,
+        accountState,
         this.accountOp,
         this.#network,
         [this.selectedOption!.token],
@@ -1382,7 +1407,7 @@ export class SignAccountOpController extends EventEmitter {
 
     const userOperation = getUserOperation(
       this.account,
-      this.accountState,
+      accountState,
       this.accountOp,
       this.bundlerSwitcher.getBundler().getName(),
       this.accountOp.meta?.entryPointAuthorization,
@@ -1433,6 +1458,14 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
+    const errorResponse = response as PaymasterErrorReponse
+    if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
+      // silenly continuing on error as this is an attempt for an UX improvement
+      await this.#accounts
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+        .catch((e) => e)
+    }
+
     // auto-retry once if it was the ambire paymaster
     if (paymaster.canAutoRetryOnFailure() && counter === 0) {
       const reestimatedUserOp = await this.#getInitialUserOp(true, eip7702Auth)
@@ -1442,7 +1475,7 @@ export class SignAccountOpController extends EventEmitter {
     return {
       required: true,
       success: false,
-      errorResponse: response as PaymasterErrorReponse
+      errorResponse
     }
   }
 
@@ -1527,6 +1560,11 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.accountOp.accountAddr,
+      this.accountOp.chainId
+    )
+
     try {
       // plain EOA
       if (
@@ -1541,7 +1579,7 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
-          this.accountState,
+          accountState,
           signer
         )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
@@ -1565,10 +1603,10 @@ export class SignAccountOpController extends EventEmitter {
           const contract = getContractImplementation(this.#network.chainId)
           eip7702Auth = get7702Sig(
             this.#network.chainId,
-            this.accountState.nonce,
+            accountState.nonce,
             contract,
             signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, this.accountState.nonce)
+              getAuthorizationHash(this.#network.chainId, contract, accountState.nonce)
             )
           )
 
@@ -1579,12 +1617,12 @@ export class SignAccountOpController extends EventEmitter {
           const epActivatorTypedData = await getEntryPointAuthorization(
             this.account.addr,
             this.#network.chainId,
-            this.accountState.nonce
+            accountState.nonce
           )
           const epSignature = await getEIP712Signature(
             epActivatorTypedData,
             this.account,
-            this.accountState,
+            accountState,
             signer,
             this.#network
           )
@@ -1657,12 +1695,10 @@ export class SignAccountOpController extends EventEmitter {
         // Relayer
         this.#addFeePayment()
 
-        // TODO: THINK ABOUT FETCHING THE NONCE FROM THE PENDING STATE AT THIS POINT
-        // DO SMT LIKE: FETCH THE NONCE, IF HIGHER USE IT
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
-          this.accountState,
+          accountState,
           signer
         )
       }
