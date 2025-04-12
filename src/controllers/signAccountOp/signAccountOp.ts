@@ -281,7 +281,8 @@ export class SignAccountOpController extends EventEmitter {
     )
     this.gasPrice = new GasPriceController(network, provider, this.bundlerSwitcher, () => ({
       estimation: this.estimation,
-      readyToSign: this.readyToSign
+      readyToSign: this.readyToSign,
+      isSignRequestStillActive
     }))
     this.#traceCall = traceCall
 
