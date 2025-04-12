@@ -684,7 +684,45 @@ export class MainController extends EventEmitter {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    this.#broadcastSignedAccountOp()
+    await this.withStatus(
+      'broadcastSignedAccountOp',
+      async () => {
+        this.#broadcastSignedAccountOp()
+      },
+      true
+    )
+  }
+
+  async resolveDappBroadcast(
+    submittedAccountOp: SubmittedAccountOp,
+    dappHandlers: {
+      promise: {
+        session: { name: string; origin: string; icon: string }
+        resolve: (data: any) => void
+        reject: (data: any) => void
+      }
+      txnId?: string
+    }[]
+  ) {
+    // this could take a while
+    // return the txnId to the dapp once it's confirmed as return a txId
+    // that could be front ran would cause bad UX on the dapp side
+    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
+    dappHandlers.forEach((handler) => {
+      if (txnId) {
+        // If the call has a txnId, resolve the promise with it.
+        // This could happen when an EOA account is broadcasting multiple transactions.
+        handler.promise.resolve({ hash: handler.txnId || txnId })
+      } else {
+        handler.promise.reject(
+          ethErrors.rpc.transactionRejected({
+            message: 'Transaction rejected by the bundler'
+          })
+        )
+      }
+    })
+
+    this.emitUpdate()
   }
 
   destroySignAccOp() {
@@ -1996,26 +2034,7 @@ export class MainController extends EventEmitter {
       }
     }
 
-    // emitting the removed user req
-    this.emitUpdate()
-
-    // this could take a while
-    // return the txnId to the dapp once it's confirmed as return a txId
-    // that could be front ran would cause bad UX on the dapp side
-    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
-    dappHandlers.forEach((handler) => {
-      if (txnId) {
-        // If the call has a txnId, resolve the promise with it.
-        // This could happen when an EOA account is broadcasting multiple transactions.
-        handler.promise.resolve({ hash: handler.txnId || txnId })
-      } else {
-        handler.promise.reject(
-          ethErrors.rpc.transactionRejected({
-            message: 'Transaction rejected by the bundler'
-          })
-        )
-      }
-    })
+    this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
     this.emitUpdate()
   }
