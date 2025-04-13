@@ -687,7 +687,7 @@ export class MainController extends EventEmitter {
     await this.withStatus(
       'broadcastSignedAccountOp',
       async () => {
-        this.#broadcastSignedAccountOp()
+        await this.#broadcastSignedAccountOp()
       },
       true
     )
