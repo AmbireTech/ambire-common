@@ -4,6 +4,7 @@ import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
+import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
@@ -70,6 +71,7 @@ export interface AccountOp {
     // pass the entry point authorization signature for the deploy 4337 txn
     entryPointAuthorization?: string
     paymasterService?: PaymasterService
+    swapTxn?: SwapAndBridgeSendTxRequest
   }
 }
 

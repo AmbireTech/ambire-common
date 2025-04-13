@@ -1674,7 +1674,10 @@ export class SwapAndBridgeController extends EventEmitter {
       nonce: accountState.nonce,
       signature: null,
       accountOpToExecuteBefore: null,
-      calls
+      calls,
+      meta: {
+        swapTxn: userTxn
+      }
     }
 
     // to do: if already initialized, do not re-init
