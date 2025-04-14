@@ -480,10 +480,14 @@ export class LiFiAPI {
     })
     const url = `${this.#baseUrl}/status?${params.toString()}`
 
+    // no error handling on getRouteStatus. Swallow the error and always return
+    // a pending route result and try again. This is the best decision after
+    // discussing it with Li.Fi. as in our one-swap, one-bridge design the
+    // only errors that should be returned are once that will disappear after time
     const response = await this.#handleResponse<LiFiRouteStatusResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
-    })
+    }).catch((e) => e)
 
     const statuses: { [key in LiFiRouteStatusResponse['status']]: SwapAndBridgeRouteStatus } = {
       DONE: 'completed',
@@ -491,6 +495,10 @@ export class LiFiAPI {
       INVALID: null,
       NOT_FOUND: null,
       PENDING: null
+    }
+
+    if (response instanceof SwapAndBridgeProviderApiError) {
+      return statuses.PENDING
     }
 
     return statuses[response.status]
