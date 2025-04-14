@@ -47,8 +47,7 @@ const getBridgeBannerText = (
 
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  accountOpActions: AccountOpAction[],
-  networks: Network[]
+  accountOpActions: AccountOpAction[]
 ): Banner[] => {
   const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
     !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
@@ -74,13 +73,6 @@ export const getBridgeBanners = (
   )
 
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
-
-  const remainingRoutes = filteredRoutes.filter(
-    (r) =>
-      r.routeStatus !== 'in-progress' &&
-      r.routeStatus !== 'completed' &&
-      r.routeStatus !== 'waiting-approval-to-resolve'
-  )
 
   const banners: Banner[] = []
 
@@ -122,34 +114,6 @@ export const getBridgeBanners = (
       ]
     })
   }
-
-  // Add other statuses normally
-  remainingRoutes.forEach((r) => {
-    const actions: Action[] =
-      r.routeStatus === 'ready'
-        ? [
-            {
-              label: 'Reject',
-              actionName: 'reject-bridge',
-              meta: { activeRouteIds: [r.activeRouteId] }
-            },
-            {
-              label: (r.route?.currentUserTxIndex || 0) >= 1 ? 'Proceed to Next Step' : 'Open',
-              actionName: 'proceed-bridge',
-              meta: { activeRouteId: r.activeRouteId }
-            }
-          ]
-        : []
-
-    banners.push({
-      id: `bridge-${r.activeRouteId}`,
-      type: 'info',
-      category: `bridge-${r.routeStatus}`,
-      title: 'Bridge request awaiting signature',
-      text: getBridgeBannerText(r, isBridgeTxn(r), networks),
-      actions
-    })
-  })
 
   return banners
 }
