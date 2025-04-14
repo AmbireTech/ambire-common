@@ -50,8 +50,6 @@ export class Paymaster extends AbstractPaymaster {
 
   type: PaymasterType = 'None'
 
-  sponsorDataEstimation: PaymasterEstimationData | undefined
-
   paymasterService: PaymasterService | null = null
 
   network: Network | null = null

@@ -1447,6 +1447,12 @@ export class SignAccountOpController extends EventEmitter {
     if (!paymaster.isUsable()) return { required: false }
 
     const localOp = { ...originalUserOp }
+    // persist the paymaster properties from the pm_stubData request
+    if (paymaster.isSponsored() && paymaster.sponsorDataEstimation) {
+      localOp.paymasterVerificationGasLimit =
+        paymaster.sponsorDataEstimation.paymasterVerificationGasLimit
+      localOp.paymasterPostOpGasLimit = paymaster.sponsorDataEstimation.paymasterPostOpGasLimit
+    }
     const response = await paymaster.call(this.account, this.accountOp, localOp, this.#network)
 
     if (response.success) {

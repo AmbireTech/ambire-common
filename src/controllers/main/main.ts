@@ -2180,7 +2180,7 @@ export class MainController extends EventEmitter {
       try {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
         if (feePayerKey instanceof Error) {
-          return this.throwBroadcastAccountOp({
+          return await this.throwBroadcastAccountOp({
             signAccountOp,
             message: feePayerKey.message,
             accountState
@@ -2236,7 +2236,7 @@ export class MainController extends EventEmitter {
             }
           }
         } else {
-          return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
+          return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
         signAccountOp.update({ signedTransactionsCount: null })
@@ -2538,11 +2538,9 @@ export class MainController extends EventEmitter {
     signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
 
-    this.emitError({
-      message,
-      level: 'major',
-      error: new Error(message)
-    })
+    return Promise.reject(
+      new EmittableError({ level: 'major', message, error: _err || new Error(message) })
+    )
   }
 
   get isSignRequestStillActive(): boolean {
