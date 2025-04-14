@@ -94,7 +94,12 @@ export const getBridgeBanners = (
       text: `You have ${inProgressRoutes.length} bridge request${
         inProgressRoutes.length > 1 ? 's' : ''
       } in progress.`,
-      actions: []
+      actions: [
+        {
+          label: 'View',
+          actionName: 'view-bridge'
+        }
+      ]
     })
   }
 

@@ -104,3 +104,7 @@ export type Action =
       actionName: 'dismiss-7702-banner'
       meta: { accountAddr: string }
     }
+  | {
+      label: 'View'
+      actionName: 'view-bridge'
+    }
