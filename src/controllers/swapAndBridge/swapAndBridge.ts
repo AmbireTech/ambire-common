@@ -1627,7 +1627,7 @@ export class SwapAndBridgeController extends EventEmitter {
     // again it shouldn't happen but there might be a case where the from token
     // disappears because of a strange update event. It's fine to just not
     // continue from the point forward
-    if (!this.fromSelectedToken) return
+    if (!this.fromSelectedToken || !this.toSelectedToken) return
 
     if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate) return
 
@@ -1674,8 +1674,14 @@ export class SwapAndBridgeController extends EventEmitter {
       signature: null,
       accountOpToExecuteBefore: null,
       calls,
+      flags: {
+        hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
+      },
       meta: {
-        swapTxn: userTxn
+        swapTxn: {
+          activeRouteId: userTxn.activeRouteId,
+          userTxIndex: userTxn.userTxIndex
+        }
       }
     }
 

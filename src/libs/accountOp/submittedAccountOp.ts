@@ -46,9 +46,6 @@ export interface SubmittedAccountOp extends AccountOp {
   timestamp: number
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
-  flags?: {
-    hideActivityBanner?: boolean
-  }
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {

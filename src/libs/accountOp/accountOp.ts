@@ -75,6 +75,9 @@ export interface AccountOp {
       userTxIndex: number
     }
   }
+  flags?: {
+    hideActivityBanner?: boolean
+  }
 }
 
 /**
