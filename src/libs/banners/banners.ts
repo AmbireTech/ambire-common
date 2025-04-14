@@ -88,6 +88,11 @@ export const getBridgeBanners = (
       } in progress.`,
       actions: [
         {
+          label: 'Close',
+          actionName: 'close-bridge',
+          meta: { activeRouteIds: inProgressRoutes.map((r) => r.activeRouteId), isHideStyle: true }
+        },
+        {
           label: 'View',
           actionName: 'view-bridge'
         }
@@ -109,7 +114,7 @@ export const getBridgeBanners = (
         {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId) }
+          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId), isHideStyle: true }
         }
       ]
     })

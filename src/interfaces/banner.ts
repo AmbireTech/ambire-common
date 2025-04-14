@@ -68,7 +68,7 @@ export type Action =
   | {
       label: 'Close'
       actionName: 'close-bridge'
-      meta: { activeRouteIds: string[] }
+      meta: { activeRouteIds: string[]; isHideStyle: boolean }
     }
   | {
       label: 'Details'
