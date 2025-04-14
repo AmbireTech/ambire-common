@@ -1454,7 +1454,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#handleActiveRouteBroadcastedTransaction(call.fromUserRequestId, op.status)
       this.#handleActiveRouteBroadcastedApproval(call.fromUserRequestId, op.status)
       this.#handleActiveRoutesWithReadyApproval(call.fromUserRequestId, op.status)
-      this.#handleUpdateActiveRoutesUserTxId(call.fromUserRequestId, op.txnId)
+      this.#handleUpdateActiveRoutesUserTxData(call.fromUserRequestId, op)
       this.#handleActiveRoutesCompleted(call.fromUserRequestId, op.status)
     })
   }
@@ -1517,15 +1517,18 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  #handleUpdateActiveRoutesUserTxId(
+  #handleUpdateActiveRoutesUserTxData(
     fromUserRequestId: Call['fromUserRequestId'],
-    opTxnId: SubmittedAccountOp['txnId']
+    submittedAccountOp: SubmittedAccountOp
   ) {
     const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
     if (!activeRoute) return
 
-    if (opTxnId && !activeRoute.userTxHash) {
-      this.updateActiveRoute(activeRoute.activeRouteId, { userTxHash: opTxnId })
+    if (submittedAccountOp && !activeRoute.userTxHash) {
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        userTxHash: submittedAccountOp?.txnId,
+        identifiedBy: submittedAccountOp.identifiedBy
+      })
     }
   }
 
