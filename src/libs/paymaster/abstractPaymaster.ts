@@ -15,6 +15,12 @@ import { UserOperation } from '../userOperation/types'
  * Use this mainly as a typehint to prevent dependancy cicles
  */
 export abstract class AbstractPaymaster {
+  /**
+   * If there's a sponsorship from pm_getPaymasterStubData,
+   * it will get recorded here. Use it for the final broadcast
+   */
+  sponsorDataEstimation: PaymasterEstimationData | undefined
+
   abstract init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider): void
 
   abstract shouldIncludePayment(): boolean
