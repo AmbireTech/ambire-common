@@ -250,7 +250,7 @@ export class AccountPickerController extends EventEmitter {
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    return mergedAccounts.map((acc) => ({
+    const accountsWithStatus = mergedAccounts.map((acc) => ({
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
@@ -260,6 +260,26 @@ export class AccountPickerController extends EventEmitter {
         keyIteratorType: this.keyIterator?.type
       })
     }))
+
+    const hasUsedSmartAccount = accountsWithStatus.some(
+      (a) => isSmartAccount(a.account) && !!a.account.usedOnNetworks.length
+    )
+
+    // if hasUsedSmartAccount = true filter out all unused smart accounts
+    if (hasUsedSmartAccount) {
+      return accountsWithStatus.filter(
+        (a) =>
+          !isSmartAccount(a.account) ||
+          (isSmartAccount(a.account) && a.account.usedOnNetworks.length)
+      )
+    }
+
+    // or if hasUsedSmartAccount = false return only one "new" smart account for that page
+    return accountsWithStatus.filter(
+      (a) =>
+        !isSmartAccount(a.account) ||
+        (isSmartAccount(a.account) && a.slot === (this.page - 1) * this.pageSize + 1)
+    )
   }
 
   get selectedAccounts(): SelectedAccountForImport[] {
@@ -869,7 +889,7 @@ export class AccountPickerController extends EventEmitter {
       // Indices for the smart accounts.
       indicesToRetrieve.push({
         from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-        to: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       })
     }
     // Combine the requests for all accounts in one call to the keyIterator.
