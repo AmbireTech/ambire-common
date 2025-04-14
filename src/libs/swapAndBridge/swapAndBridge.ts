@@ -7,6 +7,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import {
   SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
+  SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
@@ -231,6 +232,10 @@ const buildSwapAndBridgeUserRequests = async (
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
+
+export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
+  return route.userTxs.some((userTx) => getIsBridgeTxn(userTx.userTxType))
+}
 
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
