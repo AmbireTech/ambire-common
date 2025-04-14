@@ -869,7 +869,7 @@ export class AccountPickerController extends EventEmitter {
       // Indices for the smart accounts.
       indicesToRetrieve.push({
         from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        to: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       })
     }
     // Combine the requests for all accounts in one call to the keyIterator.

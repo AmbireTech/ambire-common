@@ -992,7 +992,8 @@ export class KeystoreController extends EventEmitter {
       hasPasswordSecret: this.hasPasswordSecret,
       hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
-      hasTempSeed: this.hasTempSeed
+      hasTempSeed: this.hasTempSeed,
+      isReadyToStoreKeys: this.isReadyToStoreKeys
     }
   }
 }
