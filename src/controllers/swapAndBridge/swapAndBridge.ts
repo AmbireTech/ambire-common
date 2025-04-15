@@ -82,7 +82,8 @@ export enum SwapAndBridgeFormStatus {
   NoRoutesFound = 'no-routes-found',
   InvalidRouteSelected = 'invalid-route-selected',
   ReadyToEstimate = 'ready-to-estimate',
-  ReadyToSubmit = 'ready-to-submit'
+  ReadyToSubmit = 'ready-to-submit',
+  Proceeded = 'proceeded'
 }
 
 const STATUS_WRAPPED_METHODS = {
@@ -209,6 +210,8 @@ export class SwapAndBridgeController extends EventEmitter {
   signAccountOpController: SignAccountOpController | null = null
 
   #portfolioUpdate: Function
+
+  hasProceeded: boolean = false
 
   constructor({
     accounts,
@@ -342,6 +345,8 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get formStatus() {
+    if (this.hasProceeded) return SwapAndBridgeFormStatus.Proceeded
+
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
     if (this.updateQuoteStatus === 'LOADING' && !this.quote)
@@ -509,6 +514,7 @@ export class SwapAndBridgeController extends EventEmitter {
       // screen is opened after a some time
       this.#serviceProviderAPI.resetHealth()
     }
+    this.hasProceeded = false
   }
 
   addOrUpdateError(error: SwapAndBridgeErrorType) {
@@ -680,6 +686,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
+    this.hasProceeded = false
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -693,6 +700,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#toTokenList = []
     this.errors = []
     this.destroySignAccountOp()
+    this.hasProceeded = false
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -908,6 +916,9 @@ export class SwapAndBridgeController extends EventEmitter {
       skipStatusUpdate: false
     }
   ) {
+    // no updates if the user has commited
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
+
     const quoteId = uuidv4()
     this.#updateQuoteId = quoteId
 
@@ -1135,7 +1146,6 @@ export class SwapAndBridgeController extends EventEmitter {
             selectedRouteSteps: routeToSelectSteps,
             routes
           }
-          this.destroySignAccountOp()
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
         await this.initSignAccountOpIfNeeded()
@@ -1308,9 +1318,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = route.steps
 
-    this.destroySignAccountOp()
-    this.emitUpdate()
     await this.initSignAccountOpIfNeeded()
+    this.emitUpdate()
   }
 
   async addActiveRoute({
@@ -1339,9 +1348,6 @@ export class SwapAndBridgeController extends EventEmitter {
           route
         })
       }
-
-      this.resetForm()
-
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
@@ -1621,9 +1627,13 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.signAccountOpController) return
     this.signAccountOpController.reset()
     this.signAccountOpController = null
+    this.hasProceeded = false
   }
 
   async initSignAccountOpIfNeeded() {
+    // no updates if the user has commited
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
+
     // shouldn't happen ever
     if (!this.#selectedAccount.account) return
 
@@ -1632,7 +1642,11 @@ export class SwapAndBridgeController extends EventEmitter {
     // continue from the point forward
     if (!this.fromSelectedToken || !this.toSelectedToken) return
 
-    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate) return
+    if (
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
+    )
+      return
 
     const fromToken = this.fromSelectedToken as TokenResult
     const network = this.#networks.networks.find((net) => net.chainId === fromToken.chainId)
@@ -1666,6 +1680,20 @@ export class SwapAndBridgeController extends EventEmitter {
       provider,
       accountState
     )
+
+    if (this.signAccountOpController) {
+      this.signAccountOpController.update({ calls })
+
+      // add the real swapTxn
+      if (!this.signAccountOpController.accountOp.meta)
+        this.signAccountOpController.accountOp.meta = {}
+      this.signAccountOpController.accountOp.meta.swapTxn = {
+        activeRouteId: userTxn.activeRouteId,
+        userTxIndex: userTxn.userTxIndex
+      }
+      return
+    }
+
     const accountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
@@ -1720,6 +1748,11 @@ export class SwapAndBridgeController extends EventEmitter {
     this.signAccountOpController.onError((error) => {
       this.emitError(error)
     })
+  }
+
+  setUserProceeded(hasProceeded: boolean) {
+    this.hasProceeded = hasProceeded
+    this.emitUpdate()
   }
 
   toJSON() {
