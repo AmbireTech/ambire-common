@@ -68,9 +68,7 @@ export const getBridgeBanners = (
     return !isRouteTurnedIntoAccountOp(route)
   })
 
-  const inProgressRoutes = filteredRoutes.filter(
-    (r) => r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve'
-  )
+  const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
 
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
 

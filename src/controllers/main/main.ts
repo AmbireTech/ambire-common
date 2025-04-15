@@ -702,7 +702,13 @@ export class MainController extends EventEmitter {
     )
 
     // Error handling on the prev step will notify the user, it's fine to return here
-    if (signAccountOp?.status?.type !== SigningStatus.Done) return
+    if (signAccountOp?.status?.type !== SigningStatus.Done) {
+      // remove the active route on signing failure
+      if (signAccountOp?.accountOp.meta?.swapTxn) {
+        this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+      }
+      return
+    }
 
     await this.withStatus(
       'broadcastSignedAccountOp',
@@ -2543,6 +2549,11 @@ export class MainController extends EventEmitter {
     // broadcast is called in the FE only after successful signing
     signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
     this.feePayerKey = null
+
+    // remove the active route on broadcast failure
+    if (signAccountOp?.accountOp.meta?.swapTxn) {
+      this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+    }
 
     return Promise.reject(
       new EmittableError({ level: 'major', message, error: _err || new Error(message) })

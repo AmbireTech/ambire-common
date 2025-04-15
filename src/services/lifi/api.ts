@@ -11,6 +11,7 @@ import {
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { InviteController } from '../../controllers/invite/invite'
+import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SwapAndBridgeActiveRoute,
@@ -376,6 +377,8 @@ export class LiFiAPI {
       }
     }
 
+    const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
+    const slippage = Number(fromAmountInUsd) <= 100 ? '0.015' : '0.005'
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
@@ -385,7 +388,7 @@ export class LiFiAPI {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage: '0.005',
+        slippage,
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
