@@ -99,6 +99,8 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
   'zksync-native'
 ]
 
+const PERSIST_FOR_SESSION_IDS = ['popup', 'action-window']
+
 /**
  * The Swap and Bridge controller is responsible for managing the state and
  * logic related to swapping and bridging tokens across different networks.
@@ -495,9 +497,12 @@ export class SwapAndBridgeController extends EventEmitter {
   unloadScreen(sessionId: string, forceUnload?: boolean) {
     const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
     const signAccountOpCtrlStatus = this.signAccountOpController?.status?.type
+    const isSigningOrBroadcasting =
+      signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
     const shouldPersistState =
-      (isFormDirty && !forceUnload && sessionId === 'persistent') ||
-      (signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus))
+      (isFormDirty || isSigningOrBroadcasting) &&
+      PERSIST_FOR_SESSION_IDS.includes(sessionId) &&
+      !forceUnload
 
     if (shouldPersistState) return
 
