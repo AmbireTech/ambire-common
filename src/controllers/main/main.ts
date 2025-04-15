@@ -299,6 +299,7 @@ export class MainController extends EventEmitter {
       keystore: this.keystore,
       networks: this.networks,
       providers: this.providers,
+      externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
       /**
@@ -843,11 +844,9 @@ export class MainController extends EventEmitter {
       }
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
-      await latticeCtrl.unlock(hdPathTemplate, undefined, true)
 
-      const { walletSDK } = latticeCtrl
       await this.accountPicker.init({
-        keyIterator: new LatticeKeyIterator({ walletSDK }),
+        keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate
       })
     } catch (error: any) {

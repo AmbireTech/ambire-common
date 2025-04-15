@@ -8,6 +8,7 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
+import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
 import {
   Account,
   AccountOnchainState,
@@ -19,7 +20,13 @@ import {
 } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
+import {
+  dedicatedToOneSAPriv,
+  ExternalKey,
+  ExternalSignerControllers,
+  Key,
+  ReadyToAddKeys
+} from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import {
   getAccountImportStatus,
@@ -32,6 +39,7 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { AccountsController } from '../accounts/accounts'
@@ -62,6 +70,8 @@ export class AccountPickerController extends EventEmitter {
   #networks: NetworksController
 
   #providers: ProvidersController
+
+  #externalSignerControllers: ExternalSignerControllers
 
   keyIterator?: KeyIterator | null
 
@@ -126,6 +136,7 @@ export class AccountPickerController extends EventEmitter {
     keystore,
     networks,
     providers,
+    externalSignerControllers,
     relayerUrl,
     fetch,
     onAddAccountsSuccessCallback
@@ -134,6 +145,7 @@ export class AccountPickerController extends EventEmitter {
     keystore: KeystoreController
     networks: NetworksController
     providers: ProvidersController
+    externalSignerControllers: ExternalSignerControllers
     relayerUrl: string
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
@@ -143,6 +155,7 @@ export class AccountPickerController extends EventEmitter {
     this.#keystore = keystore
     this.#networks = networks
     this.#providers = providers
+    this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
@@ -323,17 +336,6 @@ export class AccountPickerController extends EventEmitter {
     )
   }
 
-  async #isKeyIteratorInitializedWithTheSavedSeed() {
-    if (this.keyIterator?.subType !== 'seed') return false
-
-    if (!this.#keystore.hasKeystoreSavedSeed) return false
-
-    const savedSeed = await this.#keystore.getSavedSeed()
-    if (!savedSeed) return false
-
-    return !!this.keyIterator?.isSeedMatching?.(savedSeed.seed)
-  }
-
   async init({
     keyIterator,
     hdPathTemplate,
@@ -359,8 +361,9 @@ export class AccountPickerController extends EventEmitter {
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
-
     await this.forceEmitUpdate()
+    await this.selectNextAccount()
+    await this.addAccounts()
   }
 
   get type() {
@@ -674,10 +677,7 @@ export class AccountPickerController extends EventEmitter {
    * triggered, which uses the `readyToAdd...` properties to further set
    * the newly added accounts data (like preferences, keys and others)
    */
-  async addAccounts(
-    accounts: SelectedAccountForImport[] = [],
-    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
-  ) {
+  async addAccounts(accounts?: SelectedAccountForImport[]) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
@@ -685,7 +685,9 @@ export class AccountPickerController extends EventEmitter {
     await this.forceEmitUpdate()
 
     let newlyCreatedAccounts: Account['addr'][] = []
-    const accountsToAddOnRelayer: SelectedAccountForImport[] = accounts
+    const accountsToAddOnRelayer: SelectedAccountForImport[] = (
+      accounts || this.selectedAccountsFromCurrentSession
+    )
       // Identity only for the smart accounts must be created on the Relayer
       .filter((x) => isSmartAccount(x.account))
       // Skip creating identity for Ambire v1 smart accounts
@@ -741,7 +743,7 @@ export class AccountPickerController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map((x, i) => {
+      ...(accounts || this.selectedAccountsFromCurrentSession).map((x, i) => {
         const alreadyImportedAcc = this.#alreadyImportedAccounts.find(
           (a) => a.addr === x.account.addr
         )
@@ -757,6 +759,57 @@ export class AccountPickerController extends EventEmitter {
         }
       })
     ]
+
+    const readyToAddKeys: ReadyToAddKeys = {
+      internal: [],
+      external: []
+    }
+
+    if (this.type === 'internal') {
+      readyToAddKeys.internal = this.retrieveInternalKeysOfSelectedAccounts()
+    } else {
+      // External keys flow
+      const keyType = this.type as ExternalKey['type']
+
+      const deviceIds: { [key in ExternalKey['type']]: string } = {
+        ledger: this.#externalSignerControllers.ledger?.deviceId || '',
+        trezor: this.#externalSignerControllers.trezor?.deviceId || '',
+        lattice: this.#externalSignerControllers?.lattice?.deviceId || ''
+      }
+
+      const deviceModels: { [key in ExternalKey['type']]: string } = {
+        ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
+        trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
+        lattice: this.#externalSignerControllers.lattice?.deviceModel || ''
+      }
+
+      const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
+        ({ account, accountKeys }) =>
+          accountKeys.map(({ addr, index }, i) => ({
+            addr,
+            type: keyType,
+            label: `${HARDWARE_WALLET_DEVICE_NAMES[this.type as ExternalKey['type']]} ${
+              getExistingKeyLabel(this.#keystore.keys, addr, this.type as Key['type']) ||
+              getDefaultKeyLabel(
+                this.#keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+                i
+              )
+            }`,
+            dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+            meta: {
+              deviceId: deviceIds[keyType],
+              deviceModel: deviceModels[keyType],
+              // always defined in the case of external keys
+              hdPathTemplate: this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE,
+              index,
+              createdAt: new Date().getTime()
+            }
+          }))
+      )
+
+      readyToAddKeys.external = readyToAddExternalKeys
+    }
+
     this.readyToAddKeys = readyToAddKeys
 
     this.addedAccountsFromCurrentSession = [
