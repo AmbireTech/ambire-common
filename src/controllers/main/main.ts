@@ -210,8 +210,6 @@ export class MainController extends EventEmitter {
 
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
-  #signAccountOpBroadcastPromise?: Promise<SubmittedAccountOp>
-
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
@@ -598,17 +596,45 @@ export class MainController extends EventEmitter {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (this.signAccountOp?.status?.type !== SigningStatus.Done) return
 
-    return this.withStatus(
+    await this.withStatus(
       'broadcastSignedAccountOp',
       async () => {
-        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpBroadcastPromise = this.#broadcastSignedAccountOp().finally(() => {
-          this.#signAccountOpBroadcastPromise = undefined
-        })
-        return this.#signAccountOpBroadcastPromise
+        await this.#broadcastSignedAccountOp()
       },
       true
     )
+  }
+
+  async resolveDappBroadcast(
+    submittedAccountOp: SubmittedAccountOp,
+    dappHandlers: {
+      promise: {
+        session: { name: string; origin: string; icon: string }
+        resolve: (data: any) => void
+        reject: (data: any) => void
+      }
+      txnId?: string
+    }[]
+  ) {
+    // this could take a while
+    // return the txnId to the dapp once it's confirmed as return a txId
+    // that could be front ran would cause bad UX on the dapp side
+    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
+    dappHandlers.forEach((handler) => {
+      if (txnId) {
+        // If the call has a txnId, resolve the promise with it.
+        // This could happen when an EOA account is broadcasting multiple transactions.
+        handler.promise.resolve({ hash: handler.txnId || txnId })
+      } else {
+        handler.promise.reject(
+          ethErrors.rpc.transactionRejected({
+            message: 'Transaction rejected by the bundler'
+          })
+        )
+      }
+    })
+
+    this.emitUpdate()
   }
 
   destroySignAccOp() {
@@ -685,7 +711,7 @@ export class MainController extends EventEmitter {
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.actions.visibleActionsQueue,
-        network
+        this.networks.networks
       )
       // update the portfolio only if new tokens were found through tracing
       if (learnedNewTokens || learnedNewNfts) {
@@ -1095,14 +1121,10 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
-    const signAccountOpChainId = this.signAccountOp?.accountOp.chainId
-    const networkData =
-      network || this.networks.networks.find((n) => n.chainId === signAccountOpChainId)
-
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
       this.actions.visibleActionsQueue,
-      networkData
+      this.networks.networks
     )
 
     await this.portfolio.updateSelectedAccount(
@@ -1685,7 +1707,6 @@ export class MainController extends EventEmitter {
       }
 
       if (this.#signAccountOpSigningPromise) await this.#signAccountOpSigningPromise
-      if (this.#signAccountOpBroadcastPromise) await this.#signAccountOpBroadcastPromise
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -1927,23 +1948,16 @@ export class MainController extends EventEmitter {
       }
     }
 
-    // Note: this may take a while!
-    const txnId = await this.activity.getConfirmedTxId(submittedAccountOp)
-
+    const dappHandlers = []
     // eslint-disable-next-line no-restricted-syntax
     for (const call of calls) {
       const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
-        if (txnId) {
-          // If the call has a txnId, resolve the promise with it.
-          // This could happen when an EOA account is broadcasting multiple transactions.
-          uReq.dappPromise?.resolve({ hash: call.txnId || txnId })
-        } else {
-          uReq.dappPromise?.reject(
-            ethErrors.rpc.transactionRejected({
-              message: 'Transaction rejected by the bundler'
-            })
-          )
+        if (uReq.dappPromise) {
+          dappHandlers.push({
+            promise: uReq.dappPromise,
+            txnId: call.txnId
+          })
         }
 
         this.removeUserRequest(uReq.id, {
@@ -1957,6 +1971,8 @@ export class MainController extends EventEmitter {
         })
       }
     }
+
+    this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
     this.emitUpdate()
   }
@@ -2317,7 +2333,6 @@ export class MainController extends EventEmitter {
           : 'The transaction was'
       } successfully signed and broadcast to the network.`
     })
-    return Promise.resolve(submittedAccountOp)
   }
 
   // ! IMPORTANT !
@@ -2376,11 +2391,9 @@ export class MainController extends EventEmitter {
         isReplacementFeeLow = true
         if (this.signAccountOp) this.signAccountOp.simulate()
       } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
-        message = `Signer key not supported on this network.${
-          !accountState?.isV2
-            ? 'You can add/change signers from the web wallet or contact support.'
-            : 'Please contact support.'
-        }`
+        message = accountState?.isV2
+          ? 'Broadcast failed because of a pending transaction. Please try again'
+          : 'Signer key not supported on this network'
       } else if (originalMessage.includes('underpriced')) {
         message =
           'Transaction fee underpriced. Please select a higher transaction speed and try again'
@@ -2389,6 +2402,15 @@ export class MainController extends EventEmitter {
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
+      } else if (originalMessage.includes('user nonce') && isRelayer) {
+        if (this.signAccountOp) {
+          this.accounts
+            .updateAccountState(this.signAccountOp.accountOp.accountAddr, 'pending', [
+              this.signAccountOp.accountOp.chainId
+            ])
+            .then(() => this.signAccountOp?.simulate())
+            .catch((e) => e)
+        }
       }
     }
 

@@ -7,7 +7,7 @@ import { ErrorType } from '../../libs/errorDecoder/types'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { createRecurringTimeout } from '../../utils/timeout'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 
@@ -28,7 +28,7 @@ export class GasPriceController extends EventEmitter {
 
   blockGasLimit: bigint | undefined = undefined
 
-  gasPriceTimeout?: { start: any; stop: any }
+  stopRefetching: boolean = false
 
   constructor(
     network: Network,
@@ -41,6 +41,14 @@ export class GasPriceController extends EventEmitter {
     this.#provider = provider
     this.#bundlerSwitcher = bundlerSwitcher
     this.#getSignAccountOpState = getSignAccountOpState
+  }
+
+  async refetch() {
+    await wait(12000)
+    if (this.stopRefetching) return
+    const signAccountOpState = this.#getSignAccountOpState()
+    if (!signAccountOpState.isSignRequestStillActive()) return
+    this.fetch('major')
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
@@ -97,12 +105,10 @@ export class GasPriceController extends EventEmitter {
 
     this.emitUpdate()
 
-    if (!this.gasPriceTimeout)
-      this.gasPriceTimeout = createRecurringTimeout(() => this.fetch('major'), 12000)
-    this.gasPriceTimeout.start()
+    this.refetch()
   }
 
   reset() {
-    if (this.gasPriceTimeout) this.gasPriceTimeout.stop()
+    this.stopRefetching = true
   }
 }

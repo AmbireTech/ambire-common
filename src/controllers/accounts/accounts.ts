@@ -252,6 +252,11 @@ export class AccountsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
+    await this.updateAccountState(addr, 'pending', [chainId])
+    return this.accountStates[addr][chainId.toString()]
+  }
+
   toJSON() {
     return {
       ...this,

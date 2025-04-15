@@ -7,7 +7,6 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
-import { getAccountOpsByNetwork } from '../actions/actions'
 
 export const batchCallsFromUserRequests = ({
   accountAddr,
@@ -142,17 +141,31 @@ export const makeAccountOpAction = ({
 export const getAccountOpsForSimulation = (
   account: Account,
   visibleActionsQueue: Action[],
-  network?: Network
-):
-  | {
-      [key: string]: AccountOp[]
-    }
-  | undefined => {
+  networks: Network[]
+): { [key: string]: AccountOp[] } | undefined => {
   const isSmart = isSmartAccount(account)
+  const accountOps = (
+    visibleActionsQueue.filter((a) => a.type === 'accountOp') as AccountOpAction[]
+  )
+    .map((a) => a.accountOp)
+    .filter((op) => {
+      if (op.accountAddr !== account.addr) return false
 
-  // Simulation isn't supported by EOAs if the network doesn't support state override
-  if (!isSmart && (!network || network.rpcNoStateOverride)) return undefined
+      const networkData = networks.find((n) => n.chainId === op.chainId)
 
-  // Simulate all account ops for the account
-  return getAccountOpsByNetwork(account.addr, visibleActionsQueue) || undefined
+      // We cannot simulate if the account isn't smart and the network's RPC doesn't support
+      // state override
+      return isSmart || (networkData && !networkData.rpcNoStateOverride)
+    })
+
+  if (!accountOps.length) return undefined
+
+  return accountOps.reduce((acc: any, accountOp) => {
+    const { chainId } = accountOp
+
+    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
+
+    acc[chainId.toString()].push(accountOp)
+    return acc
+  }, {})
 }
