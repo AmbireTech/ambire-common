@@ -99,8 +99,6 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
   'zksync-native'
 ]
 
-const PERSIST_FOR_SESSION_IDS = ['popup', 'action-window']
-
 /**
  * The Swap and Bridge controller is responsible for managing the state and
  * logic related to swapping and bridging tokens across different networks.
@@ -500,9 +498,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const isSigningOrBroadcasting =
       signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
     const shouldPersistState =
-      (isFormDirty || isSigningOrBroadcasting) &&
-      PERSIST_FOR_SESSION_IDS.includes(sessionId) &&
-      !forceUnload
+      (isFormDirty || isSigningOrBroadcasting) && sessionId === 'popup' && !forceUnload
 
     if (shouldPersistState) return
 
