@@ -124,7 +124,7 @@ export const getBridgeBanners = (
 }
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
+  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
   if (!requests.length) return []
 
   return [
