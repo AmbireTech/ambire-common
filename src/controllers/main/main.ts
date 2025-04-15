@@ -2426,7 +2426,6 @@ export class MainController extends EventEmitter {
     // visualize the success page on the FE instead of resetting the form
     if (type === SIGN_ACCOUNT_OP_SWAP) {
       this.swapAndBridge.resetForm()
-      this.swapAndBridge.destroySignAccountOp()
     }
 
     await this.#notificationManager.create({
@@ -2441,6 +2440,9 @@ export class MainController extends EventEmitter {
           : 'The transaction was'
       } successfully signed and broadcast to the network.`
     })
+
+    // reset the fee payer key
+    this.feePayerKey = null
   }
 
   // ! IMPORTANT !

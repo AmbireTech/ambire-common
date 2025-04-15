@@ -687,6 +687,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
+    this.destroySignAccountOp()
     this.hasProceeded = false
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
