@@ -229,34 +229,8 @@ export async function fetchTxnId(
   }
 }
 
-export async function pollTxnId(
-  identifiedBy: AccountOpIdentifiedBy,
-  network: Network,
-  fetchFn: Fetch,
-  callRelayer: Function,
-  failCount = 0
-): Promise<string | null> {
-  // allow 8 retries and declate fetching the txnId a failure after
-  if (failCount >= 8) return null
-
-  const fetchTxnIdResult = await fetchTxnId(identifiedBy, network, fetchFn, callRelayer)
-  if (fetchTxnIdResult.status === 'rejected') return null
-
-  if (fetchTxnIdResult.status === 'not_found') {
-    const delayPromise = () =>
-      new Promise((resolve) => {
-        setTimeout(resolve, 1500)
-      })
-    await delayPromise()
-    const increase = failCount + 1
-    return pollTxnId(identifiedBy, network, fetchFn, callRelayer, increase)
-  }
-
-  return fetchTxnIdResult.txnId
-}
-
 export function updateOpStatus(
-  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][networkId][index]
+  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][chainId][index]
   // so we could mutate it from inside this method
   opReference: SubmittedAccountOp,
   status: AccountOpStatus,

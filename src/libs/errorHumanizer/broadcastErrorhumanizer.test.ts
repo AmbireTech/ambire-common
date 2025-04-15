@@ -45,7 +45,7 @@ describe('Broadcast errors are humanized', () => {
     const humanizedError = getHumanReadableBroadcastError(error)
 
     expect(humanizedError.message).toBe(
-      `${PREFIX}the user nonce is too low. Is there a pending transaction? Please try broadcasting again.`
+      `${PREFIX}of a pending transaction. Please try broadcasting again.`
     )
   })
   it('Random relayer error is displayed to the user', () => {
@@ -56,5 +56,6 @@ describe('Broadcast errors are humanized', () => {
     expect(humanizedError.message).toBe(
       `${PREFIX}of an unknown error (Origin: Relayer call). Error code: the hamsters have stopped running\nPlease try again or contact Ambire support for assistance.`
     )
+    expect(humanizedError.cause).toBe('the hamsters have stopped running')
   })
 })

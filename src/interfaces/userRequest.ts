@@ -5,7 +5,6 @@ import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
-import { NetworkId } from './network'
 import { EIP7702Signature } from './signatures'
 
 export interface Calls {
@@ -43,7 +42,7 @@ export interface Authorization {
 export interface Message {
   fromActionId: SignMessageAction['id']
   accountAddr: AccountId
-  networkId: NetworkId
+  chainId: bigint
   content: PlainTextMessage | TypedMessage | Authorization
   signature: EIP7702Signature | string | null
 }
@@ -55,11 +54,11 @@ export interface SignUserRequest {
   meta: {
     isSignAction: true
     accountAddr: AccountId
-    networkId: NetworkId
+    chainId: bigint
     paymasterService?: PaymasterService
     isWalletSendCalls?: boolean
     submittedAccountOp?: any
-    activeRouteId?: number
+    activeRouteId?: string
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest

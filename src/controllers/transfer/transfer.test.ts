@@ -2,7 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { velcroUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -17,9 +17,11 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
+import { AccountsController } from '../accounts/accounts'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
-const ethereum = networks.find((x) => x.id === 'ethereum')
-const polygon = networks.find((x) => x.id === 'polygon')
+const ethereum = networks.find((x) => x.chainId === 1n)
+const polygon = networks.find((x) => x.chainId === 137n)
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
@@ -49,7 +51,7 @@ const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUr
 let transferController: TransferController
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 let providersCtrl: ProvidersController
@@ -58,6 +60,7 @@ const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController(
   storageCtrl,
   fetch,
+  relayerUrl,
   (net) => {
     providersCtrl.setProvider(net)
   },
@@ -67,6 +70,20 @@ const networksCtrl = new NetworksController(
 )
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
+
+const accountsCtrl = new AccountsController(
+  storageCtrl,
+  providersCtrl,
+  networksCtrl,
+  () => {},
+  () => {},
+  () => {}
+)
+
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
@@ -81,19 +98,21 @@ describe('Transfer Controller', () => {
       produceMemoryStore(),
       humanizerInfo as HumanizerMeta,
       PLACEHOLDER_SELECTED_ACCOUNT,
-      networksCtrl.networks
+      networksCtrl.networks,
+      selectedAccountCtrl.portfolio,
+      false,
+      '0.0.0'
     )
-    transferController.update({
+    await transferController.update({
       contacts: CONTACTS
     })
     expect(transferController.isInitialized).toBe(true)
   })
-  test('should set address state', () => {
-    transferController.update({
+  test('should set address state', async () => {
+    await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -103,11 +122,10 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(true)
   })
   test('should flag recipient address as a smart contract', async () => {
-    transferController.update({
+    await transferController.update({
       addressState: {
         fieldValue: XWALLET_ADDRESS,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -116,41 +134,38 @@ describe('Transfer Controller', () => {
   test('should show SW warning', async () => {
     const tokens = await getTokens()
     const polOnPolygon = tokens.find(
-      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 137n
     )
 
-    transferController.update({ selectedToken: polOnPolygon })
+    await transferController.update({ selectedToken: polOnPolygon })
     expect(transferController.isSWWarningVisible).toBe(true)
   })
   test('should change selected token', async () => {
     const tokens = await getTokens()
-    const xwalletOnEthereum = tokens.find(
-      (t) => t.address === XWALLET_ADDRESS && t.networkId === 'ethereum'
-    )
-    transferController.update({ selectedToken: xwalletOnEthereum })
+    const xwalletOnEthereum = tokens.find((t) => t.address === XWALLET_ADDRESS && t.chainId === 1n)
+    await transferController.update({ selectedToken: xwalletOnEthereum })
 
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
-    expect(transferController.selectedToken?.networkId).toBe('ethereum')
+    expect(transferController.selectedToken?.chainId).toBe(1n)
   })
 
-  test('should set amount', () => {
-    transferController.update({
+  test('should set amount', async () => {
+    await transferController.update({
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
   })
-  test('should set sw warning agreed', () => {
-    transferController.update({
+  test('should set sw warning agreed', async () => {
+    await transferController.update({
       isSWWarningAgreed: true
     })
     expect(transferController.isSWWarningAgreed).toBe(true)
   })
   test('should set validation form messages', async () => {
-    transferController.update({
+    await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -159,57 +174,54 @@ describe('Transfer Controller', () => {
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
 
     // Recipient address
-    transferController.update({
+    await transferController.update({
       isRecipientAddressUnknownAgreed: true
     })
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
     // Amount
-    transferController.update({
+    await transferController.update({
       amount: '0'
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(false)
 
-    transferController.update({
+    await transferController.update({
       amount: transferController.maxAmount
     })
-    transferController.update({
+    await transferController.update({
       amount: String(Number(transferController.amount) + 1)
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(false)
 
     // Reset
-    transferController.update({
+    await transferController.update({
       amount: transferController.maxAmount
     })
   })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
     const zeroAmountToken = tokens.find(
-      (t) =>
-        t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.networkId === 'ethereum'
+      (t) => t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.chainId === 1n
     )
-    transferController.update({ selectedToken: zeroAmountToken })
+    await transferController.update({ selectedToken: zeroAmountToken })
     expect(transferController.selectedToken?.address).not.toBe(zeroAmountToken?.address)
   })
   test("should accept a token that doesn't have amount but has amountPostSimulation for transfer", async () => {
     const tokens = await getTokens()
     const nativeToken = tokens.find(
-      (t) =>
-        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 1n
     )
     nativeToken!.amountPostSimulation = 10n
-    transferController.update({ selectedToken: nativeToken })
+    await transferController.update({ selectedToken: nativeToken })
     expect(transferController.selectedToken).not.toBe(null)
   })
 
   test('should detect that the recipient is the fee collector', async () => {
-    transferController.update({
+    await transferController.update({
       addressState: {
         fieldValue: FEE_COLLECTOR,
         ensAddress: '',
-        udAddress: '',
         isDomainResolving: false
       }
     })
@@ -225,7 +237,6 @@ describe('Transfer Controller', () => {
     expect(transferController.addressState).toEqual({
       fieldValue: '',
       ensAddress: '',
-      udAddress: '',
       isDomainResolving: false
     })
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)

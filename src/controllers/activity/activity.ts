@@ -6,11 +6,13 @@ import { isSmartAccount } from '../../libs/account/account'
 import {
   fetchFrontRanTxnId,
   fetchTxnId,
+  isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import wait from '../../utils/wait'
 /* eslint-disable import/no-extraneous-dependencies */
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
@@ -39,10 +41,10 @@ interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
   account: string
-  network?: string
+  chainId?: bigint
 }
 
-interface InternalAccountsOps {
+export interface InternalAccountsOps {
   // account => network => SubmittedAccountOp[]
   [key: string]: { [key: string]: SubmittedAccountOp[] }
 }
@@ -182,8 +184,8 @@ export class ActivityController extends EventEmitter {
 
     let filteredItems
 
-    if (filters.network) {
-      filteredItems = this.#accountsOps[filters.account]?.[filters.network] || []
+    if (filters.chainId) {
+      filteredItems = this.#accountsOps[filters.account]?.[filters.chainId.toString()] || []
     } else {
       filteredItems = Object.values(this.#accountsOps[filters.account] || []).flat()
       // By default, #accountsOps are grouped by network and sorted in descending order.
@@ -268,10 +270,10 @@ export class ActivityController extends EventEmitter {
     await Promise.all(promises)
   }
 
-  removeNetworkData(id: Network['id']) {
+  removeNetworkData(chainId: bigint) {
     Object.keys(this.accountsOps).forEach(async (sessionId) => {
       const state = this.accountsOps[sessionId]
-      const isFilteredByRemovedNetwork = state.filters.network === id
+      const isFilteredByRemovedNetwork = state.filters.chainId === chainId
 
       if (isFilteredByRemovedNetwork) {
         await this.filterAccountsOps(
@@ -286,14 +288,15 @@ export class ActivityController extends EventEmitter {
   async addAccountOp(accountOp: SubmittedAccountOp) {
     await this.#initialLoadPromise
 
-    const { accountAddr, networkId } = accountOp
+    const { accountAddr, chainId } = accountOp
 
     if (!this.#accountsOps[accountAddr]) this.#accountsOps[accountAddr] = {}
-    if (!this.#accountsOps[accountAddr][networkId]) this.#accountsOps[accountAddr][networkId] = []
+    if (!this.#accountsOps[accountAddr][chainId.toString()])
+      this.#accountsOps[accountAddr][chainId.toString()] = []
 
     // newest SubmittedAccountOp goes first in the list
-    this.#accountsOps[accountAddr][networkId].unshift({ ...accountOp })
-    trim(this.#accountsOps[accountAddr][networkId])
+    this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp })
+    trim(this.#accountsOps[accountAddr][chainId.toString()])
 
     await this.syncFilteredAccountsOps()
 
@@ -339,147 +342,164 @@ export class ActivityController extends EventEmitter {
     let newestOpTimestamp: number = 0
 
     await Promise.all(
-      Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
-        const network = this.#networks.networks.find((x) => x.id === networkId)
-        if (!network) return
-        const provider = this.#providers.providers[network.id]
+      Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(
+        async (keyAsChainId) => {
+          const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
+          if (!network) return
+          const provider = this.#providers.providers[network.chainId.toString()]
 
-        const selectedAccount = this.#selectedAccount.account?.addr
+          const selectedAccount = this.#selectedAccount.account?.addr
 
-        if (!selectedAccount) return
+          if (!selectedAccount) return
 
-        return Promise.all(
-          this.#accountsOps[selectedAccount][networkId].map(async (accountOp, accountOpIndex) => {
-            // Don't update the current network account ops statuses,
-            // as the statuses are already updated in the previous calls.
-            if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
+          return Promise.all(
+            this.#accountsOps[selectedAccount][network.chainId.toString()].map(
+              async (accountOp, accountOpIndex) => {
+                // Don't update the current network account ops statuses,
+                // as the statuses are already updated in the previous calls.
+                if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
-            shouldEmitUpdate = true
+                shouldEmitUpdate = true
 
-            if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
-              newestOpTimestamp = accountOp.timestamp
-            }
+                if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
+                  newestOpTimestamp = accountOp.timestamp
+                }
 
-            const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
-              const accountOpDate = new Date(op.timestamp)
-              accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
-              const aQuaterHasPassed = accountOpDate < new Date()
-              if (aQuaterHasPassed) {
-                const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex],
-                  AccountOpStatus.BroadcastButStuck
+                const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
+                  const accountOpDate = new Date(op.timestamp)
+                  accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
+                  const aQuaterHasPassed = accountOpDate < new Date()
+                  if (aQuaterHasPassed) {
+                    const updatedOpIfAny = updateOpStatus(
+                      this.#accountsOps[selectedAccount][network.chainId.toString()][
+                        accountOpIndex
+                      ],
+                      AccountOpStatus.BroadcastButStuck
+                    )
+                    if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  }
+                }
+
+                const fetchTxnIdResult = await fetchTxnId(
+                  accountOp.identifiedBy,
+                  network,
+                  this.#fetch,
+                  this.#callRelayer,
+                  accountOp
                 )
-                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              }
-            }
-
-            const fetchTxnIdResult = await fetchTxnId(
-              accountOp.identifiedBy,
-              network,
-              this.#fetch,
-              this.#callRelayer,
-              accountOp
-            )
-            if (fetchTxnIdResult.status === 'rejected') {
-              const updatedOpIfAny = updateOpStatus(
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex],
-                AccountOpStatus.Rejected
-              )
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              return
-            }
-            if (fetchTxnIdResult.status === 'not_found') {
-              declareStuckIfQuaterPassed(accountOp)
-              return
-            }
-
-            const txnId = fetchTxnIdResult.txnId as string
-            this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId
-
-            try {
-              let receipt = await provider.getTransactionReceipt(txnId)
-              if (receipt) {
-                // if the status is a failure and it's an userOp, it means it
-                // could've been front ran. We need to make sure we find the
-                // transaction that has succeeded
-                if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                  const frontRanTxnId = await fetchFrontRanTxnId(
-                    accountOp.identifiedBy,
-                    txnId,
-                    network
+                if (fetchTxnIdResult.status === 'rejected') {
+                  const updatedOpIfAny = updateOpStatus(
+                    this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                    AccountOpStatus.Rejected
                   )
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId =
-                    frontRanTxnId
-                  receipt = await provider.getTransactionReceipt(frontRanTxnId)
-                  if (!receipt) return
+                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  return
+                }
+                if (fetchTxnIdResult.status === 'not_found') {
+                  declareStuckIfQuaterPassed(accountOp)
+                  return
                 }
 
-                // if this is an user op, we have to check the logs
-                let isSuccess: boolean | undefined
-                if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
-                  if (userOpEventLog) isSuccess = userOpEventLog.success
+                const txnId = fetchTxnIdResult.txnId as string
+                this.#accountsOps[selectedAccount][network.chainId.toString()][
+                  accountOpIndex
+                ].txnId = txnId
+
+                try {
+                  let receipt = await provider.getTransactionReceipt(txnId)
+                  if (receipt) {
+                    // if the status is a failure and it's an userOp, it means it
+                    // could've been front ran. We need to make sure we find the
+                    // transaction that has succeeded
+                    if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                      const frontRanTxnId = await fetchFrontRanTxnId(
+                        accountOp.identifiedBy,
+                        txnId,
+                        network
+                      )
+                      this.#accountsOps[selectedAccount][network.chainId.toString()][
+                        accountOpIndex
+                      ].txnId = frontRanTxnId
+                      receipt = await provider.getTransactionReceipt(frontRanTxnId)
+                      if (!receipt) return
+                    }
+
+                    // if this is an user op, we have to check the logs
+                    let isSuccess: boolean | undefined
+                    if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                      const userOpEventLog = parseLogs(
+                        receipt.logs,
+                        accountOp.identifiedBy.identifier
+                      )
+                      if (userOpEventLog) isSuccess = userOpEventLog.success
+                    }
+
+                    // if it's not an userOp or it is, but isSuccess was not found
+                    if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                    const updatedOpIfAny = updateOpStatus(
+                      this.#accountsOps[selectedAccount][network.chainId.toString()][
+                        accountOpIndex
+                      ],
+                      isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                      receipt
+                    )
+                    if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+
+                    if (receipt.status) {
+                      shouldUpdatePortfolio = true
+                    }
+
+                    if (accountOp.isSingletonDeploy && receipt.status) {
+                      await this.#onContractsDeployed(network)
+                    }
+                    return
+                  }
+
+                  // if there's no receipt, confirm there's a txn
+                  // if there's no txn and 15 minutes have passed, declare it a failure
+                  const txn = await provider.getTransaction(txnId)
+                  if (txn) return
+                  declareStuckIfQuaterPassed(accountOp)
+                } catch {
+                  this.emitError({
+                    level: 'silent',
+                    message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
+                    error: new Error(
+                      `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                    )
+                  })
                 }
 
-                // if it's not an userOp or it is, but isSuccess was not found
-                if (isSuccess === undefined) isSuccess = !!receipt.status
-
-                const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[selectedAccount][networkId][accountOpIndex],
-                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
-                  receipt
+                // if there are more than 1 txns with the same nonce and payer,
+                // we can conclude this one is replaced by fee
+                const sameNonceTxns = this.#accountsOps[selectedAccount][
+                  network.chainId.toString()
+                ].filter(
+                  (accOp) =>
+                    accOp.gasFeePayment &&
+                    accountOp.gasFeePayment &&
+                    accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
+                    accOp.nonce.toString() === accountOp.nonce.toString()
                 )
-                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-
-                if (receipt.status) {
+                const confirmedSameNonceTxns = sameNonceTxns.find(
+                  (accOp) =>
+                    accOp.status === AccountOpStatus.Success ||
+                    accOp.status === AccountOpStatus.Failure
+                )
+                if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
+                  const updatedOpIfAny = updateOpStatus(
+                    this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                    AccountOpStatus.UnknownButPastNonce
+                  )
+                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
                   shouldUpdatePortfolio = true
                 }
-
-                if (accountOp.isSingletonDeploy && receipt.status) {
-                  await this.#onContractsDeployed(network)
-                }
-                return
               }
-
-              // if there's no receipt, confirm there's a txn
-              // if there's no txn and 15 minutes have passed, declare it a failure
-              const txn = await provider.getTransaction(txnId)
-              if (txn) return
-              declareStuckIfQuaterPassed(accountOp)
-            } catch {
-              this.emitError({
-                level: 'silent',
-                message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
-                error: new Error(
-                  `activity: failed to get transaction receipt for ${accountOp.txnId}`
-                )
-              })
-            }
-
-            // if there are more than 1 txns with the same nonce and payer,
-            // we can conclude this one is replaced by fee
-            const sameNonceTxns = this.#accountsOps[selectedAccount][networkId].filter(
-              (accOp) =>
-                accOp.gasFeePayment &&
-                accountOp.gasFeePayment &&
-                accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
-                accOp.nonce.toString() === accountOp.nonce.toString()
             )
-            const confirmedSameNonceTxns = sameNonceTxns.find(
-              (accOp) =>
-                accOp.status === AccountOpStatus.Success || accOp.status === AccountOpStatus.Failure
-            )
-            if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-              const updatedOpIfAny = updateOpStatus(
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex],
-                AccountOpStatus.UnknownButPastNonce
-              )
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              shouldUpdatePortfolio = true
-            }
-          })
-        )
-      })
+          )
+        }
+      )
     )
 
     if (shouldEmitUpdate) {
@@ -522,21 +542,23 @@ export class ActivityController extends EventEmitter {
 
   async hideBanner({
     addr,
-    network,
+    chainId,
     timestamp
   }: {
     addr: string
-    network: string
+    chainId: bigint
     timestamp: number
   }) {
     await this.#initialLoadPromise
 
     // shouldn't happen
     if (!this.#accountsOps[addr]) return
-    if (!this.#accountsOps[addr][network]) return
+    if (!this.#accountsOps[addr][chainId.toString()]) return
 
     // find the op we want to update
-    const op = this.#accountsOps[addr][network].find((accOp) => accOp.timestamp === timestamp)
+    const op = this.#accountsOps[addr][chainId.toString()].find(
+      (accOp) => accOp.timestamp === timestamp
+    )
     if (!op) return
 
     // update by reference
@@ -546,15 +568,6 @@ export class ActivityController extends EventEmitter {
     await this.#storage.set('accountsOps', this.#accountsOps)
 
     this.emitUpdate()
-  }
-
-  #throwNotInitialized() {
-    this.emitError({
-      level: 'major',
-      message:
-        "Looks like your activity couldn't be processed. Retry, or contact support if issue persists.",
-      error: new Error('activity: controller not initialized')
-    })
   }
 
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
@@ -573,7 +586,7 @@ export class ActivityController extends EventEmitter {
         // do not show a banner for forcefully hidden banners
         .filter((op) => !(op.flags && op.flags.hideActivityBanner))
         .map((accountOp) => {
-          const network = this.#networks.networks.find((x) => x.id === accountOp.networkId)!
+          const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)!
 
           const url = `https://benzin.ambire.com/${getBenzinUrlParams({
             chainId: network.chainId,
@@ -593,7 +606,7 @@ export class ActivityController extends EventEmitter {
                 actionName: 'hide-activity-banner',
                 meta: {
                   addr: accountOp.accountAddr,
-                  network: accountOp.networkId,
+                  chainId: accountOp.chainId,
                   timestamp: accountOp.timestamp,
                   isHideStyle: true
                 }
@@ -615,20 +628,21 @@ export class ActivityController extends EventEmitter {
    * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
    * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
    */
-  getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null {
+  getNotConfirmedOpIfAny(accId: AccountId, chainId: bigint): SubmittedAccountOp | null {
     const acc = this.#accounts.accounts.find((oneA) => oneA.addr === accId)
     if (!acc) return null
 
     // if the broadcasting account is a smart account, it means relayer
-    // broadcast => it's in this.#accountsOps[acc.addr][networkId]
+    // broadcast => it's in this.#accountsOps[acc.addr][chainId]
     // disregard erc-4337 txns as they shouldn't have an RBF
     const isSA = isSmartAccount(acc)
     if (isSA) {
-      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId]) return null
-      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status!))
+      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][chainId.toString(0)])
+        return null
+      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][chainId.toString(0)][0].status!))
         return null
 
-      return this.#accountsOps[acc.addr][networkId][0]
+      return this.#accountsOps[acc.addr][chainId.toString(0)][0]
     }
 
     // if the account is an EOA, we have to go through all the smart accounts
@@ -638,10 +652,10 @@ export class ActivityController extends EventEmitter {
     )
     const ops: SubmittedAccountOp[] = []
     theEOAandSAaccounts.forEach((oneA) => {
-      if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][networkId]) return
-      const op = this.#accountsOps[oneA.addr][networkId].find(
+      if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][chainId.toString()]) return
+      const op = this.#accountsOps[oneA.addr][chainId.toString()].find(
         (oneOp) =>
-          this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][networkId][0].status!) &&
+          this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][chainId.toString()][0].status!) &&
           oneOp.gasFeePayment?.paidBy === oneA.addr
       )
       if (!op) return
@@ -656,6 +670,48 @@ export class ActivityController extends EventEmitter {
     if (!this.#signedMessages[account]) return null
 
     return this.#signedMessages[account].find(filter)
+  }
+
+  // return a txn id only if we have certainty that this is the final txn id:
+  // EOA broadcast: 100% certainty on broadcast
+  // Relayer | Bundler broadcast: once we have a receipt as there could be
+  // front running or txnId replacement issues
+  async getConfirmedTxId(
+    submittedAccountOp: SubmittedAccountOp,
+    counter = 0
+  ): Promise<string | undefined> {
+    if (
+      !this.#accountsOps[submittedAccountOp.accountAddr] ||
+      !this.#accountsOps[submittedAccountOp.accountAddr][submittedAccountOp.chainId.toString()]
+    )
+      return undefined
+
+    const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr][
+      submittedAccountOp.chainId.toString()
+    ].find((op) => op.identifiedBy === submittedAccountOp.identifiedBy)
+    // shouldn't happen
+    if (!activityAccountOp) return undefined
+
+    if (
+      !isIdentifiedByUserOpHash(activityAccountOp.identifiedBy) &&
+      !isIdentifiedByRelayer(activityAccountOp.identifiedBy)
+    )
+      return activityAccountOp.txnId
+
+    // @frontrunning
+    if (
+      activityAccountOp.status === AccountOpStatus.Pending ||
+      activityAccountOp.status === AccountOpStatus.BroadcastedButNotConfirmed
+    ) {
+      // if the receipt cannot be confirmed after a lot of retries, continue on
+      if (counter >= 30) return activityAccountOp.txnId
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      await wait(1000)
+      return this.getConfirmedTxId(submittedAccountOp, counter + 1)
+    }
+
+    return activityAccountOp.txnId
   }
 
   toJSON() {

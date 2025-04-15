@@ -3,18 +3,34 @@
 import { Interface, ZeroAddress } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Hex } from '../../interfaces/hex'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
-import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import {
+  BundlerStateOverride,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { privSlot } from '../proxyDeploy/deploy'
+import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
 export class V2 extends BaseAccount {
+  // we're state overriding the estimation to make it think
+  // the account is deployed and it has the entry point as a signer
+  //
+  // deployment costs are already added and calculated by the ambire estimation
+  // we're adding 20k gas for SSTORE in the privilege for the entry point
+  // and 15k gas entry point overhead to be on the safe side
+  ENTRY_POINT_DEPLOYMENT_ADDITIONAL_GAS = 35000n
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
@@ -52,13 +68,14 @@ export class V2 extends BaseAccount {
   }
 
   getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     options: {
       feeToken: TokenResult
       op: AccountOp
     }
   ): bigint {
-    if (estimation.error || !estimation.ambireEstimation) return 0n
+    const isError = estimation instanceof Error
+    if (isError || !estimation.ambireEstimation) return 0n
 
     const ambireBroaddcastGas = getBroadcastGas(this, options.op)
     const ambireGas = ambireBroaddcastGas + estimation.ambireEstimation.gasUsed
@@ -68,7 +85,15 @@ export class V2 extends BaseAccount {
 
     // has 4337 => use the bundler if it doesn't have an error
     if (!estimation.bundlerEstimation) return ambireGas
-    const bundlerGasUsed = BigInt(estimation.bundlerEstimation.callGasLimit)
+    let bundlerGasUsed = BigInt(estimation.bundlerEstimation.callGasLimit)
+
+    // if the account is not deployed, add the ambire estimation deployment calc
+    // to the bundler total as we're state overriding the bundler to think
+    // the account is already deployed during estimation
+    if (!this.accountState.isDeployed)
+      bundlerGasUsed +=
+        estimation.ambireEstimation.deploymentGas + this.ENTRY_POINT_DEPLOYMENT_ADDITIONAL_GAS
+
     return bundlerGasUsed > ambireGas ? bundlerGasUsed : ambireGas
   }
 
@@ -111,5 +136,24 @@ export class V2 extends BaseAccount {
       getSignableCalls(accountOp),
       getSpoof(this.account)
     ]) as Hex
+  }
+
+  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
+    if (this.accountState.isDeployed || !!userOp.factory) return undefined
+
+    return {
+      [this.account.addr]: {
+        code: AmbireAccount.binRuntime,
+        stateDiff: {
+          [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
+        }
+      }
+    }
+  }
+
+  // we need to authorize the entry point as a signer if we're deploying
+  // the account via 4337
+  shouldSignDeployAuth(broadcastOption: string): boolean {
+    return broadcastOption === BROADCAST_OPTIONS.byBundler && !this.accountState.isDeployed
   }
 }

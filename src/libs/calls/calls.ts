@@ -4,7 +4,6 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { networks } from '../../consts/networks'
 import { Network } from '../../interfaces/network'
 import { Call } from '../accountOp/types'
 import { TokenResult } from '../portfolio'
@@ -55,7 +54,7 @@ export function decodeFeeCall(
   address: string
   amount: bigint
   isGasTank: boolean
-  network: Network
+  chainId: bigint
 } {
   if (to === FEE_COLLECTOR) {
     if (data === '0x') {
@@ -63,7 +62,7 @@ export function decodeFeeCall(
         address: ZeroAddress,
         amount: value,
         isGasTank: false,
-        network
+        chainId: network.chainId
       }
     }
 
@@ -71,15 +70,15 @@ export function decodeFeeCall(
 
     // Prioritize Ethereum tokens
     const ethereumToken = gasTankFeeTokens.find(
-      ({ symbol: tSymbol, networkId: tNetworkId }) =>
-        tSymbol.toLowerCase() === symbol.toLowerCase() && tNetworkId === 'ethereum'
+      ({ symbol: tSymbol, chainId: tChainId }) =>
+        tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === 1n
     )
     // Fallback to network tokens
     const networkToken =
-      network.id !== 'ethereum'
+      network.chainId !== 1n
         ? gasTankFeeTokens.find(
-            ({ symbol: tSymbol, networkId: tNetworkId }) =>
-              tSymbol.toLowerCase() === symbol.toLowerCase() && tNetworkId === network.id
+            ({ symbol: tSymbol, chainId: tChainId }) =>
+              tSymbol.toLowerCase() === symbol.toLowerCase() && tChainId === network.chainId
           )
         : null
     // Fallback to any network token. Example: user paid the fee on Base
@@ -93,18 +92,18 @@ export function decodeFeeCall(
     // USDT on BSC, but we prioritize the USDT on Ethereum. 18 vs 6 decimals.
     // There is no way to fix this as the call data doesn't contain the decimals nor
     // the network of the token.
-    const { address, networkId } = ethereumToken || networkToken || anyNetworkToken || {}
+    const { address, chainId } = ethereumToken || networkToken || anyNetworkToken || {}
 
     if (!address)
       throw new Error(
-        `Unable to find gas tank fee token for symbol ${symbol} and network ${network.id}`
+        `Unable to find gas tank fee token for symbol ${symbol} and network ${chainId}`
       )
 
     return {
       amount,
       address,
       isGasTank: true,
-      network: networks.find(({ id }) => id === networkId)!
+      chainId: chainId!
     }
   }
 
@@ -113,6 +112,6 @@ export function decodeFeeCall(
     amount,
     address: to,
     isGasTank: false,
-    network
+    chainId: network.chainId
   }
 }

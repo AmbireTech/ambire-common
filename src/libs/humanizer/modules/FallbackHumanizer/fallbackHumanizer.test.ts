@@ -9,7 +9,7 @@ import { fallbackHumanizer } from './fallBackHumanizer'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: 'ethereum',
+  chainId: 1n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,
@@ -84,9 +84,8 @@ const transactions = {
 describe('fallbackHumanizer', () => {
   test('fallback', async () => {
     accountOp.calls = [...transactions.generic]
-    
-    let irCalls = fallbackHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
-    })
+
+    let irCalls = fallbackHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {})
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
       content: 'Call approve(address _spender, uint256 _value)'

@@ -4,8 +4,14 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { AccountOp } from '../accountOp/accountOp'
-import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
+import {
+  BundlerStateOverride,
+  FeePaymentOption,
+  FullEstimation,
+  FullEstimationSummary
+} from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
+import { UserOperation } from '../userOperation/types'
 
 export abstract class BaseAccount {
   protected account: Account
@@ -26,7 +32,7 @@ export abstract class BaseAccount {
 
   // each implementation should declare when an estimation failure is critical
   // and we should display it to the user
-  abstract getEstimationCriticalError(estimation: FullEstimation): Error | null
+  abstract getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null
 
   abstract supportsBundlerEstimation(): boolean
 
@@ -36,7 +42,7 @@ export abstract class BaseAccount {
   ): FeePaymentOption[]
 
   abstract getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     // all of the options below need to be passed. Each implementation
     // decides on its own which are actually important for it
     options: {
@@ -51,21 +57,6 @@ export abstract class BaseAccount {
       op: AccountOp
     }
   ): string
-
-  // this is specific for v2 accounts, hardcoding a false for all else
-  shouldIncludeActivatorCall(broadcastOption: string) {
-    return false
-  }
-
-  // this is specific for eoa7702 accounts
-  shouldSignAuthorization(broadcastOption: string): boolean {
-    return false
-  }
-
-  // valid only EOAs in very specific circumstances
-  shouldBroadcastCallsSeparately(op: AccountOp): boolean {
-    return false
-  }
 
   // can the account type use the receiving amount after the estimation
   // to pay the fee. Smart accounts can but EOA / 7702 EOAs cannot
@@ -84,4 +75,29 @@ export abstract class BaseAccount {
   // we return the calldata specific for each account to allow
   // the estimation to calculate it correctly
   abstract getBroadcastCalldata(accountOp: AccountOp): Hex
+
+  // this is specific for v2 accounts, hardcoding a false for all else
+  shouldIncludeActivatorCall(broadcastOption: string) {
+    return false
+  }
+
+  // this is specific for eoa7702 accounts
+  shouldSignAuthorization(broadcastOption: string): boolean {
+    return false
+  }
+
+  // valid only EOAs in very specific circumstances
+  shouldBroadcastCallsSeparately(op: AccountOp): boolean {
+    return false
+  }
+
+  // describe the state override needed during bundler estimation if any
+  getBundlerStateOverride(userOp: UserOperation): BundlerStateOverride | undefined {
+    return undefined
+  }
+
+  // this is specific for v2 accounts
+  shouldSignDeployAuth(broadcastOption: string): boolean {
+    return false
+  }
 }

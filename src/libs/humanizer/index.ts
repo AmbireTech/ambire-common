@@ -30,10 +30,12 @@ import { embeddedAmbireOperationHumanizer } from './modules/embeddedAmbireOperat
 import { ensModule } from './modules/ENS'
 import fallbackHumanizer from './modules/FallbackHumanizer'
 import gasTankModule from './modules/GasTankModule'
+import GuildModule from './modules/Guild'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
 import { openSeaModule } from './modules/OpenSea'
+import PancakeModule from './modules/Pancake'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
@@ -64,6 +66,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   SocketModule,
   AcrossModule,
   OneInchModule,
+  PancakeModule,
   wrappingModule,
   aaveHumanizer,
   WALLETModule,
@@ -72,6 +75,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   legendsModule,
   singletonFactory,
   ensModule,
+  GuildModule,
   openSeaModule,
   asciiModule,
   fallbackHumanizer,
@@ -95,7 +99,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): Ir
   const accountOp = parse(stringify(_accountOp))
   const humanizerOptions: HumanizerOptions = {
     ...options,
-    networkId: accountOp.networkId
+    chainId: accountOp.chainId
   }
 
   let currentCalls: IrCall[] = accountOp.calls

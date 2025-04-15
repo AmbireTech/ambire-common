@@ -5,7 +5,6 @@
 import { Contract, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -16,7 +15,6 @@ import { Bundler } from '../../services/bundlers/bundler'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
-import { has7702 } from '../7702/7702'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
@@ -28,9 +26,9 @@ import { estimateWithRetries } from './estimateWithRetries'
 import { Erc4337GasLimits, EstimationFlags } from './interfaces'
 
 async function estimate(
+  baseAcc: BaseAccount,
   bundler: Bundler,
   network: Network,
-  accountState: AccountOnchainState,
   userOp: UserOperation,
   errorCallback: Function
 ): Promise<{
@@ -79,16 +77,7 @@ async function estimate(
     return getHumanReadableEstimationError(decodedError)
   }
 
-  // TODO: this should probably be moved to BaseAccount
-  const stateOverride =
-    has7702(network) && accountState.isEOA && !accountState.isSmarterEoa && !userOp.eip7702Auth
-      ? {
-          [userOp.sender]: {
-            code: AmbireAccount7702.binRuntime
-          }
-        }
-      : undefined
-
+  const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
   const initializeRequests = () => [
     bundler.estimate(userOp, network, stateOverride).catch(estimateErrorCallback)
   ]
@@ -98,9 +87,12 @@ async function estimate(
     'estimation-bundler',
     errorCallback
   )
+  const foundError = Array.isArray(estimation)
+    ? estimation.find((res) => res instanceof Error)
+    : null
   return {
     gasPrice,
-    estimation,
+    estimation: foundError ?? estimation,
     nonFatalErrors
   }
 }
@@ -135,11 +127,15 @@ export async function bundlerEstimate(
   const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.signature = getSigForCalculations()
 
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
+    getSignableCallsForBundlerEstimate(localOp)
+  ])
   const paymaster = await paymasterFactory.create(op, userOp, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
   userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
     getSignableCallsForBundlerEstimate(localOp)
   ])
+  const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {
     const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData
@@ -157,7 +153,7 @@ export async function bundlerEstimate(
   while (true) {
     // estimate
     const bundler = switcher.getBundler()
-    const estimations = await estimate(bundler, network, accountState, userOp, errorCallback)
+    const estimations = await estimate(baseAcc, bundler, network, userOp, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -170,7 +166,8 @@ export async function bundlerEstimate(
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
         gasPrice: estimations.gasPrice as GasSpeeds,
         paymaster,
-        flags
+        flags,
+        feeCallType
       }
     }
 

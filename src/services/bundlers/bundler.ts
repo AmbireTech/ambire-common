@@ -12,7 +12,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { decodeError } from '../../libs/errorDecoder'
 import { BundlerError } from '../../libs/errorDecoder/customErrors'
 import { DecodedError } from '../../libs/errorDecoder/types'
-import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
+import { BundlerEstimateResult, BundlerStateOverride } from '../../libs/estimate/interfaces'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
@@ -65,11 +65,7 @@ export abstract class Bundler {
   private async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
-    stateOverride?: {
-      [accAddr: string]: {
-        code: string
-      }
-    }
+    stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
     return stateOverride
@@ -87,11 +83,7 @@ export abstract class Bundler {
   async estimate(
     userOperation: UserOperation,
     network: Network,
-    stateOverride?: {
-      [accAddr: string]: {
-        code: string
-      }
-    }
+    stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
     const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
 
@@ -145,6 +137,7 @@ export abstract class Bundler {
 
   // use this request to check if the bundler supports the network
   static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
+    if (chainId === 146n) return true
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200

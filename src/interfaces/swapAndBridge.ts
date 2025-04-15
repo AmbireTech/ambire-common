@@ -1,3 +1,5 @@
+import { Route as LiFiRoute } from '@lifi/types'
+
 export interface SocketAPIResponse<T> {
   result: T
   success?: boolean
@@ -14,8 +16,13 @@ export interface SocketAPIToken {
   symbol: string
 }
 
-export interface SwapAndBridgeToToken extends SocketAPIToken {
-  // TODO: Strip out the properties that are not needed.
+export interface SwapAndBridgeToToken {
+  symbol: string
+  name: string
+  chainId: number
+  address: string
+  icon?: string
+  decimals: number
 }
 
 export interface SocketAPIQuote {
@@ -26,6 +33,16 @@ export interface SocketAPIQuote {
   selectedRoute: SocketAPIRoute
   selectedRouteSteps: SocketAPIStep[]
   routes: SocketAPIRoute[]
+}
+
+export interface SwapAndBridgeQuote {
+  fromAsset: SwapAndBridgeToToken
+  fromChainId: number
+  toAsset: SwapAndBridgeToToken
+  toChainId: number
+  selectedRoute?: SwapAndBridgeRoute
+  selectedRouteSteps: SwapAndBridgeStep[]
+  routes: SwapAndBridgeRoute[]
 }
 
 export interface SocketAPIRoute {
@@ -54,6 +71,30 @@ export interface SocketAPIRoute {
   minimumGasBalances: object
   extraData: object
   errorMessage?: string
+}
+
+export interface SwapAndBridgeRoute {
+  routeId: string
+  currentUserTxIndex: number
+  fromChainId: number
+  toChainId: number
+  userAddress: string
+  isOnlySwapRoute: boolean
+  fromAmount: string
+  toAmount: string
+  usedBridgeNames?: string[]
+  usedDexName?: string
+  totalGasFeesInUsd: number
+  // TODO: Deprecate userTxs
+  userTxs: SwapAndBridgeUserTx[]
+  sender?: string
+  steps: SwapAndBridgeStep[]
+  receivedValueInUsd: number
+  inputValueInUsd: number
+  outputValueInUsd: number
+  serviceTime: number
+  errorMessage?: string
+  rawRoute: SocketAPIRoute | LiFiRoute
 }
 
 export interface SocketAPISwapUserTx {
@@ -92,9 +133,7 @@ export interface SocketAPIBridgeUserTx {
   steps: SocketAPIStep[]
   stepCount: number
   serviceTime: number
-  sender: string
   routePath: string
-  recipient: string
   maxServiceTime: number
   gasFees: {
     gasAmount: string
@@ -163,9 +202,71 @@ export interface SocketApiBridgeStep {
 
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
+export type SwapAndBridgeStep = {
+  chainId: number
+  fromAmount: string
+  fromAsset: SwapAndBridgeToToken
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset?: SwapAndBridgeToToken
+  }
+  serviceTime?: number
+  minAmountOut: string
+  protocol: {
+    name: string
+    displayName: string
+    icon: string
+  }
+  swapSlippage?: number
+  toAmount: string
+  toAsset: SwapAndBridgeToToken
+  type: 'middleware' | 'swap'
+  userTxIndex?: number
+}
+
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
 
+export type SwapAndBridgeUserTx = {
+  userTxType: 'dex-swap' | 'fund-movr'
+  userTxIndex: number
+  txType: string
+  fromAsset: SwapAndBridgeToToken
+  toAsset: SwapAndBridgeToToken
+  chainId: number
+  fromAmount: string
+  toAmount: string
+  swapSlippage?: number
+  serviceTime?: number
+  protocol: {
+    displayName: string
+    icon: string
+    name: string
+  }
+  minAmountOut: string
+  gasFees: {
+    gasAmount: string
+    gasLimit: number
+    feesInUsd: number
+    asset?: SwapAndBridgeToToken
+  }
+}
+
 export type SocketAPIUserTxApprovalData = {
+  allowanceTarget: string
+  approvalTokenAddress: string
+  minimumApprovalAmount: string
+  owner: string
+}
+
+export type SwapAndBridgeApproval = {
+  allowanceTarget: string
+  approvalTokenAddress: string
+  minimumApprovalAmount: string
+}
+
+export type SwapAndBridgeTxApprovalData = {
   allowanceTarget: string
   approvalTokenAddress: string
   minimumApprovalAmount: string
@@ -177,6 +278,18 @@ export type SocketAPISendTransactionRequest = {
   approvalData: SocketAPIUserTxApprovalData | null
   chainId: number
   totalUserTx: number
+  txData: string
+  txTarget: string
+  txType: 'eth_sendTransaction'
+  userTxIndex: number
+  userTxType: 'fund-movr' | 'dex-swap'
+  value: string
+}
+
+export type SwapAndBridgeSendTxRequest = {
+  activeRouteId: string
+  approvalData: SwapAndBridgeTxApprovalData | null
+  chainId: number
   txData: string
   txTarget: string
   txType: 'eth_sendTransaction'
@@ -203,10 +316,29 @@ export type ActiveRoute = {
   error?: string
 }
 
+export type SwapAndBridgeActiveRoute = {
+  serviceProviderId: 'socket' | 'lifi'
+  sender: string
+  activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
+  userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
+  userTxHash: string | null
+  route?: SwapAndBridgeRoute & {
+    createdAt: string
+    updatedAt: string
+    routeStatus: string
+    fromChainId: number
+    toChainId: number
+    currentUserTxIndex: number
+    transactionData: { txHash: string }[] | null
+    userAddress: string
+  }
+  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
+  error?: string
+}
+
 export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   activeRouteId: SocketAPISendTransactionRequest['activeRouteId']
   userAddress: string
-  totalUserTx: number
   userTxs: SocketAPIUserTx[]
   fromAssetAddress: string
   toAssetAddress: string
@@ -217,6 +349,8 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
 }
 
 export type SocketRouteStatus = 'ready' | 'completed' | null
+
+export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | null
 
 export type SocketAPISupportedChain = {
   chainId: number
@@ -241,10 +375,14 @@ export type SocketAPISupportedChain = {
   explorers: string[]
 }
 
-export type CachedSupportedChains = { lastFetched: number; data: SocketAPISupportedChain[] }
+export type CachedSupportedChains = { lastFetched: number; data: SwapAndBridgeSupportedChain[] }
+
+export interface SwapAndBridgeSupportedChain {
+  chainId: number
+}
 
 type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
 export type CachedToTokenLists = {
-  [key: CachedTokenListKey]: { lastFetched: number; data: SocketAPIToken[] }
+  [key: CachedTokenListKey]: { lastFetched: number; data: SwapAndBridgeToToken[] }
 }

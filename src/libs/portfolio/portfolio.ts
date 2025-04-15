@@ -106,7 +106,7 @@ export class Portfolio {
           return baseCurrencies.map((baseCurrency) => {
             const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
             const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-              .map((x) => x.data.networkId)
+              .map((x) => x.data.chainId)
               .join(',')}&accounts=${queueSegment
               .map((x) => x.data.accountAddr)
               .join(',')}&baseCurrency=${baseCurrency}`
@@ -116,16 +116,16 @@ export class Portfolio {
         {
           timeoutSettings: {
             timeoutAfter: 3000,
-            timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
+            timeoutErrorMessage: `Velcro discovery timed out on ${network.name}`
           },
-          dedupeByKeys: ['networkId', 'accountAddr']
+          dedupeByKeys: ['chainId', 'accountAddr']
         }
       )
     }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
       timeoutSettings: {
         timeoutAfter: 3000,
-        timeoutErrorMessage: `Cena request timed out on ${network.id}`
+        timeoutErrorMessage: `Cena request timed out on ${network.name}`
       }
     })
     this.network = network
@@ -143,7 +143,7 @@ export class Portfolio {
 
     // Get hints (addresses to check on-chain) via Velcro
     const start = Date.now()
-    const networkId = this.network.id
+    const chainId = this.network.chainId
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
@@ -155,7 +155,7 @@ export class Portfolio {
       // but we should not record an error if such is the case
       if (this.network.hasRelayer && !disableAutoDiscovery) {
         hintsFromExternalAPI = await this.batchedVelcroDiscovery({
-          networkId,
+          chainId,
           accountAddr,
           baseCurrency
         })
@@ -166,7 +166,7 @@ export class Portfolio {
         }
       }
     } catch (error: any) {
-      const errorMesssage = `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
+      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
       if (localOpts.previousHintsFromExternalAPI) {
         hints = { ...localOpts.previousHintsFromExternalAPI }
         const TEN_MINUTES = 10 * 60 * 1000
@@ -214,7 +214,7 @@ export class Portfolio {
     // add the fee tokens
     hints.erc20s = [
       ...hints.erc20s,
-      ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+      ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
     const checksummedErc20Hints = hints.erc20s
@@ -388,16 +388,12 @@ export class Portfolio {
       tokens: tokensWithPrices,
       feeTokens: tokensWithPrices.filter((t) => {
         // return the native token
-        if (
-          t.address === ZeroAddress &&
-          t.networkId.toLowerCase() === this.network.id.toLowerCase()
-        )
-          return true
+        if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
         return gasTankFeeTokens.find(
           (gasTankT) =>
             gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase()
+            gasTankT.chainId === t.chainId
         )
       }),
       beforeNonce,

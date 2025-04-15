@@ -1,11 +1,11 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
-import { Network } from '../../interfaces/network'
-import { Warning, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
+import { Price } from '../../interfaces/assets'
+import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
-import { Price, TokenResult } from '../../libs/portfolio'
+import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 
@@ -40,11 +40,11 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 function getSignificantBalanceDecreaseWarning(
   latest: AccountState,
   pending: AccountState,
-  networkId: Network['id'],
+  chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const latestNetworkData = latest?.[networkId]
-  const pendingNetworkData = pending?.[networkId]
+  const latestNetworkData = latest?.[chainId.toString()]
+  const pendingNetworkData = pending?.[chainId.toString()]
   const canDetermineIfBalanceWillDecrease =
     latestNetworkData &&
     !latestNetworkData.isLoading &&

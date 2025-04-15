@@ -47,7 +47,7 @@ function buildMintVestingRequest({
     action: txn,
     meta: {
       isSignAction: true,
-      networkId: selectedToken.networkId,
+      chainId: selectedToken.chainId,
       accountAddr: selectedAccount
     }
   }
@@ -84,7 +84,7 @@ function buildClaimWalletRequest({
     action: txn,
     meta: {
       isSignAction: true,
-      networkId: selectedToken.networkId,
+      chainId: selectedToken.chainId,
       accountAddr: selectedAccount
     }
   }
@@ -115,7 +115,7 @@ function buildTransferUserRequest({
     recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
   if (isNativeTopUp) {
     // if not predefined network, we cannot make a native top up
-    const network = networks.find((net) => net.id === selectedToken.networkId)
+    const network = networks.find((n) => n.chainId === selectedToken.chainId)
     if (!network) return null
 
     // if a wrapped addr is not specified, we cannot make a native top up
@@ -144,7 +144,7 @@ function buildTransferUserRequest({
       action: calls,
       meta: {
         isSignAction: true,
-        networkId: selectedToken.networkId,
+        chainId: selectedToken.chainId,
         accountAddr: selectedAccount
       }
     }
@@ -176,7 +176,7 @@ function buildTransferUserRequest({
     action: txn,
     meta: {
       isSignAction: true,
-      networkId: selectedToken.networkId,
+      chainId: selectedToken.chainId,
       accountAddr: selectedAccount
     }
   }
