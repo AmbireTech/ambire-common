@@ -49,7 +49,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_PAGE = 1
-export const DEFAULT_PAGE_SIZE = 5
+export const DEFAULT_PAGE_SIZE = 1
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 
@@ -87,7 +87,7 @@ export class AccountPickerController extends EventEmitter {
   page: number = DEFAULT_PAGE
 
   /* The number of accounts to be displayed on a single page */
-  pageSize: number = this.subType === 'private-key' ? 1 : 5
+  pageSize: number = DEFAULT_PAGE_SIZE
 
   /* State to indicate the page requested fails to load (and the reason why) */
   pageError: null | string = null
@@ -574,11 +574,20 @@ export class AccountPickerController extends EventEmitter {
     return this.accountsLoading || this.linkedAccountsLoading
   }
 
-  async setPage({ page = this.page }: { page: number }): Promise<void> {
+  async setPage({
+    page = this.page,
+    pageSize
+  }: {
+    page: number
+    pageSize?: number
+  }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    if (page === this.page && this.#derivedAccounts.length) return
+    if (pageSize && pageSize !== this.pageSize) {
+      this.pageSize = pageSize
+      this.page = page
+    } else if (page === this.page && this.#derivedAccounts.length) return
 
     this.page = page
     this.pageError = null
@@ -846,7 +855,7 @@ export class AccountPickerController extends EventEmitter {
     while (true) {
       // Load the accounts for the current page
       // eslint-disable-next-line no-await-in-loop
-      await this.setPage({ page: currentPage })
+      await this.setPage({ page: currentPage, pageSize: DEFAULT_PAGE_SIZE })
       if (this.pageError) {
         throw new EmittableError({
           message: this.pageError,
