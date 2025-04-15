@@ -416,7 +416,11 @@ export class AccountPickerController extends EventEmitter {
 
     this.emitUpdate()
 
-    await this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
+    await this.setPage({
+      page: DEFAULT_PAGE,
+      shouldGetAccountsUsedOnNetworks: DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
+      shouldSearchForLinkedAccounts: DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+    }) // takes the user back on the first page
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
@@ -576,13 +580,25 @@ export class AccountPickerController extends EventEmitter {
 
   async setPage({
     page = this.page,
-    pageSize
+    pageSize,
+    shouldSearchForLinkedAccounts,
+    shouldGetAccountsUsedOnNetworks
   }: {
     page: number
     pageSize?: number
+    shouldSearchForLinkedAccounts?: boolean
+    shouldGetAccountsUsedOnNetworks?: boolean
   }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    if (shouldSearchForLinkedAccounts !== undefined) {
+      this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
+    }
+
+    if (shouldGetAccountsUsedOnNetworks !== undefined) {
+      this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
+    }
 
     if (pageSize && pageSize !== this.pageSize) {
       this.pageSize = pageSize
@@ -855,7 +871,12 @@ export class AccountPickerController extends EventEmitter {
     while (true) {
       // Load the accounts for the current page
       // eslint-disable-next-line no-await-in-loop
-      await this.setPage({ page: currentPage, pageSize: DEFAULT_PAGE_SIZE })
+      await this.setPage({
+        page: currentPage,
+        pageSize: DEFAULT_PAGE_SIZE,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false
+      })
       if (this.pageError) {
         throw new EmittableError({
           message: this.pageError,
