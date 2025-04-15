@@ -1717,6 +1717,9 @@ export class SwapAndBridgeController extends EventEmitter {
     this.signAccountOpController.onUpdate(() => {
       this.emitUpdate()
     })
+    this.signAccountOpController.onError((error) => {
+      this.emitError(error)
+    })
   }
 
   toJSON() {
