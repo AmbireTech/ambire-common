@@ -7,6 +7,7 @@ import {
   BenzinAction,
   DappRequestAction,
   SignMessageAction,
+  SwapAndBridgeAction,
   SwitchAccountAction
 } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
@@ -26,13 +27,33 @@ export type {
   BenzinAction,
   DappRequestAction,
   SignMessageAction,
-  SwitchAccountAction
+  SwitchAccountAction,
+  SwapAndBridgeAction
 }
 
 export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
+const CUSTOM_WINDOW_SIZE: {
+  [key: string]: {
+    width: number
+    height: number
+  }
+} = {
+  signMessage: {
+    width: 720,
+    height: 800
+  },
+  accountOp: {
+    width: 720,
+    height: 800
+  },
+  swapAndBridge: {
+    width: 600,
+    height: 600
+  }
+}
 /**
  * The ActionsController is responsible for storing the converted userRequests
  * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
@@ -89,6 +110,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'switchAccount') {
         return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
+      }
+      if (a.type === 'swapAndBridge') {
+        return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
       }
 
       return true
@@ -274,13 +298,9 @@ export class ActionsController extends EventEmitter {
       try {
         this.actionWindow.openWindowPromise = this.#windowManager
           .open({
-            customSize:
-              this.currentAction?.type === 'accountOp' || this.currentAction?.type === 'signMessage'
-                ? {
-                    width: 720,
-                    height: 800
-                  }
-                : undefined
+            customSize: this.currentAction?.type
+              ? CUSTOM_WINDOW_SIZE[this.currentAction?.type]
+              : undefined
           })
           .finally(() => {
             this.actionWindow.openWindowPromise = undefined
@@ -342,6 +362,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'switchAccount') {
         return a.userRequest.meta.switchToAccountAddr !== address
+      }
+      if (a.type === 'swapAndBridge') {
+        return a.userRequest.meta.accountAddr !== address
       }
 
       return true

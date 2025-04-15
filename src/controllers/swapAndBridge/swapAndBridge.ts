@@ -57,7 +57,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { noStateUpdateStatuses, SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -494,7 +494,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
   unloadScreen(sessionId: string, forceUnload?: boolean) {
     const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
-    const shouldPersistState = isFormDirty && !forceUnload && sessionId === 'popup'
+    const signAccountOpCtrlStatus = this.signAccountOpController?.status?.type
+    const shouldPersistState =
+      (isFormDirty && !forceUnload && sessionId === 'persistent') ||
+      (signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus))
 
     if (shouldPersistState) return
 
