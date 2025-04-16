@@ -1728,10 +1728,6 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
-    // to do: if already initialized, do not re-init
-    // exception would be if the quote has changed but maybe we should
-    // destroy the sign account op instead of updating it as its made
-    // to work with a single account op
     this.signAccountOpController = new SignAccountOpController(
       this.#accounts,
       this.#networks,
@@ -1744,7 +1740,6 @@ export class SwapAndBridgeController extends EventEmitter {
       randomId(), // the account op and the action are fabricated
       accountOp,
       () => {
-        // TODO<oneClickSwap>
         return true
       },
       false,
