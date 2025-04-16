@@ -402,6 +402,13 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
+  get seeds() {
+    return this.#keystoreSeeds.map(({ id, label }) => ({
+      id,
+      label
+    }))
+  }
+
   async #getEncryptedSeedPhrase(
     seed: KeystoreSeed['seed'],
     seedPassphrase?: KeystoreSeed['seedPassphrase']
@@ -986,8 +993,8 @@ export class KeystoreController extends EventEmitter {
       return (
         this.#keystoreSeeds.find(
           (s) =>
-            s.seed === encryptedKeyIteratorSeed.seed &&
-            s.seedPassphrase === encryptedKeyIteratorSeed.passphrase
+            s.seed === encryptedKeyIteratorSeed?.seed &&
+            s.seedPassphrase === encryptedKeyIteratorSeed?.passphrase
         ) || null
       )
     }
@@ -1001,6 +1008,7 @@ export class KeystoreController extends EventEmitter {
       ...super.toJSON(),
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
       keys: this.keys,
+      seeds: this.seeds,
       hasPasswordSecret: this.hasPasswordSecret,
       hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
