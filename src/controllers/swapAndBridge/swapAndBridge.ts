@@ -213,6 +213,13 @@ export class SwapAndBridgeController extends EventEmitter {
 
   hasProceeded: boolean = false
 
+  /**
+   * Describes whether quote refetch should happen at a given interval.
+   * We forbid it:
+   * - when the user has chosen a custom route by himself
+   */
+  isAutoSelectRouteDisabled: boolean = false
+
   constructor({
     accounts,
     keystore,
@@ -689,6 +696,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.quoteRoutesStatuses = {}
     this.destroySignAccountOp()
     this.hasProceeded = false
+    this.isAutoSelectRouteDisabled = false
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -701,8 +709,6 @@ export class SwapAndBridgeController extends EventEmitter {
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
-    this.destroySignAccountOp()
-    this.hasProceeded = false
 
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
@@ -919,7 +925,8 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   ) {
     // no updates if the user has commited
-    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
+      return
 
     const quoteId = uuidv4()
     this.#updateQuoteId = quoteId
@@ -985,6 +992,9 @@ export class SwapAndBridgeController extends EventEmitter {
         })
 
         if (quoteId !== this.#updateQuoteId) return
+        // no updates if the user has commited
+        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
+          return
 
         if (
           this.#getIsFormValidToFetchQuote() &&
@@ -1306,7 +1316,7 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  async selectRoute(route: SwapAndBridgeRoute) {
+  async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
     if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
     if (
       ![
@@ -1319,6 +1329,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = route.steps
+    if (isAutoSelectDisabled !== undefined) {
+      this.isAutoSelectRouteDisabled = isAutoSelectDisabled
+    }
 
     await this.initSignAccountOpIfNeeded()
     this.emitUpdate()
@@ -1424,7 +1437,7 @@ export class SwapAndBridgeController extends EventEmitter {
    * Find the next route in line and try to re-estimate with it
    */
   async onEstimationFailure() {
-    if (!this.quote || !this.quote.selectedRoute) return
+    if (!this.quote || !this.quote.selectedRoute || this.isAutoSelectRouteDisabled) return
 
     const routeId = this.quote.selectedRoute.routeId
     let routeIndex = null
@@ -1754,6 +1767,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
+    this.emitUpdate()
+  }
+
+  setIsAutoSelectRouteDisabled(isDisabled: boolean) {
+    this.isAutoSelectRouteDisabled = isDisabled
     this.emitUpdate()
   }
 

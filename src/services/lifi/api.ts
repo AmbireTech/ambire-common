@@ -378,7 +378,7 @@ export class LiFiAPI {
     }
 
     const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-    const slippage = Number(fromAmountInUsd) <= 100 ? '0.015' : '0.005'
+    const slippage = Number(fromAmountInUsd) <= 300 ? '0.010' : '0.005'
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
