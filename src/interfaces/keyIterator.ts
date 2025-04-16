@@ -29,6 +29,10 @@ export interface KeyIterator {
       createdAt: number
     }
   }[]
+  getEncryptedSeed?: (encryptor: any) => Promise<{
+    seed: string
+    passphrase: string | null
+  } | null>
   /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
   isSeedMatching?: (seedToCompareWith: string) => boolean
 }

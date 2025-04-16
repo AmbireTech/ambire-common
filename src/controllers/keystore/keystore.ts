@@ -11,6 +11,7 @@ import {
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
+import { v4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
@@ -94,7 +95,7 @@ export class KeystoreController extends EventEmitter {
 
   #keystoreSeeds: KeystoreSeed[] = []
 
-  #tempSeed: Omit<KeystoreSeed, 'label'> | null = null
+  #tempSeed: Omit<KeystoreSeed, 'id' | 'label'> | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -425,18 +426,6 @@ export class KeystoreController extends EventEmitter {
       })
     }
 
-    // Currently we support only one seed phrase to be added to the keystore
-    // this fist seed phrase will become the saved seed phrase of the wallet
-    if (this.#keystoreSeeds.length) {
-      throw new EmittableError({
-        message: 'You can have only one saved seed in the extension',
-        level: 'major',
-        error: new Error(
-          'keystore: seed phase already added. Storing multiple seed phrases not supported yet'
-        )
-      })
-    }
-
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above\
@@ -448,7 +437,7 @@ export class KeystoreController extends EventEmitter {
     }
   }
 
-  async addTempSeed({ seed, seedPassphrase, hdPathTemplate }: Omit<KeystoreSeed, 'label'>) {
+  async addTempSeed({ seed, seedPassphrase, hdPathTemplate }: Omit<KeystoreSeed, 'id' | 'label'>) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -483,18 +472,21 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: Omit<KeystoreSeed, 'label'>) {
+  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: Omit<KeystoreSeed, 'id' | 'label'>) {
     const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(
       seed,
       seedPassphrase
     )
 
-    const existingEntry = this.#keystoreSeeds.find((entry) => entry.seed === seedPhrase)
+    const existingEntry = this.#keystoreSeeds.find(
+      (entry) => entry.seed === seedPhrase && entry.seedPassphrase === seedPassphrase
+    )
     if (existingEntry) return
 
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
     const newEntry = {
+      id: v4(),
       label,
       seed: seedPhrase,
       seedPassphrase: passphrase,
@@ -508,7 +500,7 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addSeed(keystoreSeed: Omit<KeystoreSeed, 'label'>) {
+  async addSeed(keystoreSeed: Omit<KeystoreSeed, 'id' | 'label'>) {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true)
   }
 
@@ -981,6 +973,26 @@ export class KeystoreController extends EventEmitter {
     if (!this.#tempSeed || !keyIterator || keyIterator.subType !== 'seed') return false
 
     return !!keyIterator.isSeedMatching && keyIterator.isSeedMatching(this.#tempSeed.seed)
+  }
+
+  async getKeystoreSeed(keyIterator?: KeyIterator | null) {
+    if (!keyIterator || keyIterator.subType !== 'seed') return null
+
+    if (keyIterator.getEncryptedSeed) {
+      const encryptedKeyIteratorSeed = await keyIterator.getEncryptedSeed(
+        this.#getEncryptedSeedPhrase.bind(this)
+      )
+
+      return (
+        this.#keystoreSeeds.find(
+          (s) =>
+            s.seed === encryptedKeyIteratorSeed.seed &&
+            s.seedPassphrase === encryptedKeyIteratorSeed.passphrase
+        ) || null
+      )
+    }
+
+    return null
   }
 
   toJSON() {

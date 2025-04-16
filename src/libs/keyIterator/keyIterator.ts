@@ -74,6 +74,21 @@ export class KeyIterator implements KeyIteratorInterface {
     throw new Error('keyIterator: invalid argument provided to constructor')
   }
 
+  async getEncryptedSeed(
+    encryptor: (
+      seed: string,
+      seedPassphrase?: string | null | undefined
+    ) => Promise<{
+      seed: string
+      passphrase: string | null
+    }>
+  ) {
+    if (!this.#seedPhrase) return null
+    const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase)
+
+    return encryptedSeed
+  }
+
   async retrieve(
     fromToArr: { from: number; to: number }[],
     hdPathTemplate?: HD_PATH_TEMPLATE_TYPE

@@ -491,6 +491,14 @@ export class MainController extends EventEmitter {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator)) {
       await this.keystore.persistTempSeed()
     }
+
+    const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
+
+    if (storedSeed) {
+      this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
+        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
+      )
+    }
     // Then add keys, because some of the next steps could have validation
     // if keys exists. Should be separate (not combined in Promise.all,
     // since firing multiple keystore actions is not possible

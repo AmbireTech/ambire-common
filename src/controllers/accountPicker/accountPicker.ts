@@ -131,6 +131,10 @@ export class AccountPickerController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
+  #addAccountsOnKeystoreReady: {
+    accounts?: SelectedAccountForImport[]
+  } | null = null
+
   constructor({
     accounts,
     keystore,
@@ -170,6 +174,13 @@ export class AccountPickerController extends EventEmitter {
         },
         20
       )
+    })
+
+    this.#keystore.onUpdate(() => {
+      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+        this.#addAccountsOnKeystoreReady = null
+      }
     })
   }
 
@@ -392,6 +403,7 @@ export class AccountPickerController extends EventEmitter {
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
     this.addedAccountsFromCurrentSession = []
+    this.#addAccountsOnKeystoreReady = null
 
     await this.forceEmitUpdate()
   }
@@ -705,6 +717,11 @@ export class AccountPickerController extends EventEmitter {
   async addAccounts(accounts?: SelectedAccountForImport[]) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    if (!this.#keystore.isReadyToStoreKeys) {
+      this.#addAccountsOnKeystoreReady = { accounts }
+      return
+    }
 
     this.addAccountsStatus = 'LOADING'
     await this.forceEmitUpdate()
