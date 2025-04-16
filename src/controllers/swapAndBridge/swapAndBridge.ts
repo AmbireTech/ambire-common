@@ -1655,7 +1655,7 @@ export class SwapAndBridgeController extends EventEmitter {
     // again it shouldn't happen but there might be a case where the from token
     // disappears because of a strange update event. It's fine to just not
     // continue from the point forward
-    if (!this.fromSelectedToken || !this.toSelectedToken) return
+    if (!this.fromSelectedToken || !this.toSelectedToken || !this.toChainId) return
 
     if (
       this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
@@ -1689,6 +1689,9 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
+    // learn the token in the portfolio
+    this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
+
     const calls = await getSwapAndBridgeCalls(
       userTxn,
       this.#selectedAccount.account,
@@ -1702,10 +1705,7 @@ export class SwapAndBridgeController extends EventEmitter {
       // add the real swapTxn
       if (!this.signAccountOpController.accountOp.meta)
         this.signAccountOpController.accountOp.meta = {}
-      this.signAccountOpController.accountOp.meta.swapTxn = {
-        activeRouteId: userTxn.activeRouteId,
-        userTxIndex: userTxn.userTxIndex
-      }
+      this.signAccountOpController.accountOp.meta.swapTxn = userTxn
       return
     }
 
@@ -1724,10 +1724,7 @@ export class SwapAndBridgeController extends EventEmitter {
         hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
       },
       meta: {
-        swapTxn: {
-          activeRouteId: userTxn.activeRouteId,
-          userTxIndex: userTxn.userTxIndex
-        }
+        swapTxn: userTxn
       }
     }
 

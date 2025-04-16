@@ -1519,11 +1519,8 @@ export class MainController extends EventEmitter {
           )
         }
 
-        if (
-          this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit ||
-          this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.Proceeded
-        ) {
-          transaction = await this.swapAndBridge.getRouteStartUserTx()
+        if (this.swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn) {
+          transaction = this.swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
         }
 
         if (activeRoute) {
@@ -1598,10 +1595,7 @@ export class MainController extends EventEmitter {
           }
         }
 
-        if (
-          this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit ||
-          this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.Proceeded
-        ) {
+        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           await this.swapAndBridge.addActiveRoute({
             activeRouteId: transaction.activeRouteId,
             userTxIndex: transaction.userTxIndex
@@ -1618,6 +1612,8 @@ export class MainController extends EventEmitter {
             true
           )
         }
+
+        this.swapAndBridge.resetForm()
       },
       true
     )
