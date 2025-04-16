@@ -99,7 +99,7 @@ export const getBridgeBanners = (
   }
 
   // Handle completed transactions grouping
-  if (completedRoutes.length > 0) {
+  if (inProgressRoutes.length === 0 && completedRoutes.length > 0) {
     banners.push({
       id: 'bridge-completed',
       type: 'success',

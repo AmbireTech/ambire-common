@@ -123,8 +123,9 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
   if (!minServiceTime) return 30000
 
-  if (minServiceTime < 60) return 15000
-  if (minServiceTime <= 180) return 20000
+  // the absolute minimum needs to be 30s, it's not a game changer
+  // if the user waits an additional 15s to get a status check
+  // but it's a game changer if we brick the API with a 429
   if (minServiceTime <= 300) return 30000
   if (minServiceTime <= 600) return 60000
 
