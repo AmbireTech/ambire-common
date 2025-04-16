@@ -535,28 +535,22 @@ export class AccountPickerController extends EventEmitter {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    if (this.selectedAccounts.find((x) => x.account.addr === account.addr)) {
-      this.selectedAccountsFromCurrentSession = this.selectedAccountsFromCurrentSession.filter(
-        (a) => a.account.addr !== account.addr
-      )
-      const accountInAlreadyAddedAccounts = this.#alreadyImportedAccounts.find(
+    if (!this.selectedAccounts.find((x) => x.account.addr === account.addr)) return
+
+    this.selectedAccountsFromCurrentSession = this.selectedAccountsFromCurrentSession.filter(
+      (a) => a.account.addr !== account.addr
+    )
+    const accountInAlreadyAddedAccounts = this.#alreadyImportedAccounts.find(
+      (a) => a.addr === account.addr
+    )
+
+    if (accountInAlreadyAddedAccounts) {
+      const accountInReadyToRemoveAccounts = this.readyToRemoveAccounts.find(
         (a) => a.addr === account.addr
       )
-
-      if (accountInAlreadyAddedAccounts) {
-        const accountInReadyToRemoveAccounts = this.readyToRemoveAccounts.find(
-          (a) => a.addr === account.addr
-        )
-        if (!accountInReadyToRemoveAccounts) this.readyToRemoveAccounts.push(account)
-      }
-      this.emitUpdate()
-    } else {
-      return this.emitError({
-        level: 'major',
-        message: 'This account cannot be deselected. Please reload and try again.',
-        error: new Error('accountPicker: account not found. Cannot deselect.')
-      })
+      if (!accountInReadyToRemoveAccounts) this.readyToRemoveAccounts.push(account)
     }
+    this.emitUpdate()
   }
 
   /**

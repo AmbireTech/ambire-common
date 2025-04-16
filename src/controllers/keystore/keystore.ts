@@ -718,8 +718,8 @@ export class KeystoreController extends EventEmitter {
     this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
   }
 
-  async sendSeedToUi() {
-    const decrypted = await this.getSavedSeed()
+  async sendSeedToUi(id: string) {
+    const decrypted = await this.getSavedSeed(id)
     this.#windowManager.sendWindowUiMessage({
       seed: decrypted.seed,
       seedPassphrase: decrypted.seedPassphrase
@@ -835,14 +835,17 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async getSavedSeed() {
+  async getSavedSeed(id: string) {
     await this.#initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
 
-    const hdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate
-    const encryptedSeedBytes = getBytes(this.#keystoreSeeds[0].seed)
+    const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id)
+
+    if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
+
+    const encryptedSeedBytes = getBytes(keystoreSeed.seed)
     // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
     // @ts-ignore
@@ -850,19 +853,19 @@ export class KeystoreController extends EventEmitter {
     const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes)
     const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes)
 
-    if (this.#keystoreSeeds[0].seedPassphrase) {
-      const encryptedSeedPassphraseBytes = getBytes(this.#keystoreSeeds[0].seedPassphrase)
+    if (keystoreSeed.seedPassphrase) {
+      const encryptedSeedPassphraseBytes = getBytes(keystoreSeed.seedPassphrase)
       const decryptedSeedPassphraseBytes = aesCtr.decrypt(encryptedSeedPassphraseBytes)
       const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
 
       return {
         seed: decryptedSeed,
         seedPassphrase: decryptedSeedPassphrase,
-        hdPathTemplate
+        hdPathTemplate: keystoreSeed.hdPathTemplate
       } as KeystoreSeed
     }
 
-    return { seed: decryptedSeed, seedPassphrase: '', hdPathTemplate }
+    return { seed: decryptedSeed, seedPassphrase: '', hdPathTemplate: keystoreSeed.hdPathTemplate }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
