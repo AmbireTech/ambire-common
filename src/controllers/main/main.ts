@@ -2439,6 +2439,7 @@ export class MainController extends EventEmitter {
 
     // reset the fee payer key
     this.feePayerKey = null
+    return Promise.resolve()
   }
 
   // ! IMPORTANT !
