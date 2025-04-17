@@ -24,6 +24,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 /* eslint-disable no-await-in-loop */
+import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import { UserRequest } from '../../interfaces/userRequest'
 import { randomId } from '../../libs/humanizer/utils'
 import { batchCallsFromUserRequests } from '../../libs/main/main'
@@ -1712,9 +1713,7 @@ export class SwapAndBridgeController extends EventEmitter {
       provider,
       accountState
     )
-    const isSwapping = this.fromChainId === this.toChainId
-    // if we're swapping, make sure to include the pending to be signed account op calls
-    const calls = isSwapping ? [...userRequestCalls, ...swapOrBridgeCalls] : swapOrBridgeCalls
+    const calls = [...userRequestCalls, ...swapOrBridgeCalls]
 
     if (this.signAccountOpController) {
       this.signAccountOpController.update({ calls })
@@ -1810,6 +1809,26 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get swapSignErrors(): SignAccountOpError[] {
+    const errors: SignAccountOpError[] = []
+    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+
+    if (
+      isBridge &&
+      this.fromSelectedToken &&
+      this.fromSelectedToken.amountPostSimulation &&
+      this.fromSelectedToken &&
+      this.fromSelectedToken.amountPostSimulation > this.fromSelectedToken.amount &&
+      BigInt(this.fromAmount) > this.fromSelectedToken.amount
+    ) {
+      errors.push({
+        title: 'Please complete your pending sign request before bridging'
+      })
+    }
+
+    return errors
+  }
+
   toJSON() {
     return {
       ...this,
@@ -1826,7 +1845,8 @@ export class SwapAndBridgeController extends EventEmitter {
       banners: this.banners,
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
-      supportedChainIds: this.supportedChainIds
+      supportedChainIds: this.supportedChainIds,
+      swapSignErrors: this.swapSignErrors
     }
   }
 }
