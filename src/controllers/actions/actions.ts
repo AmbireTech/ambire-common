@@ -39,6 +39,10 @@ const CUSTOM_WINDOW_SIZE = {
   width: 720,
   height: 800
 }
+const SWAP_AND_BRIDGE_WINDOW_SIZE = {
+  width: 640,
+  height: 640
+}
 /**
  * The ActionsController is responsible for storing the converted userRequests
  * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
@@ -280,10 +284,18 @@ export class ActionsController extends EventEmitter {
     if (this.actionWindow.windowProps) {
       this.focusActionWindow()
     } else {
+      let customSize
+
+      if (this.currentAction?.type === 'swapAndBridge') {
+        customSize = SWAP_AND_BRIDGE_WINDOW_SIZE
+      } else if (this.currentAction?.type !== 'dappRequest') {
+        customSize = CUSTOM_WINDOW_SIZE
+      }
+
       try {
         this.actionWindow.openWindowPromise = this.#windowManager
           .open({
-            customSize: this.currentAction?.type !== 'dappRequest' ? CUSTOM_WINDOW_SIZE : undefined
+            customSize
           })
           .finally(() => {
             this.actionWindow.openWindowPromise = undefined
