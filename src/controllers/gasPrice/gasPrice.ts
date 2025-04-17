@@ -9,6 +9,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 
 export class GasPriceController extends EventEmitter {
@@ -18,7 +19,11 @@ export class GasPriceController extends EventEmitter {
 
   #bundlerSwitcher: BundlerSwitcher
 
-  #getSignAccountOpState: Function
+  #getSignAccountOpState: () => {
+    estimation: EstimationController
+    readyToSign: boolean
+    isSignRequestStillActive: Function
+  }
 
   // network => GasRecommendation[]
   gasPrices: { [key: string]: GasRecommendation[] } = {}
@@ -34,7 +39,11 @@ export class GasPriceController extends EventEmitter {
     network: Network,
     provider: RPCProvider,
     bundlerSwitcher: BundlerSwitcher,
-    getSignAccountOpState: Function
+    getSignAccountOpState: () => {
+      estimation: EstimationController
+      readyToSign: boolean
+      isSignRequestStillActive: Function
+    }
   ) {
     super()
     this.#network = network
@@ -48,6 +57,14 @@ export class GasPriceController extends EventEmitter {
     if (this.stopRefetching) return
     const signAccountOpState = this.#getSignAccountOpState()
     if (!signAccountOpState.isSignRequestStillActive()) return
+
+    // no need to update the gas prices if the estimation status is Error
+    // try again after 12s
+    if (signAccountOpState.estimation.status === EstimationStatus.Error) {
+      this.refetch()
+      return
+    }
+
     this.fetch('major')
   }
 

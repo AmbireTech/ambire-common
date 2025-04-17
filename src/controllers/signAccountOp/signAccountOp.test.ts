@@ -1,11 +1,11 @@
 /* eslint no-console: "off" */
 
+import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
 import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -403,8 +403,6 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  const accountState = accountsCtrl.accountStates[account.addr][network.chainId.toString()]
-
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
     portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
@@ -457,24 +455,25 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => {
-    return null
-  })
+  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => ({
+    estimation: estimationController,
+    readyToSign: true,
+    isSignRequestStillActive: () => true
+  }))
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController(
     accountsCtrl,
     networksCtrl,
-    providersCtrl,
     keystore,
     portfolio,
     {},
     account,
-    accountState,
     network,
     provider,
     1,
     op,
     () => {},
+    true,
     () => {},
     estimationController,
     gasPriceController

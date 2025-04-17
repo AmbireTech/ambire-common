@@ -360,7 +360,7 @@ export class SocketAPI {
     fromAssetAddress: string
     toAssetAddress: string
     route?: SwapAndBridgeQuote['selectedRoute']
-  }) {
+  }): Promise<SwapAndBridgeSendTxRequest> {
     const params = {
       fromChainId,
       toChainId,

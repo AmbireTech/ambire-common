@@ -1,5 +1,6 @@
 /* eslint-disable class-methods-use-this */
 import { ZeroAddress } from 'ethers'
+import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -14,7 +15,6 @@ import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import { EstimationStatus } from './types'
 
 export class EstimationController extends EventEmitter {
@@ -24,7 +24,7 @@ export class EstimationController extends EventEmitter {
 
   #networks: NetworksController
 
-  #providers: ProvidersController
+  #provider: RPCProvider
 
   #portfolio: PortfolioController
 
@@ -50,7 +50,7 @@ export class EstimationController extends EventEmitter {
     keystore: KeystoreController,
     accounts: AccountsController,
     networks: NetworksController,
-    providers: ProvidersController,
+    provider: RPCProvider,
     portfolio: PortfolioController,
     bundlerSwitcher: BundlerSwitcher
   ) {
@@ -58,7 +58,7 @@ export class EstimationController extends EventEmitter {
     this.#keystore = keystore
     this.#accounts = accounts
     this.#networks = networks
-    this.#providers = providers
+    this.#provider = provider
     this.#portfolio = portfolio
     this.#bundlerSwitcher = bundlerSwitcher
   }
@@ -149,7 +149,7 @@ export class EstimationController extends EventEmitter {
       accountState,
       op,
       network,
-      this.#providers.providers[op.chainId.toString()],
+      this.#provider,
       feeTokens,
       nativeToCheck,
       this.#bundlerSwitcher,

@@ -1,9 +1,9 @@
-import { AccountsController } from 'controllers/accounts/accounts'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import {
   CachedSupportedChains,
@@ -23,6 +23,11 @@ import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
+/* eslint-disable no-await-in-loop */
+import { SignAccountOpError } from '../../interfaces/signAccountOp'
+import { UserRequest } from '../../interfaces/userRequest'
+import { randomId } from '../../libs/humanizer/utils'
+import { batchCallsFromUserRequests } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -31,6 +36,7 @@ import {
   getActiveRoutesForAccount,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
+  getSwapAndBridgeCalls,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -43,13 +49,18 @@ import { validateSendTransferAmount } from '../../services/validations/validate'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
+import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-/* eslint-disable no-await-in-loop */
+import { noStateUpdateStatuses, SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -73,7 +84,9 @@ export enum SwapAndBridgeFormStatus {
   FetchingRoutes = 'fetching-routes',
   NoRoutesFound = 'no-routes-found',
   InvalidRouteSelected = 'invalid-route-selected',
-  ReadyToSubmit = 'ready-to-submit'
+  ReadyToEstimate = 'ready-to-estimate',
+  ReadyToSubmit = 'ready-to-submit',
+  Proceeded = 'proceeded'
 }
 
 const STATUS_WRAPPED_METHODS = {
@@ -189,10 +202,37 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #accounts: AccountsController
 
+  #keystore: KeystoreController
+
+  #portfolio: PortfolioController
+
+  #externalSignerControllers: ExternalSignerControllers
+
+  #providers: ProvidersController
+
+  signAccountOpController: SignAccountOpController | null = null
+
   #portfolioUpdate: Function
+
+  hasProceeded: boolean = false
+
+  /**
+   * Describes whether quote refetch should happen at a given interval.
+   * We forbid it:
+   * - when the user has chosen a custom route by himself
+   */
+  isAutoSelectRouteDisabled: boolean = false
+
+  #isReestimating: boolean = false
+
+  #userRequests: UserRequest[]
 
   constructor({
     accounts,
+    keystore,
+    portfolio,
+    externalSignerControllers,
+    providers,
     selectedAccount,
     networks,
     activity,
@@ -200,9 +240,14 @@ export class SwapAndBridgeController extends EventEmitter {
     storage,
     actions,
     invite,
-    portfolioUpdate
+    portfolioUpdate,
+    userRequests = []
   }: {
     accounts: AccountsController
+    keystore: KeystoreController
+    portfolio: PortfolioController
+    externalSignerControllers: ExternalSignerControllers
+    providers: ProvidersController
     selectedAccount: SelectedAccountController
     networks: NetworksController
     activity: ActivityController
@@ -210,10 +255,15 @@ export class SwapAndBridgeController extends EventEmitter {
     storage: StorageController
     actions: ActionsController
     invite: InviteController
+    userRequests: UserRequest[]
     portfolioUpdate?: Function
   }) {
     super()
     this.#accounts = accounts
+    this.#keystore = keystore
+    this.#portfolio = portfolio
+    this.#externalSignerControllers = externalSignerControllers
+    this.#providers = providers
     this.#portfolioUpdate = portfolioUpdate || (() => {})
     this.#selectedAccount = selectedAccount
     this.#networks = networks
@@ -222,6 +272,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#storage = storage
     this.#actions = actions
     this.#invite = invite
+    this.#userRequests = userRequests
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -246,8 +297,12 @@ export class SwapAndBridgeController extends EventEmitter {
     // Service provider may have changed since the last time the user interacted
     // with the Swap & Bridge. So strip out cached active routes that were NOT
     // made by the current service provider, because they are NOT compatible.
+    //
+    // also, just in case protection: filter out ready routes as we don't have
+    // retry mechanism or follow up transaction handling anymore. Which means
+    // ready routes in the storage are just leftover routes
     this.activeRoutes = this.activeRoutes.filter(
-      (r) => r.serviceProviderId === this.#serviceProviderAPI.id
+      (r) => r.serviceProviderId === this.#serviceProviderAPI.id && r.routeStatus !== 'ready'
     )
 
     this.#selectedAccount.onUpdate(() => {
@@ -311,13 +366,22 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get formStatus() {
+    if (this.hasProceeded) return SwapAndBridgeFormStatus.Proceeded
+
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-    if (this.updateQuoteStatus !== 'INITIAL' && !this.quote)
+    if (this.updateQuoteStatus === 'LOADING' && !this.quote)
       return SwapAndBridgeFormStatus.FetchingRoutes
-    if (!this.quote?.selectedRoute) return SwapAndBridgeFormStatus.NoRoutesFound
+    if (!this.quote?.routes.filter((route) => !route.hasFailed).length)
+      return SwapAndBridgeFormStatus.NoRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
+
+    if (
+      !this.signAccountOpController ||
+      this.signAccountOpController.estimation.status !== EstimationStatus.Success
+    )
+      return SwapAndBridgeFormStatus.ReadyToEstimate
 
     return SwapAndBridgeFormStatus.ReadyToSubmit
   }
@@ -389,7 +453,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // reset only if there are no other instances opened/active
     if (!this.sessionIds.length) {
-      this.resetForm() // clear prev session form state
+      this.reset() // clear prev session form state
       // for each new session remove the completed activeRoutes from the previous session
       this.activeRoutes = this.activeRoutes.filter((r) => r.routeStatus !== 'completed')
       // remove activeRoutes errors from the previous session
@@ -454,15 +518,25 @@ export class SwapAndBridgeController extends EventEmitter {
     return `from-${this.fromChainId}-to-${this.toChainId}`
   }
 
-  unloadScreen(sessionId: string) {
+  unloadScreen(sessionId: string, forceUnload?: boolean) {
+    const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
+    const signAccountOpCtrlStatus = this.signAccountOpController?.status?.type
+    const isSigningOrBroadcasting =
+      signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
+    const shouldPersistState =
+      ((isFormDirty && sessionId === 'popup') || isSigningOrBroadcasting) && !forceUnload
+
+    if (shouldPersistState) return
+
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     if (!this.sessionIds.length) {
-      this.resetForm(true)
+      this.reset(true)
       // Reset health to prevent the error state from briefly flashing
       // before the next health check resolves when the Swap & Bridge
       // screen is opened after a some time
       this.#serviceProviderAPI.resetHealth()
     }
+    this.hasProceeded = false
   }
 
   addOrUpdateError(error: SwapAndBridgeErrorType) {
@@ -618,21 +692,35 @@ export class SwapAndBridgeController extends EventEmitter {
         this.quoteRoutesStatuses = {}
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateQuote()
 
     this.#emitUpdateIfNeeded()
   }
 
   resetForm(shouldEmit?: boolean) {
-    this.fromChainId = 1
-    this.fromSelectedToken = null
+    // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
+    // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
+    // while resetting all other state related to the form.
     this.fromAmount = ''
     this.fromAmountInFiat = ''
     this.fromAmountFieldMode = 'token'
-    this.toChainId = 1
     this.toSelectedToken = null
     this.quote = null
+    this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
+    this.destroySignAccountOp()
+    this.hasProceeded = false
+    this.isAutoSelectRouteDisabled = false
+
+    if (shouldEmit) this.#emitUpdateIfNeeded()
+  }
+
+  reset(shouldEmit?: boolean) {
+    this.resetForm()
+    this.fromChainId = 1
+    this.fromSelectedToken = null
+    this.toChainId = 1
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
@@ -851,6 +939,10 @@ export class SwapAndBridgeController extends EventEmitter {
       skipStatusUpdate: false
     }
   ) {
+    // no updates if the user has commited
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
+      return
+
     const quoteId = uuidv4()
     this.#updateQuoteId = quoteId
 
@@ -885,7 +977,10 @@ export class SwapAndBridgeController extends EventEmitter {
         }
       }
       if (!options.skipPreviousQuoteRemoval) {
-        if (this.quote) this.quote = null
+        if (this.quote) {
+          this.quote = null
+          this.updateQuoteStatus = 'LOADING'
+        }
         this.quoteRoutesStatuses = {}
         this.#emitUpdateIfNeeded()
       }
@@ -912,6 +1007,9 @@ export class SwapAndBridgeController extends EventEmitter {
         })
 
         if (quoteId !== this.#updateQuoteId) return
+        // no updates if the user has commited
+        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
+          return
 
         if (
           this.#getIsFormValidToFetchQuote() &&
@@ -1028,6 +1126,7 @@ export class SwapAndBridgeController extends EventEmitter {
           } catch (error) {
             // if the filtration fails for some reason continue with the original routes
             // array without interrupting the rest of the logic
+            // eslint-disable-next-line no-console
             console.error(error)
           }
 
@@ -1077,6 +1176,7 @@ export class SwapAndBridgeController extends EventEmitter {
           }
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
+        await this.initSignAccountOpIfNeeded()
       } catch (error: any) {
         const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
@@ -1121,8 +1221,12 @@ export class SwapAndBridgeController extends EventEmitter {
     }, nextTimeout)
   }
 
-  async getRouteStartUserTx() {
-    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) return
+  async getRouteStartUserTx(shouldThrowOnError = true): Promise<SwapAndBridgeSendTxRequest | null> {
+    if (
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
+    )
+      return null
 
     try {
       const routeResult = await this.#serviceProviderAPI.startRoute({
@@ -1135,8 +1239,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
       return routeResult
     } catch (error: any) {
-      const { message } = getHumanReadableSwapAndBridgeError(error)
-      throw new EmittableError({ error, level: 'minor', message })
+      if (shouldThrowOnError) {
+        const { message } = getHumanReadableSwapAndBridgeError(error)
+        throw new EmittableError({ error, level: 'minor', message })
+      }
+      return null
     }
   }
 
@@ -1225,11 +1332,12 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  selectRoute(route: SwapAndBridgeRoute) {
+  async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
     if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
     if (
       ![
         SwapAndBridgeFormStatus.ReadyToSubmit,
+        SwapAndBridgeFormStatus.ReadyToEstimate,
         SwapAndBridgeFormStatus.InvalidRouteSelected
       ].includes(this.formStatus)
     )
@@ -1237,8 +1345,12 @@ export class SwapAndBridgeController extends EventEmitter {
 
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = route.steps
+    if (isAutoSelectDisabled !== undefined) {
+      this.isAutoSelectRouteDisabled = isAutoSelectDisabled
+    }
 
-    this.#emitUpdateIfNeeded()
+    await this.initSignAccountOpIfNeeded()
+    this.emitUpdate()
   }
 
   async addActiveRoute({
@@ -1267,17 +1379,6 @@ export class SwapAndBridgeController extends EventEmitter {
           route
         })
       }
-
-      // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
-      // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
-      // while resetting all other state related to the form.
-      this.fromAmount = ''
-      this.fromAmountInFiat = ''
-      this.fromAmountFieldMode = 'token'
-      this.toSelectedToken = null
-      this.quote = null
-      this.quoteRoutesStatuses = {}
-
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
@@ -1348,13 +1449,52 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * Find the next route in line and try to re-estimate with it
+   */
+  async onEstimationFailure() {
+    if (!this.quote || !this.quote.selectedRoute || this.isAutoSelectRouteDisabled) return
+
+    const routeId = this.quote.selectedRoute.routeId
+    let routeIndex = null
+    this.quote.routes.forEach((route, i) => {
+      if (route.routeId === routeId) {
+        this.quote!.routes.splice(i, 1)
+        routeIndex = i
+      }
+    })
+
+    // no routes available
+    if (routeIndex === null || !this.quote.routes[routeIndex]) {
+      this.quote.selectedRoute = undefined
+      this.quote.routes = []
+      this.emitUpdate()
+      return
+    }
+
+    await this.selectRoute(this.quote.routes[routeIndex])
+  }
+
+  async markSelectedRouteAsFailed() {
+    if (!this.quote || !this.quote.selectedRoute) return
+
+    const routeId = this.quote.selectedRoute.routeId
+    this.quote.routes.forEach((route, i) => {
+      if (route.routeId === routeId) {
+        this.quote!.routes[i].hasFailed = true
+      }
+    })
+
+    this.emitUpdate()
+  }
+
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
     op.calls.forEach((call) => {
       this.#handleActiveRouteBroadcastedTransaction(call.fromUserRequestId, op.status)
       this.#handleActiveRouteBroadcastedApproval(call.fromUserRequestId, op.status)
       this.#handleActiveRoutesWithReadyApproval(call.fromUserRequestId, op.status)
-      this.#handleUpdateActiveRoutesUserTxId(call.fromUserRequestId, op.txnId)
+      this.#handleUpdateActiveRoutesUserTxData(call.fromUserRequestId, op)
       this.#handleActiveRoutesCompleted(call.fromUserRequestId, op.status)
     })
   }
@@ -1417,15 +1557,18 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  #handleUpdateActiveRoutesUserTxId(
+  #handleUpdateActiveRoutesUserTxData(
     fromUserRequestId: Call['fromUserRequestId'],
-    opTxnId: SubmittedAccountOp['txnId']
+    submittedAccountOp: SubmittedAccountOp
   ) {
     const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
     if (!activeRoute) return
 
-    if (opTxnId && !activeRoute.userTxHash) {
-      this.updateActiveRoute(activeRoute.activeRouteId, { userTxHash: opTxnId })
+    if (submittedAccountOp && !activeRoute.userTxHash) {
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        userTxHash: submittedAccountOp?.txnId,
+        identifiedBy: submittedAccountOp.identifiedBy
+      })
     }
   }
 
@@ -1457,20 +1600,13 @@ export class SwapAndBridgeController extends EventEmitter {
     if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected) {
       const errorMessage =
         opStatus === AccountOpStatus.Rejected
-          ? 'The transaction was rejected but you can try to sign it again'
-          : 'The transaction failed but you can try to sign it again'
+          ? 'The transaction was rejected. Please try again'
+          : 'The transaction failed onchain. Please try again'
       this.updateActiveRoute(activeRoute.activeRouteId, {
-        routeStatus: 'ready',
+        routeStatus: 'failed',
         error: errorMessage
       })
     }
-  }
-
-  onAccountChange() {
-    this.portfolioTokenList = []
-    this.isTokenListLoading = true
-
-    this.#emitUpdateIfNeeded()
   }
 
   #getIsFormValidToFetchQuote() {
@@ -1497,11 +1633,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(
-      activeRoutesForSelectedAccount,
-      accountOpActions,
-      this.#networks.networks
-    )
+    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
   }
 
   #debounceFunctionCallsOnSameTick(funcName: string, func: Function) {
@@ -1513,6 +1645,188 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#shouldDebounceFlags[funcName] = false
       func()
     }, 0)
+  }
+
+  destroySignAccountOp() {
+    if (!this.signAccountOpController) return
+    this.signAccountOpController.reset()
+    this.signAccountOpController = null
+    this.hasProceeded = false
+  }
+
+  async initSignAccountOpIfNeeded() {
+    // no updates if the user has commited
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
+
+    // shouldn't happen ever
+    if (!this.#selectedAccount.account) return
+
+    // again it shouldn't happen but there might be a case where the from token
+    // disappears because of a strange update event. It's fine to just not
+    // continue from the point forward
+    if (!this.fromSelectedToken || !this.toSelectedToken || !this.toChainId) return
+
+    if (
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
+    )
+      return
+
+    const fromToken = this.fromSelectedToken as TokenResult
+    const network = this.#networks.networks.find((net) => net.chainId === fromToken.chainId)
+
+    // shouldn't happen ever
+    if (!network) return
+
+    const provider = this.#providers.providers[network.chainId.toString()]
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      network.chainId
+    )
+
+    const userTxn = await this.getRouteStartUserTx(false)
+
+    // TODO<swap&bridge>: if auto select route is disabled,
+    // return the error instead
+    // Also, the below code is not working well and needs changes
+    //
+    // if no txn is provided because of a route failure (large slippage),
+    // auto select the next route and continue on
+    if (!userTxn) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.onEstimationFailure()
+      return
+    }
+
+    // learn the token in the portfolio
+    this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
+
+    // check if we have an accountOp in main
+    const userRequestCalls = batchCallsFromUserRequests({
+      accountAddr: this.#selectedAccount.account.addr,
+      chainId: network.chainId,
+      userRequests: this.#userRequests
+    })
+    const swapOrBridgeCalls = await getSwapAndBridgeCalls(
+      userTxn,
+      this.#selectedAccount.account,
+      provider,
+      accountState
+    )
+    const calls = [...userRequestCalls, ...swapOrBridgeCalls]
+
+    if (this.signAccountOpController) {
+      this.signAccountOpController.update({ calls })
+
+      // add the real swapTxn
+      if (!this.signAccountOpController.accountOp.meta)
+        this.signAccountOpController.accountOp.meta = {}
+      this.signAccountOpController.accountOp.meta.swapTxn = userTxn
+      return
+    }
+
+    const accountOp = {
+      accountAddr: this.#selectedAccount.account.addr,
+      chainId: network.chainId,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      nonce: accountState.nonce,
+      signature: null,
+      accountOpToExecuteBefore: null,
+      calls,
+      flags: {
+        hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
+      },
+      meta: {
+        swapTxn: userTxn
+      }
+    }
+
+    this.signAccountOpController = new SignAccountOpController(
+      this.#accounts,
+      this.#networks,
+      this.#keystore,
+      this.#portfolio,
+      this.#externalSignerControllers,
+      this.#selectedAccount.account,
+      network,
+      provider,
+      randomId(), // the account op and the action are fabricated
+      accountOp,
+      () => {
+        return true
+      },
+      false,
+      undefined
+    )
+
+    this.emitUpdate()
+
+    // propagate updates from signAccountOp here
+    this.signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.signAccountOpController.onError((error) => {
+      this.emitError(error)
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reestimate()
+  }
+
+  /**
+   * Reestimate the signAccountOp request periodically.
+   * Encapsulate it here instead of creating an interval in the background
+   * as intervals are tricky and harder to control
+   */
+  async reestimate() {
+    if (this.#isReestimating) return
+
+    this.#isReestimating = true
+    await wait(30000)
+    this.#isReestimating = false
+
+    if (!this.signAccountOpController) return
+    this.signAccountOpController.estimate().catch((e) => {
+      // eslint-disable-next-line no-console
+      console.log('error on swap&bridge re-estimate')
+      // eslint-disable-next-line no-console
+      console.log(e)
+    })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reestimate()
+  }
+
+  setUserProceeded(hasProceeded: boolean) {
+    this.hasProceeded = hasProceeded
+    this.emitUpdate()
+  }
+
+  setIsAutoSelectRouteDisabled(isDisabled: boolean) {
+    this.isAutoSelectRouteDisabled = isDisabled
+    this.emitUpdate()
+  }
+
+  get swapSignErrors(): SignAccountOpError[] {
+    const errors: SignAccountOpError[] = []
+    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+
+    if (
+      isBridge &&
+      this.fromSelectedToken &&
+      this.fromSelectedToken.amountPostSimulation &&
+      this.fromSelectedToken &&
+      this.fromSelectedToken.amountPostSimulation > this.fromSelectedToken.amount &&
+      BigInt(this.fromAmount) > this.fromSelectedToken.amount
+    ) {
+      errors.push({
+        title: 'Please complete your pending sign request before bridging'
+      })
+    }
+
+    return errors
   }
 
   toJSON() {
@@ -1531,7 +1845,8 @@ export class SwapAndBridgeController extends EventEmitter {
       banners: this.banners,
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
-      supportedChainIds: this.supportedChainIds
+      supportedChainIds: this.supportedChainIds,
+      swapSignErrors: this.swapSignErrors
     }
   }
 }

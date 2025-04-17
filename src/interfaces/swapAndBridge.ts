@@ -1,5 +1,7 @@
 import { Route as LiFiRoute } from '@lifi/types'
 
+import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
+
 export interface SocketAPIResponse<T> {
   result: T
   success?: boolean
@@ -95,6 +97,7 @@ export interface SwapAndBridgeRoute {
   serviceTime: number
   errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
+  hasFailed?: boolean
 }
 
 export interface SocketAPISwapUserTx {
@@ -322,6 +325,7 @@ export type SwapAndBridgeActiveRoute = {
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
+  identifiedBy: AccountOpIdentifiedBy
   route?: SwapAndBridgeRoute & {
     createdAt: string
     updatedAt: string

@@ -24,7 +24,7 @@ import {
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -90,7 +90,6 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -230,21 +229,27 @@ export class SignAccountOpController extends EventEmitter {
     text: string
   } | null = null
 
+  /**
+   * Should this signAccountOp instance simulate the accountOp it's
+   * preparing as well as estimate. Simulaton is required in the
+   * original signAccountOp but should be avoided in swap&bridge
+   */
+  #shouldSimulate: boolean
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
-    providers: ProvidersController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accountState: AccountOnchainState,
     network: Network,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
-    traceCall: Function
+    shouldSimulate: boolean,
+    traceCall?: Function
   ) {
     super()
 
@@ -255,7 +260,7 @@ export class SignAccountOpController extends EventEmitter {
     this.account = account
     this.baseAccount = getBaseAccount(
       account,
-      accountState,
+      accounts.accountStates[account.addr][network.chainId.toString()],
       keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
       network
     )
@@ -275,21 +280,23 @@ export class SignAccountOpController extends EventEmitter {
       keystore,
       accounts,
       networks,
-      providers,
+      provider,
       portfolio,
       this.bundlerSwitcher
     )
+    const emptyFunc = () => {}
+    this.#traceCall = traceCall ?? emptyFunc
     this.gasPrice = new GasPriceController(network, provider, this.bundlerSwitcher, () => ({
       estimation: this.estimation,
       readyToSign: this.readyToSign,
       isSignRequestStillActive
     }))
-    this.#traceCall = traceCall
+    this.#shouldSimulate = shouldSimulate
 
-    this.#load()
+    this.#load(shouldSimulate)
   }
 
-  #load() {
+  #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
     this.estimation.onUpdate(() => {
@@ -306,7 +313,7 @@ export class SignAccountOpController extends EventEmitter {
       this.emitError(error)
     })
 
-    this.simulate(true)
+    shouldSimulate ? this.simulate(true) : this.estimate()
     this.gasPrice.fetch()
   }
 
@@ -345,6 +352,8 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
+
+    // we can set a default paidBy and feeToken here if they aren't any set
   }
 
   #setGasFeePayment() {
@@ -430,7 +439,7 @@ export class SignAccountOpController extends EventEmitter {
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'Please select a signer to sign the transaction.',
+        title: 'No signer available',
         code: 'NO_SIGNER'
       })
 
@@ -737,7 +746,7 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp.calls = calls
 
         if (hasNewCalls) this.learnTokensFromCalls()
-        this.simulate(hasNewCalls)
+        this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
@@ -872,9 +881,9 @@ export class SignAccountOpController extends EventEmitter {
 
     if (
       this.isInitialized &&
-      this.accountOp?.signingKeyAddr &&
-      this.accountOp?.signingKeyType &&
-      this.accountOp?.gasFeePayment
+      this.accountOp.signingKeyAddr &&
+      this.accountOp.signingKeyType &&
+      this.accountOp.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 
@@ -1256,11 +1265,11 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get feeToken(): string | null {
-    return this.accountOp?.gasFeePayment?.inToken || null
+    return this.accountOp.gasFeePayment?.inToken || null
   }
 
   get feePaidBy(): string | null {
-    return this.accountOp?.gasFeePayment?.paidBy || null
+    return this.accountOp.gasFeePayment?.paidBy || null
   }
 
   get accountKeyStoreKeys(): Key[] {
@@ -1496,12 +1505,12 @@ export class SignAccountOpController extends EventEmitter {
     // by changing the status to InProgress. Check update() for more info
     this.status = { type: SigningStatus.InProgress }
 
-    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType) {
+    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
 
-    if (!this.accountOp?.gasFeePayment || !this.selectedOption) {
+    if (!this.accountOp.gasFeePayment || !this.selectedOption) {
       const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign(message)
     }
