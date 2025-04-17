@@ -882,8 +882,9 @@ export class AccountPickerController extends EventEmitter {
 
     let currentPage: number = this.page
     let nextAccount: AccountWithNetworkMeta | undefined
+    const maxPages = 10000 // limit, acts as a safeguard to prevent infinite loops
 
-    while (true) {
+    while (currentPage <= maxPages) {
       // TODO: Flag that excludes getting smart account key addresses
       // Load the accounts for the current page
       // eslint-disable-next-line no-await-in-loop
@@ -918,6 +919,10 @@ export class AccountPickerController extends EventEmitter {
       // If no account found on the page, move to the next page
       currentPage++
     }
+
+    // TODO: Should never happen, but could benefit with better error handling
+    if (!nextAccount) console.error('accountPicker: no next account found')
+
     this.selectNextAccountStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
