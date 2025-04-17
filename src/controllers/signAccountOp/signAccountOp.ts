@@ -229,6 +229,13 @@ export class SignAccountOpController extends EventEmitter {
     text: string
   } | null = null
 
+  /**
+   * Should this signAccountOp instance simulate the accountOp it's
+   * preparing as well as estimate. Simulaton is required in the
+   * original signAccountOp but should be avoided in swap&bridge
+   */
+  #shouldSimulate: boolean
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -284,6 +291,7 @@ export class SignAccountOpController extends EventEmitter {
       readyToSign: this.readyToSign,
       isSignRequestStillActive
     }))
+    this.#shouldSimulate = shouldSimulate
 
     this.#load(shouldSimulate)
   }
@@ -431,7 +439,7 @@ export class SignAccountOpController extends EventEmitter {
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'Please select a signer to sign the transaction.',
+        title: 'No signer available',
         code: 'NO_SIGNER'
       })
 
@@ -738,7 +746,7 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp.calls = calls
 
         if (hasNewCalls) this.learnTokensFromCalls()
-        this.simulate(hasNewCalls)
+        this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
