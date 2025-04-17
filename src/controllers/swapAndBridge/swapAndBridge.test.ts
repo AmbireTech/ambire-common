@@ -10,6 +10,7 @@ import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
@@ -286,20 +287,24 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
   })
-  test('should update fromAmount to make the form valid again', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(['ready-to-estimate', 'fetching-routes']).toContain(
-          swapAndBridgeController.formStatus
-        )
-        expect(swapAndBridgeController.quote).not.toBeNull()
-        unsubscribe()
-        done()
-      }
-    })
+  test('should update fromAmount to make the form valid again', async () => {
     swapAndBridgeController.updateForm({ fromAmount: '0.02' })
+
+    const check = async (attempt = 0) => {
+      if (attempt > 10) {
+        throw new Error('Quote timeout')
+      }
+      if (swapAndBridgeController.updateQuoteStatus === 'LOADING') {
+        await wait(1000)
+        await check(attempt + 1)
+        return
+      }
+
+      expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+      expect(swapAndBridgeController.quote).toBeDefined()
+    }
+
+    await check()
   })
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
