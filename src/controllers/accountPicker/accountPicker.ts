@@ -884,11 +884,12 @@ export class AccountPickerController extends EventEmitter {
     let nextAccount: AccountWithNetworkMeta | undefined
 
     while (true) {
+      // TODO: Flag that excludes getting smart account key addresses
       // Load the accounts for the current page
       // eslint-disable-next-line no-await-in-loop
       await this.setPage({
         page: currentPage,
-        pageSize: DEFAULT_PAGE_SIZE,
+        pageSize: this.pageSize,
         shouldGetAccountsUsedOnNetworks: false,
         shouldSearchForLinkedAccounts: false
       })

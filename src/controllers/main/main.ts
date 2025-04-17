@@ -850,7 +850,10 @@ export class MainController extends EventEmitter {
       const { walletSDK } = trezorCtrl
       await this.accountPicker.init({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
-        hdPathTemplate
+        hdPathTemplate,
+        // TODO: Temporary, so that the Trezor key iterator caches accounts upfront,
+        // otherwise - Trezor popup would pop... up on every next page requested
+        pageSize: 5
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
