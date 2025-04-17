@@ -24,7 +24,9 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 /* eslint-disable no-await-in-loop */
+import { UserRequest } from '../../interfaces/userRequest'
 import { randomId } from '../../libs/humanizer/utils'
+import { batchCallsFromUserRequests } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -222,6 +224,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #isReestimating: boolean = false
 
+  #userRequests: UserRequest[]
+
   constructor({
     accounts,
     keystore,
@@ -235,7 +239,8 @@ export class SwapAndBridgeController extends EventEmitter {
     storage,
     actions,
     invite,
-    portfolioUpdate
+    portfolioUpdate,
+    userRequests = []
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -249,6 +254,7 @@ export class SwapAndBridgeController extends EventEmitter {
     storage: StorageController
     actions: ActionsController
     invite: InviteController
+    userRequests: UserRequest[]
     portfolioUpdate?: Function
   }) {
     super()
@@ -265,6 +271,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#storage = storage
     this.#actions = actions
     this.#invite = invite
+    this.#userRequests = userRequests
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -1693,12 +1700,21 @@ export class SwapAndBridgeController extends EventEmitter {
     // learn the token in the portfolio
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
 
-    const calls = await getSwapAndBridgeCalls(
+    // check if we have an accountOp in main
+    const userRequestCalls = batchCallsFromUserRequests({
+      accountAddr: this.#selectedAccount.account.addr,
+      chainId: network.chainId,
+      userRequests: this.#userRequests
+    })
+    const swapOrBridgeCalls = await getSwapAndBridgeCalls(
       userTxn,
       this.#selectedAccount.account,
       provider,
       accountState
     )
+    const isSwapping = this.fromChainId === this.toChainId
+    // if we're swapping, make sure to include the pending to be signed account op calls
+    const calls = isSwapping ? [...userRequestCalls, ...swapOrBridgeCalls] : swapOrBridgeCalls
 
     if (this.signAccountOpController) {
       this.signAccountOpController.update({ calls })

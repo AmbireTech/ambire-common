@@ -180,6 +180,7 @@ describe('SwapAndBridge Controller', () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
     await selectedAccountCtrl.setAccount(accounts[0])
+
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
@@ -192,9 +193,9 @@ describe('SwapAndBridge Controller', () => {
       keystore: new KeystoreController(storageCtrl, {}, windowManager),
       portfolio: portfolioCtrl,
       providers: providersCtrl,
-      externalSignerControllers: {}
+      externalSignerControllers: {},
+      userRequests: []
     })
-
     expect(swapAndBridgeController).toBeDefined()
   })
   test('should initForm', async () => {
