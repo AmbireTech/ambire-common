@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -504,7 +504,7 @@ export class LiFiAPI {
       return statuses.PENDING
     }
 
-    return statuses[response.status]
+    return statuses[response.status as LiFiRouteStatusResponse['status']]
   }
 
   /**

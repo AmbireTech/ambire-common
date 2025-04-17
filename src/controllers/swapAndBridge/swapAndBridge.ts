@@ -1608,13 +1608,6 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  onAccountChange() {
-    this.portfolioTokenList = []
-    this.isTokenListLoading = true
-
-    this.#emitUpdateIfNeeded()
-  }
-
   #getIsFormValidToFetchQuote() {
     return (
       this.fromChainId &&

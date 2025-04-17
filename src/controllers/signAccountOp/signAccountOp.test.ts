@@ -1,11 +1,11 @@
 /* eslint no-console: "off" */
 
+import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
 import fetch from 'node-fetch'
 import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -455,13 +455,11 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => {
-    return {
-      estimation: estimationController,
-      readyToSign: true,
-      isSignRequestStillActive: () => true
-    }
-  })
+  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => ({
+    estimation: estimationController,
+    readyToSign: true,
+    isSignRequestStillActive: () => true
+  }))
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController(
     accountsCtrl,

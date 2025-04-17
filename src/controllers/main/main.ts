@@ -508,8 +508,14 @@ export class MainController extends EventEmitter {
     if (this.actions?.currentAction?.type !== 'switchAccount') {
       this.actions.closeActionWindow()
     }
+    const swapAndBridgeSigningAction = this.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge'
+    )
+    if (swapAndBridgeSigningAction) {
+      this.actions.removeAction(swapAndBridgeSigningAction.id)
+    }
     this.selectedAccount.setAccount(accountToSelect)
-    this.swapAndBridge.onAccountChange()
+    this.swapAndBridge.reset()
     await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()

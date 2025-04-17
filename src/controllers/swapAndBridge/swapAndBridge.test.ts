@@ -8,7 +8,6 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -166,14 +165,13 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
-const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
-const portfolio = new PortfolioController(
+const portfolioCtrl = new PortfolioController(
   storageCtrl,
   fetch,
   providersCtrl,
   networksCtrl,
   accountsCtrl,
-  'https://staging-relayer.ambire.com',
+  relayerUrl,
   velcroUrl
 )
 
@@ -192,10 +190,10 @@ describe('SwapAndBridge Controller', () => {
       serviceProviderAPI: socketAPIMock as any,
       actions: actionsCtrl,
       invite: inviteCtrl,
-      keystore,
-      portfolio,
-      externalSignerControllers: {},
+      keystore: new KeystoreController(storageCtrl, {}, windowManager),
+      portfolio: portfolioCtrl,
       providers: providersCtrl,
+      externalSignerControllers: {},
       userRequests: []
     })
     expect(swapAndBridgeController).toBeDefined()
@@ -259,7 +257,7 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
@@ -293,7 +291,7 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
@@ -315,9 +313,9 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('empty')
-    expect(swapAndBridgeController.quote).toBeNull()
-    expect(swapAndBridgeController.banners).toHaveLength(1)
+    expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+    expect(swapAndBridgeController.quote).toBeDefined()
+    expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
@@ -329,7 +327,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
   })
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
