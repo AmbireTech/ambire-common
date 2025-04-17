@@ -1,3 +1,4 @@
+import { networks } from '../../consts/networks'
 import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPISendTransactionRequest,
@@ -37,6 +38,10 @@ export class SocketAPIMock {
 
   resetHealth() {
     this.isHealthy = null
+  }
+
+  getSupportedChains() {
+    return networks.map((network) => ({ chainId: network.chainId }))
   }
 
   async getToTokenList({
