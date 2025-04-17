@@ -35,24 +35,9 @@ export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
-const CUSTOM_WINDOW_SIZE: {
-  [key: string]: {
-    width: number
-    height: number
-  }
-} = {
-  signMessage: {
-    width: 720,
-    height: 800
-  },
-  accountOp: {
-    width: 720,
-    height: 800
-  },
-  swapAndBridge: {
-    width: 600,
-    height: 600
-  }
+const CUSTOM_WINDOW_SIZE = {
+  width: 720,
+  height: 800
 }
 /**
  * The ActionsController is responsible for storing the converted userRequests
@@ -298,9 +283,7 @@ export class ActionsController extends EventEmitter {
       try {
         this.actionWindow.openWindowPromise = this.#windowManager
           .open({
-            customSize: this.currentAction?.type
-              ? CUSTOM_WINDOW_SIZE[this.currentAction?.type]
-              : undefined
+            customSize: this.currentAction?.type !== 'dappRequest' ? CUSTOM_WINDOW_SIZE : undefined
           })
           .finally(() => {
             this.actionWindow.openWindowPromise = undefined
