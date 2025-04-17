@@ -307,7 +307,11 @@ export class AccountPickerController extends EventEmitter {
   }
 
   get selectedAccounts(): SelectedAccountForImport[] {
-    const accountsAddrOnPage = this.#alreadyImportedAccounts.map((a) => a.addr)
+    const accountsOnPageWithKeys = this.#alreadyImportedAccounts.filter((a) =>
+      this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr))
+    )
+
+    const accountsAddrOnPage = accountsOnPageWithKeys.map((a) => a.addr)
     const selectedAccountsFromPrevSession = this.accountsOnPage
       .filter((a) => accountsAddrOnPage.includes(a.account.addr))
       .map((a) => {
