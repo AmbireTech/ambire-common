@@ -229,6 +229,13 @@ export class SignAccountOpController extends EventEmitter {
     text: string
   } | null = null
 
+  /**
+   * Should this signAccountOp instance simulate the accountOp it's
+   * preparing as well as estimate. Simulaton is required in the
+   * original signAccountOp but should be avoided in swap&bridge
+   */
+  #shouldSimulate: boolean
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
@@ -284,6 +291,7 @@ export class SignAccountOpController extends EventEmitter {
       readyToSign: this.readyToSign,
       isSignRequestStillActive
     }))
+    this.#shouldSimulate = shouldSimulate
 
     this.#load(shouldSimulate)
   }
@@ -738,7 +746,7 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp.calls = calls
 
         if (hasNewCalls) this.learnTokensFromCalls()
-        this.simulate(hasNewCalls)
+        this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
