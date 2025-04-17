@@ -904,7 +904,9 @@ export class AccountPickerController extends EventEmitter {
         ({ isLinked, account }) =>
           !isLinked &&
           !isSmartAccount(account) &&
-          !this.#alreadyImportedAccounts.some((a) => a.addr === account.addr)
+          !this.#alreadyImportedAccounts
+            .filter((a) => this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr)))
+            .some((a) => a.addr === account.addr)
       )?.account
 
       if (nextAccount) {
