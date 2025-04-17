@@ -189,6 +189,7 @@ export class AccountPickerController extends EventEmitter {
       // The displayed (visible) accounts on page should not include the derived
       // EOA (basic) accounts only used as smart account keys, they should not
       // be visible nor importable (or selectable).
+      .filter((a) => !isSmartAccount(a.account))
       .filter((x) => !isDerivedForSmartAccountKeyOnly(x.index))
       .flatMap((derivedAccount) => {
         const associatedLinkedAccounts = this.#linkedAccounts.filter(
@@ -261,7 +262,12 @@ export class AccountPickerController extends EventEmitter {
         ]
       })
 
-    const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts]
+    const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts].filter(
+      (a) =>
+        !isSmartAccount(a.account) ||
+        (isSmartAccount(a.account) &&
+          this.#linkedAccounts.find((linkedAcc) => linkedAcc.account.addr === a.account.addr))
+    )
 
     mergedAccounts.sort((a, b) => {
       const prioritizeAccountType = (item: any) => {
@@ -285,25 +291,28 @@ export class AccountPickerController extends EventEmitter {
       })
     }))
 
-    const hasUsedSmartAccount = accountsWithStatus.some(
-      (a) => isSmartAccount(a.account) && !!a.account.usedOnNetworks.length
-    )
+    const hasUsedSmartAccount = accountsWithStatus.some((a) => isSmartAccount(a.account))
 
-    // if hasUsedSmartAccount = true filter out all unused smart accounts
-    if (hasUsedSmartAccount) {
-      return accountsWithStatus.filter(
-        (a) =>
-          !isSmartAccount(a.account) ||
-          (isSmartAccount(a.account) && a.account.usedOnNetworks.length)
-      )
+    if (!hasUsedSmartAccount) {
+      const newSmartAcc = this.#derivedAccounts
+        .filter((a) => isSmartAccount(a.account))
+        .sort((a, b) => a.index - b.index)[0]
+
+      if (newSmartAcc) {
+        accountsWithStatus.push({
+          ...newSmartAcc,
+          importStatus: getAccountImportStatus({
+            account: newSmartAcc.account,
+            alreadyImportedAccounts: this.#alreadyImportedAccounts,
+            keys: this.#keystore.keys,
+            accountsOnPage: mergedAccounts,
+            keyIteratorType: this.keyIterator?.type
+          })
+        })
+      }
     }
 
-    // or if hasUsedSmartAccount = false return only one "new" smart account for that page
-    return accountsWithStatus.filter(
-      (a) =>
-        !isSmartAccount(a.account) ||
-        (isSmartAccount(a.account) && a.slot === (this.page - 1) * this.pageSize + 1)
-    )
+    return accountsWithStatus
   }
 
   get selectedAccounts(): SelectedAccountForImport[] {
@@ -657,10 +666,6 @@ export class AccountPickerController extends EventEmitter {
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
-            // Search for linked accounts to the basic (EOA) accounts only.
-            // Searching for linked accounts to another Ambire smart accounts
-            // is a feature that Ambire is yet to support.
-            !isSmartAccount(acc.account) &&
             // Skip searching for linked accounts to the derived EOA (basic)
             // accounts that are used for smart account keys only. They are
             // solely purposed to manage 1 particular (smart) account,
@@ -1153,7 +1158,10 @@ export class AccountPickerController extends EventEmitter {
     this.linkedAccountsLoading = true
     this.emitUpdate()
 
-    const keys = accounts.map((acc) => `keys[]=${acc.addr}`).join('&')
+    const keys = accounts
+      .flatMap((a) => a.associatedKeys)
+      .map((k) => `keys[]=${k}`)
+      .join('&')
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
