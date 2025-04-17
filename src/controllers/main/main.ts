@@ -382,7 +382,8 @@ export class MainController extends EventEmitter {
       actions: this.actions,
       portfolioUpdate: () => {
         this.updateSelectedAccountPortfolio(true)
-      }
+      },
+      userRequests: this.userRequests
     })
     this.domains = new DomainsController(this.providers.providers)
 

@@ -3,18 +3,21 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -163,11 +166,23 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
+const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+const portfolio = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  'https://staging-relayer.ambire.com',
+  velcroUrl
+)
+
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
     await selectedAccountCtrl.setAccount(accounts[0])
+
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
@@ -176,9 +191,13 @@ describe('SwapAndBridge Controller', () => {
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
       actions: actionsCtrl,
-      invite: inviteCtrl
+      invite: inviteCtrl,
+      keystore,
+      portfolio,
+      externalSignerControllers: {},
+      providers: providersCtrl,
+      userRequests: []
     })
-
     expect(swapAndBridgeController).toBeDefined()
   })
   test('should initForm', async () => {

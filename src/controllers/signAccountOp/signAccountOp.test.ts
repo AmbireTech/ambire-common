@@ -456,7 +456,11 @@ const init = async (
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
   const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => {
-    return null
+    return {
+      estimation: estimationController,
+      readyToSign: true,
+      isSignRequestStillActive: () => true
+    }
   })
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController(
