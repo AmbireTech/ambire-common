@@ -220,6 +220,8 @@ export class SwapAndBridgeController extends EventEmitter {
    */
   isAutoSelectRouteDisabled: boolean = false
 
+  #isReestimating: boolean = false
+
   constructor({
     accounts,
     keystore,
@@ -678,6 +680,7 @@ export class SwapAndBridgeController extends EventEmitter {
         this.quoteRoutesStatuses = {}
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateQuote()
 
     this.#emitUpdateIfNeeded()
@@ -1111,6 +1114,7 @@ export class SwapAndBridgeController extends EventEmitter {
           } catch (error) {
             // if the filtration fails for some reason continue with the original routes
             // array without interrupting the rest of the logic
+            // eslint-disable-next-line no-console
             console.error(error)
           }
 
@@ -1755,6 +1759,32 @@ export class SwapAndBridgeController extends EventEmitter {
     this.signAccountOpController.onError((error) => {
       this.emitError(error)
     })
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reestimate()
+  }
+
+  /**
+   * Reestimate the signAccountOp request periodically.
+   * Encapsulate it here instead of creating an interval in the background
+   * as intervals are tricky and harder to control
+   */
+  async reestimate() {
+    if (this.#isReestimating) return
+
+    this.#isReestimating = true
+    await wait(30000)
+    this.#isReestimating = false
+
+    if (!this.signAccountOpController) return
+    this.signAccountOpController.estimate().catch((e) => {
+      // eslint-disable-next-line no-console
+      console.log('error on swap&bridge re-estimate')
+      // eslint-disable-next-line no-console
+      console.log(e)
+    })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reestimate()
   }
 
   setUserProceeded(hasProceeded: boolean) {
