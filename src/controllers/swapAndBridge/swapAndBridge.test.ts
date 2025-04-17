@@ -3,7 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -14,7 +14,9 @@ import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -163,6 +165,16 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  relayerUrl,
+  velcroUrl
+)
+
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
@@ -176,7 +188,11 @@ describe('SwapAndBridge Controller', () => {
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
       actions: actionsCtrl,
-      invite: inviteCtrl
+      invite: inviteCtrl,
+      keystore: new KeystoreController(storageCtrl, {}, windowManager),
+      portfolio: portfolioCtrl,
+      providers: providersCtrl,
+      externalSignerControllers: {}
     })
 
     expect(swapAndBridgeController).toBeDefined()
@@ -240,7 +256,7 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
@@ -274,7 +290,7 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
@@ -296,9 +312,9 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('empty')
-    expect(swapAndBridgeController.quote).toBeNull()
-    expect(swapAndBridgeController.banners).toHaveLength(1)
+    expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+    expect(swapAndBridgeController.quote).toBeDefined()
+    expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
@@ -310,7 +326,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
   })
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
