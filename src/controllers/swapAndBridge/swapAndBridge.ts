@@ -512,7 +512,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const isSigningOrBroadcasting =
       signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
     const shouldPersistState =
-      (isFormDirty || isSigningOrBroadcasting) && sessionId === 'popup' && !forceUnload
+      ((isFormDirty && sessionId === 'popup') || isSigningOrBroadcasting) && !forceUnload
 
     if (shouldPersistState) return
 
