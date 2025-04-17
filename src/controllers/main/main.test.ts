@@ -22,7 +22,7 @@ import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import { MainController } from './main'
 
 // Public API key, shared by Socket, for testing purposes only
-const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
+const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
 const windowManager = {
   event: new EventEmitter(),
@@ -35,6 +35,17 @@ const windowManager = {
 
 const notificationManager = {
   create: () => Promise.resolve()
+}
+
+const signAccountOp = {
+  gasPrice: {
+    fetch: jest.fn()
+  },
+  updateStatus: jest.fn(),
+  accountOp: {
+    meta: {}
+  },
+  simulate: jest.fn()
 }
 
 describe('Main Controller ', () => {
@@ -80,7 +91,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
@@ -211,7 +222,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -297,7 +308,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -403,6 +414,7 @@ describe('Main Controller ', () => {
       const { controllerAnyType } = prepareTest()
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           message: 'message',
           error: new Error('error')
         })
@@ -414,6 +426,7 @@ describe('Main Controller ', () => {
       const { controllerAnyType } = prepareTest()
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error: new Error(
             "pimlico_getUserOperationGasPrice some information we don't care about 0x2314214"
           )
@@ -434,6 +447,7 @@ describe('Main Controller ', () => {
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
@@ -448,6 +462,7 @@ describe('Main Controller ', () => {
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
@@ -462,6 +477,7 @@ describe('Main Controller ', () => {
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
@@ -480,6 +496,7 @@ describe('Main Controller ', () => {
       )
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {

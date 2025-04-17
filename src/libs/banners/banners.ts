@@ -47,8 +47,7 @@ const getBridgeBannerText = (
 
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  accountOpActions: AccountOpAction[],
-  networks: Network[]
+  accountOpActions: AccountOpAction[]
 ): Banner[] => {
   const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
     !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
@@ -69,18 +68,9 @@ export const getBridgeBanners = (
     return !isRouteTurnedIntoAccountOp(route)
   })
 
-  const inProgressRoutes = filteredRoutes.filter(
-    (r) => r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve'
-  )
+  const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
 
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
-
-  const remainingRoutes = filteredRoutes.filter(
-    (r) =>
-      r.routeStatus !== 'in-progress' &&
-      r.routeStatus !== 'completed' &&
-      r.routeStatus !== 'waiting-approval-to-resolve'
-  )
 
   const banners: Banner[] = []
 
@@ -96,15 +86,20 @@ export const getBridgeBanners = (
       } in progress.`,
       actions: [
         {
-          label: 'Details',
-          actionName: 'open-swap-and-bridge-tab'
+          label: 'Close',
+          actionName: 'close-bridge',
+          meta: { activeRouteIds: inProgressRoutes.map((r) => r.activeRouteId), isHideStyle: true }
+        },
+        {
+          label: 'View',
+          actionName: 'view-bridge'
         }
       ]
     })
   }
 
   // Handle completed transactions grouping
-  if (completedRoutes.length > 0) {
+  if (inProgressRoutes.length === 0 && completedRoutes.length > 0) {
     banners.push({
       id: 'bridge-completed',
       type: 'success',
@@ -117,45 +112,17 @@ export const getBridgeBanners = (
         {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId) }
+          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId), isHideStyle: true }
         }
       ]
     })
   }
 
-  // Add other statuses normally
-  remainingRoutes.forEach((r) => {
-    const actions: Action[] =
-      r.routeStatus === 'ready'
-        ? [
-            {
-              label: 'Reject',
-              actionName: 'reject-bridge',
-              meta: { activeRouteIds: [r.activeRouteId] }
-            },
-            {
-              label: (r.route?.currentUserTxIndex || 0) >= 1 ? 'Proceed to Next Step' : 'Open',
-              actionName: 'proceed-bridge',
-              meta: { activeRouteId: r.activeRouteId }
-            }
-          ]
-        : []
-
-    banners.push({
-      id: `bridge-${r.activeRouteId}`,
-      type: 'info',
-      category: `bridge-${r.routeStatus}`,
-      title: 'Bridge request awaiting signature',
-      text: getBridgeBannerText(r, isBridgeTxn(r), networks),
-      actions
-    })
-  })
-
   return banners
 }
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
+  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
   if (!requests.length) return []
 
   return [

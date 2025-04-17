@@ -3,18 +3,21 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -163,11 +166,22 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  relayerUrl,
+  velcroUrl
+)
+
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
     await selectedAccountCtrl.setAccount(accounts[0])
+
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
@@ -176,9 +190,13 @@ describe('SwapAndBridge Controller', () => {
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
       actions: actionsCtrl,
-      invite: inviteCtrl
+      invite: inviteCtrl,
+      keystore: new KeystoreController(storageCtrl, {}, windowManager),
+      portfolio: portfolioCtrl,
+      providers: providersCtrl,
+      externalSignerControllers: {},
+      userRequests: []
     })
-
     expect(swapAndBridgeController).toBeDefined()
   })
   test('should initForm', async () => {
@@ -240,7 +258,7 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
@@ -269,18 +287,24 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
   })
-  test('should update fromAmount to make the form valid again', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
-        expect(swapAndBridgeController.quote).not.toBeNull()
-        unsubscribe()
-        done()
-      }
-    })
+  test('should update fromAmount to make the form valid again', async () => {
     swapAndBridgeController.updateForm({ fromAmount: '0.02' })
+
+    const check = async (attempt = 0) => {
+      if (attempt > 10) {
+        throw new Error('Quote timeout')
+      }
+      if (swapAndBridgeController.updateQuoteStatus === 'LOADING') {
+        await wait(1000)
+        await check(attempt + 1)
+        return
+      }
+
+      expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+      expect(swapAndBridgeController.quote).toBeDefined()
+    }
+
+    await check()
   })
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
@@ -296,9 +320,9 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('empty')
-    expect(swapAndBridgeController.quote).toBeNull()
-    expect(swapAndBridgeController.banners).toHaveLength(1)
+    expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+    expect(swapAndBridgeController.quote).toBeDefined()
+    expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
@@ -310,7 +334,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
   })
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()

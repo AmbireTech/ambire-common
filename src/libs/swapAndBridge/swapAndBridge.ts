@@ -7,10 +7,10 @@ import { RPCProvider } from '../../interfaces/provider'
 import {
   SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
+  SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
-import { SignUserRequest } from '../../interfaces/userRequest'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM
@@ -123,8 +123,9 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
   if (!minServiceTime) return 30000
 
-  if (minServiceTime < 60) return 15000
-  if (minServiceTime <= 180) return 20000
+  // the absolute minimum needs to be 30s, it's not a game changer
+  // if the user waits an additional 15s to get a status check
+  // but it's a game changer if we brick the API with a 429
   if (minServiceTime <= 300) return 30000
   if (minServiceTime <= 600) return 60000
 
@@ -171,13 +172,12 @@ const buildRevokeApprovalIfNeeded = async (
   }
 }
 
-const buildSwapAndBridgeUserRequests = async (
+const getSwapAndBridgeCalls = async (
   userTx: SwapAndBridgeSendTxRequest,
-  chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState
-): Promise<SignUserRequest[]> => {
+): Promise<Call[]> => {
   const calls: Call[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
@@ -203,15 +203,25 @@ const buildSwapAndBridgeUserRequests = async (
     fromUserRequestId: userTx.activeRouteId
   })
 
+  return calls
+}
+
+const buildSwapAndBridgeUserRequests = async (
+  userTx: SwapAndBridgeSendTxRequest,
+  chainId: bigint,
+  account: Account,
+  provider: RPCProvider,
+  state: AccountOnchainState
+) => {
   return [
     {
       id: userTx.activeRouteId,
       action: {
         kind: 'calls' as const,
-        calls
+        calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
       },
       meta: {
-        isSignAction: true,
+        isSignAction: true as true,
         chainId,
         accountAddr: account.addr,
         activeRouteId: userTx.activeRouteId,
@@ -223,6 +233,10 @@ const buildSwapAndBridgeUserRequests = async (
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
+
+export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
+  return route.userTxs.some((userTx) => getIsBridgeTxn(userTx.userTxType))
+}
 
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
@@ -282,5 +296,6 @@ export {
   buildSwapAndBridgeUserRequests,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
-  getActiveRoutesUpdateInterval
+  getActiveRoutesUpdateInterval,
+  getSwapAndBridgeCalls
 }

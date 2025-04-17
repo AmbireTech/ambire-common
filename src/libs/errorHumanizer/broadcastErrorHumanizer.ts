@@ -11,7 +11,7 @@ const LAST_RESORT_ERROR_MESSAGE =
 const MESSAGE_PREFIX = 'The transaction cannot be broadcast because'
 /** The paymaster is down or the user is offline */
 export const PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE =
-  'Unable to connect to the paymaster. Please try again later or use a Basic Account to pay the fee if the issue persists.'
+  'Unable to connect to the paymaster. Please try again'
 
 function getPrefix(reason: string | null): string {
   if (!reason) return MESSAGE_PREFIX

@@ -1,16 +1,17 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { InviteController } from '../../controllers/invite/invite'
+import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SwapAndBridgeActiveRoute,
@@ -187,12 +188,18 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ apiKey, fetch }: { apiKey?: string; fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
       Accept: 'application/json',
       'Content-Type': 'application/json'
+    }
+
+    // add the apiKey if specified only. Li Fi can function without an apiKey,
+    // it will just put a custom user rate limit
+    if (apiKey) {
+      this.#headers['x-lifi-api-key'] = apiKey
     }
   }
 
@@ -370,6 +377,8 @@ export class LiFiAPI {
       }
     }
 
+    const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
+    const slippage = Number(fromAmountInUsd) <= 300 ? '0.010' : '0.005'
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
@@ -379,7 +388,7 @@ export class LiFiAPI {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage: '0.005',
+        slippage,
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',
         // These two flags ensure we have NO transaction on the destination chain
@@ -474,10 +483,14 @@ export class LiFiAPI {
     })
     const url = `${this.#baseUrl}/status?${params.toString()}`
 
+    // no error handling on getRouteStatus. Swallow the error and always return
+    // a pending route result and try again. This is the best decision after
+    // discussing it with Li.Fi. as in our one-swap, one-bridge design the
+    // only errors that should be returned are once that will disappear after time
     const response = await this.#handleResponse<LiFiRouteStatusResponse>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
-    })
+    }).catch((e) => e)
 
     const statuses: { [key in LiFiRouteStatusResponse['status']]: SwapAndBridgeRouteStatus } = {
       DONE: 'completed',
@@ -487,7 +500,11 @@ export class LiFiAPI {
       PENDING: null
     }
 
-    return statuses[response.status]
+    if (response instanceof SwapAndBridgeProviderApiError) {
+      return statuses.PENDING
+    }
+
+    return statuses[response.status as LiFiRouteStatusResponse['status']]
   }
 
   /**
