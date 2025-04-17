@@ -431,7 +431,7 @@ export class SignAccountOpController extends EventEmitter {
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'Please select a signer to sign the transaction.',
+        title: 'No signer available',
         code: 'NO_SIGNER'
       })
 
