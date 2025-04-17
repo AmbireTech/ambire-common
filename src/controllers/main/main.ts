@@ -1244,6 +1244,48 @@ export class MainController extends EventEmitter {
     return 'The dApp is trying to sign using an address that is not selected in the extension.'
   }
 
+  /**
+   * Don't allow the user to open new action windows if there's a pending to sign swap action.
+   * This is done to prevent complications with the signing process- e.g. a new request
+   * being sent to the hardware wallet while the swap and bridge one is still pending.
+   * @returns {boolean} - true if an error was thrown
+   * @throws {Error} - if throwRpcError is true
+   */
+  async #swapAndBridgeActionSafeguard(throwRpcError = false): Promise<boolean> {
+    const pendingSwapAction = this.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge'
+    )
+
+    if (!pendingSwapAction) return false
+
+    const isSigning = this.statuses.broadcastSignedAccountOp !== 'INITIAL'
+
+    // The swap and bridge is done/forgotten so we can remove the action
+    if (!isSigning) {
+      this.actions.removeAction(pendingSwapAction.id)
+      this.swapAndBridge.reset()
+      // TODO: remove this ugly fix.
+      // Issue: https://github.com/AmbireTech/ambire-app/issues/4469
+      await wait(500)
+      return false
+    }
+
+    this.actions.focusActionWindow()
+    this.emitError({
+      level: 'major',
+      message: 'Please complete the pending swap action.',
+      error: new Error('Pending swap action')
+    })
+
+    if (throwRpcError) {
+      throw ethErrors.rpc.transactionRejected({
+        message: 'You have a pending swap action. Please complete it before signing.'
+      })
+    }
+
+    return true
+  }
+
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
@@ -1253,6 +1295,8 @@ export class MainController extends EventEmitter {
     }
   ) {
     await this.#initialLoadPromise
+    await this.#swapAndBridgeActionSafeguard(true)
+
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
@@ -1753,6 +1797,10 @@ export class MainController extends EventEmitter {
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
+    const shouldSkipAddUserRequest = await this.#swapAndBridgeActionSafeguard()
+
+    if (shouldSkipAddUserRequest) return
+
     if (req.action.kind === 'calls') {
       ;(req.action as Calls).calls.forEach((_, i) => {
         ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
