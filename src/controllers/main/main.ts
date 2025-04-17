@@ -2341,6 +2341,8 @@ export class MainController extends EventEmitter {
           : 'The transaction was'
       } successfully signed and broadcast to the network.`
     })
+
+    return Promise.resolve()
   }
 
   // ! IMPORTANT !

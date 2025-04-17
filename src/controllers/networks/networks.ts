@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks, ODYSSEY_CHAIN_ID } from '../../consts/networks'
+import { ODYSSEY_CHAIN_ID, networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -221,12 +221,14 @@ export class NetworksController extends EventEmitter {
           updatedNetworks[chainId.toString()] = {
             ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
             ...relayerNetwork,
-            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
+            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])],
+            iconUrls: relayerNetwork.iconUrls
           }
         } else {
           updatedNetworks[chainId.toString()] = {
             ...storedNetwork,
-            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
+            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])],
+            iconUrls: relayerNetwork.iconUrls
           }
         }
       })
