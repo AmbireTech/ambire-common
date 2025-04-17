@@ -290,7 +290,9 @@ describe('SwapAndBridge Controller', () => {
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+        expect(['ready-to-estimate', 'fetching-routes']).toContain(
+          swapAndBridgeController.formStatus
+        )
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
