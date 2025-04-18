@@ -1,7 +1,7 @@
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
-import { Action, Banner } from '../../interfaces/banner'
+import { Action, Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
@@ -63,67 +63,59 @@ export const getBridgeBanners = (
   }
 
   const filteredRoutes = activeRoutes.filter(isBridgeTxn).filter((route) => {
-    if (route.routeStatus !== 'ready') return true
+    if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
+      return true
     return !isRouteTurnedIntoAccountOp(route)
   })
 
   const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
   const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
-  const inProgressOrFailed = [...inProgressRoutes, ...failedRoutes]
-
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
+  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes]
+
+  let title = ''
+  let text = ''
+  let type: BannerType
+  if (inProgressRoutes.length > 0) {
+    type = 'info'
+    title = `Bridge request${allRoutes.length > 1 ? 's' : ''} in progress`
+    text = `You have ${allRoutes.length} pending bridge${allRoutes.length > 1 ? 's' : ''}`
+  } else if (failedRoutes.length > 0) {
+    type = 'error'
+    title = `Failed bridge request${failedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+      completedRoutes.length > 1
+        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }`
+  } else {
+    type = 'success'
+    title = `Bridge request${completedRoutes.length > 1 ? 's' : ''} completed`
+    text = `You have ${completedRoutes.length} completed bridge request${
+      completedRoutes.length > 1 ? 's' : ''
+    }.`
+  }
 
   const banners: Banner[] = []
-
-  // Handle in-progress transactions grouping
-  if (inProgressOrFailed.length > 0) {
+  if (allRoutes.length > 0) {
     banners.push({
       id: 'bridge-in-progress',
-      type: inProgressRoutes.length > 0 ? 'info' : 'error',
+      type,
       category: 'bridge-in-progress',
-      title: `${
-        inProgressRoutes.length > 0
-          ? `Bridge request${inProgressRoutes.length > 1 ? 's' : ''} in progress`
-          : `Bridge request${failedRoutes.length > 1 ? 's' : ''} failed`
-      }`,
-      text:
-        inProgressRoutes.length > 0
-          ? `You have ${inProgressOrFailed.length} pending bridge${
-              inProgressOrFailed.length > 1 ? 's' : ''
-            }`
-          : `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}`,
+      title,
+      text,
       actions: [
         {
           label: 'Close',
           actionName: 'close-bridge',
           meta: {
-            activeRouteIds: inProgressOrFailed.map((r) => r.activeRouteId),
+            activeRouteIds: allRoutes.map((r) => r.activeRouteId),
             isHideStyle: true
           }
         },
         {
           label: 'View',
           actionName: 'view-bridge'
-        }
-      ]
-    })
-  }
-
-  // Handle completed transactions grouping
-  if (inProgressOrFailed.length === 0 && completedRoutes.length > 0) {
-    banners.push({
-      id: 'bridge-completed',
-      type: 'success',
-      category: 'bridge-completed',
-      title: `Bridge request${completedRoutes.length > 1 ? 's' : ''} completed`,
-      text: `You have ${completedRoutes.length} completed bridge request${
-        completedRoutes.length > 1 ? 's' : ''
-      }.`,
-      actions: [
-        {
-          label: 'Close',
-          actionName: 'close-bridge',
-          meta: { activeRouteIds: filteredRoutes.map((r) => r.activeRouteId), isHideStyle: true }
         }
       ]
     })
