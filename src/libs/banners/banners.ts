@@ -63,32 +63,43 @@ export const getBridgeBanners = (
   }
 
   const filteredRoutes = activeRoutes.filter(isBridgeTxn).filter((route) => {
-    if (route.routeStatus === 'failed') return false
     if (route.routeStatus !== 'ready') return true
     return !isRouteTurnedIntoAccountOp(route)
   })
 
   const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
+  const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
+  const inProgressOrFailed = [...inProgressRoutes, ...failedRoutes]
 
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
 
   const banners: Banner[] = []
 
   // Handle in-progress transactions grouping
-  if (inProgressRoutes.length > 0) {
+  if (inProgressOrFailed.length > 0) {
     banners.push({
       id: 'bridge-in-progress',
-      type: 'info',
+      type: inProgressRoutes.length > 0 ? 'info' : 'error',
       category: 'bridge-in-progress',
-      title: `Bridge request${inProgressRoutes.length > 1 ? 's' : ''} in progress`,
-      text: `You have ${inProgressRoutes.length} bridge request${
-        inProgressRoutes.length > 1 ? 's' : ''
-      } in progress.`,
+      title: `${
+        inProgressRoutes.length > 0
+          ? `Bridge request${inProgressRoutes.length > 1 ? 's' : ''} in progress`
+          : `Bridge request${failedRoutes.length > 1 ? 's' : ''} failed`
+      }`,
+      text:
+        inProgressRoutes.length > 0
+          ? `You have ${inProgressOrFailed.length} pending bridge${
+              inProgressOrFailed.length > 1 ? 's' : ''
+            }`
+          : `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}`,
       actions: [
         {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteIds: inProgressRoutes.map((r) => r.activeRouteId), isHideStyle: true }
+          meta: {
+            activeRouteIds: inProgressOrFailed.map((r) => r.activeRouteId),
+            isHideStyle: true
+          }
         },
         {
           label: 'View',
@@ -99,7 +110,7 @@ export const getBridgeBanners = (
   }
 
   // Handle completed transactions grouping
-  if (inProgressRoutes.length === 0 && completedRoutes.length > 0) {
+  if (inProgressOrFailed.length === 0 && completedRoutes.length > 0) {
     banners.push({
       id: 'bridge-completed',
       type: 'success',
@@ -112,7 +123,7 @@ export const getBridgeBanners = (
         {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId), isHideStyle: true }
+          meta: { activeRouteIds: filteredRoutes.map((r) => r.activeRouteId), isHideStyle: true }
         }
       ]
     })

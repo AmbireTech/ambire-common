@@ -1600,8 +1600,8 @@ export class SwapAndBridgeController extends EventEmitter {
     if (opStatus === AccountOpStatus.Failure || opStatus === AccountOpStatus.Rejected) {
       const errorMessage =
         opStatus === AccountOpStatus.Rejected
-          ? 'The transaction was rejected. Please try again'
-          : 'The transaction failed onchain. Please try again'
+          ? 'The transaction was rejected'
+          : 'The transaction failed onchain'
       this.updateActiveRoute(activeRoute.activeRouteId, {
         routeStatus: 'failed',
         error: errorMessage
