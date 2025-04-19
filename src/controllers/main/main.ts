@@ -2317,7 +2317,7 @@ export class MainController extends EventEmitter {
 
       // broadcast through bundler's service
       let userOperationHash
-      const bundler = bundlerSwitcher.getBundler()
+      const bundler = bundlerSwitcher.getBundler(userOperation.eip7702Auth)
       try {
         userOperationHash = await bundler.broadcast(userOperation, network)
       } catch (e: any) {
