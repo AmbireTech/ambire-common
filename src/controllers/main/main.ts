@@ -852,7 +852,12 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      await this.accountPicker.init({ keyIterator, hdPathTemplate })
+      await this.accountPicker.setInitParams({
+        keyIterator,
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
+      })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
       throw new EmittableError({ message, level: 'major', error })
@@ -881,12 +886,11 @@ export class MainController extends EventEmitter {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      await this.accountPicker.init({
+      await this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
-        // TODO: Temporary, so that the Trezor key iterator caches accounts upfront,
-        // otherwise - Trezor popup would pop... up on every next page requested
-        pageSize: 5
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
@@ -915,9 +919,11 @@ export class MainController extends EventEmitter {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      await this.accountPicker.init({
+      await this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
-        hdPathTemplate
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'

@@ -52,6 +52,7 @@ export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 1
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
+const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 
 /**
  * Account Picker Controller
@@ -73,6 +74,16 @@ export class AccountPickerController extends EventEmitter {
 
   #externalSignerControllers: ExternalSignerControllers
 
+  initParams: {
+    keyIterator: KeyIterator | null
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    page?: number
+    pageSize?: number
+    shouldSearchForLinkedAccounts?: boolean
+    shouldGetAccountsUsedOnNetworks?: boolean
+    shouldAddNextAccountAutomatically?: boolean
+  } | null = null
+
   keyIterator?: KeyIterator | null
 
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
@@ -82,6 +93,8 @@ export class AccountPickerController extends EventEmitter {
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
+
+  shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY
 
   /* This is only the index of the current page */
   page: number = DEFAULT_PAGE
@@ -360,22 +373,34 @@ export class AccountPickerController extends EventEmitter {
     )
   }
 
-  async init({
-    keyIterator,
-    hdPathTemplate,
-    page,
-    pageSize,
-    shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
-    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
-  }: {
+  setInitParams(params: {
     keyIterator: KeyIterator | null
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     page?: number
     pageSize?: number
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
+    shouldAddNextAccountAutomatically?: boolean
   }) {
-    await this.reset()
+    this.initParams = params
+    this.emitUpdate()
+  }
+
+  async init() {
+    if (!this.initParams) return
+
+    const {
+      keyIterator,
+      hdPathTemplate,
+      page,
+      pageSize,
+      shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
+      shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
+      shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY
+    } = this.initParams
+
+    await this.reset(false)
+
     this.keyIterator = keyIterator
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
     this.page = page || DEFAULT_PAGE
@@ -386,19 +411,22 @@ export class AccountPickerController extends EventEmitter {
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
     await this.forceEmitUpdate()
-    await this.selectNextAccount()
-    await this.addAccounts()
+    if (shouldAddNextAccountAutomatically) {
+      await this.selectNextAccount()
+      await this.addAccounts()
+    }
   }
 
   get type() {
-    return this.keyIterator?.type
+    return this.keyIterator?.type || this.initParams?.keyIterator?.type
   }
 
   get subType() {
-    return this.keyIterator?.subType
+    return this.keyIterator?.subType || this.initParams?.keyIterator?.subType
   }
 
-  async reset() {
+  async reset(resetInitParams: boolean = true) {
+    if (resetInitParams) this.initParams = null
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
@@ -878,10 +906,11 @@ export class AccountPickerController extends EventEmitter {
   }
 
   async selectNextAccount() {
+    console.log('selectNextAccount 1')
     if (!this.isInitialized) return this.#throwNotInitialized()
 
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
-
+    console.log('selectNextAccount 2')
     this.selectNextAccountStatus = 'LOADING'
     await this.forceEmitUpdate()
 
@@ -915,6 +944,7 @@ export class AccountPickerController extends EventEmitter {
             .filter((a) => this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr)))
             .some((a) => a.addr === account.addr)
       )?.account
+      console.log('selectNextAccount', nextAccount)
 
       if (nextAccount) {
         this.selectAccount(nextAccount)
