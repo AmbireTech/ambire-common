@@ -49,6 +49,10 @@ const config: HardhatUserConfig = {
     binance: {
       url: 'https://invictus.ambire.com/binance-smart-chain',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    gnosis: {
+      url: 'https://rpc.gnosischain.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -58,7 +62,8 @@ const config: HardhatUserConfig = {
       odyssey: process.env.ETHERSCAN_API_KEY,
       ethereum: process.env.ETHERSCAN_API_KEY,
       sepolia: process.env.ETHERSCAN_API_KEY,
-      binance: process.env.BNB_API_KEY
+      binance: process.env.BNB_API_KEY,
+      gnosis: process.env.GNOSIS_API_KEY
     },
     customChains: [
       {
@@ -107,6 +112,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.bscscan.com/api',
           browserURL: 'https://api.bscscan.com/'
+        }
+      },
+      {
+        network: 'gnosis',
+        chainId: 100,
+        urls: {
+          apiURL: 'https://api.gnosisscan.io/api',
+          browserURL: 'https://api.gnosisscan.io/'
         }
       }
     ]
