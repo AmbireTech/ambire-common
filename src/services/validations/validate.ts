@@ -53,7 +53,7 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
 }
 
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
-  "This address isn't in your address book. Double-check the details before confirming."
+  "This address isn't in your Address Book. Double-check the details before confirming."
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
