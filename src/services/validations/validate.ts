@@ -52,6 +52,8 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
   return { success: true, message: '' }
 }
 
+const NOT_IN_ADDRESS_BOOK_MESSAGE =
+  "This address isn't in your address book. Double-check the details before confirming."
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
@@ -93,8 +95,7 @@ const validateSendTransferAddress = (
   ) {
     return {
       success: false,
-      message:
-        "You're trying to send to an unknown address. If you're really sure, confirm using the checkbox below."
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE
     }
   }
 
@@ -104,10 +105,9 @@ const validateSendTransferAddress = (
     isEnsAddress &&
     !isRecipientDomainResolving
   ) {
-    const name = 'Ethereum Name Service'
     return {
       success: false,
-      message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE
     }
   }
 
