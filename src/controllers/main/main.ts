@@ -834,8 +834,10 @@ export class MainController extends EventEmitter {
         this.actions.visibleActionsQueue,
         this.networks.networks
       )
+
       // update the portfolio only if new tokens were found through tracing
-      if (learnedNewTokens || learnedNewNfts) {
+      const canUpdateSignAccountOp = !this.signAccountOp || this.signAccountOp.canUpdate()
+      if (canUpdateSignAccountOp && (learnedNewTokens || learnedNewNfts)) {
         await this.portfolio.updateSelectedAccount(
           accountOp.accountAddr,
           network,
@@ -1215,6 +1217,8 @@ export class MainController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
+    const canUpdateSignAccountOp = !this.signAccountOp || this.signAccountOp.canUpdate()
+    if (!canUpdateSignAccountOp) return
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
