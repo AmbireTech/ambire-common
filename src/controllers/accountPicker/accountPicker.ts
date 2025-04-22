@@ -944,7 +944,6 @@ export class AccountPickerController extends EventEmitter {
             .filter((a) => this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr)))
             .some((a) => a.addr === account.addr)
       )?.account
-      console.log('selectNextAccount', nextAccount)
 
       if (nextAccount) {
         this.selectAccount(nextAccount)
