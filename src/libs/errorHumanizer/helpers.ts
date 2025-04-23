@@ -65,6 +65,7 @@ const getHumanReadableErrorMessage = (
           if (errorReason === checkAgainst) return true
 
           // Split checkAgainst by spaces and check if any of the parts
+          // match the lowerCaseReason
           const splitCheckAgainst = checkAgainst.split(' ')
 
           return splitCheckAgainst.some((part) => part.toLowerCase() === lowerCaseReason)
