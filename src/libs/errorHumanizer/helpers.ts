@@ -59,10 +59,11 @@ const getHumanReadableErrorMessage = (
 
       const isMatching = error.reasons.some((errorReason) => {
         const lowerCaseReason = errorReason.toLowerCase()
+        const lowerCaseCheckAgainst = checkAgainst.toLowerCase()
 
         if (isExactMatch) {
           // Try a simple equality check first
-          if (errorReason === checkAgainst) return true
+          if (lowerCaseCheckAgainst === lowerCaseReason) return true
 
           // Split checkAgainst by spaces and check if any of the parts
           // match the lowerCaseReason
@@ -71,7 +72,7 @@ const getHumanReadableErrorMessage = (
           return splitCheckAgainst.some((part) => part.toLowerCase() === lowerCaseReason)
         }
 
-        return checkAgainst.toLowerCase().includes(lowerCaseReason)
+        return lowerCaseCheckAgainst.includes(lowerCaseReason)
       })
       if (!isMatching) return
 
