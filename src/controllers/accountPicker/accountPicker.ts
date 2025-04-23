@@ -199,10 +199,12 @@ export class AccountPickerController extends EventEmitter {
 
   get accountsOnPage(): AccountOnPage[] {
     const processedAccounts = this.#derivedAccounts
+      // Remove smart accounts derived programmatically, because since v4.60.0
+      // unused smart accounts are no longer displayed on page.
+      .filter((a) => !isSmartAccount(a.account))
       // The displayed (visible) accounts on page should not include the derived
       // EOA (basic) accounts only used as smart account keys, they should not
       // be visible nor importable (or selectable).
-      .filter((a) => !isSmartAccount(a.account))
       .filter((x) => !isDerivedForSmartAccountKeyOnly(x.index))
       .flatMap((derivedAccount) => {
         const associatedLinkedAccounts = this.#linkedAccounts.filter(
@@ -694,11 +696,11 @@ export class AccountPickerController extends EventEmitter {
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
-            // Skip searching for linked accounts to the derived EOA (basic)
-            // accounts that are used for smart account keys only. They are
-            // solely purposed to manage 1 particular (smart) account,
-            // not at all for linking.
-            !isDerivedForSmartAccountKeyOnly(acc.index)
+            // Since v4.60.0, linked accounts are searched for 1) Basic Accounts
+            // and 2) Basic Accounts derived for Smart Account keys ONLY
+            // (workaround so that the Relayer returns information if the Smart
+            // Account with this key is used (with identity) or not).
+            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
         )
         .map((acc) => acc.account)
     })
@@ -1187,10 +1189,7 @@ export class AccountPickerController extends EventEmitter {
     this.linkedAccountsLoading = true
     this.emitUpdate()
 
-    const keys = accounts
-      .flatMap((a) => a.associatedKeys)
-      .map((k) => `keys[]=${k}`)
-      .join('&')
+    const keys = accounts.map((acc) => `keys[]=${acc.addr}`).join('&')
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
