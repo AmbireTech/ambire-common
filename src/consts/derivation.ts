@@ -35,7 +35,7 @@ export const DERIVATION_OPTIONS: DerivationOption[] = [
   {
     label: 'BIP44',
     value: BIP44_STANDARD_DERIVATION_TEMPLATE,
-    description: 'BIP44 Standard: HDpath defined by the BIP44 protocol.'
+    description: 'BIP44 Standard: HD path defined by the BIP44 protocol.'
   },
   {
     label: 'Ledger Live',
@@ -45,7 +45,7 @@ export const DERIVATION_OPTIONS: DerivationOption[] = [
   {
     label: 'Ledger Legacy',
     value: LEGACY_POPULAR_DERIVATION_TEMPLATE,
-    description: 'Ledger Legacy: HD path used by MEW / Mycrypto.'
+    description: 'Ledger Legacy: HD path used by MEW / MyCrypto.'
   }
 ]
 
