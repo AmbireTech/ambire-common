@@ -1,10 +1,10 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
-import { KeystoreController } from 'controllers/keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { canBecomeSmarter, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { KeystoreController } from '../keystore/keystore'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
