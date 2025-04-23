@@ -465,16 +465,9 @@ export class KeystoreController extends EventEmitter {
   }
 
   async persistTempSeed() {
-    if (!this.#tempSeed) {
-      throw new EmittableError({
-        message:
-          'Imported seed no longer exists in the extension. If you want to save it, please re-import it',
-        level: 'major',
-        error: new Error('keystore: imported seed deleted although a request to save it was made')
-      })
-    }
+    if (!this.#tempSeed) return
 
-    await this.addSeed(this.#tempSeed)
+    await this.#addSeed(this.#tempSeed)
     this.#tempSeed = null
     this.emitUpdate()
   }
