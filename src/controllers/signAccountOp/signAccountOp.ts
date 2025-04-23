@@ -637,6 +637,9 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async simulate(shouldTraceCall: boolean = false) {
+    // no simulation / estimation if we're in a signing state
+    if (!this.canUpdate()) return
+
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
       this.estimation.estimate(this.accountOp).catch((e) => e)
@@ -716,8 +719,10 @@ export class SignAccountOpController extends EventEmitter {
       // most updates are frozen during the signing process
       if (typeof signedTransactionsCount !== 'undefined') {
         this.signedTransactionsCount = signedTransactionsCount
+        this.status = { type: SigningStatus.Done }
         // If we add other exclusions we should figure out a way to emitUpdate only once
         this.emitUpdate()
+        return
       }
 
       // once the user commits to the things he sees on his screen,
@@ -1728,6 +1733,10 @@ export class SignAccountOpController extends EventEmitter {
 
       this.#emitSigningErrorAndResetToReadyToSign(message)
     }
+  }
+
+  canUpdate(): boolean {
+    return !this.status || noStateUpdateStatuses.indexOf(this.status.type) === -1
   }
 
   toJSON() {
