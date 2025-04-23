@@ -26,6 +26,15 @@ export class EOA7702 extends BaseAccount {
   // access list address: 2400
   ACTIVATOR_GAS_USED = 29300n
 
+  /**
+   * Introduce a public variable we can use to make a simple check on the FE
+   * whether this account type is 7702.
+   * This should only be used in cases where refactoring the logic on the FE
+   * would mean a time-consuming event like sorting the fee payment options.
+   * Use this as an exception rather than rule. Long term, we should refactor
+   */
+  is7702 = true
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
