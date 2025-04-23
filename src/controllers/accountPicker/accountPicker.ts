@@ -306,25 +306,23 @@ export class AccountPickerController extends EventEmitter {
       })
     }))
 
-    const hasUsedSmartAccount = accountsWithStatus.some((a) => isSmartAccount(a.account))
-
-    if (!hasUsedSmartAccount) {
-      const newSmartAcc = this.#derivedAccounts
-        .filter((a) => isSmartAccount(a.account))
-        .sort((a, b) => a.index - b.index)[0]
-
-      if (newSmartAcc) {
-        accountsWithStatus.push({
-          ...newSmartAcc,
-          importStatus: getAccountImportStatus({
-            account: newSmartAcc.account,
-            alreadyImportedAccounts: this.#alreadyImportedAccounts,
-            keys: this.#keystore.keys,
-            accountsOnPage: mergedAccounts,
-            keyIteratorType: this.keyIterator?.type
-          })
+    // Since v4.60.0 there should always be 1 unused Smart Account on the page,
+    // except when all smart accounts are found via linked accounts (therefore, used).
+    const nextUnusedSmartAcc = this.#derivedAccounts
+      .filter((acc) => isSmartAccount(acc.account))
+      .filter((acc) => !accountsWithStatus.map((as) => as.account.addr).includes(acc.account.addr))
+      .sort((a, b) => a.index - b.index)[0]
+    if (nextUnusedSmartAcc) {
+      accountsWithStatus.push({
+        ...nextUnusedSmartAcc,
+        importStatus: getAccountImportStatus({
+          account: nextUnusedSmartAcc.account,
+          alreadyImportedAccounts: this.#alreadyImportedAccounts,
+          keys: this.#keystore.keys,
+          accountsOnPage: mergedAccounts,
+          keyIteratorType: this.keyIterator?.type
         })
-      }
+      })
     }
 
     return accountsWithStatus
