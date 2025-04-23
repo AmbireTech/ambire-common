@@ -1465,7 +1465,7 @@ describe('Negative cases', () => {
     const errors = controller.errors
     expect(errors.length).toBe(1)
     expect(errors[0].title).toBe(
-      'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC and others'
+      'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC, RETH, AAVE, LINK and others'
     )
     expect(errors[0].code).toBe('INSUFFICIENT_FUNDS_SA')
 
