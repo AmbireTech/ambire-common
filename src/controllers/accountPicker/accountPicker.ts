@@ -16,6 +16,7 @@ import {
   AccountWithNetworkMeta,
   DerivedAccount,
   DerivedAccountWithoutNetworkMeta,
+  ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -335,7 +336,11 @@ export class AccountPickerController extends EventEmitter {
 
     const accountsAddrOnPage = accountsOnPageWithKeys.map((a) => a.addr)
     const selectedAccountsFromPrevSession = this.accountsOnPage
-      .filter((a) => accountsAddrOnPage.includes(a.account.addr))
+      .filter(
+        (a) =>
+          accountsAddrOnPage.includes(a.account.addr) &&
+          a.importStatus === ImportStatus.ImportedWithTheSameKeys
+      )
       .map((a) => {
         const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
           (accOnPage) => accOnPage.account.addr === a.account.addr
