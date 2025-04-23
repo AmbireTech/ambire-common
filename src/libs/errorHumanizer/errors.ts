@@ -112,12 +112,14 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['80'],
     message:
-      "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation."
+      "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation.",
+    isExactMatch: true
   },
   {
     reasons: ['STF'],
     message:
-      'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
+      'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.',
+    isExactMatch: true
   },
   {
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old', 'BAL#508', 'SWAP_DEADLINE'],

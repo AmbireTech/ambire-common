@@ -55,9 +55,15 @@ const getHumanReadableErrorMessage = (
 
   if (checkAgainst) {
     errors.forEach((error) => {
-      const isMatching = error.reasons.some((errorReason) =>
-        checkAgainst.toLowerCase().includes(errorReason.toLowerCase())
-      )
+      const { isExactMatch } = error
+
+      const isMatching = error.reasons.some((errorReason) => {
+        if (isExactMatch) {
+          return errorReason === checkAgainst
+        }
+
+        return checkAgainst.toLowerCase().includes(errorReason.toLowerCase())
+      })
       if (!isMatching) return
 
       message = `${messagePrefix ? `${messagePrefix} ` : ''}${error.message}`
