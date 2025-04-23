@@ -911,11 +911,9 @@ export class AccountPickerController extends EventEmitter {
   }
 
   async selectNextAccount() {
-    console.log('selectNextAccount 1')
     if (!this.isInitialized) return this.#throwNotInitialized()
-
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
-    console.log('selectNextAccount 2')
+
     this.selectNextAccountStatus = 'LOADING'
     await this.forceEmitUpdate()
 
@@ -942,12 +940,10 @@ export class AccountPickerController extends EventEmitter {
       }
 
       nextAccount = this.accountsOnPage.find(
-        ({ isLinked, account }) =>
+        ({ isLinked, account, importStatus }) =>
+          importStatus !== ImportStatus.ImportedWithTheSameKeys &&
           !isLinked &&
-          !isSmartAccount(account) &&
-          !this.#alreadyImportedAccounts
-            .filter((a) => this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr)))
-            .some((a) => a.addr === account.addr)
+          !isSmartAccount(account)
       )?.account
 
       if (nextAccount) {
