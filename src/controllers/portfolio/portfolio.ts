@@ -3,7 +3,8 @@ import { getAddress, ZeroAddress } from 'ethers'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { isBasicAccount } from '../../libs/account/account'
+import { canBecomeSmarter, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { KeystoreController } from '../keystore/keystore'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -18,7 +19,6 @@ import {
   getTotal,
   getUpdatedHints,
   processTokens,
-  shouldGetAdditionalPortfolio,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
@@ -105,6 +105,8 @@ export class PortfolioController extends EventEmitter {
 
   #accounts: AccountsController
 
+  #keystore: KeystoreController
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
@@ -114,6 +116,7 @@ export class PortfolioController extends EventEmitter {
     providers: ProvidersController,
     networks: NetworksController,
     accounts: AccountsController,
+    keystore: KeystoreController,
     relayerUrl: string,
     velcroUrl: string
   ) {
@@ -129,6 +132,7 @@ export class PortfolioController extends EventEmitter {
     this.#providers = providers
     this.#networks = networks
     this.#accounts = accounts
+    this.#keystore = keystore
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
     this.#batchedVelcroDiscovery = batcher(
@@ -684,9 +688,10 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    const updateAdditionalPortfolioIfNeeded = shouldGetAdditionalPortfolio(selectedAccount)
-      ? this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
-      : Promise.resolve()
+    const updateAdditionalPortfolioIfNeeded =
+      isSmartAccount(selectedAccount) || canBecomeSmarter(selectedAccount, this.#keystore.keys)
+        ? this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
+        : Promise.resolve()
 
     const networks = network ? [network] : this.#networks.networks
     await Promise.all([

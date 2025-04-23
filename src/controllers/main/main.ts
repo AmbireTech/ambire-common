@@ -292,6 +292,7 @@ export class MainController extends EventEmitter {
       this.providers,
       this.networks,
       this.accounts,
+      this.keystore,
       relayerUrl,
       velcroUrl
     )
