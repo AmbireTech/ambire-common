@@ -4,6 +4,8 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { KeystoreController } from 'controllers/keystore/keystore'
+import { KeystoreSigner } from 'libs/keystoreSigner/keystoreSigner'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -56,24 +58,6 @@ const selectedAccountCtrl = new SelectedAccountController({
   accounts: accountsCtrl
 })
 
-const portfolioCtrl = new PortfolioController(
-  storageCtrl,
-  fetch,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  relayerUrl,
-  velcroUrl
-)
-
-const defiPositionsCtrl = new DefiPositionsController({
-  fetch,
-  storage,
-  selectedAccount: selectedAccountCtrl,
-  networks: networksCtrl,
-  providers: providersCtrl
-})
-
 const event = new EventEmitter()
 let windowId = 0
 const windowManager = {
@@ -97,6 +81,26 @@ const windowManager = {
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
+const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystore,
+  relayerUrl,
+  velcroUrl
+)
+
+const defiPositionsCtrl = new DefiPositionsController({
+  fetch,
+  storage,
+  selectedAccount: selectedAccountCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl
+})
 
 const notificationManager = {
   create: () => Promise.resolve()

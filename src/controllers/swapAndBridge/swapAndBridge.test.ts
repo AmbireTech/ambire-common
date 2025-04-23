@@ -115,6 +115,8 @@ const activityCtrl = new ActivityController(
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
+const keystore = new KeystoreController(storageCtrl, {}, windowManager)
+
 const accounts = [
   {
     addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -172,6 +174,7 @@ const portfolioCtrl = new PortfolioController(
   providersCtrl,
   networksCtrl,
   accountsCtrl,
+  keystore,
   relayerUrl,
   velcroUrl
 )
@@ -191,7 +194,7 @@ describe('SwapAndBridge Controller', () => {
       serviceProviderAPI: socketAPIMock as any,
       actions: actionsCtrl,
       invite: inviteCtrl,
-      keystore: new KeystoreController(storageCtrl, {}, windowManager),
+      keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,
       externalSignerControllers: {},
