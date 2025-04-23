@@ -102,9 +102,14 @@ export class DappsController extends EventEmitter {
     this.dappSessions[key].setMessenger(messenger)
   }
 
-  setSessionLastHandledRequestsId = (key: string, id: number) => {
-    if (id > this.dappSessions[key].lastHandledRequestId)
+  setSessionLastHandledRequestsId = (key: string, id: number, isWeb3AppRequest?: boolean) => {
+    if (id > this.dappSessions[key].lastHandledRequestId) {
       this.dappSessions[key].lastHandledRequestId = id
+      if (isWeb3AppRequest && !this.dappSessions[key].isWeb3App) {
+        this.dappSessions[key].isWeb3App = true
+        this.emitUpdate()
+      }
+    }
   }
 
   resetSessionLastHandledRequestsId = (key: string) => {
