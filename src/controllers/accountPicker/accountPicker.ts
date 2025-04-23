@@ -441,6 +441,7 @@ export class AccountPickerController extends EventEmitter {
     this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
     this.pageError = null
 
+    this.linkedAccountsLoading = false
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
     this.#linkedAccounts = []
@@ -663,6 +664,7 @@ export class AccountPickerController extends EventEmitter {
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.networksWithAccountStateError = []
+    this.linkedAccountsLoading = false
     this.emitUpdate()
 
     if (page <= 0) {
@@ -1251,9 +1253,14 @@ export class AccountPickerController extends EventEmitter {
       ]
     })
 
+    // in case the page is changed or the ctrl is reset do not continue with the logic
+    if (!this.linkedAccountsLoading) return
+
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts: linkedAccounts as any
     })
+
+    if (!this.linkedAccountsLoading) return
 
     this.#linkedAccounts = linkedAccountsWithNetworks
     this.#verifyLinkedAccounts()
