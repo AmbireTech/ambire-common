@@ -112,7 +112,7 @@ export async function bundlerEstimate(
 
   const account = baseAcc.getAccount()
   const localOp = { ...op }
-  const initialBundler = switcher.getBundler()
+  const initialBundler = switcher.getBundler(eip7702Auth)
   const userOp = getUserOperation(
     account,
     accountState,
