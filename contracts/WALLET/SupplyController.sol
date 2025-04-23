@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.7;
 
-import "./libs/SignatureValidatorV2.sol";
-import "./libs/MerkleProof.sol";
-import "./libs/IERC20.sol";
+import "../libs/SignatureValidator.sol";
+import "../libs/MerkleProof.sol";
+import "../deployless/IERC20.sol";
 import "./WALLET.sol";
 
 interface IStakingPool {
@@ -119,7 +119,7 @@ contract WALLETSupplyController {
 		// args for updating the root
 		bytes32 newRoot, bytes calldata signature
 	) external {
-		address signer = SignatureValidator.recoverAddrImpl(newRoot, signature, false);
+		address signer = SignatureValidator.recoverAddr(newRoot, signature, false);
 		require(hasGovernance[signer], "NOT_GOVERNANCE");
 		lastRoot = newRoot;
 		claim(totalRewardInTree, proof, toBurnBps, stakingPool);
