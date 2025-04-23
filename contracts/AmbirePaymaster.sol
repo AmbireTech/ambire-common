@@ -65,6 +65,8 @@ contract AmbirePaymaster is IPaymaster {
 			userOp.paymasterAndData[UserOpHelper.PAYMASTER_DATA_OFFSET:],
 			(uint48, uint48, bytes)
 		);
+		// 48/8 + 48/8 = 12
+		require(userOp.paymasterAndData.length == UserOpHelper.PAYMASTER_DATA_OFFSET + 12 + signature.length, 'paymasterAndData length check');
 
 		bytes memory callData = userOp.callData;
 		bytes32 hash = keccak256(abi.encode(
