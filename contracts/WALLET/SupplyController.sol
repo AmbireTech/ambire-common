@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: agpl-3.0
-pragma solidity 0.8.7;
+pragma solidity 0.8.19;
 
 import "../libs/SignatureValidator.sol";
 import "../libs/MerkleProof.sol";
@@ -32,7 +32,7 @@ contract WALLETSupplyController {
 
 	function setGovernance(address addr, bool level) external {
 		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
-		// Sometimes we need to get someone to de-auth themselves, but 
+		// Sometimes we need to get someone to de-auth themselves, but
 		// it's better to protect against bricking rather than have this functionality
 		// we can burn conrtol by transferring control over to a contract that can't mint or by ypgrading the supply controller
 		require(msg.sender != addr, "CANNOT_MODIFY_SELF");

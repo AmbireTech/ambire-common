@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: agpl-3.0
-pragma solidity 0.8.7;
+pragma solidity 0.8.19;
 
 interface ISupplyController {
 	function mintableVesting(address addr, uint end, uint amountPerSecond) external view returns (uint);
