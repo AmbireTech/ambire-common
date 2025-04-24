@@ -109,8 +109,11 @@ export class EOA7702 extends BaseAccount {
     feeOption: FeePaymentOption,
     options: {
       op: AccountOp
+      isSponsored?: boolean
     }
   ): string {
+    if (options.isSponsored) return BROADCAST_OPTIONS.byBundler
+
     const feeToken = feeOption.token
     const isNative = feeToken.address === ZeroAddress && !feeToken.flags.onGasTank
     if (isNative) {

@@ -144,7 +144,10 @@ export class Paymaster extends AbstractPaymaster {
   }
 
   shouldIncludePayment(): boolean {
-    return this.type === 'Ambire' || this.type === 'ERC7677'
+    return (
+      this.type === 'Ambire' ||
+      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER)
+    )
   }
 
   // get the fee call type used in the estimation
