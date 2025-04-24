@@ -21,7 +21,13 @@ export abstract class AbstractPaymaster {
    */
   sponsorDataEstimation: PaymasterEstimationData | undefined
 
-  abstract init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider): void
+  abstract init(
+    op: AccountOp,
+    userOp: UserOperation,
+    account: Account,
+    network: Network,
+    provider: RPCProvider
+  ): void
 
   abstract shouldIncludePayment(): boolean
 
