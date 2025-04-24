@@ -315,7 +315,9 @@ export class ActionsController extends EventEmitter {
       return
     try {
       this.actionWindow.focusWindowPromise = this.#windowManager
-        .focus(this.actionWindow.windowProps)
+        .focus({
+          id: this.actionWindow.windowProps.id
+        })
         .finally(() => {
           this.actionWindow.focusWindowPromise = undefined
         })

@@ -17,7 +17,7 @@ export interface WindowManager {
     route?: string
     customSize?: { width: number; height: number }
   }) => Promise<WindowProps>
-  focus: (windowProps: WindowProps) => Promise<void>
+  focus: (windowProps: Partial<WindowProps> & Pick<NonNullable<WindowProps>, 'id'>) => Promise<void>
   remove: (winId: WindowId) => Promise<void>
   sendWindowToastMessage: (
     message: string,
