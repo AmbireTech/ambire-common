@@ -34,7 +34,7 @@ export interface ExternalSignerController {
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
-  retrieveAddresses: (paths: string[]) => Promise<string[]> // Ledger specific
+  retrieveAddresses?: (paths: string[]) => Promise<string[]> // Ledger specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
@@ -106,12 +106,14 @@ export type InternalKey = {
   dedicatedToOneSA: boolean
   meta: {
     createdAt: number | null
+    fromSeedId?: string
+    [key: string]: any
   }
 }
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | string
+  type: 'trezor' | 'ledger' | 'lattice'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -120,12 +122,15 @@ export type ExternalKey = {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
     createdAt: number | null
+    [key: string]: any
   }
 }
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
 
 export type KeystoreSeed = {
+  id: string
+  label: string
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
@@ -138,21 +143,21 @@ export type KeystoreSignerType = {
 /**
  * The keys that are ready to be added to the user's keystore (by the Main Controller).
  * They are needed as an intermediate step during the accounts import flow
- * (for the accounts that were just imported by the AccountAdder Controller).
+ * (for the accounts that were just imported by the AccountPicker Controller).
  */
 export type ReadyToAddKeys = {
   internal: {
-    addr: Key['addr']
+    addr: InternalKey['addr']
     label: string
-    type: 'internal'
+    type: InternalKey['type']
     privateKey: string
-    dedicatedToOneSA: Key['dedicatedToOneSA']
+    dedicatedToOneSA: InternalKey['dedicatedToOneSA']
     meta: InternalKey['meta']
   }[]
   external: {
-    addr: Key['addr']
+    addr: ExternalKey['addr']
     label: string
-    type: Key['type']
+    type: ExternalKey['type']
     dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]

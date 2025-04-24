@@ -77,11 +77,7 @@ export type Action =
   | {
       label: 'Hide'
       actionName: 'hide-activity-banner'
-      meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
-    }
-  | {
-      label: 'Check'
-      actionName: 'confirm-temp-seed'
+      meta: { timestamp: number; addr: string; chainId: bigint; isHideStyle: boolean }
     }
   | {
       label: 'Open'
