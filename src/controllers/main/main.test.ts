@@ -19,6 +19,7 @@ import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { RelayerError } from '../../libs/relayerCall/relayerCall'
+import wait from '../../utils/wait'
 import { MainController } from './main'
 
 // Public API key, shared by Socket, for testing purposes only
@@ -217,7 +218,7 @@ describe('Main Controller ', () => {
   //   // console.log('isUnlock ==>', controller.isUnlock())
   // })
 
-  test('should add smart accounts', async () => {
+  test('should add an account from the account picker and persist it in accounts', async () => {
     controller = new MainController({
       storage,
       fetch,
@@ -230,75 +231,31 @@ describe('Main Controller ', () => {
       velcroUrl
     })
 
-    const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const priv = { addr: signerAddr, hash: ethers.toBeHex(1, 32) }
-    const bytecode = await getBytecode([priv])
-
-    // Same mechanism to generating this one as used for the
-    // `accountNotDeployed` in accountState.test.ts
-    const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
-    const accountPendingCreation: SelectedAccountForImport = {
-      account: {
-        addr,
-        associatedKeys: [signerAddr],
-        creation: {
-          factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-          bytecode,
-          salt: ethers.toBeHex(0, 32)
-        },
-        initialPrivileges: [
-          [
-            '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-            '0x0000000000000000000000000000000000000000000000000000000000000001'
-          ]
-        ],
-        preferences: {
-          label: 'Account 4', // because there are 3 in the storage before this one
-          pfp: addr
-        }
-      },
-      accountKeys: [{ addr: signerAddr, index: 0, slot: 1 }],
-      isLinked: false
+    while (!controller.isReady) {
+      // eslint-disable-next-line no-await-in-loop
+      await wait(100)
     }
 
-    const addAccounts = async () => {
-      const keyIterator = new KeyIterator(
-        '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-      )
-      await controller.accountAdder.init({
-        keyIterator,
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-      })
-      await controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
-    }
-
-    let emitCounter = 0
-    // The `isReady` flag on the MainController gets set in async manner.
-    // If the property of the main controller `isReady` becomes true before
-    // reaching await new Promise..., the code inside the onUpdate won't run,
-    // because there is nothing that will trigger an update. To prevent this,
-    // check if the controller is ready outside of the onUpdate first and add the accounts.
-    if (controller.isReady && emitCounter === 0) {
-      emitCounter++
-      await addAccounts()
-    }
-
-    return new Promise((resolve) => {
-      const unsubscribe = controller.onUpdate(async () => {
-        emitCounter++
-        if (emitCounter === 2 && controller.isReady) await addAccounts()
-
-        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
-          expect(controller.accounts.accounts).toContainEqual({
-            ...accountPendingCreation.account,
-            newlyAdded: true,
-            newlyCreated: false
-          })
-          unsubscribe()
-          resolve(null)
-        }
-      })
+    await controller.keystore.addSecret('password', '12345678', '', true)
+    const keyIterator = new KeyIterator(
+      '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+    )
+    controller.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldAddNextAccountAutomatically: false
     })
+
+    await controller.accountPicker.init()
+    await controller.accountPicker.setPage({ page: 1 })
+    while (controller.accountPicker.accountsLoading) {
+      // eslint-disable-next-line no-await-in-loop
+      await wait(100)
+    }
+    const accToSelect = controller.accountPicker.accountsOnPage[0].account
+    controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0].account)
+    await controller.accountPicker.addAccounts().catch(console.error)
+    expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
 
   // FIXME: This test works when fired standalone, but it throws an error when

@@ -26,7 +26,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
-import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
+import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -706,7 +706,7 @@ export class SignAccountOpController extends EventEmitter {
     paidBy?: string
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
-    signingKeyType?: Key['type']
+    signingKeyType?: InternalKey['type'] | ExternalKey['type']
     calls?: AccountOp['calls']
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
