@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -400,8 +400,8 @@ export class LiFiAPI {
       }
     }
 
-    // const shouldRemoveConvenienceFee = isOG
-    // if (shouldRemoveConvenienceFee) delete body.options.fee
+    const shouldRemoveConvenienceFee = isOG
+    if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
     const response = await this.#handleResponse<LiFiRoutesResponse>({
