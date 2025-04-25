@@ -1,11 +1,11 @@
 import { AbiCoder, Contract, ethers, JsonRpcProvider } from 'ethers'
-import nock from 'nock'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { velcroUrl } from '../../../test/config'
+import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -70,10 +70,7 @@ describe('Portfolio', () => {
   }
 
   test('batching works', async () => {
-    nock.recorder.rec({
-      output_objects: true,
-      dont_print: true
-    })
+    const interceptedRequests = monitor()
 
     // 💡 Important Note: BATCH_LIMIT is set to 40 in portfolio/gecko.ts.
     // To simplify testing, we've chosen addresses that contain no more than 40 tokens.
@@ -85,17 +82,11 @@ describe('Portfolio', () => {
       portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
     ])
 
-    const interceptedRequestsRaw = nock.recorder.play()
-    const interceptedRequests = interceptedRequestsRaw.map(({ path, scope, ...rest }: any) => ({
-      url: new URL(scope.replace(':443', '') + path),
-      ...rest
-    }))
-
     const tokens =
       (result1.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0) +
       (result2.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0)
 
-    nock.recorder.clear()
+    stopMonitoring()
 
     const multiHintsReqs = interceptedRequests.filter(
       (req) =>
@@ -111,9 +102,8 @@ describe('Portfolio', () => {
         req?.url.pathname === '/api/v3/simple/token_price/ethereum'
     )
     const rpcReqs = interceptedRequests.filter(
-      (req) => req?.url.hostname === 'invictus.ambire.com' && req?.url.pathname === '/ethereum'
+      (req) => req?.url === 'https://invictus.ambire.com/ethereum'
     )
-    console.log(rpcReqs)
 
     expect(multiHintsReqs.length).toEqual(1)
     expect(nativePriceReqs.length).toEqual(1)
