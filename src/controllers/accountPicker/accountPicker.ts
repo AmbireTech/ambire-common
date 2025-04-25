@@ -470,7 +470,6 @@ export class AccountPickerController extends EventEmitter {
     // accounts, as of v4.32.0, we don't store their hd path. When import
     // completes, only the latest hd path of the controller is stored.
     this.selectedAccountsFromCurrentSession = []
-    this.readyToRemoveAccounts = []
     this.#derivedAccounts = []
 
     this.emitUpdate()
