@@ -404,9 +404,10 @@ export class KeystoreController extends EventEmitter {
   }
 
   get seeds() {
-    return this.#keystoreSeeds.map(({ id, label }) => ({
+    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate }) => ({
       id,
-      label: label || 'Unnamed Recovery Seed'
+      label: label || 'Unnamed Recovery Seed',
+      hdPathTemplate
     }))
   }
 
@@ -965,10 +966,6 @@ export class KeystoreController extends EventEmitter {
     return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
-  get hasKeystoreSavedSeed() {
-    return !!this.#keystoreSeeds.length
-  }
-
   get hasKeystoreTempSeed() {
     return !!this.#tempSeed
   }
@@ -1025,11 +1022,11 @@ export class KeystoreController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
+      // includes the getters in the stringified instance
+      isUnlocked: this.isUnlocked,
       keys: this.keys,
       seeds: this.seeds,
       hasPasswordSecret: this.hasPasswordSecret,
-      hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
       hasTempSeed: this.hasTempSeed,
       isReadyToStoreKeys: this.isReadyToStoreKeys

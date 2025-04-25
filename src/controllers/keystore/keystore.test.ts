@@ -12,9 +12,12 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import {
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  LEGACY_POPULAR_DERIVATION_TEMPLATE
+} from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, Key } from '../../interfaces/keystore'
+import { ExternalKey, InternalKey, Key } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -518,44 +521,53 @@ describe('KeystoreController', () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(128)
   })
-  // TODO: fix the test
-  test.skip('should remove key', async () => {
-    // const keyLengthBefore = keystore.keys.length
-    // // An internal key and a trezor key with the same public address
-    // const keysWithSamePublicAddress = keystore.keys.filter(
-    //   (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
-    // )
-    // // First remove the internal key
-    // const internalKeyToRemove = keysWithSamePublicAddress.find((x) => x.type === 'internal')
-    // expect(keysWithSamePublicAddress.length).toBeGreaterThanOrEqual(2)
-    // await keystore.removeKey(internalKeyToRemove?.addr || '', internalKeyToRemove?.type || '')
-    // expect(keystore.keys.length).toBe(keyLengthBefore - 1)
-    // const keysWithSamePublicAddressAfter = keystore.keys.filter(
-    //   (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
-    // )
-    // const hwWalletKeyToRemove = keysWithSamePublicAddressAfter.find((x) => x.type === 'trezor')
-    // // Make sure the trezor key is not removed
-    // expect(hwWalletKeyToRemove).toBeDefined()
-    // // Remove the trezor key
-    // await keystore.removeKey(hwWalletKeyToRemove?.addr || '', hwWalletKeyToRemove?.type || '')
-    // // Make sure both keys are removed
-    // expect(keystore.keys.length).toBe(keyLengthBefore - 2)
+  test('should remove key', async () => {
+    const keyLengthBefore = keystore.keys.length
+    // An internal key and a trezor key with the same public address
+    const keysWithSamePublicAddress = keystore.keys.filter(
+      (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
+    )
+    // First remove the internal key
+    const internalKeyToRemove = keysWithSamePublicAddress.find(
+      (x) => x.type === 'internal'
+    ) as InternalKey
+    expect(keysWithSamePublicAddress.length).toBeGreaterThanOrEqual(2)
+    await keystore.removeKey(internalKeyToRemove?.addr || '', internalKeyToRemove?.type || '')
+    expect(keystore.keys.length).toBe(keyLengthBefore - 1)
+    const keysWithSamePublicAddressAfter = keystore.keys.filter(
+      (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
+    )
+    const hwWalletKeyToRemove = keysWithSamePublicAddressAfter.find(
+      (x) => x.type === 'trezor'
+    ) as ExternalKey
+    // Make sure the trezor key is not removed
+    expect(hwWalletKeyToRemove).toBeDefined()
+    // Remove the trezor key
+    await keystore.removeKey(hwWalletKeyToRemove?.addr || '', hwWalletKeyToRemove?.type || '')
+    // Make sure both keys are removed
+    expect(keystore.keys.length).toBe(keyLengthBefore - 2)
   })
-  // TODO: fix the test
-  test.skip('should add keystore default seed phrase', async () => {
-    //   expect(!!keystore.hasKeystoreSavedSeed).toBeFalsy()
-    //   expect(keystore.isUnlocked).toBeTruthy()
-    //   await keystore.addSeed({
-    //     seed: process.env.SEED,
-    //     hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-    //   })
-    //   expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
-    // })
-    // test('should get default seed phrase', async () => {
-    //   expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
-    //   const decryptedSavedSeedPhrase = await keystore.getSavedSeed()
-    //   expect(decryptedSavedSeedPhrase.seed).toEqual(process.env.SEED)
-    //   expect(decryptedSavedSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
+  test('should add keystore seed phrase', async () => {
+    expect(keystore.seeds.length).toBe(0)
+    expect(keystore.isUnlocked).toBeTruthy()
+    await keystore.addSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    expect(keystore.seeds.length).toBe(1)
+    expect(keystore.seeds[0].label).toBe('Recovery Phrase 1')
+    expect(keystore.seeds[0].hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+  })
+  test('should update existing seed', async () => {
+    expect(keystore.seeds.length).toBe(1)
+    await keystore.updateSeed({
+      id: keystore.seeds[0].id,
+      label: 'New Label',
+      hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE
+    })
+    expect(keystore.seeds.length).toBe(1)
+    expect(keystore.seeds[0].label).toBe('New Label')
+    expect(keystore.seeds[0].hdPathTemplate).toBe(LEGACY_POPULAR_DERIVATION_TEMPLATE)
   })
 })
 
