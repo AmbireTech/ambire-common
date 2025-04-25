@@ -719,7 +719,6 @@ export class SignAccountOpController extends EventEmitter {
       // most updates are frozen during the signing process
       if (typeof signedTransactionsCount !== 'undefined') {
         this.signedTransactionsCount = signedTransactionsCount
-        this.status = { type: SigningStatus.Done }
         // If we add other exclusions we should figure out a way to emitUpdate only once
         this.emitUpdate()
         return
