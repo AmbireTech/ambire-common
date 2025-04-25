@@ -1067,7 +1067,8 @@ export class SignAccountOpController extends EventEmitter {
 
       // each available fee option should declare it's estimation method
       const broadcastOption = this.baseAccount.getBroadcastOption(option, {
-        op: this.accountOp
+        op: this.accountOp,
+        isSponsored: this.isSponsored
       })
       if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         if (!estimation.bundlerEstimation || !this.bundlerGasPrices) return
@@ -1264,7 +1265,8 @@ export class SignAccountOpController extends EventEmitter {
       maxPriorityFeePerGas:
         'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined,
       broadcastOption: this.baseAccount.getBroadcastOption(this.selectedOption, {
-        op: this.accountOp
+        op: this.accountOp,
+        isSponsored: this.isSponsored
       })
     }
   }
