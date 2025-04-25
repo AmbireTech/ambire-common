@@ -511,6 +511,11 @@ export class MainController extends EventEmitter {
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
 
     if (storedSeed) {
+      this.keystore.updateSeed({
+        id: storedSeed.id,
+        hdPathTemplate: this.accountPicker.hdPathTemplate
+      })
+
       this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
         (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
       )

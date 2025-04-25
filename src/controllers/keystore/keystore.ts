@@ -47,6 +47,7 @@ const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
+  updateSeed: 'INITIAL',
   deleteSavedSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
@@ -405,7 +406,7 @@ export class KeystoreController extends EventEmitter {
   get seeds() {
     return this.#keystoreSeeds.map(({ id, label }) => ({
       id,
-      label
+      label: label || 'Unnamed Recovery Seed'
     }))
   }
 
@@ -504,6 +505,46 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true)
   }
 
+  async #updateSeed({
+    id,
+    label,
+    hdPathTemplate
+  }: {
+    id: KeystoreSeed['id']
+    label?: KeystoreSeed['label']
+    hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+  }) {
+    if (!label && !hdPathTemplate) return
+
+    const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id)
+    if (!keystoreSeed) return
+
+    if (label) keystoreSeed.label = label
+
+    if (hdPathTemplate) keystoreSeed.hdPathTemplate = hdPathTemplate
+
+    const updatedKeystoreSeeds = this.#keystoreSeeds.map((s) =>
+      s.id === keystoreSeed.id ? keystoreSeed : s
+    )
+
+    this.#keystoreSeeds = updatedKeystoreSeeds
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
+  }
+
+  async updateSeed({
+    id,
+    label,
+    hdPathTemplate
+  }: {
+    id: KeystoreSeed['id']
+    label?: KeystoreSeed['label']
+    hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+  }) {
+    await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate }), true)
+  }
+
   async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
     if (!nextHdPathTemplate) return // should never happen
 
@@ -516,24 +557,6 @@ export class KeystoreController extends EventEmitter {
     if (isTheSameHdPathTemplate) return
 
     this.#tempSeed.hdPathTemplate = nextHdPathTemplate
-
-    this.emitUpdate()
-  }
-
-  async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
-    if (!nextHdPathTemplate) return // should never happen
-
-    await this.#initialLoadPromise
-
-    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
-    if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
-
-    const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate
-    if (isTheSameHdPathTemplate) return
-
-    // As of v4.33.0 we support only one seed phrase (saved seed) to be added to the keystore
-    this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate
-    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
   }
