@@ -188,7 +188,7 @@ export class AccountsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async removeAccountData(address: Account['addr']) {
+  removeAccountData(address: Account['addr']) {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
@@ -212,7 +212,7 @@ export class AccountsController extends EventEmitter {
       if (isAddress(account.preferences.pfp)) {
         account.preferences.pfp = getAddress(account.preferences.pfp)
       }
-      return { ...acc, preferences: account.preferences, newlyAdded: false }
+      return { ...acc, preferences: account.preferences }
     })
 
     await this.#storage.set('accounts', this.accounts)
@@ -245,6 +245,11 @@ export class AccountsController extends EventEmitter {
       await this.updateAccountState(addr, 'latest', [chainId])
 
     return this.accountStates[addr][chainId.toString()]
+  }
+
+  resetAccountsNewlyAddedState() {
+    this.accounts = this.accounts.map((a) => ({ ...a, newlyAdded: false }))
+    this.emitUpdate()
   }
 
   async forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState> {

@@ -2,6 +2,7 @@ import { Session, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
+import { patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 
@@ -48,7 +49,7 @@ export class DappsController extends EventEmitter {
       })
     )
 
-    return [...predefinedDappsParsed, ...this.#dapps].reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
+    return [...this.#dapps, ...predefinedDappsParsed].reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
       if (!acc.some(({ url }) => url === curr.url)) return [...acc, curr]
       return acc
     }, [])
@@ -67,7 +68,7 @@ export class DappsController extends EventEmitter {
     this.#storage.remove('dappSessions')
     const storedDapps = await this.#storage.get('dapps', [])
 
-    this.#dapps = storedDapps
+    this.#dapps = patchStorageApps(storedDapps)
     this.emitUpdate()
   }
 

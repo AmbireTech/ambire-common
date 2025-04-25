@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -138,7 +138,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   serviceTime: route.steps[0].estimate.executionDuration,
   // errorMessage: undefined
   rawRoute: route,
-  sender: route.fromAddress
+  sender: route.fromAddress,
+  toToken: route.toToken
 })
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
@@ -378,7 +379,7 @@ export class LiFiAPI {
     }
 
     const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-    const slippage = Number(fromAmountInUsd) <= 300 ? '0.010' : '0.005'
+    const slippage = Number(fromAmountInUsd) <= 400 ? '0.010' : '0.005'
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),

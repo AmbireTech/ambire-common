@@ -1,4 +1,4 @@
-import { Route as LiFiRoute } from '@lifi/types'
+import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
 
@@ -98,6 +98,7 @@ export interface SwapAndBridgeRoute {
   errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
   hasFailed?: boolean
+  toToken: LiFiToken
 }
 
 export interface SocketAPISwapUserTx {

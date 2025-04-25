@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
-import { AbiCoder, Contract, toBeHex, ZeroAddress } from 'ethers'
+import { AbiCoder, Contract, Interface, toBeHex, ZeroAddress } from 'ethers'
 
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -68,7 +69,13 @@ export class Paymaster extends AbstractPaymaster {
     this.errorCallback = errorCallback
   }
 
-  async init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider) {
+  async init(
+    op: AccountOp,
+    userOp: UserOperation,
+    account: Account,
+    network: Network,
+    provider: RPCProvider
+  ) {
     this.network = network
     this.provider = provider
     this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
@@ -76,8 +83,21 @@ export class Paymaster extends AbstractPaymaster {
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
         this.paymasterService = op.meta.paymasterService
+
+        // when requesting stub data with an empty account, send over
+        // the deploy data as per EIP-7677 standard
+        const localOp = { ...userOp }
+        if (BigInt(localOp.nonce) === 0n && account.creation) {
+          const factoryInterface = new Interface(AmbireFactory.abi)
+          localOp.factory = account.creation.factoryAddr
+          localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+            account.creation.bytecode,
+            account.creation.salt
+          ])
+        }
+
         const response = await Promise.race([
-          getPaymasterStubData(op.meta.paymasterService, userOp, network),
+          getPaymasterStubData(op.meta.paymasterService, localOp, network),
           new Promise((_resolve, reject) => {
             setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000)
           })
@@ -124,7 +144,10 @@ export class Paymaster extends AbstractPaymaster {
   }
 
   shouldIncludePayment(): boolean {
-    return this.type === 'Ambire' || this.type === 'ERC7677'
+    return (
+      this.type === 'Ambire' ||
+      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER)
+    )
   }
 
   // get the fee call type used in the estimation

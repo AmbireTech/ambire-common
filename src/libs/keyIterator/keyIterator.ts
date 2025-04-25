@@ -42,7 +42,7 @@ export const getPrivateKeyFromSeed = (
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
 export class KeyIterator implements KeyIteratorInterface {
-  type = 'internal'
+  type = 'internal' as 'internal'
 
   subType: 'seed' | 'private-key'
 
@@ -72,6 +72,21 @@ export class KeyIterator implements KeyIteratorInterface {
     }
 
     throw new Error('keyIterator: invalid argument provided to constructor')
+  }
+
+  async getEncryptedSeed(
+    encryptor: (
+      seed: string,
+      seedPassphrase?: string | null | undefined
+    ) => Promise<{
+      seed: string
+      passphrase: string | null
+    }>
+  ) {
+    if (!this.#seedPhrase) return null
+    const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase)
+
+    return encryptedSeed
   }
 
   async retrieve(

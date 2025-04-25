@@ -1713,7 +1713,8 @@ export class SwapAndBridgeController extends EventEmitter {
       provider,
       accountState
     )
-    const calls = [...userRequestCalls, ...swapOrBridgeCalls]
+    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
     if (this.signAccountOpController) {
       this.signAccountOpController.update({ calls })
@@ -1817,12 +1818,10 @@ export class SwapAndBridgeController extends EventEmitter {
       isBridge &&
       this.fromSelectedToken &&
       this.fromSelectedToken.amountPostSimulation &&
-      this.fromSelectedToken &&
-      this.fromSelectedToken.amountPostSimulation > this.fromSelectedToken.amount &&
-      BigInt(this.fromAmount) > this.fromSelectedToken.amount
+      this.fromSelectedToken.amount !== this.fromSelectedToken.amountPostSimulation
     ) {
       errors.push({
-        title: 'Please complete your pending sign request before bridging'
+        title: `${this.fromSelectedToken.symbol} detected in batch. Please complete the batch before bridging`
       })
     }
 

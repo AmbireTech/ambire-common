@@ -26,7 +26,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
-import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
+import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -706,7 +706,7 @@ export class SignAccountOpController extends EventEmitter {
     paidBy?: string
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
-    signingKeyType?: Key['type']
+    signingKeyType?: InternalKey['type'] | ExternalKey['type']
     calls?: AccountOp['calls']
     rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
     bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
@@ -1067,7 +1067,8 @@ export class SignAccountOpController extends EventEmitter {
 
       // each available fee option should declare it's estimation method
       const broadcastOption = this.baseAccount.getBroadcastOption(option, {
-        op: this.accountOp
+        op: this.accountOp,
+        isSponsored: this.isSponsored
       })
       if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         if (!estimation.bundlerEstimation || !this.bundlerGasPrices) return
@@ -1264,7 +1265,8 @@ export class SignAccountOpController extends EventEmitter {
       maxPriorityFeePerGas:
         'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined,
       broadcastOption: this.baseAccount.getBroadcastOption(this.selectedOption, {
-        op: this.accountOp
+        op: this.accountOp,
+        isSponsored: this.isSponsored
       })
     }
   }
