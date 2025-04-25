@@ -86,8 +86,9 @@ describe('Portfolio', () => {
     ])
 
     const interceptedRequestsRaw = nock.recorder.play()
-    const interceptedRequests = interceptedRequestsRaw.map(({ path, scope }: any) => ({
-      url: new URL(scope.replace(':443', '') + path)
+    const interceptedRequests = interceptedRequestsRaw.map(({ path, scope, ...rest }: any) => ({
+      url: new URL(scope.replace(':443', '') + path),
+      ...rest
     }))
 
     const tokens =
@@ -112,6 +113,7 @@ describe('Portfolio', () => {
     const rpcReqs = interceptedRequests.filter(
       (req) => req?.url.hostname === 'invictus.ambire.com' && req?.url.pathname === '/ethereum'
     )
+    console.log(rpcReqs)
 
     expect(multiHintsReqs.length).toEqual(1)
     expect(nativePriceReqs.length).toEqual(1)
