@@ -550,7 +550,10 @@ export class SwapAndBridgeController extends EventEmitter {
       toSelectedToken?: SwapAndBridgeToToken | null
       routePriority?: 'output' | 'time'
     },
-    emitUpdate: boolean = true
+    updateProps?: {
+      emitUpdate?: boolean
+      updateQuote?: boolean
+    }
   ) {
     const {
       fromAmount,
@@ -561,6 +564,7 @@ export class SwapAndBridgeController extends EventEmitter {
       toSelectedToken,
       routePriority
     } = props
+    const { emitUpdate = true, updateQuote = true } = updateProps || {}
 
     // fromAmountFieldMode must be set before fromAmount so it
     // works correctly when both are set at the same time
@@ -684,7 +688,7 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.updateQuote()
+    if (updateQuote) this.updateQuote()
 
     if (emitUpdate) this.#emitUpdateIfNeeded()
   }
@@ -934,7 +938,10 @@ export class SwapAndBridgeController extends EventEmitter {
           fromAmount: '',
           fromAmountFieldMode: 'token'
         },
-        false
+        {
+          emitUpdate: false,
+          updateQuote: false
+        }
       )
     } else if (this.toChainId) {
       const toSelectedTokenNetwork = this.#networks.networks.find(
@@ -982,7 +989,10 @@ export class SwapAndBridgeController extends EventEmitter {
           fromAmount,
           fromAmountFieldMode: 'token'
         },
-        false
+        {
+          emitUpdate: false,
+          updateQuote: false
+        }
       )
     }
 
