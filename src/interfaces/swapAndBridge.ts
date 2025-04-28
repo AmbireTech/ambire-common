@@ -1,3 +1,5 @@
+import { TokenResult } from 'libs/portfolio'
+
 import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
@@ -390,4 +392,8 @@ type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
 export type CachedToTokenLists = {
   [key: CachedTokenListKey]: { lastFetched: number; data: SwapAndBridgeToToken[] }
+}
+
+export type FromToken = TokenResult & {
+  isSwitchedZeroToken?: boolean
 }
