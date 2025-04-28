@@ -5,6 +5,8 @@ import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+/* eslint-disable no-await-in-loop */
+import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
@@ -19,13 +21,11 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
+import { UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
-/* eslint-disable no-await-in-loop */
-import { SignAccountOpError } from '../../interfaces/signAccountOp'
-import { UserRequest } from '../../interfaces/userRequest'
 import { randomId } from '../../libs/humanizer/utils'
 import { batchCallsFromUserRequests } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -573,6 +573,10 @@ export class SwapAndBridgeController extends EventEmitter {
       routePriority
     } = props
 
+    if (fromAmountFieldMode) {
+      this.fromAmountFieldMode = fromAmountFieldMode
+    }
+
     if (fromAmount !== undefined) {
       const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
       this.fromAmount = fromAmount
@@ -638,10 +642,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (fromAmountInFiat !== undefined) {
       this.fromAmountInFiat = fromAmountInFiat
-    }
-
-    if (fromAmountFieldMode) {
-      this.fromAmountFieldMode = fromAmountFieldMode
     }
 
     if (fromSelectedToken) {
@@ -1834,7 +1834,6 @@ export class SwapAndBridgeController extends EventEmitter {
       ...super.toJSON(),
       toTokenList: this.toTokenList,
       maxFromAmount: this.maxFromAmount,
-      maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,
       formStatus: this.formStatus,
