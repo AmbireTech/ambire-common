@@ -1,8 +1,8 @@
 import { JsonRpcProvider, Provider } from 'ethers'
-import { v4 as uuidv4 } from 'uuid'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
+import { generateUuid } from '../../../utils/uuid'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
@@ -79,7 +79,7 @@ export async function getAAVEPositions(
   }
 
   const position = {
-    id: uuidv4(),
+    id: await generateUuid(),
     additionalData: {
       healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
       positionInUSD: 0,
