@@ -395,5 +395,5 @@ export type CachedToTokenLists = {
 }
 
 export type FromToken = TokenResult & {
-  isSwitchedZeroToken?: boolean
+  isSwitchedToToken?: boolean
 }

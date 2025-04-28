@@ -746,15 +746,13 @@ export class SwapAndBridgeController extends EventEmitter {
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
     // update the selected token
-    if (!this.fromSelectedToken?.isSwitchedZeroToken && shouldUpdateFromSelectedToken) {
+    if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
       this.updateForm({
         fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
       })
       return
     }
-    if (this.fromSelectedToken?.isSwitchedZeroToken) {
-      this.#addFromTokenToPortfolioListIfNeeded()
-    }
+    this.#addFromTokenToPortfolioListIfNeeded()
 
     this.#emitUpdateIfNeeded()
   }
@@ -919,7 +917,7 @@ export class SwapAndBridgeController extends EventEmitter {
         t.chainId === this.fromSelectedToken!.chainId
     )
 
-    if (isAlreadyInTheList || !this.fromSelectedToken.isSwitchedZeroToken) return
+    if (isAlreadyInTheList || !this.fromSelectedToken.isSwitchedToToken) return
 
     this.portfolioTokenList = [...this.portfolioTokenList, this.fromSelectedToken]
   }
@@ -928,10 +926,16 @@ export class SwapAndBridgeController extends EventEmitter {
     this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true)
 
   async switchFromAndToTokens() {
-    const currentFromSelectedToken = { ...this.fromSelectedToken }
-
+    const prevFromSelectedToken = { ...this.fromSelectedToken }
     if (!this.toSelectedToken) {
       this.fromSelectedToken = null
+      this.updateForm(
+        {
+          fromAmount: '',
+          fromAmountFieldMode: 'token'
+        },
+        false
+      )
     } else if (this.toChainId) {
       const toSelectedTokenNetwork = this.#networks.networks.find(
         (n) => Number(n.chainId) === this.toChainId
@@ -941,6 +945,8 @@ export class SwapAndBridgeController extends EventEmitter {
           token.address === this.toSelectedToken?.address &&
           token.chainId === toSelectedTokenNetwork.chainId
       )
+
+      const price = Number(this.quote?.selectedRoute?.toToken.priceUSD || 0)
 
       this.fromSelectedToken = tokenInPortfolio || {
         ...this.toSelectedToken,
@@ -952,34 +958,37 @@ export class SwapAndBridgeController extends EventEmitter {
           canTopUpGasTank: false,
           rewardsType: null
         },
-        priceIn: [],
-        isSwitchedZeroToken: true
+        priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
+
+      this.fromSelectedToken.isSwitchedToToken = true
       this.#addFromTokenToPortfolioListIfNeeded()
-    }
-    let fromAmount = ''
-    // Try catch just in case because of formatUnits
-    try {
-      if (this.quote && this.quote.selectedRoute?.fromAmount) {
-        fromAmount = formatUnits(
-          this.quote.selectedRoute.toAmount,
-          this.quote.selectedRoute.toToken.decimals
-        )
+
+      // Update the amount to the one from the quote
+      let fromAmount = ''
+      // Try catch just in case because of formatUnits
+      try {
+        if (this.quote && this.quote.selectedRoute?.fromAmount) {
+          fromAmount = formatUnits(
+            this.quote.selectedRoute.toAmount,
+            this.quote.selectedRoute.toToken.decimals
+          )
+        }
+      } catch (error) {
+        console.error('Error formatting fromAmount', error)
       }
-    } catch (error) {
-      console.error('Error formatting fromAmount', error)
+      this.updateForm(
+        {
+          fromAmount,
+          fromAmountFieldMode: 'token'
+        },
+        false
+      )
     }
-    this.updateForm(
-      {
-        fromAmount,
-        fromAmountFieldMode: 'token'
-      },
-      false
-    )
-    // this.fromAmount = this.quote?.selectedRoute?.toAmount || ''
+
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
     this.emitUpdate()
-    await this.updateToTokenList(true, currentFromSelectedToken.address)
+    if (prevFromSelectedToken) await this.updateToTokenList(true, prevFromSelectedToken.address)
   }
 
   async updateQuote(
@@ -1670,7 +1679,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmount &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
-      this.validateFromAmount.success
+      (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)
     )
   }
 
