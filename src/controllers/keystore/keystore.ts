@@ -48,7 +48,7 @@ const STATUS_WRAPPED_METHODS = {
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
   updateSeed: 'INITIAL',
-  deleteSavedSeed: 'INITIAL',
+  deleteSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -546,6 +546,19 @@ export class KeystoreController extends EventEmitter {
     await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate }), true)
   }
 
+  async deleteSeed(id: KeystoreSeed['id']) {
+    await this.withStatus('deleteSeed', () => this.#deleteSeed(id))
+  }
+
+  async #deleteSeed(id: KeystoreSeed['id']) {
+    await this.#initialLoadPromise
+
+    this.#keystoreSeeds = this.#keystoreSeeds.filter((s) => s.id !== id)
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
+  }
+
   async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
     if (!nextHdPathTemplate) return // should never happen
 
@@ -941,19 +954,6 @@ export class KeystoreController extends EventEmitter {
       return { ...keystoreKey, ...key.preferences }
     })
     await this.#storage.set('keystoreKeys', this.#keystoreKeys)
-    this.emitUpdate()
-  }
-
-  async deleteSavedSeed() {
-    await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed())
-  }
-
-  async #deleteSavedSeed() {
-    await this.#initialLoadPromise
-
-    this.#keystoreSeeds = []
-    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
-
     this.emitUpdate()
   }
 
