@@ -782,7 +782,10 @@ export class SwapAndBridgeController extends EventEmitter {
     this.updateToTokenListStatus = 'LOADING'
     this.#updateToTokenListThrottle.time = now
     this.removeError('to-token-list-fetch-failed', false)
-    if (!this.fromChainId || !this.toChainId) return
+    if (!this.fromChainId || !this.toChainId) {
+      this.updateToTokenListStatus = 'INITIAL'
+      return
+    }
 
     if (shouldReset) {
       this.#toTokenList = []
@@ -827,7 +830,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
     // should never happen
-    if (!toTokenNetwork) throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+    if (!toTokenNetwork) {
+      this.updateToTokenListStatus = 'INITIAL'
+      throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+    }
 
     const additionalTokensFromPortfolio = this.portfolioTokenList
       .filter((t) => t.chainId === toTokenNetwork.chainId)
@@ -931,18 +937,25 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async switchFromAndToTokens() {
     const prevFromSelectedToken = { ...this.fromSelectedToken }
+    // Update the from token
     if (!this.toSelectedToken) {
-      this.fromSelectedToken = null
       this.updateForm(
         {
           fromAmount: '',
-          fromAmountFieldMode: 'token'
+          fromAmountFieldMode: 'token',
+          toSelectedToken: this.fromSelectedToken
+            ? {
+                ...this.fromSelectedToken,
+                chainId: Number(this.fromSelectedToken.chainId)
+              }
+            : null
         },
         {
           emitUpdate: false,
           updateQuote: false
         }
       )
+      this.fromSelectedToken = null
     } else if (this.toChainId) {
       const toSelectedTokenNetwork = this.#networks.networks.find(
         (n) => Number(n.chainId) === this.toChainId
@@ -996,9 +1009,11 @@ export class SwapAndBridgeController extends EventEmitter {
       )
     }
 
+    // Update the chain ids
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
-    this.emitUpdate()
-    if (prevFromSelectedToken) await this.updateToTokenList(true, prevFromSelectedToken.address)
+
+    // Update the to token list
+    await this.updateToTokenList(true, prevFromSelectedToken?.address)
   }
 
   async updateQuote(
