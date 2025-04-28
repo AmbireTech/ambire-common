@@ -2,11 +2,11 @@ import '@nomicfoundation/hardhat-chai-matchers'
 
 import { expect } from 'chai'
 import { Contract, MaxUint256, solidityPackedKeccak256 } from 'ethers'
-import { ethers } from 'hardhat'
+import { ethers, network } from 'hardhat'
 
 import { ERC20 } from '../../src/libs/humanizer/const/abis'
 
-describe('stkWallet', () => {
+describe.skip('stkWallet', () => {
   let signer: any
   let stkWallet: any
   const WALLET_ADDRESS = '0x88800092ff476844f74dc2fc427974bbee2794ae'
@@ -20,17 +20,17 @@ describe('stkWallet', () => {
 
   before(async () => {
     // commented out
-    // await network.provider.request({
-    //   method: 'hardhat_reset',
-    //   params: [
-    //     {
-    //       forking: {
-    //         jsonRpcUrl: 'https://invictus.ambire.com/ethereum-5',
-    //         blockNumber: 14390000
-    //       }
-    //     }
-    //   ]
-    // })
+    await network.provider.request({
+      method: 'hardhat_reset',
+      params: [
+        {
+          forking: {
+            jsonRpcUrl: 'https://invictus.ambire.com/ethereum-5',
+            blockNumber: 14390000
+          }
+        }
+      ]
+    })
   })
 
   beforeEach('Use fork of mainnet', async () => {
@@ -48,7 +48,7 @@ describe('stkWallet', () => {
     const StkWallet = await ethers.getContractFactory('stkWALLET')
     stkWallet = await StkWallet.deploy(WALLET_ADDRESS, XWALLET_ADDRESS)
   })
-  it.skip('Basic wrap with xWALLET ', async () => {
+  it('Basic wrap with xWALLET ', async () => {
     const amount = BigInt(10 * 1e18)
     await (walletContract.connect(signer) as any).approve(XWALLET_ADDRESS, amount)
     await (xWalletContract.connect(signer) as any).enter(amount)
@@ -60,13 +60,13 @@ describe('stkWallet', () => {
     expect(await stkWallet.balanceOf(signer.address)).gt(amount)
   })
 
-  it.skip('Basic stake and wrap with WALLET ', async () => {
+  it('Basic stake and wrap with WALLET ', async () => {
     const amount = BigInt(10 * 1e18)
     await (walletContract.connect(signer) as any).approve(stkWallet.target, amount)
     // await (walletContract.connect(signer) as any).approve(XWALLET_ADDRESS, amount)
 
     const xWalletBalanceOfStkWalletBefore = await xWalletContract.balanceOf(stkWallet.target)
-    await (stkWallet.connect(signer) as any).stakeAndWrap(amount)
+    await (stkWallet.connect(signer) as any).enterTo(signer.address, amount)
     const xWalletBalanceOfStkWalletAfter = await xWalletContract.balanceOf(stkWallet.target)
     const newXWallets = xWalletBalanceOfStkWalletAfter - xWalletBalanceOfStkWalletBefore
     const storedXWallets = await stkWallet.shares(signer.address)
