@@ -966,7 +966,7 @@ export class SwapAndBridgeController extends EventEmitter {
           token.chainId === toSelectedTokenNetwork.chainId
       )
 
-      const price = Number(this.quote?.selectedRoute?.toToken.priceUSD || 0)
+      const price = Number(this.quote?.selectedRoute?.toToken?.priceUSD || 0)
 
       this.fromSelectedToken = tokenInPortfolio || {
         ...this.toSelectedToken,
