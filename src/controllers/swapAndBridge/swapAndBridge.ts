@@ -572,6 +572,10 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmountFieldMode = fromAmountFieldMode
     }
 
+    if (fromAmountFieldMode) {
+      this.fromAmountFieldMode = fromAmountFieldMode
+    }
+
     if (fromAmount !== undefined) {
       const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
       this.fromAmount = fromAmount
@@ -1922,7 +1926,6 @@ export class SwapAndBridgeController extends EventEmitter {
       ...super.toJSON(),
       toTokenList: this.toTokenList,
       maxFromAmount: this.maxFromAmount,
-      maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,
       formStatus: this.formStatus,
