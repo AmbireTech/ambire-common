@@ -1,8 +1,7 @@
-import { TokenResult } from 'libs/portfolio'
-
 import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
+import { TokenResult } from '../libs/portfolio'
 
 export interface SocketAPIResponse<T> {
   result: T
