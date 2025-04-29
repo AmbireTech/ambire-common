@@ -4,6 +4,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -115,6 +116,9 @@ import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAcc
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { TransferController } from '../transfer/transfer'
+import { APP_VERSION } from '../../../../common/config/env'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 
 const STATUS_WRAPPED_METHODS = {
   signAccountOp: 'INITIAL',
@@ -179,6 +183,8 @@ export class MainController extends EventEmitter {
   signMessage: SignMessageController
 
   swapAndBridge: SwapAndBridgeController
+
+  transfer: TransferController
 
   signAccountOp: SignAccountOpController | null = null
 
@@ -391,6 +397,15 @@ export class MainController extends EventEmitter {
       },
       userRequests: this.userRequests
     })
+    this.transfer = new TransferController(
+      storage, // TODO: consider using this.#storage
+      humanizerInfo as HumanizerMeta,
+      this.selectedAccount,
+      this.networks.networks,
+      this.selectedAccount.portfolio,
+      true, // TODO: not sure what initial value should have here
+      '5.0.0' // TODO: we may re-do it with session storage and not rely on APP_VERSION
+    )
     this.domains = new DomainsController(this.providers.providers)
 
     this.#initialLoadPromise = this.#load()

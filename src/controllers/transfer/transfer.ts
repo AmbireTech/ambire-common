@@ -1,7 +1,6 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
@@ -17,6 +16,7 @@ import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { stringify } from '../../libs/richJson/richJson'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -94,7 +94,7 @@ export class TransferController extends EventEmitter {
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccountData: Account | null = null
+  #selectedAccountData: SelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -128,7 +128,7 @@ export class TransferController extends EventEmitter {
   constructor(
     storage: Storage,
     humanizerInfo: HumanizerMeta,
-    selectedAccountData: Account,
+    selectedAccountData: SelectedAccountController,
     networks: Network[],
     portfolio: SelectedAccountPortfolio,
     shouldHydrate: boolean,
@@ -152,6 +152,8 @@ export class TransferController extends EventEmitter {
       'shouldSkipTransactionQueuedModal',
       false
     )
+
+    await this.#selectedAccountData.initialLoadPromise
 
     // Currently, we should not hydrate when it's a Top-up, but in the future, we may have other cases as well.
     if (shouldHydrate) await this.#hydrate()
@@ -316,12 +318,12 @@ export class TransferController extends EventEmitter {
 
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
-    if (this.#humanizerInfo && this.#selectedAccountData) {
+    if (this.#humanizerInfo && this.#selectedAccountData.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccountData.addr,
+        this.#selectedAccountData.account?.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
@@ -378,7 +380,9 @@ export class TransferController extends EventEmitter {
   }
 
   get isInitialized() {
-    return !!this.#humanizerInfo && !!this.#selectedAccountData && !!this.#networks.length
+    return (
+      !!this.#humanizerInfo && !!this.#selectedAccountData.account?.addr && !!this.#networks.length
+    )
   }
 
   get recipientAddress() {
@@ -411,7 +415,7 @@ export class TransferController extends EventEmitter {
 
     const prevState = stringify(this.persistableState)
     const hasAccountChanged =
-      selectedAccountData && this.#selectedAccountData?.addr !== selectedAccountData.addr
+      selectedAccountData && this.#selectedAccountData.account?.addr !== selectedAccountData.addr
 
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -426,14 +430,15 @@ export class TransferController extends EventEmitter {
         this.checkIsRecipientAddressUnknown()
       }
     }
-    if (selectedAccountData) {
-      if (hasAccountChanged) {
-        this.#setAmount('')
-        this.selectedToken = null
-        this.addressState = { ...DEFAULT_ADDRESS_STATE }
-      }
-      this.#selectedAccountData = selectedAccountData
-    }
+    // TODO - selectedAccountData.onUpdate implement
+    // if (selectedAccountData) {
+    //   if (hasAccountChanged) {
+    //     this.#setAmount('')
+    //     this.selectedToken = null
+    //     this.addressState = { ...DEFAULT_ADDRESS_STATE }
+    //   }
+    //   this.#selectedAccountData = selectedAccountData
+    // }
     if (selectedToken) {
       this.selectedToken = selectedToken
     }
@@ -582,11 +587,11 @@ export class TransferController extends EventEmitter {
   }
 
   #setSWWarningVisibleIfNeeded() {
-    if (!this.#selectedAccountData) return
+    if (!this.#selectedAccountData.account?.addr) return
 
     this.isSWWarningVisible =
       this.isRecipientAddressUnknown &&
-      isSmartAccount(this.#selectedAccountData) &&
+      isSmartAccount(this.#selectedAccountData.account) &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
