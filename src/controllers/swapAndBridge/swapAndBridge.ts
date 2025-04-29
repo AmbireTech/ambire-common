@@ -1056,22 +1056,22 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const updateQuoteFunction = async () => {
       if (!this.#selectedAccount.account) return
-      if (!this.fromAmount) return
+      if (!this.fromAmount || !this.fromSelectedToken || !this.toSelectedToken) return
 
       const sanitizedFromAmount = getSanitizedAmount(
         this.fromAmount,
-        this.fromSelectedToken!.decimals
+        this.fromSelectedToken.decimals
       )
 
-      const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken!.decimals)
+      const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken.decimals)
 
       if (this.quote) {
         const isFromAmountSame =
           this.quote.selectedRoute?.fromAmount === bigintFromAmount.toString()
         const isFromNetworkSame = this.quote.fromChainId === this.fromChainId
-        const isFromAddressSame = this.quote.fromAsset.address === this.fromSelectedToken!.address
+        const isFromAddressSame = this.quote.fromAsset.address === this.fromSelectedToken.address
         const isToNetworkSame = this.quote.toChainId === this.toChainId
-        const isToAddressSame = this.quote.toAsset.address === this.toSelectedToken!.address
+        const isToAddressSame = this.quote.toAsset.address === this.toSelectedToken.address
 
         if (
           skipQuoteUpdateOnSameValues &&
@@ -1097,10 +1097,10 @@ export class SwapAndBridgeController extends EventEmitter {
         const quoteResult = await this.#serviceProviderAPI.quote({
           fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
-          fromTokenAddress: this.fromSelectedToken!.address,
+          fromTokenAddress: this.fromSelectedToken.address,
           toAsset: this.toSelectedToken,
           toChainId: this.toChainId!,
-          toTokenAddress: this.toSelectedToken!.address,
+          toTokenAddress: this.toSelectedToken.address,
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
           isSmartAccount: !isBasicAccount(
