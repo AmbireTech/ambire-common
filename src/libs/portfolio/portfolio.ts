@@ -154,7 +154,7 @@ export class Portfolio {
     try {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
-      if (this.network.hasRelayer && !disableAutoDiscovery) {
+      if (!disableAutoDiscovery) {
         hintsFromExternalAPI = await this.batchedVelcroDiscovery({
           chainId,
           accountAddr,
