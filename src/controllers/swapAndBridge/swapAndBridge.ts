@@ -1056,6 +1056,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const updateQuoteFunction = async () => {
       if (!this.#selectedAccount.account) return
+      if (!this.#getIsFormValidToFetchQuote()) return
       if (!this.fromAmount || !this.fromSelectedToken || !this.toSelectedToken) return
 
       const sanitizedFromAmount = getSanitizedAmount(
