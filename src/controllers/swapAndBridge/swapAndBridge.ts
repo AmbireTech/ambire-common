@@ -950,7 +950,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async switchFromAndToTokens() {
     this.switchTokensStatus = 'LOADING'
-    await this.forceEmitUpdate()
+    this.#emitUpdateIfNeeded()
 
     const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
     // Update the from token
