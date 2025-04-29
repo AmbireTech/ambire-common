@@ -148,9 +148,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #updateQuoteId?: string
 
-  #updateQuoteTimeout?: ReturnType<typeof setTimeout>
-
   updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
+
+  switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   sessionIds: string[] = []
 
@@ -307,13 +307,12 @@ export class SwapAndBridgeController extends EventEmitter {
     )
 
     this.#selectedAccount.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', () => {
+      this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
         if (this.#selectedAccount.portfolio.isReadyToVisualize) {
           this.isTokenListLoading = false
-          this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+          await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
           // To token list includes selected account portfolio tokens, it should get an update too
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.updateToTokenList(false)
+          await this.updateToTokenList(false)
         }
       })
     })
@@ -465,7 +464,7 @@ export class SwapAndBridgeController extends EventEmitter {
     // do not await the health status check to prevent UI freeze while fetching
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#serviceProviderAPI.updateHealth()
-    this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
     this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -540,7 +539,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
 
-  updateForm(
+  async updateForm(
     props: {
       fromAmount?: string
       fromAmountInFiat?: string
@@ -565,6 +564,7 @@ export class SwapAndBridgeController extends EventEmitter {
       routePriority
     } = props
     const { emitUpdate = true, updateQuote = true } = updateProps || {}
+    let shouldUpdateToTokenList = false
 
     // fromAmountFieldMode must be set before fromAmount so it
     // works correctly when both are set at the same time
@@ -654,8 +654,7 @@ export class SwapAndBridgeController extends EventEmitter {
           if (!this.toSelectedToken) {
             // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
             this.toChainId = Number(network.chainId)
-            // eslint-disable-next-line @typescript-eslint/no-floating-promises
-            this.updateToTokenList(true)
+            shouldUpdateToTokenList = true
           }
         }
       }
@@ -675,12 +674,11 @@ export class SwapAndBridgeController extends EventEmitter {
     if (toChainId) {
       if (this.toChainId !== Number(toChainId)) {
         this.toChainId = Number(toChainId)
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateToTokenList(true)
+        shouldUpdateToTokenList = true
       }
     }
 
-    if (toSelectedToken) {
+    if (typeof toSelectedToken !== 'undefined') {
       this.toSelectedToken = toSelectedToken
     }
 
@@ -691,10 +689,13 @@ export class SwapAndBridgeController extends EventEmitter {
         this.quoteRoutesStatuses = {}
       }
     }
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    if (updateQuote) this.updateQuote()
 
     if (emitUpdate) this.#emitUpdateIfNeeded()
+
+    await Promise.all([
+      shouldUpdateToTokenList ? this.updateToTokenList(true, toSelectedToken?.address) : undefined,
+      updateQuote ? this.updateQuote({ debounce: true }) : undefined
+    ])
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -727,7 +728,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
 
-  updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
+  async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
     const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
@@ -755,9 +756,14 @@ export class SwapAndBridgeController extends EventEmitter {
     // and the user has switched the "from" and "to" tokens we should not
     // update the selected token
     if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
-      this.updateForm({
-        fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
-      })
+      await this.updateForm(
+        {
+          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
+        },
+        {
+          emitUpdate: false
+        }
+      )
       return
     }
     this.#addFromTokenToPortfolioListIfNeeded()
@@ -791,10 +797,12 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
+    // Emit an update to set the loading state in the UI
+    this.#emitUpdateIfNeeded()
+
     if (shouldReset) {
       this.#toTokenList = []
       this.toSelectedToken = null
-      this.#emitUpdateIfNeeded()
     }
 
     const toTokenListInCache =
@@ -836,6 +844,7 @@ export class SwapAndBridgeController extends EventEmitter {
     // should never happen
     if (!toTokenNetwork) {
       this.updateToTokenListStatus = 'INITIAL'
+      this.#emitUpdateIfNeeded()
       throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
     }
 
@@ -853,7 +862,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (addressToSelect) {
         const token = this.#toTokenList.find((t) => t.address === addressToSelect)
         if (token) {
-          this.updateForm({ toSelectedToken: token })
+          await this.updateForm({ toSelectedToken: token }, { emitUpdate: false })
           this.updateToTokenListStatus = 'INITIAL'
           this.#emitUpdateIfNeeded()
           return
@@ -940,10 +949,13 @@ export class SwapAndBridgeController extends EventEmitter {
     this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true)
 
   async switchFromAndToTokens() {
-    const prevFromSelectedToken = { ...this.fromSelectedToken }
+    this.switchTokensStatus = 'LOADING'
+    await this.forceEmitUpdate()
+
+    const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
     // Update the from token
     if (!this.toSelectedToken) {
-      this.updateForm(
+      await this.updateForm(
         {
           fromAmount: '',
           fromAmountFieldMode: 'token',
@@ -1001,7 +1013,7 @@ export class SwapAndBridgeController extends EventEmitter {
       } catch (error) {
         console.error('Error formatting fromAmount', error)
       }
-      this.updateForm(
+      await this.updateForm(
         {
           fromAmount,
           fromAmountFieldMode: 'token'
@@ -1018,19 +1030,23 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // Update the to token list
     await this.updateToTokenList(true, prevFromSelectedToken?.address)
+
+    this.switchTokensStatus = 'INITIAL'
+    this.#emitUpdateIfNeeded()
   }
 
-  async updateQuote(
-    options: {
-      skipQuoteUpdateOnSameValues?: boolean
-      skipPreviousQuoteRemoval?: boolean
-      skipStatusUpdate?: boolean
-    } = {
-      skipQuoteUpdateOnSameValues: true,
-      skipPreviousQuoteRemoval: false,
-      skipStatusUpdate: false
-    }
-  ) {
+  async updateQuote(options?: {
+    skipQuoteUpdateOnSameValues?: boolean
+    skipPreviousQuoteRemoval?: boolean
+    skipStatusUpdate?: boolean
+    debounce?: boolean
+  }) {
+    const {
+      skipQuoteUpdateOnSameValues = true,
+      skipPreviousQuoteRemoval = false,
+      skipStatusUpdate = false,
+      debounce = false
+    } = options || {}
     // no updates if the user has commited
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
       return
@@ -1058,7 +1074,7 @@ export class SwapAndBridgeController extends EventEmitter {
         const isToAddressSame = this.quote.toAsset.address === this.toSelectedToken!.address
 
         if (
-          options.skipQuoteUpdateOnSameValues &&
+          skipQuoteUpdateOnSameValues &&
           isFromAmountSame &&
           isFromNetworkSame &&
           isFromAddressSame &&
@@ -1068,7 +1084,7 @@ export class SwapAndBridgeController extends EventEmitter {
           return
         }
       }
-      if (!options.skipPreviousQuoteRemoval) {
+      if (!skipPreviousQuoteRemoval) {
         if (this.quote) {
           this.quote = null
           this.updateQuoteStatus = 'LOADING'
@@ -1284,33 +1300,19 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
-    let nextTimeout = 400 // timeout when there is no pending quote update
-    if (this.#updateQuoteTimeout) {
-      nextTimeout = 1000 // timeout when there is a pending quote update
-      clearTimeout(this.#updateQuoteTimeout)
-      this.#updateQuoteTimeout = undefined
-    }
-
-    if (!options.skipStatusUpdate && !this.quote) {
+    if (!skipStatusUpdate && !this.quote) {
       this.updateQuoteStatus = 'LOADING'
       this.#emitUpdateIfNeeded()
     }
 
-    this.#updateQuoteTimeout = setTimeout(async () => {
-      if (!options.skipStatusUpdate && !!this.quote) {
-        this.updateQuoteStatus = 'LOADING'
-        this.#emitUpdateIfNeeded()
-      }
+    // Debounce the updateQuote function to avoid multiple calls
+    if (debounce) await wait(500)
+    if (this.#updateQuoteId !== quoteId) return
 
-      await updateQuoteFunction()
+    await updateQuoteFunction()
 
-      if (quoteId !== this.#updateQuoteId) return
-
-      this.updateQuoteStatus = 'INITIAL'
-      this.#emitUpdateIfNeeded()
-      clearTimeout(this.#updateQuoteTimeout)
-      this.#updateQuoteTimeout = undefined
-    }, nextTimeout)
+    this.updateQuoteStatus = 'INITIAL'
+    this.#emitUpdateIfNeeded()
   }
 
   async getRouteStartUserTx(shouldThrowOnError = true): Promise<SwapAndBridgeSendTxRequest | null> {
