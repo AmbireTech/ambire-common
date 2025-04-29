@@ -573,6 +573,10 @@ export class SwapAndBridgeController extends EventEmitter {
       routePriority
     } = props
 
+    if (fromAmountFieldMode) {
+      this.fromAmountFieldMode = fromAmountFieldMode
+    }
+
     if (fromAmount !== undefined) {
       const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
       this.fromAmount = fromAmount
@@ -638,10 +642,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (fromAmountInFiat !== undefined) {
       this.fromAmountInFiat = fromAmountInFiat
-    }
-
-    if (fromAmountFieldMode) {
-      this.fromAmountFieldMode = fromAmountFieldMode
     }
 
     if (fromSelectedToken) {
@@ -1834,7 +1834,6 @@ export class SwapAndBridgeController extends EventEmitter {
       ...super.toJSON(),
       toTokenList: this.toTokenList,
       maxFromAmount: this.maxFromAmount,
-      maxFromAmountInFiat: this.maxFromAmountInFiat,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,
       formStatus: this.formStatus,
