@@ -2,7 +2,7 @@ import { Hex } from '../../interfaces/hex'
 
 export interface PaymasterService {
   url: string
-  context: {
+  context?: {
     policyId: string
   }
   id: number

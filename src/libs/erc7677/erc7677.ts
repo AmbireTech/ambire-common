@@ -3,6 +3,7 @@ import { toBeHex, toQuantity } from 'ethers'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
+import { BaseAccount } from '../account/BaseAccount'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp } from '../userOperation/userOperation'
 import {
@@ -30,6 +31,18 @@ export function getPaymasterService(
   const paymasterService = capabilities.paymasterService[foundChainId]
   paymasterService.id = new Date().getTime()
   return paymasterService
+}
+
+export function getAmbirePaymasterService(
+  baseAcc: BaseAccount,
+  relayerUrl: string
+): PaymasterService | undefined {
+  if (!baseAcc.isSponsorable()) return undefined
+
+  return {
+    url: `${relayerUrl}/v2/sponsorship`,
+    id: new Date().getTime()
+  }
 }
 
 export function getPaymasterStubData(

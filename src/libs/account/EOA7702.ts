@@ -154,4 +154,8 @@ export class EOA7702 extends BaseAccount {
       }
     }
   }
+
+  isSponsorable(): boolean {
+    return this.network.chainId === 100n
+  }
 }
