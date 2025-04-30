@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -41,41 +41,62 @@ const normalizeLiFiTokenToSwapAndBridgeToToken = (
   return { name, address, decimals, symbol, icon, chainId: toChainId }
 }
 
-const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] =>
-  parentStep.includedSteps
-    // Picks only steps that need to be visualized / displayed
-    .filter(({ type }) => ['swap', 'cross'].includes(type))
-    .map((step: LiFiIncludedStep, index: number) => ({
-      chainId: step.action.fromChainId,
-      fromAmount: parentStep.action.fromAmount,
-      fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
-        step.action.fromToken,
-        step.action.fromChainId
-      ),
-      gasFees: {
-        gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-        gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-        feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-        asset: step.estimate.gasCosts?.[0]?.token
-          ? normalizeLiFiTokenToSwapAndBridgeToToken(
-              step.estimate.gasCosts[0].token,
-              step.estimate.gasCosts[0].token.chainId
-            )
-          : undefined
-      },
-      serviceTime: parentStep.estimate.executionDuration,
-      minAmountOut: step.estimate.toAmountMin,
-      protocol: {
-        name: step.toolDetails.name,
-        displayName: step.toolDetails.name,
-        icon: step.toolDetails.logoURI
-      },
-      swapSlippage: step.action.slippage,
-      toAmount: step.estimate.toAmount,
-      toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(step.action.toToken, step.action.toChainId),
-      type: step.type === 'swap' ? 'swap' : 'middleware',
-      userTxIndex: index
-    }))
+const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] => {
+  const includedSteps = parentStep.includedSteps
+  const swapOrBridgeSteps = ['swap', 'cross']
+
+  const isSwapOrBridge = includedSteps.some((s) => swapOrBridgeSteps.includes(s.type))
+
+  return (
+    includedSteps
+      // Picks only steps that need to be visualized / displayed
+      .filter(({ type }) => {
+        // If it's swap or bridge we don't want to show protocol steps
+        // as they are not relevant for the user
+        if (isSwapOrBridge) {
+          return swapOrBridgeSteps.includes(type)
+        }
+
+        // If it's not swap or bridge we want to show protocol steps
+        // (Wrap / Unwrap)
+        return type === 'protocol'
+      })
+      .map((step: LiFiIncludedStep, index: number) => ({
+        chainId: step.action.fromChainId,
+        fromAmount: parentStep.action.fromAmount,
+        fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
+          step.action.fromToken,
+          step.action.fromChainId
+        ),
+        gasFees: {
+          gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
+          gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
+          feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
+          asset: step.estimate.gasCosts?.[0]?.token
+            ? normalizeLiFiTokenToSwapAndBridgeToToken(
+                step.estimate.gasCosts[0].token,
+                step.estimate.gasCosts[0].token.chainId
+              )
+            : undefined
+        },
+        serviceTime: parentStep.estimate.executionDuration,
+        minAmountOut: step.estimate.toAmountMin,
+        protocol: {
+          name: step.toolDetails.name,
+          displayName: step.toolDetails.name,
+          icon: step.toolDetails.logoURI
+        },
+        swapSlippage: step.action.slippage,
+        toAmount: step.estimate.toAmount,
+        toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
+          step.action.toToken,
+          step.action.toChainId
+        ),
+        type: step.type === 'swap' ? 'swap' : 'middleware',
+        userTxIndex: index
+      }))
+  )
+}
 
 const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBridgeUserTx[] =>
   parentStep.includedSteps
@@ -400,8 +421,8 @@ export class LiFiAPI {
       }
     }
 
-    // const shouldRemoveConvenienceFee = isOG
-    // if (shouldRemoveConvenienceFee) delete body.options.fee
+    const shouldRemoveConvenienceFee = isOG
+    if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
     const response = await this.#handleResponse<LiFiRoutesResponse>({
