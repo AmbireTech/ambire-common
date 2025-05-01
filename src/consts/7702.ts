@@ -15,6 +15,10 @@ export const networks7702: Custom7702Settings = {
   // sepolia
   '11155111': {
     implementation: EIP_7702_AMBIRE_ACCOUNT
+  },
+  // gnosis
+  '100': {
+    implementation: EIP_7702_AMBIRE_ACCOUNT
   }
 }
 
