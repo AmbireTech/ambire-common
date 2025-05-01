@@ -24,10 +24,10 @@ const DEFAULT_STATE = {
 }
 
 /**
- * As of v4.20.0, an invite verification flow is introduced as a first step upon
- * extension installation. This flow requires users to provide a valid invite
- * code before they can use the Ambire extension. This controller manages the
- * verification of these invite codes and persisting the current invite status.
+ * As of v5.1.0, invite code is no longer required for using the extension. In
+ * v4.20.0, a mandatory invite verification flow is introduced as a first step
+ * upon extension installation. The controller is still used to manage OG status
+ * and other invite-related data.
  */
 export class InviteController extends EventEmitter {
   #storage: StorageController
