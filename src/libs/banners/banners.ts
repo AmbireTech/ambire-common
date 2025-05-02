@@ -82,7 +82,7 @@ export const getBridgeBanners = (
     text = `You have ${allRoutes.length} pending bridge${allRoutes.length > 1 ? 's' : ''}`
   } else if (failedRoutes.length > 0) {
     type = 'error'
-    title = `Failed bridge ${failedRoutes.length > 1 ? 's' : ''}`
+    title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
     text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
       completedRoutes.length > 1
         ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
