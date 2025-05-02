@@ -1,3 +1,4 @@
+import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -28,6 +29,7 @@ export class PaymasterFactory {
   async create(
     op: AccountOp,
     userOp: UserOperation,
+    account: Account,
     network: Network,
     provider: RPCProvider
   ): Promise<AbstractPaymaster> {
@@ -47,7 +49,7 @@ export class PaymasterFactory {
     }
 
     const paymaster = new Paymaster(this.relayerUrl, this.fetch, this.errorCallback)
-    await paymaster.init(localOp, userOp, network, provider)
+    await paymaster.init(localOp, userOp, account, network, provider)
     return paymaster
   }
 }

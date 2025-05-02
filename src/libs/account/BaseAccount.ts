@@ -55,6 +55,7 @@ export abstract class BaseAccount {
     feeOption: FeePaymentOption,
     options: {
       op: AccountOp
+      isSponsored?: boolean
     }
   ): string
 

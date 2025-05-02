@@ -3,10 +3,9 @@ import { Contract, formatUnits, ZeroAddress } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { Account, AccountId } from '../../interfaces/account'
+import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { isSmartAccount } from '../account/account'
 import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
@@ -105,10 +104,6 @@ export const validateERC20Token = async (
 
   isValid = isValid && !hasError
   return [isValid, type]
-}
-
-export const shouldGetAdditionalPortfolio = (account: Account) => {
-  return isSmartAccount(account)
 }
 
 // fetch the amountPostSimulation for the token if set

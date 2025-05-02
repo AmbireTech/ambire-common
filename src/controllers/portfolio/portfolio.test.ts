@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, jest } from '@jest/globals'
 
+import EventEmitter from 'events'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -16,6 +17,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
@@ -134,10 +136,35 @@ const emptyAccount = {
   }
 }
 
+const event = new EventEmitter()
+let windowId = 0
+const windowManager = {
+  event,
+  focus: () => Promise.resolve(),
+  open: () => {
+    windowId++
+    return Promise.resolve({
+      id: windowId,
+      top: 0,
+      left: 0,
+      width: 100,
+      height: 100,
+      focused: true
+    })
+  },
+  remove: () => {
+    event.emit('windowRemoved', windowId)
+    return Promise.resolve()
+  },
+  sendWindowToastMessage: () => {},
+  sendWindowUiMessage: () => {}
+}
+
 const prepareTest = () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
+  const keystore = new KeystoreController(storageCtrl, {}, windowManager)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storageCtrl,
@@ -166,6 +193,7 @@ const prepareTest = () => {
     providersCtrl,
     networksCtrl,
     accountsCtrl,
+    keystore,
     relayerUrl,
     velcroUrl
   )

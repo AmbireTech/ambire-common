@@ -29,7 +29,7 @@ export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
     let segmentId: string = queueItem.data.baseCurrency
 
     if (geckoId) segmentId += ':natives'
-    else segmentId += `:${queueItem.data.network.id}`
+    else segmentId += `:${queueItem.data.network.chainId}`
 
     if (!segments[segmentId]) segments[segmentId] = []
     segments[segmentId].push(queueItem)

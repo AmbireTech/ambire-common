@@ -77,10 +77,14 @@ describe('Portfolio', () => {
     // This allows us to predict the number of requests in advance.
     // If more advanced testing is required, we'll need to count the number of hints and calculate the expected
     // number of paginated requests accordingly.
-    await Promise.all([
+    const [result1, result2] = await Promise.all([
       portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
     ])
+
+    const tokens =
+      (result1.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0) +
+      (result2.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0)
 
     stopMonitoring()
 
@@ -103,7 +107,8 @@ describe('Portfolio', () => {
 
     expect(multiHintsReqs.length).toEqual(1)
     expect(nativePriceReqs.length).toEqual(1)
-    expect(tokenPriceReqs.length).toEqual(1)
+    // Expect tokenPriceReqs to be paginated. 40 is the max tokens per request.
+    expect(tokenPriceReqs.length).toEqual(Math.ceil(tokens / 40))
     expect(rpcReqs.length).toEqual(1)
   })
 

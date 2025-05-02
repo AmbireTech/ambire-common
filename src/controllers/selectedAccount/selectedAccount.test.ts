@@ -1,4 +1,3 @@
-import EventEmitterClass from 'controllers/eventEmitter/eventEmitter'
 import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
@@ -10,10 +9,13 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
+import EventEmitterClass from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
@@ -56,24 +58,6 @@ const selectedAccountCtrl = new SelectedAccountController({
   accounts: accountsCtrl
 })
 
-const portfolioCtrl = new PortfolioController(
-  storageCtrl,
-  fetch,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  relayerUrl,
-  velcroUrl
-)
-
-const defiPositionsCtrl = new DefiPositionsController({
-  fetch,
-  storage,
-  selectedAccount: selectedAccountCtrl,
-  networks: networksCtrl,
-  providers: providersCtrl
-})
-
 const event = new EventEmitter()
 let windowId = 0
 const windowManager = {
@@ -97,6 +81,26 @@ const windowManager = {
   sendWindowToastMessage: () => {},
   sendWindowUiMessage: () => {}
 }
+const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystore,
+  relayerUrl,
+  velcroUrl
+)
+
+const defiPositionsCtrl = new DefiPositionsController({
+  fetch,
+  storage,
+  selectedAccount: selectedAccountCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl
+})
 
 const notificationManager = {
   create: () => Promise.resolve()

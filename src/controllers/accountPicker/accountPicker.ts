@@ -1,5 +1,6 @@
 import { getCreate2Address, keccak256 } from 'ethers'
 
+import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -7,6 +8,7 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
+import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
 import {
   Account,
   AccountOnchainState,
@@ -14,11 +16,18 @@ import {
   AccountWithNetworkMeta,
   DerivedAccount,
   DerivedAccountWithoutNetworkMeta,
+  ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
+import {
+  dedicatedToOneSAPriv,
+  ExternalKey,
+  ExternalSignerControllers,
+  Key,
+  ReadyToAddKeys
+} from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import {
   getAccountImportStatus,
@@ -31,6 +40,7 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { AccountsController } from '../accounts/accounts'
@@ -40,18 +50,19 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_PAGE = 1
-export const DEFAULT_PAGE_SIZE = 5
+export const DEFAULT_PAGE_SIZE = 1
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
+const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 
 /**
- * Account Adder Controller
+ * Account Picker Controller
  * is responsible for listing accounts that can be selected for adding, and for
  * adding (creating) identity for the smart accounts (if needed) on the Relayer.
  * It uses a KeyIterator interface allow iterating all the keys in a specific
  * underlying store such as a hardware device or an object holding a seed.
  */
-export class AccountAdderController extends EventEmitter {
+export class AccountPickerController extends EventEmitter {
   #callRelayer: Function
 
   #accounts: AccountsController
@@ -62,17 +73,29 @@ export class AccountAdderController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #keyIterator?: KeyIterator | null
+  #externalSignerControllers: ExternalSignerControllers
+
+  initParams: {
+    keyIterator: KeyIterator | null
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    page?: number
+    pageSize?: number
+    shouldSearchForLinkedAccounts?: boolean
+    shouldGetAccountsUsedOnNetworks?: boolean
+    shouldAddNextAccountAutomatically?: boolean
+  } | null = null
+
+  keyIterator?: KeyIterator | null
 
   hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 
   isInitialized: boolean = false
 
-  isInitializedWithSavedSeed: boolean = false
-
   shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
+
+  shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY
 
   /* This is only the index of the current page */
   page: number = DEFAULT_PAGE
@@ -83,11 +106,14 @@ export class AccountAdderController extends EventEmitter {
   /* State to indicate the page requested fails to load (and the reason why) */
   pageError: null | string = null
 
-  selectedAccounts: SelectedAccountForImport[] = []
+  selectedAccountsFromCurrentSession: SelectedAccountForImport[] = []
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
+
+  // Accounts that were selected in a previous session but are now deselected in the current one
+  readyToRemoveAccounts: Account[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -96,6 +122,10 @@ export class AccountAdderController extends EventEmitter {
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
   addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
+
+  selectNextAccountStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
+
+  #addedAccountsFromCurrentSession: Account[] = []
 
   accountsLoading: boolean = false
 
@@ -107,36 +137,72 @@ export class AccountAdderController extends EventEmitter {
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
-  // This prevents the recalculation of getters that use accounts during the execution of addAccounts.
-  // Without this, the controller incorrectly identifies newly added accounts as those from a previous session,
-  // leading to unpredictable behavior on the AccountAdderScreen
-  #alreadyImportedAccountsOnControllerInit: Account[] = []
+  #alreadyImportedAccounts: Account[] = []
+
+  #onAddAccountsSuccessCallback: () => Promise<void>
+
+  #onAddAccountsSuccessCallbackPromise?: Promise<void>
+
+  #shouldDebounceFlags: { [key: string]: boolean } = {}
+
+  #addAccountsOnKeystoreReady: {
+    accounts?: SelectedAccountForImport[]
+  } | null = null
 
   constructor({
     accounts,
     keystore,
     networks,
     providers,
+    externalSignerControllers,
     relayerUrl,
-    fetch
+    fetch,
+    onAddAccountsSuccessCallback
   }: {
     accounts: AccountsController
     keystore: KeystoreController
     networks: NetworksController
     providers: ProvidersController
+    externalSignerControllers: ExternalSignerControllers
     relayerUrl: string
     fetch: Fetch
+    onAddAccountsSuccessCallback: () => Promise<void>
   }) {
     super()
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks
     this.#providers = providers
+    this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
+
+    this.#accounts.onUpdate(() => {
+      this.#debounceFunctionCalls(
+        'update-accounts',
+        () => {
+          if (!this.isInitialized) return
+          if (this.addAccountsStatus !== 'INITIAL') return
+
+          this.#updateStateWithTheLatestFromAccounts()
+        },
+        20
+      )
+    })
+
+    this.#keystore.onUpdate(() => {
+      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+        this.#addAccountsOnKeystoreReady = null
+      }
+    })
   }
 
   get accountsOnPage(): AccountOnPage[] {
     const processedAccounts = this.#derivedAccounts
+      // Remove smart accounts derived programmatically, because since v4.60.0
+      // unused smart accounts are no longer displayed on page.
+      .filter((a) => !isSmartAccount(a.account))
       // The displayed (visible) accounts on page should not include the derived
       // EOA (basic) accounts only used as smart account keys, they should not
       // be visible nor importable (or selectable).
@@ -212,7 +278,12 @@ export class AccountAdderController extends EventEmitter {
         ]
       })
 
-    const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts]
+    const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts].filter(
+      (a) =>
+        !isSmartAccount(a.account) ||
+        (isSmartAccount(a.account) &&
+          this.#linkedAccounts.find((linkedAcc) => linkedAcc.account.addr === a.account.addr))
+    )
 
     mergedAccounts.sort((a, b) => {
       const prioritizeAccountType = (item: any) => {
@@ -225,83 +296,152 @@ export class AccountAdderController extends EventEmitter {
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    return mergedAccounts.map((acc) => ({
+    const accountsWithStatus = mergedAccounts.map((acc) => ({
       ...acc,
       importStatus: getAccountImportStatus({
         account: acc.account,
-        alreadyImportedAccounts: this.#alreadyImportedAccountsOnControllerInit,
+        alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
         accountsOnPage: mergedAccounts,
-        keyIteratorType: this.#keyIterator?.type
+        keyIteratorType: this.keyIterator?.type
       })
     }))
+
+    // Since v4.60.0 there should always be 1 unused Smart Account on the page,
+    // except when all smart accounts are found via linked accounts (therefore, used).
+    const nextUnusedSmartAcc = this.#derivedAccounts
+      .filter((acc) => isSmartAccount(acc.account))
+      .filter((acc) => !accountsWithStatus.map((as) => as.account.addr).includes(acc.account.addr))
+      .sort((a, b) => a.index - b.index)[0]
+    if (nextUnusedSmartAcc) {
+      accountsWithStatus.push({
+        ...nextUnusedSmartAcc,
+        importStatus: getAccountImportStatus({
+          account: nextUnusedSmartAcc.account,
+          alreadyImportedAccounts: this.#alreadyImportedAccounts,
+          keys: this.#keystore.keys,
+          accountsOnPage: mergedAccounts,
+          keyIteratorType: this.keyIterator?.type
+        })
+      })
+    }
+
+    return accountsWithStatus
   }
 
-  async #isKeyIteratorInitializedWithTheSavedSeed() {
-    if (this.#keyIterator?.subType !== 'seed') return false
+  get selectedAccounts(): SelectedAccountForImport[] {
+    const accountsOnPageWithKeys = this.#alreadyImportedAccounts.filter((a) =>
+      this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr))
+    )
 
-    if (!this.#keystore.hasKeystoreSavedSeed) return false
+    const accountsAddrOnPage = accountsOnPageWithKeys.map((a) => a.addr)
+    const selectedAccountsFromPrevSession = this.accountsOnPage
+      .filter(
+        (a) =>
+          accountsAddrOnPage.includes(a.account.addr) &&
+          a.importStatus === ImportStatus.ImportedWithTheSameKeys
+      )
+      .map((a) => {
+        const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
+          (accOnPage) => accOnPage.account.addr === a.account.addr
+        )
+        const accountKeys = this.#getAccountKeys(a.account, accountsOnPageWithThisAcc)
 
-    const savedSeed = await this.#keystore.getSavedSeed()
-    if (!savedSeed) return false
+        return {
+          account: a.account,
+          isLinked: a.isLinked,
+          accountKeys: accountKeys.map((accKey) => ({
+            addr: accKey.account.addr,
+            slot: accKey.slot,
+            index: accKey.index
+          }))
+        } as SelectedAccountForImport
+      })
 
-    return !!this.#keyIterator?.isSeedMatching?.(savedSeed.seed)
+    const nextSelectedAccount = [
+      ...selectedAccountsFromPrevSession,
+      ...this.selectedAccountsFromCurrentSession
+    ]
+
+    const readyToRemoveAccountsAddr = this.readyToRemoveAccounts.map((a) => a.addr)
+
+    return nextSelectedAccount.filter((a) => !readyToRemoveAccountsAddr.includes(a.account.addr))
   }
 
-  async #getInitialHdPathTemplate(defaultHdPathTemplate: HD_PATH_TEMPLATE_TYPE) {
-    if (!this.isInitializedWithSavedSeed) return defaultHdPathTemplate
-
-    const savedSeed = await this.#keystore.getSavedSeed()
-    return savedSeed.hdPathTemplate || defaultHdPathTemplate
+  get addedAccountsFromCurrentSession() {
+    return this.#addedAccountsFromCurrentSession
   }
 
-  async init({
-    keyIterator,
-    page,
-    pageSize,
-    hdPathTemplate,
-    shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
-    shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
-  }: {
+  set addedAccountsFromCurrentSession(val: Account[]) {
+    this.#addedAccountsFromCurrentSession = Array.from(
+      new Map(val.map((account) => [account.addr, account])).values()
+    )
+  }
+
+  setInitParams(params: {
     keyIterator: KeyIterator | null
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     page?: number
     pageSize?: number
-    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
+    shouldAddNextAccountAutomatically?: boolean
   }) {
-    this.#keyIterator = keyIterator
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
-
-    this.page = page || DEFAULT_PAGE
-    this.pageSize = pageSize || DEFAULT_PAGE_SIZE
-    this.isInitializedWithSavedSeed = await this.#isKeyIteratorInitializedWithTheSavedSeed()
-    this.hdPathTemplate = await this.#getInitialHdPathTemplate(hdPathTemplate)
-    this.isInitialized = true
-    this.#alreadyImportedAccountsOnControllerInit = this.#accounts.accounts
-    this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
-    this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
-
+    this.initParams = params
     this.emitUpdate()
   }
 
+  async init() {
+    if (!this.initParams) return
+
+    const {
+      keyIterator,
+      hdPathTemplate,
+      page,
+      pageSize,
+      shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
+      shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
+      shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY
+    } = this.initParams
+
+    await this.reset(false)
+
+    this.keyIterator = keyIterator
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+    this.page = page || DEFAULT_PAGE
+    if (pageSize) this.pageSize = pageSize
+    this.hdPathTemplate = hdPathTemplate
+    this.isInitialized = true
+    this.#alreadyImportedAccounts = [...this.#accounts.accounts]
+    this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
+    this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
+    await this.forceEmitUpdate()
+    if (shouldAddNextAccountAutomatically) {
+      await this.selectNextAccount()
+      await this.addAccounts()
+    }
+  }
+
   get type() {
-    return this.#keyIterator?.type
+    return this.keyIterator?.type || this.initParams?.keyIterator?.type
   }
 
   get subType() {
-    return this.#keyIterator?.subType
+    return this.keyIterator?.subType || this.initParams?.keyIterator?.subType
   }
 
-  reset() {
-    this.#keyIterator = null
-    this.selectedAccounts = []
+  async reset(resetInitParams: boolean = true) {
+    if (resetInitParams) this.initParams = null
+    this.keyIterator = null
+    this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
     this.pageSize = DEFAULT_PAGE_SIZE
     this.hdPathTemplate = undefined
     this.shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
     this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
+    this.pageError = null
 
+    this.linkedAccountsLoading = false
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
     this.#linkedAccounts = []
@@ -309,26 +449,42 @@ export class AccountAdderController extends EventEmitter {
     this.networksWithAccountStateError = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
-    this.isInitializedWithSavedSeed = false
+    this.addedAccountsFromCurrentSession = []
+    this.#addAccountsOnKeystoreReady = null
+
+    await this.forceEmitUpdate()
+  }
+
+  resetAccountsSelection() {
+    this.selectedAccountsFromCurrentSession = []
+    this.readyToRemoveAccounts = []
 
     this.emitUpdate()
   }
 
   async setHDPathTemplate({ hdPathTemplate }: { hdPathTemplate: HD_PATH_TEMPLATE_TYPE }) {
-    this.hdPathTemplate = hdPathTemplate
+    if (this.hdPathTemplate === hdPathTemplate) return
 
+    this.hdPathTemplate = hdPathTemplate
     // Reset the currently selected accounts, because for the keys of these
     // accounts, as of v4.32.0, we don't store their hd path. When import
     // completes, only the latest hd path of the controller is stored.
-    this.selectedAccounts = []
+    this.selectedAccountsFromCurrentSession = []
+    this.#derivedAccounts = []
 
-    await this.setPage({ page: DEFAULT_PAGE }) // takes the user back on the first page
+    this.emitUpdate()
+
+    await this.setPage({
+      page: DEFAULT_PAGE,
+      shouldGetAccountsUsedOnNetworks: DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
+      shouldSearchForLinkedAccounts: DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS
+    }) // takes the user back on the first page
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
-      console.error(`accountAdder: account ${account.addr} was not found in the accountsOnPage.`)
+      console.error(`accountPicker: account ${account.addr} was not found in the accountsOnPage.`)
       return []
     }
 
@@ -380,7 +536,7 @@ export class AccountAdderController extends EventEmitter {
 
   selectAccount(_account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
     // Needed, because linked accounts could have multiple keys (basic accounts),
     // and therefore - same linked account could be found on different slots.
@@ -410,39 +566,37 @@ export class AccountAdderController extends EventEmitter {
       }))
     }
 
-    const accountExists = this.selectedAccounts.some(
+    const accountExists = this.selectedAccountsFromCurrentSession.some(
       (x) => x.account.addr === nextSelectedAccount.account.addr
     )
-    if (accountExists) {
-      // If the account exists, replace it with the new one, to make sure
-      // the latest data is used. We could add one more sub-step to skip this,
-      // if we do a deep comparison, but that would probably be an overkill.
-      this.selectedAccounts = this.selectedAccounts.map((x) =>
-        x.account.addr === nextSelectedAccount.account.addr ? nextSelectedAccount : x
-      )
-    } else {
-      this.selectedAccounts.push(nextSelectedAccount)
-    }
+    if (!accountExists) this.selectedAccountsFromCurrentSession.push(nextSelectedAccount)
+    this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter(
+      (a) => a.addr !== nextSelectedAccount.account.addr
+    )
 
     this.emitUpdate()
   }
 
   deselectAccount(account: Account) {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
+    if (!this.selectedAccounts.find((x) => x.account.addr === account.addr)) return
 
-    if (accIdx !== -1) {
-      this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
-      this.emitUpdate()
-    } else {
-      return this.emitError({
-        level: 'major',
-        message: 'This account cannot be deselected. Please reload and try again.',
-        error: new Error('accountAdder: account not found. Cannot deselect.')
-      })
+    this.selectedAccountsFromCurrentSession = this.selectedAccountsFromCurrentSession.filter(
+      (a) => a.account.addr !== account.addr
+    )
+    const accountInAlreadyAddedAccounts = this.#alreadyImportedAccounts.find(
+      (a) => a.addr === account.addr
+    )
+
+    if (accountInAlreadyAddedAccounts) {
+      const accountInReadyToRemoveAccounts = this.readyToRemoveAccounts.find(
+        (a) => a.addr === account.addr
+      )
+      if (!accountInReadyToRemoveAccounts) this.readyToRemoveAccounts.push(account)
     }
+    this.emitUpdate()
   }
 
   /**
@@ -455,13 +609,13 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    if (!this.#keyIterator?.retrieveInternalKeys) {
+    if (!this.keyIterator?.retrieveInternalKeys) {
       this.#throwMissingKeyIteratorRetrieveInternalKeysMethod()
       return []
     }
 
-    return this.#keyIterator?.retrieveInternalKeys(
-      this.selectedAccounts,
+    return this.keyIterator?.retrieveInternalKeys(
+      this.selectedAccountsFromCurrentSession,
       this.hdPathTemplate,
       this.#keystore.keys
     )
@@ -476,9 +630,32 @@ export class AccountAdderController extends EventEmitter {
     return this.accountsLoading || this.linkedAccountsLoading
   }
 
-  async setPage({ page = this.page }: { page: number }): Promise<void> {
+  async setPage({
+    page = this.page,
+    pageSize,
+    shouldSearchForLinkedAccounts,
+    shouldGetAccountsUsedOnNetworks
+  }: {
+    page: number
+    pageSize?: number
+    shouldSearchForLinkedAccounts?: boolean
+    shouldGetAccountsUsedOnNetworks?: boolean
+  }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    if (shouldSearchForLinkedAccounts !== undefined) {
+      this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
+    }
+
+    if (shouldGetAccountsUsedOnNetworks !== undefined) {
+      this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
+    }
+
+    if (pageSize && pageSize !== this.pageSize) {
+      this.pageSize = pageSize
+      this.page = page
+    } else if (page === this.page && this.#derivedAccounts.length) return
 
     this.page = page
     this.pageError = null
@@ -486,6 +663,7 @@ export class AccountAdderController extends EventEmitter {
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.networksWithAccountStateError = []
+    this.linkedAccountsLoading = false
     this.emitUpdate()
 
     if (page <= 0) {
@@ -498,7 +676,7 @@ export class AccountAdderController extends EventEmitter {
     try {
       this.#derivedAccounts = await this.#deriveAccounts()
 
-      if (this.#keyIterator?.type === 'internal' && this.#keyIterator?.subType === 'private-key') {
+      if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
         const usedAccounts = accountsOnPageWithoutTheLinked.filter(
           (acc) => acc.account.usedOnNetworks.length
@@ -522,50 +700,73 @@ export class AccountAdderController extends EventEmitter {
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
-            // Search for linked accounts to the basic (EOA) accounts only.
-            // Searching for linked accounts to another Ambire smart accounts
-            // is a feature that Ambire is yet to support.
-            !isSmartAccount(acc.account) &&
-            // Skip searching for linked accounts to the derived EOA (basic)
-            // accounts that are used for smart account keys only. They are
-            // solely purposed to manage 1 particular (smart) account,
-            // not at all for linking.
-            !isDerivedForSmartAccountKeyOnly(acc.index)
+            // Since v4.60.0, linked accounts are searched for 1) Basic Accounts
+            // and 2) Basic Accounts derived for Smart Account keys ONLY
+            // (workaround so that the Relayer returns information if the Smart
+            // Account with this key is used (with identity) or not).
+            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
         )
         .map((acc) => acc.account)
     })
   }
 
+  #updateStateWithTheLatestFromAccounts() {
+    this.#alreadyImportedAccounts = [...this.#accounts.accounts]
+
+    this.addedAccountsFromCurrentSession = Array.from(
+      new Set([
+        ...(this.addedAccountsFromCurrentSession
+          .map((a) => this.#accounts.accounts.find((acc) => acc.addr === a.addr))
+          .filter(Boolean) as Account[])
+      ])
+    )
+    this.#derivedAccounts = this.#derivedAccounts.map((derivedAcc) => {
+      const updatedAccount = this.#accounts.accounts.find(
+        (acc) => acc.addr === derivedAcc.account.addr
+      )
+
+      if (updatedAccount) {
+        return {
+          ...derivedAcc,
+          account: { ...derivedAcc.account, ...updatedAccount }
+        }
+      }
+
+      return derivedAcc
+    })
+
+    const accountsAddr = this.#accounts.accounts.map((a) => a.addr)
+    this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter((a) =>
+      accountsAddr.includes(a.addr)
+    )
+    this.readyToAddAccounts = this.readyToAddAccounts.filter((a) => !accountsAddr.includes(a.addr))
+
+    this.emitUpdate()
+  }
+
   /**
-   * Triggers the process of adding accounts via the AccountAdder flow by
+   * Triggers the process of adding accounts via the AccountPicker flow by
    * creating identity for the smart accounts (if needed) on the Relayer.
-   * Then the `onAccountAdderSuccess` listener in the Main Controller gets
+   * Then the `onAccountPickerSuccess` listener in the Main Controller gets
    * triggered, which uses the `readyToAdd...` properties to further set
    * the newly added accounts data (like preferences, keys and others)
    */
-  async addAccounts(
-    accounts: SelectedAccountForImport[] = [],
-    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
-  ) {
+  async addAccounts(accounts?: SelectedAccountForImport[]) {
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    if (!accounts.length) {
-      return this.emitError({
-        level: 'minor',
-        message:
-          'Trying to add accounts, but no accounts are selected. Please select at least one account.',
-        error: new Error(
-          'accountAdder: requested method `addAccounts`, but the accounts param is empty'
-        )
-      })
+    if (!this.#keystore.isReadyToStoreKeys) {
+      this.#addAccountsOnKeystoreReady = { accounts }
+      return
     }
 
     this.addAccountsStatus = 'LOADING'
     await this.forceEmitUpdate()
 
     let newlyCreatedAccounts: Account['addr'][] = []
-    const accountsToAddOnRelayer: SelectedAccountForImport[] = accounts
+    const accountsToAddOnRelayer: SelectedAccountForImport[] = (
+      accounts || this.selectedAccountsFromCurrentSession
+    )
       // Identity only for the smart accounts must be created on the Relayer
       .filter((x) => isSmartAccount(x.account))
       // Skip creating identity for Ambire v1 smart accounts
@@ -621,8 +822,10 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [
-      ...accounts.map((x, i) => {
-        const alreadyImportedAcc = this.#accounts.accounts.find((a) => a.addr === x.account.addr)
+      ...(accounts || this.selectedAccountsFromCurrentSession).map((x, i) => {
+        const alreadyImportedAcc = this.#alreadyImportedAccounts.find(
+          (a) => a.addr === x.account.addr
+        )
 
         return {
           ...x.account,
@@ -630,17 +833,136 @@ export class AccountAdderController extends EventEmitter {
           // re-importing the same account via different key type(s) would reset them.
           preferences: alreadyImportedAcc
             ? alreadyImportedAcc.preferences
-            : getDefaultAccountPreferences(x.account.addr, this.#accounts.accounts, i),
+            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i),
           newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
         }
       })
     ]
+
+    const readyToAddKeys: ReadyToAddKeys = {
+      internal: [],
+      external: []
+    }
+
+    if (this.type === 'internal') {
+      readyToAddKeys.internal = this.retrieveInternalKeysOfSelectedAccounts()
+    } else {
+      // External keys flow
+      const keyType = this.type as ExternalKey['type']
+
+      const deviceIds: { [key in ExternalKey['type']]: string } = {
+        ledger: this.#externalSignerControllers.ledger?.deviceId || '',
+        trezor: this.#externalSignerControllers.trezor?.deviceId || '',
+        lattice: this.#externalSignerControllers?.lattice?.deviceId || ''
+      }
+
+      const deviceModels: { [key in ExternalKey['type']]: string } = {
+        ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
+        trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
+        lattice: this.#externalSignerControllers.lattice?.deviceModel || ''
+      }
+
+      const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
+        ({ account, accountKeys }) =>
+          accountKeys.map(({ addr, index }, i) => ({
+            addr,
+            type: keyType,
+            label: `${HARDWARE_WALLET_DEVICE_NAMES[this.type as ExternalKey['type']]} ${
+              getExistingKeyLabel(this.#keystore.keys, addr, this.type as Key['type']) ||
+              getDefaultKeyLabel(
+                this.#keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+                i
+              )
+            }`,
+            dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+            meta: {
+              deviceId: deviceIds[keyType],
+              deviceModel: deviceModels[keyType],
+              // always defined in the case of external keys
+              hdPathTemplate: this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE,
+              index,
+              createdAt: new Date().getTime()
+            }
+          }))
+      )
+
+      readyToAddKeys.external = readyToAddExternalKeys
+    }
+
     this.readyToAddKeys = readyToAddKeys
+
+    this.addedAccountsFromCurrentSession = [
+      ...this.addedAccountsFromCurrentSession,
+      ...this.readyToAddAccounts
+    ]
+    this.selectedAccountsFromCurrentSession = []
+    this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
+      this.#onAddAccountsSuccessCallbackPromise = undefined
+    })
+    await this.#onAddAccountsSuccessCallbackPromise
+
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
+    this.#updateStateWithTheLatestFromAccounts()
+
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     this.addAccountsStatus = 'INITIAL'
+    await this.forceEmitUpdate()
+  }
+
+  async selectNextAccount() {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    this.selectNextAccountStatus = 'LOADING'
+    await this.forceEmitUpdate()
+
+    let currentPage: number = this.page
+    let nextAccount: AccountWithNetworkMeta | undefined
+    const maxPages = 10000 // limit, acts as a safeguard to prevent infinite loops
+
+    while (currentPage <= maxPages) {
+      // TODO: Flag that excludes getting smart account key addresses
+      // Load the accounts for the current page
+      // eslint-disable-next-line no-await-in-loop
+      await this.setPage({
+        page: currentPage,
+        pageSize: this.pageSize,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false
+      })
+      if (this.pageError) {
+        throw new EmittableError({
+          message: this.pageError,
+          level: 'major',
+          error: new Error(this.pageError)
+        })
+      }
+
+      nextAccount = this.accountsOnPage.find(
+        ({ isLinked, account, importStatus }) =>
+          importStatus !== ImportStatus.ImportedWithTheSameKeys &&
+          !isLinked &&
+          !isSmartAccount(account)
+      )?.account
+
+      if (nextAccount) {
+        this.selectAccount(nextAccount)
+        break
+      }
+
+      // If no account found on the page, move to the next page
+      currentPage++
+    }
+
+    // TODO: Should never happen, but could benefit with better error handling
+    if (!nextAccount) console.error('accountPicker: no next account found')
+
+    this.selectNextAccountStatus = 'SUCCESS'
+    await this.forceEmitUpdate()
+
+    this.selectNextAccountStatus = 'INITIAL'
     await this.forceEmitUpdate()
   }
 
@@ -650,9 +972,9 @@ export class AccountAdderController extends EventEmitter {
       accountKeys: [recoveryKey]
     } = selectedAccount
     if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    const keyPublicAddress: string = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
+    const keyPublicAddress: string = (await this.keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
 
     const emailSmartAccount = await getEmailAccount(
       {
@@ -665,7 +987,7 @@ export class AccountAdderController extends EventEmitter {
     await this.addAccounts([{ ...selectedAccount, account: { ...emailSmartAccount, email } }])
   }
 
-  // updates the account adder state so the main ctrl receives the readyToAddAccounts
+  // updates the account picker state so the main ctrl receives the readyToAddAccounts
   // that should be added to the storage of the app
   async addExistingEmailAccounts(accounts: Account[]) {
     // There is no need to call the addAccounts method in order to add that
@@ -685,9 +1007,9 @@ export class AccountAdderController extends EventEmitter {
 
   async #deriveAccounts(): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
-    // called - there is a check if the #keyIterator exists.
-    if (!this.#keyIterator) {
-      console.error('accountAdder: missing keyIterator')
+    // called - there is a check if the keyIterator exists.
+    if (!this.keyIterator) {
+      console.error('accountPicker: missing keyIterator')
       return []
     }
 
@@ -704,7 +1026,7 @@ export class AccountAdderController extends EventEmitter {
     // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
     // accounts out of the private key (with another approach - salt and
     // extra entropy) was creating confusion.
-    const shouldRetrieveSmartAccountIndices = this.#keyIterator.type !== 'private-key'
+    const shouldRetrieveSmartAccountIndices = this.keyIterator.subType !== 'private-key'
     if (shouldRetrieveSmartAccountIndices) {
       // Indices for the smart accounts.
       indicesToRetrieve.push({
@@ -716,7 +1038,7 @@ export class AccountAdderController extends EventEmitter {
     // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
     // for Trezor, because it fires a confirmation popup for each call.
-    const combinedBasicAndSmartAccKeys = await this.#keyIterator.retrieve(
+    const combinedBasicAndSmartAccKeys = await this.keyIterator.retrieve(
       indicesToRetrieve,
       this.hdPathTemplate
     )
@@ -735,7 +1057,7 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (basic) account which is the key for the smart account
-      const account = getBasicAccount(smartAccKey, this.#accounts.accounts)
+      const account = getBasicAccount(smartAccKey, this.#alreadyImportedAccounts)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
@@ -743,7 +1065,7 @@ export class AccountAdderController extends EventEmitter {
       smartAccountsPromises.push(
         getSmartAccount(
           [{ addr: smartAccKey, hash: dedicatedToOneSAPriv }],
-          this.#accounts.accounts
+          this.#alreadyImportedAccounts
         )
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
@@ -770,7 +1092,7 @@ export class AccountAdderController extends EventEmitter {
       const slot = startIdx + (index + 1)
 
       // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey, this.#accounts.accounts)
+      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
@@ -807,7 +1129,7 @@ export class AccountAdderController extends EventEmitter {
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          console.error('accountAdder: failed to get account state on ', chainId)
+          console.error('accountPicker: failed to get account state on ', chainId)
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
           this.networksWithAccountStateError.push(BigInt(chainId))
         })
@@ -904,7 +1226,7 @@ export class AccountAdderController extends EventEmitter {
         return []
       }
 
-      const existingAccount = this.#accounts.accounts.find((acc) => acc.addr === addr)
+      const existingAccount = this.#alreadyImportedAccounts.find((acc) => acc.addr === addr)
       return [
         {
           account: {
@@ -930,9 +1252,14 @@ export class AccountAdderController extends EventEmitter {
       ]
     })
 
+    // in case the page is changed or the ctrl is reset do not continue with the logic
+    if (!this.linkedAccountsLoading) return
+
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts: linkedAccounts as any
     })
+
+    if (!this.linkedAccountsLoading) return
 
     this.#linkedAccounts = linkedAccountsWithNetworks
     this.#verifyLinkedAccounts()
@@ -972,7 +1299,7 @@ export class AccountAdderController extends EventEmitter {
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
       error: new Error(
-        'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+        'accountPicker: requested a method of the AccountPicker controller, but the controller was not initialized'
       )
     })
   }
@@ -982,7 +1309,7 @@ export class AccountAdderController extends EventEmitter {
       level: 'major',
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-      error: new Error('accountAdder: missing keyIterator')
+      error: new Error('accountPicker: missing keyIterator')
     })
   }
 
@@ -991,7 +1318,7 @@ export class AccountAdderController extends EventEmitter {
       level: 'major',
       message:
         'Retrieving internal keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
-      error: new Error('accountAdder: missing retrieveInternalKeys method')
+      error: new Error('accountPicker: missing retrieveInternalKeys method')
     })
   }
 
@@ -1000,8 +1327,26 @@ export class AccountAdderController extends EventEmitter {
       level: 'major',
       message:
         'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
-      error: new Error('accountAdder: missing hdPathTemplate')
+      error: new Error('accountPicker: missing hdPathTemplate')
     })
+  }
+
+  #debounceFunctionCalls(funcName: string, func: () => void, ms: number = 0) {
+    if (this.#shouldDebounceFlags[funcName]) return
+    this.#shouldDebounceFlags[funcName] = true
+
+    setTimeout(() => {
+      this.#shouldDebounceFlags[funcName] = false
+      try {
+        func()
+      } catch (error: any) {
+        this.emitError({
+          level: 'minor',
+          message: `The execution of ${funcName} in the AccountPickerController failed`,
+          error
+        })
+      }
+    }, ms)
   }
 
   toJSON() {
@@ -1010,6 +1355,8 @@ export class AccountAdderController extends EventEmitter {
       ...super.toJSON(),
       // includes the getter in the stringified instance
       accountsOnPage: this.accountsOnPage,
+      selectedAccounts: this.selectedAccounts,
+      addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
       subType: this.subType,
       isPageLocked: this.isPageLocked
@@ -1017,4 +1364,4 @@ export class AccountAdderController extends EventEmitter {
   }
 }
 
-export default AccountAdderController
+export default AccountPickerController

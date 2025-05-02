@@ -1,6 +1,7 @@
-import { Route as LiFiRoute } from '@lifi/types'
+import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
+import { TokenResult } from '../libs/portfolio'
 
 export interface SocketAPIResponse<T> {
   result: T
@@ -98,6 +99,7 @@ export interface SwapAndBridgeRoute {
   errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
   hasFailed?: boolean
+  toToken: LiFiToken
 }
 
 export interface SocketAPISwapUserTx {
@@ -389,4 +391,8 @@ type StringifiedChainId = string
 export type CachedTokenListKey = `from-${StringifiedChainId}-to-${StringifiedChainId}`
 export type CachedToTokenLists = {
   [key: CachedTokenListKey]: { lastFetched: number; data: SwapAndBridgeToToken[] }
+}
+
+export type FromToken = TokenResult & {
+  isSwitchedToToken?: boolean
 }

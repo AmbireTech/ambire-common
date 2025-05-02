@@ -33,6 +33,7 @@ export default function batcher(
 ): Function {
   const { timeoutSettings, batchDebounce = 0, dedupeByKeys = [] } = options
   let queue: QueueElement[] = []
+  let timeoutId: NodeJS.Timeout | null = null
 
   // Helper function to deduplicate queue elements
   function deduplicateQueue(inputQueue: QueueElement[]): QueueElement[] {
@@ -133,7 +134,14 @@ export default function batcher(
 
   return async (data: any): Promise<any> => {
     // always do the setTimeout - if it's a second or third batchedCall within a tick, all setTimeouts will fire but only the first will perform work
-    setTimeout(resolveQueue, batchDebounce)
+    // Clear the existing timeout to avoid multiple resolveQueue calls
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+
+    // Set a new timeout for the resolveQueue call
+    timeoutId = setTimeout(resolveQueue, batchDebounce)
+
     return new Promise((resolve, reject) => {
       queue.push({ resolve, reject, fetch, data })
     })
