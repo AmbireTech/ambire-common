@@ -1425,7 +1425,7 @@ export class SignAccountOpController extends EventEmitter {
       this.account,
       accountState,
       this.accountOp,
-      this.bundlerSwitcher.getBundler(eip7702Auth).getName(),
+      this.bundlerSwitcher.getBundler().getName(),
       this.accountOp.meta?.entryPointAuthorization,
       eip7702Auth
     )
