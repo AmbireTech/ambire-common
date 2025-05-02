@@ -402,9 +402,7 @@ export class MainController extends EventEmitter {
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
       this.networks.networks,
-      this.selectedAccount.portfolio,
-      true, // TODO: not sure what initial value should have here
-      '5.0.0' // TODO: we may re-do it with session storage and not rely on APP_VERSION
+      this.addressBook
     )
     this.domains = new DomainsController(this.providers.providers)
 
