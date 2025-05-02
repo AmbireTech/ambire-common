@@ -78,11 +78,11 @@ export const getBridgeBanners = (
   let type: BannerType
   if (inProgressRoutes.length > 0) {
     type = 'info'
-    title = `Bridge request${allRoutes.length > 1 ? 's' : ''} in progress`
+    title = `Bridge${allRoutes.length > 1 ? 's' : ''} in progress`
     text = `You have ${allRoutes.length} pending bridge${allRoutes.length > 1 ? 's' : ''}`
   } else if (failedRoutes.length > 0) {
     type = 'error'
-    title = `Failed bridge request${failedRoutes.length > 1 ? 's' : ''}`
+    title = `Failed bridge ${failedRoutes.length > 1 ? 's' : ''}`
     text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
       completedRoutes.length > 1
         ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
@@ -90,8 +90,8 @@ export const getBridgeBanners = (
     }`
   } else {
     type = 'success'
-    title = `Bridge request${completedRoutes.length > 1 ? 's' : ''} completed`
-    text = `You have ${completedRoutes.length} completed bridge request${
+    title = `Bridge${completedRoutes.length > 1 ? 's' : ''} completed`
+    text = `You have ${completedRoutes.length} completed bridge${
       completedRoutes.length > 1 ? 's' : ''
     }.`
   }
