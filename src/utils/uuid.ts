@@ -4,7 +4,6 @@
  * are fully deterministic and identical across environments.
  */
 export async function generateUuid(): Promise<string> {
-  // TODO: Temporarily switch to nanoid
-  const { nanoid } = await import('nanoid')
-  return nanoid(36)
+  const { v4: uuidv4 } = await import('uuid')
+  return uuidv4()
 }
