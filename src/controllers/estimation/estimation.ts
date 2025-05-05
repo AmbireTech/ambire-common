@@ -253,12 +253,11 @@ export class EstimationController extends EventEmitter {
     if (this.error) {
       let code = ''
 
-      if (
-        this.error instanceof ErrorHumanizerError &&
-        this.error.isFallbackMessage &&
-        typeof this.error.cause === 'string'
-      ) {
-        code = this.error.cause || 'ESTIMATION_ERROR'
+      if (this.error instanceof ErrorHumanizerError && this.error.isFallbackMessage) {
+        code =
+          typeof this.error.cause === 'string' && !!this.error.cause
+            ? this.error.cause
+            : 'ESTIMATION_ERROR'
       }
 
       errors.push({
