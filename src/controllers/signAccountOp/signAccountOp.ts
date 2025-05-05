@@ -640,6 +640,8 @@ export class SignAccountOpController extends EventEmitter {
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
+    if (shouldTraceCall) this.#traceCall(this)
+
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
       this.estimation.estimate(this.accountOp).catch((e) => e)
@@ -679,8 +681,6 @@ export class SignAccountOpController extends EventEmitter {
     if (this.estimation.status === EstimationStatus.Error) {
       this.#portfolio.overridePendingResults(this.accountOp)
     }
-
-    if (shouldTraceCall) this.#traceCall()
   }
 
   async estimate() {
@@ -1425,7 +1425,7 @@ export class SignAccountOpController extends EventEmitter {
       this.account,
       accountState,
       this.accountOp,
-      this.bundlerSwitcher.getBundler(eip7702Auth).getName(),
+      this.bundlerSwitcher.getBundler().getName(),
       this.accountOp.meta?.entryPointAuthorization,
       eip7702Auth
     )
@@ -1738,6 +1738,10 @@ export class SignAccountOpController extends EventEmitter {
 
   canUpdate(): boolean {
     return !this.status || noStateUpdateStatuses.indexOf(this.status.type) === -1
+  }
+
+  setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
+    this.traceCallDiscoveryStatus = status
   }
 
   toJSON() {

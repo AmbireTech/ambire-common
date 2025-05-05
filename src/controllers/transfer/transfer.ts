@@ -4,19 +4,19 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { Network } from '../../interfaces/network'
+import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { stringify } from '../../libs/richJson/richJson'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { Contacts } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
-import { stringify } from '../../libs/richJson/richJson'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -434,15 +434,17 @@ export class TransferController extends EventEmitter {
       }
       this.#selectedAccountData = selectedAccountData
     }
+
+    if (amountFieldMode) {
+      this.amountFieldMode = amountFieldMode
+    }
+
     if (selectedToken) {
       this.selectedToken = selectedToken
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#setAmount(amount)
-    }
-    if (amountFieldMode) {
-      this.amountFieldMode = amountFieldMode
     }
 
     if (addressState) {
