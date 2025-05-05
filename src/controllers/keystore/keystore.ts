@@ -142,7 +142,13 @@ export class KeystoreController extends EventEmitter {
         this.#storage.get('keystoreKeys', [])
       ])
       this.keyStoreUid = keyStoreUid
-      this.#keystoreSeeds = keystoreSeeds
+      this.#keystoreSeeds = keystoreSeeds.map((s) => {
+        if (s.id) return s
+
+        // Migrate the old seed structure to the new one for cases where the prev versions
+        // of the extension supported only one saved seed which lacked id and label props.
+        return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
+      })
       this.#keystoreKeys = keystoreKeys
     } catch (e) {
       this.emitError({
@@ -404,10 +410,11 @@ export class KeystoreController extends EventEmitter {
   }
 
   get seeds() {
-    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate }) => ({
+    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase }) => ({
       id,
       label: label || 'Unnamed Recovery Seed',
-      hdPathTemplate
+      hdPathTemplate,
+      withPassphrase: !!seedPassphrase
     }))
   }
 
