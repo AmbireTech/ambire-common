@@ -606,7 +606,18 @@ export class MainController extends EventEmitter {
     }
 
     if (type === SIGN_ACCOUNT_OP_SWAP) {
-      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge()
+      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
+        // if an error has ocurred while signing and we're back to SigningStatus.ReadyToSign,
+        // override the pending results as they will be incorrect
+        if (
+          this.swapAndBridge.signAccountOpController &&
+          this.swapAndBridge.signAccountOpController.status?.type === SigningStatus.ReadyToSign
+        ) {
+          this.portfolio.overridePendingResults(
+            this.swapAndBridge.signAccountOpController.accountOp
+          )
+        }
+      })
     }
 
     await this.withStatus(
