@@ -5,6 +5,7 @@ import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
@@ -27,6 +28,7 @@ import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
+import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { batchCallsFromUserRequests } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -228,6 +230,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #userRequests: UserRequest[]
 
+  #relayerUrl: string
+
   constructor({
     accounts,
     keystore,
@@ -242,6 +246,7 @@ export class SwapAndBridgeController extends EventEmitter {
     actions,
     invite,
     portfolioUpdate,
+    relayerUrl,
     userRequests = []
   }: {
     accounts: AccountsController
@@ -257,6 +262,7 @@ export class SwapAndBridgeController extends EventEmitter {
     actions: ActionsController
     invite: InviteController
     userRequests: UserRequest[]
+    relayerUrl: string
     portfolioUpdate?: Function
   }) {
     super()
@@ -274,6 +280,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#actions = actions
     this.#invite = invite
     this.#userRequests = userRequests
+    this.#relayerUrl = relayerUrl
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -1821,6 +1828,12 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      this.#keystore.getAccountKeys(this.#selectedAccount.account),
+      network
+    )
     const accountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
@@ -1836,7 +1849,8 @@ export class SwapAndBridgeController extends EventEmitter {
         hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
       },
       meta: {
-        swapTxn: userTxn
+        swapTxn: userTxn,
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
       }
     }
 
