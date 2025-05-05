@@ -1,7 +1,6 @@
 /* eslint-disable class-methods-use-this */
 
-import { EIP7702Auth } from '../../consts/7702'
-import { BUNDLER, PIMLICO } from '../../consts/bundlers'
+import { BUNDLER } from '../../consts/bundlers'
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from './bundler'
@@ -32,11 +31,7 @@ export class BundlerSwitcher {
     return bundlers && bundlers.length > 1
   }
 
-  getBundler(eip7702Auth?: EIP7702Auth): Bundler {
-    // force get a bundler under given circumstances:
-    // if eip7702Auth is provided, only PIMLICO can broadcast it
-    if (eip7702Auth) return getBundlerByName(PIMLICO)
-
+  getBundler(): Bundler {
     return this.bundler
   }
 
