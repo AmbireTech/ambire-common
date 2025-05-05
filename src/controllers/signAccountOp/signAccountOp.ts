@@ -380,8 +380,7 @@ export class SignAccountOpController extends EventEmitter {
     if (isAmbireV1AndNetworkNotSupported) {
       errors.push({
         title:
-          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.',
-        code: 'V1_UNSUPPORTED_NETWORK'
+          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
       })
 
       // Don't show any other errors
@@ -401,8 +400,7 @@ export class SignAccountOpController extends EventEmitter {
     if (!areGasPricesLoading && !this.gasPrices?.length) {
       errors.push({
         title:
-          'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.',
-        code: 'GAS_PRICE_UNAVAILABLE'
+          'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
       })
     }
 
@@ -412,8 +410,7 @@ export class SignAccountOpController extends EventEmitter {
       this.selectedOption.gasUsed > this.#blockGasLimit
     ) {
       errors.push({
-        title: 'The transaction gas limit exceeds the network block gas limit.',
-        code: 'GAS_LIMIT_EXCEEDED'
+        title: 'The transaction gas limit exceeds the network block gas limit.'
       })
     }
 
@@ -423,24 +420,21 @@ export class SignAccountOpController extends EventEmitter {
       this.selectedOption.gasUsed > 500000000n
     ) {
       errors.push({
-        title: 'Unreasonably high estimation. This transaction will probably fail',
-        code: 'UNREASONABLY_HIGH_ESTIMATION'
+        title: 'Unreasonably high estimation. This transaction will probably fail'
       })
     }
 
     // this error should never happen as availableFeeOptions should always have the native option
     if (!this.isSponsored && !this.estimation.availableFeeOptions.length)
       errors.push({
-        title: 'Insufficient funds to cover the fee.',
-        code: 'INSUFFICIENT_FUNDS'
+        title: 'Insufficient funds to cover the fee.'
       })
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'No signer available',
-        code: 'NO_SIGNER'
+        title: 'No signer available'
       })
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
@@ -452,8 +446,7 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isSponsored && !currentPortfolioNetworkNative)
       errors.push({
         title:
-          'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.',
-        code: 'NO_NATIVE_TOKEN'
+          'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       })
 
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
@@ -471,8 +464,7 @@ export class SignAccountOpController extends EventEmitter {
       )
       if (this.hasSpeeds(identifier))
         errors.push({
-          title: 'Please select a token and an account for paying the gas fee.',
-          code: 'NO_GAS_FEE_PAYMENT'
+          title: 'Please select a token and an account for paying the gas fee.'
         })
     }
 
@@ -537,22 +529,19 @@ export class SignAccountOpController extends EventEmitter {
                     skippedTokensCount ? ' and others' : ''
                   }`
                 : ''
-            }`,
-            code: isSA ? 'INSUFFICIENT_FUNDS_SA' : 'INSUFFICIENT_FUNDS'
+            }`
           })
         } else {
           errors.push({
             title: isSA
               ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-              : ERRORS.eoaInsufficientFunds,
-            code: isSA ? 'INSUFFICIENT_FUNDS_SA' : 'INSUFFICIENT_FUNDS'
+              : ERRORS.eoaInsufficientFunds
           })
         }
       } else {
         errors.push({
           title:
-            'The selected speed is not available due to insufficient funds. Please select a slower speed.',
-          code: 'FEE_SPEED_UNAVAILABLE'
+            'The selected speed is not available due to insufficient funds. Please select a slower speed.'
         })
       }
     }
@@ -573,14 +562,12 @@ export class SignAccountOpController extends EventEmitter {
       if (!this.hasSpeeds(identifier)) {
         if (!this.feeTokenResult?.priceIn.length) {
           errors.push({
-            title: `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`,
-            code: 'MISSING_FEE_TOKEN_PRICE'
+            title: `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
           })
         } else {
           errors.push({
             title:
-              'Unable to estimate the transaction fee. Please try changing the fee token or contact support.',
-            code: 'FEE_SPEEDS_UNAVAILABLE'
+              'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
           })
         }
       }
@@ -640,6 +627,8 @@ export class SignAccountOpController extends EventEmitter {
     // no simulation / estimation if we're in a signing state
     if (!this.canUpdate()) return
 
+    if (shouldTraceCall) this.#traceCall(this)
+
     await Promise.all([
       this.#portfolio.simulateAccountOp(this.accountOp),
       this.estimation.estimate(this.accountOp).catch((e) => e)
@@ -679,8 +668,6 @@ export class SignAccountOpController extends EventEmitter {
     if (this.estimation.status === EstimationStatus.Error) {
       this.#portfolio.overridePendingResults(this.accountOp)
     }
-
-    if (shouldTraceCall) this.#traceCall()
   }
 
   async estimate() {
@@ -1738,6 +1725,10 @@ export class SignAccountOpController extends EventEmitter {
 
   canUpdate(): boolean {
     return !this.status || noStateUpdateStatuses.indexOf(this.status.type) === -1
+  }
+
+  setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
+    this.traceCallDiscoveryStatus = status
   }
 
   toJSON() {
