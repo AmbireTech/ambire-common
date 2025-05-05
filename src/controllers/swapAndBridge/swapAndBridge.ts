@@ -215,6 +215,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #portfolioUpdate: Function
 
+  #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
+
   hasProceeded: boolean = false
 
   /**
@@ -242,7 +244,8 @@ export class SwapAndBridgeController extends EventEmitter {
     actions,
     invite,
     portfolioUpdate,
-    userRequests = []
+    userRequests = [],
+    isMainSignAccountOpThrowingAnEstimationError
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -258,6 +261,7 @@ export class SwapAndBridgeController extends EventEmitter {
     invite: InviteController
     userRequests: UserRequest[]
     portfolioUpdate?: Function
+    isMainSignAccountOpThrowingAnEstimationError?: Function
   }) {
     super()
     this.#accounts = accounts
@@ -266,6 +270,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#portfolioUpdate = portfolioUpdate || (() => {})
+    this.#isMainSignAccountOpThrowingAnEstimationError =
+      isMainSignAccountOpThrowingAnEstimationError
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -1563,6 +1569,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (routeIndex === null || !this.quote.routes[routeIndex]) {
       this.quote.selectedRoute = undefined
       this.quote.routes = []
+      this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
       return
     }
@@ -1918,6 +1925,18 @@ export class SwapAndBridgeController extends EventEmitter {
     ) {
       errors.push({
         title: `${this.fromSelectedToken.symbol} detected in batch. Please complete the batch before bridging`
+      })
+    }
+
+    // Check if there are any errors from the main SignAccountOp controller
+    // This prevents proceeding with a swap/bridge if there are estimation errors
+    // in the pending batch of transactions
+    if (
+      this.#isMainSignAccountOpThrowingAnEstimationError &&
+      this.#isMainSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
+    ) {
+      errors.push({
+        title: 'Error detected in the pending batch. Please review it before proceeding'
       })
     }
 

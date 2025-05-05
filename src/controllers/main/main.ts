@@ -23,6 +23,7 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -388,7 +389,20 @@ export class MainController extends EventEmitter {
       portfolioUpdate: () => {
         this.updateSelectedAccountPortfolio(true)
       },
-      userRequests: this.userRequests
+      userRequests: this.userRequests,
+      isMainSignAccountOpThrowingAnEstimationError: (
+        fromChainId: number | null,
+        toChainId: number | null
+      ) => {
+        return (
+          this.signAccountOp &&
+          fromChainId &&
+          toChainId &&
+          this.signAccountOp.estimation.status === EstimationStatus.Error &&
+          this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
+          fromChainId === toChainId
+        )
+      }
     })
     this.domains = new DomainsController(this.providers.providers)
 
