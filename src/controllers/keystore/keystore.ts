@@ -1017,7 +1017,7 @@ export class KeystoreController extends EventEmitter {
         this.#keystoreSeeds.find(
           (s) =>
             s.seed === encryptedKeyIteratorSeed?.seed &&
-            s.seedPassphrase === encryptedKeyIteratorSeed?.passphrase
+            (s.seedPassphrase || '') === (encryptedKeyIteratorSeed?.passphrase || '')
         ) || null
       )
     }
