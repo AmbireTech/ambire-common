@@ -266,7 +266,6 @@ export class TransferController extends EventEmitter {
   }
 
   async update({
-    selectedAccountData,
     humanizerInfo,
     selectedToken,
     amount,
@@ -277,24 +276,12 @@ export class TransferController extends EventEmitter {
     networks,
     amountFieldMode
   }: TransferUpdate) {
-    const hasAccountChanged =
-      selectedAccountData && this.#selectedAccountData.account?.addr !== selectedAccountData.addr
-
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
     if (networks) {
       this.#networks = networks
     }
-    // TODO - selectedAccountData.onUpdate implement
-    // if (selectedAccountData) {
-    //   if (hasAccountChanged) {
-    //     this.#setAmount('')
-    //     this.selectedToken = null
-    //     this.addressState = { ...DEFAULT_ADDRESS_STATE }
-    //   }
-    //   this.#selectedAccountData = selectedAccountData
-    // }
     if (selectedToken) {
       this.selectedToken = selectedToken
     }
