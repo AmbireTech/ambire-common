@@ -156,4 +156,8 @@ export class V2 extends BaseAccount {
   shouldSignDeployAuth(broadcastOption: string): boolean {
     return broadcastOption === BROADCAST_OPTIONS.byBundler && !this.accountState.isDeployed
   }
+
+  isSponsorable(): boolean {
+    return this.network.chainId === 100n
+  }
 }
