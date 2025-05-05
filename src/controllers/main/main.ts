@@ -96,7 +96,6 @@ import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
-import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
@@ -583,12 +582,8 @@ export class MainController extends EventEmitter {
           return this.isSignRequestStillActive
         },
         true,
-        () => {
-          if (
-            this.signAccountOp &&
-            this.signAccountOp.estimation.status === EstimationStatus.Success
-          )
-            this.traceCall()
+        (ctrl: SignAccountOpController) => {
+          this.traceCall(ctrl)
         }
       )
     }
@@ -698,10 +693,8 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall() {
-    if (!this.signAccountOp) return
-
-    const accountOp = this.signAccountOp.accountOp
+  async traceCall(signAccountOpCtrl: SignAccountOpController) {
+    const accountOp = signAccountOpCtrl.accountOp
     if (!accountOp) return
 
     const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
@@ -718,18 +711,13 @@ export class MainController extends EventEmitter {
     // Here, we also check the status because, in the case of re-estimation,
     // `traceCallDiscoveryStatus` is already set, and we don’t want to reset it to "InProgress".
     // This prevents the BalanceDecrease banner from flickering.
-    if (
-      this.signAccountOp &&
-      this.signAccountOp.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted
-    )
-      this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.InProgress
+    if (signAccountOpCtrl.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted)
+      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
 
     // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
-      if (this.signAccountOp) {
-        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.SlowPendingResponse
-        this.signAccountOp.calculateWarnings()
-      }
+      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
+      signAccountOpCtrl.calculateWarnings()
     }, 2000)
 
     this.#traceCallTimeoutId = timeoutId
@@ -762,7 +750,7 @@ export class MainController extends EventEmitter {
       )
 
       // update the portfolio only if new tokens were found through tracing
-      const canUpdateSignAccountOp = !this.signAccountOp || this.signAccountOp.canUpdate()
+      const canUpdateSignAccountOp = !signAccountOpCtrl || signAccountOpCtrl.canUpdate()
       if (canUpdateSignAccountOp && (learnedNewTokens || learnedNewNfts)) {
         await this.portfolio.updateSelectedAccount(
           accountOp.accountAddr,
@@ -777,11 +765,9 @@ export class MainController extends EventEmitter {
         )
       }
 
-      if (this.signAccountOp)
-        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Done
+      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
     } catch (e: any) {
-      if (this.signAccountOp)
-        this.signAccountOp.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.Failed
+      signAccountOpCtrl.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
 
       this.emitError({
         level: 'silent',
@@ -790,7 +776,7 @@ export class MainController extends EventEmitter {
       })
     }
 
-    this.signAccountOp?.calculateWarnings()
+    signAccountOpCtrl?.calculateWarnings()
     this.#traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
