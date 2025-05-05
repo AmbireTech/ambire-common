@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "baseUrl": "src/",
+    "outDir": "./dist",
     "noEmit": false,
     "noEmitOnError": true,
     "noEmitHelpers": true,
