@@ -605,6 +605,10 @@ export class MainController extends EventEmitter {
       })
     }
 
+    if (type === SIGN_ACCOUNT_OP_SWAP) {
+      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge()
+    }
+
     await this.withStatus(
       'signAccountOp',
       async () => {

@@ -687,6 +687,10 @@ export class SignAccountOpController extends EventEmitter {
     await this.estimation.estimate(this.accountOp)
   }
 
+  async simulateSwapOrBridge() {
+    await this.#portfolio.simulateAccountOp(this.accountOp)
+  }
+
   update({
     gasPrices,
     feeToken,
