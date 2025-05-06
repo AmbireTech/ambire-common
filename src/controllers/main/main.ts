@@ -1289,9 +1289,18 @@ export class MainController extends EventEmitter {
       const calls: Calls['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
-      const paymasterService = isWalletSendCalls
-        ? getPaymasterService(network.chainId, request.params[0].capabilities)
-        : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      const paymasterService =
+        isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
+          ? getPaymasterService(network.chainId, request.params[0].capabilities)
+          : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+
+      const atomicRequired = isWalletSendCalls && !!request.params[0].atomicRequired
+      if (isWalletSendCalls && atomicRequired && baseAcc.getAtomicStatus() === 'unsupported') {
+        throw ethErrors.provider.custom({
+          code: 5700,
+          message: 'Transaction failed - atomicity is not supported for this account'
+        })
+      }
 
       userRequest = {
         id: new Date().getTime(),

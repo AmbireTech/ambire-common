@@ -160,4 +160,8 @@ export class V2 extends BaseAccount {
   isSponsorable(): boolean {
     return this.network.chainId === 100n
   }
+
+  getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
+    return 'supported'
+  }
 }

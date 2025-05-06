@@ -77,6 +77,9 @@ export abstract class BaseAccount {
   // the estimation to calculate it correctly
   abstract getBroadcastCalldata(accountOp: AccountOp): Hex
 
+  // each account should declare if it supports atomicity
+  abstract getAtomicStatus(): 'unsupported' | 'supported' | 'ready'
+
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall(broadcastOption: string) {
     return false
