@@ -1891,7 +1891,7 @@ export class SwapAndBridgeController extends EventEmitter {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate()
+    this.reestimate(userTxn)
   }
 
   /**
@@ -1899,7 +1899,7 @@ export class SwapAndBridgeController extends EventEmitter {
    * Encapsulate it here instead of creating an interval in the background
    * as intervals are tricky and harder to control
    */
-  async reestimate() {
+  async reestimate(userTxn: SwapAndBridgeSendTxRequest) {
     if (this.#isReestimating) return
 
     this.#isReestimating = true
@@ -1907,6 +1907,29 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#isReestimating = false
 
     if (!this.signAccountOpController) return
+    if (!this.signAccountOpController.accountOp.meta?.swapTxn) return
+
+    const newestUserTxn = JSON.parse(
+      JSON.stringify(this.signAccountOpController.accountOp.meta.swapTxn)
+    )
+
+    // if we're refetching a quote atm, we don't execute the estimation
+    // a race between the old estimation with the old quote and the new
+    // estimation with the new quote might happen
+    //
+    // also, if the tx data is different, it means the user is playing
+    // with the swap, so we don't want to reestimate
+    //
+    // we only want a re-estimate in a stale state
+    if (
+      this.updateQuoteStatus === 'LOADING' ||
+      userTxn.txData !== this.signAccountOpController.accountOp.meta.swapTxn.txData
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.reestimate(newestUserTxn)
+      return
+    }
+
     this.signAccountOpController.estimate().catch((e) => {
       // eslint-disable-next-line no-console
       console.log('error on swap&bridge re-estimate')
@@ -1914,7 +1937,7 @@ export class SwapAndBridgeController extends EventEmitter {
       console.log(e)
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate()
+    this.reestimate(newestUserTxn)
   }
 
   setUserProceeded(hasProceeded: boolean) {
