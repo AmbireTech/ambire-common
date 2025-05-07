@@ -23,6 +23,7 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -392,7 +393,20 @@ export class MainController extends EventEmitter {
       portfolioUpdate: () => {
         this.updateSelectedAccountPortfolio(true)
       },
-      userRequests: this.userRequests
+      userRequests: this.userRequests,
+      isMainSignAccountOpThrowingAnEstimationError: (
+        fromChainId: number | null,
+        toChainId: number | null
+      ) => {
+        return (
+          this.signAccountOp &&
+          fromChainId &&
+          toChainId &&
+          this.signAccountOp.estimation.status === EstimationStatus.Error &&
+          this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
+          fromChainId === toChainId
+        )
+      }
     })
     this.domains = new DomainsController(this.providers.providers)
 
@@ -606,6 +620,21 @@ export class MainController extends EventEmitter {
       await this.swapAndBridge.addActiveRoute({
         activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
         userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
+      })
+    }
+
+    if (type === SIGN_ACCOUNT_OP_SWAP) {
+      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
+        // if an error has ocurred while signing and we're back to SigningStatus.ReadyToSign,
+        // override the pending results as they will be incorrect
+        if (
+          this.swapAndBridge.signAccountOpController &&
+          this.swapAndBridge.signAccountOpController.status?.type === SigningStatus.ReadyToSign
+        ) {
+          this.portfolio.overridePendingResults(
+            this.swapAndBridge.signAccountOpController.accountOp
+          )
+        }
       })
     }
 
