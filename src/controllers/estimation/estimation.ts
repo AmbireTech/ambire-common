@@ -1,5 +1,7 @@
-/* eslint-disable class-methods-use-this */
 import { ZeroAddress } from 'ethers'
+
+/* eslint-disable class-methods-use-this */
+import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -249,12 +251,18 @@ export class EstimationController extends EventEmitter {
     if (!this.isInitialized()) return []
 
     if (this.error) {
-      errors.push({
-        title: this.error.message,
-        code:
-          typeof this.error.cause === 'string' && this.error.cause.length
+      let code = ''
+
+      if (this.error instanceof ErrorHumanizerError && this.error.isFallbackMessage) {
+        code =
+          typeof this.error.cause === 'string' && !!this.error.cause
             ? this.error.cause
             : 'ESTIMATION_ERROR'
+      }
+
+      errors.push({
+        title: this.error.message,
+        code
       })
     }
 

@@ -23,6 +23,7 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
+import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -52,7 +53,7 @@ import {
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
-import { getPaymasterService } from '../../libs/erc7677/erc7677'
+import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 import {
@@ -216,6 +217,8 @@ export class MainController extends EventEmitter {
 
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
+  #relayerUrl: string
+
   constructor({
     storage,
     fetch,
@@ -296,6 +299,7 @@ export class MainController extends EventEmitter {
       providers: this.providers
     })
     this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
+    this.#relayerUrl = relayerUrl
     this.accountPicker = new AccountPickerController({
       accounts: this.accounts,
       keystore: this.keystore,
@@ -385,10 +389,24 @@ export class MainController extends EventEmitter {
       serviceProviderAPI: lifiAPI,
       storage: this.#storage,
       actions: this.actions,
+      relayerUrl,
       portfolioUpdate: () => {
         this.updateSelectedAccountPortfolio(true)
       },
-      userRequests: this.userRequests
+      userRequests: this.userRequests,
+      isMainSignAccountOpThrowingAnEstimationError: (
+        fromChainId: number | null,
+        toChainId: number | null
+      ) => {
+        return (
+          this.signAccountOp &&
+          fromChainId &&
+          toChainId &&
+          this.signAccountOp.estimation.status === EstimationStatus.Error &&
+          this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
+          fromChainId === toChainId
+        )
+      }
     })
     this.domains = new DomainsController(this.providers.providers)
 
@@ -602,6 +620,21 @@ export class MainController extends EventEmitter {
       await this.swapAndBridge.addActiveRoute({
         activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
         userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
+      })
+    }
+
+    if (type === SIGN_ACCOUNT_OP_SWAP) {
+      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
+        // if an error has ocurred while signing and we're back to SigningStatus.ReadyToSign,
+        // override the pending results as they will be incorrect
+        if (
+          this.swapAndBridge.signAccountOpController &&
+          this.swapAndBridge.signAccountOpController.status?.type === SigningStatus.ReadyToSign
+        ) {
+          this.portfolio.overridePendingResults(
+            this.swapAndBridge.signAccountOpController.accountOp
+          )
+        }
       })
     }
 
@@ -1269,6 +1302,16 @@ export class MainController extends EventEmitter {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
 
+      const baseAcc = getBaseAccount(
+        this.selectedAccount.account,
+        await this.accounts.getOrFetchAccountOnChainState(
+          this.selectedAccount.account.addr,
+          network.chainId
+        ),
+        this.keystore.getAccountKeys(this.selectedAccount.account),
+        network
+      )
+
       const isWalletSendCalls = !!request.params[0].calls
       const accountAddr = getAddress(request.params[0].from)
 
@@ -1277,7 +1320,7 @@ export class MainController extends EventEmitter {
         : [request.params[0]]
       const paymasterService = isWalletSendCalls
         ? getPaymasterService(network.chainId, request.params[0].capabilities)
-        : null
+        : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
 
       userRequest = {
         id: new Date().getTime(),
@@ -1481,11 +1524,21 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
 
+    const baseAcc = getBaseAccount(
+      this.selectedAccount.account,
+      await this.accounts.getOrFetchAccountOnChainState(
+        this.selectedAccount.account.addr,
+        selectedToken.chainId
+      ),
+      this.keystore.getAccountKeys(this.selectedAccount.account),
+      this.networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+    )
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.selectedAccount.account.addr,
       amount,
       selectedToken,
-      recipientAddress
+      recipientAddress,
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
     })
 
     if (!userRequest) {
@@ -1578,15 +1631,23 @@ export class MainController extends EventEmitter {
 
         // TODO: Consider refining the error handling in here, because this
         // swallows errors and doesn't provide any feedback to the user.
+        const accountState = await this.accounts.getOrFetchAccountOnChainState(
+          this.selectedAccount.account.addr,
+          network.chainId
+        )
+        const baseAcc = getBaseAccount(
+          this.selectedAccount.account,
+          accountState,
+          this.keystore.getAccountKeys(this.selectedAccount.account),
+          network
+        )
         const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
           transaction,
           network.chainId,
           this.selectedAccount.account,
           this.providers.providers[network.chainId.toString()],
-          await this.accounts.getOrFetchAccountOnChainState(
-            this.selectedAccount.account.addr,
-            network.chainId
-          )
+          accountState,
+          getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {

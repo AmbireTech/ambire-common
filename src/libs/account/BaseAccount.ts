@@ -101,4 +101,8 @@ export abstract class BaseAccount {
   shouldSignDeployAuth(broadcastOption: string): boolean {
     return false
   }
+
+  isSponsorable(): boolean {
+    return false
+  }
 }
