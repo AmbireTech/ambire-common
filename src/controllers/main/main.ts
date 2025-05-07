@@ -105,6 +105,7 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { TransactionManager } from '../transaction/transactionManager'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
@@ -178,6 +179,8 @@ export class MainController extends EventEmitter {
   signMessage: SignMessageController
 
   swapAndBridge: SwapAndBridgeController
+
+  transactionManager: TransactionManager
 
   signAccountOp: SignAccountOpController | null = null
 
@@ -416,6 +419,30 @@ export class MainController extends EventEmitter {
         )
       }
     })
+
+    // TODO: [WIP] - The manager should be initialized with transfer and
+    // swap and bridge controller dependencies.
+    this.transactionManager = new TransactionManager({
+      accounts: this.accounts,
+      keystore: this.keystore,
+      portfolio: this.portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      networks: this.networks,
+      activity: this.activity,
+      invite: this.invite,
+      // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
+      // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
+      serviceProviderAPI: lifiAPI,
+      storage: this.#storage,
+      actions: this.actions,
+      portfolioUpdate: () => {
+        this.updateSelectedAccountPortfolio(true)
+      },
+      userRequests: this.userRequests
+    })
+
     this.domains = new DomainsController(this.providers.providers)
 
     this.#initialLoadPromise = this.#load()
