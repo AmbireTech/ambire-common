@@ -1465,7 +1465,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
-    if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
+    if (!this.quote || !this.quote.routes.length) return
     if (
       ![
         SwapAndBridgeFormStatus.ReadyToSubmit,
@@ -1819,10 +1819,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const userTxn = await this.getRouteStartUserTx(false)
 
-    // TODO<swap&bridge>: if auto select route is disabled,
-    // return the error instead
-    // Also, the below code is not working well and needs changes
-    //
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn) {
