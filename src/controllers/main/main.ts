@@ -74,7 +74,8 @@ import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import {
   buildClaimWalletRequest,
   buildMintVestingRequest,
-  buildTransferUserRequest
+  buildTransferUserRequest,
+  prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
 /* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
@@ -1550,6 +1551,46 @@ export class MainController extends EventEmitter {
       return
     }
 
+    await this.addUserRequest(userRequest, 'last', actionExecutionType)
+  }
+
+  async buildIntentUserRequest(
+    amount: string,
+    recipientAddress: string,
+    selectedToken: TokenResult,
+    actionExecutionType: ActionExecutionType = 'open-action-window'
+  ) {
+    await this.#initialLoadPromise
+    if (!this.selectedAccount.account) return
+
+    const baseAcc = getBaseAccount(
+      this.selectedAccount.account,
+      await this.accounts.getOrFetchAccountOnChainState(
+        this.selectedAccount.account.addr,
+        selectedToken.chainId
+      ),
+      this.keystore.getAccountKeys(this.selectedAccount.account),
+      this.networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+    )
+
+    const userRequest = prepareIntentUserRequest({
+      selectedAccount: this.selectedAccount.account.addr,
+      amount,
+      selectedToken,
+      recipientAddress,
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+    })
+
+    if (!userRequest) {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building intent request',
+        error: new Error(
+          'buildUserRequestFromIntentRequest: bad parameters passed to buildIntentUserRequest'
+        )
+      })
+      return
+    }
     await this.addUserRequest(userRequest, 'last', actionExecutionType)
   }
 
