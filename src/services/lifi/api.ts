@@ -28,7 +28,8 @@ import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
-  convertPortfolioTokenToSwapAndBridgeToToken
+  convertPortfolioTokenToSwapAndBridgeToToken,
+  sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
@@ -322,17 +323,19 @@ export class LiFiAPI {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    const result: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
+    const tokens: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
 
-    const sortedResult = await attemptToSortTokensByMarketCap({
+    const sortedTokens = await attemptToSortTokensByMarketCap({
       fetch: this.#fetch,
       chainId: toChainId,
-      tokens: result
+      tokens
     })
 
-    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedResult })
+    const withCustomTokens = addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedTokens })
+
+    return sortNativeTokenFirst(withCustomTokens)
   }
 
   async getToken({

@@ -1,4 +1,4 @@
-import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
+import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -77,6 +77,14 @@ export const attemptToSortTokensByMarketCap = async ({
     console.error('Sorting Swap & Bridge tokens by market failed', e)
     return tokens
   }
+}
+
+export const sortNativeTokenFirst = (tokens: SwapAndBridgeToToken[]) => {
+  return tokens.sort((a, b) => {
+    if (a.address === ZeroAddress) return -1
+    if (b.address === ZeroAddress) return 1
+    return 0
+  })
 }
 
 export const sortTokenListResponse = (
