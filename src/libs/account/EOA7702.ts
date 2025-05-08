@@ -158,4 +158,8 @@ export class EOA7702 extends BaseAccount {
   isSponsorable(): boolean {
     return this.network.chainId === 100n
   }
+
+  getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
+    return this.accountState.isSmarterEoa ? 'supported' : 'ready'
+  }
 }
