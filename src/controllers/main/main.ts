@@ -106,7 +106,7 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { TransactionManager } from '../transaction/transactionManager'
+import { TransactionManagerController } from '../transaction/transactionManager'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
@@ -401,7 +401,7 @@ export class MainController extends EventEmitter {
 
     // TODO: [WIP] - The manager should be initialized with transfer and
     // swap and bridge controller dependencies.
-    this.transactionManager = new TransactionManager({
+    this.transactionManager = new TransactionManagerController({
       accounts: this.accounts,
       keystore: this.keystore,
       portfolio: this.portfolio,
