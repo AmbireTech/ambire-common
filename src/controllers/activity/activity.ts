@@ -4,6 +4,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { isSmartAccount } from '../../libs/account/account'
 import {
+  AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
   fetchTxnId,
   isIdentifiedByRelayer,
@@ -712,6 +713,20 @@ export class ActivityController extends EventEmitter {
     }
 
     return activityAccountOp.txnId
+  }
+
+  findByIdentifiedBy(
+    identifiedBy: AccountOpIdentifiedBy,
+    accountAddr: string,
+    chainId: bigint
+  ): SubmittedAccountOp | undefined {
+    if (!this.#accountsOps[accountAddr] || !this.#accountsOps[accountAddr][chainId.toString()]) {
+      return undefined
+    }
+
+    return this.#accountsOps[accountAddr][chainId.toString()].find(
+      (op) => op.identifiedBy.identifier === identifiedBy.identifier
+    )
   }
 
   toJSON() {

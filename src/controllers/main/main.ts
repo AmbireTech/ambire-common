@@ -1331,6 +1331,10 @@ export class MainController extends EventEmitter {
         })
       }
 
+      const walletSendCallsVersion = isWalletSendCalls
+        ? request.params[0].version ?? '1.0.0'
+        : undefined
+
       userRequest = {
         id: new Date().getTime(),
         action: {
@@ -1344,6 +1348,7 @@ export class MainController extends EventEmitter {
         meta: {
           isSignAction: true,
           isWalletSendCalls,
+          walletSendCallsVersion,
           accountAddr,
           chainId: network.chainId,
           paymasterService
