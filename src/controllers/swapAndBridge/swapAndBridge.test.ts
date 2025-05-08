@@ -207,26 +207,17 @@ describe('SwapAndBridge Controller', () => {
     await swapAndBridgeController.initForm('1')
     expect(swapAndBridgeController.sessionIds).toContain('1')
   })
-  test('should update portfolio token list', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-        expect(swapAndBridgeController.toTokenList).not.toContainEqual(
-          expect.objectContaining({
-            address: swapAndBridgeController.fromSelectedToken?.address
-          })
-        )
-        expect(swapAndBridgeController.toSelectedToken).toBeNull()
-        unsubscribe()
-        done()
-      }
-    })
-
+  test('should update portfolio token list', async () => {
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
-    swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    expect(swapAndBridgeController.toTokenList).toHaveLength(3)
+    expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+      expect.objectContaining({
+        address: swapAndBridgeController.fromSelectedToken?.address
+      })
+    )
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
       '0x0000000000000000000000000000000000000000' // the one with highest balance
