@@ -472,7 +472,8 @@ export class StorageController {
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
   async associateAccountKeysWithLegacySavedSeedMigration(
     accountPicker: AccountPickerController,
-    keystore: KeystoreController
+    keystore: KeystoreController,
+    onSuccess: () => Promise<void>
   ) {
     if (this.#associateAccountKeysWithLegacySavedSeedMigrationPassed) return
 
@@ -481,6 +482,8 @@ export class StorageController {
       this.#storage.get('keystoreSeeds', []),
       this.#storage.get('keystoreKeys', [])
     ])
+
+    if (passedMigrations.includes('associateAccountKeysWithLegacySavedSeedMigration')) return
 
     const savedSeed = keystoreSeeds.find((s) => !s.id)
 
@@ -521,12 +524,13 @@ export class StorageController {
     console.log(keystoreKeys, updatedKeystoreKeys)
     const storageUpdates = [
       this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateTokenPreferences'])
+        ...new Set([...passedMigrations, 'associateAccountKeysWithLegacySavedSeedMigration'])
       ]),
       this.#storage.set('keystoreKeys', updatedKeystoreKeys)
     ]
 
     await Promise.all(storageUpdates)
     this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
+    await onSuccess()
   }
 }

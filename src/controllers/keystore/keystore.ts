@@ -1029,6 +1029,13 @@ export class KeystoreController extends EventEmitter {
     return null
   }
 
+  async updateKeystoreKeys() {
+    const keystoreKeys = await this.#storage.get('keystoreKeys', [])
+    this.#keystoreKeys = keystoreKeys
+
+    this.emitUpdate()
+  }
+
   toJSON() {
     return {
       ...this,

@@ -429,7 +429,10 @@ export class MainController extends EventEmitter {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
         this.#storage.associateAccountKeysWithLegacySavedSeedMigration(
           this.accountPicker,
-          this.keystore
+          this.keystore,
+          async () => {
+            await this.keystore.updateKeystoreKeys()
+          }
         )
       }
     })
