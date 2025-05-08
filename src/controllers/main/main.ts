@@ -23,7 +23,6 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
-import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -97,6 +96,7 @@ import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
@@ -216,6 +216,15 @@ export class MainController extends EventEmitter {
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Tracks broadcast request IDs to abort stale requests.
+   * Prevents rejected hardware wallet signatures from affecting new requests
+   * when a user closes an action window and starts a new one.
+   */
+  #broadcastCallId: number | null = null
+
+  #isBroadcastAwaitingHWSignature: boolean = false
 
   #relayerUrl: string
 
@@ -670,14 +679,33 @@ export class MainController extends EventEmitter {
       }
       return
     }
+    const broadcastCallId = Date.now()
 
-    await this.withStatus(
-      'broadcastSignedAccountOp',
-      async () => {
-        await this.#broadcastSignedAccountOp(signAccountOp, type)
-      },
-      true
-    )
+    try {
+      await this.#broadcastSignedAccountOp(signAccountOp, type, broadcastCallId)
+      this.statuses.broadcastSignedAccountOp = 'SUCCESS'
+      await this.forceEmitUpdate()
+    } catch (error: any) {
+      if (broadcastCallId === this.#broadcastCallId) {
+        if ('message' in error && 'level' in error && 'error' in error) {
+          this.emitError(error)
+        } else {
+          this.emitError({
+            level: 'major',
+            message: error.message || 'Unknown error occurred while broadcasting the transaction',
+            error
+          })
+        }
+        this.statuses.broadcastSignedAccountOp = 'ERROR'
+        await this.forceEmitUpdate()
+      }
+    } finally {
+      if (broadcastCallId === this.#broadcastCallId) {
+        this.statuses.broadcastSignedAccountOp = 'INITIAL'
+        this.#broadcastCallId = null
+        await this.forceEmitUpdate()
+      }
+    }
   }
 
   async resolveDappBroadcast(
@@ -715,10 +743,19 @@ export class MainController extends EventEmitter {
   destroySignAccOp() {
     if (!this.signAccountOp) return
 
+    // Reset these flags only if we were awaiting a HW signature
+    // to broadcast a transaction.
+    if (this.#isBroadcastAwaitingHWSignature) {
+      this.statuses.broadcastSignedAccountOp = 'INITIAL'
+      this.#isBroadcastAwaitingHWSignature = false
+      this.#broadcastCallId = null
+    }
+
     this.feePayerKey = null
     this.signAccountOp.reset()
     this.signAccountOp = null
     this.signAccOpInitError = null
+    this.#signAccountOpSigningPromise = undefined
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -1318,9 +1355,22 @@ export class MainController extends EventEmitter {
       const calls: Calls['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
-      const paymasterService = isWalletSendCalls
-        ? getPaymasterService(network.chainId, request.params[0].capabilities)
-        : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      const paymasterService =
+        isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
+          ? getPaymasterService(network.chainId, request.params[0].capabilities)
+          : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+
+      const atomicRequired = isWalletSendCalls && !!request.params[0].atomicRequired
+      if (isWalletSendCalls && atomicRequired && baseAcc.getAtomicStatus() === 'unsupported') {
+        throw ethErrors.provider.custom({
+          code: 5700,
+          message: 'Transaction failed - atomicity is not supported for this account'
+        })
+      }
+
+      const walletSendCallsVersion = isWalletSendCalls
+        ? request.params[0].version ?? '1.0.0'
+        : undefined
 
       userRequest = {
         id: new Date().getTime(),
@@ -1335,6 +1385,7 @@ export class MainController extends EventEmitter {
         meta: {
           isSignAction: true,
           isWalletSendCalls,
+          walletSendCallsVersion,
           accountAddr,
           chainId: network.chainId,
           paymasterService
@@ -1863,7 +1914,10 @@ export class MainController extends EventEmitter {
         })
       }
 
-      if (this.#signAccountOpSigningPromise) await this.#signAccountOpSigningPromise
+      if (this.#signAccountOpSigningPromise) {
+        console.error('addUserRequest called with active #signAccountOpSigningPromise')
+        await this.#signAccountOpSigningPromise
+      }
 
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -2023,9 +2077,6 @@ export class MainController extends EventEmitter {
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
 
-    // enable 7702 if the network added was oddysey
-    if (network.chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', true)
-
     await this.updateSelectedAccountPortfolio()
   }
 
@@ -2036,9 +2087,6 @@ export class MainController extends EventEmitter {
     this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
     this.activity.removeNetworkData(chainId)
-
-    // disable 7702 if the network removed was oddysey
-    if (chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', false)
   }
 
   async resolveAccountOpAction(
@@ -2169,7 +2217,18 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async #broadcastSignedAccountOp(signAccountOp: SignAccountOpController, type: SignAccountOpType) {
+  async #broadcastSignedAccountOp(
+    signAccountOp: SignAccountOpController,
+    type: SignAccountOpType,
+    callId: number
+  ) {
+    if (this.statuses.broadcastSignedAccountOp !== 'INITIAL') {
+      this.throwBroadcastAccountOp({
+        signAccountOp,
+        message: 'Pending broadcast. Please try again in a bit.'
+      })
+      return
+    }
     const accountOp = signAccountOp.accountOp
     const estimation = signAccountOp.estimation.estimation
     const actionId = signAccountOp.fromActionId
@@ -2210,6 +2269,11 @@ export class MainController extends EventEmitter {
       const message = `Network with id ${accountOp.chainId} not found. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
+
+    this.statuses.broadcastSignedAccountOp = 'LOADING'
+    this.#broadcastCallId = callId
+
+    await this.forceEmitUpdate()
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
       accountOp.accountAddr,
@@ -2265,7 +2329,10 @@ export class MainController extends EventEmitter {
         this.emitUpdate()
 
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
+        if (signer.init) {
+          signer.init(this.#externalSignerControllers[feePayerKey.type])
+          this.#isBroadcastAwaitingHWSignature = true
+        }
 
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
           ? accountOp.calls.length
@@ -2284,6 +2351,9 @@ export class MainController extends EventEmitter {
             accountOp.calls[i]
           )
           const signedTxn = await signer.signRawTransaction(rawTxn)
+          if (callId !== this.#broadcastCallId) {
+            return
+          }
           multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
@@ -2299,6 +2369,7 @@ export class MainController extends EventEmitter {
             })
           }
         }
+        if (callId !== this.#broadcastCallId) return
         transactionRes = {
           nonce,
           identifiedBy: {
@@ -2309,6 +2380,7 @@ export class MainController extends EventEmitter {
             txnLength === 1 ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-') : undefined
         }
       } catch (error: any) {
+        if (this.#broadcastCallId !== callId) return
         // eslint-disable-next-line no-console
         console.error('Error broadcasting', error)
         // for multiple txn cases
@@ -2327,7 +2399,10 @@ export class MainController extends EventEmitter {
           return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
-        signAccountOp.update({ signedTransactionsCount: null })
+        if (this.#broadcastCallId === callId) {
+          this.#isBroadcastAwaitingHWSignature = false
+          signAccountOp.update({ signedTransactionsCount: null })
+        }
       }
     }
     // Smart account, the ERC-4337 way
@@ -2424,6 +2499,8 @@ export class MainController extends EventEmitter {
         return this.throwBroadcastAccountOp({ signAccountOp, error, accountState, isRelayer: true })
       }
     }
+
+    if (this.#broadcastCallId !== callId) return
 
     if (!transactionRes)
       return this.throwBroadcastAccountOp({
@@ -2572,6 +2649,9 @@ export class MainController extends EventEmitter {
     const originalMessage = _err?.message
     let message = humanReadableMessage
     let isReplacementFeeLow = false
+
+    this.statuses.broadcastSignedAccountOp = 'ERROR'
+    this.forceEmitUpdate()
 
     if (originalMessage) {
       if (originalMessage.includes('replacement fee too low')) {

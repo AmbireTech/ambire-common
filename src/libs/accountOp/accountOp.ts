@@ -72,6 +72,7 @@ export interface AccountOp {
     entryPointAuthorization?: string
     paymasterService?: PaymasterService
     swapTxn?: SwapAndBridgeSendTxRequest
+    walletSendCallsVersion?: string
   }
   flags?: {
     hideActivityBanner?: boolean
