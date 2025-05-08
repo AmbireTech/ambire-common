@@ -189,4 +189,86 @@ function buildTransferUserRequest({
   }
 }
 
-export { buildClaimWalletRequest, buildMintVestingRequest, buildTransferUserRequest }
+interface PrepareIntentUserRequestParams {
+  amount: string
+  selectedToken: TokenResult
+  selectedAccount: string
+  recipientAddress: string
+  paymasterService?: PaymasterService
+}
+function prepareIntentUserRequest({
+  amount,
+  selectedToken,
+  selectedAccount,
+  recipientAddress,
+  paymasterService
+}: PrepareIntentUserRequestParams): SignUserRequest | null {
+  if (!selectedToken || !selectedAccount || !recipientAddress) return null
+
+  console.log({
+    amount,
+    selectedToken,
+    selectedAccount,
+    recipientAddress,
+    paymasterService
+  })
+  // const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals)
+
+  // const bigNumberHexAmount = `0x${parseUnits(
+  //   sanitizedAmount,
+  //   Number(selectedToken.decimals)
+  // ).toString(16)}`
+
+  // const txn = {
+  //   kind: 'calls' as const,
+  //   calls: [
+  //     {
+  //       to: selectedToken.address,
+  //       value: BigInt(0),
+  //       data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+  //     }
+  //   ]
+  // }
+
+  // if (Number(selectedToken.address) === 0) {
+  //   txn.calls = [
+  //     {
+  //       to: recipientAddress,
+  //       value: BigInt(bigNumberHexAmount),
+  //       data: '0x'
+  //     }
+  //   ]
+  // }
+
+  // TODO: call the simulateIntent function
+
+  // TODO: add the calls to the txn
+  const txn = {
+    kind: 'calls' as const,
+    calls: [
+      {
+        to: recipientAddress,
+        value: BigInt(0),
+        data: '0x'
+      }
+    ]
+  }
+
+  return {
+    id: new Date().getTime(),
+    action: txn,
+    meta: {
+      isSignAction: true,
+      chainId: selectedToken.chainId,
+      accountAddr: selectedAccount,
+      paymasterService
+    }
+  }
+}
+
+export {
+  buildClaimWalletRequest,
+  buildMintVestingRequest,
+  buildTransferUserRequest,
+  prepareIntentUserRequest
+}
