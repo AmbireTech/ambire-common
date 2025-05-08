@@ -15,7 +15,8 @@ import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
-  updateAccountPreferences: 'INITIAL'
+  updateAccountPreferences: 'INITIAL',
+  addAccounts: 'INITIAL'
 } as const
 
 export class AccountsController extends EventEmitter {
@@ -147,7 +148,7 @@ export class AccountsController extends EventEmitter {
     this.#onAccountStateUpdate()
   }
 
-  async addAccounts(accounts: Account[] = []) {
+  async #addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
     // eslint-disable-next-line no-param-reassign
     accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }))
@@ -186,6 +187,10 @@ export class AccountsController extends EventEmitter {
     this.#updateAccountStates(newAccountsNotAddedYet)
 
     this.emitUpdate()
+  }
+
+  async addAccounts(accounts: Account[] = []) {
+    await this.withStatus('addAccounts', async () => this.#addAccounts(accounts), true)
   }
 
   removeAccountData(address: Account['addr']) {
