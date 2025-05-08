@@ -17,6 +17,9 @@ export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: str
   )
     return 'Trezor device got disconnected.'
 
+  if (errorCode === 'Device_CallInProgress')
+    return 'Trezor device busy. Please make sure there are no pending requests on the device.'
+
   return `${errorMsg} (${errorCode ?? 'no error code incoming'})`
 }
 
