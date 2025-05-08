@@ -428,7 +428,16 @@ export class MainController extends EventEmitter {
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
         this.#storage.associateAccountKeysWithLegacySavedSeedMigration(
-          this.accountPicker,
+          new AccountPickerController({
+            accounts: this.accounts,
+            keystore: this.keystore,
+            networks: this.networks,
+            providers: this.providers,
+            externalSignerControllers: this.#externalSignerControllers,
+            relayerUrl,
+            fetch: this.fetch,
+            onAddAccountsSuccessCallback: async () => {}
+          }),
           this.keystore,
           async () => {
             await this.keystore.updateKeystoreKeys()

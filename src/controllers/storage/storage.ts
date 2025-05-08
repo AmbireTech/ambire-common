@@ -520,8 +520,8 @@ export class StorageController {
 
       return key
     })
+    await accountPicker.reset()
 
-    console.log(keystoreKeys, updatedKeystoreKeys)
     const storageUpdates = [
       this.#storage.set('passedMigrations', [
         ...new Set([...passedMigrations, 'associateAccountKeysWithLegacySavedSeedMigration'])
