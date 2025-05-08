@@ -53,6 +53,10 @@ export const attemptToSortTokensByMarketCap = async ({
     const tokenAddressesByMarketCapRes = await fetch(
       `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`
     )
+
+    if (tokenAddressesByMarketCapRes.status !== 200)
+      throw new Error(`Got status ${tokenAddressesByMarketCapRes.status} from the API.`)
+
     const tokenAddressesByMarketCap = await tokenAddressesByMarketCapRes.json()
 
     // Highest market cap comes first from the response
