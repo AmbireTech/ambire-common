@@ -198,6 +198,7 @@ describe('SwapAndBridge Controller', () => {
       portfolio: portfolioCtrl,
       providers: providersCtrl,
       externalSignerControllers: {},
+      relayerUrl,
       userRequests: []
     })
     expect(swapAndBridgeController).toBeDefined()

@@ -5,6 +5,7 @@ import { describe, expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { MockCustomError } from '../errorDecoder/errorDecoder.test'
+import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { MESSAGE_PREFIX } from './estimationErrorHumanizer'
 import { getHumanReadableEstimationError } from './index'
 
@@ -25,6 +26,7 @@ describe('Estimation errors are humanized', () => {
       const humanizedError = getHumanReadableEstimationError(error)
 
       expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+      expect(humanizedError.isFallbackMessage).toBe(false)
     }
     try {
       await contract.revertWithReason('INSUFFICIENT_PRIVILEGE')
@@ -32,6 +34,7 @@ describe('Estimation errors are humanized', () => {
       const humanizedError = getHumanReadableEstimationError(error)
 
       expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+      expect(humanizedError.isFallbackMessage).toBe(false)
     }
   })
   it('0x7b36c479 (PartialSwapsNotAllowed)', () => {
@@ -42,6 +45,7 @@ describe('Estimation errors are humanized', () => {
     const humanizedError = getHumanReadableEstimationError(error)
 
     expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+    expect(humanizedError.isFallbackMessage).toBe(false)
     restore()
   })
   it('Custom error (0x81ceff30)', () => {
@@ -56,5 +60,19 @@ describe('Estimation errors are humanized', () => {
     const humanizedError = getHumanReadableEstimationError(swapFailedError)
 
     expect(humanizedError.message).toBe(EXPECTED_MESSAGE)
+    expect(humanizedError.isFallbackMessage).toBe(false)
+  })
+  it('Random error humanized to fallback message', () => {
+    const error: DecodedError = {
+      type: ErrorType.InnerCallFailureError,
+      reason: '0x12345678',
+      data: ''
+    }
+
+    const humanizedError = getHumanReadableEstimationError(error)
+
+    expect(humanizedError.message).toBe(`${MESSAGE_PREFIX} it will revert onchain.`)
+    expect(humanizedError.isFallbackMessage).toBe(true)
+    expect(humanizedError.cause).toBe('0x12345678')
   })
 })
