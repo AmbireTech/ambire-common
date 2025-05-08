@@ -5,6 +5,7 @@ import { CashbackStatus } from '../../interfaces/selectedAccount'
 // eslint-disable-next-line import/no-cycle
 import { Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
@@ -12,6 +13,10 @@ import {
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
+// eslint-disable-next-line import/no-cycle
+import { AccountPickerController } from '../accountPicker/accountPicker'
+// eslint-disable-next-line import/no-cycle
+import { KeystoreController } from '../keystore/keystore'
 
 export class StorageController {
   #storage: Storage
@@ -20,6 +25,8 @@ export class StorageController {
   #storageMigrationsPromise: Promise<void>
 
   #storageUpdateQueue: Promise<void> = Promise.resolve()
+
+  #associateAccountKeysWithLegacySavedSeedMigrationPassed: boolean = false
 
   constructor(storage: Storage) {
     this.#storage = storage
@@ -460,5 +467,66 @@ export class StorageController {
       }
     })
     await this.#storageUpdateQueue
+  }
+
+  // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
+  async associateAccountKeysWithLegacySavedSeedMigration(
+    accountPicker: AccountPickerController,
+    keystore: KeystoreController
+  ) {
+    if (this.#associateAccountKeysWithLegacySavedSeedMigrationPassed) return
+
+    const [passedMigrations, keystoreSeeds, keystoreKeys] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('keystoreSeeds', []),
+      this.#storage.get('keystoreKeys', [])
+    ])
+
+    const savedSeed = keystoreSeeds.find((s) => !s.id)
+
+    if (!savedSeed) {
+      this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
+      return
+    }
+
+    const keystoreSavedSeed = await keystore.getSavedSeed('legacy-saved-seed')
+
+    const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase)
+    await accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
+      pageSize: 50,
+      shouldAddNextAccountAutomatically: false,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: true
+    })
+    await accountPicker.init()
+    await accountPicker.setPage({ page: 1 })
+    await accountPicker.findAndSetLinkedAccountsPromise
+
+    const updatedKeystoreKeys = keystoreKeys.map((key) => {
+      if (accountPicker.allKeysOnPage.some((k) => k === key.addr)) {
+        return {
+          ...key,
+          meta: {
+            ...key.meta,
+            fromSeedId: keystoreSavedSeed.id
+          }
+        }
+      }
+
+      return key
+    })
+
+    console.log(keystoreKeys, updatedKeystoreKeys)
+    const storageUpdates = [
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateTokenPreferences'])
+      ]),
+      this.#storage.set('keystoreKeys', updatedKeystoreKeys)
+    ]
+
+    await Promise.all(storageUpdates)
+    this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
   }
 }

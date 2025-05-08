@@ -424,6 +424,15 @@ export class MainController extends EventEmitter {
       if (!this.signAccountOp) return
       this.emitError(e)
     })
+
+    this.keystore.onUpdate(() => {
+      if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        this.#storage.associateAccountKeysWithLegacySavedSeedMigration(
+          this.accountPicker,
+          this.keystore
+        )
+      }
+    })
   }
 
   /**

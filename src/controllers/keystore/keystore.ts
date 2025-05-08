@@ -896,13 +896,17 @@ export class KeystoreController extends EventEmitter {
       const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
 
       return {
+        ...keystoreSeed,
         seed: decryptedSeed,
-        seedPassphrase: decryptedSeedPassphrase,
-        hdPathTemplate: keystoreSeed.hdPathTemplate
+        seedPassphrase: decryptedSeedPassphrase
       } as KeystoreSeed
     }
 
-    return { seed: decryptedSeed, seedPassphrase: '', hdPathTemplate: keystoreSeed.hdPathTemplate }
+    return {
+      ...keystoreSeed,
+      seed: decryptedSeed,
+      seedPassphrase: ''
+    }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {

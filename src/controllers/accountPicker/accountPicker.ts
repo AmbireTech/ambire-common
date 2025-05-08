@@ -143,6 +143,8 @@ export class AccountPickerController extends EventEmitter {
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
 
+  findAndSetLinkedAccountsPromise?: Promise<void>
+
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   #addAccountsOnKeystoreReady: {
@@ -327,6 +329,13 @@ export class AccountPickerController extends EventEmitter {
     }
 
     return accountsWithStatus
+  }
+
+  get allKeysOnPage() {
+    const derivedKeys = this.#derivedAccounts.flatMap((a) => a.account.associatedKeys)
+    const linkedKeys = this.#linkedAccounts.flatMap((a) => a.account.associatedKeys)
+
+    return [...new Set([...derivedKeys, ...linkedKeys])]
   }
 
   get selectedAccounts(): SelectedAccountForImport[] {
@@ -697,7 +706,7 @@ export class AccountPickerController extends EventEmitter {
     this.accountsLoading = false
     this.emitUpdate()
 
-    await this.#findAndSetLinkedAccounts({
+    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
@@ -708,7 +717,10 @@ export class AccountPickerController extends EventEmitter {
             !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
         )
         .map((acc) => acc.account)
+    }).finally(() => {
+      this.findAndSetLinkedAccountsPromise = undefined
     })
+    await this.findAndSetLinkedAccountsPromise
   }
 
   #updateStateWithTheLatestFromAccounts() {
@@ -1356,6 +1368,7 @@ export class AccountPickerController extends EventEmitter {
       ...super.toJSON(),
       // includes the getter in the stringified instance
       accountsOnPage: this.accountsOnPage,
+      allKeysOnPage: this.allKeysOnPage,
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
