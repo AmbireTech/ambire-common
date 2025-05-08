@@ -10,13 +10,13 @@ export function getVersion(accOp: SubmittedAccountOp | undefined): string {
 }
 
 export function getPendingStatus(version: string) {
-  return version === '1.0.0' ? 'PENDING' : 100
+  return version === '2.0.0' ? 100 : 'PENDING'
 }
 
 export function getSuccessStatus(version: string) {
-  return version === '1.0.0' ? 'SUCCESS' : 200
+  return version === '2.0.0' ? 200 : 'CONFIRMED'
 }
 
 export function getFailureStatus(version: string) {
-  return version === '1.0.0' ? 'FAILURE' : 400
+  return version === '2.0.0' ? 400 : 'FAILURE'
 }
