@@ -2077,9 +2077,6 @@ export class MainController extends EventEmitter {
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
 
-    // enable 7702 if the network added was oddysey
-    if (network.chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', true)
-
     await this.updateSelectedAccountPortfolio()
   }
 
@@ -2090,9 +2087,6 @@ export class MainController extends EventEmitter {
     this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
     this.activity.removeNetworkData(chainId)
-
-    // disable 7702 if the network removed was oddysey
-    if (chainId === ODYSSEY_CHAIN_ID) this.featureFlags.setFeatureFlag('eip7702', false)
   }
 
   async resolveAccountOpAction(
