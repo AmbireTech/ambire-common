@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -37,6 +38,45 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
 
   return 0
+}
+
+export const attemptToSortTokensByMarketCap = async ({
+  fetch,
+  chainId,
+  tokens
+}: {
+  fetch: Fetch
+  chainId: number
+  tokens: SwapAndBridgeToToken[]
+}) => {
+  try {
+    const tokenAddressesByMarketCapRes = await fetch(
+      `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`
+    )
+    const tokenAddressesByMarketCap = await tokenAddressesByMarketCapRes.json()
+
+    // Highest market cap comes first from the response
+    const addressPriority = new Map(
+      tokenAddressesByMarketCap.data.map((addr: string, index: number) => [addr, index])
+    )
+
+    // Sort the result by the market cap response order position (highest first)
+    return tokens.sort((a, b) => {
+      const aPriority = addressPriority.get(a.address.toLowerCase())
+      const bPriority = addressPriority.get(b.address.toLowerCase())
+
+      if (aPriority !== undefined && bPriority !== undefined)
+        return (aPriority as number) - (bPriority as number)
+
+      if (aPriority !== undefined) return -1
+      if (bPriority !== undefined) return 1
+      return 0
+    })
+  } catch (e) {
+    // Fail silently, no biggie
+    console.error('Sorting Swap & Bridge tokens by market failed', e)
+    return tokens
+  }
 }
 
 export const sortTokenListResponse = (

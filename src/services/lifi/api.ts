@@ -27,6 +27,7 @@ import {
 import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
+  attemptToSortTokensByMarketCap,
   convertPortfolioTokenToSwapAndBridgeToToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
@@ -227,7 +228,7 @@ export class LiFiAPI {
 
   // eslint-disable-next-line class-methods-use-this
   async getHealth() {
-    // Li.Fi’s v1 API doesn't have a dedicated health endpoint
+    // Li.Fi's v1 API doesn't have a dedicated health endpoint
     return true
   }
 
@@ -325,7 +326,13 @@ export class LiFiAPI {
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
 
-    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: result })
+    const sortedResult = await attemptToSortTokensByMarketCap({
+      fetch: this.#fetch,
+      chainId: toChainId,
+      tokens: result
+    })
+
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedResult })
   }
 
   async getToken({
