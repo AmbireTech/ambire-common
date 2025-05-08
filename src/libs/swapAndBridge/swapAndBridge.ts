@@ -61,17 +61,13 @@ export const attemptToSortTokensByMarketCap = async ({
 
     // Highest market cap comes first from the response
     const addressPriority = new Map(
-      tokenAddressesByMarketCap.data.map((addr: string, index: number) => [
-        // FIXME: Incoming addresses are not check summed, temporarily use lowercase comparison
-        addr.toLowerCase(),
-        index
-      ])
+      tokenAddressesByMarketCap.data.map((addr: string, index: number) => [addr, index])
     )
 
     // Sort the result by the market cap response order position (highest first)
     return tokens.sort((a, b) => {
-      const aPriority = addressPriority.get(a.address.toLowerCase())
-      const bPriority = addressPriority.get(b.address.toLowerCase())
+      const aPriority = addressPriority.get(a.address)
+      const bPriority = addressPriority.get(b.address)
 
       if (aPriority !== undefined && bPriority !== undefined)
         return (aPriority as number) - (bPriority as number)
