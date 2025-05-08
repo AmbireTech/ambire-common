@@ -5,7 +5,6 @@ import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
@@ -25,6 +24,7 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount } from '../../libs/account/account'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
@@ -292,12 +292,16 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
   }
 
-  #emitUpdateIfNeeded() {
+  #emitUpdateIfNeeded(forceUpdate: boolean = false) {
     const shouldSkipUpdate =
       // No need to emit emit updates if there are no active sessions
       !this.sessionIds.length &&
       // but ALSO there are no active routes (otherwise, banners need the updates)
-      !this.activeRoutes.length
+      !this.activeRoutes.length &&
+      // Force update is needed when the form is reset
+      // as the sessions are cleared
+      !forceUpdate
+
     if (shouldSkipUpdate) return
 
     super.emitUpdate()
@@ -444,7 +448,13 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  async initForm(sessionId: string) {
+  async initForm(
+    sessionId: string,
+    params?: {
+      preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>
+    }
+  ) {
+    const { preselectedFromToken } = params || {}
     await this.#initialLoadPromise
 
     if (this.sessionIds.includes(sessionId)) return
@@ -477,7 +487,9 @@ export class SwapAndBridgeController extends EventEmitter {
     // do not await the health status check to prevent UI freeze while fetching
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#serviceProviderAPI.updateHealth()
-    await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens, {
+      preselectedToken: preselectedFromToken
+    })
     this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -726,7 +738,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.hasProceeded = false
     this.isAutoSelectRouteDisabled = false
 
-    if (shouldEmit) this.#emitUpdateIfNeeded()
+    if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
   reset(shouldEmit?: boolean) {
@@ -738,10 +750,16 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#toTokenList = []
     this.errors = []
 
-    if (shouldEmit) this.#emitUpdateIfNeeded()
+    if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
-  async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
+  async updatePortfolioTokenList(
+    nextPortfolioTokenList: TokenResult[],
+    params?: {
+      preselectedToken?: Pick<TokenResult, 'address' | 'chainId'>
+    }
+  ) {
+    const { preselectedToken } = params || {}
     const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
@@ -752,18 +770,24 @@ export class SwapAndBridgeController extends EventEmitter {
       tokens.filter((t) => !t.flags.isHidden)
     )
 
-    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
-      (t) =>
+    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find((t) => {
+      if (preselectedToken) {
+        return t.address === preselectedToken.address && t.chainId === preselectedToken.chainId
+      }
+
+      return (
         t.address === this.fromSelectedToken?.address &&
         t.chainId === this.fromSelectedToken?.chainId
-    )
+      )
+    })
 
     const shouldUpdateFromSelectedToken =
       !this.fromSelectedToken || // initial (default) state
       // May happen if selected account gets changed or the token gets send away in the meantime
       !fromSelectedTokenInNextPortfolio ||
       // May happen if user receives or sends the token in the meantime
-      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount
+      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount ||
+      preselectedToken
 
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
@@ -1441,7 +1465,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
-    if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
+    if (!this.quote || !this.quote.routes.length) return
     if (
       ![
         SwapAndBridgeFormStatus.ReadyToSubmit,
@@ -1795,10 +1819,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const userTxn = await this.getRouteStartUserTx(false)
 
-    // TODO<swap&bridge>: if auto select route is disabled,
-    // return the error instead
-    // Also, the below code is not working well and needs changes
-    //
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn) {

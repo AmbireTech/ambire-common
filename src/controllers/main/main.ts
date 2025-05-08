@@ -23,7 +23,6 @@ import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interf
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { RPCProvider } from '../../interfaces/provider'
-import { EstimationStatus } from '../estimation/types'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -97,6 +96,7 @@ import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
@@ -683,6 +683,8 @@ export class MainController extends EventEmitter {
 
     try {
       await this.#broadcastSignedAccountOp(signAccountOp, type, broadcastCallId)
+      this.statuses.broadcastSignedAccountOp = 'SUCCESS'
+      await this.forceEmitUpdate()
     } catch (error: any) {
       if (broadcastCallId === this.#broadcastCallId) {
         if ('message' in error && 'level' in error && 'error' in error) {
@@ -2276,6 +2278,8 @@ export class MainController extends EventEmitter {
 
     this.statuses.broadcastSignedAccountOp = 'LOADING'
     this.#broadcastCallId = callId
+
+    await this.forceEmitUpdate()
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
       accountOp.accountAddr,
