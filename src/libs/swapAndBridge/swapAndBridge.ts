@@ -56,8 +56,8 @@ export const sortTokenListResponse = (
       if (comparisonResult !== 0) return comparisonResult
     }
 
-    // Otherwise, just alphabetical
-    return (a.name || '').localeCompare(b.name || '')
+    // Otherwise, don't change, persist the order from the service provider
+    return 0
   })
 }
 
