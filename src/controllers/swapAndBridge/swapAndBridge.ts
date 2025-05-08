@@ -450,11 +450,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
   async initForm(
     sessionId: string,
-    params: {
+    params?: {
       preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>
     }
   ) {
-    const { preselectedFromToken } = params
+    const { preselectedFromToken } = params || {}
     await this.#initialLoadPromise
 
     if (this.sessionIds.includes(sessionId)) return
