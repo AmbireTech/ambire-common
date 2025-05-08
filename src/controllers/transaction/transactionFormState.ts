@@ -1,6 +1,6 @@
-// This class should only contain the state of the form to be used
-
 import { AddressState } from 'interfaces/domains'
+import { FromToken, SwapAndBridgeToToken } from 'interfaces/swapAndBridge'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
@@ -8,8 +8,7 @@ const DEFAULT_ADDRESS_STATE = {
   isDomainResolving: false
 }
 
-// in the only page of the transaction flow
-export class TransactionFormState {
+export class TransactionFormState extends EventEmitter {
   fromAmount: string = ''
 
   fromAmountInFiat: string = ''
@@ -34,8 +33,13 @@ export class TransactionFormState {
 
   isRecipientHumanizerKnownTokenOrSmartContract = false
 
-  update(params: Partial<TransactionFormState>) {
-    Object.assign(this, params)
+  fromSelectedToken: FromToken | null = null
+
+  toSelectedToken: SwapAndBridgeToToken | null = null
+
+  update(params: any) {
+    this.fromAmount = params.fromAmount
+    this.emitUpdate()
   }
 
   reset() {
@@ -55,5 +59,27 @@ export class TransactionFormState {
       !this.toAmount ||
       !this.addressState.fieldValue
     )
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      fromAmount: this.fromAmount,
+      fromAmountInFiat: this.fromAmountInFiat,
+      fromAmountFieldMode: this.fromAmountFieldMode,
+      toAmount: this.toAmount,
+      toAmountInFiat: this.toAmountInFiat,
+      toAmountFieldMode: this.toAmountFieldMode,
+      fromChainId: this.fromChainId,
+      toChainId: this.toChainId,
+      addressState: this.addressState,
+      isRecipientAddressUnknown: this.isRecipientAddressUnknown,
+      isRecipientAddressUnknownAgreed: this.isRecipientAddressUnknownAgreed,
+      isRecipientHumanizerKnownTokenOrSmartContract:
+        this.isRecipientHumanizerKnownTokenOrSmartContract,
+      fromSelectedToken: this.fromSelectedToken,
+      toSelectedToken: this.toSelectedToken
+    }
   }
 }
