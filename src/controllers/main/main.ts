@@ -2279,6 +2279,8 @@ export class MainController extends EventEmitter {
     this.statuses.broadcastSignedAccountOp = 'LOADING'
     this.#broadcastCallId = callId
 
+    await this.forceEmitUpdate()
+
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
       accountOp.accountAddr,
       accountOp.chainId
