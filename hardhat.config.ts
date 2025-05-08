@@ -57,8 +57,8 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
-      base: process.env.ETHERSCAN_API_KEY,
-      optimism: process.env.ETHERSCAN_API_KEY,
+      base: process.env.BASESCAN_API_KEY,
+      optimism: process.env.OPTIMISM_API_KEY,
       odyssey: process.env.ETHERSCAN_API_KEY,
       ethereum: process.env.ETHERSCAN_API_KEY,
       sepolia: process.env.ETHERSCAN_API_KEY,

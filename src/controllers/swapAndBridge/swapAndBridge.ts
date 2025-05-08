@@ -5,6 +5,7 @@ import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
@@ -27,6 +28,7 @@ import { isBasicAccount } from '../../libs/account/account'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
+import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { batchCallsFromUserRequests } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -215,6 +217,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #portfolioUpdate: Function
 
+  #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
+
   hasProceeded: boolean = false
 
   /**
@@ -227,6 +231,8 @@ export class SwapAndBridgeController extends EventEmitter {
   #isReestimating: boolean = false
 
   #userRequests: UserRequest[]
+
+  #relayerUrl: string
 
   constructor({
     accounts,
@@ -242,7 +248,9 @@ export class SwapAndBridgeController extends EventEmitter {
     actions,
     invite,
     portfolioUpdate,
-    userRequests = []
+    userRequests = [],
+    relayerUrl,
+    isMainSignAccountOpThrowingAnEstimationError
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -257,7 +265,9 @@ export class SwapAndBridgeController extends EventEmitter {
     actions: ActionsController
     invite: InviteController
     userRequests: UserRequest[]
+    relayerUrl: string
     portfolioUpdate?: Function
+    isMainSignAccountOpThrowingAnEstimationError?: Function
   }) {
     super()
     this.#accounts = accounts
@@ -266,6 +276,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#portfolioUpdate = portfolioUpdate || (() => {})
+    this.#isMainSignAccountOpThrowingAnEstimationError =
+      isMainSignAccountOpThrowingAnEstimationError
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -274,6 +286,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#actions = actions
     this.#invite = invite
     this.#userRequests = userRequests
+    this.#relayerUrl = relayerUrl
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -1563,6 +1576,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (routeIndex === null || !this.quote.routes[routeIndex]) {
       this.quote.selectedRoute = undefined
       this.quote.routes = []
+      this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
       return
     }
@@ -1821,6 +1835,12 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      this.#keystore.getAccountKeys(this.#selectedAccount.account),
+      network
+    )
     const accountOp = {
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
@@ -1836,7 +1856,8 @@ export class SwapAndBridgeController extends EventEmitter {
         hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
       },
       meta: {
-        swapTxn: userTxn
+        swapTxn: userTxn,
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
       }
     }
 
@@ -1865,11 +1886,12 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitUpdate()
     })
     this.signAccountOpController.onError((error) => {
+      this.#portfolio.overridePendingResults(this.signAccountOpController!.accountOp)
       this.emitError(error)
     })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate()
+    this.reestimate(userTxn)
   }
 
   /**
@@ -1877,7 +1899,7 @@ export class SwapAndBridgeController extends EventEmitter {
    * Encapsulate it here instead of creating an interval in the background
    * as intervals are tricky and harder to control
    */
-  async reestimate() {
+  async reestimate(userTxn: SwapAndBridgeSendTxRequest) {
     if (this.#isReestimating) return
 
     this.#isReestimating = true
@@ -1885,6 +1907,29 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#isReestimating = false
 
     if (!this.signAccountOpController) return
+    if (!this.signAccountOpController.accountOp.meta?.swapTxn) return
+
+    const newestUserTxn = JSON.parse(
+      JSON.stringify(this.signAccountOpController.accountOp.meta.swapTxn)
+    )
+
+    // if we're refetching a quote atm, we don't execute the estimation
+    // a race between the old estimation with the old quote and the new
+    // estimation with the new quote might happen
+    //
+    // also, if the tx data is different, it means the user is playing
+    // with the swap, so we don't want to reestimate
+    //
+    // we only want a re-estimate in a stale state
+    if (
+      this.updateQuoteStatus === 'LOADING' ||
+      userTxn.txData !== this.signAccountOpController.accountOp.meta.swapTxn.txData
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.reestimate(newestUserTxn)
+      return
+    }
+
     this.signAccountOpController.estimate().catch((e) => {
       // eslint-disable-next-line no-console
       console.log('error on swap&bridge re-estimate')
@@ -1892,7 +1937,7 @@ export class SwapAndBridgeController extends EventEmitter {
       console.log(e)
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate()
+    this.reestimate(newestUserTxn)
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -1917,6 +1962,18 @@ export class SwapAndBridgeController extends EventEmitter {
     ) {
       errors.push({
         title: `${this.fromSelectedToken.symbol} detected in batch. Please complete the batch before bridging`
+      })
+    }
+
+    // Check if there are any errors from the main SignAccountOp controller
+    // This prevents proceeding with a swap/bridge if there are estimation errors
+    // in the pending batch of transactions
+    if (
+      this.#isMainSignAccountOpThrowingAnEstimationError &&
+      this.#isMainSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
+    ) {
+      errors.push({
+        title: 'Error detected in the pending batch. Please review it before proceeding'
       })
     }
 

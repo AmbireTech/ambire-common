@@ -6,6 +6,7 @@ import WETH from '../../../contracts/compiled/WETH.json'
 import { FEE_COLLECTOR, SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { Calls, SignUserRequest } from '../../interfaces/userRequest'
+import { PaymasterService } from '../erc7677/types'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
 
@@ -17,6 +18,7 @@ interface BuildUserRequestParams {
   selectedToken: TokenResult
   selectedAccount: string
   recipientAddress: string
+  paymasterService?: PaymasterService
 }
 
 function buildMintVestingRequest({
@@ -94,7 +96,8 @@ function buildTransferUserRequest({
   amount,
   selectedToken,
   selectedAccount,
-  recipientAddress: _recipientAddress
+  recipientAddress: _recipientAddress,
+  paymasterService
 }: BuildUserRequestParams): SignUserRequest | null {
   if (!selectedToken || !selectedAccount || !_recipientAddress) return null
 
@@ -113,6 +116,7 @@ function buildTransferUserRequest({
   const isNativeTopUp =
     Number(selectedToken.address) === 0 &&
     recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+
   if (isNativeTopUp) {
     // if not predefined network, we cannot make a native top up
     const network = networks.find((n) => n.chainId === selectedToken.chainId)
@@ -139,13 +143,15 @@ function buildTransferUserRequest({
         }
       ]
     }
+
     return {
       id: new Date().getTime(),
       action: calls,
       meta: {
         isSignAction: true,
         chainId: selectedToken.chainId,
-        accountAddr: selectedAccount
+        accountAddr: selectedAccount,
+        paymasterService
       }
     }
   }
@@ -177,9 +183,10 @@ function buildTransferUserRequest({
     meta: {
       isSignAction: true,
       chainId: selectedToken.chainId,
-      accountAddr: selectedAccount
+      accountAddr: selectedAccount,
+      paymasterService
     }
   }
 }
 
-export { buildTransferUserRequest, buildClaimWalletRequest, buildMintVestingRequest }
+export { buildClaimWalletRequest, buildMintVestingRequest, buildTransferUserRequest }

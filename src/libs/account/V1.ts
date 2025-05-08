@@ -86,4 +86,8 @@ export class V1 extends BaseAccount {
       getSpoof(this.account)
     ]) as Hex
   }
+
+  getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
+    return 'supported'
+  }
 }

@@ -17,6 +17,7 @@ import {
 } from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
+import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
@@ -211,7 +212,8 @@ const buildSwapAndBridgeUserRequests = async (
   chainId: bigint,
   account: Account,
   provider: RPCProvider,
-  state: AccountOnchainState
+  state: AccountOnchainState,
+  paymasterService?: PaymasterService
 ) => {
   return [
     {
@@ -225,7 +227,8 @@ const buildSwapAndBridgeUserRequests = async (
         chainId,
         accountAddr: account.addr,
         activeRouteId: userTx.activeRouteId,
-        isSwapAndBridgeCall: true
+        isSwapAndBridgeCall: true,
+        paymasterService
       }
     }
   ]
