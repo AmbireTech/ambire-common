@@ -78,7 +78,7 @@ export const attemptToSortTokensByMarketCap = async ({
     })
   } catch (e) {
     // Fail silently, no biggie
-    console.error('Sorting Swap & Bridge tokens by market failed', e)
+    console.error(`Sorting Swap & Bridge tokens by market for network with id ${chainId} failed`, e)
     return tokens
   }
 }
