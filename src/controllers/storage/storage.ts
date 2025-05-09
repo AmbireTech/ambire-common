@@ -15,10 +15,15 @@ import {
 } from '../../libs/storage/storage'
 // eslint-disable-next-line import/no-cycle
 import { AccountPickerController } from '../accountPicker/accountPicker'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
 
-export class StorageController {
+const STATUS_WRAPPED_METHODS = {
+  associateAccountKeysWithLegacySavedSeedMigration: 'INITIAL'
+} as const
+
+export class StorageController extends EventEmitter {
   #storage: Storage
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -28,7 +33,11 @@ export class StorageController {
 
   #associateAccountKeysWithLegacySavedSeedMigrationPassed: boolean = false
 
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
   constructor(storage: Storage) {
+    super()
+
     this.#storage = storage
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storageMigrationsPromise = this.#loadMigrations()
@@ -470,7 +479,7 @@ export class StorageController {
   }
 
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
-  async associateAccountKeysWithLegacySavedSeedMigration(
+  async #associateAccountKeysWithLegacySavedSeedMigration(
     accountPicker: AccountPickerController,
     keystore: KeystoreController,
     onSuccess: () => Promise<void>
@@ -498,29 +507,38 @@ export class StorageController {
     await accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
-      pageSize: 50,
+      pageSize: 10,
       shouldAddNextAccountAutomatically: false,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: true
     })
     await accountPicker.init()
-    await accountPicker.setPage({ page: 1 })
-    await accountPicker.findAndSetLinkedAccountsPromise
+    const updatedKeyMap = new Map(keystoreKeys.map((k) => [k.addr, { ...k }]))
 
-    const updatedKeystoreKeys = keystoreKeys.map((key) => {
-      if (accountPicker.allKeysOnPage.some((k) => k === key.addr)) {
-        return {
-          ...key,
-          meta: {
-            ...key.meta,
-            fromSeedId: keystoreSavedSeed.id
-          }
-        }
+    let page = 1
+    while (page <= 10) {
+      // eslint-disable-next-line no-await-in-loop
+      await accountPicker.setPage({ page })
+      // eslint-disable-next-line no-await-in-loop
+      await accountPicker.findAndSetLinkedAccountsPromise
+
+      const matchingKeys = accountPicker.allKeysOnPage.filter((k) => updatedKeyMap.has(k))
+
+      if (matchingKeys.length === 0) break
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const addr of matchingKeys) {
+        const key = updatedKeyMap.get(addr)!
+        key.meta = { ...key.meta, fromSeedId: keystoreSavedSeed.id }
+        updatedKeyMap.set(addr, key)
       }
 
-      return key
-    })
+      page++
+    }
+
     await accountPicker.reset()
+
+    const updatedKeystoreKeys = Array.from(updatedKeyMap.values())
 
     const storageUpdates = [
       this.#storage.set('passedMigrations', [
@@ -532,5 +550,18 @@ export class StorageController {
     await Promise.all(storageUpdates)
     this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
     await onSuccess()
+  }
+
+  async associateAccountKeysWithLegacySavedSeedMigration(
+    accountPicker: AccountPickerController,
+    keystore: KeystoreController,
+    onSuccess: () => Promise<void>
+  ) {
+    await this.withStatus(
+      'associateAccountKeysWithLegacySavedSeedMigration',
+      () =>
+        this.#associateAccountKeysWithLegacySavedSeedMigration(accountPicker, keystore, onSuccess),
+      true
+    )
   }
 }

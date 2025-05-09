@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -42,11 +43,14 @@ import {
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-/* eslint-disable @typescript-eslint/no-floating-promises */
+// eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
+// eslint-disable-next-line import/no-cycle
 import { NetworksController } from '../networks/networks'
+// eslint-disable-next-line import/no-cycle
 import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_PAGE = 1

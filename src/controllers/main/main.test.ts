@@ -89,7 +89,7 @@ describe('Main Controller ', () => {
   let controller: MainController
   test('Init controller', async () => {
     controller = new MainController({
-      storage,
+      storageAPI: storage,
       fetch,
       relayerUrl,
       swapApiKey,
@@ -220,7 +220,7 @@ describe('Main Controller ', () => {
 
   test('should add an account from the account picker and persist it in accounts', async () => {
     controller = new MainController({
-      storage,
+      storageAPI: storage,
       fetch,
       relayerUrl,
       swapApiKey,
@@ -262,7 +262,7 @@ describe('Main Controller ', () => {
   // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
     const mainCtrl = new MainController({
-      storage,
+      storageAPI: storage,
       fetch,
       relayerUrl,
       swapApiKey,

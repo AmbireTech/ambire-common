@@ -36,6 +36,7 @@ import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
