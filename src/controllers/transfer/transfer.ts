@@ -22,7 +22,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { ProvidersController } from '../providers/providers'
 import { NetworksController } from '../networks/networks'
-import { SignUserRequest } from '../../interfaces/userRequest'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { Call } from '../../libs/accountOp/types'
 
