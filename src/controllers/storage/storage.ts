@@ -494,7 +494,7 @@ export class StorageController extends EventEmitter {
 
     if (passedMigrations.includes('associateAccountKeysWithLegacySavedSeedMigration')) return
 
-    const savedSeed = keystoreSeeds.find((s) => !s.id)
+    const savedSeed = keystoreSeeds.find((s) => !s.id || s.id === 'legacy-saved-seed')
 
     if (!savedSeed) {
       this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
