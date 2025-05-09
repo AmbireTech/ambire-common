@@ -26,12 +26,20 @@ async function main() {
   const tx = {
     to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton
     value: 0n,
+    data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
+  }
+
+  const gasLimit = await deployer.estimateGas(tx)
+
+  const newTxn = {
+    to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton
+    value: 0n,
     data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt]),
-    gasLimit: 3500000n
+    gasLimit: gasLimit * 4n
   }
 
   // Send the transaction
-  const txResponse = await deployer.sendTransaction(tx)
+  const txResponse = await deployer.sendTransaction(newTxn)
 
   // Wait for the transaction to be mined
   const txReceipt = await txResponse.wait()

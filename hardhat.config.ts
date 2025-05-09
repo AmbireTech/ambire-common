@@ -53,6 +53,22 @@ const config: HardhatUserConfig = {
     gnosis: {
       url: 'https://rpc.gnosischain.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    mantle: {
+      url: 'https://invictus.ambire.com/mantle',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    ink: {
+      url: 'https://rpc-qnd.inkonchain.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    soneium: {
+      url: 'https://rpc.soneium.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    mode: {
+      url: 'https://mainnet.mode.network',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -63,7 +79,11 @@ const config: HardhatUserConfig = {
       ethereum: process.env.ETHERSCAN_API_KEY,
       sepolia: process.env.ETHERSCAN_API_KEY,
       binance: process.env.BNB_API_KEY,
-      gnosis: process.env.GNOSIS_API_KEY
+      gnosis: process.env.GNOSIS_API_KEY,
+      mantle: process.env.ETHERSCAN_API_KEY,
+      ink: process.env.ETHERSCAN_API_KEY,
+      soneium: process.env.ETHERSCAN_API_KEY,
+      mode: process.env.ETHERSCAN_API_KEY
     },
     customChains: [
       {
@@ -120,6 +140,38 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.gnosisscan.io/api',
           browserURL: 'https://api.gnosisscan.io/'
+        }
+      },
+      {
+        network: 'mantle',
+        chainId: 5000,
+        urls: {
+          apiURL: 'https://explorer.mantle.xyz/api',
+          browserURL: 'https://explorer.mantle.xyz/'
+        }
+      },
+      {
+        network: 'ink',
+        chainId: 57073,
+        urls: {
+          apiURL: 'https://explorer.inkonchain.com/api',
+          browserURL: 'https://explorer.inkonchain.com/'
+        }
+      },
+      {
+        network: 'soneium',
+        chainId: 1868,
+        urls: {
+          apiURL: 'https://soneium.blockscout.com/api',
+          browserURL: 'https://soneium.blockscout.com/'
+        }
+      },
+      {
+        network: 'mode',
+        chainId: 34443,
+        urls: {
+          apiURL: 'https://explorer.mode.network/api',
+          browserURL: 'https://explorer.mode.network/'
         }
       }
     ]
