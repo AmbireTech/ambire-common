@@ -1,10 +1,10 @@
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -106,29 +106,7 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
 }
 
 describe('Actions Controller', () => {
-  const event = new EventEmitter()
-  let windowId = 0
-  const windowManager = {
-    event,
-    focus: () => Promise.resolve(),
-    open: () => {
-      windowId++
-      return Promise.resolve({
-        id: windowId,
-        top: 0,
-        left: 0,
-        width: 100,
-        height: 100,
-        focused: true
-      })
-    },
-    remove: () => {
-      event.emit('windowRemoved', windowId)
-      return Promise.resolve()
-    },
-    sendWindowToastMessage: () => {},
-    sendWindowUiMessage: () => {}
-  }
+  const { windowManager, getWindowId, eventEmitter: event } = mockWindowManager()
 
   const notificationManager = {
     create: () => Promise.resolve()
@@ -395,7 +373,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    event.emit('windowRemoved', windowId)
+    event.emit('windowRemoved', getWindowId())
   })
   test('select back the first account', (done) => {
     let emitCounter = 0
@@ -485,7 +463,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    event.emit('windowFocusChange', windowId)
+    event.emit('windowFocusChange', getWindowId())
   })
   test('should remove actions from actionsQueue', (done) => {
     let emitCounter = 0

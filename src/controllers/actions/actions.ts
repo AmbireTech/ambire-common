@@ -64,7 +64,7 @@ export class ActionsController extends EventEmitter {
   actionWindow: {
     windowProps: WindowProps
     openWindowPromise?: Promise<WindowProps>
-    focusWindowPromise?: Promise<void>
+    focusWindowPromise?: Promise<WindowProps>
     loaded: boolean
     pendingMessage: {
       message: string
@@ -319,6 +319,13 @@ export class ActionsController extends EventEmitter {
         .finally(() => {
           this.actionWindow.focusWindowPromise = undefined
         })
+
+      const newActionWindowProps = await this.actionWindow.focusWindowPromise
+
+      if (newActionWindowProps) {
+        this.actionWindow.windowProps = newActionWindowProps
+      }
+
       this.emitUpdate()
     } catch (err) {
       console.error('Error focusing action window:', err)

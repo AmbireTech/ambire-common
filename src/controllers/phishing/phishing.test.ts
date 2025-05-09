@@ -1,9 +1,9 @@
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from '../storage/storage'
 import { PhishingController } from './phishing'
@@ -11,29 +11,7 @@ import { PhishingController } from './phishing'
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
 
-const event = new EventEmitter()
-let windowId = 0
-const windowManager = {
-  event,
-  focus: () => Promise.resolve(),
-  open: () => {
-    windowId++
-    return Promise.resolve({
-      id: windowId,
-      top: 0,
-      left: 0,
-      width: 100,
-      height: 100,
-      focused: true
-    })
-  },
-  remove: () => {
-    event.emit('windowRemoved', windowId)
-    return Promise.resolve()
-  },
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 let phishing: PhishingController
 const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
