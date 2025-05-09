@@ -401,8 +401,13 @@ export class MainController extends EventEmitter {
       storage, // TODO: consider using this.#storage
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
-      this.networks.networks,
-      this.addressBook
+      this.networks,
+      this.addressBook,
+      this.accounts,
+      this.keystore,
+      this.portfolio,
+      this.#externalSignerControllers,
+      this.providers
     )
     this.domains = new DomainsController(this.providers.providers)
 

@@ -2,7 +2,6 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
-import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
@@ -15,6 +14,17 @@ import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
 import { AddressBookController } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { randomId } from '../../libs/humanizer/utils'
+import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
+import { PortfolioController } from '../portfolio/portfolio'
+import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { ProvidersController } from '../providers/providers'
+import { NetworksController } from '../networks/networks'
+import { SignUserRequest } from '../../interfaces/userRequest'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
+import { Call } from '../../libs/accountOp/types'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -41,7 +51,7 @@ const HARD_CODED_CURRENCY = 'usd'
 export class TransferController extends EventEmitter {
   #storage: Storage
 
-  #networks: Network[] = []
+  #networks: NetworksController
 
   #addressBook: AddressBookController
 
@@ -73,6 +83,20 @@ export class TransferController extends EventEmitter {
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
+  #accounts: AccountsController
+
+  #keystore: KeystoreController
+
+  #portfolio: PortfolioController
+
+  #externalSignerControllers: ExternalSignerControllers
+
+  #providers: ProvidersController
+
+  signAccountOpController: SignAccountOpController | null = null
+
+  hasProceeded: boolean = false
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
@@ -80,8 +104,13 @@ export class TransferController extends EventEmitter {
     storage: Storage,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: SelectedAccountController,
-    networks: Network[],
-    addressBook: AddressBookController
+    networks: NetworksController,
+    addressBook: AddressBookController,
+    accounts: AccountsController,
+    keystore: KeystoreController,
+    portfolio: PortfolioController,
+    externalSignerControllers: ExternalSignerControllers,
+    providers: ProvidersController
   ) {
     super()
 
@@ -90,6 +119,12 @@ export class TransferController extends EventEmitter {
     this.#selectedAccountData = selectedAccountData
     this.#networks = networks
     this.#addressBook = addressBook
+
+    this.#accounts = accounts
+    this.#keystore = keystore
+    this.#portfolio = portfolio
+    this.#externalSignerControllers = externalSignerControllers
+    this.#providers = providers
 
     this.#initialLoadPromise = this.#load()
     this.emitUpdate()
@@ -186,6 +221,7 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
+    this.destroySignAccountOp()
     this.emitUpdate()
   }
 
@@ -257,7 +293,9 @@ export class TransferController extends EventEmitter {
 
   get isInitialized() {
     return (
-      !!this.#humanizerInfo && !!this.#selectedAccountData.account?.addr && !!this.#networks.length
+      !!this.#humanizerInfo &&
+      !!this.#selectedAccountData.account?.addr &&
+      !!this.#networks.networks.length
     )
   }
 
@@ -273,14 +311,21 @@ export class TransferController extends EventEmitter {
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
     isTopUp,
-    networks,
     amountFieldMode
   }: TransferUpdate) {
+    console.log('TransferController: update() invoked', {
+      humanizerInfo,
+      selectedToken,
+      amount,
+      addressState,
+      isSWWarningAgreed,
+      isRecipientAddressUnknownAgreed,
+      isTopUp,
+      amountFieldMode
+    })
+
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
-    }
-    if (networks) {
-      this.#networks = networks
     }
     if (selectedToken) {
       this.selectedToken = selectedToken
@@ -318,6 +363,8 @@ export class TransferController extends EventEmitter {
       this.#setSWWarningVisibleIfNeeded()
     }
 
+    console.log('TransferController: update()')
+    await this.syncSignAccountOp()
     this.emitUpdate()
   }
 
@@ -426,7 +473,7 @@ export class TransferController extends EventEmitter {
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
-      this.#networks
+      this.#networks.networks
         .filter((n) => n.chainId !== 1n)
         .map(({ chainId }) => chainId)
         .includes(this.selectedToken.chainId || 1n)
@@ -435,8 +482,121 @@ export class TransferController extends EventEmitter {
   }
 
   get hasPersistedState() {
-    console.log(this)
     return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
+  }
+
+  async syncSignAccountOp() {
+    console.log('Background: syncSignAccountOp() invoked')
+    // shouldn't happen ever
+    if (!this.#selectedAccountData.account) return
+
+    // form field validation
+    if (!this.#selectedToken || !this.amount || !isAddress(this.recipientAddress)) return
+
+    const userRequest = buildTransferUserRequest({
+      selectedAccount: this.#selectedAccountData.account.addr,
+      amount: this.amount,
+      selectedToken: this.#selectedToken,
+      recipientAddress: this.recipientAddress
+    })
+
+    if (!userRequest || userRequest.action.kind !== 'calls') {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building transfer request',
+        error: new Error(
+          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
+        )
+      })
+
+      return
+    }
+
+    const calls = userRequest.action.calls
+
+    // If SignAccountOpController is already initialized, we just update it.
+    if (this.signAccountOpController) {
+      console.log('Background: Updating signAccountOpController with new calls:')
+      this.signAccountOpController.update({ calls })
+      return
+    }
+
+    console.log('Background: Init signAccountOpController')
+    await this.#initSignAccOp(calls)
+  }
+
+  async #initSignAccOp(calls: Call[]) {
+    if (!this.#selectedAccountData.account || this.signAccountOpController) return
+
+    const network = this.#networks.networks.find(
+      (net) => net.chainId === this.#selectedToken!.chainId
+    )
+
+    // shouldn't happen ever
+    if (!network) return
+
+    const provider = this.#providers.providers[network.chainId.toString()]
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccountData.account.addr,
+      network.chainId
+    )
+
+    const accountOp = {
+      accountAddr: this.#selectedAccountData.account.addr,
+      chainId: network.chainId,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      nonce: accountState.nonce,
+      signature: null,
+      accountOpToExecuteBefore: null,
+      calls
+      // TODO: Not sure should we hide it or not
+      // flags: {
+      //   hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
+      // },
+      // TODO: Not sure should we attach a meta txn or not
+      // meta: {
+      //   swapTxn: userTxn
+      // }
+    }
+
+    this.signAccountOpController = new SignAccountOpController(
+      this.#accounts,
+      this.#networks,
+      this.#keystore,
+      this.#portfolio,
+      this.#externalSignerControllers,
+      this.#selectedAccountData.account,
+      network,
+      provider,
+      randomId(), // the account op and the action are fabricated
+      accountOp,
+      () => true,
+      false,
+      undefined
+    )
+
+    // propagate updates from signAccountOp here
+    this.signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.signAccountOpController.onError((error) => {
+      this.emitError(error)
+    })
+  }
+
+  setUserProceeded(hasProceeded: boolean) {
+    this.hasProceeded = hasProceeded
+    this.emitUpdate()
+  }
+
+  destroySignAccountOp() {
+    if (!this.signAccountOpController) return
+    this.signAccountOpController.reset()
+    this.signAccountOpController = null
+    this.hasProceeded = false
   }
 
   // includes the getters in the stringified instance
