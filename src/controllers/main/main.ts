@@ -181,7 +181,7 @@ export class MainController extends EventEmitter {
 
   swapAndBridge: SwapAndBridgeController
 
-  transactionManager: TransactionManager
+  transactionManager: TransactionManagerController
 
   signAccountOp: SignAccountOpController | null = null
 
@@ -436,7 +436,7 @@ export class MainController extends EventEmitter {
       // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
       // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
       serviceProviderAPI: lifiAPI,
-      storage: this.#storage,
+      storage: this.storage,
       actions: this.actions,
       portfolioUpdate: () => {
         this.updateSelectedAccountPortfolio(true)
