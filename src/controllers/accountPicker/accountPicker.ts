@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -42,11 +43,14 @@ import {
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-/* eslint-disable @typescript-eslint/no-floating-promises */
+// eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
+// eslint-disable-next-line import/no-cycle
 import { NetworksController } from '../networks/networks'
+// eslint-disable-next-line import/no-cycle
 import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_PAGE = 1
@@ -142,6 +146,8 @@ export class AccountPickerController extends EventEmitter {
   #onAddAccountsSuccessCallback: () => Promise<void>
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
+
+  findAndSetLinkedAccountsPromise?: Promise<void>
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -329,6 +335,13 @@ export class AccountPickerController extends EventEmitter {
     return accountsWithStatus
   }
 
+  get allKeysOnPage() {
+    const derivedKeys = this.#derivedAccounts.flatMap((a) => a.account.associatedKeys)
+    const linkedKeys = this.#linkedAccounts.flatMap((a) => a.account.associatedKeys)
+
+    return [...new Set([...derivedKeys, ...linkedKeys])]
+  }
+
   get selectedAccounts(): SelectedAccountForImport[] {
     const accountsOnPageWithKeys = this.#alreadyImportedAccounts.filter((a) =>
       this.#keystore.keys.some((k) => a.associatedKeys.includes(k.addr))
@@ -415,10 +428,11 @@ export class AccountPickerController extends EventEmitter {
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
-    await this.forceEmitUpdate()
     if (shouldAddNextAccountAutomatically) {
       await this.selectNextAccount()
       await this.addAccounts()
+    } else {
+      await this.forceEmitUpdate()
     }
   }
 
@@ -696,7 +710,7 @@ export class AccountPickerController extends EventEmitter {
     this.accountsLoading = false
     this.emitUpdate()
 
-    await this.#findAndSetLinkedAccounts({
+    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
@@ -707,7 +721,10 @@ export class AccountPickerController extends EventEmitter {
             !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
         )
         .map((acc) => acc.account)
+    }).finally(() => {
+      this.findAndSetLinkedAccountsPromise = undefined
     })
+    await this.findAndSetLinkedAccountsPromise
   }
 
   #updateStateWithTheLatestFromAccounts() {
@@ -1355,6 +1372,7 @@ export class AccountPickerController extends EventEmitter {
       ...super.toJSON(),
       // includes the getter in the stringified instance
       accountsOnPage: this.accountsOnPage,
+      allKeysOnPage: this.allKeysOnPage,
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,

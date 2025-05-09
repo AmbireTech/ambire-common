@@ -242,7 +242,7 @@ describe('Portfolio', () => {
       gasLimit: null,
       gasFeePayment: null,
       chainId: 1n,
-      nonce: BigInt(EOA_SIMULATION_NONCE),
+      nonce: await getNonce('0xD8293ad21678c6F09Da139b4B62D38e514a03B78'),
       signature: '0x',
       calls: [
         await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
@@ -431,7 +431,7 @@ describe('Portfolio', () => {
       gasLimit: null,
       gasFeePayment: null,
       chainId: 1n,
-      nonce: BigInt(EOA_SIMULATION_NONCE),
+      nonce: await getNonce(acc),
       signature: '0x',
       calls: [
         await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)

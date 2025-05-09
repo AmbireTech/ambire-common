@@ -27,7 +27,9 @@ import {
 import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
-  convertPortfolioTokenToSwapAndBridgeToToken
+  attemptToSortTokensByMarketCap,
+  convertPortfolioTokenToSwapAndBridgeToToken,
+  sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
@@ -41,41 +43,62 @@ const normalizeLiFiTokenToSwapAndBridgeToToken = (
   return { name, address, decimals, symbol, icon, chainId: toChainId }
 }
 
-const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] =>
-  parentStep.includedSteps
-    // Picks only steps that need to be visualized / displayed
-    .filter(({ type }) => ['swap', 'cross'].includes(type))
-    .map((step: LiFiIncludedStep, index: number) => ({
-      chainId: step.action.fromChainId,
-      fromAmount: parentStep.action.fromAmount,
-      fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
-        step.action.fromToken,
-        step.action.fromChainId
-      ),
-      gasFees: {
-        gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-        gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-        feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-        asset: step.estimate.gasCosts?.[0]?.token
-          ? normalizeLiFiTokenToSwapAndBridgeToToken(
-              step.estimate.gasCosts[0].token,
-              step.estimate.gasCosts[0].token.chainId
-            )
-          : undefined
-      },
-      serviceTime: parentStep.estimate.executionDuration,
-      minAmountOut: step.estimate.toAmountMin,
-      protocol: {
-        name: step.toolDetails.name,
-        displayName: step.toolDetails.name,
-        icon: step.toolDetails.logoURI
-      },
-      swapSlippage: step.action.slippage,
-      toAmount: step.estimate.toAmount,
-      toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(step.action.toToken, step.action.toChainId),
-      type: step.type === 'swap' ? 'swap' : 'middleware',
-      userTxIndex: index
-    }))
+const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] => {
+  const includedSteps = parentStep.includedSteps
+  const swapOrBridgeSteps = ['swap', 'cross']
+
+  const isSwapOrBridge = includedSteps.some((s) => swapOrBridgeSteps.includes(s.type))
+
+  return (
+    includedSteps
+      // Picks only steps that need to be visualized / displayed
+      .filter(({ type }) => {
+        // If it's swap or bridge we don't want to show protocol steps
+        // as they are not relevant for the user
+        if (isSwapOrBridge) {
+          return swapOrBridgeSteps.includes(type)
+        }
+
+        // If it's not swap or bridge we want to show protocol steps
+        // (Wrap / Unwrap)
+        return type === 'protocol'
+      })
+      .map((step: LiFiIncludedStep, index: number) => ({
+        chainId: step.action.fromChainId,
+        fromAmount: parentStep.action.fromAmount,
+        fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
+          step.action.fromToken,
+          step.action.fromChainId
+        ),
+        gasFees: {
+          gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
+          gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
+          feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
+          asset: step.estimate.gasCosts?.[0]?.token
+            ? normalizeLiFiTokenToSwapAndBridgeToToken(
+                step.estimate.gasCosts[0].token,
+                step.estimate.gasCosts[0].token.chainId
+              )
+            : undefined
+        },
+        serviceTime: parentStep.estimate.executionDuration,
+        minAmountOut: step.estimate.toAmountMin,
+        protocol: {
+          name: step.toolDetails.name,
+          displayName: step.toolDetails.name,
+          icon: step.toolDetails.logoURI
+        },
+        swapSlippage: step.action.slippage,
+        toAmount: step.estimate.toAmount,
+        toAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
+          step.action.toToken,
+          step.action.toChainId
+        ),
+        type: step.type === 'swap' ? 'swap' : 'middleware',
+        userTxIndex: index
+      }))
+  )
+}
 
 const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBridgeUserTx[] =>
   parentStep.includedSteps
@@ -206,7 +229,7 @@ export class LiFiAPI {
 
   // eslint-disable-next-line class-methods-use-this
   async getHealth() {
-    // Li.Fi’s v1 API doesn't have a dedicated health endpoint
+    // Li.Fi's v1 API doesn't have a dedicated health endpoint
     return true
   }
 
@@ -300,11 +323,19 @@ export class LiFiAPI {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    const result: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
+    const tokens: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
 
-    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: result })
+    const sortedTokens = await attemptToSortTokensByMarketCap({
+      fetch: this.#fetch,
+      chainId: toChainId,
+      tokens
+    })
+
+    const withCustomTokens = addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedTokens })
+
+    return sortNativeTokenFirst(withCustomTokens)
   }
 
   async getToken({

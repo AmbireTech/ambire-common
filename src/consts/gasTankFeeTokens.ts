@@ -595,51 +595,52 @@ export default [
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
-  {
-    address: '0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE',
-    baseToken: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
-    symbol: 'aavadai',
-    chainId: 43114n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/10843/small/aDAI.png',
-    hiddenOnError: true
-  },
-  {
-    address: '0x625E7708f30cA75bfd92586e17077590C60eb4cD',
-    baseToken: '0xA7D7079b0FEaD91F3e65f86E8915Cb59c1a4C664',
-    symbol: 'aavausdc',
-    chainId: 43114n,
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/17226/small/aAMMUSDC_2x.png',
-    hiddenOnError: true
-  },
-  {
-    address: '0x6ab707Aca953eDAeFBc4fD23bA73294241490620',
-    baseToken: '0xc7198437980c041c805A1EDcbA50c1Ce5db95118',
-    symbol: 'aavausdt',
-    chainId: 43114n,
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/17264/small/amUSDT_2x.png',
-    hiddenOnError: true
-  },
-  {
-    address: '0x078f358208685046a11C85e8ad32895DED33A249',
-    baseToken: '0x50b7545627a5162F82A992c33b87aDc75187B218',
-    symbol: 'aavawbtc',
-    chainId: 43114n,
-    decimals: 8,
-    icon: 'https://assets.coingecko.com/coins/images/17265/small/amWBTC_2x.png',
-    hiddenOnError: true
-  },
-  {
-    address: '0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8',
-    baseToken: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
-    symbol: 'aavaweth',
-    chainId: 43114n,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/17266/small/amWETH_2x.png',
-    hiddenOnError: true
-  },
+  // commenting these out as they are disabled in the relayer as fee
+  // {
+  //   address: '0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE',
+  //   baseToken: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
+  //   symbol: 'aavadai',
+  //   chainId: 43114n,
+  //   decimals: 18,
+  //   icon: 'https://assets.coingecko.com/coins/images/10843/small/aDAI.png',
+  //   hiddenOnError: true
+  // },
+  // {
+  //   address: '0x625E7708f30cA75bfd92586e17077590C60eb4cD',
+  //   baseToken: '0xA7D7079b0FEaD91F3e65f86E8915Cb59c1a4C664',
+  //   symbol: 'aavausdc',
+  //   chainId: 43114n,
+  //   decimals: 6,
+  //   icon: 'https://assets.coingecko.com/coins/images/17226/small/aAMMUSDC_2x.png',
+  //   hiddenOnError: true
+  // },
+  // {
+  //   address: '0x6ab707Aca953eDAeFBc4fD23bA73294241490620',
+  //   baseToken: '0xc7198437980c041c805A1EDcbA50c1Ce5db95118',
+  //   symbol: 'aavausdt',
+  //   chainId: 43114n,
+  //   decimals: 6,
+  //   icon: 'https://assets.coingecko.com/coins/images/17264/small/amUSDT_2x.png',
+  //   hiddenOnError: true
+  // },
+  // {
+  //   address: '0x078f358208685046a11C85e8ad32895DED33A249',
+  //   baseToken: '0x50b7545627a5162F82A992c33b87aDc75187B218',
+  //   symbol: 'aavawbtc',
+  //   chainId: 43114n,
+  //   decimals: 8,
+  //   icon: 'https://assets.coingecko.com/coins/images/17265/small/amWBTC_2x.png',
+  //   hiddenOnError: true
+  // },
+  // {
+  //   address: '0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8',
+  //   baseToken: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+  //   symbol: 'aavaweth',
+  //   chainId: 43114n,
+  //   decimals: 18,
+  //   icon: 'https://assets.coingecko.com/coins/images/17266/small/amWETH_2x.png',
+  //   hiddenOnError: true
+  // },
   {
     chainId: 43114n,
     address: '0x63a72806098bd3d9520cc43356dd78afe5d386d9',

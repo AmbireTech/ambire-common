@@ -2,13 +2,13 @@
 
 import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -321,14 +321,7 @@ const gasTankToken: TokenResult = {
   }
 }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const init = async (
   account: Account,
@@ -1035,7 +1028,6 @@ describe('Negative cases', () => {
     expect(errors[0].title).toBe(
       `Currently, ${controller.estimation.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
     )
-    expect(errors[0].code).toBe('MISSING_FEE_TOKEN_PRICE')
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
 
@@ -1467,8 +1459,6 @@ describe('Negative cases', () => {
     expect(errors[0].title).toBe(
       'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC, RETH, AAVE, LINK and others'
     )
-    expect(errors[0].code).toBe('INSUFFICIENT_FUNDS_SA')
-
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
 

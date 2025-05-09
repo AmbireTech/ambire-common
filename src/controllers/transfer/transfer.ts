@@ -327,15 +327,17 @@ export class TransferController extends EventEmitter {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
+
+    if (amountFieldMode) {
+      this.amountFieldMode = amountFieldMode
+    }
+
     if (selectedToken) {
       this.selectedToken = selectedToken
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#setAmount(amount)
-    }
-    if (amountFieldMode) {
-      this.amountFieldMode = amountFieldMode
     }
 
     if (addressState) {
