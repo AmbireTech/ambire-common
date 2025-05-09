@@ -116,7 +116,6 @@ import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
-import { APP_VERSION } from '../../../../common/config/env'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 
 const STATUS_WRAPPED_METHODS = {
@@ -423,7 +422,7 @@ export class MainController extends EventEmitter {
       }
     })
     this.transfer = new TransferController(
-      storage, // TODO: consider using this.#storage
+      this.#storageAPI, // TODO: consider using this.#storage
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
       this.networks,
