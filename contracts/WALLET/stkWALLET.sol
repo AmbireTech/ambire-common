@@ -7,6 +7,7 @@ interface IXWallet {
 	function transfer(address to, uint256 amount) external returns (bool);
 	function transferFrom(address from, address to, uint256 amount) external returns (bool);
 	function enter(uint256 amount) external;
+	function enterTo(address recipient, uint256 amount) external;
 	function governance() external view returns (address);
 }
 
@@ -15,7 +16,7 @@ interface IWallet {
 	function approve(address, uint) external;
 }
 
-contract stkWALLET {
+contract stkWALLET is IXWallet {
 	// ERC20 stuff
 	// Constants
 	string public constant name = "Staked $WALLET";
@@ -35,7 +36,7 @@ contract stkWALLET {
 	event Approval(address indexed owner, address indexed spender, uint256 amount);
 	event Transfer(address indexed from, address indexed to, uint256 amount);
 	// Custom events
-	event ShareValueUpdate(uint256 shareValue);
+	event ShareValueUpdate(uint256 xwalletValue);
 
 	// ERC20 methods
 	function symbol() external view returns (string memory) {
@@ -53,25 +54,25 @@ contract stkWALLET {
 
 	function transfer(address to, uint256 amount) external returns (bool success) {
 		require(to != address(this) && to != address(0), "BAD_ADDRESS");
-		uint256 shareValue = xWallet.shareValue();
-		uint256 sharesAmount = (amount * 1e18) / shareValue;
+		uint256 xwalletValue = xWallet.shareValue();
+		uint256 sharesAmount = (amount * 1e18) / xwalletValue;
 		shares[msg.sender] = shares[msg.sender] - sharesAmount;
 		shares[to] = shares[to] + sharesAmount;
 		emit Transfer(msg.sender, to, amount);
-		emit ShareValueUpdate(shareValue);
+		emit ShareValueUpdate(xwalletValue);
 		return true;
 	}
 
 	function transferFrom(address from, address to, uint256 amount) external returns (bool success) {
 		require(to != address(this) && to != address(0), "BAD_ADDRESS");
-		uint256 shareValue = xWallet.shareValue();
-		uint256 sharesAmount = (amount * 1e18) / shareValue;
+		uint256 xwalletValue = xWallet.shareValue();
+		uint256 sharesAmount = (amount * 1e18) / xwalletValue;
 		shares[from] = shares[from] - sharesAmount;
 		uint256 prevAllowance = allowed[from][msg.sender];
 		if (prevAllowance < type(uint256).max) allowed[from][msg.sender] = prevAllowance - amount;
 		shares[to] = shares[to] + sharesAmount;
 		emit Transfer(from, to, amount);
-		emit ShareValueUpdate(shareValue);
+		emit ShareValueUpdate(xwalletValue);
 		return true;
 	}
 
@@ -113,7 +114,7 @@ contract stkWALLET {
 	}
 
 	// convert WALLET to stkWALLET
-	function stakeAndWrap(uint256 amount) external {
+	function enterTo(address recipient, uint256 amount) public {
 		require(wallet.transferFrom(msg.sender, address(this), amount));
 		uint256 balanceBefore = xWallet.balanceOf(address(this));
 		wallet.approve(address(xWallet), amount);
@@ -121,7 +122,20 @@ contract stkWALLET {
 		uint256 balanceAfter = xWallet.balanceOf(address(this));
 
 		require(balanceAfter > balanceBefore);
-		innerMintTo(msg.sender, balanceAfter - balanceBefore);
+		innerMintTo(recipient, balanceAfter - balanceBefore);
+	}
+
+	function enter(uint256 amount) external {
+		enterTo(msg.sender, amount);
+	}
+
+	// xWALLET interface compat
+	function shareValue() external pure returns (uint256) {
+		return 1e18;
+	}
+
+	function governance() external view returns (address) {
+		return xWallet.governance();
 	}
 
 	// set deprecated flag

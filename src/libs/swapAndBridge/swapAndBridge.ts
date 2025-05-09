@@ -1,7 +1,8 @@
-import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
+import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -17,6 +18,7 @@ import {
 } from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
+import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
@@ -38,6 +40,57 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   return 0
 }
 
+export const attemptToSortTokensByMarketCap = async ({
+  fetch,
+  chainId,
+  tokens
+}: {
+  fetch: Fetch
+  chainId: number
+  tokens: SwapAndBridgeToToken[]
+}) => {
+  try {
+    const tokenAddressesByMarketCapRes = await fetch(
+      `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`
+    )
+
+    if (tokenAddressesByMarketCapRes.status !== 200)
+      throw new Error(`Got status ${tokenAddressesByMarketCapRes.status} from the API.`)
+
+    const tokenAddressesByMarketCap = await tokenAddressesByMarketCapRes.json()
+
+    // Highest market cap comes first from the response
+    const addressPriority = new Map(
+      tokenAddressesByMarketCap.data.map((addr: string, index: number) => [addr, index])
+    )
+
+    // Sort the result by the market cap response order position (highest first)
+    return tokens.sort((a, b) => {
+      const aPriority = addressPriority.get(a.address)
+      const bPriority = addressPriority.get(b.address)
+
+      if (aPriority !== undefined && bPriority !== undefined)
+        return (aPriority as number) - (bPriority as number)
+
+      if (aPriority !== undefined) return -1
+      if (bPriority !== undefined) return 1
+      return 0
+    })
+  } catch (e) {
+    // Fail silently, no biggie
+    console.error(`Sorting Swap & Bridge tokens by market for network with id ${chainId} failed`, e)
+    return tokens
+  }
+}
+
+export const sortNativeTokenFirst = (tokens: SwapAndBridgeToToken[]) => {
+  return tokens.sort((a, b) => {
+    if (a.address === ZeroAddress) return -1
+    if (b.address === ZeroAddress) return 1
+    return 0
+  })
+}
+
 export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
@@ -55,8 +108,8 @@ export const sortTokenListResponse = (
       if (comparisonResult !== 0) return comparisonResult
     }
 
-    // Otherwise, just alphabetical
-    return (a.name || '').localeCompare(b.name || '')
+    // Otherwise, don't change, persist the order from the service provider
+    return 0
   })
 }
 
@@ -211,7 +264,8 @@ const buildSwapAndBridgeUserRequests = async (
   chainId: bigint,
   account: Account,
   provider: RPCProvider,
-  state: AccountOnchainState
+  state: AccountOnchainState,
+  paymasterService?: PaymasterService
 ) => {
   return [
     {
@@ -225,7 +279,8 @@ const buildSwapAndBridgeUserRequests = async (
         chainId,
         accountAddr: account.addr,
         activeRouteId: userTx.activeRouteId,
-        isSwapAndBridgeCall: true
+        isSwapAndBridgeCall: true,
+        paymasterService
       }
     }
   ]

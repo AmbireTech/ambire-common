@@ -93,4 +93,8 @@ export class EOA extends BaseAccount {
   getBroadcastCalldata(): Hex {
     return '0x'
   }
+
+  getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
+    return 'unsupported'
+  }
 }

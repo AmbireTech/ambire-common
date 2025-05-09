@@ -1,5 +1,3 @@
-import { ethers } from 'ethers'
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -7,17 +5,14 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
-import { SelectedAccountForImport } from '../../interfaces/account'
 import { UserRequest } from '../../interfaces/userRequest'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { getBytecode } from '../../libs/proxyDeploy/bytecode'
-import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import { MainController } from './main'
@@ -25,14 +20,7 @@ import { MainController } from './main'
 // Public API key, shared by Socket, for testing purposes only
 const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const notificationManager = {
   create: () => Promise.resolve()
@@ -89,7 +77,7 @@ describe('Main Controller ', () => {
   let controller: MainController
   test('Init controller', async () => {
     controller = new MainController({
-      storage,
+      storageAPI: storage,
       fetch,
       relayerUrl,
       swapApiKey,
@@ -220,7 +208,7 @@ describe('Main Controller ', () => {
 
   test('should add an account from the account picker and persist it in accounts', async () => {
     controller = new MainController({
-      storage,
+      storageAPI: storage,
       fetch,
       relayerUrl,
       swapApiKey,
@@ -262,7 +250,7 @@ describe('Main Controller ', () => {
   // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
     const mainCtrl = new MainController({
-      storage,
+      storageAPI: storage,
       fetch,
       relayerUrl,
       swapApiKey,

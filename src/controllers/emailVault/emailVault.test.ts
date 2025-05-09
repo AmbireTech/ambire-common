@@ -1,11 +1,11 @@
 /* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Storage } from '../../interfaces/storage'
@@ -54,14 +54,7 @@ let keystore: KeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 describe('happy cases', () => {
   beforeEach(() => {

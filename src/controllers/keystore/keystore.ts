@@ -36,6 +36,7 @@ import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -48,7 +49,7 @@ const STATUS_WRAPPED_METHODS = {
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
   updateSeed: 'INITIAL',
-  deleteSavedSeed: 'INITIAL',
+  deleteSeed: 'INITIAL',
   removeSecret: 'INITIAL',
   addKeys: 'INITIAL',
   addKeysExternallyStored: 'INITIAL',
@@ -142,7 +143,13 @@ export class KeystoreController extends EventEmitter {
         this.#storage.get('keystoreKeys', [])
       ])
       this.keyStoreUid = keyStoreUid
-      this.#keystoreSeeds = keystoreSeeds
+      this.#keystoreSeeds = keystoreSeeds.map((s) => {
+        if (s.id) return s
+
+        // Migrate the old seed structure to the new one for cases where the prev versions
+        // of the extension supported only one saved seed which lacked id and label props.
+        return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
+      })
       this.#keystoreKeys = keystoreKeys
     } catch (e) {
       this.emitError({
@@ -404,10 +411,11 @@ export class KeystoreController extends EventEmitter {
   }
 
   get seeds() {
-    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate }) => ({
+    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase }) => ({
       id,
       label: label || 'Unnamed Recovery Seed',
-      hdPathTemplate
+      hdPathTemplate,
+      withPassphrase: !!seedPassphrase
     }))
   }
 
@@ -544,6 +552,19 @@ export class KeystoreController extends EventEmitter {
     hdPathTemplate?: KeystoreSeed['hdPathTemplate']
   }) {
     await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate }), true)
+  }
+
+  async deleteSeed(id: KeystoreSeed['id']) {
+    await this.withStatus('deleteSeed', () => this.#deleteSeed(id))
+  }
+
+  async #deleteSeed(id: KeystoreSeed['id']) {
+    await this.#initialLoadPromise
+
+    this.#keystoreSeeds = this.#keystoreSeeds.filter((s) => s.id !== id)
+    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
+
+    this.emitUpdate()
   }
 
   async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
@@ -876,13 +897,17 @@ export class KeystoreController extends EventEmitter {
       const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
 
       return {
+        ...keystoreSeed,
         seed: decryptedSeed,
-        seedPassphrase: decryptedSeedPassphrase,
-        hdPathTemplate: keystoreSeed.hdPathTemplate
+        seedPassphrase: decryptedSeedPassphrase
       } as KeystoreSeed
     }
 
-    return { seed: decryptedSeed, seedPassphrase: '', hdPathTemplate: keystoreSeed.hdPathTemplate }
+    return {
+      ...keystoreSeed,
+      seed: decryptedSeed,
+      seedPassphrase: ''
+    }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
@@ -944,19 +969,6 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async deleteSavedSeed() {
-    await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed())
-  }
-
-  async #deleteSavedSeed() {
-    await this.#initialLoadPromise
-
-    this.#keystoreSeeds = []
-    await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
-
-    this.emitUpdate()
-  }
-
   resetErrorState() {
     this.errorMessage = ''
     this.emitUpdate()
@@ -1010,12 +1022,19 @@ export class KeystoreController extends EventEmitter {
         this.#keystoreSeeds.find(
           (s) =>
             s.seed === encryptedKeyIteratorSeed?.seed &&
-            s.seedPassphrase === encryptedKeyIteratorSeed?.passphrase
+            (s.seedPassphrase || '') === (encryptedKeyIteratorSeed?.passphrase || '')
         ) || null
       )
     }
 
     return null
+  }
+
+  async updateKeystoreKeys() {
+    const keystoreKeys = await this.#storage.get('keystoreKeys', [])
+    this.#keystoreKeys = keystoreKeys
+
+    this.emitUpdate()
   }
 
   toJSON() {

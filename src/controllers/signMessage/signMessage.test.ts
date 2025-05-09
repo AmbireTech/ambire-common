@@ -1,12 +1,12 @@
 import { hexlify, randomBytes } from 'ethers'
 /* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -74,14 +74,7 @@ const account: Account = {
   }
 }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const messageToSign: Message = {
   fromActionId: 1,

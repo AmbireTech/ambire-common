@@ -27,7 +27,9 @@ import {
 import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
-  convertPortfolioTokenToSwapAndBridgeToToken
+  attemptToSortTokensByMarketCap,
+  convertPortfolioTokenToSwapAndBridgeToToken,
+  sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
@@ -227,7 +229,7 @@ export class LiFiAPI {
 
   // eslint-disable-next-line class-methods-use-this
   async getHealth() {
-    // Li.Fi’s v1 API doesn't have a dedicated health endpoint
+    // Li.Fi's v1 API doesn't have a dedicated health endpoint
     return true
   }
 
@@ -321,11 +323,19 @@ export class LiFiAPI {
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
-    const result: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
+    const tokens: SwapAndBridgeToToken[] = response.tokens[toChainId].map((t: LiFiToken) =>
       normalizeLiFiTokenToSwapAndBridgeToToken(t, toChainId)
     )
 
-    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: result })
+    const sortedTokens = await attemptToSortTokensByMarketCap({
+      fetch: this.#fetch,
+      chainId: toChainId,
+      tokens
+    })
+
+    const withCustomTokens = addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedTokens })
+
+    return sortNativeTokenFirst(withCustomTokens)
   }
 
   async getToken({

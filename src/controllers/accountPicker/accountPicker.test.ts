@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { Wallet } from 'ethers'
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
@@ -9,6 +8,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -28,14 +28,7 @@ import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])

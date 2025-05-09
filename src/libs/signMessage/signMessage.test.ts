@@ -1,10 +1,10 @@
 import { Contract, hashMessage, hexlify, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
-import { EventEmitter } from 'stream'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -134,14 +134,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 let keystore: KeystoreController
 describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
