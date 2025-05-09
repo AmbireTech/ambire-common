@@ -5,6 +5,7 @@ import { CashbackStatus } from '../../interfaces/selectedAccount'
 // eslint-disable-next-line import/no-cycle
 import { Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
@@ -12,8 +13,17 @@ import {
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
+// eslint-disable-next-line import/no-cycle
+import { AccountPickerController } from '../accountPicker/accountPicker'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
+import { KeystoreController } from '../keystore/keystore'
 
-export class StorageController {
+const STATUS_WRAPPED_METHODS = {
+  associateAccountKeysWithLegacySavedSeedMigration: 'INITIAL'
+} as const
+
+export class StorageController extends EventEmitter {
   #storage: Storage
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -21,7 +31,13 @@ export class StorageController {
 
   #storageUpdateQueue: Promise<void> = Promise.resolve()
 
+  #associateAccountKeysWithLegacySavedSeedMigrationPassed: boolean = false
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
   constructor(storage: Storage) {
+    super()
+
     this.#storage = storage
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storageMigrationsPromise = this.#loadMigrations()
@@ -460,5 +476,99 @@ export class StorageController {
       }
     })
     await this.#storageUpdateQueue
+  }
+
+  // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
+  async #associateAccountKeysWithLegacySavedSeedMigration(
+    accountPicker: AccountPickerController,
+    keystore: KeystoreController,
+    onSuccess: () => Promise<void>
+  ) {
+    if (this.#associateAccountKeysWithLegacySavedSeedMigrationPassed) return
+
+    const [passedMigrations, keystoreSeeds, keystoreKeys] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('keystoreSeeds', []),
+      this.#storage.get('keystoreKeys', [])
+    ])
+
+    if (passedMigrations.includes('associateAccountKeysWithLegacySavedSeedMigration')) return
+
+    const savedSeed = keystoreSeeds.find((s) => !s.id || s.id === 'legacy-saved-seed')
+
+    if (!savedSeed) {
+      this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
+      return
+    }
+
+    const keystoreSavedSeed = await keystore.getSavedSeed('legacy-saved-seed')
+
+    const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase)
+    await accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
+      pageSize: 10,
+      shouldAddNextAccountAutomatically: false,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: true
+    })
+    await accountPicker.init()
+    const updatedKeyMap = new Map(keystoreKeys.map((k) => [k.addr, { ...k }]))
+
+    let page = 1
+    while (page <= 10) {
+      // eslint-disable-next-line no-await-in-loop
+      await accountPicker.setPage({ page })
+      // eslint-disable-next-line no-await-in-loop
+      await accountPicker.findAndSetLinkedAccountsPromise
+
+      const matchingKeys = accountPicker.allKeysOnPage.filter((k) => updatedKeyMap.has(k))
+
+      if (matchingKeys.length === 0) break
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const addr of matchingKeys) {
+        const key = updatedKeyMap.get(addr)!
+        key.meta = { ...key.meta, fromSeedId: keystoreSavedSeed.id }
+        updatedKeyMap.set(addr, key)
+      }
+
+      page++
+    }
+
+    await accountPicker.reset()
+
+    const updatedKeystoreKeys = Array.from(updatedKeyMap.values())
+
+    const storageUpdates = [
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'associateAccountKeysWithLegacySavedSeedMigration'])
+      ]),
+      this.#storage.set('keystoreKeys', updatedKeystoreKeys)
+    ]
+
+    await Promise.all(storageUpdates)
+    this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
+    await onSuccess()
+  }
+
+  async associateAccountKeysWithLegacySavedSeedMigration(
+    accountPicker: AccountPickerController,
+    keystore: KeystoreController,
+    onSuccess: () => Promise<void>
+  ) {
+    await this.withStatus(
+      'associateAccountKeysWithLegacySavedSeedMigration',
+      () =>
+        this.#associateAccountKeysWithLegacySavedSeedMigration(accountPicker, keystore, onSuccess),
+      true
+    )
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON()
+    }
   }
 }

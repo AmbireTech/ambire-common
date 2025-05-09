@@ -6,12 +6,12 @@
 
 import { Encrypted } from 'eth-crypto'
 import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
-import { EventEmitter } from 'stream'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
@@ -84,14 +84,7 @@ class LedgerSigner {
   }
 }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 let keystore: KeystoreController
 const pass = 'hoiHoi'

@@ -111,6 +111,17 @@ export const makeAccountOpAction = ({
     ? userReqWithPaymasterService.meta.paymasterService
     : undefined
 
+  // find the user request with a wallet send calls version if any
+  const userReqWithWalletSendCallsVersion = userRequests.find(
+    (req) =>
+      req.meta.accountAddr === account.addr &&
+      req.meta.chainId === chainId &&
+      req.meta.walletSendCallsVersion
+  )
+  const walletSendCallsVersion = userReqWithWalletSendCallsVersion
+    ? userReqWithWalletSendCallsVersion.meta.walletSendCallsVersion
+    : undefined
+
   const accountOp: AccountOpAction['accountOp'] = {
     accountAddr: account.addr,
     chainId,
@@ -127,7 +138,8 @@ export const makeAccountOpAction = ({
       userRequests
     }),
     meta: {
-      paymasterService
+      paymasterService,
+      walletSendCallsVersion
     }
   }
 

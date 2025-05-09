@@ -1,10 +1,10 @@
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -25,29 +25,7 @@ import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
 let swapAndBridgeController: SwapAndBridgeController
-const event = new EventEmitter()
-let windowId = 0
-const windowManager = {
-  event,
-  focus: () => Promise.resolve(),
-  open: () => {
-    windowId++
-    return Promise.resolve({
-      id: windowId,
-      top: 0,
-      left: 0,
-      width: 100,
-      height: 100,
-      focused: true
-    })
-  },
-  remove: () => {
-    event.emit('windowRemoved', windowId)
-    return Promise.resolve()
-  },
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const notificationManager = {
   create: () => Promise.resolve()
@@ -207,26 +185,17 @@ describe('SwapAndBridge Controller', () => {
     await swapAndBridgeController.initForm('1')
     expect(swapAndBridgeController.sessionIds).toContain('1')
   })
-  test('should update portfolio token list', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-        expect(swapAndBridgeController.toTokenList).not.toContainEqual(
-          expect.objectContaining({
-            address: swapAndBridgeController.fromSelectedToken?.address
-          })
-        )
-        expect(swapAndBridgeController.toSelectedToken).toBeNull()
-        unsubscribe()
-        done()
-      }
-    })
-
+  test('should update portfolio token list', async () => {
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
-    swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    expect(swapAndBridgeController.toTokenList).toHaveLength(3)
+    expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+      expect.objectContaining({
+        address: swapAndBridgeController.fromSelectedToken?.address
+      })
+    )
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
       '0x0000000000000000000000000000000000000000' // the one with highest balance

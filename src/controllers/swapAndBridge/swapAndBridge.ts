@@ -5,7 +5,6 @@ import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { getBaseAccount } from '../../libs/account/getBaseAccount'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
@@ -25,6 +24,7 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount } from '../../libs/account/account'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
@@ -217,6 +217,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #portfolioUpdate: Function
 
+  #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
+
   hasProceeded: boolean = false
 
   /**
@@ -246,8 +248,9 @@ export class SwapAndBridgeController extends EventEmitter {
     actions,
     invite,
     portfolioUpdate,
+    userRequests = [],
     relayerUrl,
-    userRequests = []
+    isMainSignAccountOpThrowingAnEstimationError
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -264,6 +267,7 @@ export class SwapAndBridgeController extends EventEmitter {
     userRequests: UserRequest[]
     relayerUrl: string
     portfolioUpdate?: Function
+    isMainSignAccountOpThrowingAnEstimationError?: Function
   }) {
     super()
     this.#accounts = accounts
@@ -272,6 +276,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#portfolioUpdate = portfolioUpdate || (() => {})
+    this.#isMainSignAccountOpThrowingAnEstimationError =
+      isMainSignAccountOpThrowingAnEstimationError
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
@@ -286,12 +292,16 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#initialLoadPromise = this.#load()
   }
 
-  #emitUpdateIfNeeded() {
+  #emitUpdateIfNeeded(forceUpdate: boolean = false) {
     const shouldSkipUpdate =
       // No need to emit emit updates if there are no active sessions
       !this.sessionIds.length &&
       // but ALSO there are no active routes (otherwise, banners need the updates)
-      !this.activeRoutes.length
+      !this.activeRoutes.length &&
+      // Force update is needed when the form is reset
+      // as the sessions are cleared
+      !forceUpdate
+
     if (shouldSkipUpdate) return
 
     super.emitUpdate()
@@ -394,7 +404,9 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get validateFromAmount() {
-    if (!this.fromSelectedToken) return { success: false, message: '' }
+    const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
+
+    if (!fromSelectedTokenWithUpToDateAmount) return { success: false, message: '' }
 
     if (
       !this.isFormEmpty &&
@@ -411,7 +423,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmount,
       Number(this.maxFromAmount),
       Number(this.maxFromAmountInFiat),
-      this.fromSelectedToken
+      fromSelectedTokenWithUpToDateAmount
     )
   }
 
@@ -438,7 +450,13 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  async initForm(sessionId: string) {
+  async initForm(
+    sessionId: string,
+    params?: {
+      preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>
+    }
+  ) {
+    const { preselectedFromToken } = params || {}
     await this.#initialLoadPromise
 
     if (this.sessionIds.includes(sessionId)) return
@@ -471,7 +489,9 @@ export class SwapAndBridgeController extends EventEmitter {
     // do not await the health status check to prevent UI freeze while fetching
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#serviceProviderAPI.updateHealth()
-    await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
+    await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens, {
+      preselectedToken: preselectedFromToken
+    })
     this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -720,7 +740,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.hasProceeded = false
     this.isAutoSelectRouteDisabled = false
 
-    if (shouldEmit) this.#emitUpdateIfNeeded()
+    if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
   reset(shouldEmit?: boolean) {
@@ -732,10 +752,16 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#toTokenList = []
     this.errors = []
 
-    if (shouldEmit) this.#emitUpdateIfNeeded()
+    if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
-  async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
+  async updatePortfolioTokenList(
+    nextPortfolioTokenList: TokenResult[],
+    params?: {
+      preselectedToken?: Pick<TokenResult, 'address' | 'chainId'>
+    }
+  ) {
+    const { preselectedToken } = params || {}
     const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
@@ -746,18 +772,24 @@ export class SwapAndBridgeController extends EventEmitter {
       tokens.filter((t) => !t.flags.isHidden)
     )
 
-    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
-      (t) =>
+    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find((t) => {
+      if (preselectedToken) {
+        return t.address === preselectedToken.address && t.chainId === preselectedToken.chainId
+      }
+
+      return (
         t.address === this.fromSelectedToken?.address &&
         t.chainId === this.fromSelectedToken?.chainId
-    )
+      )
+    })
 
     const shouldUpdateFromSelectedToken =
       !this.fromSelectedToken || // initial (default) state
       // May happen if selected account gets changed or the token gets send away in the meantime
       !fromSelectedTokenInNextPortfolio ||
       // May happen if user receives or sends the token in the meantime
-      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount
+      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount ||
+      preselectedToken
 
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
@@ -1435,7 +1467,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
-    if (!this.quote || !this.quote.routes.length || !this.shouldEnableRoutesSelection) return
+    if (!this.quote || !this.quote.routes.length) return
     if (
       ![
         SwapAndBridgeFormStatus.ReadyToSubmit,
@@ -1570,6 +1602,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (routeIndex === null || !this.quote.routes[routeIndex]) {
       this.quote.selectedRoute = undefined
       this.quote.routes = []
+      this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
       return
     }
@@ -1788,10 +1821,6 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const userTxn = await this.getRouteStartUserTx(false)
 
-    // TODO<swap&bridge>: if auto select route is disabled,
-    // return the error instead
-    // Also, the below code is not working well and needs changes
-    //
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn) {
@@ -1879,11 +1908,12 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitUpdate()
     })
     this.signAccountOpController.onError((error) => {
+      this.#portfolio.overridePendingResults(this.signAccountOpController!.accountOp)
       this.emitError(error)
     })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate()
+    this.reestimate(userTxn)
   }
 
   /**
@@ -1891,7 +1921,7 @@ export class SwapAndBridgeController extends EventEmitter {
    * Encapsulate it here instead of creating an interval in the background
    * as intervals are tricky and harder to control
    */
-  async reestimate() {
+  async reestimate(userTxn: SwapAndBridgeSendTxRequest) {
     if (this.#isReestimating) return
 
     this.#isReestimating = true
@@ -1899,6 +1929,29 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#isReestimating = false
 
     if (!this.signAccountOpController) return
+    if (!this.signAccountOpController.accountOp.meta?.swapTxn) return
+
+    const newestUserTxn = JSON.parse(
+      JSON.stringify(this.signAccountOpController.accountOp.meta.swapTxn)
+    )
+
+    // if we're refetching a quote atm, we don't execute the estimation
+    // a race between the old estimation with the old quote and the new
+    // estimation with the new quote might happen
+    //
+    // also, if the tx data is different, it means the user is playing
+    // with the swap, so we don't want to reestimate
+    //
+    // we only want a re-estimate in a stale state
+    if (
+      this.updateQuoteStatus === 'LOADING' ||
+      userTxn.txData !== this.signAccountOpController.accountOp.meta.swapTxn.txData
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.reestimate(newestUserTxn)
+      return
+    }
+
     this.signAccountOpController.estimate().catch((e) => {
       // eslint-disable-next-line no-console
       console.log('error on swap&bridge re-estimate')
@@ -1906,7 +1959,7 @@ export class SwapAndBridgeController extends EventEmitter {
       console.log(e)
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate()
+    this.reestimate(newestUserTxn)
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -1922,15 +1975,29 @@ export class SwapAndBridgeController extends EventEmitter {
   get swapSignErrors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
     if (
       isBridge &&
-      this.fromSelectedToken &&
-      this.fromSelectedToken.amountPostSimulation &&
-      this.fromSelectedToken.amount !== this.fromSelectedToken.amountPostSimulation
+      fromSelectedTokenWithUpToDateAmount &&
+      fromSelectedTokenWithUpToDateAmount.amountPostSimulation &&
+      fromSelectedTokenWithUpToDateAmount.amount !==
+        fromSelectedTokenWithUpToDateAmount.amountPostSimulation
     ) {
       errors.push({
-        title: `${this.fromSelectedToken.symbol} detected in batch. Please complete the batch before bridging`
+        title: `${fromSelectedTokenWithUpToDateAmount.symbol} detected in batch. Please complete the batch before bridging`
+      })
+    }
+
+    // Check if there are any errors from the main SignAccountOp controller
+    // This prevents proceeding with a swap/bridge if there are estimation errors
+    // in the pending batch of transactions
+    if (
+      this.#isMainSignAccountOpThrowingAnEstimationError &&
+      this.#isMainSignAccountOpThrowingAnEstimationError(this.fromChainId, this.toChainId)
+    ) {
+      errors.push({
+        title: 'Error detected in the pending batch. Please review it before proceeding'
       })
     }
 
