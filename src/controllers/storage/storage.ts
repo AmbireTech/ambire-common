@@ -564,4 +564,11 @@ export class StorageController extends EventEmitter {
       true
     )
   }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON()
+    }
+  }
 }
