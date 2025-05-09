@@ -36,6 +36,7 @@ import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
@@ -896,13 +897,17 @@ export class KeystoreController extends EventEmitter {
       const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
 
       return {
+        ...keystoreSeed,
         seed: decryptedSeed,
-        seedPassphrase: decryptedSeedPassphrase,
-        hdPathTemplate: keystoreSeed.hdPathTemplate
+        seedPassphrase: decryptedSeedPassphrase
       } as KeystoreSeed
     }
 
-    return { seed: decryptedSeed, seedPassphrase: '', hdPathTemplate: keystoreSeed.hdPathTemplate }
+    return {
+      ...keystoreSeed,
+      seed: decryptedSeed,
+      seedPassphrase: ''
+    }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
@@ -1023,6 +1028,13 @@ export class KeystoreController extends EventEmitter {
     }
 
     return null
+  }
+
+  async updateKeystoreKeys() {
+    const keystoreKeys = await this.#storage.get('keystoreKeys', [])
+    this.#keystoreKeys = keystoreKeys
+
+    this.emitUpdate()
   }
 
   toJSON() {

@@ -79,7 +79,7 @@ const prepareTest = async () => {
   await selectedAccountCtrl.setAccount(ACCOUNT)
   const controller = new DefiPositionsController({
     fetch: global.fetch as any,
-    storage,
+    storage: storageCtrl,
     selectedAccount: selectedAccountCtrl,
     providers: providersCtrl,
     networks: networksCtrl

@@ -1,6 +1,5 @@
 import { AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
-import { Storage } from '../../interfaces/storage'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
@@ -17,6 +16,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 // eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 
 export class DefiPositionsController extends EventEmitter {
   #selectedAccount: SelectedAccountController
@@ -27,7 +27,7 @@ export class DefiPositionsController extends EventEmitter {
 
   #fetch: Fetch
 
-  #storage: Storage
+  #storage: StorageController
 
   #minUpdateInterval: number = 60 * 1000 // 1 minute
 
@@ -43,7 +43,7 @@ export class DefiPositionsController extends EventEmitter {
     networks
   }: {
     fetch: Fetch
-    storage: Storage
+    storage: StorageController
     selectedAccount: SelectedAccountController
     providers: ProvidersController
     networks: NetworksController

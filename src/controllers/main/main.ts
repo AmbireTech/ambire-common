@@ -13,7 +13,6 @@ import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
-import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
@@ -131,7 +130,7 @@ const STATUS_WRAPPED_METHODS = {
 export class MainController extends EventEmitter {
   #storageAPI: Storage
 
-  #storage: StorageController
+  storage: StorageController
 
   fetch: Fetch
 
@@ -229,7 +228,7 @@ export class MainController extends EventEmitter {
   #relayerUrl: string
 
   constructor({
-    storage,
+    storageAPI,
     fetch,
     relayerUrl,
     velcroUrl,
@@ -239,7 +238,7 @@ export class MainController extends EventEmitter {
     windowManager,
     notificationManager
   }: {
-    storage: Storage
+    storageAPI: Storage
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
@@ -250,17 +249,17 @@ export class MainController extends EventEmitter {
     notificationManager: NotificationManager
   }) {
     super()
-    this.#storageAPI = storage
+    this.#storageAPI = storageAPI
     this.fetch = fetch
     this.#windowManager = windowManager
     this.#notificationManager = notificationManager
 
-    this.#storage = new StorageController(this.#storageAPI)
-    this.invite = new InviteController({ relayerUrl, fetch, storage: this.#storage })
-    this.keystore = new KeystoreController(this.#storage, keystoreSigners, windowManager)
+    this.storage = new StorageController(this.#storageAPI)
+    this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
+    this.keystore = new KeystoreController(this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
-      this.#storage,
+      this.storage,
       this.fetch,
       relayerUrl,
       async (network: Network) => {
@@ -274,7 +273,7 @@ export class MainController extends EventEmitter {
     this.featureFlags = new FeatureFlagsController(this.networks)
     this.providers = new ProvidersController(this.networks)
     this.accounts = new AccountsController(
-      this.#storage,
+      this.storage,
       this.providers,
       this.networks,
       async (accounts) => {
@@ -287,11 +286,11 @@ export class MainController extends EventEmitter {
       this.#updateIsOffline.bind(this)
     )
     this.selectedAccount = new SelectedAccountController({
-      storage: this.#storage,
+      storage: this.storage,
       accounts: this.accounts
     })
     this.portfolio = new PortfolioController(
-      this.#storage,
+      this.storage,
       this.fetch,
       this.providers,
       this.networks,
@@ -302,12 +301,12 @@ export class MainController extends EventEmitter {
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
-      storage,
+      storage: this.storage,
       selectedAccount: this.selectedAccount,
       networks: this.networks,
       providers: this.providers
     })
-    this.emailVault = new EmailVaultController(this.#storage, this.fetch, relayerUrl, this.keystore)
+    this.emailVault = new EmailVaultController(this.storage, this.fetch, relayerUrl, this.keystore)
     this.#relayerUrl = relayerUrl
     this.accountPicker = new AccountPickerController({
       accounts: this.accounts,
@@ -329,7 +328,7 @@ export class MainController extends EventEmitter {
        */
       onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
     })
-    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.selectedAccount)
+    this.addressBook = new AddressBookController(this.storage, this.accounts, this.selectedAccount)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -340,12 +339,12 @@ export class MainController extends EventEmitter {
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
-      storage: this.#storage,
+      storage: this.storage,
       windowManager: this.#windowManager
     })
     // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
     const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
-    this.dapps = new DappsController(this.#storage)
+    this.dapps = new DappsController(this.storage)
     this.actions = new ActionsController({
       selectedAccount: this.selectedAccount,
       windowManager,
@@ -372,7 +371,7 @@ export class MainController extends EventEmitter {
 
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.activity = new ActivityController(
-      this.#storage,
+      this.storage,
       this.fetch,
       this.callRelayer,
       this.accounts,
@@ -396,7 +395,7 @@ export class MainController extends EventEmitter {
       // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
       // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
       serviceProviderAPI: lifiAPI,
-      storage: this.#storage,
+      storage: this.storage,
       actions: this.actions,
       relayerUrl,
       portfolioUpdate: () => {
@@ -423,6 +422,27 @@ export class MainController extends EventEmitter {
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
       this.emitError(e)
+    })
+
+    this.keystore.onUpdate(() => {
+      if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        this.storage.associateAccountKeysWithLegacySavedSeedMigration(
+          new AccountPickerController({
+            accounts: this.accounts,
+            keystore: this.keystore,
+            networks: this.networks,
+            providers: this.providers,
+            externalSignerControllers: this.#externalSignerControllers,
+            relayerUrl,
+            fetch: this.fetch,
+            onAddAccountsSuccessCallback: async () => {}
+          }),
+          this.keystore,
+          async () => {
+            await this.keystore.updateKeystoreKeys()
+          }
+        )
+      }
     })
   }
 

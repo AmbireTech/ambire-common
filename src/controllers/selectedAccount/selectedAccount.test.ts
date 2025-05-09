@@ -1,10 +1,10 @@
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -58,29 +58,8 @@ const selectedAccountCtrl = new SelectedAccountController({
   accounts: accountsCtrl
 })
 
-const event = new EventEmitter()
-let windowId = 0
-const windowManager = {
-  event,
-  focus: () => Promise.resolve(),
-  open: () => {
-    windowId++
-    return Promise.resolve({
-      id: windowId,
-      top: 0,
-      left: 0,
-      width: 100,
-      height: 100,
-      focused: true
-    })
-  },
-  remove: () => {
-    event.emit('windowRemoved', windowId)
-    return Promise.resolve()
-  },
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
+
 const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
 
 const portfolioCtrl = new PortfolioController(
@@ -96,7 +75,7 @@ const portfolioCtrl = new PortfolioController(
 
 const defiPositionsCtrl = new DefiPositionsController({
   fetch,
-  storage,
+  storage: storageCtrl,
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   providers: providersCtrl
