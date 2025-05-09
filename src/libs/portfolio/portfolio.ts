@@ -7,7 +7,6 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -65,18 +64,6 @@ const defaultOptions: GetOptions = {
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
   fetchPinned: true
-}
-
-const getHardcodedOdysseyPrices = (address: string) => {
-  if (address === '0x2B44e7315B20da1A9CBE827489A2FE99545e3ba7')
-    return [
-      {
-        baseCurrency: 'usd',
-        price: 2
-      }
-    ]
-
-  return null
 }
 
 export class Portfolio {
@@ -314,10 +301,7 @@ export class Portfolio {
     const tokensWithPrices: TokenResult[] = await Promise.all(
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
-        const cachedPriceIn =
-          this.network.chainId === ODYSSEY_CHAIN_ID
-            ? getHardcodedOdysseyPrices(token.address)
-            : getPriceFromCache(token.address)
+        const cachedPriceIn = getPriceFromCache(token.address)
 
         if (cachedPriceIn) {
           priceIn = cachedPriceIn

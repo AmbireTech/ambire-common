@@ -131,7 +131,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     rpcUrls,
     iconUrls,
     platformId,
-    has7702
+    has7702,
+    disabledByDefault
   } = relayerNetwork
   const {
     native: {
@@ -216,7 +217,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     erc4337,
     rpcNoStateOverride,
     isSAEnabled,
-    predefined: true,
+    predefined: !disabledByDefault,
     predefinedConfigVersion,
     areContractsDeployed,
     features,
