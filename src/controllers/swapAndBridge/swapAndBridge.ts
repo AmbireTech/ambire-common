@@ -404,7 +404,9 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get validateFromAmount() {
-    if (!this.fromSelectedToken) return { success: false, message: '' }
+    const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
+
+    if (!fromSelectedTokenWithUpToDateAmount) return { success: false, message: '' }
 
     if (
       !this.isFormEmpty &&
@@ -421,7 +423,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmount,
       Number(this.maxFromAmount),
       Number(this.maxFromAmountInFiat),
-      this.fromSelectedToken
+      fromSelectedTokenWithUpToDateAmount
     )
   }
 
@@ -1973,15 +1975,17 @@ export class SwapAndBridgeController extends EventEmitter {
   get swapSignErrors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const fromSelectedTokenWithUpToDateAmount = this.#getFromSelectedTokenInPortfolio()
 
     if (
       isBridge &&
-      this.fromSelectedToken &&
-      this.fromSelectedToken.amountPostSimulation &&
-      this.fromSelectedToken.amount !== this.fromSelectedToken.amountPostSimulation
+      fromSelectedTokenWithUpToDateAmount &&
+      fromSelectedTokenWithUpToDateAmount.amountPostSimulation &&
+      fromSelectedTokenWithUpToDateAmount.amount !==
+        fromSelectedTokenWithUpToDateAmount.amountPostSimulation
     ) {
       errors.push({
-        title: `${this.fromSelectedToken.symbol} detected in batch. Please complete the batch before bridging`
+        title: `${fromSelectedTokenWithUpToDateAmount.symbol} detected in batch. Please complete the batch before bridging`
       })
     }
 
