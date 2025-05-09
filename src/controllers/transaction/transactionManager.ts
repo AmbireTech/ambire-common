@@ -20,7 +20,7 @@ export class TransactionManagerController extends EventEmitter {
   constructor(dependencies: TransactionDependencies) {
     super()
 
-    this.formState = new TransactionFormState()
+    this.formState = new TransactionFormState(dependencies)
     this.swapAndBridge = new SwapAndBridgeController(dependencies, this.formState)
     this.intent = new IntentController(dependencies, this.formState)
     this.transfer = new TransferController(dependencies, this.formState)
@@ -37,5 +37,16 @@ export class TransactionManagerController extends EventEmitter {
         this.emitUpdate()
       }, `${controller.constructor.name}-update`)
     })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      formState: this.formState.toJSON(),
+      swapAndBridge: this.swapAndBridge.toJSON(),
+      intent: this.intent.toJSON(),
+      transfer: this.transfer.toJSON()
+    }
   }
 }
