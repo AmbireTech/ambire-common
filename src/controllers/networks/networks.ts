@@ -192,11 +192,12 @@ export class NetworksController extends EventEmitter {
     const updatedNetworks = { ...finalNetworks }
     try {
       const res = await this.#callRelayer('/v2/config/networks')
-      relayerNetworks = res.data.extensionConfigNetworks.filter(
-        (network: RelayerNetworkConfigResponse) => !network.disabledByDefault
-      )
+      relayerNetworks = res.data.extensionConfigNetworks
 
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
+        // for the time being, we don't want to show disabledByDefault networks
+        if (network.disabledByDefault) return
+
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
         const storedNetwork = Object.values(networksInStorage).find((n) => n.chainId === chainId)
