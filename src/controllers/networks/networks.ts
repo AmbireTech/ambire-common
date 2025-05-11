@@ -192,7 +192,9 @@ export class NetworksController extends EventEmitter {
     const updatedNetworks = { ...finalNetworks }
     try {
       const res = await this.#callRelayer('/v2/config/networks')
-      relayerNetworks = res.data.extensionConfigNetworks
+      relayerNetworks = res.data.extensionConfigNetworks.filter(
+        (network: RelayerNetworkConfigResponse) => !network.disabledByDefault
+      )
 
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
