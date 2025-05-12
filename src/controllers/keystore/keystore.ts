@@ -496,7 +496,7 @@ export class KeystoreController extends EventEmitter {
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
     const newEntry = {
-      id: await generateUuid(),
+      id: generateUuid(),
       label,
       seed: seedPhrase,
       seedPassphrase: passphrase,

@@ -1090,7 +1090,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
       return
 
-    const quoteId = await generateUuid()
+    const quoteId = generateUuid()
     this.#updateQuoteId = quoteId
 
     const updateQuoteFunction = async () => {
