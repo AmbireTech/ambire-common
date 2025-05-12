@@ -1,3 +1,8 @@
+import { isAddress } from 'ethers'
+import { HumanizerMeta } from 'libs/humanizer/interfaces'
+import { FEE_COLLECTOR } from '../../consts/addresses'
+import { validateSendTransferAddress } from '../../services/validations'
+import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import {
   CachedSupportedChains,
@@ -23,8 +28,20 @@ import { handleAmountConversion } from '../../libs/transaction/conversion'
 import { TokenResult } from '../../libs/portfolio'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { Contacts } from '../addressBook/addressBook'
 
 import { TransactionDependencies } from './dependencies'
+
+const DEFAULT_VALIDATION_FORM_MSGS = {
+  amount: {
+    success: false,
+    message: ''
+  },
+  recipientAddress: {
+    success: false,
+    message: ''
+  }
+}
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
@@ -70,6 +87,12 @@ export class TransactionFormState extends EventEmitter {
   isRecipientAddressUnknownAgreed = false
 
   isRecipientHumanizerKnownTokenOrSmartContract = false
+
+  #selectedAccountData: Account | null = null
+
+  #addressBookContacts: Contacts = []
+
+  #humanizerInfo: HumanizerMeta | null = null
 
   fromSelectedToken: FromToken | null = null
 
@@ -153,19 +176,22 @@ export class TransactionFormState extends EventEmitter {
       fromAmountFieldMode,
       fromSelectedToken,
       toSelectedToken,
-      // fromChainId, // TODO: When receive component is added
       toChainId,
-      routePriority
-      // addressState // TODO: When receive component is added
-      // TODO: transfer transaction
-      // isRecipientAddressUnknown,
-      // isRecipientAddressUnknownAgreed,
-      // isRecipientHumanizerKnownTokenOrSmartContract
+      routePriority,
+      addressState
     } = params
 
     const { emitUpdate = true /* , updateQuote = true */ } = updateProps || {}
 
     let shouldUpdateToTokenList = false
+
+    if (addressState) {
+      this.addressState = {
+        ...this.addressState,
+        ...addressState
+      }
+      this.#onRecipientAddressChange()
+    }
 
     if (fromAmountFieldMode) {
       this.fromAmountFieldMode = fromAmountFieldMode
@@ -240,6 +266,72 @@ export class TransactionFormState extends EventEmitter {
     ])
 
     this.emitUpdate()
+  }
+
+  get isInitialized() {
+    return !!this.#humanizerInfo && !!this.#selectedAccountData
+  }
+
+  get validationFormMsgs() {
+    if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
+
+    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+
+    if (this.#humanizerInfo && this.#selectedAccountData) {
+      const isEnsAddress = !!this.addressState.ensAddress
+
+      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
+        this.recipientAddress,
+        this.#selectedAccountData.addr,
+        this.isRecipientAddressUnknownAgreed,
+        this.isRecipientAddressUnknown,
+        this.isRecipientHumanizerKnownTokenOrSmartContract,
+        isEnsAddress,
+        this.addressState.isDomainResolving
+      )
+    }
+    return validationFormMsgsNew
+  }
+
+  get recipientAddress() {
+    return this.addressState.ensAddress || this.addressState.fieldValue
+  }
+
+  checkIsRecipientAddressUnknown() {
+    if (!isAddress(this.recipientAddress)) {
+      this.isRecipientAddressUnknown = false
+      this.isRecipientAddressUnknownAgreed = false
+
+      this.emitUpdate()
+      return
+    }
+    const isAddressInAddressBook = this.#addressBookContacts.some(
+      ({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase()
+    )
+
+    this.isRecipientAddressUnknown =
+      !isAddressInAddressBook && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.isRecipientAddressUnknownAgreed = false
+    // this.#setSWWarningVisibleIfNeeded()
+
+    this.emitUpdate()
+  }
+
+  #onRecipientAddressChange() {
+    if (!isAddress(this.recipientAddress)) {
+      this.isRecipientAddressUnknown = false
+      this.isRecipientAddressUnknownAgreed = false
+      this.isRecipientHumanizerKnownTokenOrSmartContract = false
+      return
+    }
+
+    if (this.#humanizerInfo) {
+      // @TODO: could fetch address code
+      this.isRecipientHumanizerKnownTokenOrSmartContract =
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+    }
+
+    this.checkIsRecipientAddressUnknown()
   }
 
   private handleAmountConversion(fromAmount: string, fromAmountFormatted: string) {
