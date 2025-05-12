@@ -81,6 +81,9 @@ const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 const NETWORK_MISMATCH_MESSAGE =
   'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
 
+// For performance reasons, limit the max number of tokens in the to token list
+const TO_TOKEN_LIST_LIMIT = 50
+
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
   Invalid = 'invalid',
@@ -169,6 +172,10 @@ export class SwapAndBridgeController extends EventEmitter {
   toChainId: number | null = 1
 
   toSelectedToken: SwapAndBridgeToToken | null = null
+
+  toTokenSearchTerm: string = ''
+
+  toTokenSearchResults: SwapAndBridgeToToken[] = []
 
   quote: SwapAndBridgeQuote | null = null
 
@@ -920,8 +927,7 @@ export class SwapAndBridgeController extends EventEmitter {
         this.#toTokenList
           // Swaps between same "from" and "to" tokens are not feasible, filter them out
           .filter((t) => t.address !== this.fromSelectedToken?.address)
-          // For performance reasons, limit the number of tokens to max 50
-          .slice(0, 50)
+          .slice(0, TO_TOKEN_LIST_LIMIT)
       )
     }
 
@@ -991,6 +997,44 @@ export class SwapAndBridgeController extends EventEmitter {
 
   addToTokenByAddress = async (address: string) =>
     this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true)
+
+  async searchToToken(searchTerm: string) {
+    // Reset the search results
+    this.toTokenSearchTerm = ''
+    this.toTokenSearchResults = []
+    this.#emitUpdateIfNeeded()
+
+    if (!searchTerm) return // should never happen
+
+    const normalizedSearchTerm = searchTerm.toLowerCase()
+    this.toTokenSearchTerm = normalizedSearchTerm
+
+    const { exactMatches, partialMatches } = this.#toTokenList.reduce(
+      (result, token) => {
+        const fieldsToSearch = [
+          token.address.toLowerCase(),
+          token.symbol.toLowerCase(),
+          token.name.toLowerCase()
+        ]
+
+        // Prioritize exact matches, partial matches come after
+        const isExactMatch = fieldsToSearch.some((field) => field === normalizedSearchTerm)
+        const isPartialMatch = fieldsToSearch.some((field) => field.includes(normalizedSearchTerm))
+
+        if (isExactMatch) {
+          result.exactMatches.push(token)
+        } else if (isPartialMatch) {
+          result.partialMatches.push(token)
+        }
+
+        return result
+      },
+      { exactMatches: [] as SwapAndBridgeToToken[], partialMatches: [] as SwapAndBridgeToToken[] }
+    )
+
+    this.toTokenSearchResults = [...exactMatches, ...partialMatches].slice(0, TO_TOKEN_LIST_LIMIT)
+    this.#emitUpdateIfNeeded()
+  }
 
   async switchFromAndToTokens() {
     this.switchTokensStatus = 'LOADING'
