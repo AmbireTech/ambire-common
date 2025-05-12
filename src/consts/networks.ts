@@ -213,10 +213,10 @@ const networks: Network[] = [
     wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
-    name: 'Binance Smart Chain',
+    name: 'BNB Smart Chain',
     nativeAssetSymbol: 'BNB',
     has7702: true,
-    nativeAssetName: 'Binance Coin',
+    nativeAssetName: 'BNB',
     rpcUrls: ['https://invictus.ambire.com/binance-smart-chain'],
     selectedRpcUrl: 'https://invictus.ambire.com/binance-smart-chain',
     rpcNoStateOverride: false,
@@ -233,7 +233,7 @@ const networks: Network[] = [
     areContractsDeployed: true,
     hasRelayer: true,
     platformId: 'binance-smart-chain',
-    nativeAssetId: 'binancecoin',
+    nativeAssetId: 'bnb',
     hasSingleton: true,
     features: [],
     feeOptions: { is1559: true },
