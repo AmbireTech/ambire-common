@@ -917,7 +917,12 @@ export class SwapAndBridgeController extends EventEmitter {
     const isSwapping = this.fromChainId === this.toChainId
     if (isSwapping) {
       // Swaps between same "from" and "to" tokens are not feasible, filter them out
-      return this.#toTokenList.filter((t) => t.address !== this.fromSelectedToken?.address)
+      return (
+        this.#toTokenList
+          .filter((t) => t.address !== this.fromSelectedToken?.address)
+          // For performance reasons, limit the number of tokens to max 50
+          .slice(0, 50)
+      )
     }
 
     return this.#toTokenList
