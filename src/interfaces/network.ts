@@ -175,6 +175,7 @@ export type RelayerNetwork = {
       increasePreVerGas?: number
     }
   }
+  disabledByDefault?: boolean
 }
 
 export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

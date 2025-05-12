@@ -9,6 +9,7 @@ export type WindowProps = {
   width: number
   height: number
   focused: boolean
+  createdFromWindowId?: number
 } | null
 
 export interface WindowManager {
