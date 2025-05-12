@@ -2224,6 +2224,14 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #preSignTrezorCleanup() {
+    try {
+      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
+    } catch (e) {
+      console.error('Error while focusing Trezor window', e)
+    }
+  }
+
   /**
    * There are 4 ways to broadcast an AccountOp:
    *   1. For basic accounts (EOA), there is only one way to do that. After
@@ -2350,6 +2358,7 @@ export class MainController extends EventEmitter {
 
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) {
+          if (feePayerKey.type === 'trezor') await this.#preSignTrezorCleanup()
           signer.init(this.#externalSignerControllers[feePayerKey.type])
           this.#isBroadcastAwaitingHWSignature = true
         }
