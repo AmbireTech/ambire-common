@@ -93,7 +93,7 @@ const activityCtrl = new ActivityController(
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
-const keystore = new KeystoreController(storageCtrl, {}, windowManager)
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
 
 const accounts = [
   {

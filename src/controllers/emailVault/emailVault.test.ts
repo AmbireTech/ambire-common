@@ -61,7 +61,7 @@ describe('happy cases', () => {
     email = getRandomEmail()
     storage = produceMemoryStore()
     storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
   })
   test('login first time', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
@@ -126,7 +126,12 @@ describe('happy cases', () => {
   test('full keystore sync', async () => {
     const storage2 = produceMemoryStore()
     const storageCtrl2 = new StorageController(storage2)
-    const keystore2 = new KeystoreController(storageCtrl2, keystoreSigners, windowManager)
+    const keystore2 = new KeystoreController(
+      'default',
+      storageCtrl2,
+      keystoreSigners,
+      windowManager
+    )
 
     const keys = [
       {
