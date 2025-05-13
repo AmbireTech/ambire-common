@@ -278,7 +278,6 @@ export class KeystoreController extends EventEmitter {
 
     const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
-    console.timeEnd('alabala')
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
