@@ -10,7 +10,6 @@ import {
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 // import { entropyToMnemonic } from 'bip39'
-import { Platform } from 'interfaces/platform'
 import { v4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
@@ -30,6 +29,7 @@ import {
   ReadyToAddKeys,
   StoredKey
 } from '../../interfaces/keystore'
+import { Platform } from '../../interfaces/platform'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
