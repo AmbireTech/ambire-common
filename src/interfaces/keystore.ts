@@ -41,6 +41,9 @@ export interface ExternalSignerController {
   appName?: string // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
+  discoverySubscription?: any // Ledger specific
+  stateSubscription?: any // Ledger specific
+  currentSessionId?: any // Ledger specific
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
