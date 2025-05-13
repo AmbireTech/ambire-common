@@ -99,21 +99,6 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
-    // HOW TO TEST THIS?
-    // const eip7702Auth = get7702Sig(
-    //   network.chainId,
-    //   accountState.nonce,
-    //   '0x0000000000000000000000000000000000000000',
-    //   signer.sign7702(
-    //     getAuthorizationHash(
-    //       network.chainId,
-    //       '0x0000000000000000000000000000000000000000',
-    //       accountState.nonce
-    //     )
-    //   )
-    // )
-    // const signedTxn = signer.signTransactionTypeFour(rawTxn, eip7702Auth)
-
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const maxPriorityFeePerGas = txnRequest.maxPriorityFeePerGas ?? txnRequest.gasPrice
@@ -124,20 +109,20 @@ export class KeystoreSigner implements KeystoreSignerInterface {
         '0x04',
         encodeRlp([
           toBeHex(txnRequest.chainId),
-          toBeHex(txnRequest.nonce),
+          txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
           toBeHex(maxPriorityFeePerGas!),
           toBeHex(maxFeePerGas!),
           toBeHex(txnRequest.gasLimit),
-          hexlify(txnRequest.to),
+          txnRequest.to,
           txnRequest.value ? toBeHex(txnRequest.value) : '0x',
           txnRequest.data,
-          '0x', // access list
+          [],
           [
             [
-              toBeHex(eip7702Auth.chainId),
-              hexlify(eip7702Auth.address),
-              toBeHex(eip7702Auth.nonce),
-              eip7702Auth.yParity,
+              eip7702Auth.chainId,
+              eip7702Auth.address,
+              eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+              eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
               eip7702Auth.r,
               eip7702Auth.s
             ]
@@ -153,34 +138,32 @@ export class KeystoreSigner implements KeystoreSignerInterface {
       s: `0x${signature.substring(66)}`
     }
 
-    return keccak256(
-      concat([
-        '0x04',
-        encodeRlp([
-          toBeHex(txnRequest.chainId),
-          toBeHex(txnRequest.nonce),
-          toBeHex(maxPriorityFeePerGas!),
-          toBeHex(maxFeePerGas!),
-          toBeHex(txnRequest.gasLimit),
-          hexlify(txnRequest.to),
-          txnRequest.value ? toBeHex(txnRequest.value) : '0x00',
-          txnRequest.data,
-          '0x', // access list
+    return concat([
+      '0x04',
+      encodeRlp([
+        toBeHex(txnRequest.chainId),
+        txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+        toBeHex(maxPriorityFeePerGas!),
+        toBeHex(maxFeePerGas!),
+        toBeHex(txnRequest.gasLimit),
+        txnRequest.to,
+        txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+        txnRequest.data,
+        [],
+        [
           [
-            [
-              toBeHex(eip7702Auth.chainId),
-              hexlify(eip7702Auth.address),
-              toBeHex(eip7702Auth.nonce),
-              eip7702Auth.yParity,
-              eip7702Auth.r,
-              eip7702Auth.s
-            ]
-          ],
-          txnTypeFourSignature.yParity,
-          txnTypeFourSignature.r,
-          txnTypeFourSignature.s
-        ])
+            eip7702Auth.chainId,
+            eip7702Auth.address,
+            eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+            eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+            eip7702Auth.r,
+            eip7702Auth.s
+          ]
+        ],
+        txnTypeFourSignature.yParity === '0x00' ? '0x' : txnTypeFourSignature.yParity,
+        txnTypeFourSignature.r,
+        txnTypeFourSignature.s
       ])
-    ) as Hex
+    ]) as Hex
   }
 }

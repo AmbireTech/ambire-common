@@ -122,6 +122,15 @@ export const makeAccountOpAction = ({
     ? userReqWithWalletSendCallsVersion.meta.walletSendCallsVersion
     : undefined
 
+  // find the user request with a setDelegation meta property if any
+  const userReqWithDelegation = userRequests.find(
+    (req) =>
+      req.meta.accountAddr === account.addr &&
+      req.meta.chainId === chainId &&
+      'setDelegation' in req.meta
+  )
+  const setDelegation = userReqWithDelegation ? userReqWithDelegation.meta.setDelegation : undefined
+
   const accountOp: AccountOpAction['accountOp'] = {
     accountAddr: account.addr,
     chainId,
@@ -139,7 +148,8 @@ export const makeAccountOpAction = ({
     }),
     meta: {
       paymasterService,
-      walletSendCallsVersion
+      walletSendCallsVersion,
+      setDelegation
     }
   }
 

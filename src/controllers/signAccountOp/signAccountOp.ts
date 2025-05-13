@@ -17,6 +17,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { Hex } from '../../interfaces/hex'
 /* eslint-disable no-restricted-syntax */
 import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
 import {
@@ -1594,6 +1595,24 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp,
           accountState,
           signer
+        )
+      } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
+        // a delegation request has been made
+        if (!this.accountOp.meta) this.accountOp.meta = {}
+
+        const contract = this.accountOp.meta.setDelegation
+          ? getContractImplementation(this.#network.chainId)
+          : (ZeroAddress as Hex)
+        this.accountOp.meta.delegation = get7702Sig(
+          this.#network.chainId,
+          // because we're broadcasting by ourselves, we need to add 1 to the nonce
+          // as the sender nonce (the curr acc) gets incremented before the
+          // authrorization validation
+          accountState.eoaNonce! + 1n,
+          contract,
+          signer.sign7702(
+            getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
+          )
         )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
