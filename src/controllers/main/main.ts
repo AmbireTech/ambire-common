@@ -335,7 +335,12 @@ export class MainController extends EventEmitter {
       this.networks,
       this.accounts,
       this.#externalSignerControllers,
-      this.invite
+      this.invite,
+      () => {
+        if (this.signMessage.signingKeyType === 'trezor') {
+          this.#handleTrezorCleanup()
+        }
+      }
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
@@ -769,6 +774,14 @@ export class MainController extends EventEmitter {
       this.statuses.broadcastSignedAccountOp = 'INITIAL'
       this.#isBroadcastAwaitingHWSignature = false
       this.#broadcastCallId = null
+    }
+
+    const isSignerTrezor =
+      this.signAccountOp.accountOp.signingKeyType === 'trezor' ||
+      this.feePayerKey?.type === 'trezor'
+
+    if (isSignerTrezor) {
+      this.#handleTrezorCleanup()
     }
 
     this.feePayerKey = null
@@ -2224,11 +2237,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #preSignTrezorCleanup() {
+  async #handleTrezorCleanup() {
     try {
-      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
+      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html**')
     } catch (e) {
-      console.error('Error while focusing Trezor window', e)
+      console.error('Error while removing Trezor window', e)
     }
   }
 
@@ -2358,7 +2371,6 @@ export class MainController extends EventEmitter {
 
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) {
-          if (feePayerKey.type === 'trezor') await this.#preSignTrezorCleanup()
           signer.init(this.#externalSignerControllers[feePayerKey.type])
           this.#isBroadcastAwaitingHWSignature = true
         }
