@@ -141,7 +141,12 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+    keystore = new KeystoreController(
+      'default',
+      storageCtrl,
+      { internal: KeystoreSigner },
+      windowManager
+    )
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
@@ -670,7 +675,12 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+    keystore = new KeystoreController(
+      'default',
+      storageCtrl,
+      { internal: KeystoreSigner },
+      windowManager
+    )
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([

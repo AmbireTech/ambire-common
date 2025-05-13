@@ -338,7 +338,12 @@ const init = async (
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
-  const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+  const keystore = new KeystoreController(
+    'default',
+    storageCtrl,
+    { internal: KeystoreSigner },
+    windowManager
+  )
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
