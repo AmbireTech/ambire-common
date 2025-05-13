@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { StoredKey } from '../../interfaces/keystore'
@@ -513,7 +514,10 @@ export class StorageController extends EventEmitter {
       shouldSearchForLinkedAccounts: true
     })
     await accountPicker.init()
-    const updatedKeyMap = new Map(keystoreKeys.map((k) => [k.addr, { ...k }]))
+    const makeKeyMapId = (k: { addr: string; type: string }) => `${k.addr}:${k.type}`
+
+    // Keep all keys, keyed by composite key
+    const updatedKeyMap = new Map(keystoreKeys.map((k) => [makeKeyMapId(k), { ...k }]))
 
     let page = 1
     while (page <= 10) {
@@ -522,15 +526,24 @@ export class StorageController extends EventEmitter {
       // eslint-disable-next-line no-await-in-loop
       await accountPicker.findAndSetLinkedAccountsPromise
 
-      const matchingKeys = accountPicker.allKeysOnPage.filter((k) => updatedKeyMap.has(k))
+      const matchingAddresses = accountPicker.allKeysOnPage
 
-      if (matchingKeys.length === 0) break
+      if (matchingAddresses.length === 0) break
 
-      // eslint-disable-next-line no-restricted-syntax
-      for (const addr of matchingKeys) {
-        const key = updatedKeyMap.get(addr)!
-        key.meta = { ...key.meta, fromSeedId: keystoreSavedSeed.id }
-        updatedKeyMap.set(addr, key)
+      for (const addr of matchingAddresses) {
+        // Only modify keys with type === 'internal' and matching addr
+        const matchingInternalKeys = keystoreKeys.filter(
+          (k) => k.addr === addr && k.type === 'internal'
+        )
+
+        for (const key of matchingInternalKeys) {
+          const compositeKey = makeKeyMapId(key)
+          const storedKey = updatedKeyMap.get(compositeKey)
+          if (storedKey) {
+            storedKey.meta = { ...storedKey.meta, fromSeedId: keystoreSavedSeed.id }
+            updatedKeyMap.set(compositeKey, storedKey)
+          }
+        }
       }
 
       page++
