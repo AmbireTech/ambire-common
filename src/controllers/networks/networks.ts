@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks, ODYSSEY_CHAIN_ID } from '../../consts/networks'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -233,14 +233,14 @@ export class NetworksController extends EventEmitter {
           updatedNetworks[chainId.toString()] = {
             ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
             ...relayerNetwork,
-            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])],
-            iconUrls: relayerNetwork.iconUrls
+            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
           }
         } else {
           updatedNetworks[chainId.toString()] = {
             ...storedNetwork,
             rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])],
-            iconUrls: relayerNetwork.iconUrls
+            iconUrls: relayerNetwork.iconUrls,
+            predefined: relayerNetwork.predefined
           }
         }
       })
@@ -260,11 +260,6 @@ export class NetworksController extends EventEmitter {
         // Update the hasRelayer flag to false just in case
         if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
           updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
-        }
-
-        // Special case: Set the platformId for Odyssey chain
-        if (network.chainId === ODYSSEY_CHAIN_ID) {
-          updatedNetworks[chainId] = { ...network, platformId: 'ethereum' }
         }
       })
     } catch (e: any) {

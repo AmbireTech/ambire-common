@@ -217,7 +217,7 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     erc4337,
     rpcNoStateOverride,
     isSAEnabled,
-    predefined: true,
+    predefined: !disabledByDefault,
     predefinedConfigVersion,
     areContractsDeployed,
     features,
