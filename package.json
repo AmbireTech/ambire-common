@@ -28,6 +28,7 @@
     "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@ethersproject/abstract-signer": "^5.7.0",
+    "@noble/hashes": "^1.8.0",
     "@types/uuid": "9.0.0",
     "@types/validator": "^13.7.0",
     "@walletconnect/client": "^1.7.1",

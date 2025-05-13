@@ -99,7 +99,7 @@ describe('KeystoreController', () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   test('should initialize', () => {
-    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
