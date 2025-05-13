@@ -576,8 +576,8 @@ describe('import/export with pub key test', () => {
     const storageCtrl = new StorageController(storage)
     const storageCtrl2 = new StorageController(storage2)
 
-    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
-    keystore2 = new KeystoreController(storageCtrl2, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
+    keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')
