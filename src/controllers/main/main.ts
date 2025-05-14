@@ -657,10 +657,15 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
-    const signAccountOp =
-      type === SIGN_ACCOUNT_OP_MAIN
-        ? this.signAccountOp
-        : this.swapAndBridge.signAccountOpController
+    let signAccountOp: SignAccountOpController | null
+
+    if (type === SIGN_ACCOUNT_OP_MAIN) {
+      signAccountOp = this.signAccountOp
+    } else if (type === SIGN_ACCOUNT_OP_SWAP) {
+      signAccountOp = this.swapAndBridge.signAccountOpController
+    } else {
+      signAccountOp = this.transfer.signAccountOpController
+    }
 
     // if the accountOp has a swapTxn, start the route as the user is broadcasting it
     if (signAccountOp?.accountOp.meta?.swapTxn) {
