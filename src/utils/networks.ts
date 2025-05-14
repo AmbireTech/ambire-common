@@ -120,7 +120,7 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
 export const mapRelayerNetworkConfigToAmbireNetwork = (
   chainId: bigint,
   relayerNetwork: RelayerNetwork
-): Network & { predefinedConfigVersion: number } => {
+): Network & { predefinedConfigVersion: number; disabledByDefault?: boolean } => {
   const {
     name,
     explorerUrl,
@@ -131,7 +131,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     rpcUrls,
     iconUrls,
     platformId,
-    has7702
+    has7702,
+    disabledByDefault
   } = relayerNetwork
   const {
     native: {
@@ -216,12 +217,13 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     erc4337,
     rpcNoStateOverride,
     isSAEnabled,
-    predefined: true,
+    predefined: !disabledByDefault,
     predefinedConfigVersion,
     areContractsDeployed,
     features,
     hasSingleton,
-    has7702: is7702Enabled
+    has7702: is7702Enabled,
+    disabledByDefault
   }
 }
 
