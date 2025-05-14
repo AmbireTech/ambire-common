@@ -263,6 +263,10 @@ export class MainController extends EventEmitter {
       this.fetch,
       relayerUrl,
       async (network: Network) => {
+        if (network.disabled) {
+          await this.removeNetworkData(network.chainId)
+          return
+        }
         this.providers.setProvider(network)
         await this.reloadSelectedAccount({ chainId: network.chainId })
       },
@@ -2100,13 +2104,14 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetwork(chainId: bigint) {
-    await this.networks.removeNetwork(chainId)
-
+  async removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
     this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
-    this.activity.removeNetworkData(chainId)
+    // Don't remove user activity for now because removing networks
+    // is no longer possible in the UI. Users can only disable networks
+    // and it doesn't make sense to delete their activity
+    // this.activity.removeNetworkData(chainId)
   }
 
   async resolveAccountOpAction(
