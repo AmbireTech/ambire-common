@@ -44,6 +44,7 @@ export interface ExternalSignerController {
   discoverySubscription?: any // Ledger specific
   stateSubscription?: any // Ledger specific
   currentSessionId?: any // Ledger specific
+  singerEth?: any // Ledger specific
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 

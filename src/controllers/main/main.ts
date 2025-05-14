@@ -931,9 +931,6 @@ export class MainController extends EventEmitter {
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
       await ledgerCtrl.unlock(hdPathTemplate)
 
-      // TODO: Implement further
-      return
-
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
         throw new EmittableError({ message, level: 'major', error: new Error(message) })
