@@ -1,0 +1,68 @@
+import { Network } from '../interfaces/network'
+
+const testnetNetworks: Network[] = [
+  {
+    name: 'Sepolia',
+    nativeAssetSymbol: 'ETH',
+    has7702: false,
+    nativeAssetName: 'Ether',
+    rpcUrls: ['https://gateway.tenderly.co/public/sepolia'],
+    selectedRpcUrl: 'https://gateway.tenderly.co/public/sepolia',
+    rpcNoStateOverride: false,
+    chainId: 11155111n,
+    explorerUrl: 'https://sepolia.etherscan.io',
+    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+    isSAEnabled: false,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: 'ethereum-sepolia',
+    nativeAssetId: 'ethereum-sepolia',
+    hasSingleton: true,
+    features: [],
+    feeOptions: { is1559: true },
+    predefined: true
+  },
+  {
+    name: 'Base Sepolia',
+    nativeAssetSymbol: 'ETH',
+    has7702: false,
+    nativeAssetName: 'Ether',
+    rpcUrls: ['https://base-sepolia.gateway.tenderly.co'],
+    selectedRpcUrl: 'https://base-sepolia.gateway.tenderly.co',
+    rpcNoStateOverride: false,
+    chainId: 84532n,
+    explorerUrl: 'https://base-sepolia.blockscout.com',
+    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+    isSAEnabled: false,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: 'base-sepolia',
+    nativeAssetId: 'base-sepolia',
+    hasSingleton: true,
+    features: [],
+    feeOptions: { is1559: true },
+    predefined: true
+  },
+  {
+    name: 'Arbitrum Sepolia',
+    nativeAssetSymbol: 'ETH',
+    has7702: false,
+    nativeAssetName: 'Ether',
+    rpcUrls: ['https://rpc.therpc.io/arbitrum-sepolia'],
+    selectedRpcUrl: 'https://rpc.therpc.io/arbitrum-sepolia',
+    rpcNoStateOverride: false,
+    chainId: 421614n,
+    explorerUrl: 'https://sepolia.arbiscan.io',
+    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+    isSAEnabled: false,
+    areContractsDeployed: true,
+    hasRelayer: false,
+    platformId: 'arbitrum-sepolia',
+    nativeAssetId: 'arbitrum-sepolia',
+    hasSingleton: true,
+    features: [],
+    feeOptions: { is1559: true },
+    predefined: true
+  }
+]
+export { testnetNetworks }
