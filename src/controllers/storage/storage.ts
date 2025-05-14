@@ -526,7 +526,9 @@ export class StorageController extends EventEmitter {
       // eslint-disable-next-line no-await-in-loop
       await accountPicker.findAndSetLinkedAccountsPromise
 
-      const matchingAddresses = accountPicker.allKeysOnPage
+      const matchingAddresses = accountPicker.allKeysOnPage.filter((k) =>
+        updatedKeyMap.has(`${k}:internal`)
+      )
 
       if (matchingAddresses.length === 0) break
 
