@@ -116,16 +116,19 @@ import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
-  signAccountOp: 'INITIAL',
-  broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountPickerInitLedger: 'INITIAL',
   handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   buildSwapAndBridgeUserRequest: 'INITIAL',
-  selectAccount: 'INITIAL'
+  selectAccount: 'INITIAL',
+  signAndBroadcastAccountOp: 'INITIAL'
 } as const
+
+type CustomStatuses = {
+  signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
+}
 
 export class MainController extends EventEmitter {
   #storageAPI: Storage
@@ -206,7 +209,7 @@ export class MainController extends EventEmitter {
 
   isOffline: boolean = false
 
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
 
   #windowManager: WindowManager
 
@@ -221,9 +224,7 @@ export class MainController extends EventEmitter {
    * Prevents rejected hardware wallet signatures from affecting new requests
    * when a user closes an action window and starts a new one.
    */
-  #broadcastCallId: number | null = null
-
-  #isBroadcastAwaitingHWSignature: boolean = false
+  #signAndBroadcastCallId: number | null = null
 
   #relayerUrl: string
 
@@ -644,6 +645,23 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
+    if (this.statuses.signAndBroadcastAccountOp !== 'INITIAL') {
+      this.emitError({
+        level: 'major',
+        message: 'The signing process is already in progress.',
+        error: new Error(
+          'The signing process is already in progress. (handleSignAndBroadcastAccountOp)'
+        )
+      })
+      return
+    }
+
+    const signAndBroadcastCallId = Date.now()
+    this.#signAndBroadcastCallId = signAndBroadcastCallId
+
+    this.statuses.signAndBroadcastAccountOp = 'SIGNING'
+    this.forceEmitUpdate()
+
     const signAccountOp =
       type === SIGN_ACCOUNT_OP_MAIN
         ? this.signAccountOp
@@ -672,29 +690,27 @@ export class MainController extends EventEmitter {
       })
     }
 
-    await this.withStatus(
-      'signAccountOp',
-      async () => {
-        const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
-        if (wasAlreadySigned) return Promise.resolve()
+    const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
 
-        if (!signAccountOp) {
-          const message =
-            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+    if (!wasAlreadySigned) {
+      if (!signAccountOp) {
+        const message =
+          'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
 
-          const error = new EmittableError({ level: 'major', message })
-          return Promise.reject(error)
-        }
+        throw new EmittableError({ level: 'major', message })
+      }
 
-        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
-          this.#signAccountOpSigningPromise = undefined
-        })
+      // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+      this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
+        if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
 
-        return this.#signAccountOpSigningPromise
-      },
-      true
-    )
+        this.#signAccountOpSigningPromise = undefined
+      })
+
+      await this.#signAccountOpSigningPromise
+    }
+
+    if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
 
     // Error handling on the prev step will notify the user, it's fine to return here
     if (signAccountOp?.status?.type !== SigningStatus.Done) {
@@ -702,16 +718,20 @@ export class MainController extends EventEmitter {
       if (signAccountOp?.accountOp.meta?.swapTxn) {
         this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
       }
+      this.statuses.signAndBroadcastAccountOp = 'ERROR'
+      await this.forceEmitUpdate()
+      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+      this.#signAndBroadcastCallId = null
+      await this.forceEmitUpdate()
       return
     }
-    const broadcastCallId = Date.now()
 
     try {
-      await this.#broadcastSignedAccountOp(signAccountOp, type, broadcastCallId)
-      this.statuses.broadcastSignedAccountOp = 'SUCCESS'
+      await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
+      this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
       await this.forceEmitUpdate()
     } catch (error: any) {
-      if (broadcastCallId === this.#broadcastCallId) {
+      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         if ('message' in error && 'level' in error && 'error' in error) {
           this.emitError(error)
         } else {
@@ -721,13 +741,13 @@ export class MainController extends EventEmitter {
             error
           })
         }
-        this.statuses.broadcastSignedAccountOp = 'ERROR'
+        this.statuses.signAndBroadcastAccountOp = 'ERROR'
         await this.forceEmitUpdate()
       }
     } finally {
-      if (broadcastCallId === this.#broadcastCallId) {
-        this.statuses.broadcastSignedAccountOp = 'INITIAL'
-        this.#broadcastCallId = null
+      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.#signAndBroadcastCallId = null
         await this.forceEmitUpdate()
       }
     }
@@ -768,12 +788,17 @@ export class MainController extends EventEmitter {
   destroySignAccOp() {
     if (!this.signAccountOp) return
 
+    const isAwaitingHWSignature =
+      (this.signAccountOp.accountOp.signingKeyType !== 'internal' &&
+        this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
+      (this.feePayerKey?.type !== 'internal' &&
+        this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
+
     // Reset these flags only if we were awaiting a HW signature
     // to broadcast a transaction.
-    if (this.#isBroadcastAwaitingHWSignature) {
-      this.statuses.broadcastSignedAccountOp = 'INITIAL'
-      this.#isBroadcastAwaitingHWSignature = false
-      this.#broadcastCallId = null
+    if (isAwaitingHWSignature) {
+      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+      this.#signAndBroadcastCallId = null
     }
 
     const isSignerTrezor =
@@ -1319,10 +1344,12 @@ export class MainController extends EventEmitter {
 
     if (!pendingSwapAction) return false
 
-    const isSigning = this.statuses.broadcastSignedAccountOp !== 'INITIAL'
+    const isSigningOrBroadcasting =
+      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
+      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
 
     // The swap and bridge is done/forgotten so we can remove the action
-    if (!isSigning) {
+    if (!isSigningOrBroadcasting) {
       this.actions.removeAction(pendingSwapAction.id)
       this.swapAndBridge.reset()
       // TODO: remove this ugly fix.
@@ -2263,7 +2290,7 @@ export class MainController extends EventEmitter {
     type: SignAccountOpType,
     callId: number
   ) {
-    if (this.statuses.broadcastSignedAccountOp !== 'INITIAL') {
+    if (this.statuses.signAndBroadcastAccountOp !== 'SIGNING') {
       this.throwBroadcastAccountOp({
         signAccountOp,
         message: 'Pending broadcast. Please try again in a bit.'
@@ -2311,9 +2338,7 @@ export class MainController extends EventEmitter {
       return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
-    this.statuses.broadcastSignedAccountOp = 'LOADING'
-    this.#broadcastCallId = callId
-
+    this.statuses.signAndBroadcastAccountOp = 'BROADCASTING'
     await this.forceEmitUpdate()
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -2372,7 +2397,6 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) {
           signer.init(this.#externalSignerControllers[feePayerKey.type])
-          this.#isBroadcastAwaitingHWSignature = true
         }
 
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
@@ -2392,7 +2416,7 @@ export class MainController extends EventEmitter {
             accountOp.calls[i]
           )
           const signedTxn = await signer.signRawTransaction(rawTxn)
-          if (callId !== this.#broadcastCallId) {
+          if (callId !== this.#signAndBroadcastCallId) {
             return
           }
           multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
@@ -2410,7 +2434,7 @@ export class MainController extends EventEmitter {
             })
           }
         }
-        if (callId !== this.#broadcastCallId) return
+        if (callId !== this.#signAndBroadcastCallId) return
         transactionRes = {
           nonce,
           identifiedBy: {
@@ -2421,7 +2445,7 @@ export class MainController extends EventEmitter {
             txnLength === 1 ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-') : undefined
         }
       } catch (error: any) {
-        if (this.#broadcastCallId !== callId) return
+        if (this.#signAndBroadcastCallId !== callId) return
         // eslint-disable-next-line no-console
         console.error('Error broadcasting', error)
         // for multiple txn cases
@@ -2440,8 +2464,7 @@ export class MainController extends EventEmitter {
           return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
-        if (this.#broadcastCallId === callId) {
-          this.#isBroadcastAwaitingHWSignature = false
+        if (this.#signAndBroadcastCallId === callId) {
           signAccountOp.update({ signedTransactionsCount: null })
         }
       }
@@ -2541,7 +2564,7 @@ export class MainController extends EventEmitter {
       }
     }
 
-    if (this.#broadcastCallId !== callId) return
+    if (this.#signAndBroadcastCallId !== callId) return
 
     if (!transactionRes)
       return this.throwBroadcastAccountOp({
@@ -2691,7 +2714,7 @@ export class MainController extends EventEmitter {
     let message = humanReadableMessage
     let isReplacementFeeLow = false
 
-    this.statuses.broadcastSignedAccountOp = 'ERROR'
+    this.statuses.signAndBroadcastAccountOp = 'ERROR'
     this.forceEmitUpdate()
 
     if (originalMessage) {
