@@ -728,8 +728,10 @@ export class MainController extends EventEmitter {
 
     try {
       await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
-      this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-      await this.forceEmitUpdate()
+      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
+        this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+        await this.forceEmitUpdate()
+      }
     } catch (error: any) {
       if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         if ('message' in error && 'level' in error && 'error' in error) {
@@ -2385,7 +2387,7 @@ export class MainController extends EventEmitter {
       try {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
         if (feePayerKey instanceof Error) {
-          return await this.throwBroadcastAccountOp({
+          return this.throwBroadcastAccountOp({
             signAccountOp,
             message: feePayerKey.message,
             accountState
@@ -2461,7 +2463,7 @@ export class MainController extends EventEmitter {
             }
           }
         } else {
-          return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
+          return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
         if (this.#signAndBroadcastCallId === callId) {
@@ -2778,9 +2780,7 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    return Promise.reject(
-      new EmittableError({ level: 'major', message, error: _err || new Error(message) })
-    )
+    throw new EmittableError({ level: 'major', message, error: _err || new Error(message) })
   }
 
   get isSignRequestStillActive(): boolean {
