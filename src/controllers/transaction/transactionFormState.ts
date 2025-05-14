@@ -1,5 +1,6 @@
-import { isAddress } from 'ethers'
+import { formatUnits, isAddress } from 'ethers'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
+import { testnetNetworks } from '../../consts/testnetNetworks'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { validateSendTransferAddress } from '../../services/validations'
 import { Account } from '../../interfaces/account'
@@ -13,7 +14,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
-
+import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { Network } from '../../interfaces/network'
 import wait from '../../utils/wait'
 import {
@@ -121,6 +122,8 @@ export class TransactionFormState extends EventEmitter {
 
   #toTokenList: SwapAndBridgeToToken[] = []
 
+  supportedChainIds: Network['chainId'][] = []
+
   /**
    * Needed to efficiently manage and cache token lists for different chain
    * combinations (fromChainId and toChainId) without having to fetch them
@@ -150,6 +153,7 @@ export class TransactionFormState extends EventEmitter {
     super()
 
     this.#initialLoadPromise = this.#load()
+    this.supportedChainIds = testnetNetworks.map((c) => BigInt(c.chainId))
   }
 
   #emitUpdateIfNeeded() {
@@ -724,8 +728,22 @@ export class TransactionFormState extends EventEmitter {
     return `from-${this.fromChainId}-to-${this.toChainId}`
   }
 
-  get supportedChainIds(): Network['chainId'][] {
-    return this.#cachedSupportedChains.data.map((c) => BigInt(c.chainId))
+  // The token in portfolio is the source of truth for the amount, it updates
+  // on every balance (pending or anything) change.
+  #getFromSelectedTokenInPortfolio = () =>
+    this.portfolioTokenList.find(
+      (t) =>
+        t.address === this.fromSelectedToken?.address &&
+        t.chainId === this.fromSelectedToken?.chainId &&
+        getIsTokenEligibleForSwapAndBridge(t)
+    )
+
+  get maxFromAmount(): string {
+    const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
+    if (!tokenRef || getTokenAmount(tokenRef) === 0n || typeof tokenRef.decimals !== 'number')
+      return '0'
+
+    return formatUnits(getTokenAmount(tokenRef), tokenRef.decimals)
   }
 
   get isFormEmpty() {
@@ -742,7 +760,8 @@ export class TransactionFormState extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      supportedChainIds: this.supportedChainIds
+      supportedChainIds: this.supportedChainIds,
+      maxFromAmount: this.maxFromAmount
     }
   }
 }
