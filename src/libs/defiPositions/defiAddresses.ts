@@ -17,6 +17,9 @@ export const AAVE_V3 = {
   },
   '534352': {
     poolAddr: '0x11fCfe756c05AD438e312a7fd934381537D3cFfe'
+  },
+  '56': {
+    poolAddr: '0x6807dc923806fE8Fd134338EABCA509979a7e0cB'
   }
 }
 
@@ -40,5 +43,9 @@ export const UNISWAP_V3 = {
   '137': {
     nonfungiblePositionManagerAddr: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
     factoryAddr: '0x1F98431c8aD98523631AE4a59f267346ea31F984'
+  },
+  '56': {
+    nonfungiblePositionManagerAddr: '0x7b8a01b39d58278b5de7e48c8449c9f4f5170613',
+    factoryAddr: '0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7'
   }
 }
