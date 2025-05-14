@@ -1,10 +1,12 @@
 import EventEmitter from 'events'
 
+import { WindowManager } from '../../src/interfaces/window'
+
 const mockWindowManager = (eventEmitter?: EventEmitter) => {
   let windowId = 0
   const event = eventEmitter || new EventEmitter()
 
-  const windowManager = {
+  const windowManager: WindowManager = {
     event,
     focus: () =>
       Promise.resolve({
@@ -25,6 +27,10 @@ const mockWindowManager = (eventEmitter?: EventEmitter) => {
         height: 100,
         focused: true
       })
+    },
+    closePopupWithUrl: () => {
+      event.emit('windowRemoved', windowId)
+      return Promise.resolve()
     },
     remove: () => {
       event.emit('windowRemoved', windowId)
