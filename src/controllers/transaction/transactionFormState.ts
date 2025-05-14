@@ -112,6 +112,8 @@ export class TransactionFormState extends EventEmitter {
 
   updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
+  switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
+
   errors: SwapAndBridgeErrorType[] = []
 
   isTokenListLoading: boolean = false
@@ -459,6 +461,93 @@ export class TransactionFormState extends EventEmitter {
 
     this.updateToTokenListStatus = 'INITIAL'
     this.emitUpdate()
+  }
+
+  async switchFromAndToTokens() {
+    this.switchTokensStatus = 'LOADING'
+    this.#emitUpdateIfNeeded()
+
+    const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
+    // Update the from token
+    if (!this.toSelectedToken) {
+      await this.update(
+        {
+          fromAmount: '',
+          fromAmountFieldMode: 'token',
+          toSelectedToken: this.fromSelectedToken
+            ? {
+                ...this.fromSelectedToken,
+                chainId: Number(this.fromSelectedToken.chainId)
+              }
+            : null
+        },
+        {
+          emitUpdate: false,
+          updateQuote: false
+        }
+      )
+      this.fromSelectedToken = null
+    } else if (this.toChainId) {
+      const toSelectedTokenNetwork = this.dependencies.networks.networks.find(
+        (n) => Number(n.chainId) === this.toChainId
+      )!
+      const tokenInPortfolio = this.portfolioTokenList.find(
+        (token: TokenResult) =>
+          token.address === this.toSelectedToken?.address &&
+          token.chainId === toSelectedTokenNetwork.chainId
+      )
+
+      const price = Number(this.quote?.selectedRoute?.toToken?.priceUSD || 0)
+
+      this.fromSelectedToken = tokenInPortfolio || {
+        ...this.toSelectedToken,
+        chainId: BigInt(this.toChainId),
+        amount: 0n,
+        flags: {
+          onGasTank: false,
+          isFeeToken: false,
+          canTopUpGasTank: false,
+          rewardsType: null
+        },
+        priceIn: price ? [{ baseCurrency: 'usd', price }] : []
+      }
+
+      this.fromSelectedToken.isSwitchedToToken = true
+      this.#addFromTokenToPortfolioListIfNeeded()
+
+      // Update the amount to the one from the quote
+      let fromAmount = ''
+      // Try catch just in case because of formatUnits
+      try {
+        if (this.quote && this.quote.selectedRoute?.fromAmount) {
+          fromAmount = formatUnits(
+            this.quote.selectedRoute.toAmount,
+            this.quote.selectedRoute.toToken.decimals
+          )
+        }
+      } catch (error) {
+        console.error('Error formatting fromAmount', error)
+      }
+      await this.update(
+        {
+          fromAmount,
+          fromAmountFieldMode: 'token'
+        },
+        {
+          emitUpdate: false,
+          updateQuote: false
+        }
+      )
+    }
+
+    // Update the chain ids
+    ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
+
+    // Update the to token list
+    await this.updateToTokenList(true, prevFromSelectedToken?.address)
+
+    this.switchTokensStatus = 'INITIAL'
+    this.#emitUpdateIfNeeded()
   }
 
   addOrUpdateError(error: SwapAndBridgeErrorType) {
