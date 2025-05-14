@@ -40,7 +40,7 @@ export class SignMessageController extends EventEmitter {
 
   #signer: KeystoreSignerInterface | undefined
 
-  #onReset
+  #onReset?: () => void
 
   isInitialized: boolean = false
 
