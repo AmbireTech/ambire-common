@@ -93,6 +93,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
+import { DelegationController } from '../delegation/delegation'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { EstimationStatus } from '../estimation/types'
@@ -142,6 +143,8 @@ export class MainController extends EventEmitter {
   isReady: boolean = false
 
   featureFlags: FeatureFlagsController
+
+  delegation: DelegationController
 
   invite: InviteController
 
@@ -421,6 +424,7 @@ export class MainController extends EventEmitter {
       }
     })
     this.domains = new DomainsController(this.providers.providers)
+    this.delegation = new DelegationController(this.accounts, this.networks, this.selectedAccount)
 
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
