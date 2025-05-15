@@ -35,10 +35,6 @@ export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
-const CUSTOM_WINDOW_SIZE = {
-  width: 720,
-  height: 800
-}
 const SWAP_AND_BRIDGE_WINDOW_SIZE = {
   width: 640,
   height: 640
@@ -288,8 +284,6 @@ export class ActionsController extends EventEmitter {
 
       if (this.currentAction?.type === 'swapAndBridge') {
         customSize = SWAP_AND_BRIDGE_WINDOW_SIZE
-      } else if (this.currentAction?.type !== 'dappRequest') {
-        customSize = CUSTOM_WINDOW_SIZE
       }
 
       try {
