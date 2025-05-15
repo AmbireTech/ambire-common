@@ -1754,6 +1754,14 @@ export class SignAccountOpController extends EventEmitter {
     this.traceCallDiscoveryStatus = status
   }
 
+  get delegatedContract(): Hex | null {
+    if (!this.#accounts.accountStates[this.account.addr]) return null
+    if (!this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()])
+      return null
+    return this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()]
+      .delegatedContract
+  }
+
   toJSON() {
     return {
       ...this,
@@ -1766,7 +1774,8 @@ export class SignAccountOpController extends EventEmitter {
       selectedOption: this.selectedOption,
       account: this.account,
       errors: this.errors,
-      gasSavedUSD: this.gasSavedUSD
+      gasSavedUSD: this.gasSavedUSD,
+      delegatedContract: this.delegatedContract
     }
   }
 }

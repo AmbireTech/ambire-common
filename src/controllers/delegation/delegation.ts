@@ -1,3 +1,4 @@
+import { Hex } from '../../interfaces/hex'
 import { has7702 } from '../../libs/7702/7702'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -26,17 +27,20 @@ export class DelegationController extends EventEmitter {
     return this.#networks.networks.filter((net) => has7702(net))
   }
 
-  get delegations(): { [chainId: string]: boolean } | null {
+  get delegations(): { [chainId: string]: { has: boolean; delegatedContract: Hex } } | null {
     if (!this.#selectedAccount.account) return null
     if (!this.#accounts.accountStates[this.#selectedAccount.account.addr]) return null
 
-    const delegations: { [chainId: string]: boolean } = {}
+    const delegations: { [chainId: string]: { has: boolean; delegatedContract: Hex } } = {}
     this.delegationNetworks.forEach((net) => {
       const accountState =
         this.#accounts.accountStates[this.#selectedAccount.account!.addr][net.chainId.toString()]
       if (!accountState) return
 
-      delegations[net.chainId.toString()] = accountState.isSmarterEoa
+      delegations[net.chainId.toString()] = {
+        has: !!accountState.delegatedContract,
+        delegatedContract: accountState.delegatedContract
+      }
     })
 
     return delegations
