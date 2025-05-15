@@ -1,6 +1,4 @@
 /* eslint-disable @typescript-eslint/brace-style */
-/* eslint-disable no-await-in-loop */
-
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
@@ -80,6 +78,8 @@ import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import shortenAddress from '../../utils/shortenAddress'
+/* eslint-disable no-await-in-loop */
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
@@ -224,7 +224,7 @@ export class MainController extends EventEmitter {
    * Prevents rejected hardware wallet signatures from affecting new requests
    * when a user closes an action window and starts a new one.
    */
-  #signAndBroadcastCallId: number | null = null
+  #signAndBroadcastCallId: string | null = null
 
   #relayerUrl: string
 
@@ -656,7 +656,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const signAndBroadcastCallId = Date.now()
+    const signAndBroadcastCallId = generateUuid()
     this.#signAndBroadcastCallId = signAndBroadcastCallId
 
     this.statuses.signAndBroadcastAccountOp = 'SIGNING'
@@ -787,11 +787,11 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  destroySignAccOp() {
-    if (!this.signAccountOp) return
+  #abortHWSign(signAccountOp: SignAccountOpController) {
+    if (!signAccountOp) return
 
     const isAwaitingHWSignature =
-      (this.signAccountOp.accountOp.signingKeyType !== 'internal' &&
+      (signAccountOp.accountOp.signingKeyType !== 'internal' &&
         this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
       (this.feePayerKey?.type !== 'internal' &&
         this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
@@ -808,18 +808,22 @@ export class MainController extends EventEmitter {
     }
 
     const isSignerTrezor =
-      this.signAccountOp.accountOp.signingKeyType === 'trezor' ||
-      this.feePayerKey?.type === 'trezor'
+      signAccountOp.accountOp.signingKeyType === 'trezor' || this.feePayerKey?.type === 'trezor'
 
     if (isSignerTrezor) {
       this.#handleTrezorCleanup()
     }
+    this.#signAccountOpSigningPromise = undefined
+  }
 
+  destroySignAccOp() {
+    if (!this.signAccountOp) return
+
+    this.#abortHWSign(this.signAccountOp)
     this.feePayerKey = null
     this.signAccountOp.reset()
     this.signAccountOp = null
     this.signAccOpInitError = null
-    this.#signAccountOpSigningPromise = undefined
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -2270,9 +2274,30 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  onOneClickSwapClose() {
+    const signAccountOp = this.swapAndBridge.signAccountOpController
+
+    if (!signAccountOp) return
+
+    // Remove the active route if it exists
+    if (signAccountOp.accountOp.meta?.swapTxn) {
+      this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+    }
+
+    this.swapAndBridge.unloadScreen('action-window', true)
+    this.#abortHWSign(signAccountOp)
+
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
+
+    this.updateSelectedAccountPortfolio(true, network)
+    this.emitUpdate()
+  }
+
   async #handleTrezorCleanup() {
     try {
-      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html**')
+      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
     } catch (e) {
       console.error('Error while removing Trezor window', e)
     }
@@ -2294,7 +2319,7 @@ export class MainController extends EventEmitter {
   async #broadcastSignedAccountOp(
     signAccountOp: SignAccountOpController,
     type: SignAccountOpType,
-    callId: number
+    callId: string
   ) {
     if (this.statuses.signAndBroadcastAccountOp !== 'SIGNING') {
       this.throwBroadcastAccountOp({
