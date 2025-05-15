@@ -1049,6 +1049,10 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
     })
 
+    // recalculate the delegations in the delegation controller if they have been chaged
+    const delegationReq = updatedAccountsOps.filter((op) => op.meta && 'setDelegation' in op.meta)
+    if (delegationReq) this.delegation.forceEmitUpdate()
+
     return { newestOpTimestamp }
   }
 
