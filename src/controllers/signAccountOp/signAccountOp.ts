@@ -15,11 +15,15 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { SINGLETON } from '../../consts/deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Hex } from '../../interfaces/hex'
 /* eslint-disable no-restricted-syntax */
-import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
+import {
+  ERRORS,
+  RETRY_TO_INIT_ACCOUNT_OP_MSG,
+  WARNINGS
+} from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
   SA_ERC20_TRANSFER_GAS_USED,
@@ -616,6 +620,16 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
+
+    // if 7702 EOA that is not ambire
+    // and another delegation is there, show the warning
+    if (
+      'is7702' in this.baseAccount &&
+      this.baseAccount.is7702 &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+    ) {
+      warnings.push(WARNINGS.delegationDetected)
+    }
 
     const estimationWarnings = this.estimation.calculateWarnings()
 

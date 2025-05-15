@@ -21,10 +21,16 @@ const WARNINGS: { [key: string]: Warning } = {
     id: 'feeTokenPriceUnavailable',
     title: 'Unable to estimate the transaction fee in USD.',
     promptBeforeSign: false
+  },
+  delegationDetected: {
+    id: 'delegationDetected',
+    title: 'Delegation detected',
+    text: "The transaction you are about to sign will override the existing EIP-7702 delegation on your account with Ambire's one. Are you sure you want to proceed?",
+    promptBeforeSign: true
   }
 }
 
 const RETRY_TO_INIT_ACCOUNT_OP_MSG =
   'Please attempt to initiate the transaction again or contact Ambire support.'
 
-export { ERRORS, WARNINGS, RETRY_TO_INIT_ACCOUNT_OP_MSG }
+export { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG, WARNINGS }
