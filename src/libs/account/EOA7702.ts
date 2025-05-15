@@ -55,7 +55,7 @@ export class EOA7702 extends BaseAccount {
     op: AccountOp
   ): FeePaymentOption[] {
     const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
-    const isDelegating = op.meta && 'setDelegation' in op.meta
+    const isDelegating = op.meta && op.meta.setDelegation !== undefined
     return feePaymentOptions.filter(
       (opt) =>
         opt.paidBy === this.account.addr &&
@@ -80,7 +80,7 @@ export class EOA7702 extends BaseAccount {
     const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
     if (isNative) {
       // if we're delegating, we need to add the gas used for the authorization list
-      const isDelegating = options.op.meta && 'setDelegation' in options.op.meta
+      const isDelegating = options.op.meta && options.op.meta.setDelegation !== undefined
       const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
 
       if (this.accountState.isSmarterEoa) {
@@ -120,7 +120,8 @@ export class EOA7702 extends BaseAccount {
       isSponsored?: boolean
     }
   ): string {
-    if (options.op.meta && 'setDelegation' in options.op.meta) return BROADCAST_OPTIONS.delegation
+    if (options.op.meta && options.op.meta.setDelegation !== undefined)
+      return BROADCAST_OPTIONS.delegation
     if (options.isSponsored) return BROADCAST_OPTIONS.byBundler
 
     const feeToken = feeOption.token

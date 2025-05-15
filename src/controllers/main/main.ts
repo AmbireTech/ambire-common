@@ -1050,7 +1050,9 @@ export class MainController extends EventEmitter {
     })
 
     // recalculate the delegations in the delegation controller if they have been chaged
-    const delegationReq = updatedAccountsOps.filter((op) => op.meta && 'setDelegation' in op.meta)
+    const delegationReq = updatedAccountsOps.filter(
+      (op) => op.meta && op.meta.setDelegation !== undefined
+    )
     if (delegationReq) this.delegation.forceEmitUpdate()
 
     return { newestOpTimestamp }
