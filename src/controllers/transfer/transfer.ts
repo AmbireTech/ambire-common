@@ -1,22 +1,29 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
-import { Network } from '../../interfaces/network'
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { stringify } from '../../libs/richJson/richJson'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
-import { Contacts } from '../addressBook/addressBook'
+import { AddressBookController } from '../addressBook/addressBook'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { randomId } from '../../libs/humanizer/utils'
+import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
+import { PortfolioController } from '../portfolio/portfolio'
+import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { ProvidersController } from '../providers/providers'
+import { NetworksController } from '../networks/networks'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
+import { Call } from '../../libs/accountOp/types'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -40,61 +47,16 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
-// Here's how state persistence works:
-// 1. When we detect a state diff (e.g., transfer.update({...})), we save specific controller fields to storage.
-// 2. All state is stored under PERSIST_STORAGE_KEY and follows the PersistedState structure.
-// 3. When the controller loads for the first time, we hydrate it by loading the latest persisted state.
-// 4. If it's a Top-up, we skip persistence. Both Top-up and Send use the same controller,
-//    which can lead to state mix-up bugs.
-// 5. We store APP_VERSION in PersistedState.version. If a new version is deployed and it differs,
-//    we clear the persisted state and skip hydration.
-//    This avoids runtime errors caused by outdated state structures.
-const PERSIST_STORAGE_KEY = 'transferState'
-type PersistedState = {
-  version: string
-  state: Pick<
-    TransferController,
-    | 'amount'
-    | 'amountInFiat'
-    | 'amountFieldMode'
-    | 'addressState'
-    | 'isSWWarningVisible'
-    | 'isSWWarningAgreed'
-    | 'isRecipientAddressUnknown'
-    | 'isRecipientAddressUnknownAgreed'
-    | 'isRecipientHumanizerKnownTokenOrSmartContract'
-  > & {
-    selectedToken?: {
-      address: string
-      chainId: bigint
-    }
-  }
-}
-
-export const hasPersistedState = async (storage: Storage, appVersion: string) => {
-  const persistedState: PersistedState = await storage.get(PERSIST_STORAGE_KEY)
-
-  if (!persistedState) return false
-
-  if (persistedState.version !== appVersion) {
-    return false
-  }
-
-  return !!Object.keys(persistedState.state)
-}
-
 export class TransferController extends EventEmitter {
   #storage: Storage
 
-  #networks: Network[] = []
+  #networks: NetworksController
 
-  #portfolio: SelectedAccountPortfolio
-
-  #addressBookContacts: Contacts = []
+  #addressBook: AddressBookController
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccountData: Account | null = null
+  #selectedAccountData: SelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -120,19 +82,34 @@ export class TransferController extends EventEmitter {
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
+  #accounts: AccountsController
+
+  #keystore: KeystoreController
+
+  #portfolio: PortfolioController
+
+  #externalSignerControllers: ExternalSignerControllers
+
+  #providers: ProvidersController
+
+  signAccountOpController: SignAccountOpController | null = null
+
+  hasProceeded: boolean = false
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
-
-  #APP_VERSION: string
 
   constructor(
     storage: Storage,
     humanizerInfo: HumanizerMeta,
-    selectedAccountData: Account,
-    networks: Network[],
-    portfolio: SelectedAccountPortfolio,
-    shouldHydrate: boolean,
-    APP_VERSION: string
+    selectedAccountData: SelectedAccountController,
+    networks: NetworksController,
+    addressBook: AddressBookController,
+    accounts: AccountsController,
+    keystore: KeystoreController,
+    portfolio: PortfolioController,
+    externalSignerControllers: ExternalSignerControllers,
+    providers: ProvidersController
   ) {
     super()
 
@@ -140,88 +117,25 @@ export class TransferController extends EventEmitter {
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccountData = selectedAccountData
     this.#networks = networks
-    this.#portfolio = portfolio
-    this.#APP_VERSION = APP_VERSION
+    this.#addressBook = addressBook
 
-    this.#initialLoadPromise = this.#load(shouldHydrate)
+    this.#accounts = accounts
+    this.#keystore = keystore
+    this.#portfolio = portfolio
+    this.#externalSignerControllers = externalSignerControllers
+    this.#providers = providers
+
+    this.#initialLoadPromise = this.#load()
     this.emitUpdate()
   }
 
-  async #load(shouldHydrate: boolean) {
+  async #load() {
     this.#shouldSkipTransactionQueuedModal = await this.#storage.get(
       'shouldSkipTransactionQueuedModal',
       false
     )
 
-    // Currently, we should not hydrate when it's a Top-up, but in the future, we may have other cases as well.
-    if (shouldHydrate) await this.#hydrate()
-  }
-
-  async #hydrate() {
-    const persistedState: PersistedState = await this.#storage.get(PERSIST_STORAGE_KEY)
-
-    // Don't hydrate if no state was previously persisted.
-    if (!persistedState) return
-
-    // In case of a newer app version, we don't hydrate using the older persisted storage,
-    // as the storage interface may differ from the newly deployed code.
-    // This could result in a runtime error, so we prefer to play it safe.
-    if (persistedState.version !== this.#APP_VERSION) {
-      await this.#clearPersistedState()
-      return
-    }
-
-    const { selectedToken, ...rest } = persistedState.state
-
-    // Normalize selected token to TokenResult
-    if (selectedToken) {
-      const portfolioToken = this.#portfolio.tokens.find(
-        (token) =>
-          token.address === selectedToken.address && token.chainId === selectedToken.chainId
-      )
-
-      if (portfolioToken) this.#selectedToken = portfolioToken
-    }
-
-    Object.assign(this, rest)
-  }
-
-  get persistableState() {
-    const PERSISTED_FIELDS: PersistedState['state'] = {
-      amount: this.amount,
-      amountInFiat: this.amountInFiat,
-      amountFieldMode: this.amountFieldMode,
-      addressState: this.addressState,
-      isSWWarningVisible: this.isSWWarningVisible,
-      isSWWarningAgreed: this.isSWWarningAgreed,
-      isRecipientAddressUnknown: this.isRecipientAddressUnknown,
-      isRecipientAddressUnknownAgreed: this.isRecipientAddressUnknownAgreed,
-      isRecipientHumanizerKnownTokenOrSmartContract:
-        this.isRecipientHumanizerKnownTokenOrSmartContract
-    }
-
-    // We prefer to keep TokenResult simplified in storage and normalize it back to the full object during hydration,
-    // to avoid some TokenResult fields (amount, flags) becoming obsolete while cached.
-    if (this.#selectedToken) {
-      PERSISTED_FIELDS.selectedToken = {
-        address: this.#selectedToken.address,
-        chainId: this.#selectedToken.chainId
-      }
-    }
-
-    return PERSISTED_FIELDS
-  }
-
-  #persist() {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#storage.set(PERSIST_STORAGE_KEY, {
-      state: this.persistableState,
-      version: this.#APP_VERSION
-    })
-  }
-
-  async #clearPersistedState() {
-    await this.#storage.remove(PERSIST_STORAGE_KEY)
+    await this.#selectedAccountData.initialLoadPromise
   }
 
   get shouldSkipTransactionQueuedModal() {
@@ -296,7 +210,7 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  resetForm() {
+  resetForm(destroySignAccountOp = true) {
     this.amount = ''
     this.amountInFiat = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
@@ -306,8 +220,10 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#clearPersistedState()
+    // Even if the form should be reset, there are cases where we still need to know the exact broadcasted account op
+    // in order to visualize its status in the final Transfer step.
+    // In that case, we are going to destroy it on component unmount or on a route navigation.
+    if (destroySignAccountOp) this.destroySignAccountOp()
     this.emitUpdate()
   }
 
@@ -316,12 +232,12 @@ export class TransferController extends EventEmitter {
 
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
-    if (this.#humanizerInfo && this.#selectedAccountData) {
+    if (this.#humanizerInfo && this.#selectedAccountData.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccountData.addr,
+        this.#selectedAccountData.account?.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
@@ -378,16 +294,28 @@ export class TransferController extends EventEmitter {
   }
 
   get isInitialized() {
-    return !!this.#humanizerInfo && !!this.#selectedAccountData && !!this.#networks.length
+    return (
+      !!this.#humanizerInfo &&
+      !!this.#selectedAccountData.account?.addr &&
+      !!this.#networks.networks.length
+    )
   }
 
   get recipientAddress() {
     return this.addressState.ensAddress || this.addressState.fieldValue
   }
 
-  async update(
-    {
-      selectedAccountData,
+  async update({
+    humanizerInfo,
+    selectedToken,
+    amount,
+    addressState,
+    isSWWarningAgreed,
+    isRecipientAddressUnknownAgreed,
+    isTopUp,
+    amountFieldMode
+  }: TransferUpdate) {
+    console.log('TransferController: update() invoked', {
       humanizerInfo,
       selectedToken,
       amount,
@@ -395,44 +323,11 @@ export class TransferController extends EventEmitter {
       isSWWarningAgreed,
       isRecipientAddressUnknownAgreed,
       isTopUp,
-      networks,
-      contacts,
       amountFieldMode
-    }: TransferUpdate,
-    options: { shouldPersist?: boolean } = {}
-  ) {
-    // When should we persist?
-    // Simply, when a field change is triggered by the user.
-    // If the change originates from useEffect - for instance, auto-selecting a token -
-    // we should not persist, as this would load the Send form every time the user opens the Dashboard.
-    const { shouldPersist = true } = options
-
-    await this.#initialLoadPromise
-
-    const prevState = stringify(this.persistableState)
-    const hasAccountChanged =
-      selectedAccountData && this.#selectedAccountData?.addr !== selectedAccountData.addr
+    })
 
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
-    }
-    if (networks) {
-      this.#networks = networks
-    }
-    if (contacts) {
-      this.#addressBookContacts = contacts
-
-      if (this.isInitialized) {
-        this.checkIsRecipientAddressUnknown()
-      }
-    }
-    if (selectedAccountData) {
-      if (hasAccountChanged) {
-        this.#setAmount('')
-        this.selectedToken = null
-        this.addressState = { ...DEFAULT_ADDRESS_STATE }
-      }
-      this.#selectedAccountData = selectedAccountData
     }
 
     if (amountFieldMode) {
@@ -472,19 +367,9 @@ export class TransferController extends EventEmitter {
       this.#setSWWarningVisibleIfNeeded()
     }
 
+    console.log('TransferController: update()')
+    await this.syncSignAccountOp()
     this.emitUpdate()
-
-    if (shouldPersist) {
-      if (this.isTopUp || hasAccountChanged) {
-        return this.#clearPersistedState()
-      }
-
-      const hasStateChange = prevState !== stringify(this.persistableState)
-
-      // We persist only if the Transfer form fields have changed.
-      // Otherwise, we can't easily determine if the form is dirty or not.
-      if (hasStateChange) this.#persist()
-    }
   }
 
   checkIsRecipientAddressUnknown() {
@@ -495,7 +380,7 @@ export class TransferController extends EventEmitter {
       this.emitUpdate()
       return
     }
-    const isAddressInAddressBook = this.#addressBookContacts.some(
+    const isAddressInAddressBook = this.#addressBook.contacts.some(
       ({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase()
     )
 
@@ -584,20 +469,138 @@ export class TransferController extends EventEmitter {
   }
 
   #setSWWarningVisibleIfNeeded() {
-    if (!this.#selectedAccountData) return
+    if (!this.#selectedAccountData.account?.addr) return
 
     this.isSWWarningVisible =
       this.isRecipientAddressUnknown &&
-      isSmartAccount(this.#selectedAccountData) &&
+      isSmartAccount(this.#selectedAccountData.account) &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
-      this.#networks
+      this.#networks.networks
         .filter((n) => n.chainId !== 1n)
         .map(({ chainId }) => chainId)
         .includes(this.selectedToken.chainId || 1n)
 
     this.emitUpdate()
+  }
+
+  get hasPersistedState() {
+    return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
+  }
+
+  async syncSignAccountOp() {
+    console.log('Background: syncSignAccountOp() invoked')
+    // shouldn't happen ever
+    if (!this.#selectedAccountData.account) return
+
+    // form field validation
+    if (!this.#selectedToken || !this.amount || !isAddress(this.recipientAddress)) return
+
+    const userRequest = buildTransferUserRequest({
+      selectedAccount: this.#selectedAccountData.account.addr,
+      amount: this.amount,
+      selectedToken: this.#selectedToken,
+      recipientAddress: this.recipientAddress
+    })
+
+    if (!userRequest || userRequest.action.kind !== 'calls') {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building transfer request',
+        error: new Error(
+          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
+        )
+      })
+
+      return
+    }
+
+    const calls = userRequest.action.calls
+
+    // If SignAccountOpController is already initialized, we just update it.
+    if (this.signAccountOpController) {
+      console.log('Background: Updating signAccountOpController with new calls:')
+      this.signAccountOpController.update({ calls })
+      return
+    }
+
+    console.log('Background: Init signAccountOpController')
+    await this.#initSignAccOp(calls)
+  }
+
+  async #initSignAccOp(calls: Call[]) {
+    if (!this.#selectedAccountData.account || this.signAccountOpController) return
+
+    const network = this.#networks.networks.find(
+      (net) => net.chainId === this.#selectedToken!.chainId
+    )
+
+    // shouldn't happen ever
+    if (!network) return
+
+    const provider = this.#providers.providers[network.chainId.toString()]
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccountData.account.addr,
+      network.chainId
+    )
+
+    const accountOp = {
+      accountAddr: this.#selectedAccountData.account.addr,
+      chainId: network.chainId,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      nonce: accountState.nonce,
+      signature: null,
+      accountOpToExecuteBefore: null,
+      calls
+      // TODO: Not sure should we hide it or not
+      // flags: {
+      //   hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
+      // },
+      // TODO: Not sure should we attach a meta txn or not
+      // meta: {
+      //   swapTxn: userTxn
+      // }
+    }
+
+    this.signAccountOpController = new SignAccountOpController(
+      this.#accounts,
+      this.#networks,
+      this.#keystore,
+      this.#portfolio,
+      this.#externalSignerControllers,
+      this.#selectedAccountData.account,
+      network,
+      provider,
+      randomId(), // the account op and the action are fabricated
+      accountOp,
+      () => true,
+      false,
+      undefined
+    )
+
+    // propagate updates from signAccountOp here
+    this.signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.signAccountOpController.onError((error) => {
+      this.emitError(error)
+    })
+  }
+
+  setUserProceeded(hasProceeded: boolean) {
+    this.hasProceeded = hasProceeded
+    this.emitUpdate()
+  }
+
+  destroySignAccountOp() {
+    if (!this.signAccountOpController) return
+    this.signAccountOpController.reset()
+    this.signAccountOpController = null
+    this.hasProceeded = false
   }
 
   // includes the getters in the stringified instance
@@ -611,7 +614,8 @@ export class TransferController extends EventEmitter {
       selectedToken: this.selectedToken,
       maxAmount: this.maxAmount,
       maxAmountInFiat: this.maxAmountInFiat,
-      shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal
+      shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
+      hasPersistedState: this.hasPersistedState
     }
   }
 }

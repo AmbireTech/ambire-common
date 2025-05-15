@@ -4,6 +4,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -108,12 +109,15 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
+  SIGN_ACCOUNT_OP_TRANSFER,
   SignAccountOpType
 } from '../signAccountOp/helper'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { TransferController } from '../transfer/transfer'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 
 const STATUS_WRAPPED_METHODS = {
   signAccountOp: 'INITIAL',
@@ -178,6 +182,8 @@ export class MainController extends EventEmitter {
   signMessage: SignMessageController
 
   swapAndBridge: SwapAndBridgeController
+
+  transfer: TransferController
 
   signAccountOp: SignAccountOpController | null = null
 
@@ -420,6 +426,18 @@ export class MainController extends EventEmitter {
         )
       }
     })
+    this.transfer = new TransferController(
+      this.#storageAPI, // TODO: consider using this.#storage
+      humanizerInfo as HumanizerMeta,
+      this.selectedAccount,
+      this.networks,
+      this.addressBook,
+      this.accounts,
+      this.keystore,
+      this.portfolio,
+      this.#externalSignerControllers,
+      this.providers
+    )
     this.domains = new DomainsController(this.providers.providers)
 
     this.#initialLoadPromise = this.#load()
@@ -530,6 +548,7 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.reset()
+    this.transfer.resetForm()
     await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
@@ -643,10 +662,15 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
-    const signAccountOp =
-      type === SIGN_ACCOUNT_OP_MAIN
-        ? this.signAccountOp
-        : this.swapAndBridge.signAccountOpController
+    let signAccountOp: SignAccountOpController | null
+
+    if (type === SIGN_ACCOUNT_OP_MAIN) {
+      signAccountOp = this.signAccountOp
+    } else if (type === SIGN_ACCOUNT_OP_SWAP) {
+      signAccountOp = this.swapAndBridge.signAccountOpController
+    } else {
+      signAccountOp = this.transfer.signAccountOpController
+    }
 
     // if the accountOp has a swapTxn, start the route as the user is broadcasting it
     if (signAccountOp?.accountOp.meta?.swapTxn) {
@@ -2604,6 +2628,10 @@ export class MainController extends EventEmitter {
     // visualize the success page on the FE instead of resetting the form
     if (type === SIGN_ACCOUNT_OP_SWAP) {
       this.swapAndBridge.resetForm()
+    }
+
+    if (type === SIGN_ACCOUNT_OP_TRANSFER) {
+      this.transfer.resetForm(false)
     }
 
     await this.#notificationManager.create({
