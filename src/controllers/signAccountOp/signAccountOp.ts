@@ -626,7 +626,8 @@ export class SignAccountOpController extends EventEmitter {
     if (
       'is7702' in this.baseAccount &&
       this.baseAccount.is7702 &&
-      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined)
     ) {
       warnings.push(WARNINGS.delegationDetected)
     }
