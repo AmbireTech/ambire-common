@@ -424,7 +424,12 @@ export class MainController extends EventEmitter {
       }
     })
     this.domains = new DomainsController(this.providers.providers)
-    this.delegation = new DelegationController(this.accounts, this.networks, this.selectedAccount)
+    this.delegation = new DelegationController(
+      this.accounts,
+      this.networks,
+      this.selectedAccount,
+      this.keystore
+    )
 
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
@@ -539,6 +544,7 @@ export class MainController extends EventEmitter {
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
+    this.delegation.forceEmitUpdate()
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.

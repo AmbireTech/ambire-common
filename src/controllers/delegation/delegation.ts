@@ -1,7 +1,9 @@
 import { Hex } from '../../interfaces/hex'
 import { has7702 } from '../../libs/7702/7702'
+import { canBecomeSmarter } from '../../libs/account/account'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
@@ -12,15 +14,19 @@ export class DelegationController extends EventEmitter {
 
   #selectedAccount: SelectedAccountController
 
+  #keystore: KeystoreController
+
   constructor(
     account: AccountsController,
     network: NetworksController,
-    selectedAccount: SelectedAccountController
+    selectedAccount: SelectedAccountController,
+    keystore: KeystoreController
   ) {
     super()
     this.#accounts = account
     this.#networks = network
     this.#selectedAccount = selectedAccount
+    this.#keystore = keystore
   }
 
   get delegationNetworks() {
@@ -46,12 +52,24 @@ export class DelegationController extends EventEmitter {
     return delegations
   }
 
+  get is7702() {
+    if (!this.#selectedAccount.account) return false
+
+    return canBecomeSmarter(
+      this.#selectedAccount.account,
+      this.#keystore.keys.filter((key) =>
+        this.#selectedAccount.account!.associatedKeys.includes(key.addr)
+      )
+    )
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       delegations: this.delegations,
-      delegationNetworks: this.delegationNetworks
+      delegationNetworks: this.delegationNetworks,
+      is7702: this.is7702
     }
   }
 }
