@@ -850,7 +850,8 @@ export class TransactionFormState extends EventEmitter {
       ...this,
       ...super.toJSON(),
       supportedChainIds: this.supportedChainIds,
-      maxFromAmount: this.maxFromAmount
+      maxFromAmount: this.maxFromAmount,
+      recipientAddress: this.recipientAddress
     }
   }
 }
