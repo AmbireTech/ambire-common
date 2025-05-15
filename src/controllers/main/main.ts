@@ -109,6 +109,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
+  SIGN_ACCOUNT_OP_TRANSFER,
   SignAccountOpType
 } from '../signAccountOp/helper'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
@@ -2622,6 +2623,10 @@ export class MainController extends EventEmitter {
     // visualize the success page on the FE instead of resetting the form
     if (type === SIGN_ACCOUNT_OP_SWAP) {
       this.swapAndBridge.resetForm()
+    }
+
+    if (type === SIGN_ACCOUNT_OP_TRANSFER) {
+      this.transfer.resetForm(false)
     }
 
     await this.#notificationManager.create({

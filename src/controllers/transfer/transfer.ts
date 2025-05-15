@@ -210,7 +210,7 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  resetForm() {
+  resetForm(destroySignAccountOp = true) {
     this.amount = ''
     this.amountInFiat = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
@@ -220,7 +220,10 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
-    this.destroySignAccountOp()
+    // Even if the form should be reset, there are cases where we still need to know the exact broadcasted account op
+    // in order to visualize its status in the final Transfer step.
+    // In that case, we are going to destroy it on component unmount or on a route navigation.
+    if (destroySignAccountOp) this.destroySignAccountOp()
     this.emitUpdate()
   }
 
