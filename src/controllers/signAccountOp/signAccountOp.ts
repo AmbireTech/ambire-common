@@ -623,11 +623,18 @@ export class SignAccountOpController extends EventEmitter {
 
     // if 7702 EOA that is not ambire
     // and another delegation is there, show the warning
+    const broadcastOption = this.selectedOption
+      ? this.baseAccount.getBroadcastOption(this.selectedOption, {
+          op: this.accountOp,
+          isSponsored: this.isSponsored
+        })
+      : null
     if (
       'is7702' in this.baseAccount &&
       this.baseAccount.is7702 &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
-      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined)
+      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
+      broadcastOption === BROADCAST_OPTIONS.byBundler
     ) {
       warnings.push(WARNINGS.delegationDetected)
     }
