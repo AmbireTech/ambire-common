@@ -281,7 +281,7 @@ export function getFeaturesByNetworkProperties(
         title: 'Smart contract wallets are not supported',
         msg: hasSingleton
           ? 'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
-          : 'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
+          : "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
       })
     }
 
@@ -306,7 +306,7 @@ export function getFeaturesByNetworkProperties(
       updateFeature('saSupport', {
         title,
         level: 'warning',
-        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using a Basic Account and the Deploy contracts option to unlock the Smart Accounts feature. Otherwise, only Basic Accounts (EOAs) can be used on this network."
+        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using an EOA account and the deploy contracts option to unlock the Smart Accounts feature. Otherwise, only EOA accounts can be used on this network."
       })
     }
   }

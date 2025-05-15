@@ -267,7 +267,7 @@ export const getAccountImportStatus = ({
     if (notImportedYetKeysExistInPage) return ImportStatus.ImportedWithSomeOfTheKeys
 
     // Could happen when user imports a smart account with one associated key.
-    // Then imports an Basic account. Then makes the Basic account a second key
+    // Then imports an EOA. Then makes the EOA a second key
     // for the smart account. In this case, both associated keys of the smart
     // account are imported, but the smart account's `associatedKeys` are incomplete.
     const associatedKeysFoundOnPageAreDifferent = accountsOnPage
@@ -326,7 +326,7 @@ export function getAuthorization(
 }
 
 // use this in cases where you strictly want to enable/disable an action for
-// basic accounts (excluding smart and smarter)
+// EOAs (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
   return !account.creation && !state.isSmarterEoa
 }

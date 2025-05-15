@@ -502,9 +502,9 @@ export class AccountPickerController extends EventEmitter {
       return []
     }
 
-    // Case 1: The account is a Basic account
+    // Case 1: The account is a EOA
     const isBasicAcc = !isSmartAccount(account)
-    // The key of the Basic account is the basic account itself
+    // The key of the EOA is the EOA itself
     if (isBasicAcc) return accountsOnPageWithThisAcc
 
     // Case 2: The account is a Smart account, but not a linked one
@@ -514,7 +514,7 @@ export class AccountPickerController extends EventEmitter {
       accountsOnPageWithThisAcc[0].isLinked === false
 
     if (isSmartAccountAndNotLinked) {
-      // The key of the smart account is the Basic account on the same slot
+      // The key of the smart account is the EOA on the same slot
       // that is explicitly derived for a smart account key only.
       const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find(
         (a) =>
@@ -529,7 +529,7 @@ export class AccountPickerController extends EventEmitter {
     }
 
     // Case 3: The account is a Smart account and a linked one. For this case,
-    // there could exist multiple keys (basic accounts) found on different slots.
+    // there could exist multiple keys (EOAs) found on different slots.
     const basicAccOnEverySlotWhereThisAddrIsFound = accountsOnPageWithThisAcc
       .map((a) => a.slot)
       .flatMap((slot) => {
@@ -552,7 +552,7 @@ export class AccountPickerController extends EventEmitter {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 
-    // Needed, because linked accounts could have multiple keys (basic accounts),
+    // Needed, because linked accounts could have multiple keys (EOAs),
     // and therefore - same linked account could be found on different slots.
     const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
       (accOnPage) => accOnPage.account.addr === _account.addr
@@ -570,7 +570,7 @@ export class AccountPickerController extends EventEmitter {
     const nextSelectedAccount = {
       account: _account,
       // If the account has more than 1 key, it is for sure linked account,
-      // since Basic accounts have only 1 key and smart accounts with more than
+      // since EOAs have only 1 key and smart accounts with more than
       // one key present should always be found as linked accounts anyways.
       isLinked: accountKeys.length > 1,
       accountKeys: accountKeys.map((a) => ({
@@ -714,8 +714,8 @@ export class AccountPickerController extends EventEmitter {
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
-            // Since v4.60.0, linked accounts are searched for 1) Basic Accounts
-            // and 2) Basic Accounts derived for Smart Account keys ONLY
+            // Since v4.60.0, linked accounts are searched for 1) EOAs
+            // and 2) EOAs derived for Smart Account keys ONLY
             // (workaround so that the Relayer returns information if the Smart
             // Account with this key is used (with identity) or not).
             !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
