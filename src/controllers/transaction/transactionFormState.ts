@@ -4,7 +4,7 @@ import { testnetNetworks } from '../../consts/testnetNetworks'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { validateSendTransferAddress } from '../../services/validations'
 import { Account } from '../../interfaces/account'
-import { AddressState } from '../../interfaces/domains'
+import { ExtendedAddressState } from '../../interfaces/interop'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
@@ -47,6 +47,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
   ensAddress: '',
+  interopAddress: '',
   isDomainResolving: false
 }
 const HARD_CODED_CURRENCY = 'usd'
@@ -81,7 +82,7 @@ export class TransactionFormState extends EventEmitter {
 
   toChainId: number | null = null
 
-  addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
+  addressState: ExtendedAddressState = { ...DEFAULT_ADDRESS_STATE }
 
   isRecipientAddressUnknown = false
 
