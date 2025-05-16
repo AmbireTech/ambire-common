@@ -12,13 +12,13 @@ import { Account } from '../../interfaces/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
+import { AccountsController } from '../accounts/accounts'
 import { Contacts } from '../addressBook/addressBook'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
-import { AccountsController } from '../accounts/accounts'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -43,6 +43,7 @@ const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
   }
 }
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+const STK_WALLET_ADDRESS = '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
 
 const CONTACTS: Contacts = []
 const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
@@ -142,10 +143,12 @@ describe('Transfer Controller', () => {
   })
   test('should change selected token', async () => {
     const tokens = await getTokens()
-    const xwalletOnEthereum = tokens.find((t) => t.address === XWALLET_ADDRESS && t.chainId === 1n)
+    const xwalletOnEthereum = tokens.find(
+      (t) => t.address === STK_WALLET_ADDRESS && t.chainId === 1n
+    )
     await transferController.update({ selectedToken: xwalletOnEthereum })
 
-    expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
+    expect(transferController.selectedToken?.address).toBe(STK_WALLET_ADDRESS)
     expect(transferController.selectedToken?.chainId).toBe(1n)
   })
 
