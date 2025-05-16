@@ -223,7 +223,7 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'bundler-failure',
         title:
-          'Smart account fee options are temporarily unavailable. You can pay fee with a Basic account or try again later',
+          'Smart account fee options are temporarily unavailable. You can pay fee with an EOA account or try again later',
         promptBeforeSign: false
       })
     }

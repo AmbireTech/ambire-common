@@ -31,7 +31,7 @@ export async function estimateEOA(
   if (op.calls.length !== 1)
     return estimationErrorFormatted(
       new Error(
-        "Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."
+        "Trying to make multiple calls with an EOA account which shouldn't happen. Please try again or contact support."
       )
     )
 

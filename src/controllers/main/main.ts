@@ -2310,7 +2310,7 @@ export class MainController extends EventEmitter {
 
   /**
    * There are 4 ways to broadcast an AccountOp:
-   *   1. For basic accounts (EOA), there is only one way to do that. After
+   *   1. For EOAs, there is only one way to do that. After
    *   signing the transaction, the serialized signed transaction object gets
    *   send to the network.
    *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
@@ -2774,7 +2774,7 @@ export class MainController extends EventEmitter {
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
       } else if (originalMessage.includes('user nonce') && isRelayer) {
         if (this.signAccountOp) {
           this.accounts

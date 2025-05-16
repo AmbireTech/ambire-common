@@ -380,7 +380,7 @@ export class SignAccountOpController extends EventEmitter {
     if (isAmbireV1AndNetworkNotSupported) {
       errors.push({
         title:
-          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
+          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire Smart Account or an EOA account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
       })
 
       // Don't show any other errors
