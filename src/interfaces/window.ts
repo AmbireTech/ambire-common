@@ -19,6 +19,7 @@ export interface WindowManager {
     customSize?: { width: number; height: number }
   }) => Promise<WindowProps>
   focus: (windowProps: WindowProps) => Promise<WindowProps>
+  closePopupWithUrl: (url: string) => Promise<void>
   remove: (winId: WindowId) => Promise<void>
   sendWindowToastMessage: (
     message: string,
