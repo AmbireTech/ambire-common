@@ -1,4 +1,4 @@
-import { Hex } from '../../interfaces/hex'
+import { Account } from '../../interfaces/account'
 import { has7702 } from '../../libs/7702/7702'
 import { canBecomeSmarter } from '../../libs/account/account'
 import { AccountsController } from '../accounts/accounts'
@@ -6,6 +6,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { AccountDelegation, ChainDelegation } from './types'
 
 export class DelegationController extends EventEmitter {
   #accounts: AccountsController
@@ -29,18 +30,14 @@ export class DelegationController extends EventEmitter {
     this.#keystore = keystore
   }
 
-  get delegationNetworks() {
-    return this.#networks.networks.filter((net) => has7702(net))
-  }
+  #getAccountDelegations(account: Account | null): ChainDelegation | null {
+    if (!account) return null
+    if (!this.#accounts.accountStates[account.addr]) return null
 
-  get delegations(): { [chainId: string]: { has: boolean; delegatedContract: Hex } } | null {
-    if (!this.#selectedAccount.account) return null
-    if (!this.#accounts.accountStates[this.#selectedAccount.account.addr]) return null
+    const delegations: ChainDelegation = {}
 
-    const delegations: { [chainId: string]: { has: boolean; delegatedContract: Hex } } = {}
     this.delegationNetworks.forEach((net) => {
-      const accountState =
-        this.#accounts.accountStates[this.#selectedAccount.account!.addr][net.chainId.toString()]
+      const accountState = this.#accounts.accountStates[account.addr][net.chainId.toString()]
       if (!accountState) return
 
       delegations[net.chainId.toString()] = {
@@ -50,6 +47,14 @@ export class DelegationController extends EventEmitter {
     })
 
     return delegations
+  }
+
+  get delegationNetworks() {
+    return this.#networks.networks.filter((net) => has7702(net))
+  }
+
+  get delegations(): ChainDelegation | null {
+    return this.#getAccountDelegations(this.#selectedAccount.account)
   }
 
   get is7702() {
@@ -63,13 +68,24 @@ export class DelegationController extends EventEmitter {
     )
   }
 
+  get accountDelegations(): AccountDelegation {
+    const delegations: AccountDelegation = {}
+
+    this.#accounts.accounts.forEach((account) => {
+      delegations[account.addr] = this.#getAccountDelegations(account)
+    })
+
+    return delegations
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       delegations: this.delegations,
       delegationNetworks: this.delegationNetworks,
-      is7702: this.is7702
+      is7702: this.is7702,
+      accountDelegations: this.accountDelegations
     }
   }
 }
