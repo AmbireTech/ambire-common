@@ -37,14 +37,10 @@ export interface ExternalSignerController {
   retrieveAddresses?: (paths: string[]) => Promise<string[]> // Ledger specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
-  transport?: any // Ledger specific
+  singerEth?: any // Ledger specific
   appName?: string // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
-  discoverySubscription?: any // Ledger specific
-  stateSubscription?: any // Ledger specific
-  currentSessionId?: any // Ledger specific
-  singerEth?: any // Ledger specific
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
