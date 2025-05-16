@@ -929,8 +929,7 @@ export class MainController extends EventEmitter {
       // the Ledger device throws with "invalid channel" error.
       // To overcome this, always make sure to clean up before starting
       // a new session when retrieving keys, in case there already is one.
-      // TODO:
-      if (ledgerCtrl?.discoverySubscription) await ledgerCtrl.cleanUp()
+      if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
       await ledgerCtrl.unlock(hdPathTemplate)
