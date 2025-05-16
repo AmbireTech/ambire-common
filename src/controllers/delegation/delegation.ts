@@ -1,3 +1,4 @@
+import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_METAMASK } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { has7702 } from '../../libs/7702/7702'
 import { canBecomeSmarter } from '../../libs/account/account'
@@ -43,6 +44,19 @@ export class DelegationController extends EventEmitter {
       delegations[net.chainId.toString()] = {
         has: !!accountState.delegatedContract,
         delegatedContract: accountState.delegatedContract
+      }
+      if (accountState.delegatedContract) {
+        if (
+          accountState.delegatedContract.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+        ) {
+          delegations[net.chainId.toString()].isAmbire = true
+        } else if (
+          accountState.delegatedContract.toLowerCase() === EIP_7702_METAMASK.toLowerCase()
+        ) {
+          delegations[net.chainId.toString()].isMetamask = true
+        } else {
+          delegations[net.chainId.toString()].isUnknown = true
+        }
       }
     })
 
