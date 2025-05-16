@@ -47,7 +47,7 @@ export interface AccountOnchainState {
   isV2: boolean
   currentBlock: bigint
   isSmarterEoa: boolean
-  delegatedContract: Hex
+  delegatedContract: Hex | null
 }
 
 export type AccountStates = {
