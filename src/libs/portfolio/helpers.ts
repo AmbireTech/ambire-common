@@ -42,7 +42,7 @@ export function getFlags(networkData: any, chainId: string, tokenChainId: bigint
   const onGasTank = chainId === 'gasTank'
 
   let rewardsType = null
-  if (networkData?.xWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
+  if (networkData?.stkWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-rewards'
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-vesting'

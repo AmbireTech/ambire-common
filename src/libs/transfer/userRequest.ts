@@ -3,7 +3,7 @@ import { Interface, parseUnits } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
-import { FEE_COLLECTOR, SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
+import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { Calls, SignUserRequest } from '../../interfaces/userRequest'
 import { PaymasterService } from '../erc7677/types'
@@ -74,7 +74,7 @@ function buildClaimWalletRequest({
           claimableRewardsData?.totalClaimable,
           claimableRewardsData?.proof,
           0, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-          WALLET_STAKING_ADDR, // staking pool addr
+          STK_WALLET, // staking pool addr
           claimableRewardsData?.root,
           claimableRewardsData?.signedRoot
         ])
