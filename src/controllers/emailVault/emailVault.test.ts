@@ -6,7 +6,9 @@ import { expect } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
-import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { EIP7702Auth } from '../../consts/7702'
+import { Hex } from '../../interfaces/hex'
+import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
@@ -39,6 +41,11 @@ class InternalSigner implements KeystoreSignerInterface {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   sign7702(hex: string): EIP7702Signature {
+    throw new Error('not supported')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
     throw new Error('not supported')
   }
 }

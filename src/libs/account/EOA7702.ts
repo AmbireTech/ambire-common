@@ -51,15 +51,19 @@ export class EOA7702 extends BaseAccount {
    */
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    feePaymentOptions: FeePaymentOption[]
+    feePaymentOptions: FeePaymentOption[],
+    op: AccountOp
   ): FeePaymentOption[] {
     const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
+    const isDelegating = op.meta && op.meta.setDelegation !== undefined
     return feePaymentOptions.filter(
       (opt) =>
         opt.paidBy === this.account.addr &&
         opt.availableAmount > 0n &&
         (isNative(opt.token) ||
-          (estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()))
+          (!isDelegating &&
+            estimation.bundlerEstimation &&
+            estimation.bundlerEstimation.paymaster.isUsable()))
     )
   }
 
@@ -75,21 +79,25 @@ export class EOA7702 extends BaseAccount {
 
     const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
     if (isNative) {
+      // if we're delegating, we need to add the gas used for the authorization list
+      const isDelegating = options.op.meta && options.op.meta.setDelegation !== undefined
+      const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
+
       if (this.accountState.isSmarterEoa) {
         // paying in native + smartEOA makes the provider estimation more accurate
-        if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed
+        if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed + revokeGas
 
         // trust the ambire estimaton as it's more precise
         // but also add the broadcast gas as it's not included in the ambire estimate
-        return estimation.ambireEstimation.gasUsed + getBroadcastGas(this, options.op)
+        return estimation.ambireEstimation.gasUsed + getBroadcastGas(this, options.op) + revokeGas
       }
 
       // if calls are only 1, use the provider if set
       const numberOfCalls = options.op.calls.length
       if (numberOfCalls === 1) {
         return estimation.providerEstimation
-          ? estimation.providerEstimation.gasUsed
-          : estimation.ambireEstimation.gasUsed
+          ? estimation.providerEstimation.gasUsed + revokeGas
+          : estimation.ambireEstimation.gasUsed + revokeGas
       }
 
       // txn type 4 from here: not smarter with a batch, we need the bundler
@@ -112,6 +120,8 @@ export class EOA7702 extends BaseAccount {
       isSponsored?: boolean
     }
   ): string {
+    if (options.op.meta && options.op.meta.setDelegation !== undefined)
+      return BROADCAST_OPTIONS.delegation
     if (options.isSponsored) return BROADCAST_OPTIONS.byBundler
 
     const feeToken = feeOption.token

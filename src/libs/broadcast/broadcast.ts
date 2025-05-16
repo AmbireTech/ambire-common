@@ -18,7 +18,8 @@ export const BROADCAST_OPTIONS = {
   bySelf7702: 'self7702', // executeBySender
   byBundler: 'bundler', // userOp
   byRelayer: 'relayer', // execute
-  byOtherEOA: 'otherEOA' // execute + standard
+  byOtherEOA: 'otherEOA', // execute + standard
+  delegation: 'delegation' // txn type 4
 }
 
 export function getByOtherEOATxnData(
@@ -111,6 +112,17 @@ export async function getTxnData(
   nonce: number,
   call?: Call
 ): Promise<{ to: Hex; value: bigint; data: Hex; gasLimit?: bigint }> {
+  // no need to estimate gas for delegation, it's already estimated
+  if (broadcastOption === BROADCAST_OPTIONS.delegation) {
+    if (!call) throw new Error('single txn broadcast misconfig')
+    return {
+      to: call.to as Hex,
+      value: call.value,
+      data: call.data as Hex,
+      gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
+    }
+  }
+
   if (broadcastOption === BROADCAST_OPTIONS.bySelf) {
     if (!call) throw new Error('single txn broadcast misconfig')
 

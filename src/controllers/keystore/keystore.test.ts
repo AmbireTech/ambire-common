@@ -12,12 +12,13 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, InternalKey, Key } from '../../interfaces/keystore'
+import { ExternalKey, InternalKey, Key, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -53,6 +54,11 @@ class InternalSigner {
       s: hexlify(randomBytes(32)) as Hex
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
 }
 
 class LedgerSigner {
@@ -81,6 +87,11 @@ class LedgerSigner {
       r: hexlify(randomBytes(32)) as Hex,
       s: hexlify(randomBytes(32)) as Hex
     }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
   }
 }
 

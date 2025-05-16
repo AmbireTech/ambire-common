@@ -93,6 +93,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
+import { DelegationController } from '../delegation/delegation'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { EstimationStatus } from '../estimation/types'
@@ -142,6 +143,8 @@ export class MainController extends EventEmitter {
   isReady: boolean = false
 
   featureFlags: FeatureFlagsController
+
+  delegation: DelegationController
 
   invite: InviteController
 
@@ -421,6 +424,12 @@ export class MainController extends EventEmitter {
       }
     })
     this.domains = new DomainsController(this.providers.providers)
+    this.delegation = new DelegationController(
+      this.accounts,
+      this.networks,
+      this.selectedAccount,
+      this.keystore
+    )
 
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
@@ -535,6 +544,7 @@ export class MainController extends EventEmitter {
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
+    this.delegation.forceEmitUpdate()
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
@@ -1044,6 +1054,12 @@ export class MainController extends EventEmitter {
     updatedAccountsOps.forEach((op) => {
       this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
     })
+
+    // recalculate the delegations in the delegation controller if they have been chaged
+    const delegationReq = updatedAccountsOps.filter(
+      (op) => op.meta && op.meta.setDelegation !== undefined
+    )
+    if (delegationReq) this.delegation.forceEmitUpdate()
 
     return { newestOpTimestamp }
   }
@@ -2322,7 +2338,8 @@ export class MainController extends EventEmitter {
     const rawTxnBroadcast = [
       BROADCAST_OPTIONS.bySelf,
       BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA
+      BROADCAST_OPTIONS.byOtherEOA,
+      BROADCAST_OPTIONS.delegation
     ]
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
@@ -2375,11 +2392,20 @@ export class MainController extends EventEmitter {
             accountOp.gasFeePayment.broadcastOption,
             accountOp.calls[i]
           )
-          const signedTxn = await signer.signRawTransaction(rawTxn)
+          const signedTxn =
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
+              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              : await signer.signRawTransaction(rawTxn)
           if (callId !== this.#broadcastCallId) {
             return
           }
-          multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
+            multipleTxnsBroadcastRes.push({
+              hash: await provider.send('eth_sendRawTransaction', [signedTxn])
+            })
+          } else {
+            multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          }
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
           // send the txn to the relayer if it's an EOA sending for itself
