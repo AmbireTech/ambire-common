@@ -13,7 +13,7 @@ import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from 
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
 const supplyControllerAddress = '0xA69B8074CE03A33B13057B1e9D37DCDE0024Aaff'
-const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+const STK_WALLET_ADDRESS = '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 const NETWORK_NAME = NETWORKS.ethereum
 
@@ -206,7 +206,7 @@ const useClaimableWalletToken = ({
             claimableRewardsData?.totalClaimable,
             claimableRewardsData?.proof,
             withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-            WALLET_STAKING_ADDR, // staking pool addr
+            STK_WALLET_ADDRESS, // staking pool addr
             claimableRewardsData?.root,
             claimableRewardsData?.signedRoot
           ])
