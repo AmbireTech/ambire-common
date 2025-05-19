@@ -846,6 +846,21 @@ export class TransactionFormState extends EventEmitter {
     )
   }
 
+  get state() {
+    return {
+      fromChainId: this.fromChainId,
+      fromSelectedToken: this.fromSelectedToken,
+      toChainId: this.toChainId,
+      toSelectedToken: this.toSelectedToken,
+      fromAmount: this.fromAmount,
+      fromAmountInFiat: this.fromAmountInFiat,
+      fromAmountFieldMode: this.fromAmountFieldMode,
+      toAmount: this.toAmount,
+      toAmountInFiat: this.toAmountInFiat,
+      toAmountFieldMode: this.toAmountFieldMode
+    }
+  }
+
   toJSON() {
     return {
       ...this,

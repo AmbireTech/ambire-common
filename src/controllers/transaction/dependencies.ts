@@ -27,5 +27,6 @@ export type TransactionDependencies = {
   actions: ActionsController
   invite: InviteController
   userRequests: UserRequest[]
+  interopSDK: any
   portfolioUpdate?: Function
 }
