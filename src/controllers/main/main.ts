@@ -671,51 +671,53 @@ export class MainController extends EventEmitter {
         ? this.signAccountOp
         : this.swapAndBridge.signAccountOpController
 
-    // if the accountOp has a swapTxn, start the route as the user is broadcasting it
-    if (signAccountOp?.accountOp.meta?.swapTxn) {
-      await this.swapAndBridge.addActiveRoute({
-        activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
-        userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
-      })
-    }
-
-    const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
-
-    if (!wasAlreadySigned) {
-      if (!signAccountOp) {
-        const message =
-          'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-
-        throw new EmittableError({ level: 'major', message })
-      }
-
-      // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-      this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
-        if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
-
-        this.#signAccountOpSigningPromise = undefined
-      })
-
-      await this.#signAccountOpSigningPromise
-    }
-
-    if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
-
-    // Error handling on the prev step will notify the user, it's fine to return here
-    if (signAccountOp?.status?.type !== SigningStatus.Done) {
-      // remove the active route on signing failure
-      if (signAccountOp?.accountOp.meta?.swapTxn) {
-        this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
-      }
-      this.statuses.signAndBroadcastAccountOp = 'ERROR'
-      await this.forceEmitUpdate()
-      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-      this.#signAndBroadcastCallId = null
-      await this.forceEmitUpdate()
-      return
-    }
-
+    // It's vital that everything that can throw an error is wrapped in a try/catch block
+    // to prevent signAndBroadcastAccountOp from being stuck in the SIGNING state
     try {
+      // if the accountOp has a swapTxn, start the route as the user is broadcasting it
+      if (signAccountOp?.accountOp.meta?.swapTxn) {
+        await this.swapAndBridge.addActiveRoute({
+          activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
+          userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
+        })
+      }
+
+      const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
+
+      if (!wasAlreadySigned) {
+        if (!signAccountOp) {
+          const message =
+            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+
+          throw new EmittableError({ level: 'major', message })
+        }
+
+        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+        this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
+          if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
+
+          this.#signAccountOpSigningPromise = undefined
+        })
+
+        await this.#signAccountOpSigningPromise
+      }
+
+      if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
+
+      // Error handling on the prev step will notify the user, it's fine to return here
+      if (signAccountOp?.status?.type !== SigningStatus.Done) {
+        // remove the active route on signing failure
+        if (signAccountOp?.accountOp.meta?.swapTxn) {
+          this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+        }
+        this.statuses.signAndBroadcastAccountOp = 'ERROR'
+        await this.forceEmitUpdate()
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.#signAndBroadcastCallId = null
+        await this.forceEmitUpdate()
+        return
+      }
+
       await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
       if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
@@ -726,9 +728,15 @@ export class MainController extends EventEmitter {
         if ('message' in error && 'level' in error && 'error' in error) {
           this.emitError(error)
         } else {
+          const hasSigned = signAccountOp?.status?.type === SigningStatus.Done
+
           this.emitError({
             level: 'major',
-            message: error.message || 'Unknown error occurred while broadcasting the transaction',
+            message:
+              error.message ||
+              `Unknown error occurred while ${
+                !hasSigned ? 'signing the transaction' : 'broadcasting the transaction'
+              }`,
             error
           })
         }
