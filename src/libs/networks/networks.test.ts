@@ -55,7 +55,7 @@ describe('Network features', () => {
     const results2 = getFeaturesByNetworkProperties(networkInfo, network)
     const saSupport2 = results2.find((sup) => sup.id === 'saSupport')
     expect(saSupport2?.msg).toBe(
-      'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with EOA accounts.'
+      "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
     )
   })
 })
