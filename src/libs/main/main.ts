@@ -34,15 +34,13 @@ export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,
   selectedAccountAddr,
-  chainId,
   session,
   dappPromise
 }: {
   nextUserRequest: UserRequest
   selectedAccountAddr: string
-  chainId: bigint
-  session: DappProviderRequest['session']
-  dappPromise: DappUserRequest['dappPromise']
+  session?: DappProviderRequest['session']
+  dappPromise?: DappUserRequest['dappPromise']
 }): UserRequest => {
   return {
     id: ACCOUNT_SWITCH_USER_REQUEST,
@@ -51,8 +49,7 @@ export const buildSwitchAccountUserRequest = ({
       params: {
         accountAddr: selectedAccountAddr,
         switchToAccountAddr: nextUserRequest.meta.accountAddr,
-        nextRequestType: nextUserRequest.action.kind,
-        chainId
+        nextRequestType: nextUserRequest.action.kind
       }
     },
     session,
@@ -60,14 +57,15 @@ export const buildSwitchAccountUserRequest = ({
       isSignAction: false,
       accountAddr: selectedAccountAddr,
       switchToAccountAddr: nextUserRequest.meta.accountAddr,
-      nextRequestType: nextUserRequest.action.kind,
-      chainId
+      nextRequestType: nextUserRequest.action.kind
     },
-    dappPromise: {
-      ...dappPromise,
-      resolve: () => {}
-    }
-  }
+    dappPromise: dappPromise
+      ? {
+          ...dappPromise,
+          resolve: () => {}
+        }
+      : undefined
+  } as any
 }
 
 export const makeAccountOpAction = ({

@@ -93,7 +93,6 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
-import { DelegationController } from '../delegation/delegation'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { EstimationStatus } from '../estimation/types'
@@ -143,8 +142,6 @@ export class MainController extends EventEmitter {
   isReady: boolean = false
 
   featureFlags: FeatureFlagsController
-
-  delegation: DelegationController
 
   invite: InviteController
 
@@ -424,12 +421,6 @@ export class MainController extends EventEmitter {
       }
     })
     this.domains = new DomainsController(this.providers.providers)
-    this.delegation = new DelegationController(
-      this.accounts,
-      this.networks,
-      this.selectedAccount,
-      this.keystore
-    )
 
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
@@ -544,7 +535,6 @@ export class MainController extends EventEmitter {
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
-    this.delegation.forceEmitUpdate()
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
@@ -1054,12 +1044,6 @@ export class MainController extends EventEmitter {
     updatedAccountsOps.forEach((op) => {
       this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
     })
-
-    // recalculate the delegations in the delegation controller if they have been chaged
-    const delegationReq = updatedAccountsOps.filter(
-      (op) => op.meta && op.meta.setDelegation !== undefined
-    )
-    if (delegationReq) this.delegation.forceEmitUpdate()
 
     return { newestOpTimestamp }
   }
@@ -1586,24 +1570,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const network = this.networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
-
-    if (!network) {
-      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-    }
-
-    this.userRequestWaitingAccountSwitch.push(userRequest)
-    await this.addUserRequest(
-      buildSwitchAccountUserRequest({
-        nextUserRequest: userRequest,
-        chainId: network.chainId,
-        selectedAccountAddr: userRequest.meta.accountAddr,
-        session: dappPromise.session,
-        dappPromise
-      }),
-      'last',
-      'open-action-window'
-    )
+    await this.#addSwitchAccountUserRequest(userRequest)
   }
 
   async buildTransferUserRequest(
@@ -1905,7 +1872,8 @@ export class MainController extends EventEmitter {
   async addUserRequest(
     req: UserRequest,
     actionPosition: ActionPosition = 'last',
-    actionExecutionType: ActionExecutionType = 'open-action-window'
+    actionExecutionType: ActionExecutionType = 'open-action-window',
+    allowAccountSwitch: boolean = false
   ) {
     const shouldSkipAddUserRequest = await this.#swapAndBridgeActionSafeguard()
 
@@ -2016,6 +1984,14 @@ export class MainController extends EventEmitter {
         actionPosition,
         actionExecutionType
       )
+    }
+
+    if (
+      allowAccountSwitch &&
+      req.meta.isSignAction &&
+      req.meta.accountAddr !== this.selectedAccount.account?.addr
+    ) {
+      await this.#addSwitchAccountUserRequest(req)
     }
 
     this.emitUpdate()
@@ -2243,6 +2219,20 @@ export class MainController extends EventEmitter {
     }
 
     this.emitUpdate()
+  }
+
+  async #addSwitchAccountUserRequest(req: UserRequest) {
+    this.userRequestWaitingAccountSwitch.push(req)
+    await this.addUserRequest(
+      buildSwitchAccountUserRequest({
+        nextUserRequest: req,
+        selectedAccountAddr: req.meta.accountAddr,
+        session: req.dappPromise ? req.dappPromise.session : undefined,
+        dappPromise: req.dappPromise
+      }),
+      'last',
+      'open-action-window'
+    )
   }
 
   /**
