@@ -1,4 +1,7 @@
 import { Network } from '../interfaces/network'
+import { PIMLICO } from './bundlers'
+
+const ALCHEMY_API_KEY = process.env.REACT_APP_ALCHEMY_API_KEY
 
 const testnetNetworks: Network[] = [
   {
@@ -6,15 +9,21 @@ const testnetNetworks: Network[] = [
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
-    rpcUrls: ['https://gateway.tenderly.co/public/sepolia'],
-    selectedRpcUrl: 'https://gateway.tenderly.co/public/sepolia',
+    rpcUrls: [`https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`],
+    selectedRpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     rpcNoStateOverride: false,
     chainId: 11155111n,
     explorerUrl: 'https://sepolia.etherscan.io',
-    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-    isSAEnabled: false,
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
     areContractsDeployed: true,
-    hasRelayer: false,
+    hasRelayer: true,
     platformId: 'ethereum-sepolia',
     nativeAssetId: 'ethereum-sepolia',
     hasSingleton: true,
@@ -27,15 +36,21 @@ const testnetNetworks: Network[] = [
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
-    rpcUrls: ['https://base-sepolia.gateway.tenderly.co'],
-    selectedRpcUrl: 'https://base-sepolia.gateway.tenderly.co',
+    rpcUrls: [`https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`],
+    selectedRpcUrl: `https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     rpcNoStateOverride: false,
     chainId: 84532n,
     explorerUrl: 'https://base-sepolia.blockscout.com',
-    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-    isSAEnabled: false,
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
     areContractsDeployed: true,
-    hasRelayer: false,
+    hasRelayer: true,
     platformId: 'base-sepolia',
     nativeAssetId: 'base-sepolia',
     hasSingleton: true,
@@ -48,15 +63,21 @@ const testnetNetworks: Network[] = [
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
-    rpcUrls: ['https://arbitrum-sepolia.gateway.tenderly.co'],
-    selectedRpcUrl: 'https://arbitrum-sepolia.gateway.tenderly.co',
+    rpcUrls: [`https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`],
+    selectedRpcUrl: `https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     rpcNoStateOverride: false,
     chainId: 421614n,
     explorerUrl: 'https://sepolia.arbiscan.io',
-    erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-    isSAEnabled: false,
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true,
+      hasBundlerSupport: true,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO
+    },
+    isSAEnabled: true,
     areContractsDeployed: true,
-    hasRelayer: false,
+    hasRelayer: true,
     platformId: 'arbitrum-sepolia',
     nativeAssetId: 'arbitrum-sepolia',
     hasSingleton: true,
