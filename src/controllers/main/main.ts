@@ -1879,6 +1879,15 @@ export class MainController extends EventEmitter {
 
     if (shouldSkipAddUserRequest) return
 
+    if (
+      allowAccountSwitch &&
+      req.meta.isSignAction &&
+      req.meta.accountAddr !== this.selectedAccount.account?.addr
+    ) {
+      await this.#addSwitchAccountUserRequest(req)
+      return
+    }
+
     if (req.action.kind === 'calls') {
       ;(req.action as Calls).calls.forEach((_, i) => {
         ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
@@ -1984,14 +1993,6 @@ export class MainController extends EventEmitter {
         actionPosition,
         actionExecutionType
       )
-    }
-
-    if (
-      allowAccountSwitch &&
-      req.meta.isSignAction &&
-      req.meta.accountAddr !== this.selectedAccount.account?.addr
-    ) {
-      await this.#addSwitchAccountUserRequest(req)
     }
 
     this.emitUpdate()
