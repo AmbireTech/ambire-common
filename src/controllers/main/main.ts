@@ -2444,16 +2444,11 @@ export class MainController extends EventEmitter {
             accountOp.gasFeePayment.broadcastOption,
             accountOp.calls[i]
           )
-<<<<<<< HEAD
           const signedTxn =
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
               ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
               : await signer.signRawTransaction(rawTxn)
-          if (callId !== this.#broadcastCallId) {
-=======
-          const signedTxn = await signer.signRawTransaction(rawTxn)
           if (callId !== this.#signAndBroadcastCallId) {
->>>>>>> a76ae8fdad805fc41e52626d5d946a44890ecf5e
             return
           }
           if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
