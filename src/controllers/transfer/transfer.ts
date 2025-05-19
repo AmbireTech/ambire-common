@@ -24,6 +24,7 @@ import { ProvidersController } from '../providers/providers'
 import { NetworksController } from '../networks/networks'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { Call } from '../../libs/accountOp/types'
+import { getAddressFromAddressState } from '../../utils/domains'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -494,14 +495,18 @@ export class TransferController extends EventEmitter {
     // shouldn't happen ever
     if (!this.#selectedAccountData.account) return
 
+    const recipientAddress = this.isTopUp
+      ? FEE_COLLECTOR
+      : getAddressFromAddressState(this.addressState)
+
     // form field validation
-    if (!this.#selectedToken || !this.amount || !isAddress(this.recipientAddress)) return
+    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress)) return
 
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccountData.account.addr,
       amount: this.amount,
       selectedToken: this.#selectedToken,
-      recipientAddress: this.recipientAddress
+      recipientAddress
     })
 
     if (!userRequest || userRequest.action.kind !== 'calls') {
