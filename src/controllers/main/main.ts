@@ -679,21 +679,6 @@ export class MainController extends EventEmitter {
       })
     }
 
-    if (type === SIGN_ACCOUNT_OP_SWAP) {
-      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
-        // if an error has ocurred while signing and we're back to SigningStatus.ReadyToSign,
-        // override the pending results as they will be incorrect
-        if (
-          this.swapAndBridge.signAccountOpController &&
-          this.swapAndBridge.signAccountOpController.status?.type === SigningStatus.ReadyToSign
-        ) {
-          this.portfolio.overridePendingResults(
-            this.swapAndBridge.signAccountOpController.accountOp
-          )
-        }
-      })
-    }
-
     const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
 
     if (!wasAlreadySigned) {
@@ -2608,7 +2593,14 @@ export class MainController extends EventEmitter {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+    // simulate the swap & bridge only after a succesfull broadcast
+    if (type === SIGN_ACCOUNT_OP_SWAP) {
+      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
+        this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+      })
+    } else {
+      this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
