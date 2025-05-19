@@ -1,7 +1,13 @@
 import { concat, Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy'
+import {
+  EIP_7702_AMBIRE_ACCOUNT,
+  EIP_7702_METAMASK,
+  ENTRY_POINT_MARKER,
+  ERC_4337_ENTRYPOINT,
+  MAX_UINT256
+} from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getContractImplementation } from '../7702/7702'
@@ -87,6 +93,18 @@ export async function getAccountState(
       eoaCodes[account.addr] === concat(['0xef0100', getContractImplementation(network.chainId)])
     const isSmarterEoa = accResult.isEOA && hasAmbireDelegation
 
+    let delegatedContractName = null
+
+    if (delegatedContract) {
+      if (delegatedContract.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()) {
+        delegatedContractName = 'AMBIRE'
+      } else if (delegatedContract.toLowerCase() === EIP_7702_METAMASK.toLowerCase()) {
+        delegatedContractName = 'METAMASK'
+      } else {
+        delegatedContractName = 'UNKNOWN'
+      }
+    }
+
     return {
       accountAddr: account.addr,
       eoaNonce: accResult.isEOA ? eoaNonces[account.addr] : null,
@@ -111,7 +129,8 @@ export async function getAccountState(
       deployError:
         account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
       isSmarterEoa,
-      delegatedContract
+      delegatedContract,
+      delegatedContractName
     }
   })
 
