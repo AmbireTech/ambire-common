@@ -81,6 +81,7 @@ export interface Network {
   lastUpdatedNetworkInfo?: number
   has7702: boolean
   allowForce4337?: boolean
+  disabled?: boolean
 }
 
 export interface AddNetworkRequestParams {
@@ -175,6 +176,7 @@ export type RelayerNetwork = {
       increasePreVerGas?: number
     }
   }
+  disabledByDefault?: boolean
 }
 
 export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

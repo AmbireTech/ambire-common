@@ -380,7 +380,7 @@ export class SignAccountOpController extends EventEmitter {
     if (isAmbireV1AndNetworkNotSupported) {
       errors.push({
         title:
-          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
+          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire Smart Account or an EOA account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
       })
 
       // Don't show any other errors
@@ -1452,11 +1452,16 @@ export class SignAccountOpController extends EventEmitter {
     if (!paymaster.isUsable()) return { required: false }
 
     const localOp = { ...originalUserOp }
-    // persist the paymaster properties from the pm_stubData request
+
+    // persist the paymaster properties from the pm_stubData request if any
     if (paymaster.isSponsored() && paymaster.sponsorDataEstimation) {
-      localOp.paymasterVerificationGasLimit =
-        paymaster.sponsorDataEstimation.paymasterVerificationGasLimit
-      localOp.paymasterPostOpGasLimit = paymaster.sponsorDataEstimation.paymasterPostOpGasLimit
+      if (paymaster.sponsorDataEstimation.paymasterVerificationGasLimit) {
+        localOp.paymasterVerificationGasLimit =
+          paymaster.sponsorDataEstimation.paymasterVerificationGasLimit
+      }
+      if (paymaster.sponsorDataEstimation.paymasterPostOpGasLimit) {
+        localOp.paymasterPostOpGasLimit = paymaster.sponsorDataEstimation.paymasterPostOpGasLimit
+      }
     }
     const response = await paymaster.call(this.account, this.accountOp, localOp, this.#network)
 
