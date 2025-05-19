@@ -65,7 +65,7 @@ export class EstimationController extends EventEmitter {
     this.#bundlerSwitcher = bundlerSwitcher
   }
 
-  #getAvailableFeeOptions(baseAcc: BaseAccount): FeePaymentOption[] {
+  #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
     if (this.status !== EstimationStatus.Success) return []
 
     const estimation = this.estimation as FullEstimationSummary
@@ -89,7 +89,8 @@ export class EstimationController extends EventEmitter {
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
         ? estimation.providerEstimation.feePaymentOptions
-        : []
+        : [],
+      op
     )
   }
 
@@ -168,7 +169,7 @@ export class EstimationController extends EventEmitter {
       this.error = null
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
-      this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc)
+      this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
     } else {
       this.estimation = null
       this.error = estimation

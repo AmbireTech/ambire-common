@@ -38,7 +38,8 @@ export abstract class BaseAccount {
 
   abstract getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    feePaymentOptions: FeePaymentOption[]
+    feePaymentOptions: FeePaymentOption[],
+    op: AccountOp
   ): FeePaymentOption[]
 
   abstract getGasUsed(

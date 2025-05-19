@@ -1613,24 +1613,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const network = this.networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
-
-    if (!network) {
-      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-    }
-
-    this.userRequestWaitingAccountSwitch.push(userRequest)
-    await this.addUserRequest(
-      buildSwitchAccountUserRequest({
-        nextUserRequest: userRequest,
-        chainId: network.chainId,
-        selectedAccountAddr: userRequest.meta.accountAddr,
-        session: dappPromise.session,
-        dappPromise
-      }),
-      'last',
-      'open-action-window'
-    )
+    await this.#addSwitchAccountUserRequest(userRequest)
   }
 
   async buildTransferUserRequest(
@@ -1932,11 +1915,21 @@ export class MainController extends EventEmitter {
   async addUserRequest(
     req: UserRequest,
     actionPosition: ActionPosition = 'last',
-    actionExecutionType: ActionExecutionType = 'open-action-window'
+    actionExecutionType: ActionExecutionType = 'open-action-window',
+    allowAccountSwitch: boolean = false
   ) {
     const shouldSkipAddUserRequest = await this.#swapAndBridgeActionSafeguard()
 
     if (shouldSkipAddUserRequest) return
+
+    if (
+      allowAccountSwitch &&
+      req.meta.isSignAction &&
+      req.meta.accountAddr !== this.selectedAccount.account?.addr
+    ) {
+      await this.#addSwitchAccountUserRequest(req)
+      return
+    }
 
     if (req.action.kind === 'calls') {
       ;(req.action as Calls).calls.forEach((_, i) => {
@@ -2272,6 +2265,20 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #addSwitchAccountUserRequest(req: UserRequest) {
+    this.userRequestWaitingAccountSwitch.push(req)
+    await this.addUserRequest(
+      buildSwitchAccountUserRequest({
+        nextUserRequest: req,
+        selectedAccountAddr: req.meta.accountAddr,
+        session: req.dappPromise ? req.dappPromise.session : undefined,
+        dappPromise: req.dappPromise
+      }),
+      'last',
+      'open-action-window'
+    )
+  }
+
   onOneClickSwapClose() {
     const signAccountOp = this.swapAndBridge.signAccountOpController
 
@@ -2392,7 +2399,8 @@ export class MainController extends EventEmitter {
     const rawTxnBroadcast = [
       BROADCAST_OPTIONS.bySelf,
       BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA
+      BROADCAST_OPTIONS.byOtherEOA,
+      BROADCAST_OPTIONS.delegation
     ]
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
@@ -2444,11 +2452,20 @@ export class MainController extends EventEmitter {
             accountOp.gasFeePayment.broadcastOption,
             accountOp.calls[i]
           )
-          const signedTxn = await signer.signRawTransaction(rawTxn)
+          const signedTxn =
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
+              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              : await signer.signRawTransaction(rawTxn)
           if (callId !== this.#signAndBroadcastCallId) {
             return
           }
-          multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
+            multipleTxnsBroadcastRes.push({
+              hash: await provider.send('eth_sendRawTransaction', [signedTxn])
+            })
+          } else {
+            multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          }
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
           // send the txn to the relayer if it's an EOA sending for itself

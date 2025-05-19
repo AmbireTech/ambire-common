@@ -3,6 +3,7 @@ import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
+import { EIP7702Auth } from '../../consts/7702'
 import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
@@ -73,6 +74,8 @@ export interface AccountOp {
     paymasterService?: PaymasterService
     swapTxn?: SwapAndBridgeSendTxRequest
     walletSendCallsVersion?: string
+    delegation?: EIP7702Auth
+    setDelegation?: boolean
   }
   flags?: {
     hideActivityBanner?: boolean

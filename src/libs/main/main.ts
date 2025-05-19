@@ -34,15 +34,13 @@ export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,
   selectedAccountAddr,
-  chainId,
   session,
   dappPromise
 }: {
   nextUserRequest: UserRequest
   selectedAccountAddr: string
-  chainId: bigint
-  session: DappProviderRequest['session']
-  dappPromise: DappUserRequest['dappPromise']
+  session?: DappProviderRequest['session']
+  dappPromise?: DappUserRequest['dappPromise']
 }): UserRequest => {
   return {
     id: ACCOUNT_SWITCH_USER_REQUEST,
@@ -51,8 +49,7 @@ export const buildSwitchAccountUserRequest = ({
       params: {
         accountAddr: selectedAccountAddr,
         switchToAccountAddr: nextUserRequest.meta.accountAddr,
-        nextRequestType: nextUserRequest.action.kind,
-        chainId
+        nextRequestType: nextUserRequest.action.kind
       }
     },
     session,
@@ -60,14 +57,15 @@ export const buildSwitchAccountUserRequest = ({
       isSignAction: false,
       accountAddr: selectedAccountAddr,
       switchToAccountAddr: nextUserRequest.meta.accountAddr,
-      nextRequestType: nextUserRequest.action.kind,
-      chainId
+      nextRequestType: nextUserRequest.action.kind
     },
-    dappPromise: {
-      ...dappPromise,
-      resolve: () => {}
-    }
-  }
+    dappPromise: dappPromise
+      ? {
+          ...dappPromise,
+          resolve: () => {}
+        }
+      : undefined
+  } as any
 }
 
 export const makeAccountOpAction = ({
@@ -122,6 +120,15 @@ export const makeAccountOpAction = ({
     ? userReqWithWalletSendCallsVersion.meta.walletSendCallsVersion
     : undefined
 
+  // find the user request with a setDelegation meta property if any
+  const userReqWithDelegation = userRequests.find(
+    (req) =>
+      req.meta.accountAddr === account.addr &&
+      req.meta.chainId === chainId &&
+      'setDelegation' in req.meta
+  )
+  const setDelegation = userReqWithDelegation ? userReqWithDelegation.meta.setDelegation : undefined
+
   const accountOp: AccountOpAction['accountOp'] = {
     accountAddr: account.addr,
     chainId,
@@ -139,7 +146,8 @@ export const makeAccountOpAction = ({
     }),
     meta: {
       paymasterService,
-      walletSendCallsVersion
+      walletSendCallsVersion,
+      setDelegation
     }
   }
 
