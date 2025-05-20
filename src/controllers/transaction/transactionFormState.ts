@@ -550,9 +550,9 @@ export class TransactionFormState extends EventEmitter {
 
   reset(shouldEmit?: boolean) {
     this.resetForm()
-    this.fromChainId = 1
+    this.fromChainId = 11155111
     this.fromSelectedToken = null
-    this.toChainId = 1
+    this.toChainId = 111155111
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
@@ -631,7 +631,7 @@ export class TransactionFormState extends EventEmitter {
     if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
       await this.update(
         {
-          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
+          fromSelectedToken: fromSelectedTokenInNextPortfolio || null
         },
         {
           emitUpdate: false
