@@ -9,9 +9,8 @@ import {
   publicKeyByPrivateKey
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
-// import { entropyToMnemonic } from 'bip39'
-import { v4 } from 'uuid'
 
+// import { entropyToMnemonic } from 'bip39'
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
@@ -36,6 +35,7 @@ import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
@@ -501,7 +501,7 @@ export class KeystoreController extends EventEmitter {
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
     const newEntry = {
-      id: v4(),
+      id: generateUuid(),
       label,
       seed: seedPhrase,
       seedPassphrase: passphrase,

@@ -275,5 +275,4 @@ const networks: Network[] = [
 ]
 export { networks }
 
-export const ODYSSEY_CHAIN_ID = 911867n
 export const ARBITRUM_CHAIN_ID = 42161n

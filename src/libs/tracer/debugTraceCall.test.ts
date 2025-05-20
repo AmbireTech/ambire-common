@@ -86,7 +86,9 @@ describe('Debug tracecall detection for transactions', () => {
       isErc4337Enabled: false,
       currentBlock: 60529438n,
       deployError: false,
-      isErc4337Nonce: false
+      isErc4337Nonce: false,
+      delegatedContract: null,
+      delegatedContractName: null
     }
   })
 

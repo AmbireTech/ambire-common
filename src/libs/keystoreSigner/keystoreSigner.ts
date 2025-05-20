@@ -1,9 +1,20 @@
 /* eslint-disable new-cap */
-import { getBytes, hexlify, isHexString, toBeHex, TransactionRequest, Wallet } from 'ethers'
+import {
+  concat,
+  encodeRlp,
+  getBytes,
+  hexlify,
+  isHexString,
+  keccak256,
+  toBeHex,
+  TransactionRequest,
+  Wallet
+} from 'ethers'
 import { ecdsaSign } from 'secp256k1'
 
+import { EIP7702Auth } from '../../consts/7702'
 import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 
@@ -85,5 +96,74 @@ export class KeystoreSigner implements KeystoreSignerInterface {
       r: signature.substring(0, 66) as Hex,
       s: `0x${signature.substring(66)}`
     }
+  }
+
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
+
+    const maxPriorityFeePerGas = txnRequest.maxPriorityFeePerGas ?? txnRequest.gasPrice
+    const maxFeePerGas = txnRequest.maxFeePerGas ?? txnRequest.gasPrice
+
+    const txnTypeFourHash = keccak256(
+      concat([
+        '0x04',
+        encodeRlp([
+          toBeHex(txnRequest.chainId),
+          txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+          toBeHex(maxPriorityFeePerGas!),
+          toBeHex(maxFeePerGas!),
+          toBeHex(txnRequest.gasLimit),
+          txnRequest.to,
+          txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+          txnRequest.data,
+          [],
+          [
+            [
+              eip7702Auth.chainId,
+              eip7702Auth.address,
+              eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+              eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+              eip7702Auth.r,
+              eip7702Auth.s
+            ]
+          ]
+        ])
+      ])
+    ) as Hex
+    const data = ecdsaSign(getBytes(txnTypeFourHash), getBytes(this.#authorizationPrivkey))
+    const signature = hexlify(data.signature)
+    const txnTypeFourSignature = {
+      yParity: toBeHex(data.recid, 1) as Hex,
+      r: signature.substring(0, 66) as Hex,
+      s: `0x${signature.substring(66)}`
+    }
+
+    return concat([
+      '0x04',
+      encodeRlp([
+        toBeHex(txnRequest.chainId),
+        txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+        toBeHex(maxPriorityFeePerGas!),
+        toBeHex(maxFeePerGas!),
+        toBeHex(txnRequest.gasLimit),
+        txnRequest.to,
+        txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+        txnRequest.data,
+        [],
+        [
+          [
+            eip7702Auth.chainId,
+            eip7702Auth.address,
+            eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+            eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+            eip7702Auth.r,
+            eip7702Auth.s
+          ]
+        ],
+        txnTypeFourSignature.yParity === '0x00' ? '0x' : txnTypeFourSignature.yParity,
+        txnTypeFourSignature.r,
+        txnTypeFourSignature.s
+      ])
+    ]) as Hex
   }
 }
