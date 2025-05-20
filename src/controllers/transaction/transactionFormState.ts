@@ -159,17 +159,6 @@ export class TransactionFormState extends EventEmitter {
     this.supportedChainIds = testnetNetworks.map((c) => BigInt(c.chainId))
   }
 
-  #emitUpdateIfNeeded() {
-    const shouldSkipUpdate =
-      // No need to emit emit updates if there are no active sessions
-      !this.sessionIds.length &&
-      // but ALSO there are no active routes (otherwise, banners need the updates)
-      !this.activeRoutes.length
-    if (shouldSkipUpdate) return
-
-    super.emitUpdate()
-  }
-
   async update(
     params: any,
     updateProps?: {
@@ -188,7 +177,7 @@ export class TransactionFormState extends EventEmitter {
       addressState
     } = params
 
-    const { emitUpdate = true /* , updateQuote = true */ } = updateProps || {}
+    const { emitUpdate = true } = updateProps || {}
 
     let shouldUpdateToTokenList = false
 
@@ -275,33 +264,25 @@ export class TransactionFormState extends EventEmitter {
     this.emitUpdate()
   }
 
-  get isInitialized() {
-    return !!this.#humanizerInfo && !!this.#selectedAccountData
-  }
+  unloadScreen(sessionId: string, forceUnload?: boolean) {
+    const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
+    // const signAccountOpCtrlStatus = this.dependencies.signAccountOpController?.status?.type
+    // const isSigningOrBroadcasting =
+    //   signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
+    const shouldPersistState =
+      isFormDirty && sessionId === 'popup' /*  || isSigningOrBroadcasting */ && !forceUnload
 
-  get validationFormMsgs() {
-    if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
+    if (shouldPersistState) return
 
-    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
-
-    if (this.#humanizerInfo && this.#selectedAccountData) {
-      const isEnsAddress = !!this.addressState.ensAddress
-
-      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
-        this.recipientAddress,
-        this.#selectedAccountData.addr,
-        this.isRecipientAddressUnknownAgreed,
-        this.isRecipientAddressUnknown,
-        this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isEnsAddress,
-        this.addressState.isDomainResolving
-      )
+    this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
+    if (!this.sessionIds.length) {
+      this.reset(true)
+      // Reset health to prevent the error state from briefly flashing
+      // before the next health check resolves when the Swap & Bridge
+      // screen is opened after a some time
+      this.dependencies.serviceProviderAPI.resetHealth()
     }
-    return validationFormMsgsNew
-  }
-
-  get recipientAddress() {
-    return this.addressState.ensAddress || this.addressState.fieldValue
+    // this.hasProceeded = false
   }
 
   checkIsRecipientAddressUnknown() {
@@ -322,23 +303,6 @@ export class TransactionFormState extends EventEmitter {
     // this.#setSWWarningVisibleIfNeeded()
 
     this.emitUpdate()
-  }
-
-  #onRecipientAddressChange() {
-    if (!isAddress(this.recipientAddress)) {
-      this.isRecipientAddressUnknown = false
-      this.isRecipientAddressUnknownAgreed = false
-      this.isRecipientHumanizerKnownTokenOrSmartContract = false
-      return
-    }
-
-    if (this.#humanizerInfo) {
-      // @TODO: could fetch address code
-      this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
-    }
-
-    this.checkIsRecipientAddressUnknown()
   }
 
   private handleAmountConversion(fromAmount: string, fromAmountFormatted: string) {
@@ -596,36 +560,6 @@ export class TransactionFormState extends EventEmitter {
     if (shouldEmit) this.#emitUpdateIfNeeded()
   }
 
-  async #load() {
-    await this.dependencies.networks.initialLoadPromise
-    await this.dependencies.selectedAccount.initialLoadPromise
-
-    this.activeRoutes = await this.dependencies.storage.get('swapAndBridgeActiveRoutes', [])
-    // Service provider may have changed since the last time the user interacted
-    // with the Swap & Bridge. So strip out cached active routes that were NOT
-    // made by the current service provider, because they are NOT compatible.
-    //
-    // also, just in case protection: filter out ready routes as we don't have
-    // retry mechanism or follow up transaction handling anymore. Which means
-    // ready routes in the storage are just leftover routes
-    this.activeRoutes = this.activeRoutes.filter(
-      (r) =>
-        r.serviceProviderId === this.dependencies.serviceProviderAPI.id && r.routeStatus !== 'ready'
-    )
-
-    this.dependencies.selectedAccount.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
-        if (this.dependencies.selectedAccount.portfolio.isReadyToVisualize) {
-          this.isTokenListLoading = false
-          await this.updatePortfolioTokenList(this.dependencies.selectedAccount.portfolio.tokens)
-          // To token list includes selected account portfolio tokens, it should get an update too
-          await this.updateToTokenList(false)
-        }
-      })
-    })
-    this.#emitUpdateIfNeeded()
-  }
-
   async initForm(sessionId: string) {
     await this.#initialLoadPromise
 
@@ -667,21 +601,46 @@ export class TransactionFormState extends EventEmitter {
     this.#emitUpdateIfNeeded()
   }
 
-  #fetchSupportedChainsIfNeeded = async () => {
-    const shouldNotReFetchSupportedChains =
-      this.#cachedSupportedChains.data.length &&
-      Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
-    if (shouldNotReFetchSupportedChains) return
+  async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
+    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
+    this.portfolioTokenList = sortPortfolioTokenList(
+      // Filtering out hidden tokens here means: 1) They won't be displayed in
+      // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
+      // added to the "Receive" token list as additional tokens from portfolio,
+      // BUT 3) They will appear in the "Receive" if they are present in service
+      // provider's to token list. This is the desired behavior.
+      tokens.filter((t) => !t.flags.isHidden)
+    )
 
-    try {
-      const supportedChains = await this.dependencies.serviceProviderAPI.getSupportedChains()
+    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
+      (t) =>
+        t.address === this.fromSelectedToken?.address &&
+        t.chainId === this.fromSelectedToken?.chainId
+    )
 
-      this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
-      this.#emitUpdateIfNeeded()
-    } catch (error: any) {
-      // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
-      this.emitError({ error, level: 'silent', message: error?.message })
+    const shouldUpdateFromSelectedToken =
+      !this.fromSelectedToken || // initial (default) state
+      // May happen if selected account gets changed or the token gets send away in the meantime
+      !fromSelectedTokenInNextPortfolio ||
+      // May happen if user receives or sends the token in the meantime
+      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount
+
+    // If the token is not in the portfolio because it was a "to" token
+    // and the user has switched the "from" and "to" tokens we should not
+    // update the selected token
+    if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
+      await this.update(
+        {
+          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
+        },
+        {
+          emitUpdate: false
+        }
+      )
+      return
     }
+    this.#addFromTokenToPortfolioListIfNeeded()
+    this.#emitUpdateIfNeeded()
   }
 
   updateActiveRoute(
@@ -740,6 +699,53 @@ export class TransactionFormState extends EventEmitter {
     }
   }
 
+  async #load() {
+    await this.dependencies.networks.initialLoadPromise
+    await this.dependencies.selectedAccount.initialLoadPromise
+
+    this.activeRoutes = await this.dependencies.storage.get('swapAndBridgeActiveRoutes', [])
+    // Service provider may have changed since the last time the user interacted
+    // with the Swap & Bridge. So strip out cached active routes that were NOT
+    // made by the current service provider, because they are NOT compatible.
+    //
+    // also, just in case protection: filter out ready routes as we don't have
+    // retry mechanism or follow up transaction handling anymore. Which means
+    // ready routes in the storage are just leftover routes
+    this.activeRoutes = this.activeRoutes.filter(
+      (r) =>
+        r.serviceProviderId === this.dependencies.serviceProviderAPI.id && r.routeStatus !== 'ready'
+    )
+
+    this.dependencies.selectedAccount.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
+        if (this.dependencies.selectedAccount.portfolio.isReadyToVisualize) {
+          this.isTokenListLoading = false
+          await this.updatePortfolioTokenList(this.dependencies.selectedAccount.portfolio.tokens)
+          // To token list includes selected account portfolio tokens, it should get an update too
+          await this.updateToTokenList(false)
+        }
+      })
+    })
+    this.#emitUpdateIfNeeded()
+  }
+
+  #onRecipientAddressChange() {
+    if (!isAddress(this.recipientAddress)) {
+      this.isRecipientAddressUnknown = false
+      this.isRecipientAddressUnknownAgreed = false
+      this.isRecipientHumanizerKnownTokenOrSmartContract = false
+      return
+    }
+
+    if (this.#humanizerInfo) {
+      // @TODO: could fetch address code
+      this.isRecipientHumanizerKnownTokenOrSmartContract =
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+    }
+
+    this.checkIsRecipientAddressUnknown()
+  }
+
   #debounceFunctionCallsOnSameTick(funcName: string, func: Function) {
     if (this.#shouldDebounceFlags[funcName]) return
     this.#shouldDebounceFlags[funcName] = true
@@ -749,48 +755,6 @@ export class TransactionFormState extends EventEmitter {
       this.#shouldDebounceFlags[funcName] = false
       func()
     }, 0)
-  }
-
-  async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
-    this.portfolioTokenList = sortPortfolioTokenList(
-      // Filtering out hidden tokens here means: 1) They won't be displayed in
-      // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
-      // added to the "Receive" token list as additional tokens from portfolio,
-      // BUT 3) They will appear in the "Receive" if they are present in service
-      // provider's to token list. This is the desired behavior.
-      tokens.filter((t) => !t.flags.isHidden)
-    )
-
-    const fromSelectedTokenInNextPortfolio = this.portfolioTokenList.find(
-      (t) =>
-        t.address === this.fromSelectedToken?.address &&
-        t.chainId === this.fromSelectedToken?.chainId
-    )
-
-    const shouldUpdateFromSelectedToken =
-      !this.fromSelectedToken || // initial (default) state
-      // May happen if selected account gets changed or the token gets send away in the meantime
-      !fromSelectedTokenInNextPortfolio ||
-      // May happen if user receives or sends the token in the meantime
-      fromSelectedTokenInNextPortfolio.amount !== this.fromSelectedToken?.amount
-
-    // If the token is not in the portfolio because it was a "to" token
-    // and the user has switched the "from" and "to" tokens we should not
-    // update the selected token
-    if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
-      await this.update(
-        {
-          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
-        },
-        {
-          emitUpdate: false
-        }
-      )
-      return
-    }
-    this.#addFromTokenToPortfolioListIfNeeded()
-    this.#emitUpdateIfNeeded()
   }
 
   /**
@@ -812,10 +776,32 @@ export class TransactionFormState extends EventEmitter {
     this.portfolioTokenList = [...this.portfolioTokenList, this.fromSelectedToken]
   }
 
-  get #toTokenListKey(): CachedTokenListKey | null {
-    if (this.fromChainId === null || this.toChainId === null) return null
+  #emitUpdateIfNeeded() {
+    const shouldSkipUpdate =
+      // No need to emit emit updates if there are no active sessions
+      !this.sessionIds.length &&
+      // but ALSO there are no active routes (otherwise, banners need the updates)
+      !this.activeRoutes.length
+    if (shouldSkipUpdate) return
 
-    return `from-${this.fromChainId}-to-${this.toChainId}`
+    super.emitUpdate()
+  }
+
+  #fetchSupportedChainsIfNeeded = async () => {
+    const shouldNotReFetchSupportedChains =
+      this.#cachedSupportedChains.data.length &&
+      Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
+    if (shouldNotReFetchSupportedChains) return
+
+    try {
+      const supportedChains = await this.dependencies.serviceProviderAPI.getSupportedChains()
+
+      this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
+      this.#emitUpdateIfNeeded()
+    } catch (error: any) {
+      // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
+      this.emitError({ error, level: 'silent', message: error?.message })
+    }
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -827,6 +813,41 @@ export class TransactionFormState extends EventEmitter {
         t.chainId === this.fromSelectedToken?.chainId &&
         getIsTokenEligibleForSwapAndBridge(t)
     )
+
+  get #toTokenListKey(): CachedTokenListKey | null {
+    if (this.fromChainId === null || this.toChainId === null) return null
+
+    return `from-${this.fromChainId}-to-${this.toChainId}`
+  }
+
+  get isInitialized() {
+    return !!this.#humanizerInfo && !!this.#selectedAccountData
+  }
+
+  get validationFormMsgs() {
+    if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
+
+    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+
+    if (this.#humanizerInfo && this.#selectedAccountData) {
+      const isEnsAddress = !!this.addressState.ensAddress
+
+      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
+        this.recipientAddress,
+        this.#selectedAccountData.addr,
+        this.isRecipientAddressUnknownAgreed,
+        this.isRecipientAddressUnknown,
+        this.isRecipientHumanizerKnownTokenOrSmartContract,
+        isEnsAddress,
+        this.addressState.isDomainResolving
+      )
+    }
+    return validationFormMsgsNew
+  }
+
+  get recipientAddress() {
+    return this.addressState.ensAddress || this.addressState.fieldValue
+  }
 
   get maxFromAmount(): string {
     const tokenRef = this.#getFromSelectedTokenInPortfolio() || this.fromSelectedToken
