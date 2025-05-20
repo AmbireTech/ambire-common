@@ -1369,43 +1369,66 @@ export class MainController extends EventEmitter {
   }
 
   /**
-   * Don't allow the user to open new action windows if there's a pending to sign swap action.
+   * Don't allow the user to open new action windows
+   * if there's a pending to sign action (swap and bridge or transfer)
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
    * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge one is still pending.
+   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
    * @returns {boolean} - true if an error was thrown
    * @throws {Error} - if throwRpcError is true
    */
-  async #swapAndBridgeActionSafeguard(throwRpcError = false): Promise<boolean> {
-    const pendingSwapAction = this.actions.visibleActionsQueue.find(
-      ({ type }) => type === 'swapAndBridge'
+  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
+    const pendingAction = this.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
     )
 
-    if (!pendingSwapAction) return false
+    if (!pendingAction) return false
 
     const isSigningOrBroadcasting =
       this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
       this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
 
-    // The swap and bridge is done/forgotten so we can remove the action
+    // The swap and bridge or transfer is done/forgotten so we can remove the action
     if (!isSigningOrBroadcasting) {
-      this.actions.removeAction(pendingSwapAction.id)
-      this.swapAndBridge.reset()
+      this.actions.removeAction(pendingAction.id)
+
+      if (pendingAction.type === 'swapAndBridge') {
+        this.swapAndBridge.reset()
+      } else {
+        this.transfer.resetForm(true)
+      }
+
       // TODO: remove this ugly fix.
       // Issue: https://github.com/AmbireTech/ambire-app/issues/4469
       await wait(500)
       return false
     }
 
+    const errors = {
+      swapAndBridge: {
+        message: 'Please complete the pending swap action.',
+        error: 'Pending swap action',
+        rpcError: 'You have a pending swap action. Please complete it before signing.'
+      },
+      transferAndTopUp: {
+        message: 'Please complete the pending transfer action.',
+        error: 'Pending transfer action',
+        rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      }
+    }
+
+    const error = errors[pendingAction.type as keyof typeof errors]
+
     this.actions.focusActionWindow()
     this.emitError({
       level: 'major',
-      message: 'Please complete the pending swap action.',
-      error: new Error('Pending swap action')
+      message: error.message,
+      error: new Error(error.error)
     })
 
     if (throwRpcError) {
       throw ethErrors.rpc.transactionRejected({
-        message: 'You have a pending swap action. Please complete it before signing.'
+        message: error.rpcError
       })
     }
 
@@ -1421,7 +1444,7 @@ export class MainController extends EventEmitter {
     }
   ) {
     await this.#initialLoadPromise
-    await this.#swapAndBridgeActionSafeguard(true)
+    await this.#guardHWSigning(true)
 
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
@@ -1965,7 +1988,7 @@ export class MainController extends EventEmitter {
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window'
   ) {
-    const shouldSkipAddUserRequest = await this.#swapAndBridgeActionSafeguard()
+    const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
     if (shouldSkipAddUserRequest) return
 
