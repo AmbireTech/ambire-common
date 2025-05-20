@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -32,7 +32,7 @@ import {
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
-import { disabledAssetSymbols, MAYAN_BRIDGE } from './consts'
+import { MAYAN_BRIDGE } from './consts'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
   token: LiFiToken,
@@ -394,20 +394,6 @@ export class LiFiAPI {
       throw new SwapAndBridgeProviderApiError(
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
-
-    // if the from asset is disabled, we don't return routes
-    // currently, stETH is disabled because returned routes for it
-    // always end up in a failure
-    if (disabledAssetSymbols.indexOf(fromAsset.symbol) !== -1) {
-      return {
-        fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
-        fromChainId,
-        toAsset,
-        toChainId,
-        selectedRouteSteps: [],
-        routes: []
-      }
-    }
 
     const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
     const slippage = Number(fromAmountInUsd) <= 400 ? '0.010' : '0.005'
