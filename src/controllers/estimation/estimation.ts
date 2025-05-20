@@ -225,8 +225,7 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'estimation-retry',
         title: this.estimationRetryError.message,
-        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
-        promptBeforeSign: false
+        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...'
       })
     }
 
@@ -238,8 +237,7 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'bundler-failure',
         title:
-          'Smart account fee options are temporarily unavailable. You can pay fee with an EOA account or try again later',
-        promptBeforeSign: false
+          'Smart account fee options are temporarily unavailable. You can pay fee with an EOA account or try again later'
       })
     }
 
