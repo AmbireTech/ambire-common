@@ -31,7 +31,7 @@ import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { Contacts } from '../addressBook/addressBook'
 
-import { TransactionDependencies } from './dependencies'
+import { ControllersTransactionDependecies } from './dependencies'
 
 const DEFAULT_VALIDATION_FORM_MSGS = {
   amount: {
@@ -152,7 +152,7 @@ export class TransactionFormState extends EventEmitter {
     throttled: false
   }
 
-  constructor(private readonly dependencies: TransactionDependencies) {
+  constructor(private readonly dependencies: ControllersTransactionDependecies) {
     super()
 
     this.#initialLoadPromise = this.#load()

@@ -1,5 +1,5 @@
 import { IntentController } from './controllers/intent'
-import { TransactionDependencies } from './dependencies'
+import { ControllersTransactionDependecies, TransactionDependencies } from './dependencies'
 import { TransactionFormState } from './transactionFormState'
 
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -13,14 +13,16 @@ export class TransactionManagerController extends EventEmitter {
 
   public transactionType: 'transfer' | 'intent' | 'swap' | 'swapAndBridge' | 'error' = 'transfer'
 
-  constructor(private dependencies: TransactionDependencies) {
+  private dependencies: ControllersTransactionDependecies
+
+  constructor(deps: TransactionDependencies) {
     super()
 
     // TODO: intialize interopSDK here
-    this.dependencies = { ...dependencies, interopSDK: null }
+    this.dependencies = { ...deps, interopSDK: null }
 
-    this.formState = new TransactionFormState(dependencies)
-    this.intent = new IntentController(dependencies, this.formState)
+    this.formState = new TransactionFormState(this.dependencies)
+    this.intent = new IntentController(this.dependencies, this.formState)
 
     this.controllers = [this.formState]
 

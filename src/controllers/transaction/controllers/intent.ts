@@ -1,5 +1,5 @@
 import EventEmitter from '../../eventEmitter/eventEmitter'
-import { TransactionDependencies } from '../dependencies'
+import { ControllersTransactionDependecies } from '../dependencies'
 import { TransactionFormState } from '../transactionFormState'
 import { TokenResult } from '../../../libs/portfolio'
 import { SwapAndBridgeQuote } from '../../../interfaces/swapAndBridge'
@@ -8,7 +8,7 @@ export class IntentController extends EventEmitter {
   formPreviousState: any
 
   constructor(
-    private readonly dependencies: TransactionDependencies,
+    private readonly dependencies: ControllersTransactionDependecies,
     private readonly formState: TransactionFormState
   ) {
     super()
