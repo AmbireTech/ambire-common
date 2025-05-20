@@ -39,6 +39,11 @@
     "url": "^0.11.0",
     "validator": "^13.7.0"
   },
+  "peerDependenciesMeta": {
+    "@noble/hashes": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@borislav.itskov/schnorrkel.js": "2.0.85",
     "@ensdomains/dnsprovejs": "^0.4.1",
