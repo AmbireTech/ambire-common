@@ -115,9 +115,23 @@ export class EstimationController extends EventEmitter {
     // The gasTank tokens participate on each network as they belong everywhere
     // NOTE: at some point we should check all the "?" signs below and if
     // an error pops out, we should notify the user about it
-    const networkFeeTokens =
+    let networkFeeTokens =
       this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
         ?.feeTokens ?? []
+
+    // This could happen only in a race when a NOT currently selected account is
+    // requested, switched to and immediately fired a txn request for. In that situation,
+    // the portfolio would not be fetched and the estimation would be fired without tokens,
+    // resulting in a "nothing to pay the fee with" error which is absolutely wrong
+    if (networkFeeTokens.length === 0) {
+      await this.#portfolio.updateSelectedAccount(op.accountAddr, network, undefined, {
+        forceUpdate: true
+      })
+      networkFeeTokens =
+        this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
+          ?.feeTokens ?? []
+    }
+
     const gasTankResult = this.#portfolio.getLatestPortfolioState(op.accountAddr)?.gasTank?.result
     const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
       ? gasTankResult.gasTankTokens
