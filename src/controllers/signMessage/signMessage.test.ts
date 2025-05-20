@@ -106,7 +106,12 @@ describe('SignMessageController', () => {
     await storageCtrl.set('accounts', [account])
     await storageCtrl.set('selectedAccount', account.addr)
 
-    keystoreCtrl = new KeystoreController(storageCtrl, { internal: InternalSigner }, windowManager)
+    keystoreCtrl = new KeystoreController(
+      'default',
+      storageCtrl,
+      { internal: InternalSigner },
+      windowManager
+    )
     networksCtrl = new NetworksController(
       storageCtrl,
       fetch,

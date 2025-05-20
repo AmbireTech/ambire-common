@@ -19,6 +19,7 @@ import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
@@ -229,6 +230,7 @@ export class MainController extends EventEmitter {
   #relayerUrl: string
 
   constructor({
+    platform,
     storageAPI,
     fetch,
     relayerUrl,
@@ -239,6 +241,7 @@ export class MainController extends EventEmitter {
     windowManager,
     notificationManager
   }: {
+    platform: Platform
     storageAPI: Storage
     fetch: Fetch
     relayerUrl: string
@@ -257,7 +260,7 @@ export class MainController extends EventEmitter {
 
     this.storage = new StorageController(this.#storageAPI)
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
-    this.keystore = new KeystoreController(this.storage, keystoreSigners, windowManager)
+    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.storage,
