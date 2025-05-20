@@ -659,6 +659,9 @@ export class SignAccountOpController extends EventEmitter {
       this.estimation.estimate(this.accountOp).catch((e) => e)
     ])
 
+    // calculate the warnings after the portfolio is fetched
+    this.calculateWarnings()
+
     const estimation = this.estimation.estimation
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
