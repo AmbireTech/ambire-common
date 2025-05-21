@@ -2,7 +2,6 @@
 /* eslint-disable new-cap */
 /* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
-// import { entropyToMnemonic } from 'bip39'
 import {
   decryptWithPrivateKey,
   Encrypted,
@@ -10,8 +9,8 @@ import {
   publicKeyByPrivateKey
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
-import scrypt from 'scrypt-js'
 
+// import { entropyToMnemonic } from 'bip39'
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
@@ -29,12 +28,15 @@ import {
   ReadyToAddKeys,
   StoredKey
 } from '../../interfaces/keystore'
+import { Platform } from '../../interfaces/platform'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
+import wait from '../../utils/wait'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
@@ -120,7 +122,10 @@ export class KeystoreController extends EventEmitter {
 
   #windowManager: WindowManager
 
+  #scryptAdapter: ScryptAdapter
+
   constructor(
+    platform: Platform,
     _storage: StorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
     windowManager: WindowManager
@@ -131,7 +136,7 @@ export class KeystoreController extends EventEmitter {
     this.#mainKey = null
     this.keyStoreUid = null
     this.#windowManager = windowManager
-
+    this.#scryptAdapter = new ScryptAdapter(platform)
     this.#initialLoadPromise = this.#load()
   }
 
@@ -244,17 +249,18 @@ export class KeystoreController extends EventEmitter {
         error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
       })
     }
-    // @TODO: progressCallback?
-
-    const key = await scrypt.scrypt(
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(
       getBytesForSecret(secret),
       getBytes(scryptParams.salt),
-      scryptParams.N,
-      scryptParams.r,
-      scryptParams.p,
-      scryptParams.dkLen,
-      () => {}
+      {
+        N: scryptParams.N,
+        r: scryptParams.r,
+        p: scryptParams.p,
+        dkLen: scryptParams.dkLen
+      }
     )
+    await wait(0)
     const iv = getBytes(aesEncrypted.iv)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)
@@ -317,15 +323,14 @@ export class KeystoreController extends EventEmitter {
     }
 
     const salt = entropyGenerator.generateRandomBytes(32, extraEntropy)
-    const key = await scrypt.scrypt(
-      getBytesForSecret(secret),
-      salt,
-      scryptDefaults.N,
-      scryptDefaults.r,
-      scryptDefaults.p,
-      scryptDefaults.dkLen,
-      () => {}
-    )
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    await wait(0)
     const iv = entropyGenerator.generateRandomBytes(16, extraEntropy)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)

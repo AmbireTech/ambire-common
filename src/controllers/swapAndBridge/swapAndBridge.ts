@@ -1848,13 +1848,22 @@ export class SwapAndBridgeController extends EventEmitter {
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      // if the chain id has changed, we need to destroy the sign account op
+      if (
+        this.signAccountOpController.accountOp.meta &&
+        this.signAccountOpController.accountOp.meta.swapTxn &&
+        this.signAccountOpController.accountOp.meta.swapTxn.chainId !== userTxn.chainId
+      ) {
+        this.destroySignAccountOp()
+      } else {
+        this.signAccountOpController.update({ calls })
 
-      // add the real swapTxn
-      if (!this.signAccountOpController.accountOp.meta)
-        this.signAccountOpController.accountOp.meta = {}
-      this.signAccountOpController.accountOp.meta.swapTxn = userTxn
-      return
+        // add the real swapTxn
+        if (!this.signAccountOpController.accountOp.meta)
+          this.signAccountOpController.accountOp.meta = {}
+        this.signAccountOpController.accountOp.meta.swapTxn = userTxn
+        return
+      }
     }
 
     const baseAcc = getBaseAccount(

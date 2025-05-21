@@ -12,12 +12,13 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, InternalKey, Key } from '../../interfaces/keystore'
+import { ExternalKey, InternalKey, Key, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -53,6 +54,11 @@ class InternalSigner {
       s: hexlify(randomBytes(32)) as Hex
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
 }
 
 class LedgerSigner {
@@ -82,6 +88,11 @@ class LedgerSigner {
       s: hexlify(randomBytes(32)) as Hex
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
 }
 
 const windowManager = mockWindowManager().windowManager
@@ -99,7 +110,7 @@ describe('KeystoreController', () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   test('should initialize', () => {
-    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
@@ -576,8 +587,8 @@ describe('import/export with pub key test', () => {
     const storageCtrl = new StorageController(storage)
     const storageCtrl2 = new StorageController(storage2)
 
-    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
-    keystore2 = new KeystoreController(storageCtrl2, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
+    keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')

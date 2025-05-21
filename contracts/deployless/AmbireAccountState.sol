@@ -54,14 +54,20 @@ contract AmbireAccountState {
                 }
             }
 
+            // EOAs may have a 4337 nonce
+            try this.getErc4337Nonce(account.addr, account.erc4337EntryPoint) returns (uint aaNonce) {
+                accountResult[i].erc4337Nonce = aaNonce;
+            } catch (bytes memory) {
+                accountResult[i].erc4337Nonce = type(uint256).max;
+            }
+
             // do not continue for EOAs
             if (accountResult[i].isEOA && code.length == 0) continue;
 
-            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce) {
+            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2) {
                 accountResult[i].nonce = nonce;
                 accountResult[i].associatedKeyPrivileges = privileges;
                 accountResult[i].isV2 = isV2;
-                accountResult[i].erc4337Nonce = erc4337Nonce;
             } catch (bytes memory err) {
                 accountResult[i].deployErr = err;
                 continue;
@@ -72,19 +78,13 @@ contract AmbireAccountState {
         return accountResult;
     }
 
-    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce ) {
+    function gatherAmbireData(AccountInput memory account) external view returns (uint nonce, bytes32[] memory privileges, bool isV2) {
         privileges = new bytes32[](account.associatedKeys.length);
         isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
         for (uint j=0; j!=account.associatedKeys.length; j++) {
             privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
         }
         nonce = IAmbireAccount(account.addr).nonce();
-
-        try this.getErc4337Nonce(account.addr, account.erc4337EntryPoint) returns (uint aaNonce) {
-            erc4337Nonce = aaNonce;
-        } catch (bytes memory) {
-            erc4337Nonce = type(uint256).max;
-        }
     }
 
     function getErc4337Nonce(address acc, address entryPoint) external returns (uint) {
