@@ -25,6 +25,8 @@ import { NetworksController } from '../networks/networks'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { Call } from '../../libs/accountOp/types'
 import { getAddressFromAddressState } from '../../utils/domains'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -93,6 +95,8 @@ export class TransferController extends EventEmitter {
 
   #providers: ProvidersController
 
+  #relayerUrl: string
+
   signAccountOpController: SignAccountOpController | null = null
 
   hasProceeded: boolean = false
@@ -110,7 +114,8 @@ export class TransferController extends EventEmitter {
     keystore: KeystoreController,
     portfolio: PortfolioController,
     externalSignerControllers: ExternalSignerControllers,
-    providers: ProvidersController
+    providers: ProvidersController,
+    relayerUrl: string
   ) {
     super()
 
@@ -125,6 +130,7 @@ export class TransferController extends EventEmitter {
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
+    this.#relayerUrl = relayerUrl
 
     this.#initialLoadPromise = this.#load()
     this.emitUpdate()
@@ -550,6 +556,13 @@ export class TransferController extends EventEmitter {
       network.chainId
     )
 
+    const baseAcc = getBaseAccount(
+      this.#selectedAccountData.account,
+      accountState,
+      this.#keystore.getAccountKeys(this.#selectedAccountData.account),
+      network
+    )
+
     const accountOp = {
       accountAddr: this.#selectedAccountData.account.addr,
       chainId: network.chainId,
@@ -560,15 +573,10 @@ export class TransferController extends EventEmitter {
       nonce: accountState.nonce,
       signature: null,
       accountOpToExecuteBefore: null,
-      calls
-      // TODO: Not sure should we hide it or not
-      // flags: {
-      //   hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
-      // },
-      // TODO: Not sure should we attach a meta txn or not
-      // meta: {
-      //   swapTxn: userTxn
-      // }
+      calls,
+      meta: {
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      }
     }
 
     this.signAccountOpController = new SignAccountOpController(

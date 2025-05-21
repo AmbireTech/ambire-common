@@ -442,7 +442,8 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.portfolio,
       this.#externalSignerControllers,
-      this.providers
+      this.providers,
+      relayerUrl
     )
     this.domains = new DomainsController(this.providers.providers)
 

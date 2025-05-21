@@ -743,7 +743,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
-  reset(shouldEmit?: boolean) {
+    reset(shouldEmit?: boolean) {
     this.resetForm()
     this.fromChainId = 1
     this.fromSelectedToken = null
