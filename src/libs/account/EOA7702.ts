@@ -145,7 +145,7 @@ export class EOA7702 extends BaseAccount {
   }
 
   canUseReceivingNativeForFee(): boolean {
-    return false
+    return !this.accountState.isSmarterEoa
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {

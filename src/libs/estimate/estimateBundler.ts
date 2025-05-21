@@ -16,7 +16,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
 import { BaseAccount } from '../account/BaseAccount'
-import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
@@ -127,14 +127,10 @@ export async function bundlerEstimate(
   const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.signature = getSigForCalculations()
 
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCallsForBundlerEstimate(localOp)
-  ])
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
   const paymaster = await paymasterFactory.create(op, userOp, account, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCallsForBundlerEstimate(localOp)
-  ])
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
   const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {
