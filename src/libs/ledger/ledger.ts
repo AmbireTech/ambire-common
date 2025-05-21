@@ -12,6 +12,11 @@ export const normalizeLedgerMessage = (error?: string): string => {
   )
     return 'Cannot connect to your Ledger device. Please make sure it is connected.'
 
+  if (error.includes('unlock-device')) return 'Please unlock your Ledger device first.'
+
+  if (error.includes('confirm-open-app'))
+    return 'Please open the Ethereum app on your Ledger device first.'
+
   if (
     error.includes('5515') ||
     error.includes('6b0c') ||
