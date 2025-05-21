@@ -28,7 +28,7 @@ import { getAddressFromAddressState } from '../../utils/domains'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { EstimationStatus } from '../estimation/types'
-import wait from "../../utils/wait";
+import wait from '../../utils/wait'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -102,6 +102,8 @@ export class TransferController extends EventEmitter {
   signAccountOpController: SignAccountOpController | null = null
 
   hasProceeded: boolean = false
+
+  #isReestimationSet: boolean = false
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -324,17 +326,6 @@ export class TransferController extends EventEmitter {
     isTopUp,
     amountFieldMode
   }: TransferUpdate) {
-    console.log('TransferController: update() invoked', {
-      humanizerInfo,
-      selectedToken,
-      amount,
-      addressState,
-      isSWWarningAgreed,
-      isRecipientAddressUnknownAgreed,
-      isTopUp,
-      amountFieldMode
-    })
-
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -344,6 +335,13 @@ export class TransferController extends EventEmitter {
     }
 
     if (selectedToken) {
+      if (selectedToken.chainId !== this.selectedToken?.chainId) {
+        // The SignAccountOp controller is already initialized with the previous chainId and account operation.
+        // When the chainId changes, we need to recreate the controller to correctly estimate for the new chain.
+        // Here, we destroy it, and at the end of this update method, we initialize it again.
+        this.destroySignAccountOp()
+      }
+
       this.selectedToken = selectedToken
     }
     // If we do a regular check the value won't update if it's '' or '0'
@@ -614,7 +612,10 @@ export class TransferController extends EventEmitter {
    * as intervals are tricky and harder to control
    */
   async reestimate() {
-    if (!this.signAccountOpController) return
+    if (!this.signAccountOpController || this.#isReestimationSet) return
+
+    // We use this flag to prevent `reestimate` from being started twice
+    this.#isReestimationSet = true
 
     await wait(30000)
 
