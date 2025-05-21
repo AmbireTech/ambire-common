@@ -399,7 +399,8 @@ export class TransactionFormState extends EventEmitter {
     if (!toTokenNetwork) {
       this.updateToTokenListStatus = 'INITIAL'
       this.emitUpdate()
-      throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+      return
+      // throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
     }
 
     const additionalTokensFromPortfolio = this.portfolioTokenList

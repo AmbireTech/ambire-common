@@ -203,8 +203,8 @@ function prepareIntentUserRequest({
   selectedAccount,
   recipientAddress,
   paymasterService
-}: PrepareIntentUserRequestParams): SignUserRequest | null {
-  if (!selectedToken || !selectedAccount || !recipientAddress) return null
+}: PrepareIntentUserRequestParams): SignUserRequest[] {
+  if (!selectedToken || !selectedAccount || !recipientAddress) return []
 
   console.log({
     amount,
@@ -255,10 +255,16 @@ function prepareIntentUserRequest({
         to: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
         value: BigInt(0),
         data: '0x095ea7b300000000000000000000000073f70aabdad84cc5d6f58c85e655eaf1edeb918400000000000000000000000000000000000000000000000000000000005b8d80'
-      },
+      }
+    ]
+  }
+  const id2 = uuidv4()
+  const txn2 = {
+    kind: 'calls' as const,
+    calls: [
       {
-        fromUserRequestId: id,
-        id: `${id}-1`,
+        fromUserRequestId: id2,
+        id: `${id2}-0`,
         to: '0x73f70aABDAD84cC5d6F58c85E655EAF1eDeB9184',
         value: BigInt(0),
         data: '0xe917a962000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000682510949df4b782e7bbc178b3b93bfe8aafb909e84e39484d7f3c59f400f1b4691f85e20000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000000200000000000000000000000001c7d4b196cb0c7b01d743fbc6116a902379c723800000000000000000000000000000000000000000000000000000000000f4240000000000000000000000000036cbd53842c5426634e7929541ec2318f3dcf7e00000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000014a34000000000000000000000000389cf18484e8b0338e94c5c6df3dbc2e229dade800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000'
@@ -266,18 +272,32 @@ function prepareIntentUserRequest({
     ]
   }
 
-  return {
-    id,
-    action: txn,
-    meta: {
-      isSignAction: true,
-      chainId: selectedToken.chainId,
-      accountAddr: selectedAccount,
-      paymasterService,
-      isSwapAndBridgeCall: true,
-      activeRouteId: id
+  return [
+    {
+      id,
+      action: txn,
+      meta: {
+        isSignAction: true,
+        chainId: selectedToken.chainId,
+        accountAddr: selectedAccount,
+        paymasterService,
+        isSwapAndBridgeCall: true,
+        activeRouteId: id
+      }
+    },
+    {
+      id: id2,
+      action: txn2,
+      meta: {
+        isSignAction: true,
+        chainId: selectedToken.chainId,
+        accountAddr: selectedAccount,
+        paymasterService,
+        isSwapAndBridgeCall: true,
+        activeRouteId: id2
+      }
     }
-  }
+  ]
 }
 
 export {

@@ -1681,7 +1681,7 @@ export class MainController extends EventEmitter {
       paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
     })
 
-    if (!userRequest) {
+    if (!userRequest.length) {
       this.emitError({
         level: 'major',
         message: 'Unexpected error while building intent request',
@@ -1691,7 +1691,14 @@ export class MainController extends EventEmitter {
       })
       return
     }
-    await this.addUserRequest(userRequest, 'last', actionExecutionType)
+
+    for (let i = 0; i < userRequest.length; i++) {
+      if (i === 0) {
+        this.addUserRequest(userRequest[i], 'last', 'queue')
+      } else {
+        await this.addUserRequest(userRequest[i], 'last', actionExecutionType)
+      }
+    }
   }
 
   async buildSwapAndBridgeUserRequest(activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']) {

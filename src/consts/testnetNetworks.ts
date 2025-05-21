@@ -1,4 +1,5 @@
 import { Network } from '../interfaces/network'
+import { PIMLICO } from './bundlers'
 
 const ALCHEMY_API_KEY = process.env.REACT_APP_ALCHEMY_API_KEY
 
@@ -8,19 +9,21 @@ const testnetNetworks: Network[] = [
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
-    rpcUrls: ['https://invictus.ambire.com/sepolia'],
-    selectedRpcUrl: 'https://invictus.ambire.com/sepolia',
+    rpcUrls: [`https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`],
+    selectedRpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     rpcNoStateOverride: false,
     chainId: 11155111n,
     explorerUrl: 'https://sepolia.etherscan.io',
     erc4337: {
       enabled: false,
       hasPaymaster: false,
-      hasBundlerSupport: false
+      hasBundlerSupport: false,
+      bundlers: [],
+      defaultBundler: PIMLICO
     },
     isSAEnabled: false,
-    areContractsDeployed: true,
     hasRelayer: false,
+    areContractsDeployed: true,
     platformId: 'ethereum-sepolia',
     nativeAssetId: 'ethereum-sepolia',
     hasSingleton: true,
@@ -41,11 +44,13 @@ const testnetNetworks: Network[] = [
     erc4337: {
       enabled: false,
       hasPaymaster: false,
-      hasBundlerSupport: false
+      hasBundlerSupport: false,
+      bundlers: [],
+      defaultBundler: PIMLICO
     },
     isSAEnabled: false,
-    areContractsDeployed: true,
     hasRelayer: false,
+    areContractsDeployed: true,
     platformId: 'base-sepolia',
     nativeAssetId: 'base-sepolia',
     hasSingleton: true,
@@ -66,11 +71,13 @@ const testnetNetworks: Network[] = [
     erc4337: {
       enabled: false,
       hasPaymaster: false,
-      hasBundlerSupport: false
+      hasBundlerSupport: false,
+      bundlers: [],
+      defaultBundler: PIMLICO
     },
     isSAEnabled: false,
-    areContractsDeployed: true,
     hasRelayer: false,
+    areContractsDeployed: true,
     platformId: 'arbitrum-sepolia',
     nativeAssetId: 'arbitrum-sepolia',
     hasSingleton: true,
