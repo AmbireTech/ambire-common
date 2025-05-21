@@ -27,6 +27,8 @@ import { Call } from '../../libs/accountOp/types'
 import { getAddressFromAddressState } from '../../utils/domains'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
+import { EstimationStatus } from '../estimation/types'
+import wait from "../../utils/wait";
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -602,6 +604,30 @@ export class TransferController extends EventEmitter {
     this.signAccountOpController.onError((error) => {
       this.emitError(error)
     })
+
+    this.reestimate()
+  }
+
+  /**
+   * Reestimate the signAccountOp request periodically.
+   * Encapsulate it here instead of creating an interval in the background
+   * as intervals are tricky and harder to control
+   */
+  async reestimate() {
+    if (!this.signAccountOpController) return
+
+    await wait(30000)
+
+    if (this.signAccountOpController.estimation.status !== EstimationStatus.Loading) {
+      await this.signAccountOpController.estimate()
+    }
+
+    if (this.signAccountOpController.estimation.errors) {
+      // eslint-disable-next-line no-console
+      console.log('Errors on Transfer re-estimate', this.signAccountOpController.estimation.errors)
+    }
+
+    this.reestimate()
   }
 
   setUserProceeded(hasProceeded: boolean) {
