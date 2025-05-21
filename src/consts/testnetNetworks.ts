@@ -1,5 +1,4 @@
 import { Network } from '../interfaces/network'
-import { PIMLICO } from './bundlers'
 
 const ALCHEMY_API_KEY = process.env.REACT_APP_ALCHEMY_API_KEY
 
@@ -9,21 +8,19 @@ const testnetNetworks: Network[] = [
     nativeAssetSymbol: 'ETH',
     has7702: false,
     nativeAssetName: 'Ether',
-    rpcUrls: [`https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`],
-    selectedRpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+    rpcUrls: ['https://invictus.ambire.com/sepolia'],
+    selectedRpcUrl: 'https://invictus.ambire.com/sepolia',
     rpcNoStateOverride: false,
     chainId: 11155111n,
     explorerUrl: 'https://sepolia.etherscan.io',
     erc4337: {
       enabled: false,
-      hasPaymaster: true,
-      hasBundlerSupport: true,
-      bundlers: [PIMLICO],
-      defaultBundler: PIMLICO
+      hasPaymaster: false,
+      hasBundlerSupport: false
     },
-    isSAEnabled: true,
+    isSAEnabled: false,
     areContractsDeployed: true,
-    hasRelayer: true,
+    hasRelayer: false,
     platformId: 'ethereum-sepolia',
     nativeAssetId: 'ethereum-sepolia',
     hasSingleton: true,
@@ -43,14 +40,12 @@ const testnetNetworks: Network[] = [
     explorerUrl: 'https://base-sepolia.blockscout.com',
     erc4337: {
       enabled: false,
-      hasPaymaster: true,
-      hasBundlerSupport: true,
-      bundlers: [PIMLICO],
-      defaultBundler: PIMLICO
+      hasPaymaster: false,
+      hasBundlerSupport: false
     },
-    isSAEnabled: true,
+    isSAEnabled: false,
     areContractsDeployed: true,
-    hasRelayer: true,
+    hasRelayer: false,
     platformId: 'base-sepolia',
     nativeAssetId: 'base-sepolia',
     hasSingleton: true,
@@ -70,14 +65,12 @@ const testnetNetworks: Network[] = [
     explorerUrl: 'https://sepolia.arbiscan.io',
     erc4337: {
       enabled: false,
-      hasPaymaster: true,
-      hasBundlerSupport: true,
-      bundlers: [PIMLICO],
-      defaultBundler: PIMLICO
+      hasPaymaster: false,
+      hasBundlerSupport: false
     },
-    isSAEnabled: true,
+    isSAEnabled: false,
     areContractsDeployed: true,
-    hasRelayer: true,
+    hasRelayer: false,
     platformId: 'arbitrum-sepolia',
     nativeAssetId: 'arbitrum-sepolia',
     hasSingleton: true,
