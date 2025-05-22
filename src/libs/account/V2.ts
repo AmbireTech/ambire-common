@@ -62,7 +62,7 @@ export class V2 extends BaseAccount {
 
     const hasRelayer = !this.network.erc4337.enabled && this.network.hasRelayer
     return feePaymentOptions.filter(
-      (opt) => opt.availableAmount > 0n && (isNative(opt.token) || hasPaymaster || hasRelayer)
+      (opt) => isNative(opt.token) || (opt.availableAmount > 0n && (hasPaymaster || hasRelayer))
     )
   }
 
