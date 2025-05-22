@@ -595,7 +595,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 0n,
+          amount: 100000n,
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,

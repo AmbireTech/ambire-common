@@ -64,7 +64,7 @@ export abstract class BaseAccount {
   // to pay the fee. Smart accounts can but EOA / 7702 EOAs cannot
   // as paying in native means broadcasting as an EOA - you have to
   // have the native before broadcast
-  abstract canUseReceivingNativeForFee(): boolean
+  abstract canUseReceivingNativeForFee(amount: bigint): boolean
 
   // when using the ambire estimation, the broadcast gas is not included
   // so smart accounts that broadacast with EOAs/relayer do not have the

@@ -134,6 +134,9 @@ export class EOA7702 extends BaseAccount {
     const feeToken = feeOption.token
     const isNative = feeToken.address === ZeroAddress && !feeToken.flags.onGasTank
     if (isNative) {
+      // if there's no native in the account, use the bundler as a broadcast method
+      if (feeToken.amount === 0n) return BROADCAST_OPTIONS.byBundler
+
       // if the call is only 1, broadcast normally
       if (options.op.calls.length === 1) return BROADCAST_OPTIONS.bySelf
 
@@ -151,8 +154,9 @@ export class EOA7702 extends BaseAccount {
     return !this.accountState.isSmarterEoa && broadcastOption === BROADCAST_OPTIONS.byBundler
   }
 
-  canUseReceivingNativeForFee(): boolean {
-    return !this.accountState.isSmarterEoa
+  canUseReceivingNativeForFee(amount: bigint): boolean {
+    // when we use the bundler, we can use receiving eth for fee payment
+    return !this.accountState.isSmarterEoa || amount === 0n
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {
