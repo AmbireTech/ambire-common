@@ -67,7 +67,10 @@ export class TransactionManagerController extends EventEmitter {
 
       this.transactionType = 'swap'
     } else if (this.formState.fromChainId !== this.formState.toChainId) {
-      if (this.formState.toSelectedToken?.address === this.formState.fromSelectedToken?.address) {
+      if (
+        this.formState.toSelectedToken?.symbol === this.formState.fromSelectedToken?.symbol &&
+        this.formState.toSelectedToken?.decimals === this.formState.fromSelectedToken?.decimals
+      ) {
         this.transactionType = 'intent'
         await this.intent.getProtocolQuote()
         return
