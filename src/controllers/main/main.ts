@@ -1407,7 +1407,7 @@ export class MainController extends EventEmitter {
         error: 'Pending swap action',
         rpcError: 'You have a pending swap action. Please complete it before signing.'
       },
-      transferAndTopUp: {
+      transfer: {
         message: 'Please complete the pending transfer action.',
         error: 'Pending transfer action',
         rpcError: 'You have a pending transfer action. Please complete it before signing.'
