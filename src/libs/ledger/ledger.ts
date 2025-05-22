@@ -31,7 +31,7 @@ export const normalizeLedgerMessage = (error?: string): string => {
   if (error.includes('6d00')) {
     return "Your Ledger doesn't recognize the command sent. Please update device firmware and Ethereum App and try again."
   }
-  if (error.includes('6985')) {
+  if (error.includes('6985') || error.includes('5501')) {
     return 'Rejected by your Ledger device.'
   }
   if (error.toLowerCase().includes('please enable blind signing') || error.includes('6a80')) {
