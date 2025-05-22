@@ -103,7 +103,11 @@ export class TransferController extends EventEmitter {
 
   hasProceeded: boolean = false
 
-  #isReestimationSet: boolean = false
+  // Used to safely manage and cancel the periodic estimation loop.
+  // When destroySignAccountOp() is called, the AbortController is aborted,
+  // which prevents further re-estimation calls even if a wait() is in progress.
+  // This ensures only one active estimation loop exists at any time.
+  #reestimateAbortController: AbortController | null = null
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -613,23 +617,36 @@ export class TransferController extends EventEmitter {
    * as intervals are tricky and harder to control
    */
   async reestimate() {
-    if (!this.signAccountOpController || this.#isReestimationSet) return
+    // Don't run the estimation loop if there is no SignAccountOpController or if the loop is already running.
+    if (!this.signAccountOpController || this.#reestimateAbortController) return
 
-    // We use this flag to prevent `reestimate` from being started twice
-    this.#isReestimationSet = true
+    console.log('Re-estimate: Initialized')
 
-    await wait(30000)
+    this.#reestimateAbortController = new AbortController()
+    const signal = this.#reestimateAbortController.signal
 
-    if (this.signAccountOpController.estimation.status !== EstimationStatus.Loading) {
-      await this.signAccountOpController.estimate()
+    const loop = async () => {
+      while (!signal.aborted) {
+        // eslint-disable-next-line no-await-in-loop
+        await wait(10000)
+        if (signal.aborted) break
+
+        if (this.signAccountOpController?.estimation.status !== EstimationStatus.Loading) {
+          console.log('Re-estimate: Estimate()')
+          // eslint-disable-next-line no-await-in-loop
+          await this.signAccountOpController.estimate()
+        }
+
+        if (this.signAccountOpController?.estimation.errors.length) {
+          console.log(
+            'Errors on Transfer re-estimate',
+            this.signAccountOpController.estimation.errors
+          )
+        }
+      }
     }
 
-    if (this.signAccountOpController.estimation.errors) {
-      // eslint-disable-next-line no-console
-      console.log('Errors on Transfer re-estimate', this.signAccountOpController.estimation.errors)
-    }
-
-    this.reestimate()
+    loop()
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -638,9 +655,17 @@ export class TransferController extends EventEmitter {
   }
 
   destroySignAccountOp() {
-    if (!this.signAccountOpController) return
-    this.signAccountOpController.reset()
-    this.signAccountOpController = null
+    if (this.#reestimateAbortController) {
+      this.#reestimateAbortController.abort()
+      this.#reestimateAbortController = null
+      console.log('Re-estimate: Aborted and Destroyed!')
+    }
+
+    if (this.signAccountOpController) {
+      this.signAccountOpController.reset()
+      this.signAccountOpController = null
+    }
+
     this.hasProceeded = false
   }
 
