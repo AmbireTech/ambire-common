@@ -669,6 +669,12 @@ export class TransferController extends EventEmitter {
     this.hasProceeded = false
   }
 
+  unloadScreen() {
+    if (this.hasPersistedState) return
+
+    this.resetForm()
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
