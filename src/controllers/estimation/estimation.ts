@@ -66,8 +66,6 @@ export class EstimationController extends EventEmitter {
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
-    if (this.status !== EstimationStatus.Success) return []
-
     const estimation = this.estimation as FullEstimationSummary
     const isSponsored = !!estimation.bundlerEstimation?.paymaster.isSponsored()
 

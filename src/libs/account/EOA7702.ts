@@ -1,5 +1,5 @@
 /* eslint-disable class-methods-use-this */
-import { Interface, ZeroAddress } from 'ethers'
+import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import { Hex } from '../../interfaces/hex'
@@ -13,6 +13,7 @@ import {
 } from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { isNative } from '../portfolio/helpers'
 import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 
@@ -59,14 +60,13 @@ export class EOA7702 extends BaseAccount {
     feePaymentOptions: FeePaymentOption[],
     op: AccountOp
   ): FeePaymentOption[] {
-    const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
     const isDelegating = op.meta && op.meta.setDelegation !== undefined
     return feePaymentOptions.filter(
       (opt) =>
         opt.paidBy === this.account.addr &&
-        opt.availableAmount > 0n &&
         (isNative(opt.token) ||
           (!isDelegating &&
+            opt.availableAmount > 0n &&
             estimation.bundlerEstimation &&
             estimation.bundlerEstimation.paymaster.isUsable()))
     )
@@ -82,8 +82,7 @@ export class EOA7702 extends BaseAccount {
     const isError = estimation instanceof Error
     if (isError) return 0n
 
-    const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
-    if (isNative) {
+    if (isNative(options.feeToken)) {
       // if we're delegating, we need to add the gas used for the authorization list
       const isDelegating = options.op.meta && options.op.meta.setDelegation !== undefined
       const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
@@ -132,8 +131,7 @@ export class EOA7702 extends BaseAccount {
     if (options.isSponsored) return BROADCAST_OPTIONS.byBundler
 
     const feeToken = feeOption.token
-    const isNative = feeToken.address === ZeroAddress && !feeToken.flags.onGasTank
-    if (isNative) {
+    if (isNative(feeToken)) {
       // if there's no native in the account, use the bundler as a broadcast method
       if (feeToken.amount === 0n) return BROADCAST_OPTIONS.byBundler
 
