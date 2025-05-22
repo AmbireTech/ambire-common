@@ -35,7 +35,12 @@ export class EOA7702 extends BaseAccount {
    */
   is7702 = true
 
-  getEstimationCriticalError(estimation: FullEstimation): Error | null {
+  getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
+    // the critical error should be from the provider if we can broadcast in EOA only mode
+    if (!this.accountState.isSmarterEoa && op.calls.length === 1) {
+      return estimation.provider instanceof Error ? estimation.provider : null
+    }
+
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
   }
@@ -75,7 +80,7 @@ export class EOA7702 extends BaseAccount {
     }
   ): bigint {
     const isError = estimation instanceof Error
-    if (isError || !estimation.ambireEstimation) return 0n
+    if (isError) return 0n
 
     const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
     if (isNative) {
@@ -84,6 +89,9 @@ export class EOA7702 extends BaseAccount {
       const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
 
       if (this.accountState.isSmarterEoa) {
+        // smarter EOAs with a failing ambire estimation cannot broadcast
+        if (!estimation.ambireEstimation) return 0n
+
         // paying in native + smartEOA makes the provider estimation more accurate
         if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed + revokeGas
 
@@ -95,9 +103,8 @@ export class EOA7702 extends BaseAccount {
       // if calls are only 1, use the provider if set
       const numberOfCalls = options.op.calls.length
       if (numberOfCalls === 1) {
-        return estimation.providerEstimation
-          ? estimation.providerEstimation.gasUsed + revokeGas
-          : estimation.ambireEstimation.gasUsed + revokeGas
+        if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed + revokeGas
+        return estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed + revokeGas : 0n
       }
 
       // txn type 4 from here: not smarter with a batch, we need the bundler
