@@ -68,7 +68,6 @@ import {
   adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
-  getAuthorizationHash,
   getEIP712Signature,
   getEntryPointAuthorization,
   getExecuteSignature,
@@ -1642,9 +1641,7 @@ export class SignAccountOpController extends EventEmitter {
           // authrorization validation
           accountState.eoaNonce! + 1n,
           contract,
-          await signer.sign7702(
-            getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
-          )
+          await signer.sign7702(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
         )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
@@ -1669,9 +1666,7 @@ export class SignAccountOpController extends EventEmitter {
             this.#network.chainId,
             accountState.nonce,
             contract,
-            await signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, accountState.nonce)
-            )
+            await signer.sign7702(this.#network.chainId, contract, accountState.nonce)
           )
 
           shouldReestimate = true

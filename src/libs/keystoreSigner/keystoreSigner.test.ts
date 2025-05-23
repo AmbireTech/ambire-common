@@ -99,7 +99,7 @@ describe('Sign eip-7702 authorization', () => {
   it('should sign successfully', async () => {
     const hash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const signer = new KeystoreSigner(key, privKey)
-    const signature = await signer.sign7702(hash)
+    const signature = await signer.sign7702(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
 
     expect(signature.yParity === '0x00' || signature.yParity === '0x01').toBe(true)
     expect(signature.r.length).toBe(66)
