@@ -234,21 +234,16 @@ export class ActionsController extends EventEmitter {
 
   #setCurrentAction(nextAction: Action | null) {
     this.currentAction = nextAction
+    this.emitUpdate()
 
-    if (nextAction && nextAction.id === this.currentAction?.id) {
+    if (nextAction) {
       this.openActionWindow()
-      this.emitUpdate()
       return
     }
 
-    if (!this.currentAction) {
-      !!this.actionWindow.windowProps?.id &&
-        this.#windowManager.remove(this.actionWindow.windowProps.id)
-    } else {
-      this.openActionWindow()
-    }
+    if (!this.actionWindow.windowProps?.id) return
 
-    this.emitUpdate()
+    this.#windowManager.remove(this.actionWindow.windowProps.id)
   }
 
   setCurrentActionById(actionId: Action['id']) {
