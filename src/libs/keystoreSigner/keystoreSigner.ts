@@ -86,7 +86,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  sign7702(hex: string): EIP7702Signature {
+  async sign7702(hex: string): Promise<EIP7702Signature> {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))

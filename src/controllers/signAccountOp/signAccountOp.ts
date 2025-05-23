@@ -1642,7 +1642,7 @@ export class SignAccountOpController extends EventEmitter {
           // authrorization validation
           accountState.eoaNonce! + 1n,
           contract,
-          signer.sign7702(
+          await signer.sign7702(
             getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
           )
         )
@@ -1669,7 +1669,7 @@ export class SignAccountOpController extends EventEmitter {
             this.#network.chainId,
             accountState.nonce,
             contract,
-            signer.sign7702(
+            await signer.sign7702(
               getAuthorizationHash(this.#network.chainId, contract, accountState.nonce)
             )
           )

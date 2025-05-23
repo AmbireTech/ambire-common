@@ -33,28 +33,28 @@ import {
 const ethereumNetwork = networks.find((n) => n.chainId === 1n)!
 const polygonNetwork = networks.find((n) => n.chainId === 137n)!
 const contractSuccess = '0x1626ba7e'
-const unsupportedNetwork = {
-  id: 'zircuit mainnet',
-  name: 'Zircuit Mainnet',
-  nativeAssetSymbol: 'ETH',
-  nativeAssetName: 'Ether',
-  rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
-  selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
-  rpcNoStateOverride: false,
-  chainId: 48900n,
-  explorerUrl: 'https://explorer.zircuit.com',
-  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-  isSAEnabled: false,
-  areContractsDeployed: false,
-  hasRelayer: false,
-  platformId: 'zircuit',
-  nativeAssetId: 'weth',
-  hasSingleton: false,
-  features: [],
-  feeOptions: { is1559: true },
-  predefined: false,
-  has7702: false
-}
+// const unsupportedNetwork = {
+//   id: 'zircuit mainnet',
+//   name: 'Zircuit Mainnet',
+//   nativeAssetSymbol: 'ETH',
+//   nativeAssetName: 'Ether',
+//   rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
+//   selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
+//   rpcNoStateOverride: false,
+//   chainId: 48900n,
+//   explorerUrl: 'https://explorer.zircuit.com',
+//   erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+//   isSAEnabled: false,
+//   areContractsDeployed: false,
+//   hasRelayer: false,
+//   platformId: 'zircuit',
+//   nativeAssetId: 'weth',
+//   hasSingleton: false,
+//   features: [],
+//   feeOptions: { is1559: true },
+//   predefined: false,
+//   has7702: false
+// }
 
 const eoaSigner = {
   privKey: '0x8ad1e4982a3a2e5ef35db11d498d48ab33cbe91bb258802bc8703c943c5a256a',
@@ -638,7 +638,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const authorizationHash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
-    const signature = signer.sign7702(authorizationHash)
+    const signature = await signer.sign7702(authorizationHash)
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const authorizationRes = await verifyMessage({
       network: ethereumNetwork,
@@ -655,7 +655,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     // increment the nonce to be sure 'v' transform is working
     const authorizationHash2 = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 1n)
-    const signature2 = signer.sign7702(authorizationHash2)
+    const signature2 = await signer.sign7702(authorizationHash2)
     const authorizationRes2 = await verifyMessage({
       network: ethereumNetwork,
       provider,
