@@ -226,6 +226,7 @@ export class TransferController extends EventEmitter {
   }
 
   resetForm(destroySignAccountOp = true) {
+    this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
