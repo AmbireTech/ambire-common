@@ -10,6 +10,7 @@ import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { isNative } from '../portfolio/helpers'
 import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
 
@@ -29,7 +30,7 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    return feePaymentOptions.filter((opt) => opt.availableAmount > 0n)
+    return feePaymentOptions.filter((opt) => isNative(opt.token) || opt.availableAmount > 0n)
   }
 
   getGasUsed(

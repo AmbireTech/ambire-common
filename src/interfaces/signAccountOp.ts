@@ -2,7 +2,7 @@ type Warning = {
   id: string
   title: string
   text?: string
-  promptBeforeSign: boolean
+  promptBefore?: ('sign' | 'one-click-sign')[]
 }
 
 type SignAccountOpError = {

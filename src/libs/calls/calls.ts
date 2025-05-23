@@ -14,7 +14,7 @@ const ERC20Interface = new Interface(ERC20.abi)
 export function getFeeCall(feeToken: TokenResult): Call {
   // set a bigger number for gas tank / approvals so on
   // L2s it could calculate the preVerificationGas better
-  const gasTankOrApproveAmount = 500000000n * BigInt(feeToken.decimals)
+  const gasTankOrApproveAmount = 500n * BigInt(feeToken.decimals)
 
   if (feeToken.flags.onGasTank) {
     return {

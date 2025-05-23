@@ -143,6 +143,8 @@ export class AccountPickerController extends EventEmitter {
 
   #alreadyImportedAccounts: Account[] = []
 
+  addAccountsPromise?: Promise<void>
+
   #onAddAccountsSuccessCallback: () => Promise<void>
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
@@ -445,6 +447,7 @@ export class AccountPickerController extends EventEmitter {
   }
 
   async reset(resetInitParams: boolean = true) {
+    await this.addAccountsPromise
     if (resetInitParams) this.initParams = null
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
@@ -769,6 +772,13 @@ export class AccountPickerController extends EventEmitter {
    * the newly added accounts data (like preferences, keys and others)
    */
   async addAccounts(accounts?: SelectedAccountForImport[]) {
+    this.addAccountsPromise = this.#addAccounts(accounts).finally(() => {
+      this.addAccountsPromise = undefined
+    })
+    await this.addAccountsPromise
+  }
+
+  async #addAccounts(accounts?: SelectedAccountForImport[]) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
 

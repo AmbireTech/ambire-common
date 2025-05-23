@@ -1,6 +1,6 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface, ZeroAddress } from 'ethers'
+import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -15,6 +15,7 @@ import {
 } from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { isNative } from '../portfolio/helpers'
 import { privSlot } from '../proxyDeploy/deploy'
 import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
@@ -44,7 +45,6 @@ export class V2 extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
     const hasPaymaster =
       this.network.erc4337.enabled &&
       estimation.bundlerEstimation &&
@@ -55,15 +55,14 @@ export class V2 extends BaseAccount {
     if (this.network.erc4337.enabled && !this.accountState.isDeployed) {
       return feePaymentOptions.filter(
         (opt) =>
-          opt.availableAmount > 0n &&
           opt.paidBy === this.account.addr &&
-          (isNative(opt.token) || hasPaymaster)
+          (isNative(opt.token) || (opt.availableAmount > 0n && hasPaymaster))
       )
     }
 
     const hasRelayer = !this.network.erc4337.enabled && this.network.hasRelayer
     return feePaymentOptions.filter(
-      (opt) => opt.availableAmount > 0n && (isNative(opt.token) || hasPaymaster || hasRelayer)
+      (opt) => isNative(opt.token) || (opt.availableAmount > 0n && (hasPaymaster || hasRelayer))
     )
   }
 

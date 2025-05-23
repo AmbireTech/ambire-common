@@ -532,11 +532,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   unloadScreen(sessionId: string, forceUnload?: boolean) {
     const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
-    const signAccountOpCtrlStatus = this.signAccountOpController?.status?.type
-    const isSigningOrBroadcasting =
-      signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
-    const shouldPersistState =
-      ((isFormDirty && sessionId === 'popup') || isSigningOrBroadcasting) && !forceUnload
+    const shouldPersistState = isFormDirty && sessionId === 'popup' && !forceUnload
 
     if (shouldPersistState) return
 
@@ -1848,13 +1844,22 @@ export class SwapAndBridgeController extends EventEmitter {
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      // if the chain id has changed, we need to destroy the sign account op
+      if (
+        this.signAccountOpController.accountOp.meta &&
+        this.signAccountOpController.accountOp.meta.swapTxn &&
+        this.signAccountOpController.accountOp.meta.swapTxn.chainId !== userTxn.chainId
+      ) {
+        this.destroySignAccountOp()
+      } else {
+        this.signAccountOpController.update({ calls })
 
-      // add the real swapTxn
-      if (!this.signAccountOpController.accountOp.meta)
-        this.signAccountOpController.accountOp.meta = {}
-      this.signAccountOpController.accountOp.meta.swapTxn = userTxn
-      return
+        // add the real swapTxn
+        if (!this.signAccountOpController.accountOp.meta)
+          this.signAccountOpController.accountOp.meta = {}
+        this.signAccountOpController.accountOp.meta.swapTxn = userTxn
+        return
+      }
     }
 
     const baseAcc = getBaseAccount(

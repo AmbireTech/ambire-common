@@ -20,6 +20,7 @@ import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
@@ -235,6 +236,7 @@ export class MainController extends EventEmitter {
   #relayerUrl: string
 
   constructor({
+    platform,
     storageAPI,
     fetch,
     relayerUrl,
@@ -245,6 +247,7 @@ export class MainController extends EventEmitter {
     windowManager,
     notificationManager
   }: {
+    platform: Platform
     storageAPI: Storage
     fetch: Fetch
     relayerUrl: string
@@ -263,7 +266,7 @@ export class MainController extends EventEmitter {
 
     this.storage = new StorageController(this.#storageAPI)
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
-    this.keystore = new KeystoreController(this.storage, keystoreSigners, windowManager)
+    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.storage,
@@ -696,62 +699,53 @@ export class MainController extends EventEmitter {
       signAccountOp = this.transfer.signAccountOpController
     }
 
-    // if the accountOp has a swapTxn, start the route as the user is broadcasting it
-    if (signAccountOp?.accountOp.meta?.swapTxn) {
-      await this.swapAndBridge.addActiveRoute({
-        activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
-        userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
-      })
-    }
-
-    // Update tokens simulation value
-    if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
-      signAccountOp?.portfolioSimulate().then(() => {
-        // if an error has ocurred while signing and we're back to SigningStatus.ReadyToSign,
-        // override the pending results as they will be incorrect
-        if (signAccountOp && signAccountOp.status?.type === SigningStatus.ReadyToSign) {
-          this.portfolio.overridePendingResults(signAccountOp.accountOp)
-        }
-      })
-    }
-
-    const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
-
-    if (!wasAlreadySigned) {
-      if (!signAccountOp) {
-        const message =
-          'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-
-        throw new EmittableError({ level: 'major', message })
-      }
-
-      // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-      this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
-        if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
-
-        this.#signAccountOpSigningPromise = undefined
-      })
-
-      await this.#signAccountOpSigningPromise
-    }
-
-    if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
-
-    // Error handling on the prev step will notify the user, it's fine to return here
-    if (signAccountOp?.status?.type !== SigningStatus.Done) {
-      // remove the active route on signing failure
-      if (signAccountOp?.accountOp.meta?.swapTxn) {
-        this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
-      }
-      this.statuses.signAndBroadcastAccountOp = 'ERROR'
-      await this.forceEmitUpdate()
-      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-      this.#signAndBroadcastCallId = null
-      await this.forceEmitUpdate()
-      return
-    }
-
+    // It's vital that everything that can throw an error is wrapped in a try/catch block
+    // to prevent signAndBroadcastAccountOp from being stuck in the SIGNING state
     try {
+      // if the accountOp has a swapTxn, start the route as the user is broadcasting it
+      if (signAccountOp?.accountOp.meta?.swapTxn) {
+        await this.swapAndBridge.addActiveRoute({
+          activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
+          userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
+        })
+      }
+
+      const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
+
+      if (!wasAlreadySigned) {
+        if (!signAccountOp) {
+          const message =
+            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
+
+          throw new EmittableError({ level: 'major', message })
+        }
+
+        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
+        this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
+          if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
+
+          this.#signAccountOpSigningPromise = undefined
+        })
+
+        await this.#signAccountOpSigningPromise
+      }
+
+      if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
+
+      // Error handling on the prev step will notify the user, it's fine to return here
+      if (signAccountOp?.status?.type !== SigningStatus.Done) {
+        // remove the active route on signing failure
+        if (signAccountOp?.accountOp.meta?.swapTxn) {
+          this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+        }
+        this.statuses.signAndBroadcastAccountOp = 'ERROR'
+        await this.forceEmitUpdate()
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.#signAndBroadcastCallId = null
+        await this.forceEmitUpdate()
+        return
+      }
+
       await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
       if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
@@ -762,9 +756,15 @@ export class MainController extends EventEmitter {
         if ('message' in error && 'level' in error && 'error' in error) {
           this.emitError(error)
         } else {
+          const hasSigned = signAccountOp?.status?.type === SigningStatus.Done
+
           this.emitError({
             level: 'major',
-            message: error.message || 'Unknown error occurred while broadcasting the transaction',
+            message:
+              error.message ||
+              `Unknown error occurred while ${
+                !hasSigned ? 'signing the transaction' : 'broadcasting the transaction'
+              }`,
             error
           })
         }
@@ -1664,24 +1664,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const network = this.networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
-
-    if (!network) {
-      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-    }
-
-    this.userRequestWaitingAccountSwitch.push(userRequest)
-    await this.addUserRequest(
-      buildSwitchAccountUserRequest({
-        nextUserRequest: userRequest,
-        chainId: network.chainId,
-        selectedAccountAddr: userRequest.meta.accountAddr,
-        session: dappPromise.session,
-        dappPromise
-      }),
-      'last',
-      'open-action-window'
-    )
+    await this.#addSwitchAccountUserRequest(userRequest)
   }
 
   async buildTransferUserRequest(
@@ -1983,11 +1966,21 @@ export class MainController extends EventEmitter {
   async addUserRequest(
     req: UserRequest,
     actionPosition: ActionPosition = 'last',
-    actionExecutionType: ActionExecutionType = 'open-action-window'
+    actionExecutionType: ActionExecutionType = 'open-action-window',
+    allowAccountSwitch: boolean = false
   ) {
     const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
     if (shouldSkipAddUserRequest) return
+
+    if (
+      allowAccountSwitch &&
+      req.meta.isSignAction &&
+      req.meta.accountAddr !== this.selectedAccount.account?.addr
+    ) {
+      await this.#addSwitchAccountUserRequest(req)
+      return
+    }
 
     if (req.action.kind === 'calls') {
       ;(req.action as Calls).calls.forEach((_, i) => {
@@ -2323,8 +2316,25 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #addSwitchAccountUserRequest(req: UserRequest) {
+    this.userRequestWaitingAccountSwitch.push(req)
+    await this.addUserRequest(
+      buildSwitchAccountUserRequest({
+        nextUserRequest: req,
+        selectedAccountAddr: req.meta.accountAddr,
+        session: req.dappPromise ? req.dappPromise.session : undefined,
+        dappPromise: req.dappPromise
+      }),
+      'last',
+      'open-action-window'
+    )
+  }
+
   onOneClickSwapClose() {
     const signAccountOp = this.swapAndBridge.signAccountOpController
+
+    // Always unload the screen when the action window is closed
+    this.swapAndBridge.unloadScreen('action-window', true)
 
     if (!signAccountOp) return
 
@@ -2333,7 +2343,6 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    this.swapAndBridge.unloadScreen('action-window', true)
     this.#abortHWSign(signAccountOp)
 
     const network = this.networks.networks.find(
@@ -2443,7 +2452,8 @@ export class MainController extends EventEmitter {
     const rawTxnBroadcast = [
       BROADCAST_OPTIONS.bySelf,
       BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA
+      BROADCAST_OPTIONS.byOtherEOA,
+      BROADCAST_OPTIONS.delegation
     ]
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
@@ -2495,11 +2505,20 @@ export class MainController extends EventEmitter {
             accountOp.gasFeePayment.broadcastOption,
             accountOp.calls[i]
           )
-          const signedTxn = await signer.signRawTransaction(rawTxn)
+          const signedTxn =
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
+              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              : await signer.signRawTransaction(rawTxn)
           if (callId !== this.#signAndBroadcastCallId) {
             return
           }
-          multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
+            multipleTxnsBroadcastRes.push({
+              hash: await provider.send('eth_sendRawTransaction', [signedTxn])
+            })
+          } else {
+            multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          }
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
           // send the txn to the relayer if it's an EOA sending for itself
@@ -2652,7 +2671,14 @@ export class MainController extends EventEmitter {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+    // simulate the swap & bridge only after a successful broadcast
+    if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
+      signAccountOp?.portfolioSimulate().then(() => {
+        this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+      })
+    } else {
+      this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,

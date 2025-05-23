@@ -15,10 +15,15 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { SINGLETON } from '../../consts/deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { Hex } from '../../interfaces/hex'
 /* eslint-disable no-restricted-syntax */
-import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
+import {
+  ERRORS,
+  RETRY_TO_INIT_ACCOUNT_OP_MSG,
+  WARNINGS
+} from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
   SA_ERC20_TRANSFER_GAS_USED,
@@ -616,6 +621,26 @@ export class SignAccountOpController extends EventEmitter {
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
 
+    // if 7702 EOA that is not ambire
+    // and another delegation is there, show the warning
+    const broadcastOption = this.selectedOption
+      ? this.baseAccount.getBroadcastOption(this.selectedOption, {
+          op: this.accountOp,
+          isSponsored: this.isSponsored
+        })
+      : null
+    if (
+      'is7702' in this.baseAccount &&
+      this.baseAccount.is7702 &&
+      this.delegatedContract &&
+      this.delegatedContract !== ZeroAddress &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
+      broadcastOption === BROADCAST_OPTIONS.byBundler
+    ) {
+      warnings.push(WARNINGS.delegationDetected)
+    }
+
     const estimationWarnings = this.estimation.calculateWarnings()
 
     this.warnings = warnings.concat(estimationWarnings)
@@ -633,6 +658,9 @@ export class SignAccountOpController extends EventEmitter {
       this.#portfolio.simulateAccountOp(this.accountOp),
       this.estimation.estimate(this.accountOp).catch((e) => e)
     ])
+
+    // calculate the warnings after the portfolio is fetched
+    this.calculateWarnings()
 
     const estimation = this.estimation.estimation
 
@@ -1600,6 +1628,24 @@ export class SignAccountOpController extends EventEmitter {
           accountState,
           signer
         )
+      } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
+        // a delegation request has been made
+        if (!this.accountOp.meta) this.accountOp.meta = {}
+
+        const contract = this.accountOp.meta.setDelegation
+          ? getContractImplementation(this.#network.chainId)
+          : (ZeroAddress as Hex)
+        this.accountOp.meta.delegation = get7702Sig(
+          this.#network.chainId,
+          // because we're broadcasting by ourselves, we need to add 1 to the nonce
+          // as the sender nonce (the curr acc) gets incremented before the
+          // authrorization validation
+          accountState.eoaNonce! + 1n,
+          contract,
+          signer.sign7702(
+            getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
+          )
+        )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
@@ -1740,6 +1786,14 @@ export class SignAccountOpController extends EventEmitter {
     this.traceCallDiscoveryStatus = status
   }
 
+  get delegatedContract(): Hex | null {
+    if (!this.#accounts.accountStates[this.account.addr]) return null
+    if (!this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()])
+      return null
+    return this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()]
+      .delegatedContract
+  }
+
   toJSON() {
     return {
       ...this,
@@ -1752,7 +1806,8 @@ export class SignAccountOpController extends EventEmitter {
       selectedOption: this.selectedOption,
       account: this.account,
       errors: this.errors,
-      gasSavedUSD: this.gasSavedUSD
+      gasSavedUSD: this.gasSavedUSD,
+      delegatedContract: this.delegatedContract
     }
   }
 }

@@ -465,3 +465,6 @@ export const isPortfolioGasTankResult = (
 ): result is PortfolioGasTankResult => {
   return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
 }
+
+export const isNative = (token: TokenResult) =>
+  token.address === ZeroAddress && !token.flags.onGasTank
