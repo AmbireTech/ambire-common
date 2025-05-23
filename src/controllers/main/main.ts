@@ -2285,6 +2285,9 @@ export class MainController extends EventEmitter {
   onOneClickSwapClose() {
     const signAccountOp = this.swapAndBridge.signAccountOpController
 
+    // Always unload the screen when the action window is closed
+    this.swapAndBridge.unloadScreen('action-window', true)
+
     if (!signAccountOp) return
 
     // Remove the active route if it exists
@@ -2292,7 +2295,6 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    this.swapAndBridge.unloadScreen('action-window', true)
     this.#abortHWSign(signAccountOp)
 
     const network = this.networks.networks.find(
