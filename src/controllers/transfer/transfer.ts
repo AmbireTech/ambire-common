@@ -29,6 +29,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { EstimationStatus } from '../estimation/types'
 import wait from '../../utils/wait'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -100,6 +101,8 @@ export class TransferController extends EventEmitter {
   #relayerUrl: string
 
   signAccountOpController: SignAccountOpController | null = null
+
+  latestBroadcastedAccountOp: AccountOp | null = null
 
   hasProceeded: boolean = false
 
@@ -670,9 +673,14 @@ export class TransferController extends EventEmitter {
     this.hasProceeded = false
   }
 
+  destroyLatestBroadcastedAccountOp() {
+    this.latestBroadcastedAccountOp = null
+  }
+
   unloadScreen() {
     if (this.hasPersistedState) return
 
+    this.destroyLatestBroadcastedAccountOp()
     this.resetForm()
   }
 

@@ -2753,6 +2753,7 @@ export class MainController extends EventEmitter {
 
     if (type === SIGN_ACCOUNT_OP_TRANSFER) {
       this.transfer.resetForm(false)
+      this.transfer.latestBroadcastedAccountOp = submittedAccountOp
     }
 
     await this.#notificationManager.create({
