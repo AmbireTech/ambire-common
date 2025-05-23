@@ -78,6 +78,7 @@ import {
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { getHdPathFromTemplate } from '../../utils/hdPath'
 import shortenAddress from '../../utils/shortenAddress'
 /* eslint-disable no-await-in-loop */
 import { generateUuid } from '../../utils/uuid'
@@ -976,7 +977,8 @@ export class MainController extends EventEmitter {
       if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
-      await ledgerCtrl.unlock(hdPathTemplate)
+      const pathToUnlock = getHdPathFromTemplate(hdPathTemplate, 0)
+      await ledgerCtrl.unlock(pathToUnlock)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
