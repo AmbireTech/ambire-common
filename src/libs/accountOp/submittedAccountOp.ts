@@ -6,6 +6,7 @@ import { Network } from '../../interfaces/network'
 import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import wait from '../../utils/wait'
+import { TokenResult } from '../portfolio'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
 
@@ -46,6 +47,10 @@ export interface SubmittedAccountOp extends AccountOp {
   timestamp: number
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
+  events?: {
+    receivedTokens: TokenResult
+    sentTokens: TokenResult
+  }
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {

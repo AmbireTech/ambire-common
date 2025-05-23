@@ -13,6 +13,7 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { getTransferTokens } from '../../libs/logs/parseLogs'
 /* eslint-disable import/no-extraneous-dependencies */
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
@@ -454,6 +455,19 @@ export class ActivityController extends EventEmitter {
                     if (accountOp.isSingletonDeploy && receipt.status) {
                       await this.#onContractsDeployed(network)
                     }
+
+                    receipt.logs
+
+                    // record data from the logs
+                    if (isSuccess) {
+                      await getTransferTokens(
+                        receipt.logs,
+                        accountOp.accountAddr,
+                        network,
+                        provider
+                      )
+                    }
+
                     return
                   }
 
