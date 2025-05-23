@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import {
   AccountOpAction,
@@ -252,13 +253,25 @@ export class ActionsController extends EventEmitter {
 
   setCurrentActionById(actionId: Action['id']) {
     const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
-    if (!action) return
+    if (!action)
+      throw new EmittableError({
+        message:
+          'Failed to open request window. If the issue persists, please reject the request and try again.',
+        level: 'major',
+        error: new Error(`Action not found. Id: ${actionId}`)
+      })
     this.#setCurrentAction(action)
   }
 
   setCurrentActionByIndex(actionIndex: number) {
     const action = this.visibleActionsQueue[actionIndex]
-    if (!action) return
+    if (!action)
+      throw new EmittableError({
+        message:
+          'Failed to open request window. If the issue persists, please reject the request and try again.',
+        level: 'major',
+        error: new Error(`Action not found. Index: ${actionIndex}`)
+      })
     this.#setCurrentAction(action)
   }
 
@@ -297,7 +310,12 @@ export class ActionsController extends EventEmitter {
         this.actionWindow.windowProps = await this.actionWindow.openWindowPromise
         this.emitUpdate()
       } catch (err) {
-        console.error('Error opening action window:', err)
+        this.emitError({
+          message:
+            'Failed to open a new request window. Please restart your browser if the issue persists.',
+          level: 'major',
+          error: err as Error
+        })
       }
     }
   }
@@ -322,7 +340,12 @@ export class ActionsController extends EventEmitter {
 
       this.emitUpdate()
     } catch (err) {
-      console.error('Error focusing action window:', err)
+      this.emitError({
+        message:
+          'Failed to focus the request window. Please restart your browser if the issue persists.',
+        level: 'major',
+        error: err as Error
+      })
     }
   }
 
