@@ -97,7 +97,7 @@ export class ActionsController extends EventEmitter {
       if (a.type === 'switchAccount') {
         return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
       }
-      if (a.type === 'swapAndBridge') {
+      if (a.type === 'swapAndBridge' || a.type === 'transfer') {
         return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
       }
 

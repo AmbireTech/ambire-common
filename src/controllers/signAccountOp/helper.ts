@@ -11,7 +11,8 @@ import { AccountState } from '../../libs/portfolio/interfaces'
 
 export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
 export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
-export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap'
+export const SIGN_ACCOUNT_OP_TRANSFER = 'signAccountOpTransfer'
+export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap' | 'signAccountOpTransfer'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,

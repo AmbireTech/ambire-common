@@ -702,7 +702,7 @@ export class SignAccountOpController extends EventEmitter {
     await this.estimation.estimate(this.accountOp)
   }
 
-  async simulateSwapOrBridge() {
+  async portfolioSimulate() {
     await this.#portfolio.simulateAccountOp(this.accountOp)
   }
 
