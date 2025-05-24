@@ -2,7 +2,6 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
-import { Storage } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
@@ -30,6 +29,7 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { EstimationStatus } from '../estimation/types'
 import wait from '../../utils/wait'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { StorageController } from '../storage/storage'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -54,7 +54,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const HARD_CODED_CURRENCY = 'usd'
 
 export class TransferController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #networks: NetworksController
 
@@ -116,7 +116,7 @@ export class TransferController extends EventEmitter {
   #initialLoadPromise: Promise<void>
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: SelectedAccountController,
     networks: NetworksController,
@@ -638,7 +638,7 @@ export class TransferController extends EventEmitter {
         if (this.signAccountOpController?.estimation.status !== EstimationStatus.Loading) {
           console.log('Re-estimate: Estimate()')
           // eslint-disable-next-line no-await-in-loop
-          await this.signAccountOpController.estimate()
+          await this.signAccountOpController?.estimate()
         }
 
         if (this.signAccountOpController?.estimation.errors.length) {

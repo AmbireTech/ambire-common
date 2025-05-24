@@ -436,7 +436,7 @@ export class MainController extends EventEmitter {
       }
     })
     this.transfer = new TransferController(
-      this.#storageAPI, // TODO: consider using this.#storage
+      this.storage,
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
       this.networks,
