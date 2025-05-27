@@ -96,17 +96,19 @@ export class GasPriceController extends EventEmitter {
         })
         return null
       }),
-      bundler
-        // no error emits here as most of the time estimation/signing
-        // will work even if this fails
-        .fetchGasPrices(this.#network, () => {})
-        .catch((e) => {
-          this.emitError({
-            level: 'silent',
-            message: "Failed to fetch the bundler's gas price",
-            error: e
-          })
-        })
+      this.#network.erc4337.hasBundlerSupport !== false
+        ? bundler
+            // no error emits here as most of the time estimation/signing
+            // will work even if this fails
+            .fetchGasPrices(this.#network, () => {})
+            .catch((e) => {
+              this.emitError({
+                level: 'silent',
+                message: "Failed to fetch the bundler's gas price",
+                error: e
+              })
+            })
+        : null
     ])
 
     if (gasPriceData) {
