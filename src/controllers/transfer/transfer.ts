@@ -381,7 +381,6 @@ export class TransferController extends EventEmitter {
       this.#setSWWarningVisibleIfNeeded()
     }
 
-    console.log('TransferController: update()')
     await this.syncSignAccountOp()
     this.emitUpdate()
   }
@@ -504,7 +503,6 @@ export class TransferController extends EventEmitter {
   }
 
   async syncSignAccountOp() {
-    console.log('Background: syncSignAccountOp() invoked')
     // shouldn't happen ever
     if (!this.#selectedAccountData.account) return
 
@@ -538,12 +536,10 @@ export class TransferController extends EventEmitter {
 
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
-      console.log('Background: Updating signAccountOpController with new calls:')
       this.signAccountOpController.update({ calls })
       return
     }
 
-    console.log('Background: Init signAccountOpController')
     await this.#initSignAccOp(calls)
   }
 
@@ -623,19 +619,16 @@ export class TransferController extends EventEmitter {
     // Don't run the estimation loop if there is no SignAccountOpController or if the loop is already running.
     if (!this.signAccountOpController || this.#reestimateAbortController) return
 
-    console.log('Re-estimate: Initialized')
-
     this.#reestimateAbortController = new AbortController()
     const signal = this.#reestimateAbortController.signal
 
     const loop = async () => {
       while (!signal.aborted) {
         // eslint-disable-next-line no-await-in-loop
-        await wait(10000)
+        await wait(30000)
         if (signal.aborted) break
 
         if (this.signAccountOpController?.estimation.status !== EstimationStatus.Loading) {
-          console.log('Re-estimate: Estimate()')
           // eslint-disable-next-line no-await-in-loop
           await this.signAccountOpController?.estimate()
         }
@@ -661,7 +654,6 @@ export class TransferController extends EventEmitter {
     if (this.#reestimateAbortController) {
       this.#reestimateAbortController.abort()
       this.#reestimateAbortController = null
-      console.log('Re-estimate: Aborted and Destroyed!')
     }
 
     if (this.signAccountOpController) {
