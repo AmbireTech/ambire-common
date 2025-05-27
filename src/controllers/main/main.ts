@@ -1392,7 +1392,7 @@ export class MainController extends EventEmitter {
       if (pendingAction.type === 'swapAndBridge') {
         this.swapAndBridge.reset()
       } else {
-        this.transfer.resetForm(true)
+        this.transfer.resetForm()
       }
 
       // TODO: remove this ugly fix.
@@ -2752,8 +2752,9 @@ export class MainController extends EventEmitter {
     }
 
     if (type === SIGN_ACCOUNT_OP_TRANSFER) {
-      this.transfer.resetForm(false)
+      this.transfer.latestBroadcastedToken = this.transfer.selectedToken
       this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      this.transfer.resetForm()
     }
 
     await this.#notificationManager.create({

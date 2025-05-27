@@ -104,6 +104,8 @@ export class TransferController extends EventEmitter {
 
   latestBroadcastedAccountOp: AccountOp | null = null
 
+  latestBroadcastedToken: TokenResult | null = null
+
   hasProceeded: boolean = false
 
   // Used to safely manage and cancel the periodic estimation loop.
@@ -675,6 +677,7 @@ export class TransferController extends EventEmitter {
 
   destroyLatestBroadcastedAccountOp() {
     this.latestBroadcastedAccountOp = null
+    this.latestBroadcastedToken = null
   }
 
   unloadScreen() {
