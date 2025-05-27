@@ -123,8 +123,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
               eip7702Auth.address,
               eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
               eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
-              eip7702Auth.r,
-              eip7702Auth.s
+              // strip leading zeros
+              toBeHex(BigInt(eip7702Auth.r)),
+              toBeHex(BigInt(eip7702Auth.s))
             ]
           ]
         ])
@@ -156,13 +157,15 @@ export class KeystoreSigner implements KeystoreSignerInterface {
             eip7702Auth.address,
             eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
             eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
-            eip7702Auth.r,
-            eip7702Auth.s
+            // strip leading zeros
+            toBeHex(BigInt(eip7702Auth.r)),
+            toBeHex(BigInt(eip7702Auth.s))
           ]
         ],
         txnTypeFourSignature.yParity === '0x00' ? '0x' : txnTypeFourSignature.yParity,
-        txnTypeFourSignature.r,
-        txnTypeFourSignature.s
+        // strip leading zeros
+        toBeHex(BigInt(txnTypeFourSignature.r)),
+        toBeHex(BigInt(txnTypeFourSignature.s))
       ])
     ]) as Hex
   }
