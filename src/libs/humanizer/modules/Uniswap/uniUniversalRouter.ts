@@ -9,7 +9,6 @@ import {
   getDeadline,
   getLabel,
   getToken,
-  getUnknownVisualization,
   getWrapping
 } from '../../utils'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
@@ -184,9 +183,18 @@ export const uniUniversalRouter = (): HumanizerUniMatcher => {
                   getToken(ZeroAddress, params.amountMin),
                   ...getUniRecipientText(accountOp.accountAddr, params.recipient)
                 ])
-            } else parsed.push(getUnknownVisualization('Uni V3', call))
+            } else
+              parsed.push([
+                getAction('Uniswap action'),
+                getLabel('to'),
+                getAddressVisualization(call.to)
+              ])
           })
-        : parsed.push(getUnknownVisualization('Uniswap V3', call))
+        : parsed.push([
+            getAction('Uniswap action'),
+            getLabel('to'),
+            getAddressVisualization(call.to)
+          ])
 
       return uniReduce(parsed)
     }

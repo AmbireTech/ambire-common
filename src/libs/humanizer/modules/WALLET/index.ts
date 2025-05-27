@@ -4,13 +4,7 @@ import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from '../../../../const
 import { AccountOp } from '../../../accountOp/accountOp'
 import { StkWallet } from '../../const/abis/stkWallet'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import {
-  checkIfUnknownAction,
-  getAction,
-  getLabel,
-  getToken,
-  getUnknownVisualization
-} from '../../utils'
+import { checkIfUnknownAction, getAction, getLabel, getToken } from '../../utils'
 import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
@@ -78,10 +72,6 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           ...call,
           fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](call)
         }
-      }
-      return {
-        ...call,
-        fullVisualization: getUnknownVisualization('staking', call)
       }
     }
     if (matcher.supplyController[call.data.slice(0, 10)]) {

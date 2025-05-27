@@ -65,6 +65,8 @@ export const fallbackHumanizer: HumanizerCallModule = (
               knownSigHashes[call.data.slice(0, 10)].signature
                 .split('function ')
                 .filter((x) => x !== '')[0]
+                .split('(')
+                .filter((x) => x !== '')[0]
                 .split(' returns')
                 .filter((x) => x !== '')[0]
             }`
