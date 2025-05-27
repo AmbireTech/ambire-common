@@ -230,7 +230,7 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  resetForm(destroySignAccountOp = true) {
+  resetForm() {
     this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
@@ -241,10 +241,7 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
-    // Even if the form should be reset, there are cases where we still need to know the exact broadcasted account op
-    // in order to visualize its status in the final Transfer step.
-    // In that case, we are going to destroy it on component unmount or on a route navigation.
-    if (destroySignAccountOp) this.destroySignAccountOp()
+    this.destroySignAccountOp()
     this.emitUpdate()
   }
 
@@ -680,8 +677,8 @@ export class TransferController extends EventEmitter {
     this.latestBroadcastedToken = null
   }
 
-  unloadScreen() {
-    if (this.hasPersistedState) return
+  unloadScreen(forceUnload: boolean) {
+    if (this.hasPersistedState && !forceUnload) return
 
     this.destroyLatestBroadcastedAccountOp()
     this.resetForm()

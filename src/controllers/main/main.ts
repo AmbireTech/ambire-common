@@ -2353,6 +2353,24 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  onOneClickTransferClose() {
+    const signAccountOp = this.transfer.signAccountOpController
+
+    // Always unload the screen when the action window is closed
+    this.transfer.unloadScreen(true)
+
+    if (!signAccountOp) return
+
+    this.#abortHWSign(signAccountOp)
+
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
+
+    this.updateSelectedAccountPortfolio(true, network)
+    this.emitUpdate()
+  }
+
   async #handleTrezorCleanup() {
     try {
       await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
