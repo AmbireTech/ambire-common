@@ -191,86 +191,90 @@ function buildTransferUserRequest({
 }
 
 interface PrepareIntentUserRequestParams {
-  amount: string
   selectedToken: TokenResult
   selectedAccount: string
   recipientAddress: string
   paymasterService?: PaymasterService
+  transactions: {
+    from: string
+    to: string
+    value?: string
+    data: string
+  }[]
 }
 function prepareIntentUserRequest({
-  amount,
   selectedToken,
   selectedAccount,
   recipientAddress,
-  paymasterService
+  paymasterService,
+  transactions
 }: PrepareIntentUserRequestParams): SignUserRequest[] {
   if (!selectedToken || !selectedAccount || !recipientAddress) return []
 
-  console.log({
-    amount,
-    selectedToken,
-    selectedAccount,
-    recipientAddress,
-    paymasterService
-  })
-  // const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals)
-
-  // const bigNumberHexAmount = `0x${parseUnits(
-  //   sanitizedAmount,
-  //   Number(selectedToken.decimals)
-  // ).toString(16)}`
-
+  const id = uuidv4()
   // const txn = {
   //   kind: 'calls' as const,
   //   calls: [
   //     {
-  //       to: selectedToken.address,
+  //       fromUserRequestId: id,
+  //       id: `${id}-0`,
+  //       to: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   //       value: BigInt(0),
-  //       data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+  //       data: '0x095ea7b300000000000000000000000073f70aabdad84cc5d6f58c85e655eaf1edeb918400000000000000000000000000000000000000000000000000000000005b8d80'
   //     }
   //   ]
   // }
-
-  // if (Number(selectedToken.address) === 0) {
-  //   txn.calls = [
+  // const id2 = uuidv4()
+  // const txn2 = {
+  //   kind: 'calls' as const,
+  //   calls: [
   //     {
-  //       to: recipientAddress,
-  //       value: BigInt(bigNumberHexAmount),
-  //       data: '0x'
+  //       fromUserRequestId: id2,
+  //       id: `${id2}-0`,
+  //       to: '0x73f70aABDAD84cC5d6F58c85E655EAF1eDeB9184',
+  //       value: BigInt(0),
+  //       data: '0xe917a962000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000682510949df4b782e7bbc178b3b93bfe8aafb909e84e39484d7f3c59f400f1b4691f85e20000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000000200000000000000000000000001c7d4b196cb0c7b01d743fbc6116a902379c723800000000000000000000000000000000000000000000000000000000000f4240000000000000000000000000036cbd53842c5426634e7929541ec2318f3dcf7e00000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000014a34000000000000000000000000389cf18484e8b0338e94c5c6df3dbc2e229dade800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000'
   //     }
   //   ]
   // }
 
-  // TODO: call the simulateIntent function
-
-  // TODO: add the calls to the txn
-
-  const id = uuidv4()
   const txn = {
     kind: 'calls' as const,
-    calls: [
-      {
-        fromUserRequestId: id,
-        id: `${id}-0`,
-        to: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-        value: BigInt(0),
-        data: '0x095ea7b300000000000000000000000073f70aabdad84cc5d6f58c85e655eaf1edeb918400000000000000000000000000000000000000000000000000000000005b8d80'
-      }
-    ]
+    calls: transactions.map((transaction, index) => ({
+      fromUserRequestId: id,
+      id: `${id}-${index}`,
+      to: transaction.to,
+      value: BigInt(transaction.value || '0'),
+      data: transaction.data
+    }))
   }
-  const id2 = uuidv4()
-  const txn2 = {
-    kind: 'calls' as const,
-    calls: [
-      {
-        fromUserRequestId: id2,
-        id: `${id2}-0`,
-        to: '0x73f70aABDAD84cC5d6F58c85E655EAF1eDeB9184',
-        value: BigInt(0),
-        data: '0xe917a962000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000682510949df4b782e7bbc178b3b93bfe8aafb909e84e39484d7f3c59f400f1b4691f85e20000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000000200000000000000000000000001c7d4b196cb0c7b01d743fbc6116a902379c723800000000000000000000000000000000000000000000000000000000000f4240000000000000000000000000036cbd53842c5426634e7929541ec2318f3dcf7e00000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000014a34000000000000000000000000389cf18484e8b0338e94c5c6df3dbc2e229dade800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000'
-      }
-    ]
-  }
+
+  // return [
+  //   {
+  //     id,
+  //     action: txn,
+  //     meta: {
+  //       isSignAction: true,
+  //       chainId: selectedToken.chainId,
+  //       accountAddr: selectedAccount,
+  //       paymasterService,
+  //       isSwapAndBridgeCall: true,
+  //       activeRouteId: id
+  //     }
+  //   },
+  //   {
+  //     id: id2,
+  //     action: txn2,
+  //     meta: {
+  //       isSignAction: true,
+  //       chainId: selectedToken.chainId,
+  //       accountAddr: selectedAccount,
+  //       paymasterService,
+  //       isSwapAndBridgeCall: true,
+  //       activeRouteId: id2
+  //     }
+  //   }
+  // ]
 
   return [
     {
@@ -283,18 +287,6 @@ function prepareIntentUserRequest({
         paymasterService,
         isSwapAndBridgeCall: true,
         activeRouteId: id
-      }
-    },
-    {
-      id: id2,
-      action: txn2,
-      meta: {
-        isSignAction: true,
-        chainId: selectedToken.chainId,
-        accountAddr: selectedAccount,
-        paymasterService,
-        isSwapAndBridgeCall: true,
-        activeRouteId: id2
       }
     }
   ]

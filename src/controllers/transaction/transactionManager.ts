@@ -1,3 +1,5 @@
+import { createPublicClient, http } from 'viem'
+import { sepolia, arbitrumSepolia, baseSepolia } from 'viem/chains'
 import { IntentController } from './controllers/intent'
 import { ControllersTransactionDependecies, TransactionDependencies } from './dependencies'
 import { TransactionFormState } from './transactionFormState'
@@ -14,6 +16,8 @@ export class TransactionManagerController extends EventEmitter {
   public transactionType: 'transfer' | 'intent' | 'swap' | 'swapAndBridge' | 'error' = 'transfer'
 
   private dependencies: ControllersTransactionDependecies
+
+  private chainMap = [sepolia, arbitrumSepolia, baseSepolia]
 
   constructor(deps: TransactionDependencies) {
     super()
@@ -72,7 +76,12 @@ export class TransactionManagerController extends EventEmitter {
         this.formState.toSelectedToken?.decimals === this.formState.fromSelectedToken?.decimals
       ) {
         this.transactionType = 'intent'
+
         await this.intent.getProtocolQuote()
+
+        if (this.formState.fromChainId) {
+          this.intent.publicClient = this.getPublicClient(this.formState.fromChainId)
+        }
         return
       }
 
@@ -81,6 +90,17 @@ export class TransactionManagerController extends EventEmitter {
     }
 
     this.transactionType = 'error'
+  }
+
+  private getPublicClient(chainId: number) {
+    const chain = this.chainMap.find((c) => c.id === chainId)
+
+    if (!chain) return
+
+    return createPublicClient({
+      chain,
+      transport: http()
+    })
   }
 
   toJSON() {

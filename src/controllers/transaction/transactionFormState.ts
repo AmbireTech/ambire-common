@@ -879,7 +879,8 @@ export class TransactionFormState extends EventEmitter {
       fromAmountFieldMode: this.fromAmountFieldMode,
       toAmount: this.toAmount,
       toAmountInFiat: this.toAmountInFiat,
-      toAmountFieldMode: this.toAmountFieldMode
+      toAmountFieldMode: this.toAmountFieldMode,
+      addressState: this.addressState
     }
   }
 

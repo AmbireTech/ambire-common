@@ -1675,10 +1675,10 @@ export class MainController extends EventEmitter {
 
     const userRequest = prepareIntentUserRequest({
       selectedAccount: this.selectedAccount.account.addr,
-      amount,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      transactions: this.transactionManager.intent?.transactions
     })
 
     if (!userRequest.length) {
