@@ -1,12 +1,25 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUniqueAccountsArray = exports.migrateAccountPreferencesToAccounts = exports.getDefaultAccountPreferences = exports.getAccountImportStatus = exports.getDefaultSelectedAccount = exports.isDerivedForSmartAccountKeyOnly = exports.isSmartAccount = exports.isAmbireV1LinkedAccount = exports.getEmailAccount = exports.getSpoof = exports.getSmartAccount = exports.getBasicAccount = exports.getAccountDeployParams = void 0;
+exports.getDefaultAccountPreferences = exports.getAccountImportStatus = exports.getDefaultSelectedAccount = exports.isDerivedForSmartAccountKeyOnly = exports.isSmartAccount = exports.isAmbireV1LinkedAccount = void 0;
+exports.getAccountDeployParams = getAccountDeployParams;
+exports.getBasicAccount = getBasicAccount;
+exports.getSmartAccount = getSmartAccount;
+exports.getSpoof = getSpoof;
+exports.getEmailAccount = getEmailAccount;
+exports.getUniqueAccountsArray = getUniqueAccountsArray;
+exports.getAuthorization = getAuthorization;
+exports.isBasicAccount = isBasicAccount;
+exports.canBecomeSmarter = canBecomeSmarter;
+exports.canBecomeSmarterOnChain = canBecomeSmarterOnChain;
+exports.hasBecomeSmarter = hasBecomeSmarter;
+exports.shouldUseStateOverrideForEOA = shouldUseStateOverrideForEOA;
 const ethers_1 = require("ethers");
 const account_1 = require("../../consts/account");
 const deploy_1 = require("../../consts/deploy");
 const derivation_1 = require("../../consts/derivation");
 const signatures_1 = require("../../consts/signatures");
 const account_2 = require("../../interfaces/account");
+const _7702_1 = require("../7702/7702");
 const recovery_1 = require("../dkim/recovery");
 const bytecode_1 = require("../proxyDeploy/bytecode");
 const getAmbireAddressTwo_1 = require("../proxyDeploy/getAmbireAddressTwo");
@@ -22,7 +35,6 @@ function getAccountDeployParams(account) {
         factory.encodeFunctionData('deploy', [account.creation.bytecode, account.creation.salt])
     ];
 }
-exports.getAccountDeployParams = getAccountDeployParams;
 function getBasicAccount(addr, existingAccounts) {
     const { preferences } = existingAccounts.find((acc) => acc.addr === addr) || {};
     return {
@@ -36,7 +48,6 @@ function getBasicAccount(addr, existingAccounts) {
         }
     };
 }
-exports.getBasicAccount = getBasicAccount;
 async function getSmartAccount(privileges, existingAccounts) {
     const bytecode = await (0, bytecode_1.getBytecode)(privileges);
     const addr = (0, getAmbireAddressTwo_1.getAmbireAccountAddress)(deploy_1.AMBIRE_ACCOUNT_FACTORY, bytecode);
@@ -56,12 +67,10 @@ async function getSmartAccount(privileges, existingAccounts) {
         }
     };
 }
-exports.getSmartAccount = getSmartAccount;
 function getSpoof(account) {
     const abiCoder = new ethers_1.AbiCoder();
     return abiCoder.encode(['address'], [account.associatedKeys[0]]) + signatures_1.SPOOF_SIGTYPE;
 }
-exports.getSpoof = getSpoof;
 /**
  * Create a DKIM recoverable email smart account
  *
@@ -129,7 +138,6 @@ async function getEmailAccount(recoveryInfo, associatedKey) {
     const privileges = [{ addr: associatedKey, hash }];
     return getSmartAccount(privileges, []);
 }
-exports.getEmailAccount = getEmailAccount;
 const isAmbireV1LinkedAccount = (factoryAddr) => factoryAddr && (0, ethers_1.getAddress)(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA';
 exports.isAmbireV1LinkedAccount = isAmbireV1LinkedAccount;
 const isSmartAccount = (account) => !!account && !!account.creation;
@@ -185,7 +193,7 @@ const getAccountImportStatus = ({ account, alreadyImportedAccounts, keys, accoun
         if (notImportedYetKeysExistInPage)
             return account_2.ImportStatus.ImportedWithSomeOfTheKeys;
         // Could happen when user imports a smart account with one associated key.
-        // Then imports an Basic account. Then makes the Basic account a second key
+        // Then imports an EOA. Then makes the EOA a second key
         // for the smart account. In this case, both associated keys of the smart
         // account are imported, but the smart account's `associatedKeys` are incomplete.
         const associatedKeysFoundOnPageAreDifferent = accountsOnPage
@@ -212,21 +220,51 @@ const getDefaultAccountPreferences = (accountAddr, prevAccounts, i) => {
     };
 };
 exports.getDefaultAccountPreferences = getDefaultAccountPreferences;
-// As of version 4.25.0, a new Account interface has been introduced,
-// merging the previously separate Account and AccountPreferences interfaces.
-// This change requires a migration due to the introduction of a new controller, AccountsController,
-// which now manages both accounts and their preferences.
-function migrateAccountPreferencesToAccounts(accountPreferences, accounts) {
-    return accounts.map((a) => {
-        return {
-            ...a,
-            preferences: accountPreferences[a.addr] || { label: account_1.DEFAULT_ACCOUNT_LABEL, pfp: a.addr }
-        };
-    });
-}
-exports.migrateAccountPreferencesToAccounts = migrateAccountPreferencesToAccounts;
 function getUniqueAccountsArray(accounts) {
     return Array.from(new Map(accounts.map((account) => [account.addr, account])).values());
 }
-exports.getUniqueAccountsArray = getUniqueAccountsArray;
+function getAuthorization(account, 
+// make sure to pass the EOA nonce here, not the SA or entry point
+eoaNonce, network, authorizations) {
+    if (account.creation || !authorizations[account.addr])
+        return undefined;
+    return authorizations[account.addr].find((msg) => {
+        const content = msg.content;
+        return ((content.chainId === 0n || content.chainId === network.chainId) &&
+            content.nonce === eoaNonce &&
+            (0, _7702_1.getContractImplementation)(content.chainId) === content.contractAddr);
+    });
+}
+// use this in cases where you strictly want to enable/disable an action for
+// EOAs (excluding smart and smarter)
+function isBasicAccount(account, state) {
+    return !account.creation && !state.isSmarterEoa;
+}
+// can the account as a whole become smarter (disregarding chain and state)
+function canBecomeSmarter(acc, accKeys) {
+    return !(0, exports.isSmartAccount)(acc) && !!accKeys.find((key) => key.type === 'internal');
+}
+// can the account become smarter on a specific chain
+function canBecomeSmarterOnChain(network, acc, state, accKeys) {
+    return ((0, _7702_1.has7702)(network) &&
+        isBasicAccount(acc, state) &&
+        !!accKeys.find((key) => key.type === 'internal'));
+}
+function hasBecomeSmarter(account, state) {
+    if (!state[account.addr])
+        return false;
+    const networks = Object.keys(state[account.addr]);
+    for (let i = 0; i < networks.length; i++) {
+        const onChainState = state[account.addr][networks[i]];
+        // eslint-disable-next-line no-continue
+        if (!onChainState)
+            continue;
+        if (onChainState.isSmarterEoa)
+            return true;
+    }
+    return false;
+}
+function shouldUseStateOverrideForEOA(account, state) {
+    return isBasicAccount(account, state);
+}
 //# sourceMappingURL=account.js.map

@@ -29,11 +29,6 @@ const wrappingModule = (_, irCalls, humanizerMeta) => {
                     fullVisualization: (0, utils_1.getUnwrapping)(ethers_1.ZeroAddress, amount)
                 };
             }
-            if (!call?.fullVisualization)
-                return {
-                    ...call,
-                    fullVisualization: (0, utils_1.getUnknownVisualization)('wrapped', call)
-                };
         }
         return call;
     });

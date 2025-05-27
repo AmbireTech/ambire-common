@@ -6,7 +6,7 @@ export declare function getDeploylessOpts(accountAddr: string, supportsStateOver
     from: string;
     mode: DeploylessMode;
     stateToOverride: {
-        [x: string]: {
+        [accountAddr]: {
             code: string;
             stateDiff: {
                 [x: string]: string;

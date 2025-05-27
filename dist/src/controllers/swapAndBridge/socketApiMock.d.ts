@@ -1,7 +1,8 @@
 import { Fetch } from '../../interfaces/fetch';
-import { SocketAPIQuote, SocketAPISendTransactionRequest, SocketAPIToken } from '../../interfaces/swapAndBridge';
+import { SocketAPISendTransactionRequest, SocketAPIToken, SwapAndBridgeQuote } from '../../interfaces/swapAndBridge';
 export declare class SocketAPIMock {
     #private;
+    id: string;
     isHealthy: boolean | null;
     constructor({ fetch, apiKey }: {
         fetch: Fetch;
@@ -10,6 +11,9 @@ export declare class SocketAPIMock {
     getHealth(): Promise<boolean>;
     updateHealth(): Promise<void>;
     resetHealth(): void;
+    getSupportedChains(): {
+        chainId: bigint;
+    }[];
     getToTokenList({ toChainId }: {
         fromChainId: number;
         toChainId: number;
@@ -44,7 +48,6 @@ export declare class SocketAPIMock {
                     hasGasBalance: boolean;
                 };
             };
-            totalUserTx: number;
             sender: string;
             recipient: string;
             totalGasFeesInUsd: number;
@@ -410,16 +413,15 @@ export declare class SocketAPIMock {
         toChainId: number;
         fromAssetAddress: string;
         toAssetAddress: string;
-        route: SocketAPIQuote['selectedRoute'];
+        route: SwapAndBridgeQuote['selectedRoute'];
     }): Promise<{
         userTxType: string;
         txType: string;
         txData: string;
         txTarget: string;
         chainId: number;
-        totalUserTx: number;
         userTxIndex: number;
-        activeRouteId: number;
+        activeRouteId: string;
         value: string;
         approvalData: {
             minimumApprovalAmount: string;
@@ -436,7 +438,372 @@ export declare class SocketAPIMock {
     updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']): Promise<{
         activeRouteId: number;
         userAddress: string;
-        totalUserTx: number;
+        userTxs: ({
+            steps: ({
+                type: string;
+                chainId: number;
+                gasFees: {
+                    asset: {
+                        icon: string;
+                        name: string;
+                        symbol: string;
+                        address: string;
+                        chainId: number;
+                        logoURI: string;
+                        decimals: number;
+                        chainAgnosticId: null;
+                    };
+                    gasLimit: number;
+                    feesInUsd: number;
+                    gasAmount: string;
+                };
+                toAsset: {
+                    icon: string;
+                    name: string;
+                    symbol: string;
+                    address: string;
+                    chainId: number;
+                    logoURI: string;
+                    decimals: number;
+                    chainAgnosticId: null;
+                };
+                protocol: {
+                    icon: string;
+                    name: string;
+                    displayName: string;
+                    securityScore?: undefined;
+                    robustnessScore?: undefined;
+                };
+                toAmount: string;
+                fromAsset: {
+                    icon: string;
+                    name: string;
+                    symbol: string;
+                    address: string;
+                    chainId: number;
+                    logoURI: string;
+                    decimals: number;
+                    chainAgnosticId: null;
+                };
+                fromAmount: string;
+                minAmountOut: string;
+                swapSlippage: number;
+                extraData?: undefined;
+                toChainId?: undefined;
+                fromChainId?: undefined;
+                serviceTime?: undefined;
+                protocolFees?: undefined;
+                bridgeSlippage?: undefined;
+                maxServiceTime?: undefined;
+            } | {
+                type: string;
+                gasFees: {
+                    asset: {
+                        icon: string;
+                        name: string;
+                        symbol: string;
+                        address: string;
+                        chainId: number;
+                        logoURI: string;
+                        decimals: number;
+                        chainAgnosticId: null;
+                    };
+                    gasLimit: number;
+                    feesInUsd: number;
+                    gasAmount: string;
+                };
+                toAsset: {
+                    icon: string;
+                    name: string;
+                    symbol: string;
+                    address: string;
+                    chainId: number;
+                    logoURI: string;
+                    decimals: number;
+                    chainAgnosticId: string;
+                };
+                protocol: {
+                    icon: string;
+                    name: string;
+                    displayName: string;
+                    securityScore: number;
+                    robustnessScore: number;
+                };
+                toAmount: string;
+                extraData: {
+                    rewards: never[];
+                };
+                fromAsset: {
+                    icon: string;
+                    name: string;
+                    symbol: string;
+                    address: string;
+                    chainId: number;
+                    logoURI: string;
+                    decimals: number;
+                    chainAgnosticId: null;
+                };
+                toChainId: number;
+                fromAmount: string;
+                fromChainId: number;
+                serviceTime: number;
+                minAmountOut: string;
+                protocolFees: {
+                    asset: {
+                        icon: string;
+                        name: string;
+                        symbol: string;
+                        address: string;
+                        chainId: number;
+                        logoURI: string;
+                        decimals: number;
+                        chainAgnosticId: null;
+                    };
+                    amount: string;
+                    feesInUsd: number;
+                };
+                bridgeSlippage: number;
+                maxServiceTime: number;
+                chainId?: undefined;
+                swapSlippage?: undefined;
+            })[];
+            sender: string;
+            txType: string;
+            chainId: number;
+            gasFees: {
+                asset: {
+                    icon: string;
+                    name: string;
+                    symbol: string;
+                    address: string;
+                    chainId: number;
+                    logoURI: string;
+                    decimals: number;
+                    chainAgnosticId: null;
+                };
+                gasLimit: number;
+                feesInUsd: number;
+                gasAmount: string;
+            };
+            toAsset: {
+                icon: string;
+                name: string;
+                symbol: string;
+                address: string;
+                chainId: number;
+                logoURI: string;
+                decimals: number;
+                chainAgnosticId: string;
+            };
+            toAmount: string;
+            recipient: string;
+            routePath: string;
+            stepCount: number;
+            userTxType: string;
+            serviceTime: number;
+            userTxIndex: number;
+            approvalData: {
+                owner: string;
+                allowanceTarget: string;
+                approvalTokenAddress: string;
+                minimumApprovalAmount: string;
+            };
+            swapSlippage: number;
+            userTxStatus: string;
+            bridgeSlippage: number;
+            maxServiceTime: number;
+            destinationTxHash: string;
+            destinationTxReceipt: {
+                to: string;
+                from: string;
+                logs: {
+                    data: string;
+                    topics: string[];
+                    address: string;
+                    logIndex: number;
+                    blockHash: string;
+                    blockNumber: number;
+                    transactionHash: string;
+                    transactionIndex: number;
+                }[];
+                type: number;
+                status: number;
+                gasUsed: {
+                    hex: string;
+                    type: string;
+                };
+                blockHash: string;
+                byzantium: boolean;
+                logsBloom: string;
+                blockNumber: number;
+                confirmations: number;
+                contractAddress: null;
+                transactionHash: string;
+                transactionIndex: number;
+                cumulativeGasUsed: {
+                    hex: string;
+                    type: string;
+                };
+                effectiveGasPrice: {
+                    hex: string;
+                    type: string;
+                };
+            };
+            sourceTransactionHash: string;
+            sourceTransactionReceipt: {
+                to: string;
+                from: string;
+                logs: never[];
+                type: number;
+                status: number;
+                gasUsed: {
+                    hex: string;
+                    type: string;
+                };
+                blockHash: string;
+                byzantium: boolean;
+                logsBloom: string;
+                blockNumber: number;
+                confirmations: number;
+                contractAddress: null;
+                transactionHash: string;
+                transactionIndex: number;
+                cumulativeGasUsed: {
+                    hex: string;
+                    type: string;
+                };
+                effectiveGasPrice: {
+                    hex: string;
+                    type: string;
+                };
+            };
+            protocol?: undefined;
+            fromAsset?: undefined;
+            fromAmount?: undefined;
+            minAmountOut?: undefined;
+        } | {
+            sender: string;
+            txType: string;
+            chainId: number;
+            gasFees: {
+                asset: {
+                    icon: string;
+                    name: string;
+                    symbol: string;
+                    address: string;
+                    chainId: number;
+                    logoURI: string;
+                    decimals: number;
+                    chainAgnosticId: string;
+                };
+                gasLimit: number;
+                feesInUsd: number;
+                gasAmount: string;
+            };
+            toAsset: {
+                icon: null;
+                name: string;
+                symbol: string;
+                address: string;
+                chainId: number;
+                logoURI: null;
+                decimals: number;
+                chainAgnosticId: null;
+            };
+            protocol: {
+                icon: string;
+                name: string;
+                displayName: string;
+            };
+            toAmount: string;
+            fromAsset: {
+                icon: string;
+                name: string;
+                symbol: string;
+                address: string;
+                chainId: number;
+                logoURI: string;
+                decimals: number;
+                chainAgnosticId: string;
+            };
+            recipient: string;
+            fromAmount: string;
+            userTxType: string;
+            userTxIndex: number;
+            approvalData: null;
+            minAmountOut: string;
+            swapSlippage: number;
+            steps?: undefined;
+            routePath?: undefined;
+            stepCount?: undefined;
+            serviceTime?: undefined;
+            userTxStatus?: undefined;
+            bridgeSlippage?: undefined;
+            maxServiceTime?: undefined;
+            destinationTxHash?: undefined;
+            destinationTxReceipt?: undefined;
+            sourceTransactionHash?: undefined;
+            sourceTransactionReceipt?: undefined;
+        })[];
+        fromChainId: number;
+        toChainId: number;
+        fromAssetAddress: string;
+        toAssetAddress: string;
+        fromAmount: string;
+        toAmount: string;
+        refuel: null;
+        routeStatus: string;
+        transactionData: {
+            '0': {
+                txHash: string;
+                chainId: number;
+            };
+        };
+        bridgeTxHash: string;
+        recipient: string;
+        integratorId: number;
+        destinationCallData: null;
+        bridgeInsuranceData: null;
+        integratorFee: {
+            asset: {
+                icon: string;
+                name: string;
+                symbol: string;
+                address: string;
+                chainId: number;
+                logoURI: string;
+                decimals: number;
+                chainAgnosticId: null;
+            };
+            amount: string;
+        };
+        createdAt: string;
+        updatedAt: string;
+        currentUserTxIndex: number;
+        fromAsset: {
+            chainId: number;
+            address: string;
+            symbol: string;
+            name: string;
+            decimals: number;
+            icon: string;
+            logoURI: string;
+            chainAgnosticId: null;
+        };
+        toAsset: {
+            chainId: number;
+            address: string;
+            symbol: string;
+            name: string;
+            decimals: number;
+            icon: string;
+            logoURI: string;
+            chainAgnosticId: null;
+        };
+    }>;
+    getActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']): Promise<{
+        activeRouteId: number;
+        userAddress: string;
         userTxs: ({
             steps: ({
                 type: string;
@@ -806,7 +1173,6 @@ export declare class SocketAPIMock {
         txData: string;
         txTarget: string;
         chainId: number;
-        totalUserTx: number;
         activeRouteId: number;
         value: string;
         userTxIndex: number;

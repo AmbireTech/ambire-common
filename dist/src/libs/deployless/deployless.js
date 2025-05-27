@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseErr = exports.fromDescriptor = exports.Deployless = exports.DeploylessMode = void 0;
+exports.Deployless = exports.DeploylessMode = void 0;
+exports.fromDescriptor = fromDescriptor;
+exports.parseErr = parseErr;
 const tslib_1 = require("tslib");
 const assert_1 = tslib_1.__importDefault(require("assert"));
 const ethers_1 = require("ethers");
@@ -33,7 +35,7 @@ var DeploylessMode;
     DeploylessMode[DeploylessMode["Detect"] = 0] = "Detect";
     DeploylessMode[DeploylessMode["ProxyContract"] = 1] = "ProxyContract";
     DeploylessMode[DeploylessMode["StateOverride"] = 2] = "StateOverride";
-})(DeploylessMode = exports.DeploylessMode || (exports.DeploylessMode = {}));
+})(DeploylessMode || (exports.DeploylessMode = DeploylessMode = {}));
 const defaultOptions = {
     mode: DeploylessMode.Detect,
     blockTag: 'latest',
@@ -156,7 +158,6 @@ exports.Deployless = Deployless;
 function fromDescriptor(provider, desc, supportStateOverride) {
     return new Deployless(provider, desc.abi, desc.bin, supportStateOverride ? desc.binRuntime : undefined);
 }
-exports.fromDescriptor = fromDescriptor;
 async function mapError(callPromise) {
     try {
         return await callPromise;
@@ -220,7 +221,6 @@ function parseErr(data) {
     }
     return null;
 }
-exports.parseErr = parseErr;
 function checkDataSize(data) {
     if ((0, ethers_1.getBytes)(data).length >= 24576)
         throw new Error('Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.');

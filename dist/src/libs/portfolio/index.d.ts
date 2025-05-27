@@ -1,5 +1,5 @@
-import { AddrVestingData, ClaimableRewardsData, CollectionResult, GasTankTokenResult, GetOptions, Price, TokenResult } from './interfaces';
+import { AddrVestingData, ClaimableRewardsData, CollectionResult, GasTankTokenResult, GetOptions, TokenResult } from './interfaces';
 import { Portfolio } from './portfolio';
 export { Portfolio };
-export type { Price, TokenResult, ClaimableRewardsData, AddrVestingData, CollectionResult, GetOptions, GasTankTokenResult };
+export type { TokenResult, ClaimableRewardsData, AddrVestingData, CollectionResult, GetOptions, GasTankTokenResult };
 //# sourceMappingURL=index.d.ts.map

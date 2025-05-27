@@ -8,6 +8,5 @@ var TraceCallDiscoveryStatus;
     TraceCallDiscoveryStatus["SlowPendingResponse"] = "slow-pending-response";
     TraceCallDiscoveryStatus["Done"] = "done";
     TraceCallDiscoveryStatus["Failed"] = "failed";
-})(TraceCallDiscoveryStatus || (TraceCallDiscoveryStatus = {}));
-exports.TraceCallDiscoveryStatus = TraceCallDiscoveryStatus;
+})(TraceCallDiscoveryStatus || (exports.TraceCallDiscoveryStatus = TraceCallDiscoveryStatus = {}));
 //# sourceMappingURL=signAccountOp.js.map

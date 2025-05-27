@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.relayerCall = exports.relayerCallUncaught = exports.RELAYER_DOWN_MESSAGE = exports.RelayerError = void 0;
+exports.RELAYER_DOWN_MESSAGE = exports.RelayerError = void 0;
+exports.relayerCallUncaught = relayerCallUncaught;
+exports.relayerCall = relayerCall;
 const richJson_1 = require("../richJson/richJson");
 class RelayerError extends Error {
     input;
@@ -46,7 +48,6 @@ async function relayerCallUncaught(url, fetch, method = 'GET', body = null, head
         };
     }
 }
-exports.relayerCallUncaught = relayerCallUncaught;
 async function relayerCall(path, method = 'GET', body = null, headers = null) {
     const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers);
     if (!res.success) {
@@ -55,5 +56,4 @@ async function relayerCall(path, method = 'GET', body = null, headers = null) {
     }
     return res;
 }
-exports.relayerCall = relayerCall;
 //# sourceMappingURL=relayerCall.js.map

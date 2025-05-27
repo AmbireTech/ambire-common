@@ -7,10 +7,9 @@ const portfolio_1 = require("../portfolio/portfolio");
 const TEN_MINUTES = 10 * 60 * 1000;
 const getNetworksWithFailedRPCErrors = ({ providers, networks, networksWithAssets }) => {
     const errors = [];
-    const networkIds = (0, networks_1.getNetworksWithFailedRPC)({ providers }).filter((networkId) => (Object.keys(networksWithAssets).includes(networkId) &&
-        networksWithAssets[networkId] === true) ||
-        !Object.keys(networksWithAssets).includes(networkId));
-    const networksData = networkIds.map((id) => networks.find((n) => n.id === id));
+    const chainIds = (0, networks_1.getNetworksWithFailedRPC)({ providers }).filter((chainId) => (Object.keys(networksWithAssets).includes(chainId) && networksWithAssets[chainId] === true) ||
+        !Object.keys(networksWithAssets).includes(chainId));
+    const networksData = chainIds.map((id) => networks.find((n) => n.chainId.toString() === id));
     const allFailed = networksData.length === networks.length;
     const networksWithMultipleRpcUrls = allFailed
         ? []
@@ -22,11 +21,11 @@ const getNetworksWithFailedRPCErrors = ({ providers, networks, networksWithAsset
         return errors;
     networksWithMultipleRpcUrls.forEach((n) => {
         errors.push({
-            id: `custom-rpcs-down-${n.id}`,
+            id: `custom-rpcs-down-${n.chainId}`,
             networkNames: [n.name],
             type: 'error',
             title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
-            text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.',
+            text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.',
             actions: [
                 {
                     label: 'Select',
@@ -45,7 +44,7 @@ const getNetworksWithFailedRPCErrors = ({ providers, networks, networksWithAsset
         title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
             .map((n) => n.name)
             .join(', ')} (RPC malfunction)`,
-        text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS/UD domain resolving, add account.'
+        text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.'
     });
     return errors;
 };
@@ -101,36 +100,39 @@ const addPortfolioError = (errors, networkName, newError) => {
     }
     return newErrors;
 };
-const getNetworksWithPortfolioErrorErrors = ({ networks, selectedAccountLatest, providers }) => {
+const getNetworksWithPortfolioErrorErrors = ({ networks, selectedAccountLatest, providers, isAllReady }) => {
     let errors = [];
     if (!Object.keys(selectedAccountLatest).length)
         return [];
-    Object.keys(selectedAccountLatest).forEach((network) => {
-        const portfolioForNetwork = selectedAccountLatest[network];
+    Object.keys(selectedAccountLatest).forEach((chainId) => {
+        const portfolioForNetwork = selectedAccountLatest[chainId];
         const criticalError = portfolioForNetwork?.criticalError;
         const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate;
-        let networkName = networks.find((n) => n.id === network)?.name;
-        if (network === 'gasTank')
+        let networkName = networks.find((n) => n.chainId.toString() === chainId)?.name;
+        if (chainId === 'gasTank')
             networkName = 'Gas Tank';
-        else if (network === 'rewards')
+        else if (chainId === 'rewards')
             networkName = 'Rewards';
         if (!networkName) {
-            console.error('Network name not found for network in getNetworksWithPortfolioErrorErrors', network);
+            console.error('Network name not found for network in getNetworksWithPortfolioErrorErrors', chainId);
             return;
         }
         if (portfolioForNetwork?.isLoading) {
-            errors = addPortfolioError(errors, networkName, 'loading-too-long');
+            // Add an error if the network is preventing the portfolio from going ready
+            // Otherwise skip the network
+            if (!isAllReady)
+                errors = addPortfolioError(errors, networkName, 'loading-too-long');
             return;
         }
         // Don't display an error banner if the last successful update was less than 10 minutes ago
         if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
             return;
-        if (!portfolioForNetwork || !network || portfolioForNetwork.isLoading)
+        if (!portfolioForNetwork || !chainId || portfolioForNetwork.isLoading)
             return;
         // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
         // In case of additional networks don't check the RPC as there isn't one
         if (criticalError &&
-            (['gasTank', 'rewards'].includes(network) || providers[network]?.isWorking)) {
+            (['gasTank', 'rewards'].includes(chainId) || providers[chainId]?.isWorking)) {
             errors = addPortfolioError(errors, networkName, 'portfolio-critical');
             return;
         }
@@ -153,8 +155,8 @@ const getNetworksWithPortfolioErrorErrors = ({ networks, selectedAccountLatest, 
 };
 exports.getNetworksWithPortfolioErrorErrors = getNetworksWithPortfolioErrorErrors;
 const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccountState, providers, networksWithPositions }) => {
-    const isLoading = Object.keys(currentAccountState).some((networkId) => {
-        const networkState = currentAccountState[networkId];
+    const isLoading = Object.keys(currentAccountState).some((chainId) => {
+        const networkState = currentAccountState[chainId];
         return networkState.isLoading;
     });
     if (isLoading)
@@ -162,15 +164,15 @@ const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccountState
     const networkNamesWithUnknownCriticalError = [];
     const networkNamesWithAssetPriceCriticalError = [];
     const providersWithErrors = {};
-    Object.keys(currentAccountState).forEach((networkId) => {
-        const providersWithPositions = networksWithPositions[networkId];
+    Object.keys(currentAccountState).forEach((chainId) => {
+        const providersWithPositions = networksWithPositions[chainId];
         // Ignore networks that don't have positions
         // but ensure that we have a successful response stored (the network key is present)
         if (providersWithPositions && !providersWithPositions.length)
             return;
-        const networkState = currentAccountState[networkId];
-        const network = networks.find((n) => n.id === networkId);
-        const rpcProvider = providers[networkId];
+        const networkState = currentAccountState[chainId];
+        const network = networks.find((n) => n.chainId.toString() === chainId);
+        const rpcProvider = providers[chainId];
         const lastSuccessfulUpdate = networkState.updatedAt;
         if (!network ||
             !networkState ||
@@ -191,10 +193,10 @@ const getNetworksWithDeFiPositionsErrorErrors = ({ networks, currentAccountState
             ?.filter(({ providerName }) => {
             // Display all errors if there hasn't been a successful update
             // for the network.
-            if (!networksWithPositions[networkId])
+            if (!networksWithPositions[chainId])
                 return true;
             // Exclude providers without positions
-            return networksWithPositions[networkId].includes(providerName);
+            return networksWithPositions[chainId].includes(providerName);
         })
             .map((e) => e.providerName) || [];
         if (providerNamesWithErrors.length) {

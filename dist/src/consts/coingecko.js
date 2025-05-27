@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCoinGeckoTokenUrl = exports.getCoinGeckoTokenApiUrl = exports.geckoTokenAddressMapper = exports.geckoIdMapper = void 0;
+exports.getCoinGeckoTokenUrl = void 0;
+exports.geckoIdMapper = geckoIdMapper;
+exports.geckoTokenAddressMapper = geckoTokenAddressMapper;
+exports.getCoinGeckoTokenApiUrl = getCoinGeckoTokenApiUrl;
 const ethers_1 = require("ethers");
 const addresses_1 = require("./addresses");
 const COINGECKO_API_BASE_URL = 'https://api.coingecko.com/api/v3/coins/';
@@ -14,7 +17,6 @@ function geckoIdMapper(address, network) {
         return 'aave';
     return null;
 }
-exports.geckoIdMapper = geckoIdMapper;
 /**
  * Maps specific token addresses to alternative addresses if they are missing on
  * CoinGecko (so that they are aliased to existing tokens).
@@ -25,7 +27,6 @@ function geckoTokenAddressMapper(address) {
         return addresses_1.WALLET_TOKEN;
     return address;
 }
-exports.geckoTokenAddressMapper = geckoTokenAddressMapper;
 /**
  * Constructs the CoinGecko API URL for a given token address and network ID.
  * Handles special cases where the CoinGecko API handles differently certain
@@ -39,7 +40,6 @@ function getCoinGeckoTokenApiUrl({ tokenAddr, geckoChainId, geckoNativeCoinId })
     const geckoTokenAddress = geckoTokenAddressMapper(tokenAddr);
     return `${COINGECKO_API_BASE_URL}${geckoChainId}/contract/${geckoTokenAddress}`;
 }
-exports.getCoinGeckoTokenApiUrl = getCoinGeckoTokenApiUrl;
 /** Constructs the CoinGecko URL for a given token slug. */
 const getCoinGeckoTokenUrl = (slug) => `${COINGECKO_BASE_URL}${slug}`;
 exports.getCoinGeckoTokenUrl = getCoinGeckoTokenUrl;

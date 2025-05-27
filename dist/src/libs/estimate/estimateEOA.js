@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.estimateEOA = void 0;
+exports.estimateEOA = estimateEOA;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const Estimation_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/Estimation.json"));
@@ -16,20 +16,20 @@ const estimateWithRetries_1 = require("./estimateWithRetries");
 const abiCoder = new ethers_1.AbiCoder();
 async function estimateEOA(account, op, accountStates, network, provider, feeTokens, blockFrom, blockTag, errorCallback) {
     if (op.calls.length !== 1)
-        return (0, errors_1.estimationErrorFormatted)(new Error("Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."));
+        return (0, errors_1.estimationErrorFormatted)(new Error("Trying to make multiple calls with an EOA account which shouldn't happen. Please try again or contact support."));
     const deploylessEstimator = (0, deployless_2.fromDescriptor)(provider, Estimation_json_1.default, !network.rpcNoStateOverride);
     const optimisticOracle = network.isOptimistic ? deploy_1.OPTIMISTIC_ORACLE : ethers_1.ZeroAddress;
     const call = op.calls[0];
     // TODO: try to remove this call
     const nonce = await provider.getTransactionCount(account.addr);
-    const accountState = accountStates[op.accountAddr][op.networkId];
+    const accountState = accountStates[op.accountAddr][op.chainId.toString()];
     const encodedCallData = abiCoder.encode([
-        'bytes',
-        'address',
-        'address',
-        'uint256',
-        'uint256',
-        'uint256',
+        'bytes', // data
+        'address', // to
+        'address', // from
+        'uint256', // gasPrice
+        'uint256', // type
+        'uint256', // nonce
         'uint256' // gasLimit
     ], [call.data, call.to ?? ethers_1.ZeroAddress, account.addr, 100000000, 2, nonce, 100000]);
     const initializeRequests = () => [
@@ -74,11 +74,15 @@ async function estimateEOA(account, op, accountStates, network, provider, feeTok
             paidBy: account.addr,
             availableAmount: accountState.balance,
             addedNative: 0n,
-            token: feeTokens.find((token) => token.address === ethers_1.ZeroAddress && !token.flags.onGasTank)
+            token: feeTokens.find((token) => token.address === ethers_1.ZeroAddress && !token.flags.onGasTank),
+            gasUsed: 21000n
         }
     ];
     if (result instanceof Error)
         return (0, errors_1.estimationErrorFormatted)(result, { feePaymentOptions });
+    const foundError = Array.isArray(result) ? result.find((res) => res instanceof Error) : null;
+    if (foundError instanceof Error)
+        return (0, errors_1.estimationErrorFormatted)(foundError, { feePaymentOptions });
     let gasUsed = 0n;
     if (!network.rpcNoStateOverride) {
         const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] = result;
@@ -108,5 +112,4 @@ async function estimateEOA(account, op, accountStates, network, provider, feeTok
         error: result instanceof Error ? result : null
     };
 }
-exports.estimateEOA = estimateEOA;
 //# sourceMappingURL=estimateEOA.js.map

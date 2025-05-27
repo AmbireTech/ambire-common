@@ -2,8 +2,9 @@ import { Account } from '../../interfaces/account';
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore';
 import { Message } from '../../interfaces/userRequest';
 import { AccountsController } from '../accounts/accounts';
-import { SignedMessage } from '../activity/activity';
+import { SignedMessage } from '../activity/types';
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter';
+import { InviteController } from '../invite/invite';
 import { KeystoreController } from '../keystore/keystore';
 import { NetworksController } from '../networks/networks';
 import { ProvidersController } from '../providers/providers';
@@ -22,7 +23,7 @@ export declare class SignMessageController extends EventEmitter {
     signingKeyAddr: Key['addr'] | null;
     signingKeyType: Key['type'] | null;
     signedMessage: SignedMessage | null;
-    constructor(keystore: KeystoreController, providers: ProvidersController, networks: NetworksController, accounts: AccountsController, externalSignerControllers: ExternalSignerControllers);
+    constructor(keystore: KeystoreController, providers: ProvidersController, networks: NetworksController, accounts: AccountsController, externalSignerControllers: ExternalSignerControllers, invite: InviteController, onReset?: () => void);
     init({ dapp, messageToSign }: {
         dapp?: {
             name: string;

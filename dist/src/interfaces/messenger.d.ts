@@ -1,4 +1,3 @@
-/// <reference types="chrome" />
 export type CallbackOptions = {
     /** The sender of the message. */
     sender: chrome.runtime.MessageSender;

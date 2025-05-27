@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.clearHumanizerMetaObjectFromStorage = exports.humanizeMessage = exports.humanizeAccountOp = exports.humanizerCallModules = void 0;
+exports.humanizeMessage = exports.humanizeAccountOp = exports.humanizerCallModules = void 0;
 const tslib_1 = require("tslib");
 const humanizerInfo_json_1 = tslib_1.__importDefault(require("../../consts/humanizer/humanizerInfo.json"));
 const richJson_1 = require("../richJson/richJson");
@@ -16,10 +16,12 @@ const embeddedAmbireOperationHumanizer_1 = require("./modules/embeddedAmbireOper
 const ENS_1 = require("./modules/ENS");
 const FallbackHumanizer_1 = tslib_1.__importDefault(require("./modules/FallbackHumanizer"));
 const GasTankModule_1 = tslib_1.__importDefault(require("./modules/GasTankModule"));
+const Guild_1 = tslib_1.__importDefault(require("./modules/Guild"));
 const KyberSwap_1 = tslib_1.__importDefault(require("./modules/KyberSwap"));
 const Legends_1 = tslib_1.__importDefault(require("./modules/Legends"));
 const Lido_1 = require("./modules/Lido");
 const OpenSea_1 = require("./modules/OpenSea");
+const Pancake_1 = tslib_1.__importDefault(require("./modules/Pancake"));
 const postProcessModule_1 = require("./modules/PostProcessing/postProcessModule");
 const PreProcess_1 = tslib_1.__importDefault(require("./modules/PreProcess"));
 const Privileges_1 = tslib_1.__importDefault(require("./modules/Privileges"));
@@ -49,6 +51,7 @@ exports.humanizerCallModules = [
     Socket_1.SocketModule,
     Across_1.default,
     _1Inch_1.default,
+    Pancake_1.default,
     Wrapping_1.default,
     Aave_1.aaveHumanizer,
     WALLET_1.WALLETModule,
@@ -57,6 +60,7 @@ exports.humanizerCallModules = [
     Legends_1.default,
     SingletonFactory_1.default,
     ENS_1.ensModule,
+    Guild_1.default,
     OpenSea_1.openSeaModule,
     AsciiModule_1.default,
     FallbackHumanizer_1.default,
@@ -71,13 +75,14 @@ const humanizerTMModules = [
     messageModules_1.entryPointModule,
     messageModules_1.legendsMessageModule,
     messageModules_1.ensMessageModule,
-    messageModules_1.openseaMessageModule
+    messageModules_1.openseaMessageModule,
+    messageModules_1.eip7702AuthorizationModule
 ];
 const humanizeAccountOp = (_accountOp, options) => {
     const accountOp = (0, richJson_1.parse)((0, richJson_1.stringify)(_accountOp));
     const humanizerOptions = {
         ...options,
-        networkId: accountOp.networkId
+        chainId: accountOp.chainId
     };
     let currentCalls = accountOp.calls;
     exports.humanizerCallModules.forEach((hm) => {
@@ -105,11 +110,4 @@ const humanizeMessage = (_message) => {
     }
 };
 exports.humanizeMessage = humanizeMessage;
-// As of version v4.34.0 HumanizerMetaV2 in storage is no longer needed. It was
-// used for persisting learnt data from async operations, triggered by the
-// humanization process.
-async function clearHumanizerMetaObjectFromStorage(storage) {
-    await storage.remove('HumanizerMetaV2');
-}
-exports.clearHumanizerMetaObjectFromStorage = clearHumanizerMetaObjectFromStorage;
 //# sourceMappingURL=index.js.map

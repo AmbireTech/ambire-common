@@ -1,4 +1,4 @@
-import { Network, NetworkId } from '../../interfaces/network';
+import { Network } from '../../interfaces/network';
 import { RPCProviders } from '../../interfaces/provider';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { NetworksController } from '../networks/networks';
@@ -13,8 +13,8 @@ export declare class ProvidersController extends EventEmitter {
     constructor(networks: NetworksController);
     get isInitialized(): boolean;
     setProvider(network: Network): void;
-    updateProviderIsWorking(networkId: NetworkId, isWorking: boolean): void;
-    removeProvider(networkId: NetworkId): void;
+    updateProviderIsWorking(chainId: bigint, isWorking: boolean): void;
+    removeProvider(chainId: bigint): void;
     toJSON(): this & {
         isInitialized: boolean;
         emittedErrors: import("../eventEmitter/eventEmitter").ErrorRef[];

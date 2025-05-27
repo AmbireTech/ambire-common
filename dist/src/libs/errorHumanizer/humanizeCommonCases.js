@@ -2,17 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.humanizeEstimationOrBroadcastError = void 0;
 const errors_1 = require("./errors");
-const humanizeEstimationOrBroadcastError = (reason, prefix) => {
-    let message = null;
-    if (!reason)
-        return message;
-    errors_1.BROADCAST_OR_ESTIMATION_ERRORS.forEach((error) => {
-        const isMatching = error.reasons.some((errorReason) => reason.toLowerCase().includes(errorReason.toLowerCase()));
-        if (!isMatching)
-            return;
-        message = `${prefix !== '' ? `${prefix} ` : ''}${error.message}`;
-    });
-    return message;
+const helpers_1 = require("./helpers");
+const humanizeEstimationOrBroadcastError = (reason, prefix, originalError) => {
+    return (0, helpers_1.getHumanReadableErrorMessage)(null, errors_1.BROADCAST_OR_ESTIMATION_ERRORS, prefix, reason, originalError);
 };
 exports.humanizeEstimationOrBroadcastError = humanizeEstimationOrBroadcastError;
 //# sourceMappingURL=humanizeCommonCases.js.map

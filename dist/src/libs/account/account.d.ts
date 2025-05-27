@@ -1,6 +1,8 @@
-import { Account, AccountId, AccountOnPage, AccountPreferences, ImportStatus } from '../../interfaces/account';
+import { InternalSignedMessages, SignedMessage } from '../../controllers/activity/types';
+import { Account, AccountOnchainState, AccountOnPage, AccountPreferences, AccountStates, ImportStatus } from '../../interfaces/account';
 import { KeyIterator } from '../../interfaces/keyIterator';
 import { Key } from '../../interfaces/keystore';
+import { Network } from '../../interfaces/network';
 import { PrivLevels } from '../proxyDeploy/deploy';
 /**
  * The minimum requirements are emailFrom and secondaryKey.
@@ -49,22 +51,16 @@ export declare const getAccountImportStatus: ({ account, alreadyImportedAccounts
     account: Account;
     alreadyImportedAccounts: Account[];
     keys: Key[];
-    accountsOnPage?: Omit<AccountOnPage, "importStatus">[] | undefined;
-    keyIteratorType?: string | undefined;
+    accountsOnPage?: Omit<AccountOnPage, "importStatus">[];
+    keyIteratorType?: KeyIterator["type"];
 }) => ImportStatus;
 export declare const getDefaultAccountPreferences: (accountAddr: string, prevAccounts: Account[], i?: number) => AccountPreferences;
-export declare function migrateAccountPreferencesToAccounts(accountPreferences: {
-    [key: AccountId]: AccountPreferences;
-}, accounts: Account[]): {
-    preferences: AccountPreferences;
-    addr: string;
-    associatedKeys: string[];
-    initialPrivileges: [string, string][];
-    creation: import("../../interfaces/account").AccountCreation | null;
-    email?: string | undefined;
-    newlyCreated?: boolean | undefined;
-    newlyAdded?: boolean | undefined;
-}[];
 export declare function getUniqueAccountsArray(accounts: Account[]): Account[];
+export declare function getAuthorization(account: Account, eoaNonce: bigint, network: Network, authorizations: InternalSignedMessages): SignedMessage | undefined;
+export declare function isBasicAccount(account: Account, state: AccountOnchainState): boolean;
+export declare function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean;
+export declare function canBecomeSmarterOnChain(network: Network, acc: Account, state: AccountOnchainState, accKeys: Key[]): boolean;
+export declare function hasBecomeSmarter(account: Account, state: AccountStates): boolean;
+export declare function shouldUseStateOverrideForEOA(account: Account, state: AccountOnchainState): boolean;
 export {};
 //# sourceMappingURL=account.d.ts.map

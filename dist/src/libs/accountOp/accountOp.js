@@ -1,19 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.accountOpSignableHash = exports.getSignableHash = exports.getSignableCallsForBundlerEstimate = exports.getSignableCalls = exports.isAccountOpsIntentEqual = exports.canBroadcast = exports.callToTuple = exports.toSingletonCall = exports.AccountOpStatus = void 0;
+exports.toSingletonCall = toSingletonCall;
+exports.callToTuple = callToTuple;
+exports.canBroadcast = canBroadcast;
+exports.isAccountOpsIntentEqual = isAccountOpsIntentEqual;
+exports.getSignableCalls = getSignableCalls;
+exports.getSignableHash = getSignableHash;
+exports.accountOpSignableHash = accountOpSignableHash;
 const ethers_1 = require("ethers");
 const deploy_1 = require("../../consts/deploy");
 const richJson_1 = require("../richJson/richJson");
-var AccountOpStatus;
-(function (AccountOpStatus) {
-    AccountOpStatus["Pending"] = "pending";
-    AccountOpStatus["BroadcastedButNotConfirmed"] = "broadcasted-but-not-confirmed";
-    AccountOpStatus["Success"] = "success";
-    AccountOpStatus["Failure"] = "failure";
-    AccountOpStatus["Rejected"] = "rejected";
-    AccountOpStatus["UnknownButPastNonce"] = "unknown-but-past-nonce";
-    AccountOpStatus["BroadcastButStuck"] = "broadcast-but-stuck";
-})(AccountOpStatus = exports.AccountOpStatus || (exports.AccountOpStatus = {}));
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or
@@ -45,11 +41,9 @@ function toSingletonCall(call) {
         data: singletonInterface.encodeFunctionData('deploy', [call.data, (0, ethers_1.toBeHex)(0, 32)])
     };
 }
-exports.toSingletonCall = toSingletonCall;
 function callToTuple(call) {
     return [call.to, call.value.toString(), call.data];
 }
-exports.callToTuple = callToTuple;
 function canBroadcast(op, accountIsEOA) {
     if (op.signingKeyAddr === null)
         throw new Error('missing signingKeyAddr');
@@ -71,7 +65,6 @@ function canBroadcast(op, accountIsEOA) {
     }
     return true;
 }
-exports.canBroadcast = canBroadcast;
 /**
  * Compare two AccountOps intents.
  *
@@ -81,15 +74,14 @@ exports.canBroadcast = canBroadcast;
  */
 function isAccountOpsIntentEqual(accountOps1, accountOps2) {
     const createIntent = (accountOps) => {
-        return accountOps.map(({ accountAddr, networkId, calls }) => ({
+        return accountOps.map(({ accountAddr, chainId, calls }) => ({
             accountAddr,
-            networkId,
+            chainId,
             calls
         }));
     };
     return (0, richJson_1.stringify)(createIntent(accountOps1)) === (0, richJson_1.stringify)(createIntent(accountOps2));
 }
-exports.isAccountOpsIntentEqual = isAccountOpsIntentEqual;
 function getSignableCalls(op) {
     const callsToSign = op.calls.map(toSingletonCall).map(callToTuple);
     if (op.activatorCall)
@@ -98,23 +90,10 @@ function getSignableCalls(op) {
         callsToSign.push(callToTuple(op.feeCall));
     return callsToSign;
 }
-exports.getSignableCalls = getSignableCalls;
-function getSignableCallsForBundlerEstimate(op) {
-    const callsToSign = getSignableCalls(op);
-    // add the fee call one more time when doing a bundler estimate
-    // this is because the feeCall during estimation is fake (approve instead
-    // of transfer, incorrect amount) and more ofteh than not, this causes
-    // a lower estimation than the real one, causing bad UX in the process
-    if (op.feeCall)
-        callsToSign.push(callToTuple(op.feeCall));
-    return callsToSign;
-}
-exports.getSignableCallsForBundlerEstimate = getSignableCallsForBundlerEstimate;
 function getSignableHash(addr, chainId, nonce, calls) {
     const abiCoder = new ethers_1.AbiCoder();
     return (0, ethers_1.getBytes)((0, ethers_1.keccak256)(abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [addr, chainId, nonce, calls])));
 }
-exports.getSignableHash = getSignableHash;
 /**
  * This function returns the hash as a Uint8Array instead of string
  * and the reason for this is the implementation that follows:
@@ -143,5 +122,4 @@ exports.getSignableHash = getSignableHash;
 function accountOpSignableHash(op, chainId) {
     return getSignableHash(op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op));
 }
-exports.accountOpSignableHash = accountOpSignableHash;
 //# sourceMappingURL=accountOp.js.map

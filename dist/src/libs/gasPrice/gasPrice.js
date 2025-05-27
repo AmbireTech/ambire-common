@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getProbableCallData = exports.getGasPriceRecommendations = exports.MIN_GAS_PRICE = void 0;
+exports.MIN_GAS_PRICE = void 0;
+exports.getGasPriceRecommendations = getGasPriceRecommendations;
+exports.getProbableCallData = getProbableCallData;
+exports.getBroadcastGas = getBroadcastGas;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
@@ -130,10 +133,15 @@ async function getGasPriceRecommendations(provider, network, blockTag = -1) {
             const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget);
             expectedBaseFee += baseFeeDelta === 0n ? 1n : baseFeeDelta;
         }
-        else if (lastBlock.gasUsed < gasTarget) {
-            const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed);
-            expectedBaseFee -= baseFeeDelta;
-        }
+        // <Bobby>: commenting out the decrease as it's really bad UX
+        // if the user chooses slow on Ethereum and the next block doesn't
+        // actually meet the base fee and starts going up from there, the user
+        // will need to do an RBF or wait ~forever for the txn to complete
+        // the below code is good in theory, bad in practise
+        // else if (lastBlock.gasUsed < gasTarget) {
+        //   const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
+        //   expectedBaseFee -= baseFeeDelta
+        // }
         // if the estimated fee is below the chain minimum, set it to the min
         const minBaseFee = getNetworkMinBaseFee(network, lastBlock);
         if (expectedBaseFee < minBaseFee)
@@ -179,7 +187,6 @@ async function getGasPriceRecommendations(provider, network, blockTag = -1) {
     });
     return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit };
 }
-exports.getGasPriceRecommendations = getGasPriceRecommendations;
 function getProbableCallData(account, accountOp, accountState, network) {
     let estimationCallData;
     // include the activator call for estimation if any
@@ -216,5 +223,15 @@ function getProbableCallData(account, accountOp, accountState, network) {
     }
     return estimationCallData;
 }
-exports.getProbableCallData = getProbableCallData;
+function getBroadcastGas(baseAcc, op) {
+    const calldata = baseAcc.getBroadcastCalldata(op);
+    if (calldata === '0x')
+        return 0n;
+    const FIXED_OVERHEAD = 21000n;
+    const bytes = Buffer.from(baseAcc.getBroadcastCalldata(op).substring(2));
+    const nonZeroBytes = BigInt(bytes.filter((b) => b).length);
+    const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes);
+    const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n;
+    return txDataGas + FIXED_OVERHEAD;
+}
 //# sourceMappingURL=gasPrice.js.map

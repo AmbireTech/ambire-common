@@ -1,9 +1,9 @@
 import { Banner } from '../../interfaces/banner';
 import { EmailVaultData, MagicLinkFlow } from '../../interfaces/emailVault';
 import { Fetch } from '../../interfaces/fetch';
-import { Storage } from '../../interfaces/storage';
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter';
 import { KeystoreController } from '../keystore/keystore';
+import { StorageController } from '../storage/storage';
 export declare enum EmailVaultState {
     Loading = "loading",
     WaitingEmailConfirmation = "WaitingEmailConfirmation",
@@ -39,7 +39,6 @@ declare const STATUS_WRAPPED_METHODS: {
  */
 export declare class EmailVaultController extends EventEmitter {
     #private;
-    private storage;
     private initialLoadPromise;
     isReady: boolean;
     lastUpdate: Date;
@@ -51,7 +50,7 @@ export declare class EmailVaultController extends EventEmitter {
         errors?: Error[];
     };
     statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>;
-    constructor(storage: Storage, fetch: Fetch, relayerUrl: string, keyStore: KeystoreController, options?: {
+    constructor(storage: StorageController, fetch: Fetch, relayerUrl: string, keyStore: KeystoreController, options?: {
         autoConfirmMagicLink?: boolean;
     });
     private load;

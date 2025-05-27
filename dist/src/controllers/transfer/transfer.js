@@ -1,11 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TransferController = void 0;
+exports.TransferController = exports.hasPersistedState = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const addresses_1 = require("../../consts/addresses");
 const account_1 = require("../../libs/account/account");
 const helpers_1 = require("../../libs/portfolio/helpers");
+const richJson_1 = require("../../libs/richJson/richJson");
 const amount_1 = require("../../libs/transfer/amount");
 const validations_1 = require("../../services/validations");
 const formatters_1 = require("../../utils/numbers/formatters");
@@ -15,7 +16,6 @@ const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION);
 const DEFAULT_ADDRESS_STATE = {
     fieldValue: '',
     ensAddress: '',
-    udAddress: '',
     isDomainResolving: false
 };
 const DEFAULT_VALIDATION_FORM_MSGS = {
@@ -29,9 +29,30 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
     }
 };
 const HARD_CODED_CURRENCY = 'usd';
+// Here's how state persistence works:
+// 1. When we detect a state diff (e.g., transfer.update({...})), we save specific controller fields to storage.
+// 2. All state is stored under PERSIST_STORAGE_KEY and follows the PersistedState structure.
+// 3. When the controller loads for the first time, we hydrate it by loading the latest persisted state.
+// 4. If it's a Top-up, we skip persistence. Both Top-up and Send use the same controller,
+//    which can lead to state mix-up bugs.
+// 5. We store APP_VERSION in PersistedState.version. If a new version is deployed and it differs,
+//    we clear the persisted state and skip hydration.
+//    This avoids runtime errors caused by outdated state structures.
+const PERSIST_STORAGE_KEY = 'transferState';
+const hasPersistedState = async (storage, appVersion) => {
+    const persistedState = await storage.get(PERSIST_STORAGE_KEY);
+    if (!persistedState)
+        return false;
+    if (persistedState.version !== appVersion) {
+        return false;
+    }
+    return !!Object.keys(persistedState.state);
+};
+exports.hasPersistedState = hasPersistedState;
 class TransferController extends eventEmitter_1.default {
     #storage;
     #networks = [];
+    #portfolio;
     #addressBookContacts = [];
     #selectedToken = null;
     #selectedAccountData = null;
@@ -49,18 +70,76 @@ class TransferController extends eventEmitter_1.default {
     #shouldSkipTransactionQueuedModal = false;
     // Holds the initial load promise, so that one can wait until it completes
     #initialLoadPromise;
-    constructor(storage, humanizerInfo, selectedAccountData, networks) {
+    #APP_VERSION;
+    constructor(storage, humanizerInfo, selectedAccountData, networks, portfolio, shouldHydrate, APP_VERSION) {
         super();
         this.#storage = storage;
         this.#humanizerInfo = humanizerInfo;
         this.#selectedAccountData = selectedAccountData;
         this.#networks = networks;
-        this.#initialLoadPromise = this.#load();
+        this.#portfolio = portfolio;
+        this.#APP_VERSION = APP_VERSION;
+        this.#initialLoadPromise = this.#load(shouldHydrate);
         this.emitUpdate();
     }
-    async #load() {
+    async #load(shouldHydrate) {
         this.#shouldSkipTransactionQueuedModal = await this.#storage.get('shouldSkipTransactionQueuedModal', false);
-        this.emitUpdate();
+        // Currently, we should not hydrate when it's a Top-up, but in the future, we may have other cases as well.
+        if (shouldHydrate)
+            await this.#hydrate();
+    }
+    async #hydrate() {
+        const persistedState = await this.#storage.get(PERSIST_STORAGE_KEY);
+        // Don't hydrate if no state was previously persisted.
+        if (!persistedState)
+            return;
+        // In case of a newer app version, we don't hydrate using the older persisted storage,
+        // as the storage interface may differ from the newly deployed code.
+        // This could result in a runtime error, so we prefer to play it safe.
+        if (persistedState.version !== this.#APP_VERSION) {
+            await this.#clearPersistedState();
+            return;
+        }
+        const { selectedToken, ...rest } = persistedState.state;
+        // Normalize selected token to TokenResult
+        if (selectedToken) {
+            const portfolioToken = this.#portfolio.tokens.find((token) => token.address === selectedToken.address && token.chainId === selectedToken.chainId);
+            if (portfolioToken)
+                this.#selectedToken = portfolioToken;
+        }
+        Object.assign(this, rest);
+    }
+    get persistableState() {
+        const PERSISTED_FIELDS = {
+            amount: this.amount,
+            amountInFiat: this.amountInFiat,
+            amountFieldMode: this.amountFieldMode,
+            addressState: this.addressState,
+            isSWWarningVisible: this.isSWWarningVisible,
+            isSWWarningAgreed: this.isSWWarningAgreed,
+            isRecipientAddressUnknown: this.isRecipientAddressUnknown,
+            isRecipientAddressUnknownAgreed: this.isRecipientAddressUnknownAgreed,
+            isRecipientHumanizerKnownTokenOrSmartContract: this.isRecipientHumanizerKnownTokenOrSmartContract
+        };
+        // We prefer to keep TokenResult simplified in storage and normalize it back to the full object during hydration,
+        // to avoid some TokenResult fields (amount, flags) becoming obsolete while cached.
+        if (this.#selectedToken) {
+            PERSISTED_FIELDS.selectedToken = {
+                address: this.#selectedToken.address,
+                chainId: this.#selectedToken.chainId
+            };
+        }
+        return PERSISTED_FIELDS;
+    }
+    #persist() {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#storage.set(PERSIST_STORAGE_KEY, {
+            state: this.persistableState,
+            version: this.#APP_VERSION
+        });
+    }
+    async #clearPersistedState() {
+        await this.#storage.remove(PERSIST_STORAGE_KEY);
     }
     get shouldSkipTransactionQueuedModal() {
         return this.#shouldSkipTransactionQueuedModal;
@@ -83,7 +162,7 @@ class TransferController extends eventEmitter_1.default {
         const prevSelectedToken = { ...this.selectedToken };
         this.#selectedToken = token;
         if (prevSelectedToken?.address !== token?.address ||
-            prevSelectedToken?.networkId !== token?.networkId) {
+            prevSelectedToken?.chainId !== token?.chainId) {
             if (!token.priceIn.length) {
                 this.amountFieldMode = 'token';
             }
@@ -124,6 +203,8 @@ class TransferController extends eventEmitter_1.default {
         this.isRecipientHumanizerKnownTokenOrSmartContract = false;
         this.isSWWarningVisible = false;
         this.isSWWarningAgreed = false;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#clearPersistedState();
         this.emitUpdate();
     }
     get validationFormMsgs() {
@@ -131,9 +212,8 @@ class TransferController extends eventEmitter_1.default {
             return DEFAULT_VALIDATION_FORM_MSGS;
         const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS;
         if (this.#humanizerInfo && this.#selectedAccountData) {
-            const isUDAddress = !!this.addressState.udAddress;
             const isEnsAddress = !!this.addressState.ensAddress;
-            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, this.addressState.isDomainResolving, this.isSWWarningVisible, this.isSWWarningAgreed);
+            validationFormMsgsNew.recipientAddress = (0, validations_1.validateSendTransferAddress)(this.recipientAddress, this.#selectedAccountData.addr, this.isRecipientAddressUnknownAgreed, this.isRecipientAddressUnknown, this.isRecipientHumanizerKnownTokenOrSmartContract, isEnsAddress, this.addressState.isDomainResolving, this.isSWWarningVisible, this.isSWWarningAgreed);
         }
         // Validate the amount
         if (this.selectedToken) {
@@ -161,9 +241,17 @@ class TransferController extends eventEmitter_1.default {
         return !!this.#humanizerInfo && !!this.#selectedAccountData && !!this.#networks.length;
     }
     get recipientAddress() {
-        return (this.addressState.ensAddress || this.addressState.udAddress || this.addressState.fieldValue);
+        return this.addressState.ensAddress || this.addressState.fieldValue;
     }
-    update({ selectedAccountData, humanizerInfo, selectedToken, amount, addressState, isSWWarningAgreed, isRecipientAddressUnknownAgreed, isTopUp, networks, contacts, amountFieldMode }) {
+    async update({ selectedAccountData, humanizerInfo, selectedToken, amount, addressState, isSWWarningAgreed, isRecipientAddressUnknownAgreed, isTopUp, networks, contacts, amountFieldMode }, options = {}) {
+        // When should we persist?
+        // Simply, when a field change is triggered by the user.
+        // If the change originates from useEffect - for instance, auto-selecting a token -
+        // we should not persist, as this would load the Send form every time the user opens the Dashboard.
+        const { shouldPersist = true } = options;
+        await this.#initialLoadPromise;
+        const prevState = (0, richJson_1.stringify)(this.persistableState);
+        const hasAccountChanged = selectedAccountData && this.#selectedAccountData?.addr !== selectedAccountData.addr;
         if (humanizerInfo) {
             this.#humanizerInfo = humanizerInfo;
         }
@@ -177,11 +265,15 @@ class TransferController extends eventEmitter_1.default {
             }
         }
         if (selectedAccountData) {
-            if (this.#selectedAccountData?.addr !== selectedAccountData.addr) {
+            if (hasAccountChanged) {
                 this.#setAmount('');
                 this.selectedToken = null;
+                this.addressState = { ...DEFAULT_ADDRESS_STATE };
             }
             this.#selectedAccountData = selectedAccountData;
+        }
+        if (amountFieldMode) {
+            this.amountFieldMode = amountFieldMode;
         }
         if (selectedToken) {
             this.selectedToken = selectedToken;
@@ -189,9 +281,6 @@ class TransferController extends eventEmitter_1.default {
         // If we do a regular check the value won't update if it's '' or '0'
         if (typeof amount === 'string') {
             this.#setAmount(amount);
-        }
-        if (amountFieldMode) {
-            this.amountFieldMode = amountFieldMode;
         }
         if (addressState) {
             this.addressState = {
@@ -217,6 +306,16 @@ class TransferController extends eventEmitter_1.default {
             this.#setSWWarningVisibleIfNeeded();
         }
         this.emitUpdate();
+        if (shouldPersist) {
+            if (this.isTopUp || hasAccountChanged) {
+                return this.#clearPersistedState();
+            }
+            const hasStateChange = prevState !== (0, richJson_1.stringify)(this.persistableState);
+            // We persist only if the Transfer form fields have changed.
+            // Otherwise, we can't easily determine if the form is dirty or not.
+            if (hasStateChange)
+                this.#persist();
+        }
     }
     checkIsRecipientAddressUnknown() {
         if (!(0, ethers_1.isAddress)(this.recipientAddress)) {
@@ -297,9 +396,9 @@ class TransferController extends eventEmitter_1.default {
                 !!this.selectedToken?.address &&
                 Number(this.selectedToken?.address) === 0 &&
                 this.#networks
-                    .filter((n) => n.id !== 'ethereum')
-                    .map(({ id }) => id)
-                    .includes(this.selectedToken.networkId || 'ethereum');
+                    .filter((n) => n.chainId !== 1n)
+                    .map(({ chainId }) => chainId)
+                    .includes(this.selectedToken.chainId || 1n);
         this.emitUpdate();
     }
     // includes the getters in the stringified instance

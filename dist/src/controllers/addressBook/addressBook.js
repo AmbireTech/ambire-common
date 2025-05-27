@@ -39,6 +39,7 @@ class AddressBookController extends eventEmitter_1.default {
     }
     async #load() {
         await this.#accounts.initialLoadPromise;
+        await this.#selectedAccount.initialLoadPromise;
         try {
             this.#manuallyAddedContacts = await this.#storage.get('contacts', []);
             this.emitUpdate();

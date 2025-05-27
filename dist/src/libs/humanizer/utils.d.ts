@@ -1,6 +1,4 @@
-import { Fetch } from '../../interfaces/fetch';
-import { Network } from '../../interfaces/network';
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces';
+import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces';
 export declare function getWarning(content: string, level?: HumanizerWarning['level']): HumanizerWarning;
 export declare const randomId: () => number;
 export declare function getLabel(content: string, isBold?: boolean): HumanizerVisualization;
@@ -16,13 +14,7 @@ export declare function getRecipientText(from: string, recipient: string): Human
 export declare function getDeadlineText(deadline: bigint): string;
 export declare function getDeadline(deadlineSecs: bigint | number): HumanizerVisualization;
 export declare function getLink(url: string, content: string): HumanizerVisualization;
-/**
- * Make a request to coingecko to fetch the latest price of the native token.
- * This is used by benzina and hence we cannot wrap the errors in emitError
- */
-export declare function getNativePrice(network: Network, fetch: Fetch): Promise<number>;
 export declare function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean;
-export declare function getUnknownVisualization(name: string, call: IrCall): HumanizerVisualization[];
 export declare function getWrapping(address: string, amount: bigint): HumanizerVisualization[];
 export declare function getUnwrapping(address: string, amount: bigint): HumanizerVisualization[];
 export declare function getKnownName(humanizerMeta: HumanizerMeta | undefined, address: string): string | undefined;

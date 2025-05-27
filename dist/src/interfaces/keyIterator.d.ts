@@ -3,7 +3,7 @@ import { SelectedAccountForImport } from './account';
 import { ExternalSignerController, Key } from './keystore';
 export interface KeyIterator {
     type: Key['type'];
-    subType?: 'seed' | 'private-key';
+    subType: 'seed' | 'private-key' | 'hw';
     /** The wallet native SDK instance, if any exists */
     walletSDK?: any;
     /** Needed for the hardware wallets only */
@@ -24,6 +24,10 @@ export interface KeyIterator {
             createdAt: number;
         };
     }[];
+    getEncryptedSeed?: (encryptor: any) => Promise<{
+        seed: string;
+        passphrase: string | null;
+    } | null>;
     /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
     isSeedMatching?: (seedToCompareWith: string) => boolean;
 }

@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = lookup;
 const { DNSProver } = require('@ensdomains/dnsprovejs');
 /**
  * The method returns a SignedSet answer if found or throws an exception
@@ -26,5 +27,4 @@ async function lookup(selector, domain, opt = {}) {
         throw new Error(error.message);
     }
 }
-exports.default = lookup;
 //# sourceMappingURL=lookup.js.map

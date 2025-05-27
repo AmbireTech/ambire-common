@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.KeyIterator = exports.getPrivateKeyFromSeed = exports.isValidPrivateKey = void 0;
+exports.KeyIterator = exports.getPrivateKeyFromSeed = void 0;
+exports.isValidPrivateKey = isValidPrivateKey;
 /* eslint-disable new-cap */
 const ethers_1 = require("ethers");
 const derivation_1 = require("../../consts/derivation");
@@ -15,7 +16,6 @@ function isValidPrivateKey(value) {
         return false;
     }
 }
-exports.isValidPrivateKey = isValidPrivateKey;
 const getPrivateKeyFromSeed = (seed, seedPassphrase, keyIndex, hdPathTemplate) => {
     const mnemonic = ethers_1.Mnemonic.fromPhrase(seed, seedPassphrase);
     const wallet = ethers_1.HDNodeWallet.fromMnemonic(mnemonic, (0, hdPath_1.getHdPathFromTemplate)(hdPathTemplate, keyIndex));
@@ -51,6 +51,12 @@ class KeyIterator {
             return;
         }
         throw new Error('keyIterator: invalid argument provided to constructor');
+    }
+    async getEncryptedSeed(encryptor) {
+        if (!this.#seedPhrase)
+            return null;
+        const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase);
+        return encryptedSeed;
     }
     async retrieve(fromToArr, hdPathTemplate) {
         const keys = [];

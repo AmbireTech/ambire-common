@@ -3,7 +3,7 @@ import { Fetch } from '../../interfaces/fetch';
 import { Network } from '../../interfaces/network';
 import { RPCProvider } from '../../interfaces/provider';
 import { DecodedError } from '../../libs/errorDecoder/types';
-import { BundlerEstimateResult } from '../../libs/estimate/interfaces';
+import { BundlerEstimateResult, BundlerStateOverride } from '../../libs/estimate/interfaces';
 import { UserOperation } from '../../libs/userOperation/types';
 import { GasSpeeds, UserOpStatus } from './types';
 export declare abstract class Bundler {
@@ -36,7 +36,7 @@ export declare abstract class Bundler {
      */
     protected getProvider(network: Network): RPCProvider;
     private sendEstimateReq;
-    estimate(userOperation: UserOperation, network: Network, shouldStateOverride?: boolean): Promise<BundlerEstimateResult>;
+    estimate(userOperation: UserOperation, network: Network, stateOverride?: BundlerStateOverride): Promise<BundlerEstimateResult>;
     /**
      * Get the transaction receipt from the userOperationHash if ready
      *

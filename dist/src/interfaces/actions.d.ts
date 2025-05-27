@@ -31,5 +31,14 @@ export type DappRequestAction = {
     type: 'dappRequest';
     userRequest: DappUserRequest;
 };
-export type Action = SwitchAccountAction | AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction;
+export type SwapAndBridgeAction = {
+    id: UserRequest['id'];
+    type: 'swapAndBridge';
+    userRequest: {
+        meta: {
+            accountAddr: Account['addr'];
+        };
+    };
+};
+export type Action = SwitchAccountAction | AccountOpAction | SignMessageAction | BenzinAction | DappRequestAction | SwapAndBridgeAction;
 //# sourceMappingURL=actions.d.ts.map

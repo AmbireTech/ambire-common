@@ -7,6 +7,6 @@ import { BundlerSwitcher } from './bundlerSwitcher';
  * set a broken bundler as the main one to test if fallback is working
  */
 export declare class DevBundlerSwitcher extends BundlerSwitcher {
-    constructor(network: Network, getSignAccountOpStatus: Function, noStateUpdateStatuses: any[], usedBundlers?: BUNDLER[]);
+    constructor(network: Network, areUpdatesForbidden: Function, usedBundlers?: BUNDLER[]);
 }
 //# sourceMappingURL=DevBundlerSwitcher.d.ts.map

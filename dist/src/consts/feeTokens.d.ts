@@ -1,6 +1,6 @@
 declare const _default: {
     address: string;
-    networkId: string;
+    chainId: bigint;
 }[];
 export default _default;
 //# sourceMappingURL=feeTokens.d.ts.map

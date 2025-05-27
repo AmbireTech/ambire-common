@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Biconomy = void 0;
 /* eslint-disable class-methods-use-this */
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 const bundlers_1 = require("../../consts/bundlers");
 const bundler_1 = require("./bundler");
 class Biconomy extends bundler_1.Bundler {

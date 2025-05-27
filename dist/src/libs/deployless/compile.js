@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.compile = void 0;
+exports.compile = compile;
 const tslib_1 = require("tslib");
 const fs_1 = tslib_1.__importDefault(require("fs"));
 const path_1 = tslib_1.__importDefault(require("path"));
@@ -45,11 +45,12 @@ function compile(contractName, options = {}) {
         }
     };
     function findImports(libPath) {
-        let compileFolder = libPath.indexOf('node_modules') === -1
-            ? contractsFolder
-            : '';
+        let compileFolder = libPath.indexOf('node_modules') === -1 ? contractsFolder : '';
         if (libPath.indexOf('contracts/libs') !== -1) {
             compileFolder = '';
+        }
+        if (libPath.indexOf('libs') !== -1) {
+            compileFolder = 'contracts';
         }
         return {
             contents: fs_1.default.readFileSync(path_1.default.resolve(`${__dirname}../../../../`, compileFolder, libPath), {
@@ -67,9 +68,8 @@ function compile(contractName, options = {}) {
     }
     return {
         abi: output.contracts[contractName][contractName].abi,
-        bin: `0x${output.contracts[contractName][contractName].evm.bytecode.object}`,
+        bin: `0x${output.contracts[contractName][contractName].evm.bytecode.object}`, // bin
         binRuntime: `0x${output.contracts[contractName][contractName].evm.deployedBytecode.object}` // binRuntime
     };
 }
-exports.compile = compile;
 //# sourceMappingURL=compile.js.map

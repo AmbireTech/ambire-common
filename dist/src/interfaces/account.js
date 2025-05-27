@@ -15,5 +15,5 @@ var ImportStatus;
     ImportStatus["ImportedWithDifferentKeys"] = "imported-with-different-keys"; // different key
     // meaning that could be a key with the same address but different type,
     // or a key with different address altogether.
-})(ImportStatus = exports.ImportStatus || (exports.ImportStatus = {}));
+})(ImportStatus || (exports.ImportStatus = ImportStatus = {}));
 //# sourceMappingURL=account.js.map

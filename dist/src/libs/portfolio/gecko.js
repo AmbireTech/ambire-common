@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.geckoRequestBatcher = exports.geckoResponseIdentifier = void 0;
+exports.geckoResponseIdentifier = geckoResponseIdentifier;
+exports.geckoRequestBatcher = geckoRequestBatcher;
 const tslib_1 = require("tslib");
 const dotenv_1 = tslib_1.__importDefault(require("dotenv"));
 const coingecko_1 = require("../../consts/coingecko");
@@ -11,7 +12,6 @@ const BATCH_LIMIT = 40;
 function geckoResponseIdentifier(tokenAddr, network) {
     return (0, coingecko_1.geckoIdMapper)(tokenAddr, network) || tokenAddr.toLowerCase();
 }
-exports.geckoResponseIdentifier = geckoResponseIdentifier;
 function geckoRequestBatcher(queue) {
     const segments = {};
     // eslint-disable-next-line no-restricted-syntax
@@ -27,7 +27,7 @@ function geckoRequestBatcher(queue) {
         if (geckoId)
             segmentId += ':natives';
         else
-            segmentId += `:${queueItem.data.network.id}`;
+            segmentId += `:${queueItem.data.network.chainId}`;
         if (!segments[segmentId])
             segments[segmentId] = [];
         segments[segmentId].push(queueItem);
@@ -51,5 +51,4 @@ function geckoRequestBatcher(queue) {
         return { url, queueSegment };
     });
 }
-exports.geckoRequestBatcher = geckoRequestBatcher;
 //# sourceMappingURL=gecko.js.map

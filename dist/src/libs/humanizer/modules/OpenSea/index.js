@@ -57,7 +57,7 @@ const parseOrder = (order) => {
 const dedupe1155Orders = (orders) => {
     if (orders.length <= 30)
         return orders;
-    const uniqueOrders = [...new Set(orders.map(richJson_1.stringify))];
+    const uniqueOrders = [...new Set(orders.map((o) => (0, richJson_1.stringify)(o)))];
     if (uniqueOrders.length > 1)
         return orders;
     if (orders[0].items.length > 1)

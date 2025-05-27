@@ -7,7 +7,6 @@ const ethers_1 = require("ethers");
 const deploy_1 = require("../../consts/deploy");
 const errorDecoder_1 = require("../../libs/errorDecoder");
 const customErrors_1 = require("../../libs/errorDecoder/customErrors");
-const deploy_2 = require("../../libs/proxyDeploy/deploy");
 const userOperation_1 = require("../../libs/userOperation/userOperation");
 const provider_1 = require("../provider");
 require('dotenv').config();
@@ -30,31 +29,35 @@ class Bundler {
     getProvider(network) {
         return (0, provider_1.getRpcProvider)([this.getUrl(network)], network.chainId);
     }
-    async sendEstimateReq(userOperation, network, shouldStateOverride = false) {
+    async sendEstimateReq(userOperation, network, stateOverride) {
         const provider = this.getProvider(network);
-        if (shouldStateOverride) {
-            return provider.send('eth_estimateUserOperationGas', [
+        return stateOverride
+            ? provider.send('eth_estimateUserOperationGas', [
                 (0, userOperation_1.getCleanUserOp)(userOperation)[0],
                 deploy_1.ERC_4337_ENTRYPOINT,
-                {
-                    [userOperation.sender]: {
-                        stateDiff: {
-                            // add privileges to the entry point
-                            [(0, deploy_2.privSlot)(0, 'uint256', deploy_1.ERC_4337_ENTRYPOINT, 'uint256')]: deploy_1.ENTRY_POINT_MARKER
-                        }
-                    }
-                }
+                stateOverride
+            ])
+            : provider.send('eth_estimateUserOperationGas', [
+                (0, userOperation_1.getCleanUserOp)(userOperation)[0],
+                deploy_1.ERC_4337_ENTRYPOINT
             ]);
-        }
-        return provider.send('eth_estimateUserOperationGas', [
-            (0, userOperation_1.getCleanUserOp)(userOperation)[0],
-            deploy_1.ERC_4337_ENTRYPOINT
-        ]);
     }
-    async estimate(userOperation, network, shouldStateOverride = false) {
-        const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride);
+    async estimate(userOperation, network, stateOverride) {
+        const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride);
+        // Whole formula:
+        // final = estimation + estimation * percentage
+        // if percentage = 5% then percentage = 5/100 => 1/20
+        // final = estimation + estimation / 20
+        // here, we calculate the division (20 above)
+        const division = network.erc4337.increasePreVerGas
+            ? BigInt(100 / network.erc4337.increasePreVerGas)
+            : undefined;
+        // transform
+        const preVerificationGas = division
+            ? BigInt(estimatiton.preVerificationGas) + BigInt(estimatiton.preVerificationGas) / division
+            : BigInt(estimatiton.preVerificationGas);
         return {
-            preVerificationGas: (0, ethers_1.toBeHex)(estimatiton.preVerificationGas),
+            preVerificationGas: (0, ethers_1.toBeHex)(preVerificationGas),
             verificationGasLimit: (0, ethers_1.toBeHex)(estimatiton.verificationGasLimit),
             callGasLimit: (0, ethers_1.toBeHex)(estimatiton.callGasLimit),
             paymasterVerificationGasLimit: (0, ethers_1.toBeHex)(estimatiton.paymasterVerificationGasLimit),
@@ -86,6 +89,8 @@ class Bundler {
     }
     // use this request to check if the bundler supports the network
     static async isNetworkSupported(fetch, chainId) {
+        if (chainId === 146n)
+            return true;
         const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`;
         const result = await fetch(url);
         return result.status === 200;

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.formatReason = exports.getDataFromError = exports.isReasonValid = exports.getErrorCodeStringFromReason = exports.panicErrorCodeToReason = void 0;
+exports.countUnicodeLettersAndNumbers = exports.formatReason = exports.isReasonValid = exports.getErrorCodeStringFromReason = exports.panicErrorCodeToReason = void 0;
+exports.getDataFromError = getDataFromError;
 const ethers_1 = require("ethers");
 const constants_1 = require("./constants");
 const panicErrorCodeToReason = (errorCode) => {
@@ -42,6 +43,21 @@ const isReasonValid = (reason) => {
 };
 exports.isReasonValid = isReasonValid;
 /**
+ * Counts the number of valid Unicode numbers and letters in a string.
+ */
+const countUnicodeLettersAndNumbers = (str) => {
+    let validCount = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charAt(i);
+        // Check if it's an alphabetic character (from any language) or a number
+        if (/[\p{L}\p{N}]/u.test(char)) {
+            validCount++;
+        }
+    }
+    return validCount;
+};
+exports.countUnicodeLettersAndNumbers = countUnicodeLettersAndNumbers;
+/**
  * Some reasons are encoded in hex, this function will decode them to a human-readable string
  * which can then be matched to a specific error message.
  */
@@ -52,7 +68,9 @@ const formatReason = (reason) => {
     if (trimmedReason.startsWith(constants_1.ERROR_PREFIX) || trimmedReason.startsWith(constants_1.PANIC_ERROR_PREFIX))
         return trimmedReason;
     try {
-        return (0, ethers_1.toUtf8String)(trimmedReason);
+        const decodedString = (0, ethers_1.toUtf8String)(trimmedReason);
+        // Return the decoded string if it contains valid Unicode letters
+        return countUnicodeLettersAndNumbers(decodedString) > 0 ? decodedString : trimmedReason;
     }
     catch {
         return trimmedReason;
@@ -81,5 +99,4 @@ function getDataFromError(error) {
     }
     return returnData;
 }
-exports.getDataFromError = getDataFromError;
 //# sourceMappingURL=helpers.js.map

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculatePendingAmounts = void 0;
-const accountOp_1 = require("../accountOp/accountOp");
+const types_1 = require("../accountOp/types");
 /**
  * Function for calculating the pending balance and the delta amounts
  * for pendingToBeSigned and pendingToBeConfirmed states (referred to as token badges) of a token.
@@ -80,7 +80,7 @@ simulatedAccountOp) => {
         // When we broadcast the AccountOp, we set the status of the simulated AccountOp to `BroadcastedButNotConfirmed`
         // until the transaction is confirmed or the user forcefully refreshes their portfolio balance and clears the simulation.
         // When the SimulatedAccountOp has the status `BroadcastedButNotConfirmed`, we know that the pending badge is `pendingToBeConfirmed`.
-        const hasPendingToBeConfirmed = simulatedAccountOp?.status === accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed;
+        const hasPendingToBeConfirmed = simulatedAccountOp?.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed;
         if (hasPendingToBeConfirmed) {
             // Main scenario #2.
             result.pendingToBeConfirmed = simulationDelta;

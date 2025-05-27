@@ -4,6 +4,7 @@ exports.SocketAPI = exports.normalizeIncomingSocketToken = void 0;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const SwapAndBridgeProviderApiError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeProviderApiError"));
+const swapAndBridge_1 = require("../../libs/swapAndBridge/swapAndBridge");
 const constants_1 = require("./constants");
 const convertZeroAddressToNullAddressIfNeeded = (addr) => addr === constants_1.ZERO_ADDRESS ? constants_1.NULL_ADDRESS : addr;
 const convertNullAddressToZeroAddressIfNeeded = (addr) => addr === constants_1.NULL_ADDRESS ? constants_1.ZERO_ADDRESS : addr;
@@ -26,7 +27,32 @@ const normalizeOutgoingSocketToken = (token) => ({
     ...token,
     address: normalizeOutgoingSocketTokenAddress(token.address)
 });
+const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (userTxs) => {
+    // @ts-ignore TODO: Types mismatch for this legacy Socket normalization
+    return userTxs.reduce((stepsAcc, tx) => {
+        if (tx.userTxType === 'fund-movr') {
+            tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }));
+        }
+        if (tx.userTxType === 'dex-swap') {
+            stepsAcc.push({
+                chainId: tx.chainId,
+                fromAmount: tx.fromAmount,
+                fromAsset: tx.fromAsset,
+                gasFees: tx.gasFees,
+                minAmountOut: tx.minAmountOut,
+                protocol: tx.protocol,
+                swapSlippage: tx.swapSlippage,
+                toAmount: tx.toAmount,
+                toAsset: tx.toAsset,
+                type: 'swap',
+                userTxIndex: tx.userTxIndex
+            });
+        }
+        return stepsAcc;
+    }, []);
+};
 class SocketAPI {
+    id = 'socket';
     #fetch;
     #baseUrl = 'https://api.socket.tech/v2';
     #headers;
@@ -117,19 +143,11 @@ class SocketAPI {
             fetchPromise: this.#fetch(url, { headers: this.#headers }),
             errorPrefix: 'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
         });
-        return response;
-    }
-    /**
-     * Since v4.41.0 we request the shortlist from Socket, which does not include
-     * the Ambire $WALLET token. So adding it manually on the supported chains.
-     */
-    static addCustomTokens({ chainId, tokens }) {
-        const newTokens = [...tokens];
-        if (chainId === 1)
-            newTokens.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_ETHEREUM);
-        if (chainId === 8453)
-            newTokens.unshift(constants_1.AMBIRE_WALLET_TOKEN_ON_BASE);
-        return newTokens;
+        return response
+            .filter((c) => c.sendingEnabled && c.receivingEnabled)
+            .map(({ chainId }) => ({
+            chainId
+        }));
     }
     async getToTokenList({ fromChainId, toChainId }) {
         const params = new URLSearchParams({
@@ -153,8 +171,8 @@ class SocketAPI {
         // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
         if (toChainId === 1)
             response = response.filter((token) => token.address !== constants_1.ZERO_ADDRESS);
-        response = SocketAPI.addCustomTokens({ chainId: toChainId, tokens: response });
-        return response.map(exports.normalizeIncomingSocketToken);
+        response = response.map(exports.normalizeIncomingSocketToken);
+        return (0, swapAndBridge_1.addCustomTokensIfNeeded)({ chainId: toChainId, tokens: response });
     }
     async getToken({ address, chainId }) {
         const params = new URLSearchParams({
@@ -178,7 +196,7 @@ class SocketAPI {
             toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
             fromAmount: fromAmount.toString(),
             userAddress,
-            isContractCall: isSmartAccount.toString(),
+            isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
             sort,
             singleTxOnly: 'false',
             defaultSwapSlippage: '1',
@@ -203,8 +221,10 @@ class SocketAPI {
             ...response,
             fromAsset: (0, exports.normalizeIncomingSocketToken)(response.fromAsset),
             toAsset: (0, exports.normalizeIncomingSocketToken)(response.toAsset),
+            // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
             routes: response.routes.map((route) => ({
                 ...route,
+                steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs),
                 userTxs: route.userTxs.map((userTx) => ({
                     ...userTx,
                     ...('fromAsset' in userTx && {
@@ -231,7 +251,7 @@ class SocketAPI {
             includeFirstTxDetails: true,
             route: {
                 ...route,
-                userTxs: route.userTxs.map((userTx) => ({
+                userTxs: route?.userTxs.map((userTx) => ({
                     ...userTx,
                     // @ts-ignore fromAsset exists on one of the two userTx sub-types
                     fromAsset: userTx?.fromAsset ? normalizeOutgoingSocketToken(userTx.fromAsset) : undefined,
@@ -259,7 +279,7 @@ class SocketAPI {
             }),
             errorPrefix: 'Unable to start the route.'
         });
-        return response;
+        return { ...response, activeRouteId: response.activeRouteId.toString() };
     }
     async getRouteStatus({ activeRouteId, userTxIndex, txHash }) {
         const params = new URLSearchParams({
@@ -274,7 +294,7 @@ class SocketAPI {
         });
         return response;
     }
-    async updateActiveRoute(activeRouteId) {
+    async getActiveRoute(activeRouteId) {
         const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() });
         const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`;
         const response = await this.#handleResponse({
@@ -287,6 +307,8 @@ class SocketAPI {
             fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
             toAsset: (0, exports.normalizeIncomingSocketToken)(response.toAsset),
             toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
+            steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(response.userTxs),
+            // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
             userTxs: response.userTxs.map((userTx) => ({
                 ...userTx,
                 ...('fromAsset' in userTx && { fromAsset: (0, exports.normalizeIncomingSocketToken)(userTx.fromAsset) }),
@@ -301,14 +323,14 @@ class SocketAPI {
             }))
         };
     }
-    async getNextRouteUserTx(activeRouteId) {
+    async getNextRouteUserTx({ activeRouteId }) {
         const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() });
         const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`;
         const response = await this.#handleResponse({
             fetchPromise: this.#fetch(url, { headers: this.#headers }),
             errorPrefix: 'Unable to start the next step.'
         });
-        return response;
+        return { ...response, activeRouteId: response.activeRouteId.toString() };
     }
 }
 exports.SocketAPI = SocketAPI;

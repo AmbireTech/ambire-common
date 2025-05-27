@@ -7,19 +7,16 @@ class BundlerSwitcher {
     network;
     bundler;
     usedBundlers = [];
-    // a function to retrieve the current sign account op state
-    getSignAccountOpStatus;
-    // TODO:
-    // no typehints here as importing typehints from signAccountOp causes
-    // a dependancy cicle. Types should be removed from signAccountOp in
-    // a different file before proceeding to fix this
-    noStateUpdateStatuses = [];
-    constructor(network, getSignAccountOpStatus, noStateUpdateStatuses) {
+    /**
+     * This service is stateless so we're allowing a method
+     * to jump in and forbid updates if the controller state forbids them
+     */
+    hasControllerForbiddenUpdates;
+    constructor(network, hasControllerForbiddenUpdates) {
         this.network = network;
         this.bundler = (0, getBundler_1.getDefaultBundler)(network);
         this.usedBundlers.push(this.bundler.getName());
-        this.getSignAccountOpStatus = getSignAccountOpStatus;
-        this.noStateUpdateStatuses = noStateUpdateStatuses;
+        this.hasControllerForbiddenUpdates = hasControllerForbiddenUpdates;
     }
     hasBundlers() {
         const bundlers = this.network.erc4337.bundlers;
@@ -28,12 +25,12 @@ class BundlerSwitcher {
     getBundler() {
         return this.bundler;
     }
-    userHasCommitted() {
-        return this.noStateUpdateStatuses.includes(this.getSignAccountOpStatus());
-    }
-    canSwitch(bundlerError) {
+    canSwitch(acc, bundlerError) {
+        // no fallbacks for EOAs
+        if (!acc.creation)
+            return false;
         // don't switch the bundler if the account op is in a state of signing
-        if (this.userHasCommitted())
+        if (this.hasControllerForbiddenUpdates())
             return false;
         if (!this.hasBundlers())
             return false;

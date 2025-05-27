@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isValidURL = exports.isValidPassword = exports.isValidCode = exports.validateSendNftAddress = exports.validateSendTransferAmount = exports.validateSendTransferAddress = exports.validateAddAuthSignerAddress = exports.isEmail = void 0;
+exports.isValidPassword = exports.isValidCode = exports.validateSendTransferAmount = exports.validateSendTransferAddress = exports.validateAddAuthSignerAddress = exports.isEmail = void 0;
+exports.isValidURL = isValidURL;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const isEmail_1 = tslib_1.__importDefault(require("validator/es/lib/isEmail"));
@@ -45,7 +46,8 @@ const validateAddAuthSignerAddress = (address, selectedAcc) => {
     return { success: true, message: '' };
 };
 exports.validateAddAuthSignerAddress = validateAddAuthSignerAddress;
-const validateSendTransferAddress = (address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, isRecipientDomainResolving, isSWWarningVisible, isSWWarningAgreed) => {
+const NOT_IN_ADDRESS_BOOK_MESSAGE = "This address isn't in your Address Book. Double-check the details before confirming.";
+const validateSendTransferAddress = (address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isEnsAddress, isRecipientDomainResolving, isSWWarningVisible, isSWWarningAgreed) => {
     // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
     if (!(0, address_1.isValidAddress)(address) || isRecipientDomainResolving) {
         return {
@@ -67,22 +69,20 @@ const validateSendTransferAddress = (address, selectedAcc, addressConfirmed, isR
     }
     if (isRecipientAddressUnknown &&
         !addressConfirmed &&
-        !isUDAddress &&
         !isEnsAddress &&
         !isRecipientDomainResolving) {
         return {
             success: false,
-            message: "You're trying to send to an unknown address. If you're really sure, confirm using the checkbox below."
+            message: NOT_IN_ADDRESS_BOOK_MESSAGE
         };
     }
     if (isRecipientAddressUnknown &&
         !addressConfirmed &&
-        (isUDAddress || isEnsAddress) &&
+        isEnsAddress &&
         !isRecipientDomainResolving) {
-        const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service';
         return {
             success: false,
-            message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
+            message: NOT_IN_ADDRESS_BOOK_MESSAGE
         };
     }
     if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
@@ -134,27 +134,6 @@ const validateSendTransferAmount = (amount, maxAmount, maxAmountInFiat, selected
     return { success: true, message: '' };
 };
 exports.validateSendTransferAmount = validateSendTransferAmount;
-const validateSendNftAddress = (address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, metadata, selectedNetwork, network, isUDAddress, isEnsAddress, isRecipientDomainResolving) => {
-    const isValidAddr = validateSendTransferAddress(address, selectedAcc, addressConfirmed, isRecipientAddressUnknown, isRecipientHumanizerKnownTokenOrSmartContract, isUDAddress, isEnsAddress, isRecipientDomainResolving);
-    if (!isValidAddr.success)
-        return isValidAddr;
-    if (metadata &&
-        selectedAcc &&
-        metadata.owner?.address.toLowerCase() !== selectedAcc.toLowerCase()) {
-        return {
-            success: false,
-            message: "The NFT you're trying to send is not owned by you!"
-        };
-    }
-    if (selectedNetwork && network && selectedNetwork.id !== network) {
-        return {
-            success: false,
-            message: 'The selected network is not the correct one.'
-        };
-    }
-    return { success: true, message: '' };
-};
-exports.validateSendNftAddress = validateSendNftAddress;
 const isValidCode = (code) => code.length === 6;
 exports.isValidCode = isValidCode;
 const isValidPassword = (password) => password.length >= 8;
@@ -163,5 +142,4 @@ function isValidURL(url) {
     const urlRegex = /^(?:https?|ftp):\/\/(?:\w+:{0,1}\w*@)?(?:\S+)(?::\d+)?(?:\/|\/(?:[\w#!:.?+=&%@!\-\/]))?$/;
     return urlRegex.test(url);
 }
-exports.isValidURL = isValidURL;
 //# sourceMappingURL=validate.js.map

@@ -1,5 +1,5 @@
-import { Network } from '../../interfaces/network';
 import { BUNDLER } from '../../consts/bundlers';
+import { Network } from '../../interfaces/network';
 import { Bundler } from './bundler';
 import { GasSpeeds, UserOpStatus } from './types';
 export declare class Biconomy extends Bundler {

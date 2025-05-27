@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSASupport = void 0;
+exports.getSASupport = getSASupport;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
@@ -50,5 +50,4 @@ async function getSASupport(provider) {
         supportsStateOverride
     };
 }
-exports.getSASupport = getSASupport;
 //# sourceMappingURL=simulateDeployCall.js.map

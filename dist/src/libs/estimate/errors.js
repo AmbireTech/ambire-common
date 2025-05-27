@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.estimationErrorFormatted = void 0;
+exports.estimationErrorFormatted = estimationErrorFormatted;
 function estimationErrorFormatted(error, opts) {
     const feePaymentOptions = opts?.feePaymentOptions ?? [];
     const finalsOps = {
@@ -15,5 +15,4 @@ function estimationErrorFormatted(error, opts) {
         ...finalsOps
     };
 }
-exports.estimationErrorFormatted = estimationErrorFormatted;
 //# sourceMappingURL=errors.js.map

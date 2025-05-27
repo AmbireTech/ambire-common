@@ -8,7 +8,8 @@ const accountState_1 = require("../../libs/accountState/accountState");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const STATUS_WRAPPED_METHODS = {
     selectAccount: 'INITIAL',
-    updateAccountPreferences: 'INITIAL'
+    updateAccountPreferences: 'INITIAL',
+    addAccounts: 'INITIAL'
 };
 class AccountsController extends eventEmitter_1.default {
     #storage;
@@ -37,18 +38,8 @@ class AccountsController extends eventEmitter_1.default {
     async #load() {
         await this.#networks.initialLoadPromise;
         await this.#providers.initialLoadPromise;
-        const [accounts, accountPreferences] = await Promise.all([
-            this.#storage.get('accounts', []),
-            this.#storage.get('accountPreferences', undefined)
-        ]);
-        if (accountPreferences) {
-            this.accounts = (0, account_1.getUniqueAccountsArray)((0, account_1.migrateAccountPreferencesToAccounts)(accountPreferences, accounts));
-            await this.#storage.set('accounts', this.accounts);
-            await this.#storage.remove('accountPreferences');
-        }
-        else {
-            this.accounts = (0, account_1.getUniqueAccountsArray)(accounts);
-        }
+        const accounts = await this.#storage.get('accounts', []);
+        this.accounts = (0, account_1.getUniqueAccountsArray)(accounts);
         // Emit an update before updating account states as the first state update may take some time
         this.emitUpdate();
         // Don't await this. Networks should update one by one
@@ -69,40 +60,40 @@ class AccountsController extends eventEmitter_1.default {
         // if any, update the account state only for the passed networks; else - all
         const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length;
         const networksToUpdate = this.#networks.networks.filter((network) => {
-            if (this.accountStatesLoadingState[network.id])
+            if (this.accountStatesLoadingState[network.chainId.toString()])
                 return false;
             if (!updateOnlyPassedNetworks)
                 return true;
-            return updateOnlyNetworksWithIds.includes(network.id);
+            return updateOnlyNetworksWithIds.includes(network.chainId);
         });
         networksToUpdate.forEach((network) => {
-            this.accountStatesLoadingState[network.id] = true;
+            this.accountStatesLoadingState[network.chainId.toString()] = true;
         });
         this.emitUpdate();
         await Promise.all(networksToUpdate.map(async (network) => {
             try {
-                const networkAccountStates = await (0, accountState_1.getAccountState)(this.#providers.providers[network.id], network, accounts, blockTag);
-                this.#updateProviderIsWorking(network.id, true);
+                const networkAccountStates = await (0, accountState_1.getAccountState)(this.#providers.providers[network.chainId.toString()], network, accounts, blockTag);
+                this.#updateProviderIsWorking(network.chainId, true);
                 networkAccountStates.forEach((accountState) => {
                     const addr = accountState.accountAddr;
                     if (!this.accountStates[addr]) {
                         this.accountStates[addr] = {};
                     }
-                    this.accountStates[addr][network.id] = accountState;
+                    this.accountStates[addr][network.chainId.toString()] = accountState;
                 });
             }
             catch (err) {
                 console.error(`account state update error for ${network.name}: `, err);
-                this.#updateProviderIsWorking(network.id, false);
+                this.#updateProviderIsWorking(network.chainId, false);
             }
             finally {
-                this.accountStatesLoadingState[network.id] = false;
+                this.accountStatesLoadingState[network.chainId.toString()] = false;
             }
             this.emitUpdate();
         }));
         this.#onAccountStateUpdate();
     }
-    async addAccounts(accounts = []) {
+    async #addAccounts(accounts = []) {
         if (!accounts.length)
             return;
         // eslint-disable-next-line no-param-reassign
@@ -136,7 +127,10 @@ class AccountsController extends eventEmitter_1.default {
         this.#updateAccountStates(newAccountsNotAddedYet);
         this.emitUpdate();
     }
-    async removeAccountData(address) {
+    async addAccounts(accounts = []) {
+        await this.withStatus('addAccounts', async () => this.#addAccounts(accounts), true);
+    }
+    removeAccountData(address) {
         this.accounts = this.accounts.filter((acc) => acc.addr !== address);
         delete this.accountStates[address];
         this.#storage.set('accounts', this.accounts);
@@ -153,13 +147,43 @@ class AccountsController extends eventEmitter_1.default {
             if ((0, ethers_1.isAddress)(account.preferences.pfp)) {
                 account.preferences.pfp = (0, ethers_1.getAddress)(account.preferences.pfp);
             }
-            return { ...acc, preferences: account.preferences, newlyAdded: false };
+            return { ...acc, preferences: account.preferences };
         });
         await this.#storage.set('accounts', this.accounts);
         this.emitUpdate();
     }
     get areAccountStatesLoading() {
         return Object.values(this.accountStatesLoadingState).some((isLoading) => isLoading);
+    }
+    // Get the account states or in the rare case of it being undefined,
+    // fetch it.
+    // This is a precaution method as we had bugs in the past where we assumed
+    // the account state to be fetched only for it to haven't been.
+    // This ensures production doesn't blow up and it 99.9% of cases it
+    // should not call the promise
+    async getOrFetchAccountStates(addr) {
+        if (!this.accountStates[addr])
+            await this.updateAccountState(addr, 'latest');
+        return this.accountStates[addr];
+    }
+    // Get the account state or in the rare case of it being undefined,
+    // fetch it.
+    // This is a precaution method as we had bugs in the past where we assumed
+    // the account state to be fetched only for it to haven't been.
+    // This ensures production doesn't blow up and it 99.9% of cases it
+    // should not call the promise
+    async getOrFetchAccountOnChainState(addr, chainId) {
+        if (!this.accountStates[addr][chainId.toString()])
+            await this.updateAccountState(addr, 'latest', [chainId]);
+        return this.accountStates[addr][chainId.toString()];
+    }
+    resetAccountsNewlyAddedState() {
+        this.accounts = this.accounts.map((a) => ({ ...a, newlyAdded: false }));
+        this.emitUpdate();
+    }
+    async forceFetchPendingState(addr, chainId) {
+        await this.updateAccountState(addr, 'pending', [chainId]);
+        return this.accountStates[addr][chainId.toString()];
     }
     toJSON() {
         return {

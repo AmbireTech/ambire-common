@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.openseaMessageModule = exports.permit2Module = exports.legendsMessageModule = exports.erc721Module = exports.erc20Module = exports.entryPointModule = exports.ensMessageModule = void 0;
+exports.eip7702AuthorizationModule = exports.openseaMessageModule = exports.permit2Module = exports.legendsMessageModule = exports.erc721Module = exports.erc20Module = exports.entryPointModule = exports.ensMessageModule = void 0;
+const eip7702AuthorizationModule_1 = require("./eip7702AuthorizationModule");
+Object.defineProperty(exports, "eip7702AuthorizationModule", { enumerable: true, get: function () { return eip7702AuthorizationModule_1.eip7702AuthorizationModule; } });
 const ensModule_1 = require("./ensModule");
 Object.defineProperty(exports, "ensMessageModule", { enumerable: true, get: function () { return ensModule_1.ensMessageModule; } });
 const entryPointModule_1 = require("./entryPointModule");

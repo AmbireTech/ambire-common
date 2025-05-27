@@ -13,6 +13,10 @@
  *
  * Additionally, JSON.serialize and JSON.parse do not properly serialize the Error object, so we extend that functionality here as well.
  */
-export declare function stringify(obj: any): string;
+interface Options {
+    pretty?: boolean;
+}
+export declare function stringify(obj: any, opts?: Options): string;
 export declare function parse(json: string): any;
+export {};
 //# sourceMappingURL=richJson.d.ts.map

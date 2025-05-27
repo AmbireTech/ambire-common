@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.flattenResults = exports.paginate = void 0;
+exports.paginate = paginate;
+exports.flattenResults = flattenResults;
 function paginate(input, limit) {
     const pages = [];
     let from = 0;
@@ -10,7 +11,6 @@ function paginate(input, limit) {
     }
     return pages;
 }
-exports.paginate = paginate;
 function flattenResults(everything) {
     return Promise.all(everything).then((results) => {
         if (!results || !results.length) {
@@ -32,5 +32,4 @@ function flattenResults(everything) {
         return [allTokens, metadata];
     });
 }
-exports.flattenResults = flattenResults;
 //# sourceMappingURL=pagination.js.map

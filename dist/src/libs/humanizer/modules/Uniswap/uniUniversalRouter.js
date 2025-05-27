@@ -166,9 +166,17 @@ const uniUniversalRouter = () => {
                             ]);
                     }
                     else
-                        parsed.push((0, utils_1.getUnknownVisualization)('Uni V3', call));
+                        parsed.push([
+                            (0, utils_1.getAction)('Uniswap action'),
+                            (0, utils_1.getLabel)('to'),
+                            (0, utils_1.getAddressVisualization)(call.to)
+                        ]);
                 })
-                : parsed.push((0, utils_1.getUnknownVisualization)('Uniswap V3', call));
+                : parsed.push([
+                    (0, utils_1.getAction)('Uniswap action'),
+                    (0, utils_1.getLabel)('to'),
+                    (0, utils_1.getAddressVisualization)(call.to)
+                ]);
             return (0, utils_2.uniReduce)(parsed);
         }
     };

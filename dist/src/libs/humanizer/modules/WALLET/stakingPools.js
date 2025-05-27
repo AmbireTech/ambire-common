@@ -34,30 +34,15 @@ const StakingPools = () => {
         },
         [iface.getFunction('leave')?.selector]: (call) => {
             const { shares } = iface.parseTransaction(call).args;
-            return [
-                (0, utils_1.getAction)('Leave'),
-                (0, utils_1.getLabel)('with'),
-                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-                (0, utils_1.getAddressVisualization)(call.to)
-            ];
+            return [(0, utils_1.getAction)('Leave'), (0, utils_1.getLabel)('with'), (0, utils_1.getToken)(call.to, shares)];
         },
         [iface.getFunction('withdraw')?.selector]: (call) => {
             const { shares } = iface.parseTransaction(call).args;
-            return [
-                (0, utils_1.getAction)('Withdraw'),
-                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-                (0, utils_1.getLabel)('from'),
-                (0, utils_1.getAddressVisualization)(call.to)
-            ];
+            return [(0, utils_1.getAction)('Withdraw'), (0, utils_1.getToken)(call.to, shares)];
         },
         [iface.getFunction('rageLeave')?.selector]: (call) => {
             const { shares } = iface.parseTransaction(call).args;
-            return [
-                (0, utils_1.getAction)('Rage leave'),
-                (0, utils_1.getLabel)('with'),
-                (0, utils_1.getToken)(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-                (0, utils_1.getAddressVisualization)(call.to)
-            ];
+            return [(0, utils_1.getAction)('Rage leave'), (0, utils_1.getLabel)('with'), (0, utils_1.getToken)(call.to, shares)];
         }
     };
 };

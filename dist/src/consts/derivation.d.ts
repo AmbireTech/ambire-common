@@ -22,6 +22,7 @@ export type HD_PATH_TEMPLATE_TYPE = typeof BIP44_STANDARD_DERIVATION_TEMPLATE | 
 export interface DerivationOption {
     label: string;
     value: HD_PATH_TEMPLATE_TYPE;
+    description: string;
 }
 export declare const DERIVATION_OPTIONS: DerivationOption[];
 /**

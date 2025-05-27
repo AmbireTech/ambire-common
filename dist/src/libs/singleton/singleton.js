@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getGasUsed = void 0;
+exports.getGasUsed = getGasUsed;
 // Special exception for the singleton deployer:
 // Estimation on various networks depends entirely on the RPC
 // implementation of eth_estimateGas. On ethereum, the RPC tends
@@ -27,5 +27,4 @@ function getGasUsed(gasUsed) {
         return gasUsed * 5n;
     return gasUsed;
 }
-exports.getGasUsed = getGasUsed;
 //# sourceMappingURL=singleton.js.map

@@ -1,14 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSignerKey = exports.frequentlyUsedSelectors = exports.knownSelectors = exports.RECOVERY_DEFAULTS = exports.DKIM_VALIDATOR_ADDR = void 0;
+exports.frequentlyUsedSelectors = exports.knownSelectors = exports.RECOVERY_DEFAULTS = exports.DKIM_VALIDATOR_ADDR = void 0;
+exports.getSignerKey = getSignerKey;
 const ethers_1 = require("ethers");
 // TODO: change to original address once deployed
 exports.DKIM_VALIDATOR_ADDR = '0x0000000000000000000000000000000000000000';
 exports.RECOVERY_DEFAULTS = {
     emailTo: 'recovery@ambire.com',
     acceptUnknownSelectors: true,
-    waitUntilAcceptAdded: 138240n,
-    waitUntilAcceptRemoved: 138240n,
+    waitUntilAcceptAdded: 138240n, // 4 days
+    waitUntilAcceptRemoved: 138240n, // 4 days
     acceptEmptyDKIMSig: true,
     acceptEmptySecondSig: true,
     onlyOneSigTimelock: 259200n // 3 days
@@ -41,5 +42,4 @@ function getSignerKey(validatorAddr, validatorData) {
     const signerKey = (0, ethers_1.getAddress)(`0x${hash.slice(hash.length - 40, hash.length)}`);
     return { signerKey, hash };
 }
-exports.getSignerKey = getSignerKey;
 //# sourceMappingURL=recovery.js.map

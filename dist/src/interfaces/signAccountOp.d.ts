@@ -2,8 +2,12 @@ type Warning = {
     id: string;
     title: string;
     text?: string;
-    promptBeforeSign: boolean;
-    displayBeforeSign: boolean;
+    promptBefore?: ('sign' | 'one-click-sign')[];
+};
+type SignAccountOpError = {
+    title: string;
+    code?: string;
+    text?: string;
 };
 declare enum TraceCallDiscoveryStatus {
     NotStarted = "not-started",
@@ -13,5 +17,5 @@ declare enum TraceCallDiscoveryStatus {
     Failed = "failed"
 }
 export { TraceCallDiscoveryStatus };
-export type { Warning };
+export type { Warning, SignAccountOpError };
 //# sourceMappingURL=signAccountOp.d.ts.map

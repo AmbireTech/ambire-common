@@ -2,14 +2,14 @@ import { Account, AccountId } from '../../interfaces/account';
 import { Banner } from '../../interfaces/banner';
 import { Fetch } from '../../interfaces/fetch';
 import { Network } from '../../interfaces/network';
-import { Storage } from '../../interfaces/storage';
-import { Message } from '../../interfaces/userRequest';
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
+import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
 import { AccountsController } from '../accounts/accounts';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { NetworksController } from '../networks/networks';
 import { ProvidersController } from '../providers/providers';
 import { SelectedAccountController } from '../selectedAccount/selectedAccount';
+import { StorageController } from '../storage/storage';
+import { SignedMessage } from './types';
 export interface Pagination {
     fromPage: number;
     itemsPerPage: number;
@@ -20,20 +20,18 @@ interface PaginationResult<T> {
     currentPage: number;
     maxPages: number;
 }
-export interface SignedMessage extends Message {
-    dapp: {
-        name: string;
-        icon: string;
-    } | null;
-    timestamp: number;
-}
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {
 }
 interface MessagesToBeSigned extends PaginationResult<SignedMessage> {
 }
 export interface Filters {
     account: string;
-    network?: string;
+    chainId?: bigint;
+}
+export interface InternalAccountsOps {
+    [key: string]: {
+        [key: string]: SubmittedAccountOp[];
+    };
 }
 /**
  * Activity Controller
@@ -77,14 +75,14 @@ export declare class ActivityController extends EventEmitter {
             pagination: Pagination;
         };
     };
-    constructor(storage: Storage, fetch: Fetch, callRelayer: Function, accounts: AccountsController, selectedAccount: SelectedAccountController, providers: ProvidersController, networks: NetworksController, onContractsDeployed: (network: Network) => Promise<void>);
+    constructor(storage: StorageController, fetch: Fetch, callRelayer: Function, accounts: AccountsController, selectedAccount: SelectedAccountController, providers: ProvidersController, networks: NetworksController, onContractsDeployed: (network: Network) => Promise<void>);
     filterAccountsOps(sessionId: string, filters: Filters, pagination?: Pagination): Promise<void>;
     resetAccountsOpsFilters(sessionId: string): void;
     private syncFilteredAccountsOps;
     filterSignedMessages(sessionId: string, filters: Filters, pagination?: Pagination): Promise<void>;
     resetSignedMessagesFilters(sessionId: string): void;
     private syncSignedMessages;
-    removeNetworkData(id: Network['id']): void;
+    removeNetworkData(chainId: bigint): void;
     addAccountOp(accountOp: SubmittedAccountOp): Promise<void>;
     /**
      * Update AccountsOps statuses (inner and public state, and storage)
@@ -104,9 +102,9 @@ export declare class ActivityController extends EventEmitter {
     }>;
     addSignedMessage(signedMessage: SignedMessage, account: string): Promise<void>;
     removeAccountData(address: Account['addr']): Promise<void>;
-    hideBanner({ addr, network, timestamp }: {
+    hideBanner({ addr, chainId, timestamp }: {
         addr: string;
-        network: string;
+        chainId: bigint;
         timestamp: number;
     }): Promise<void>;
     get broadcastedButNotConfirmed(): SubmittedAccountOp[];
@@ -117,9 +115,10 @@ export declare class ActivityController extends EventEmitter {
      * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
      * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
      */
-    getNotConfirmedOpIfAny(accId: AccountId, networkId: Network['id']): SubmittedAccountOp | null;
-    getLastTxn(networkId: Network['id']): SubmittedAccountOp | null;
+    getNotConfirmedOpIfAny(accId: AccountId, chainId: bigint): SubmittedAccountOp | null;
     findMessage(account: string, filter: (item: SignedMessage) => boolean): Promise<SignedMessage | null | undefined>;
+    getConfirmedTxId(submittedAccountOp: SubmittedAccountOp, counter?: number): Promise<string | undefined>;
+    findByIdentifiedBy(identifiedBy: AccountOpIdentifiedBy, accountAddr: string, chainId: bigint): SubmittedAccountOp | undefined;
     toJSON(): this & {
         broadcastedButNotConfirmed: SubmittedAccountOp[];
         banners: Banner[];

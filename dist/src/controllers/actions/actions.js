@@ -3,11 +3,15 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ActionsController = void 0;
 const tslib_1 = require("tslib");
+const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 // eslint-disable-next-line import/no-cycle
 const actions_1 = require("../../libs/actions/actions");
 const banners_1 = require("../../libs/banners/banners");
-const userOperation_1 = require("../../libs/userOperation/userOperation");
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+const SWAP_AND_BRIDGE_WINDOW_SIZE = {
+    width: 640,
+    height: 640
+};
 /**
  * The ActionsController is responsible for storing the converted userRequests
  * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
@@ -44,6 +48,9 @@ class ActionsController extends eventEmitter_1.default {
             }
             if (a.type === 'switchAccount') {
                 return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr;
+            }
+            if (a.type === 'swapAndBridge') {
+                return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr;
             }
             return true;
         });
@@ -90,7 +97,14 @@ class ActionsController extends eventEmitter_1.default {
     }
     addOrUpdateAction(newAction, position = 'last', executionType = 'open-action-window') {
         // remove the benzin action if a new actions is added
-        this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin');
+        this.actionsQueue = this.actionsQueue.filter((a) => {
+            if (a.type === 'benzin')
+                return false;
+            if (a.type === 'switchAccount') {
+                return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr;
+            }
+            return true;
+        });
         if (this.currentAction && this.currentAction.type === 'benzin') {
             this.currentAction = null;
         }
@@ -137,44 +151,42 @@ class ActionsController extends eventEmitter_1.default {
     }
     removeAction(actionId, shouldOpenNextAction = true) {
         this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId);
-        if (shouldOpenNextAction) {
-            this.#setCurrentAction(this.visibleActionsQueue[0] || null);
+        if (!this.visibleActionsQueue.length) {
+            this.#setCurrentAction(null);
+        }
+        else if (shouldOpenNextAction) {
+            this.#setCurrentAction(this.visibleActionsQueue[0]);
         }
     }
     #setCurrentAction(nextAction) {
         this.currentAction = nextAction;
-        if (nextAction && nextAction.id === this.currentAction?.id) {
+        this.emitUpdate();
+        if (nextAction) {
             this.openActionWindow();
-            this.emitUpdate();
             return;
         }
-        if (!this.currentAction) {
-            !!this.actionWindow.windowProps?.id &&
-                this.#windowManager.remove(this.actionWindow.windowProps.id);
-        }
-        else {
-            this.openActionWindow();
-        }
-        this.emitUpdate();
+        if (!this.actionWindow.windowProps?.id)
+            return;
+        this.#windowManager.remove(this.actionWindow.windowProps.id);
     }
     setCurrentActionById(actionId) {
         const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString());
-        if (!action) {
-            const entryPointAction = this.visibleActionsQueue.find((a) => a.id.toString() === userOperation_1.ENTRY_POINT_AUTHORIZATION_REQUEST_ID);
-            if (entryPointAction)
-                this.#setCurrentAction(entryPointAction);
-            return;
-        }
+        if (!action)
+            throw new EmittableError_1.default({
+                message: 'Failed to open request window. If the issue persists, please reject the request and try again.',
+                level: 'major',
+                error: new Error(`Action not found. Id: ${actionId}`)
+            });
         this.#setCurrentAction(action);
     }
     setCurrentActionByIndex(actionIndex) {
         const action = this.visibleActionsQueue[actionIndex];
-        if (!action) {
-            const entryPointAction = this.visibleActionsQueue.find((a) => a.id.toString() === userOperation_1.ENTRY_POINT_AUTHORIZATION_REQUEST_ID);
-            if (entryPointAction)
-                this.#setCurrentAction(entryPointAction);
-            return;
-        }
+        if (!action)
+            throw new EmittableError_1.default({
+                message: 'Failed to open request window. If the issue persists, please reject the request and try again.',
+                level: 'major',
+                error: new Error(`Action not found. Index: ${actionIndex}`)
+            });
         this.#setCurrentAction(action);
     }
     sendNewActionMessage(newAction, type) {
@@ -198,15 +210,27 @@ class ActionsController extends eventEmitter_1.default {
             this.focusActionWindow();
         }
         else {
+            let customSize;
+            if (this.currentAction?.type === 'swapAndBridge') {
+                customSize = SWAP_AND_BRIDGE_WINDOW_SIZE;
+            }
             try {
-                this.actionWindow.openWindowPromise = this.#windowManager.open().finally(() => {
+                this.actionWindow.openWindowPromise = this.#windowManager
+                    .open({
+                    customSize
+                })
+                    .finally(() => {
                     this.actionWindow.openWindowPromise = undefined;
                 });
                 this.actionWindow.windowProps = await this.actionWindow.openWindowPromise;
                 this.emitUpdate();
             }
             catch (err) {
-                console.error('Error opening action window:', err);
+                this.emitError({
+                    message: 'Failed to open a new request window. Please restart your browser if the issue persists.',
+                    level: 'major',
+                    error: err
+                });
             }
         }
     }
@@ -221,10 +245,18 @@ class ActionsController extends eventEmitter_1.default {
                 .finally(() => {
                 this.actionWindow.focusWindowPromise = undefined;
             });
+            const newActionWindowProps = await this.actionWindow.focusWindowPromise;
+            if (newActionWindowProps) {
+                this.actionWindow.windowProps = newActionWindowProps;
+            }
             this.emitUpdate();
         }
         catch (err) {
-            console.error('Error focusing action window:', err);
+            this.emitError({
+                message: 'Failed to focus the request window. Please restart your browser if the issue persists.',
+                level: 'major',
+                error: err
+            });
         }
     }
     closeActionWindow() {
@@ -255,6 +287,9 @@ class ActionsController extends eventEmitter_1.default {
             }
             if (a.type === 'switchAccount') {
                 return a.userRequest.meta.switchToAccountAddr !== address;
+            }
+            if (a.type === 'swapAndBridge') {
+                return a.userRequest.meta.accountAddr !== address;
             }
             return true;
         });

@@ -8,7 +8,10 @@ class Session {
     icon = '';
     name = '';
     tabId = null;
+    // requestIds start from 0 but the default val should not be the fist req
+    lastHandledRequestId = -1;
     messenger = null;
+    isWeb3App = false;
     sendMessage(event, data) {
         if (this.messenger) {
             this.messenger.send('broadcast', { event, data }, { tabId: this.tabId });

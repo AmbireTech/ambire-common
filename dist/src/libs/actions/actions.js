@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.messageOnNewAction = exports.getAccountOpFromAction = exports.getAccountOpActionsByNetwork = exports.getAccountOpsByNetwork = exports.dappRequestMethodToActionKind = void 0;
+exports.messageOnNewAction = exports.getAccountOpFromAction = exports.getAccountOpActionsByNetwork = exports.dappRequestMethodToActionKind = void 0;
 const dappRequestMethodToActionKind = (method) => {
     if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method))
         return 'calls';
@@ -17,28 +17,13 @@ const dappRequestMethodToActionKind = (method) => {
     return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase());
 };
 exports.dappRequestMethodToActionKind = dappRequestMethodToActionKind;
-const getAccountOpsByNetwork = (accountAddr, actions) => {
-    const accountOps = actions.filter((a) => a.type === 'accountOp')
-        .map((a) => a.accountOp)
-        .filter((op) => op.accountAddr === accountAddr);
-    if (!accountOps.length)
-        return undefined;
-    return accountOps.reduce((acc, accountOp) => {
-        const { networkId } = accountOp;
-        if (!acc[networkId])
-            acc[networkId] = [];
-        acc[networkId].push(accountOp);
-        return acc;
-    }, {});
-};
-exports.getAccountOpsByNetwork = getAccountOpsByNetwork;
 const getAccountOpActionsByNetwork = (accountAddr, actions) => {
     const accountOpActions = actions.filter((a) => a.type === 'accountOp').filter((action) => action.accountOp.accountAddr === accountAddr);
     const actionsByNetwork = accountOpActions.reduce((acc, accountOpAction) => {
-        const { networkId } = accountOpAction.accountOp;
-        if (!acc[networkId])
-            acc[networkId] = [];
-        acc[networkId].push(accountOpAction);
+        const { chainId } = accountOpAction.accountOp;
+        if (!acc[chainId.toString()])
+            acc[chainId.toString()] = [];
+        acc[chainId.toString()].push(accountOpAction);
         return acc;
     }, {});
     return actionsByNetwork;

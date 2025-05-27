@@ -3,5 +3,5 @@ declare const insufficientPaymasterFunds = "the Paymaster has insufficient funds
 declare const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[];
 declare const BROADCAST_ERRORS: ErrorHumanizerError[];
 declare const ESTIMATION_ERRORS: ErrorHumanizerError[];
-export { BROADCAST_OR_ESTIMATION_ERRORS, BROADCAST_ERRORS, ESTIMATION_ERRORS, insufficientPaymasterFunds };
+export { BROADCAST_ERRORS, BROADCAST_OR_ESTIMATION_ERRORS, ESTIMATION_ERRORS, insufficientPaymasterFunds };
 //# sourceMappingURL=errors.d.ts.map

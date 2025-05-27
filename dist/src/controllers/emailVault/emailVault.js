@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailVaultController = exports.EmailVaultState = void 0;
 const tslib_1 = require("tslib");
 /* eslint-disable class-methods-use-this */
-/* eslint-disable no-await-in-loop */
 const crypto_1 = tslib_1.__importDefault(require("crypto"));
 const emailVault_1 = require("../../interfaces/emailVault");
 const banners_1 = require("../../libs/banners/banners");
@@ -18,7 +17,7 @@ var EmailVaultState;
     EmailVaultState["WaitingEmailConfirmation"] = "WaitingEmailConfirmation";
     EmailVaultState["UploadingSecret"] = "UploadingSecret";
     EmailVaultState["Ready"] = "Ready";
-})(EmailVaultState = exports.EmailVaultState || (exports.EmailVaultState = {}));
+})(EmailVaultState || (exports.EmailVaultState = EmailVaultState = {}));
 const RECOVERY_SECRET_ID = 'EmailVaultRecoverySecret';
 const EMAIL_VAULT_STORAGE_KEY = 'emailVault';
 const MAGIC_LINK_STORAGE_KEY = 'magicLinkKeys';
@@ -44,7 +43,7 @@ const STATUS_WRAPPED_METHODS = {
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
 class EmailVaultController extends eventEmitter_1.default {
-    storage;
+    #storage;
     initialLoadPromise;
     #isWaitingEmailConfirmation = false;
     #isUploadingSecret = false;
@@ -67,7 +66,7 @@ class EmailVaultController extends eventEmitter_1.default {
         super();
         this.#fetch = fetch;
         this.#relayerUrl = relayerUrl;
-        this.storage = storage;
+        this.#storage = storage;
         this.#emailVault = new emailVault_2.EmailVault(fetch, relayerUrl);
         this.#keyStore = keyStore;
         this.initialLoadPromise = this.load();
@@ -81,11 +80,11 @@ class EmailVaultController extends eventEmitter_1.default {
         await (0, wait_1.default)(1);
         this.emitUpdate();
         const [emailVaultState, magicLinkKey, dismissedAt] = await Promise.all([
-            this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
+            this.#storage.get(EMAIL_VAULT_STORAGE_KEY, {
                 email: {}
             }),
-            this.storage.get(MAGIC_LINK_STORAGE_KEY, {}),
-            this.storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
+            this.#storage.get(MAGIC_LINK_STORAGE_KEY, {}),
+            this.#storage.get(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt)
         ]);
         this.emailVaultStates = emailVaultState;
         this.#magicLinkKeys = this.#parseMagicLinkKeys(magicLinkKey);
@@ -111,8 +110,8 @@ class EmailVaultController extends eventEmitter_1.default {
         this.#sessionKeys[email] = await this.#emailVault.getSessionKey(email, key);
         // store magicLinkKey and sessionKey
         await Promise.all([
-            this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-            this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
+            this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+            this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
         ]);
     }
     async handleMagicLinkKey(email, fn, flow) {
@@ -161,7 +160,7 @@ class EmailVaultController extends eventEmitter_1.default {
                 confirmed: true
             };
             fn && (await fn());
-            this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys);
+            this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys);
             this.#requestSessionKey(email);
         }
         else {
@@ -229,7 +228,7 @@ class EmailVaultController extends eventEmitter_1.default {
         }
         if (emailVault) {
             this.emailVaultStates.email[email] = emailVault;
-            await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates);
+            await this.#storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates);
             if (!existsSessionKey) {
                 await this.#requestSessionKey(email);
             }
@@ -357,7 +356,7 @@ class EmailVaultController extends eventEmitter_1.default {
         await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value);
         await this.#keyStore.removeSecret('password');
         await this.#keyStore.addSecret('password', newPassword, '', false);
-        await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates);
+        await this.#storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates);
         this.emitUpdate();
     }
     async requestKeysSync(email, keys) {
@@ -465,8 +464,8 @@ class EmailVaultController extends eventEmitter_1.default {
         this.#magicLinkKeys = {};
         this.#sessionKeys = {};
         await Promise.all([
-            this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-            this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
+            this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+            this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
         ]);
         this.emitUpdate();
     }
@@ -478,7 +477,7 @@ class EmailVaultController extends eventEmitter_1.default {
     dismissBanner() {
         this.#setupBannerDismissedAt = Date.now();
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.storage.set(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt);
+        this.#storage.set(SETUP_BANNER_DISMISSED_AT_STORAGE_KEY, this.#setupBannerDismissedAt);
         this.emitUpdate();
     }
     get keystoreRecoveryEmail() {
@@ -513,8 +512,8 @@ class EmailVaultController extends eventEmitter_1.default {
             banners.push({
                 id: 'keystore-secret-backup',
                 type: 'info',
-                title: 'Enable device password reset via email',
-                text: "Email Vault recovers your device password. It is securely stored in Ambire's infrastructure cloud.",
+                title: 'Enable extension password reset via email',
+                text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
                 actions: [
                     {
                         label: 'Dismiss',
@@ -542,10 +541,10 @@ class EmailVaultController extends eventEmitter_1.default {
         return {
             ...this,
             ...super.toJSON(),
-            currentState: this.currentState,
+            currentState: this.currentState, // includes the getter in the stringified instance
             hasKeystoreRecovery: this.hasKeystoreRecovery,
             hasConfirmedRecoveryEmail: this.hasConfirmedRecoveryEmail,
-            banners: this.banners,
+            banners: this.banners, // includes the getter in the stringified instance,
             keystoreRecoveryEmail: this.keystoreRecoveryEmail
         };
     }

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.estimateGas = void 0;
+exports.estimateGas = estimateGas;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
@@ -60,5 +60,4 @@ async function estimateGas(account, op, provider, accountState, network) {
         return BigInt(withOverrides);
     });
 }
-exports.estimateGas = estimateGas;
 //# sourceMappingURL=estimateGas.js.map

@@ -1,1 +1,1 @@
-{"version":3,"file":"hdPath.d.ts","sourceRoot":"","sources":["../../../src/utils/hdPath.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,qBAAqB,EAAE,MAAM,sBAAsB,CAAA;AAE5D,eAAO,MAAM,qBAAqB,mBAAoB,qBAAqB,SAAS,MAAM,WAEzF,CAAA;AAGD,eAAO,MAAM,gBAAgB,mBAAoB,qBAAqB,iCA6BrE,CAAA"}
+{"version":3,"file":"hdPath.d.ts","sourceRoot":"","sources":["../../../src/utils/hdPath.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,qBAAqB,EAAE,MAAM,sBAAsB,CAAA;AAE5D,eAAO,MAAM,qBAAqB,GAAI,gBAAgB,qBAAqB,EAAE,OAAO,MAAM,WAEzF,CAAA;AAGD,eAAO,MAAM,gBAAgB,GAAI,gBAAgB,qBAAqB,EAAE,kBAAa,aA6BpF,CAAA"}

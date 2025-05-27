@@ -1,11 +1,13 @@
 import { Account } from '../../interfaces/account';
 import { AddressState } from '../../interfaces/domains';
 import { Network } from '../../interfaces/network';
+import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount';
 import { Storage } from '../../interfaces/storage';
 import { TransferUpdate } from '../../interfaces/transfer';
 import { HumanizerMeta } from '../../libs/humanizer/interfaces';
 import { TokenResult } from '../../libs/portfolio';
 import EventEmitter from '../eventEmitter/eventEmitter';
+export declare const hasPersistedState: (storage: Storage, appVersion: string) => Promise<boolean>;
 export declare class TransferController extends EventEmitter {
     #private;
     isSWWarningVisible: boolean;
@@ -18,7 +20,13 @@ export declare class TransferController extends EventEmitter {
     isRecipientAddressUnknownAgreed: boolean;
     isRecipientHumanizerKnownTokenOrSmartContract: boolean;
     isTopUp: boolean;
-    constructor(storage: Storage, humanizerInfo: HumanizerMeta, selectedAccountData: Account, networks: Network[]);
+    constructor(storage: Storage, humanizerInfo: HumanizerMeta, selectedAccountData: Account, networks: Network[], portfolio: SelectedAccountPortfolio, shouldHydrate: boolean, APP_VERSION: string);
+    get persistableState(): Pick<TransferController, "amount" | "amountInFiat" | "amountFieldMode" | "addressState" | "isSWWarningVisible" | "isSWWarningAgreed" | "isRecipientAddressUnknown" | "isRecipientAddressUnknownAgreed" | "isRecipientHumanizerKnownTokenOrSmartContract"> & {
+        selectedToken?: {
+            address: string;
+            chainId: bigint;
+        };
+    };
     get shouldSkipTransactionQueuedModal(): boolean;
     set shouldSkipTransactionQueuedModal(value: boolean);
     set selectedToken(token: TokenResult | null);
@@ -39,7 +47,9 @@ export declare class TransferController extends EventEmitter {
     get isFormValid(): boolean | null;
     get isInitialized(): boolean;
     get recipientAddress(): string;
-    update({ selectedAccountData, humanizerInfo, selectedToken, amount, addressState, isSWWarningAgreed, isRecipientAddressUnknownAgreed, isTopUp, networks, contacts, amountFieldMode }: TransferUpdate): void;
+    update({ selectedAccountData, humanizerInfo, selectedToken, amount, addressState, isSWWarningAgreed, isRecipientAddressUnknownAgreed, isTopUp, networks, contacts, amountFieldMode }: TransferUpdate, options?: {
+        shouldPersist?: boolean;
+    }): Promise<void>;
     checkIsRecipientAddressUnknown(): void;
     toJSON(): this & {
         validationFormMsgs: {

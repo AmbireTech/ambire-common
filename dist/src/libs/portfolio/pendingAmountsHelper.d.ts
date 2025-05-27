@@ -38,5 +38,6 @@ import { PendingAmounts } from './interfaces';
  *    - This is similar to the previous case, but here the AccOp has been broadcasted.
  *      When there is a delta between the latest and pending block amounts, both deltas are summed, resulting in the `pendingToBeConfirmed` amount.
  */
-export declare const calculatePendingAmounts: (latestAmount: bigint, pendingAmount: bigint, amountPostSimulation?: bigint, simulationDelta?: bigint, simulatedAccountOp?: AccountOp) => PendingAmounts | null;
+export declare const calculatePendingAmounts: (latestAmount: bigint, pendingAmount: bigint, amountPostSimulation?: bigint, simulationDelta?: bigint, // pending delta (this is the amount of the simulation itself)
+simulatedAccountOp?: AccountOp) => PendingAmounts | null;
 //# sourceMappingURL=pendingAmountsHelper.d.ts.map

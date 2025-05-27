@@ -1,0 +1,1 @@
+{"version":3,"file":"signatures.js","sourceRoot":"","sources":["../../../src/interfaces/signatures.ts"],"names":[],"mappings":"","sourcesContent":["import { Hex } from './hex'\n\nexport interface EIP7702Signature {\n  yParity: Hex\n  r: Hex\n  s: Hex\n}\n"]}

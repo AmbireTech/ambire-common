@@ -1,6 +1,6 @@
 import { InviteController } from '../../controllers/invite/invite';
 import { Fetch } from '../../interfaces/fetch';
-import { SocketAPIActiveRoutes, SocketAPIQuote, SocketAPISendTransactionRequest, SocketAPISupportedChain, SocketAPIToken, SocketRouteStatus } from '../../interfaces/swapAndBridge';
+import { SocketAPIToken, SocketRouteStatus, SwapAndBridgeActiveRoute, SwapAndBridgeQuote, SwapAndBridgeRoute, SwapAndBridgeSendTxRequest, SwapAndBridgeSupportedChain, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge';
 export declare const normalizeIncomingSocketToken: (token: SocketAPIToken) => {
     address: string;
     chainId: number;
@@ -12,6 +12,7 @@ export declare const normalizeIncomingSocketToken: (token: SocketAPIToken) => {
 };
 export declare class SocketAPI {
     #private;
+    id: 'socket';
     isHealthy: boolean | null;
     constructor({ fetch, apiKey }: {
         fetch: Fetch;
@@ -21,23 +22,15 @@ export declare class SocketAPI {
     updateHealth(): Promise<void>;
     updateHealthIfNeeded(): Promise<void>;
     resetHealth(): void;
-    getSupportedChains(): Promise<SocketAPISupportedChain[]>;
-    /**
-     * Since v4.41.0 we request the shortlist from Socket, which does not include
-     * the Ambire $WALLET token. So adding it manually on the supported chains.
-     */
-    static addCustomTokens({ chainId, tokens }: {
-        chainId: number;
-        tokens: SocketAPIToken[];
-    }): SocketAPIToken[];
+    getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>;
     getToTokenList({ fromChainId, toChainId }: {
         fromChainId: number;
         toChainId: number;
-    }): Promise<SocketAPIToken[]>;
+    }): Promise<SwapAndBridgeToToken[]>;
     getToken({ address, chainId }: {
         address: string;
         chainId: number;
-    }): Promise<SocketAPIToken | null>;
+    }): Promise<SwapAndBridgeToToken | null>;
     quote({ fromChainId, fromTokenAddress, toChainId, toTokenAddress, fromAmount, userAddress, isSmartAccount, sort, isOG }: {
         fromChainId: number;
         fromTokenAddress: string;
@@ -48,20 +41,33 @@ export declare class SocketAPI {
         isSmartAccount: boolean;
         sort: 'time' | 'output';
         isOG: InviteController['isOG'];
-    }): Promise<SocketAPIQuote>;
+    }): Promise<SwapAndBridgeQuote>;
     startRoute({ fromChainId, toChainId, fromAssetAddress, toAssetAddress, route }: {
         fromChainId: number;
         toChainId: number;
         fromAssetAddress: string;
         toAssetAddress: string;
-        route: SocketAPIQuote['selectedRoute'];
-    }): Promise<SocketAPISendTransactionRequest>;
+        route?: SwapAndBridgeQuote['selectedRoute'];
+    }): Promise<SwapAndBridgeSendTxRequest>;
     getRouteStatus({ activeRouteId, userTxIndex, txHash }: {
-        activeRouteId: SocketAPISendTransactionRequest['activeRouteId'];
-        userTxIndex: SocketAPISendTransactionRequest['userTxIndex'];
+        activeRouteId: SwapAndBridgeActiveRoute['activeRouteId'];
+        userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex'];
         txHash: string;
     }): Promise<SocketRouteStatus>;
-    updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']): Promise<SocketAPIActiveRoutes>;
-    getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']): Promise<SocketAPISendTransactionRequest>;
+    getActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']): Promise<SwapAndBridgeRoute>;
+    getNextRouteUserTx({ activeRouteId }: {
+        activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId'];
+    }): Promise<{
+        activeRouteId: string;
+        approvalData: import("../../interfaces/swapAndBridge").SocketAPIUserTxApprovalData | null;
+        chainId: number;
+        totalUserTx: number;
+        txData: string;
+        txTarget: string;
+        txType: "eth_sendTransaction";
+        userTxIndex: number;
+        userTxType: "fund-movr" | "dex-swap";
+        value: string;
+    }>;
 }
 //# sourceMappingURL=api.d.ts.map

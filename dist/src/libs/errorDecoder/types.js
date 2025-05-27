@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ErrorType = void 0;
 var ErrorType;
 (function (ErrorType) {
+    /** Error due to network connectivity issues when making HTTP requests */
+    ErrorType["ConnectivityError"] = "ConnectivityError";
     /** Reference, Type, Syntax and Range errors (JS/TS) */
     ErrorType["CodeError"] = "CodeError";
     /** Error due to contract reverting, identified by prefix 0x08c379a0 */
@@ -25,5 +27,5 @@ var ErrorType;
     ErrorType["UserRejectionError"] = "UserRejectionError";
     /** Error due to an inner call failure during estimation */
     ErrorType["InnerCallFailureError"] = "InnerCallFailureError";
-})(ErrorType = exports.ErrorType || (exports.ErrorType = {}));
+})(ErrorType || (exports.ErrorType = ErrorType = {}));
 //# sourceMappingURL=types.js.map

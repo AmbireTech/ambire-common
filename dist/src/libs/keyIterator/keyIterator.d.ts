@@ -9,9 +9,16 @@ export declare const getPrivateKeyFromSeed: (seed: string, seedPassphrase: strin
  */
 export declare class KeyIterator implements KeyIteratorInterface {
     #private;
-    type: string;
+    type: "internal";
     subType: 'seed' | 'private-key';
     constructor(_privKeyOrSeed: string, _seedPassphrase?: string | null);
+    getEncryptedSeed(encryptor: (seed: string, seedPassphrase?: string | null | undefined) => Promise<{
+        seed: string;
+        passphrase: string | null;
+    }>): Promise<{
+        seed: string;
+        passphrase: string | null;
+    } | null>;
     retrieve(fromToArr: {
         from: number;
         to: number;

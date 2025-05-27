@@ -1,0 +1,1 @@
+{"version":3,"file":"uuid.js","sourceRoot":"","sources":["../../../src/utils/uuid.ts"],"names":[],"mappings":";;;AAAA,+BAAmC;AAEnC,+CAA+C;AACxC,MAAM,YAAY,GAAG,GAAG,EAAE,CAAC,IAAA,SAAM,GAAE,CAAA;AAA7B,QAAA,YAAY,gBAAiB","sourcesContent":["import { v4 as uuidv4 } from 'uuid'\n\n/** Generates 36-character unique identifier */\nexport const generateUuid = () => uuidv4()\n"]}

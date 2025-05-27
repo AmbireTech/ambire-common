@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPublicKeyIfAny = void 0;
+exports.default = getPublicKey;
+exports.getPublicKeyIfAny = getPublicKeyIfAny;
 /*
   fetch domainkey record (nodejs)
 */
@@ -18,7 +19,6 @@ function getPublicKey({ domain, selector }) {
         };
     });
 }
-exports.default = getPublicKey;
 ;
 /**
  * A wrapper to help getPublicKey reverts when a pub key is not found.
@@ -36,5 +36,4 @@ async function getPublicKeyIfAny({ domain, selector }) {
         return null;
     }
 }
-exports.getPublicKeyIfAny = getPublicKeyIfAny;
 //# sourceMappingURL=getPublicKey.js.map

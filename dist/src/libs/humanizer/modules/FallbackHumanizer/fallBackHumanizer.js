@@ -41,11 +41,13 @@ const fallbackHumanizer = (accountOp, currentIrCalls, humanizerMeta) => {
                 knownSigHashes[call.data.slice(0, 10)].signature
                     .split('function ')
                     .filter((x) => x !== '')[0]
+                    .split('(')
+                    .filter((x) => x !== '')[0]
                     .split(' returns')
                     .filter((x) => x !== '')[0]}`), (0, utils_1.getLabel)('from'), (0, utils_1.getAddressVisualization)(call.to), ...extractedAddresses.map((a) => ({ ...(0, utils_1.getToken)(a, 0n), isHidden: true })));
             }
             else {
-                visualization.push((0, utils_1.getAction)('Unknown action'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to));
+                visualization.push((0, utils_1.getAction)('Interacting'), (0, utils_1.getLabel)('with'), (0, utils_1.getAddressVisualization)(call.to));
             }
         }
         if (call.value) {
@@ -59,7 +61,7 @@ const fallbackHumanizer = (accountOp, currentIrCalls, humanizerMeta) => {
             ...call,
             fullVisualization: visualization.length
                 ? visualization
-                : [(0, utils_1.getAction)('No data, no value, call to'), (0, utils_1.getAddressVisualization)(call.to)]
+                : [(0, utils_1.getAction)('Empty call to'), (0, utils_1.getAddressVisualization)(call.to)]
         };
     });
     return newCalls;

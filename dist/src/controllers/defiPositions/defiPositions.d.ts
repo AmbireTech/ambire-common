@@ -1,25 +1,24 @@
 import { Fetch } from '../../interfaces/fetch';
-import { NetworkId } from '../../interfaces/network';
-import { Storage } from '../../interfaces/storage';
 import { AccountState } from '../../libs/defiPositions/types';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { NetworksController } from '../networks/networks';
 import { ProvidersController } from '../providers/providers';
 import { SelectedAccountController } from '../selectedAccount/selectedAccount';
+import { StorageController } from '../storage/storage';
 export declare class DefiPositionsController extends EventEmitter {
     #private;
     constructor({ fetch, storage, selectedAccount, providers, networks }: {
         fetch: Fetch;
-        storage: Storage;
+        storage: StorageController;
         selectedAccount: SelectedAccountController;
         providers: ProvidersController;
         networks: NetworksController;
     });
     updatePositions(opts?: {
-        networkId?: NetworkId;
+        chainId?: bigint;
         maxDataAgeMs?: number;
     }): Promise<void>;
-    removeNetworkData(networkId: NetworkId): void;
+    removeNetworkData(chainId: bigint): void;
     getDefiPositionsState(accountAddr: string): AccountState;
     getNetworksWithPositions(accountAddr: string): import("../../libs/defiPositions/types").NetworksWithPositions;
     removeAccountData(accountAddr: string): void;

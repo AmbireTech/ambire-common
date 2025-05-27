@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requestMagicLink = void 0;
+exports.requestMagicLink = requestMagicLink;
 async function requestMagicLink(email, relayerUrl, fetch, options) {
     const flow = options?.flow;
     const resp = await fetch(`${relayerUrl}/email-vault/request-key/${email}${flow ? `?flow=${flow}` : ''}`);
@@ -13,5 +13,4 @@ async function requestMagicLink(email, relayerUrl, fetch, options) {
         throw new Error(`magicLink: error getting magic link: ${result.message}`);
     return result.data;
 }
-exports.requestMagicLink = requestMagicLink;
 //# sourceMappingURL=magicLink.js.map

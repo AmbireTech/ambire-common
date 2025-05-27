@@ -18,7 +18,9 @@ const uniV32Mapping = () => {
                 return humanizer ? humanizer(accountOp, { ...call, data }) : [(0, utils_1.getAction)('Unknown action')];
             });
             const res = (0, utils_2.uniReduce)(parsed);
-            return res.length ? [...res, (0, utils_1.getDeadline)(deadline)] : (0, utils_1.getUnknownVisualization)('Uni V3', call);
+            return res.length
+                ? [...res, (0, utils_1.getDeadline)(deadline)]
+                : [(0, utils_1.getAction)('Uniswap action'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
         // 0xac9650d8
         [ifaceV32.getFunction('multicall(bytes[])')?.selector]: (accountOp, call) => {
@@ -33,7 +35,7 @@ const uniV32Mapping = () => {
         },
         // 0x1f0464d1
         [ifaceV32.getFunction('multicall(bytes32 prevBlockHash, bytes[])')?.selector]: (accountOp, call) => {
-            const [prevBlockHash, calls] = ifaceV32.parseTransaction(call)?.args || [];
+            const [, calls] = ifaceV32.parseTransaction(call)?.args || [];
             const mappingResult = uniV32Mapping();
             const parsed = calls.map((data) => {
                 const sigHash = data.slice(0, 10);
@@ -42,7 +44,7 @@ const uniV32Mapping = () => {
             });
             return parsed.length
                 ? (0, utils_2.uniReduce)(parsed)
-                : [...(0, utils_1.getUnknownVisualization)('Uni V3', call), (0, utils_1.getLabel)(`after block ${prevBlockHash}`)];
+                : [(0, utils_1.getAction)('Uniswap action'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
         // NOTE: selfPermit is not supported cause it requires an ecrecover signature
         // 0x04e45aaf
@@ -232,7 +234,9 @@ const uniV3Mapping = () => {
                 const humanizer = mappingResult[sigHash];
                 return humanizer ? humanizer(accountOp, { ...call, data }) : [(0, utils_1.getAction)('Unknown action')];
             });
-            return parsed.length ? (0, utils_2.uniReduce)(parsed) : (0, utils_1.getUnknownVisualization)('Uni V3', call);
+            return parsed.length
+                ? (0, utils_2.uniReduce)(parsed)
+                : [(0, utils_1.getAction)('Uniswap action'), (0, utils_1.getLabel)('to'), (0, utils_1.getAddressVisualization)(call.to)];
         },
         // -------------------------------------------------------------------------------------------------
         // NOTE: selfPermit is not supported cause it requires an ecrecover signature

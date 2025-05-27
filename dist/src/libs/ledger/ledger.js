@@ -33,6 +33,9 @@ const normalizeLedgerMessage = (error) => {
     // Indicates a custom timeout error, no need to normalize
     if (error.includes('Cannot connect to your Ledger device for an extended period'))
         return error;
+    if (error.includes('The device is already open'))
+        return 'Ledger device busy. Please make sure there are no pending requests on the device.';
+    console.error('Unknown Ledger error:', error);
     return `Cannot connect to your Ledger device. Close all other apps that may be accessing it (including apps on your computer). Ensure device is responsive. Ensure Ledger firmware and Ethereum App are up to date. Device error: ${error}`;
 };
 exports.normalizeLedgerMessage = normalizeLedgerMessage;

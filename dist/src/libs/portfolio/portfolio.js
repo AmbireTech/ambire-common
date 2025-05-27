@@ -1,4 +1,5 @@
 "use strict";
+/* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable guard-for-in */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -18,10 +19,10 @@ const pagination_1 = require("./pagination");
 exports.LIMITS = {
     // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
     // proxy mode input is limited to 24kb
-    deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
+    deploylessProxyMode: { erc20: 66, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
     // theoretical capacity is 1666/450
     deploylessStateOverrideMode: {
-        erc20: 350,
+        erc20: 230,
         erc721: 70,
         erc721TokensInput: 70,
         erc721Tokens: 70
@@ -47,8 +48,7 @@ const defaultOptions = {
     blockTag: 'latest',
     priceRecency: 0,
     previousHintsFromExternalAPI: null,
-    fetchPinned: true,
-    isEOA: false
+    fetchPinned: true
 };
 class Portfolio {
     network;
@@ -56,25 +56,35 @@ class Portfolio {
     batchedGecko;
     deploylessTokens;
     deploylessNfts;
-    constructor(fetch, provider, network, velcroUrl) {
-        this.batchedVelcroDiscovery = (0, batcher_1.default)(fetch, (queue) => {
-            const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))];
-            return baseCurrencies.map((baseCurrency) => {
-                const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency);
-                const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-                    .map((x) => x.data.networkId)
-                    .join(',')}&accounts=${queueSegment
-                    .map((x) => x.data.accountAddr)
-                    .join(',')}&baseCurrency=${baseCurrency}`;
-                return { queueSegment, url };
+    constructor(fetch, provider, network, velcroUrl, customBatcher) {
+        if (customBatcher) {
+            this.batchedVelcroDiscovery = customBatcher;
+        }
+        else {
+            this.batchedVelcroDiscovery = (0, batcher_1.default)(fetch, (queue) => {
+                const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))];
+                return baseCurrencies.map((baseCurrency) => {
+                    const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency);
+                    const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+                        .map((x) => x.data.chainId)
+                        .join(',')}&accounts=${queueSegment
+                        .map((x) => x.data.accountAddr)
+                        .join(',')}&baseCurrency=${baseCurrency}`;
+                    return { queueSegment, url };
+                });
+            }, {
+                timeoutSettings: {
+                    timeoutAfter: 3000,
+                    timeoutErrorMessage: `Velcro discovery timed out on ${network.name}`
+                },
+                dedupeByKeys: ['chainId', 'accountAddr']
             });
-        }, {
-            timeoutAfter: 3000,
-            timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
-        });
+        }
         this.batchedGecko = (0, batcher_1.default)(fetch, gecko_1.geckoRequestBatcher, {
-            timeoutAfter: 3000,
-            timeoutErrorMessage: `Cena request timed out on ${network.id}`
+            timeoutSettings: {
+                timeoutAfter: 3000,
+                timeoutErrorMessage: `Cena request timed out on ${network.name}`
+            }
         });
         this.network = network;
         this.deploylessTokens = (0, deployless_1.fromDescriptor)(provider, BalanceGetter_json_1.default, !network.rpcNoStateOverride);
@@ -89,7 +99,7 @@ class Portfolio {
             throw new Error('wrong account passed');
         // Get hints (addresses to check on-chain) via Velcro
         const start = Date.now();
-        const networkId = this.network.id;
+        const chainId = this.network.chainId;
         // Make sure portfolio lib still works, even in the case Velcro discovery fails.
         // Because of this, we fall back to Velcro default response.
         let hints = (0, exports.getEmptyHints)();
@@ -97,9 +107,9 @@ class Portfolio {
         try {
             // if the network doesn't have a relayer, velcro will not work
             // but we should not record an error if such is the case
-            if (this.network.hasRelayer && !disableAutoDiscovery) {
+            if (!disableAutoDiscovery) {
                 hintsFromExternalAPI = await this.batchedVelcroDiscovery({
-                    networkId,
+                    chainId,
                     accountAddr,
                     baseCurrency
                 });
@@ -110,7 +120,7 @@ class Portfolio {
             }
         }
         catch (error) {
-            const errorMesssage = `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`;
+            const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`;
             if (localOpts.previousHintsFromExternalAPI) {
                 hints = { ...localOpts.previousHintsFromExternalAPI };
                 const TEN_MINUTES = 10 * 60 * 1000;
@@ -121,14 +131,14 @@ class Portfolio {
                         ? exports.PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
                         : exports.PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
                     message: errorMesssage,
-                    level: 'critical'
+                    level: isLastUpdateTooOld ? 'critical' : 'silent'
                 });
             }
             else {
                 errors.push({
                     name: exports.PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
                     message: errorMesssage,
-                    level: 'silent'
+                    level: 'critical'
                 });
             }
             // It's important for DX to see this error
@@ -153,7 +163,7 @@ class Portfolio {
         // add the fee tokens
         hints.erc20s = [
             ...hints.erc20s,
-            ...gasTankFeeTokens_1.default.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+            ...gasTankFeeTokens_1.default.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
         ];
         const checksummedErc20Hints = hints.erc20s
             .map((address) => {
@@ -287,11 +297,10 @@ class Portfolio {
             tokens: tokensWithPrices,
             feeTokens: tokensWithPrices.filter((t) => {
                 // return the native token
-                if (t.address === ethers_1.ZeroAddress &&
-                    t.networkId.toLowerCase() === this.network.id.toLowerCase())
+                if (t.address === ethers_1.ZeroAddress && t.chainId === this.network.chainId)
                     return true;
                 return gasTankFeeTokens_1.default.find((gasTankT) => gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-                    gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase());
+                    gasTankT.chainId === t.chainId);
             }),
             beforeNonce,
             afterNonce,

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uniReduce = exports.joinWithAndLabel = exports.getUniRecipientText = exports.parsePath = void 0;
+exports.uniReduce = exports.joinWithAndLabel = exports.getUniRecipientText = void 0;
+exports.parsePath = parsePath;
 /* eslint-disable no-continue */
 const ethers_1 = require("ethers");
 const utils_1 = require("../../utils");
@@ -14,7 +15,6 @@ function parsePath(pathBytes) {
     }
     return path;
 }
-exports.parsePath = parsePath;
 const getUniRecipientText = (accAddr, recAddr) => ['0x0000000000000000000000000000000000000001', ethers_1.ZeroAddress].includes(recAddr)
     ? []
     : (0, utils_1.getRecipientText)(accAddr, recAddr);
@@ -98,6 +98,21 @@ const uniReduce = (_calls) => {
                 calls[i][3].value =
                     calls[i][3].value > calls[j][2].value ? calls[i][3].value : calls[j][2].value;
                 calls.splice(j, 1);
+            }
+            // because of this https://www.codeslaw.app/contracts/ethereum/0x66a9893cc07d91d95644aedd05d03f95e1dba8af?file=src%2Fpkgs%2Funiversal-router%2Flib%2Fv4-periphery%2Fsrc%2Flibraries%2FActionConstants.sol&start=11&end=13
+            // we can mash two swaps into one
+            if (calls.filter(isSwap).length === 2) {
+                const indexesOfSwaps = calls
+                    .map((call, index) => (isSwap(call) ? index : -1))
+                    .filter((index) => index !== -1);
+                const indexOfFirstCall = indexesOfSwaps[0];
+                const indexOfSecondCall = indexesOfSwaps[1];
+                if (calls[indexOfFirstCall][3].value === 0n &&
+                    calls[indexOfSecondCall][1].value === BigInt(`0x8${'0'.repeat(63)}`) &&
+                    calls[indexOfFirstCall][3].address === calls[indexOfSecondCall][1].address) {
+                    calls[indexOfFirstCall][3] = calls[indexOfSecondCall][3];
+                    calls.splice(indexOfSecondCall, 1);
+                }
             }
         }
     }

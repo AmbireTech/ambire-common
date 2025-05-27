@@ -10,7 +10,7 @@ const legendsMessageModule = (message) => {
     if ((0, ethers_1.isHexString)(message.content.message) && message.content.message.length % 2 === 0) {
         messageAsText = (0, ethers_1.toUtf8String)((0, ethers_1.toUtf8Bytes)(message.content.message));
     }
-    const messageRegex = /Assign 0x[a-fA-F0-9]{40} to Ambire Legends 0x[a-fA-F0-9]{40}/;
+    const messageRegex = /Assign 0x[a-fA-F0-9]{40} to Ambire Rewards 0x[a-fA-F0-9]{40}/;
     const addressRegex = /0x[a-fA-F0-9]{40}/g;
     if (messageAsText.match(messageRegex) &&
         messageAsText.match(addressRegex)[0] === message.accountAddr)
@@ -20,7 +20,7 @@ const legendsMessageModule = (message) => {
                 (0, utils_1.getAddressVisualization)(messageAsText.match(addressRegex)[0]),
                 (0, utils_1.getLabel)('to'),
                 (0, utils_1.getAddressVisualization)(messageAsText.match(addressRegex)[1]),
-                (0, utils_1.getLabel)('for Ambire Legends', true)
+                (0, utils_1.getLabel)('for Ambire Rewards', true)
             ]
         };
     return { fullVisualization: [] };

@@ -1,6 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseLogs = exports.getUserOpHash = exports.ENTRY_POINT_AUTHORIZATION_REQUEST_ID = exports.shouldAskForEntryPointAuthorization = exports.shouldIncludeActivatorCall = exports.isErc4337Broadcast = exports.getUserOperation = exports.shouldUseOneTimeNonce = exports.getRequestType = exports.getOneTimeNonce = exports.getCleanUserOp = exports.getActivatorCall = exports.getSigForCalculations = exports.getPaymasterSpoof = exports.calculateCallDataCost = void 0;
+exports.parseLogs = exports.ENTRY_POINT_AUTHORIZATION_REQUEST_ID = void 0;
+exports.calculateCallDataCost = calculateCallDataCost;
+exports.getPaymasterSpoof = getPaymasterSpoof;
+exports.getSigForCalculations = getSigForCalculations;
+exports.getActivatorCall = getActivatorCall;
+exports.getCleanUserOp = getCleanUserOp;
+exports.getOneTimeNonce = getOneTimeNonce;
+exports.getRequestType = getRequestType;
+exports.getUserOperation = getUserOperation;
+exports.shouldIncludeActivatorCall = shouldIncludeActivatorCall;
+exports.getPackedUserOp = getPackedUserOp;
+exports.getUserOpHash = getUserOpHash;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
@@ -16,18 +27,15 @@ function calculateCallDataCost(callData) {
     const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes);
     return zeroBytes * 4n + nonZeroBytes * 16n;
 }
-exports.calculateCallDataCost = calculateCallDataCost;
 function getPaymasterSpoof() {
     const abiCoder = new ethers_1.AbiCoder();
     const spoofSig = abiCoder.encode(['address'], [deploy_1.AMBIRE_PAYMASTER_SIGNER]) + signatures_1.SPOOF_SIGTYPE;
     const simulationData = abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, spoofSig]);
     return (0, ethers_1.hexlify)((0, ethers_1.concat)([deploy_1.AMBIRE_PAYMASTER, simulationData]));
 }
-exports.getPaymasterSpoof = getPaymasterSpoof;
 function getSigForCalculations() {
     return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01';
 }
-exports.getSigForCalculations = getSigForCalculations;
 // get the call to give privileges to the entry point
 function getActivatorCall(addr) {
     const saAbi = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
@@ -41,7 +49,6 @@ function getActivatorCall(addr) {
         data: givePermsToEntryPointData
     };
 }
-exports.getActivatorCall = getActivatorCall;
 /**
  * When we use abi.encode or send the user operation to the bundler,
  * we need to strip it of the specific ambire-common properties that we use
@@ -52,7 +59,6 @@ exports.getActivatorCall = getActivatorCall;
 function getCleanUserOp(userOp) {
     return [(({ requestType, activatorCall, bundler, ...o }) => o)(userOp)];
 }
-exports.getCleanUserOp = getCleanUserOp;
 /**
  * Get the nonce we're expecting in validateUserOp
  * when we're going through the activation | recovery
@@ -90,16 +96,10 @@ function getOneTimeNonce(userOperation) {
         ])
     ])).substring(18)}${(0, ethers_1.toBeHex)(0, 8).substring(2)}`;
 }
-exports.getOneTimeNonce = getOneTimeNonce;
 function getRequestType(accountState) {
-    return accountState.isDeployed && !accountState.isErc4337Enabled ? 'activator' : 'standard';
+    return accountState.isEOA ? '7702' : 'standard';
 }
-exports.getRequestType = getRequestType;
-function shouldUseOneTimeNonce(accountState) {
-    return getRequestType(accountState) !== 'standard';
-}
-exports.shouldUseOneTimeNonce = shouldUseOneTimeNonce;
-function getUserOperation(account, accountState, accountOp, bundler, entryPointSig) {
+function getUserOperation(account, accountState, accountOp, bundler, entryPointSig, eip7702Auth) {
     const userOp = {
         sender: accountOp.accountAddr,
         nonce: (0, ethers_1.toBeHex)(accountState.erc4337Nonce),
@@ -114,11 +114,9 @@ function getUserOperation(account, accountState, accountOp, bundler, entryPointS
         bundler
     };
     // if the account is not deployed, prepare the deploy in the initCode
-    if (!accountState.isDeployed) {
+    if (entryPointSig) {
         if (!account.creation)
             throw new Error('Account creation properties are missing');
-        if (!entryPointSig)
-            throw new Error('No entry point authorization signature provided');
         const factoryInterface = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
         userOp.factory = account.creation.factoryAddr;
         userOp.factoryData = factoryInterface.encodeFunctionData('deployAndExecute', [
@@ -131,55 +129,23 @@ function getUserOperation(account, accountState, accountOp, bundler, entryPointS
     // if the request type is activator, add the activator call
     if (userOp.requestType === 'activator')
         userOp.activatorCall = getActivatorCall(accountOp.accountAddr);
+    userOp.eip7702Auth = eip7702Auth;
     return userOp;
 }
-exports.getUserOperation = getUserOperation;
-function isErc4337Broadcast(acc, network, accountState) {
-    // a special exception for gnosis which was a hardcoded chain but
-    // now it's not. The bundler doesn't support state override on gnosis
-    // so if the account IS deployed AND does NOT have 4337 privileges,
-    // it won't be able to use the edge case as the bundler will block
-    // the estimation. That's why we will use the relayer in this case
-    const canBroadcast4337 = network.chainId !== 100n || accountState.isErc4337Enabled || !accountState.isDeployed;
-    return (canBroadcast4337 &&
-        network.erc4337.enabled &&
-        accountState.isV2 &&
-        !!acc.creation &&
-        (0, ethers_1.getAddress)(acc.creation.factoryAddr) === deploy_1.AMBIRE_ACCOUNT_FACTORY);
-}
-exports.isErc4337Broadcast = isErc4337Broadcast;
 // for special cases where we broadcast a 4337 operation with an EOA,
 // add the activator call so the use has the entry point attached
 function shouldIncludeActivatorCall(network, account, accountState, is4337Broadcast = true) {
     return (account.creation &&
         account.creation.factoryAddr === deploy_1.AMBIRE_ACCOUNT_FACTORY &&
         accountState.isV2 &&
+        !accountState.isEOA &&
         network.erc4337.enabled &&
         !accountState.isErc4337Enabled &&
         (accountState.isDeployed || !is4337Broadcast));
 }
-exports.shouldIncludeActivatorCall = shouldIncludeActivatorCall;
-// if the account is v2 and the network is 4337 and the account hasn't
-// authorized the entry point, he should be asked to do so
-//
-// addition: if the account is the 0.7.0 one
-function shouldAskForEntryPointAuthorization(network, account, accountState, alreadySigned) {
-    if (alreadySigned)
-        return false;
-    return (account.creation &&
-        account.creation.factoryAddr === deploy_1.AMBIRE_ACCOUNT_FACTORY &&
-        accountState.isV2 &&
-        !accountState.isDeployed &&
-        network.erc4337.enabled &&
-        !accountState.isErc4337Enabled);
-}
-exports.shouldAskForEntryPointAuthorization = shouldAskForEntryPointAuthorization;
 exports.ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID';
-function getUserOpHash(userOp, chainId) {
-    const abiCoder = new ethers_1.AbiCoder();
+function getPackedUserOp(userOp) {
     const initCode = userOp.factory ? (0, ethers_1.concat)([userOp.factory, userOp.factoryData]) : '0x';
-    const hashInitCode = (0, ethers_1.keccak256)(initCode);
-    const hashCallData = (0, ethers_1.keccak256)(userOp.callData);
     const accountGasLimits = (0, ethers_1.concat)([
         (0, ethers_1.toBeHex)(userOp.verificationGasLimit.toString(), 16),
         (0, ethers_1.toBeHex)(userOp.callGasLimit.toString(), 16)
@@ -196,21 +162,36 @@ function getUserOpHash(userOp, chainId) {
             userOp.paymasterData
         ])
         : '0x';
-    const hashPaymasterAndData = (0, ethers_1.keccak256)(paymasterAndData);
+    return {
+        sender: userOp.sender,
+        nonce: BigInt(userOp.nonce),
+        initCode: initCode,
+        callData: userOp.callData,
+        accountGasLimits: accountGasLimits,
+        preVerificationGas: BigInt(userOp.preVerificationGas),
+        gasFees: gasFees,
+        paymasterAndData: paymasterAndData
+    };
+}
+function getUserOpHash(userOp, chainId) {
+    const abiCoder = new ethers_1.AbiCoder();
+    const packedUserOp = getPackedUserOp(userOp);
+    const hashInitCode = (0, ethers_1.keccak256)(packedUserOp.initCode);
+    const hashCallData = (0, ethers_1.keccak256)(packedUserOp.callData);
+    const hashPaymasterAndData = (0, ethers_1.keccak256)(packedUserOp.paymasterAndData);
     const packed = abiCoder.encode(['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'], [
         userOp.sender,
         userOp.nonce,
         hashInitCode,
         hashCallData,
-        accountGasLimits,
+        packedUserOp.accountGasLimits,
         userOp.preVerificationGas,
-        gasFees,
+        packedUserOp.gasFees,
         hashPaymasterAndData
     ]);
     const packedHash = (0, ethers_1.keccak256)(packed);
     return (0, ethers_1.keccak256)(abiCoder.encode(['bytes32', 'address', 'uint256'], [packedHash, deploy_1.ERC_4337_ENTRYPOINT, chainId]));
 }
-exports.getUserOpHash = getUserOpHash;
 // try to parse the UserOperationEvent to understand whether
 // the user op is a success or a failure
 const parseLogs = (logs, userOpHash, userOpsLength // benzina only

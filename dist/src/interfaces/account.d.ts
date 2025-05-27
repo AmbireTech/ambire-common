@@ -1,3 +1,4 @@
+import { Hex } from './hex';
 import { Network } from './network';
 export type AccountId = string;
 export type AccountPreferences = {
@@ -13,6 +14,8 @@ export interface Account {
     email?: string;
     newlyCreated?: boolean;
     newlyAdded?: boolean;
+    disable7702Popup?: boolean;
+    disable7702Banner?: boolean;
 }
 export interface AccountCreation {
     factoryAddr: string;
@@ -22,9 +25,10 @@ export interface AccountCreation {
 export interface AccountOnchainState {
     accountAddr: string;
     isDeployed: boolean;
+    eoaNonce: bigint | null;
     nonce: bigint;
     erc4337Nonce: bigint;
-    associatedKeysPriviliges: {
+    associatedKeys: {
         [key: string]: string;
     };
     deployError: boolean;
@@ -34,10 +38,13 @@ export interface AccountOnchainState {
     isErc4337Nonce: boolean;
     isV2: boolean;
     currentBlock: bigint;
+    isSmarterEoa: boolean;
+    delegatedContract: Hex | null;
+    delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null;
 }
 export type AccountStates = {
     [accountId: string]: {
-        [networkId: string]: AccountOnchainState;
+        [chainId: string]: AccountOnchainState;
     };
 };
 type AccountDerivationMeta = {
@@ -64,9 +71,9 @@ export type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> &
  */
 export declare enum ImportStatus {
     NotImported = "not-imported",
-    ImportedWithoutKey = "imported-without-key",
-    ImportedWithSomeOfTheKeys = "imported-with-some-of-the-keys",
-    ImportedWithTheSameKeys = "imported-with-the-same-keys",
+    ImportedWithoutKey = "imported-without-key",// as a view only account
+    ImportedWithSomeOfTheKeys = "imported-with-some-of-the-keys",// imported with
+    ImportedWithTheSameKeys = "imported-with-the-same-keys",// imported with all
     ImportedWithDifferentKeys = "imported-with-different-keys"
 }
 /**

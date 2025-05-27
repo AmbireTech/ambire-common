@@ -11,18 +11,28 @@ const WALLETSupplyControllerMapping = () => {
     const iface = new ethers_1.Interface(WALLETSupplyController_json_1.default);
     return {
         [iface.getFunction('claim')?.selector]: (call) => {
-            const { toBurnBps } = iface.parseTransaction(call).args;
+            const { toBurnBps, stakingPool } = iface.parseTransaction(call).args;
             const burnPercentage = toBurnBps.toString() / 100;
             return burnPercentage > 0
-                ? [(0, utils_1.getAction)('Claim rewards'), (0, utils_1.getLabel)(`with ${burnPercentage}% burn`)]
-                : [(0, utils_1.getAction)('Claim rewards')];
+                ? [
+                    (0, utils_1.getAction)('Claim rewards'),
+                    (0, utils_1.getLabel)(`with ${burnPercentage}% burn`),
+                    (0, utils_1.getLabel)('in'),
+                    (0, utils_1.getToken)(stakingPool, 0n)
+                ]
+                : [(0, utils_1.getAction)('Claim rewards'), (0, utils_1.getLabel)('in'), (0, utils_1.getToken)(stakingPool, 0n)];
         },
         [iface.getFunction('claimWithRootUpdate')?.selector]: (call) => {
-            const { toBurnBps } = iface.parseTransaction(call).args;
+            const { toBurnBps, stakingPool } = iface.parseTransaction(call).args;
             const burnPercentage = toBurnBps.toString() / 100;
             return burnPercentage > 0
-                ? [(0, utils_1.getAction)('Claim rewards'), (0, utils_1.getLabel)(`with ${burnPercentage}% burn`)]
-                : [(0, utils_1.getAction)('Claim rewards')];
+                ? [
+                    (0, utils_1.getAction)('Claim rewards'),
+                    (0, utils_1.getLabel)(`with ${burnPercentage}% burn`),
+                    (0, utils_1.getLabel)('in'),
+                    (0, utils_1.getToken)(stakingPool, 0n)
+                ]
+                : [(0, utils_1.getAction)('Claim rewards'), (0, utils_1.getLabel)('in'), (0, utils_1.getToken)(stakingPool, 0n)];
         },
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         [iface.getFunction('mintVesting')?.selector]: () => {

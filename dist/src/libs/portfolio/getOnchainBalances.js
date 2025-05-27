@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getTokens = exports.getNFTs = exports.getDeploylessOpts = void 0;
+exports.getDeploylessOpts = getDeploylessOpts;
+exports.getNFTs = getNFTs;
+exports.getTokens = getTokens;
 const deploy_1 = require("../../consts/deploy");
 const deployless_1 = require("../../consts/deployless");
 const simulationStateOverride_1 = require("../../utils/simulationStateOverride");
@@ -47,20 +49,22 @@ function handleSimulationError(error, beforeNonce, afterNonce, simulationOps) {
     }
 }
 function getDeploylessOpts(accountAddr, supportsStateOverride, opts) {
+    const hasEOAOverride = opts.simulation && (0, account_1.shouldUseStateOverrideForEOA)(opts.simulation.account, opts.simulation.state);
     return {
         blockTag: opts.blockTag,
         from: deploy_1.DEPLOYLESS_SIMULATION_FROM,
-        mode: supportsStateOverride && opts.isEOA ? deployless_2.DeploylessMode.StateOverride : deployless_2.DeploylessMode.Detect,
-        stateToOverride: supportsStateOverride && opts.isEOA ? (0, simulationStateOverride_1.getEoaSimulationStateOverride)(accountAddr) : null
+        mode: supportsStateOverride && hasEOAOverride
+            ? deployless_2.DeploylessMode.StateOverride
+            : deployless_2.DeploylessMode.Detect,
+        stateToOverride: supportsStateOverride && hasEOAOverride ? (0, simulationStateOverride_1.getEoaSimulationStateOverride)(accountAddr) : null
     };
 }
-exports.getDeploylessOpts = getDeploylessOpts;
 async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limits) {
     const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts);
     const mapToken = (token) => {
         return {
             name: token.name,
-            networkId: network.id,
+            chainId: network.chainId,
             symbol: token.symbol,
             amount: BigInt(token.nfts.length),
             decimals: 1,
@@ -76,11 +80,13 @@ async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limit
         ], deploylessOpts))[0];
         return [collections.map((token) => [token.error, mapToken(token)]), {}];
     }
-    const { accountOps, account } = opts.simulation;
+    const { accountOps, account, state } = opts.simulation;
     const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
     const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
         // EOA starts from a fake, specified nonce
-        nonce: (0, account_1.isSmartAccount)(account) ? nonce : BigInt(deployless_1.EOA_SIMULATION_NONCE) + BigInt(idx),
+        nonce: !(0, account_1.shouldUseStateOverrideForEOA)(account, state)
+            ? nonce
+            : BigInt(deployless_1.EOA_SIMULATION_NONCE) + BigInt(idx),
         calls: calls.map(accountOp_1.toSingletonCall).map(accountOp_1.callToTuple)
     }));
     const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call('simulateAndGetAllNFTs', [
@@ -136,18 +142,20 @@ async function getNFTs(network, deployless, opts, accountAddr, tokenAddrs, limit
         {}
     ];
 }
-exports.getNFTs = getNFTs;
 async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
     const mapToken = (token, address) => {
         return {
             amount: token.amount,
-            networkId: network.id,
+            chainId: network.chainId,
             decimals: Number(token.decimals),
+            name: address === '0x0000000000000000000000000000000000000000'
+                ? network.nativeAssetName
+                : token.name,
             symbol: address === '0x0000000000000000000000000000000000000000'
                 ? network.nativeAssetSymbol
-                : (0, helpers_1.overrideSymbol)(address, network.id, token.symbol),
+                : (0, helpers_1.overrideSymbol)(address, network.chainId, token.symbol),
             address,
-            flags: (0, helpers_1.getFlags)({}, network.id, network.id, address)
+            flags: (0, helpers_1.getFlags)({}, network.chainId.toString(), network.chainId, address)
         };
     };
     const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts);
@@ -160,10 +168,12 @@ async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
             }
         ];
     }
-    const { accountOps, account } = opts.simulation;
+    const { accountOps, account, state } = opts.simulation;
     const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
         // EOA starts from a fake, specified nonce
-        nonce: (0, account_1.isSmartAccount)(account) ? nonce : BigInt(deployless_1.EOA_SIMULATION_NONCE) + BigInt(idx),
+        nonce: !(0, account_1.shouldUseStateOverrideForEOA)(account, state)
+            ? nonce
+            : BigInt(deployless_1.EOA_SIMULATION_NONCE) + BigInt(idx),
         calls: calls.map(accountOp_1.toSingletonCall).map(accountOp_1.callToTuple)
     }));
     const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
@@ -219,5 +229,4 @@ async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
         }
     ];
 }
-exports.getTokens = getTokens;
 //# sourceMappingURL=getOnchainBalances.js.map

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHumanReadableSwapAndBridgeError = void 0;
+exports.getHumanReadableSwapAndBridgeError = getHumanReadableSwapAndBridgeError;
 const tslib_1 = require("tslib");
 const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 const SwapAndBridgeError_1 = tslib_1.__importDefault(require("../../classes/SwapAndBridgeError"));
@@ -22,5 +22,4 @@ function getHumanReadableSwapAndBridgeError(e) {
     const errorMessage = `Unexpected error happened in the Swap & Bridge flow. Try again later or contact Ambire support. Details: <${message}>`;
     return new Error(errorMessage);
 }
-exports.getHumanReadableSwapAndBridgeError = getHumanReadableSwapAndBridgeError;
 //# sourceMappingURL=swapAndBridgeErrorHumanizer.js.map

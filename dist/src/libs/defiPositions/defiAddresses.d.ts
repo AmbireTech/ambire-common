@@ -1,41 +1,70 @@
 export declare const AAVE_V3: {
-    ethereum: {
+    '1': {
         poolAddr: string;
     };
-    optimism: {
+    '10': {
         poolAddr: string;
     };
-    arbitrum: {
+    '42161': {
         poolAddr: string;
     };
-    base: {
+    '8453': {
         poolAddr: string;
     };
-    polygon: {
+    '137': {
         poolAddr: string;
     };
-    scroll: {
+    '534352': {
+        poolAddr: string;
+    };
+    '56': {
+        poolAddr: string;
+    };
+    '43114': {
+        poolAddr: string;
+    };
+    '100': {
         poolAddr: string;
     };
 };
 export declare const UNISWAP_V3: {
-    ethereum: {
+    '1': {
         nonfungiblePositionManagerAddr: string;
         factoryAddr: string;
     };
-    optimism: {
+    '10': {
         nonfungiblePositionManagerAddr: string;
         factoryAddr: string;
     };
-    arbitrum: {
+    '42161': {
         nonfungiblePositionManagerAddr: string;
         factoryAddr: string;
     };
-    base: {
+    '8453': {
         nonfungiblePositionManagerAddr: string;
         factoryAddr: string;
     };
-    polygon: {
+    '137': {
+        nonfungiblePositionManagerAddr: string;
+        factoryAddr: string;
+    };
+    '56': {
+        nonfungiblePositionManagerAddr: string;
+        factoryAddr: string;
+    };
+    '42220': {
+        nonfungiblePositionManagerAddr: string;
+        factoryAddr: string;
+    };
+    '81457': {
+        nonfungiblePositionManagerAddr: string;
+        factoryAddr: string;
+    };
+    '7777777': {
+        nonfungiblePositionManagerAddr: string;
+        factoryAddr: string;
+    };
+    '480': {
         nonfungiblePositionManagerAddr: string;
         factoryAddr: string;
     };

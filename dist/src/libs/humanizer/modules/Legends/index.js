@@ -49,7 +49,7 @@ const legendsModule = (accOp, calls) => {
                 (0, utils_1.getAction)('Pick character'),
                 (0, utils_1.getImage)(characterTypes[heroType]?.image || characterTypes[0].image),
                 (0, utils_1.getLabel)(characterTypes[heroType]?.type || characterTypes[0].type, true),
-                (0, utils_1.getLabel)('for Ambire Legends')
+                (0, utils_1.getLabel)('for Ambire Rewards')
             ];
         },
         [iface.getFunction('getDailyReward')?.selector]: () => [
@@ -78,7 +78,7 @@ const legendsModule = (accOp, calls) => {
         },
         [iface.getFunction('invite')?.selector]: (call) => {
             const [invitee] = iface.parseTransaction(call).args;
-            return [(0, utils_1.getAction)('Invite'), (0, utils_1.getAddressVisualization)(invitee), (0, utils_1.getLabel)('to Ambire Legends')];
+            return [(0, utils_1.getAction)('Invite'), (0, utils_1.getAddressVisualization)(invitee), (0, utils_1.getLabel)('to Ambire Rewards')];
         },
         [iface.getFunction('claimXpFromFeedback')?.selector]: () => {
             return [(0, utils_1.getAction)('Claim XP'), (0, utils_1.getLabel)('from'), (0, utils_1.getLabel)('feedback form', true)];

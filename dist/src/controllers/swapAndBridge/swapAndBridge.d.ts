@@ -1,15 +1,24 @@
+import { ExternalSignerControllers } from '../../interfaces/keystore';
 import { Network } from '../../interfaces/network';
-import { Storage } from '../../interfaces/storage';
-import { ActiveRoute, SocketAPIQuote, SocketAPIRoute, SocketAPISendTransactionRequest, SocketAPIToken, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge';
+import { SignAccountOpError } from '../../interfaces/signAccountOp';
+import { FromToken, SwapAndBridgeActiveRoute, SwapAndBridgeQuote, SwapAndBridgeRoute, SwapAndBridgeSendTxRequest, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge';
+import { UserRequest } from '../../interfaces/userRequest';
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp';
 import { TokenResult } from '../../libs/portfolio';
+import { LiFiAPI } from '../../services/lifi/api';
 import { SocketAPI } from '../../services/socket/api';
+import { AccountsController } from '../accounts/accounts';
 import { ActionsController } from '../actions/actions';
 import { ActivityController } from '../activity/activity';
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter';
 import { InviteController } from '../invite/invite';
+import { KeystoreController } from '../keystore/keystore';
 import { NetworksController } from '../networks/networks';
+import { PortfolioController } from '../portfolio/portfolio';
+import { ProvidersController } from '../providers/providers';
 import { SelectedAccountController } from '../selectedAccount/selectedAccount';
+import { SignAccountOpController } from '../signAccountOp/signAccountOp';
+import { StorageController } from '../storage/storage';
 type SwapAndBridgeErrorType = {
     id: 'to-token-list-fetch-failed';
     title: string;
@@ -22,7 +31,9 @@ export declare enum SwapAndBridgeFormStatus {
     FetchingRoutes = "fetching-routes",
     NoRoutesFound = "no-routes-found",
     InvalidRouteSelected = "invalid-route-selected",
-    ReadyToSubmit = "ready-to-submit"
+    ReadyToEstimate = "ready-to-estimate",
+    ReadyToSubmit = "ready-to-submit",
+    Proceeded = "proceeded"
 }
 declare const STATUS_WRAPPED_METHODS: {
     readonly addToTokenByAddress: "INITIAL";
@@ -42,32 +53,50 @@ export declare class SwapAndBridgeController extends EventEmitter {
     statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>;
     updateQuoteStatus: 'INITIAL' | 'LOADING';
     updateToTokenListStatus: 'INITIAL' | 'LOADING';
+    switchTokensStatus: 'INITIAL' | 'LOADING';
     sessionIds: string[];
     fromChainId: number | null;
-    fromSelectedToken: TokenResult | null;
+    fromSelectedToken: FromToken | null;
     fromAmount: string;
     fromAmountInFiat: string;
     fromAmountFieldMode: 'fiat' | 'token';
     toChainId: number | null;
     toSelectedToken: SwapAndBridgeToToken | null;
-    quote: SocketAPIQuote | null;
+    quote: SwapAndBridgeQuote | null;
     quoteRoutesStatuses: {
         [key: string]: {
             status: string;
         };
     };
-    portfolioTokenList: TokenResult[];
+    portfolioTokenList: FromToken[];
     isTokenListLoading: boolean;
     errors: SwapAndBridgeErrorType[];
     routePriority: 'output' | 'time';
-    constructor({ selectedAccount, networks, activity, socketAPI, storage, actions, invite }: {
+    signAccountOpController: SignAccountOpController | null;
+    hasProceeded: boolean;
+    /**
+     * Describes whether quote refetch should happen at a given interval.
+     * We forbid it:
+     * - when the user has chosen a custom route by himself
+     */
+    isAutoSelectRouteDisabled: boolean;
+    constructor({ accounts, keystore, portfolio, externalSignerControllers, providers, selectedAccount, networks, activity, serviceProviderAPI, storage, actions, invite, portfolioUpdate, userRequests, relayerUrl, isMainSignAccountOpThrowingAnEstimationError }: {
+        accounts: AccountsController;
+        keystore: KeystoreController;
+        portfolio: PortfolioController;
+        externalSignerControllers: ExternalSignerControllers;
+        providers: ProvidersController;
         selectedAccount: SelectedAccountController;
         networks: NetworksController;
         activity: ActivityController;
-        socketAPI: SocketAPI;
-        storage: Storage;
+        serviceProviderAPI: SocketAPI | LiFiAPI;
+        storage: StorageController;
         actions: ActionsController;
         invite: InviteController;
+        userRequests: UserRequest[];
+        relayerUrl: string;
+        portfolioUpdate?: Function;
+        isMainSignAccountOpThrowingAnEstimationError?: Function;
     });
     get maxFromAmount(): string;
     get maxFromAmountInFiat(): string;
@@ -77,15 +106,16 @@ export declare class SwapAndBridgeController extends EventEmitter {
         success: boolean;
         message: string;
     };
-    get activeRoutesInProgress(): ActiveRoute[];
-    get activeRoutes(): ActiveRoute[];
-    set activeRoutes(value: ActiveRoute[]);
-    get isSwitchFromAndToTokensEnabled(): boolean;
+    get activeRoutesInProgress(): SwapAndBridgeActiveRoute[];
+    get activeRoutes(): SwapAndBridgeActiveRoute[];
+    set activeRoutes(value: SwapAndBridgeActiveRoute[]);
     get shouldEnableRoutesSelection(): boolean;
-    initForm(sessionId: string): Promise<void>;
+    initForm(sessionId: string, params?: {
+        preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>;
+    }): Promise<void>;
     get isHealthy(): boolean | null;
     get supportedChainIds(): Network['chainId'][];
-    unloadScreen(sessionId: string): void;
+    unloadScreen(sessionId: string, forceUnload?: boolean): void;
     addOrUpdateError(error: SwapAndBridgeErrorType): void;
     removeError(id: SwapAndBridgeErrorType['id'], shouldEmit?: boolean): void;
     updateForm(props: {
@@ -94,11 +124,17 @@ export declare class SwapAndBridgeController extends EventEmitter {
         fromAmountFieldMode?: 'fiat' | 'token';
         fromSelectedToken?: TokenResult | null;
         toChainId?: bigint | number;
-        toSelectedToken?: SocketAPIToken | null;
+        toSelectedToken?: SwapAndBridgeToToken | null;
         routePriority?: 'output' | 'time';
-    }): void;
+    }, updateProps?: {
+        emitUpdate?: boolean;
+        updateQuote?: boolean;
+    }): Promise<void>;
     resetForm(shouldEmit?: boolean): void;
-    updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]): void;
+    reset(shouldEmit?: boolean): void;
+    updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[], params?: {
+        preselectedToken?: Pick<TokenResult, 'address' | 'chainId'>;
+    }): Promise<void>;
     updateToTokenList(shouldReset: boolean, addressToSelect?: string): Promise<void>;
     get toTokenList(): SwapAndBridgeToToken[];
     addToTokenByAddress: (address: string) => Promise<void>;
@@ -107,37 +143,55 @@ export declare class SwapAndBridgeController extends EventEmitter {
         skipQuoteUpdateOnSameValues?: boolean;
         skipPreviousQuoteRemoval?: boolean;
         skipStatusUpdate?: boolean;
+        debounce?: boolean;
     }): Promise<void>;
-    getRouteStartUserTx(): Promise<SocketAPISendTransactionRequest | undefined>;
-    getNextRouteUserTx(activeRouteId: number): Promise<SocketAPISendTransactionRequest>;
+    getRouteStartUserTx(shouldThrowOnError?: boolean): Promise<SwapAndBridgeSendTxRequest | null>;
+    getNextRouteUserTx({ activeRouteId, activeRoute: { route } }: {
+        activeRouteId: SwapAndBridgeActiveRoute['activeRouteId'];
+        activeRoute: SwapAndBridgeActiveRoute;
+    }): Promise<SwapAndBridgeSendTxRequest>;
     checkForNextUserTxForActiveRoutes(): Promise<void>;
-    selectRoute(route: SocketAPIRoute): void;
-    addActiveRoute(activeRoute: {
-        activeRouteId: SocketAPISendTransactionRequest['activeRouteId'];
-        userTxIndex: SocketAPISendTransactionRequest['userTxIndex'];
+    selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean): Promise<void>;
+    addActiveRoute({ activeRouteId, userTxIndex }: {
+        activeRouteId: SwapAndBridgeActiveRoute['activeRouteId'];
+        userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex'];
     }): Promise<void>;
-    updateActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId'], activeRoute?: Partial<ActiveRoute>, forceUpdateRoute?: boolean): void;
-    removeActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']): void;
+    updateActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId'], activeRoute?: Partial<SwapAndBridgeActiveRoute>, forceUpdateRoute?: boolean): void;
+    removeActiveRoute(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']): void;
+    /**
+     * Find the next route in line and try to re-estimate with it
+     */
+    onEstimationFailure(): Promise<void>;
+    markSelectedRouteAsFailed(): Promise<void>;
     handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp): void;
-    onAccountChange(): void;
     get banners(): import("../../interfaces/banner").Banner[];
+    destroySignAccountOp(): void;
+    initSignAccountOpIfNeeded(): Promise<void>;
+    /**
+     * Reestimate the signAccountOp request periodically.
+     * Encapsulate it here instead of creating an interval in the background
+     * as intervals are tricky and harder to control
+     */
+    reestimate(userTxn: SwapAndBridgeSendTxRequest): Promise<void>;
+    setUserProceeded(hasProceeded: boolean): void;
+    setIsAutoSelectRouteDisabled(isDisabled: boolean): void;
+    get swapSignErrors(): SignAccountOpError[];
     toJSON(): this & {
         toTokenList: SwapAndBridgeToToken[];
         maxFromAmount: string;
-        maxFromAmountInFiat: string;
         validateFromAmount: {
             success: boolean;
             message: string;
         };
         isFormEmpty: boolean;
         formStatus: SwapAndBridgeFormStatus;
-        activeRoutesInProgress: ActiveRoute[];
-        activeRoutes: ActiveRoute[];
-        isSwitchFromAndToTokensEnabled: boolean;
+        activeRoutesInProgress: SwapAndBridgeActiveRoute[];
+        activeRoutes: SwapAndBridgeActiveRoute[];
         banners: import("../../interfaces/banner").Banner[];
         isHealthy: boolean | null;
         shouldEnableRoutesSelection: boolean;
         supportedChainIds: bigint[];
+        swapSignErrors: SignAccountOpError[];
         emittedErrors: import("../eventEmitter/eventEmitter").ErrorRef[];
     };
 }

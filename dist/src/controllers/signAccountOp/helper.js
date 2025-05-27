@@ -1,10 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getFeeTokenPriceUnavailableWarning = exports.getSignificantBalanceDecreaseWarning = exports.getTokenUsdAmount = exports.getFeeSpeedIdentifier = void 0;
+exports.getFeeTokenPriceUnavailableWarning = exports.SIGN_ACCOUNT_OP_SWAP = exports.SIGN_ACCOUNT_OP_MAIN = void 0;
+exports.getFeeSpeedIdentifier = getFeeSpeedIdentifier;
+exports.getSignificantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning;
+exports.getTokenUsdAmount = getTokenUsdAmount;
+exports.getUsdAmount = getUsdAmount;
 const ethers_1 = require("ethers");
 const errorHandling_1 = require("../../consts/signAccountOp/errorHandling");
 const signAccountOp_1 = require("../../interfaces/signAccountOp");
 const helpers_1 = require("../../libs/portfolio/helpers");
+exports.SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain';
+exports.SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap';
 function getFeeSpeedIdentifier(option, accountAddr, rbfAccountOp) {
     // if the token is native and we're paying with EOA, we do not need
     // a different identifier as the fee speed calculations will be the same
@@ -12,20 +18,21 @@ function getFeeSpeedIdentifier(option, accountAddr, rbfAccountOp) {
     const paidBy = option.token.address === ethers_1.ZeroAddress && option.paidBy !== accountAddr ? 'EOA' : option.paidBy;
     return `${paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${option.token.flags.onGasTank ? 'gasTank' : 'feeToken'}${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`;
 }
-exports.getFeeSpeedIdentifier = getFeeSpeedIdentifier;
+function getUsdAmount(usdPrice, tokenDecimals, gasAmount) {
+    const usdPriceFormatted = BigInt(usdPrice * 1e18);
+    // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
+    return (0, ethers_1.formatUnits)(BigInt(gasAmount) * usdPriceFormatted, 18 + tokenDecimals);
+}
 function getTokenUsdAmount(token, gasAmount) {
     const isUsd = (price) => price.baseCurrency === 'usd';
     const usdPrice = token.priceIn.find(isUsd)?.price;
     if (!usdPrice)
         return '';
-    const usdPriceFormatted = BigInt(usdPrice * 1e18);
-    // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-    return (0, ethers_1.formatUnits)(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals);
+    return getUsdAmount(usdPrice, token.decimals, gasAmount);
 }
-exports.getTokenUsdAmount = getTokenUsdAmount;
-function getSignificantBalanceDecreaseWarning(latest, pending, networkId, traceCallDiscoveryStatus) {
-    const latestNetworkData = latest?.[networkId];
-    const pendingNetworkData = pending?.[networkId];
+function getSignificantBalanceDecreaseWarning(latest, pending, chainId, traceCallDiscoveryStatus) {
+    const latestNetworkData = latest?.[chainId.toString()];
+    const pendingNetworkData = pending?.[chainId.toString()];
     const canDetermineIfBalanceWillDecrease = latestNetworkData &&
         !latestNetworkData.isLoading &&
         pendingNetworkData &&
@@ -53,7 +60,6 @@ function getSignificantBalanceDecreaseWarning(latest, pending, networkId, traceC
     }
     return null;
 }
-exports.getSignificantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning;
 const getFeeTokenPriceUnavailableWarning = (hasSpeed, feeTokenHasPrice) => {
     if (!hasSpeed || feeTokenHasPrice)
         return null;

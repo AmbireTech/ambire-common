@@ -10,7 +10,7 @@ class BiconomyEstimationErrorHandler {
     }
     handle(data, error) {
         const { message } = error?.error || error || {};
-        const lowerCased = message.toLowerCase();
+        const lowerCased = typeof message === 'string' ? message.toLowerCase() : '';
         // TODO: expand with more error cases
         let reason = '';
         if (lowerCased.includes('400') || lowerCased.includes('internal error')) {

@@ -1,7 +1,7 @@
 declare const _default: ({
     address: string;
     symbol: string;
-    networkId: string;
+    chainId: bigint;
     decimals: number;
     icon: string;
     disableGasTankDeposit?: undefined;
@@ -11,7 +11,7 @@ declare const _default: ({
 } | {
     address: string;
     symbol: string;
-    networkId: string;
+    chainId: bigint;
     disableGasTankDeposit: boolean;
     decimals: number;
     icon: string;
@@ -23,7 +23,7 @@ declare const _default: ({
     disableGasTankDeposit: boolean;
     disableAsFeeToken: boolean;
     symbol: string;
-    networkId: string;
+    chainId: bigint;
     decimals: number;
     icon: string;
     baseToken?: undefined;
@@ -32,7 +32,7 @@ declare const _default: ({
     address: string;
     baseToken: string;
     symbol: string;
-    networkId: string;
+    chainId: bigint;
     decimals: number;
     icon: string;
     hiddenOnError: boolean;

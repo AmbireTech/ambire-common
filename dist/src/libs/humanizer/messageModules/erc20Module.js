@@ -22,22 +22,6 @@ const erc20Module = (message) => {
             ].filter((x) => x)
         };
     }
-    if (tm.types.PermitSingle &&
-        tm.primaryType === 'PermitSingle' &&
-        tm?.message?.spender &&
-        tm?.message?.details?.token &&
-        tm?.message?.details?.amount &&
-        tm?.message?.details?.expiration) {
-        return {
-            fullVisualization: [
-                (0, utils_1.getAction)('Approve'),
-                (0, utils_1.getAddressVisualization)(tm.message.spender),
-                (0, utils_1.getLabel)('to use'),
-                (0, utils_1.getToken)(tm.message.details.token, BigInt(tm.message.details.amount)),
-                (0, utils_1.getDeadline)(tm.message.details.expiration)
-            ]
-        };
-    }
     return { fullVisualization: [] };
 };
 exports.erc20Module = erc20Module;

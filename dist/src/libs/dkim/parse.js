@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parse = void 0;
+exports.parse = parse;
 const tslib_1 = require("tslib");
 const isDKIM_1 = tslib_1.__importDefault(require("./isDKIM"));
 /*
@@ -76,6 +76,5 @@ function parse(email) {
         dkims
     };
 }
-exports.parse = parse;
 ;
 //# sourceMappingURL=parse.js.map

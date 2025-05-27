@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchUserOp = void 0;
+exports.fetchUserOp = fetchUserOp;
 async function fetchUserOp(userOpHash, fetchFn) {
     const url = `https://api.jiffyscan.xyz/v0/getUserOp?hash=${userOpHash}`;
     return Promise.race([
@@ -19,5 +19,4 @@ async function fetchUserOp(userOpHash, fetchFn) {
         return null;
     });
 }
-exports.fetchUserOp = fetchUserOp;
 //# sourceMappingURL=jiffyscan.js.map

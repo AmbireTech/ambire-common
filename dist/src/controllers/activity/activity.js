@@ -3,11 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ActivityController = void 0;
 const tslib_1 = require("tslib");
 const account_1 = require("../../libs/account/account");
-const accountOp_1 = require("../../libs/accountOp/accountOp");
 const submittedAccountOp_1 = require("../../libs/accountOp/submittedAccountOp");
+const types_1 = require("../../libs/accountOp/types");
 /* eslint-disable import/no-extraneous-dependencies */
 const userOperation_1 = require("../../libs/userOperation/userOperation");
 const benzin_1 = require("../../utils/benzin");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 // We are limiting items array to include no more than 1000 records,
 // as we trim out the oldest ones (in the beginning of the items array).
@@ -23,7 +24,7 @@ const paginate = (items, fromPage, itemsPerPage) => {
     return {
         items: items.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
         itemsTotal: items.length,
-        currentPage: fromPage,
+        currentPage: fromPage, // zero/index based
         maxPages: Math.ceil(items.length / itemsPerPage)
     };
 };
@@ -66,7 +67,7 @@ class ActivityController extends eventEmitter_1.default {
     #providers;
     #networks;
     #onContractsDeployed;
-    #rbfStatuses = [accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed, accountOp_1.AccountOpStatus.BroadcastButStuck];
+    #rbfStatuses = [types_1.AccountOpStatus.BroadcastedButNotConfirmed, types_1.AccountOpStatus.BroadcastButStuck];
     #callRelayer;
     constructor(storage, fetch, callRelayer, accounts, selectedAccount, providers, networks, onContractsDeployed) {
         super();
@@ -97,8 +98,8 @@ class ActivityController extends eventEmitter_1.default {
     }) {
         await this.#initialLoadPromise;
         let filteredItems;
-        if (filters.network) {
-            filteredItems = this.#accountsOps[filters.account]?.[filters.network] || [];
+        if (filters.chainId) {
+            filteredItems = this.#accountsOps[filters.account]?.[filters.chainId.toString()] || [];
         }
         else {
             filteredItems = Object.values(this.#accountsOps[filters.account] || []).flat();
@@ -120,6 +121,7 @@ class ActivityController extends eventEmitter_1.default {
     // free the memory calling this method.
     resetAccountsOpsFilters(sessionId) {
         delete this.accountsOps[sessionId];
+        this.emitUpdate();
     }
     // Everytime we add/remove an AccOp, we should run this method in order to keep the filtered and internal accounts ops in sync.
     async syncFilteredAccountsOps() {
@@ -147,6 +149,7 @@ class ActivityController extends eventEmitter_1.default {
     // free the memory calling this method.
     resetSignedMessagesFilters(sessionId) {
         delete this.signedMessages[sessionId];
+        this.emitUpdate();
     }
     // Everytime we add/remove a Message, we should run this method in order to keep the filtered and internal messages in sync.
     async syncSignedMessages() {
@@ -155,10 +158,10 @@ class ActivityController extends eventEmitter_1.default {
         });
         await Promise.all(promises);
     }
-    removeNetworkData(id) {
+    removeNetworkData(chainId) {
         Object.keys(this.accountsOps).forEach(async (sessionId) => {
             const state = this.accountsOps[sessionId];
-            const isFilteredByRemovedNetwork = state.filters.network === id;
+            const isFilteredByRemovedNetwork = state.filters.chainId === chainId;
             if (isFilteredByRemovedNetwork) {
                 await this.filterAccountsOps(sessionId, { account: state.filters.account }, state.pagination);
             }
@@ -166,14 +169,14 @@ class ActivityController extends eventEmitter_1.default {
     }
     async addAccountOp(accountOp) {
         await this.#initialLoadPromise;
-        const { accountAddr, networkId } = accountOp;
+        const { accountAddr, chainId } = accountOp;
         if (!this.#accountsOps[accountAddr])
             this.#accountsOps[accountAddr] = {};
-        if (!this.#accountsOps[accountAddr][networkId])
-            this.#accountsOps[accountAddr][networkId] = [];
+        if (!this.#accountsOps[accountAddr][chainId.toString()])
+            this.#accountsOps[accountAddr][chainId.toString()] = [];
         // newest SubmittedAccountOp goes first in the list
-        this.#accountsOps[accountAddr][networkId].unshift({ ...accountOp });
-        trim(this.#accountsOps[accountAddr][networkId]);
+        this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp });
+        trim(this.#accountsOps[accountAddr][chainId.toString()]);
         await this.syncFilteredAccountsOps();
         await this.#storage.set('accountsOps', this.#accountsOps);
         this.emitUpdate();
@@ -205,18 +208,18 @@ class ActivityController extends eventEmitter_1.default {
         // Use this flag to make the auto-refresh slower with the passege of time.
         // implementation is in background.ts
         let newestOpTimestamp = 0;
-        await Promise.all(Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (networkId) => {
-            const network = this.#networks.networks.find((x) => x.id === networkId);
+        await Promise.all(Object.keys(this.#accountsOps[this.#selectedAccount.account.addr]).map(async (keyAsChainId) => {
+            const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId);
             if (!network)
                 return;
-            const provider = this.#providers.providers[network.id];
+            const provider = this.#providers.providers[network.chainId.toString()];
             const selectedAccount = this.#selectedAccount.account?.addr;
             if (!selectedAccount)
                 return;
-            return Promise.all(this.#accountsOps[selectedAccount][networkId].map(async (accountOp, accountOpIndex) => {
+            return Promise.all(this.#accountsOps[selectedAccount][network.chainId.toString()].map(async (accountOp, accountOpIndex) => {
                 // Don't update the current network account ops statuses,
                 // as the statuses are already updated in the previous calls.
-                if (accountOp.status !== accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed)
+                if (accountOp.status !== types_1.AccountOpStatus.BroadcastedButNotConfirmed)
                     return;
                 shouldEmitUpdate = true;
                 if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
@@ -227,16 +230,16 @@ class ActivityController extends eventEmitter_1.default {
                     accountOpDate.setMinutes(accountOpDate.getMinutes() + 15);
                     const aQuaterHasPassed = accountOpDate < new Date();
                     if (aQuaterHasPassed) {
-                        this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                            accountOp_1.AccountOpStatus.BroadcastButStuck;
-                        updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
+                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex], types_1.AccountOpStatus.BroadcastButStuck);
+                        if (updatedOpIfAny)
+                            updatedAccountsOps.push(updatedOpIfAny);
                     }
                 };
                 const fetchTxnIdResult = await (0, submittedAccountOp_1.fetchTxnId)(accountOp.identifiedBy, network, this.#fetch, this.#callRelayer, accountOp);
                 if (fetchTxnIdResult.status === 'rejected') {
-                    this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                        accountOp_1.AccountOpStatus.Rejected;
-                    updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
+                    const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex], types_1.AccountOpStatus.Rejected);
+                    if (updatedOpIfAny)
+                        updatedAccountsOps.push(updatedOpIfAny);
                     return;
                 }
                 if (fetchTxnIdResult.status === 'not_found') {
@@ -244,13 +247,23 @@ class ActivityController extends eventEmitter_1.default {
                     return;
                 }
                 const txnId = fetchTxnIdResult.txnId;
-                this.#accountsOps[selectedAccount][networkId][accountOpIndex].txnId = txnId;
+                this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex].txnId = txnId;
                 try {
-                    const receipt = await provider.getTransactionReceipt(txnId);
+                    let receipt = await provider.getTransactionReceipt(txnId);
                     if (receipt) {
+                        // if the status is a failure and it's an userOp, it means it
+                        // could've been front ran. We need to make sure we find the
+                        // transaction that has succeeded
+                        if (!receipt.status && (0, submittedAccountOp_1.isIdentifiedByUserOpHash)(accountOp.identifiedBy)) {
+                            const frontRanTxnId = await (0, submittedAccountOp_1.fetchFrontRanTxnId)(accountOp.identifiedBy, txnId, network);
+                            this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex].txnId = frontRanTxnId;
+                            receipt = await provider.getTransactionReceipt(frontRanTxnId);
+                            if (!receipt)
+                                return;
+                        }
                         // if this is an user op, we have to check the logs
                         let isSuccess;
-                        if (accountOp.identifiedBy.type === 'UserOperation') {
+                        if ((0, submittedAccountOp_1.isIdentifiedByUserOpHash)(accountOp.identifiedBy)) {
                             const userOpEventLog = (0, userOperation_1.parseLogs)(receipt.logs, accountOp.identifiedBy.identifier);
                             if (userOpEventLog)
                                 isSuccess = userOpEventLog.success;
@@ -258,10 +271,9 @@ class ActivityController extends eventEmitter_1.default {
                         // if it's not an userOp or it is, but isSuccess was not found
                         if (isSuccess === undefined)
                             isSuccess = !!receipt.status;
-                        this.#accountsOps[selectedAccount][networkId][accountOpIndex].status = isSuccess
-                            ? accountOp_1.AccountOpStatus.Success
-                            : accountOp_1.AccountOpStatus.Failure;
-                        updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
+                        const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex], isSuccess ? types_1.AccountOpStatus.Success : types_1.AccountOpStatus.Failure, receipt);
+                        if (updatedOpIfAny)
+                            updatedAccountsOps.push(updatedOpIfAny);
                         if (receipt.status) {
                             shouldUpdatePortfolio = true;
                         }
@@ -280,21 +292,22 @@ class ActivityController extends eventEmitter_1.default {
                 catch {
                     this.emitError({
                         level: 'silent',
-                        message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
+                        message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
                         error: new Error(`activity: failed to get transaction receipt for ${accountOp.txnId}`)
                     });
                 }
                 // if there are more than 1 txns with the same nonce and payer,
                 // we can conclude this one is replaced by fee
-                const sameNonceTxns = this.#accountsOps[selectedAccount][networkId].filter((accOp) => accOp.gasFeePayment &&
+                const sameNonceTxns = this.#accountsOps[selectedAccount][network.chainId.toString()].filter((accOp) => accOp.gasFeePayment &&
                     accountOp.gasFeePayment &&
                     accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
                     accOp.nonce.toString() === accountOp.nonce.toString());
-                const confirmedSameNonceTxns = sameNonceTxns.find((accOp) => accOp.status === accountOp_1.AccountOpStatus.Success || accOp.status === accountOp_1.AccountOpStatus.Failure);
+                const confirmedSameNonceTxns = sameNonceTxns.find((accOp) => accOp.status === types_1.AccountOpStatus.Success ||
+                    accOp.status === types_1.AccountOpStatus.Failure);
                 if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-                    this.#accountsOps[selectedAccount][networkId][accountOpIndex].status =
-                        accountOp_1.AccountOpStatus.UnknownButPastNonce;
-                    updatedAccountsOps.push(this.#accountsOps[selectedAccount][networkId][accountOpIndex]);
+                    const updatedOpIfAny = (0, submittedAccountOp_1.updateOpStatus)(this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex], types_1.AccountOpStatus.UnknownButPastNonce);
+                    if (updatedOpIfAny)
+                        updatedAccountsOps.push(updatedOpIfAny);
                     shouldUpdatePortfolio = true;
                 }
             }));
@@ -327,15 +340,15 @@ class ActivityController extends eventEmitter_1.default {
         await this.#storage.set('signedMessages', this.#signedMessages);
         this.emitUpdate();
     }
-    async hideBanner({ addr, network, timestamp }) {
+    async hideBanner({ addr, chainId, timestamp }) {
         await this.#initialLoadPromise;
         // shouldn't happen
         if (!this.#accountsOps[addr])
             return;
-        if (!this.#accountsOps[addr][network])
+        if (!this.#accountsOps[addr][chainId.toString()])
             return;
         // find the op we want to update
-        const op = this.#accountsOps[addr][network].find((accOp) => accOp.timestamp === timestamp);
+        const op = this.#accountsOps[addr][chainId.toString()].find((accOp) => accOp.timestamp === timestamp);
         if (!op)
             return;
         // update by reference
@@ -345,19 +358,12 @@ class ActivityController extends eventEmitter_1.default {
         await this.#storage.set('accountsOps', this.#accountsOps);
         this.emitUpdate();
     }
-    #throwNotInitialized() {
-        this.emitError({
-            level: 'major',
-            message: "Looks like your activity couldn't be processed. Retry, or contact support if issue persists.",
-            error: new Error('activity: controller not initialized')
-        });
-    }
     get broadcastedButNotConfirmed() {
         if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
             return [];
         return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
             .flat()
-            .filter((accountOp) => accountOp.status === accountOp_1.AccountOpStatus.BroadcastedButNotConfirmed);
+            .filter((accountOp) => accountOp.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed);
     }
     get banners() {
         if (!this.#networks.isInitialized)
@@ -366,7 +372,7 @@ class ActivityController extends eventEmitter_1.default {
             // do not show a banner for forcefully hidden banners
             .filter((op) => !(op.flags && op.flags.hideActivityBanner))
             .map((accountOp) => {
-            const network = this.#networks.networks.find((x) => x.id === accountOp.networkId);
+            const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId);
             const url = `https://benzin.ambire.com/${(0, benzin_1.getBenzinUrlParams)({
                 chainId: network.chainId,
                 txnId: accountOp.txnId,
@@ -384,7 +390,7 @@ class ActivityController extends eventEmitter_1.default {
                         actionName: 'hide-activity-banner',
                         meta: {
                             addr: accountOp.accountAddr,
-                            network: accountOp.networkId,
+                            chainId: accountOp.chainId,
                             timestamp: accountOp.timestamp,
                             isHideStyle: true
                         }
@@ -404,29 +410,29 @@ class ActivityController extends eventEmitter_1.default {
      * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
      * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
      */
-    getNotConfirmedOpIfAny(accId, networkId) {
+    getNotConfirmedOpIfAny(accId, chainId) {
         const acc = this.#accounts.accounts.find((oneA) => oneA.addr === accId);
         if (!acc)
             return null;
         // if the broadcasting account is a smart account, it means relayer
-        // broadcast => it's in this.#accountsOps[acc.addr][networkId]
+        // broadcast => it's in this.#accountsOps[acc.addr][chainId]
         // disregard erc-4337 txns as they shouldn't have an RBF
         const isSA = (0, account_1.isSmartAccount)(acc);
         if (isSA) {
-            if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][networkId])
+            if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][chainId.toString(0)])
                 return null;
-            if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][networkId][0].status))
+            if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][chainId.toString(0)][0].status))
                 return null;
-            return this.#accountsOps[acc.addr][networkId][0];
+            return this.#accountsOps[acc.addr][chainId.toString(0)][0];
         }
         // if the account is an EOA, we have to go through all the smart accounts
         // to check whether the EOA has made a broadcast for them
         const theEOAandSAaccounts = this.#accounts.accounts.filter((oneA) => (0, account_1.isSmartAccount)(oneA) || oneA.addr === accId);
         const ops = [];
         theEOAandSAaccounts.forEach((oneA) => {
-            if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][networkId])
+            if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][chainId.toString()])
                 return;
-            const op = this.#accountsOps[oneA.addr][networkId].find((oneOp) => this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][networkId][0].status) &&
+            const op = this.#accountsOps[oneA.addr][chainId.toString()].find((oneOp) => this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][chainId.toString()][0].status) &&
                 oneOp.gasFeePayment?.paidBy === oneA.addr);
             if (!op)
                 return;
@@ -434,24 +440,50 @@ class ActivityController extends eventEmitter_1.default {
         });
         return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m));
     }
-    getLastTxn(networkId) {
-        if (!this.#selectedAccount.account ||
-            !this.#accountsOps[this.#selectedAccount.account.addr] ||
-            !this.#accountsOps[this.#selectedAccount.account.addr][networkId])
-            return null;
-        return this.#accountsOps[this.#selectedAccount.account.addr][networkId][0];
-    }
     async findMessage(account, filter) {
         await this.#initialLoadPromise;
         if (!this.#signedMessages[account])
             return null;
         return this.#signedMessages[account].find(filter);
     }
+    // return a txn id only if we have certainty that this is the final txn id:
+    // EOA broadcast: 100% certainty on broadcast
+    // Relayer | Bundler broadcast: once we have a receipt as there could be
+    // front running or txnId replacement issues
+    async getConfirmedTxId(submittedAccountOp, counter = 0) {
+        if (!this.#accountsOps[submittedAccountOp.accountAddr] ||
+            !this.#accountsOps[submittedAccountOp.accountAddr][submittedAccountOp.chainId.toString()])
+            return undefined;
+        const activityAccountOp = this.#accountsOps[submittedAccountOp.accountAddr][submittedAccountOp.chainId.toString()].find((op) => op.identifiedBy === submittedAccountOp.identifiedBy);
+        // shouldn't happen
+        if (!activityAccountOp)
+            return undefined;
+        if (!(0, submittedAccountOp_1.isIdentifiedByUserOpHash)(activityAccountOp.identifiedBy) &&
+            !(0, submittedAccountOp_1.isIdentifiedByRelayer)(activityAccountOp.identifiedBy))
+            return activityAccountOp.txnId;
+        // @frontrunning
+        if (activityAccountOp.status === types_1.AccountOpStatus.Pending ||
+            activityAccountOp.status === types_1.AccountOpStatus.BroadcastedButNotConfirmed) {
+            // if the receipt cannot be confirmed after a lot of retries, continue on
+            if (counter >= 30)
+                return activityAccountOp.txnId;
+            // eslint-disable-next-line @typescript-eslint/no-floating-promises
+            await (0, wait_1.default)(1000);
+            return this.getConfirmedTxId(submittedAccountOp, counter + 1);
+        }
+        return activityAccountOp.txnId;
+    }
+    findByIdentifiedBy(identifiedBy, accountAddr, chainId) {
+        if (!this.#accountsOps[accountAddr] || !this.#accountsOps[accountAddr][chainId.toString()]) {
+            return undefined;
+        }
+        return this.#accountsOps[accountAddr][chainId.toString()].find((op) => op.identifiedBy.identifier === identifiedBy.identifier);
+    }
     toJSON() {
         return {
             ...this,
             ...super.toJSON(),
-            broadcastedButNotConfirmed: this.broadcastedButNotConfirmed,
+            broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
             banners: this.banners // includes the getter in the stringified instance
         };
     }

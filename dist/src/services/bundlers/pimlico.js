@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Pimlico = void 0;
+/* eslint-disable class-methods-use-this */
 const bundlers_1 = require("../../consts/bundlers");
 const bundler_1 = require("./bundler");
 class Pimlico extends bundler_1.Bundler {

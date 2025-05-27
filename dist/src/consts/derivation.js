@@ -22,11 +22,20 @@ exports.BIP44_LEDGER_DERIVATION_TEMPLATE = "m/44'/60'/<account>'/0/0";
  */
 exports.LEGACY_POPULAR_DERIVATION_TEMPLATE = "m/44'/60'/0'/<account>";
 exports.DERIVATION_OPTIONS = [
-    { label: 'BIP44 Standard (MetaMask, Trezor, Grid+)', value: exports.BIP44_STANDARD_DERIVATION_TEMPLATE },
-    { label: 'BIP44 Ledger Live', value: exports.BIP44_LEDGER_DERIVATION_TEMPLATE },
     {
-        label: 'Legacy (Ledger, MyEtherWallet, MyCrypto)',
-        value: exports.LEGACY_POPULAR_DERIVATION_TEMPLATE
+        label: 'BIP44',
+        value: exports.BIP44_STANDARD_DERIVATION_TEMPLATE,
+        description: 'BIP44 Standard: HD path defined by the BIP44 protocol.'
+    },
+    {
+        label: 'Ledger Live',
+        value: exports.BIP44_LEDGER_DERIVATION_TEMPLATE,
+        description: 'Ledger Live: Ledger official HD path.'
+    },
+    {
+        label: 'Ledger Legacy',
+        value: exports.LEGACY_POPULAR_DERIVATION_TEMPLATE,
+        description: 'Ledger Legacy: HD path used by MEW / MyCrypto.'
     }
 ];
 /**

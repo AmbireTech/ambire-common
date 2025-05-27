@@ -6,9 +6,9 @@ var SecretType;
     SecretType["RecoveryKey"] = "recoveryKey";
     SecretType["KeyStore"] = "keyStore";
     SecretType["keyBackup"] = "keyBackup";
-})(SecretType = exports.SecretType || (exports.SecretType = {}));
+})(SecretType || (exports.SecretType = SecretType = {}));
 var OperationRequestType;
 (function (OperationRequestType) {
     OperationRequestType["requestKeySync"] = "requestKeySync";
-})(OperationRequestType = exports.OperationRequestType || (exports.OperationRequestType = {}));
+})(OperationRequestType || (exports.OperationRequestType = OperationRequestType = {}));
 //# sourceMappingURL=emailVault.js.map

@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildMintVestingRequest = exports.buildClaimWalletRequest = exports.buildTransferUserRequest = void 0;
+exports.buildClaimWalletRequest = buildClaimWalletRequest;
+exports.buildMintVestingRequest = buildMintVestingRequest;
+exports.buildTransferUserRequest = buildTransferUserRequest;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const IERC20_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/IERC20.json"));
@@ -31,12 +33,11 @@ function buildMintVestingRequest({ selectedAccount, selectedToken, addrVestingDa
         action: txn,
         meta: {
             isSignAction: true,
-            networkId: selectedToken.networkId,
+            chainId: selectedToken.chainId,
             accountAddr: selectedAccount
         }
     };
 }
-exports.buildMintVestingRequest = buildMintVestingRequest;
 function buildClaimWalletRequest({ selectedAccount, selectedToken, claimableRewardsData }) {
     const txn = {
         kind: 'calls',
@@ -47,8 +48,8 @@ function buildClaimWalletRequest({ selectedAccount, selectedToken, claimableRewa
                 data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
                     claimableRewardsData?.totalClaimable,
                     claimableRewardsData?.proof,
-                    0,
-                    addresses_1.WALLET_STAKING_ADDR,
+                    0, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
+                    addresses_1.STK_WALLET, // staking pool addr
                     claimableRewardsData?.root,
                     claimableRewardsData?.signedRoot
                 ])
@@ -60,13 +61,12 @@ function buildClaimWalletRequest({ selectedAccount, selectedToken, claimableRewa
         action: txn,
         meta: {
             isSignAction: true,
-            networkId: selectedToken.networkId,
+            chainId: selectedToken.chainId,
             accountAddr: selectedAccount
         }
     };
 }
-exports.buildClaimWalletRequest = buildClaimWalletRequest;
-function buildTransferUserRequest({ amount, selectedToken, selectedAccount, recipientAddress: _recipientAddress }) {
+function buildTransferUserRequest({ amount, selectedToken, selectedAccount, recipientAddress: _recipientAddress, paymasterService }) {
     if (!selectedToken || !selectedAccount || !_recipientAddress)
         return null;
     // if the request is a top up, the recipient is the relayer
@@ -80,7 +80,7 @@ function buildTransferUserRequest({ amount, selectedToken, selectedAccount, reci
         recipientAddress.toLowerCase() === addresses_1.FEE_COLLECTOR.toLowerCase();
     if (isNativeTopUp) {
         // if not predefined network, we cannot make a native top up
-        const network = networks_1.networks.find((net) => net.id === selectedToken.networkId);
+        const network = networks_1.networks.find((n) => n.chainId === selectedToken.chainId);
         if (!network)
             return null;
         // if a wrapped addr is not specified, we cannot make a native top up
@@ -109,8 +109,9 @@ function buildTransferUserRequest({ amount, selectedToken, selectedAccount, reci
             action: calls,
             meta: {
                 isSignAction: true,
-                networkId: selectedToken.networkId,
-                accountAddr: selectedAccount
+                chainId: selectedToken.chainId,
+                accountAddr: selectedAccount,
+                paymasterService
             }
         };
     }
@@ -138,10 +139,10 @@ function buildTransferUserRequest({ amount, selectedToken, selectedAccount, reci
         action: txn,
         meta: {
             isSignAction: true,
-            networkId: selectedToken.networkId,
-            accountAddr: selectedAccount
+            chainId: selectedToken.chainId,
+            accountAddr: selectedAccount,
+            paymasterService
         }
     };
 }
-exports.buildTransferUserRequest = buildTransferUserRequest;
 //# sourceMappingURL=userRequest.js.map

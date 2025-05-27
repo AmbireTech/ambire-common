@@ -1,20 +1,27 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.decodeError = void 0;
+exports.decodeError = decodeError;
 const tslib_1 = require("tslib");
 const customErrors_1 = require("./customErrors");
 const handlers_1 = require("./handlers");
 const biconomy_1 = tslib_1.__importDefault(require("./handlers/biconomy"));
+const internal_1 = tslib_1.__importDefault(require("./handlers/internal"));
 const pimlico_1 = tslib_1.__importDefault(require("./handlers/pimlico"));
 const relayer_1 = tslib_1.__importDefault(require("./handlers/relayer"));
 const helpers_1 = require("./helpers");
 const types_1 = require("./types");
+// The order of these handlers is important!
+// Preprocessor handlers must be ordered by least specific to most specific
+// Why- because error reasons are overwritten by subsequent matching handlers
+// Error handlers must be ordered by most specific to least specific
+// Why- because the first valid reason cannot be overwritten by subsequent handlers
 const PREPROCESSOR_BUNDLER_HANDLERS = [
     biconomy_1.default,
     pimlico_1.default
 ];
 const PREPROCESSOR_HANDLERS = [handlers_1.BundlerErrorHandler, relayer_1.default, handlers_1.InnerCallFailureHandler];
 const ERROR_HANDLERS = [
+    internal_1.default,
     handlers_1.RpcErrorHandler,
     handlers_1.CustomErrorHandler,
     handlers_1.PanicErrorHandler,
@@ -25,19 +32,6 @@ const ERROR_HANDLERS = [
 // additionalHandlers is a list of handlers we want to add only for
 // specific decodeError cases (e.g. bundler estimation)
 function decodeError(e) {
-    // Otherwise regular JS/TS errors will be handled
-    // as RPC errors which is confusing.
-    if (e instanceof TypeError ||
-        e instanceof ReferenceError ||
-        e instanceof SyntaxError ||
-        e instanceof RangeError) {
-        console.error('Encountered a code error', e);
-        return {
-            type: types_1.ErrorType.CodeError,
-            reason: e.name,
-            data: null
-        };
-    }
     const errorData = (0, helpers_1.getDataFromError)(e);
     let decodedError = {
         type: types_1.ErrorType.UnknownError,
@@ -50,7 +44,7 @@ function decodeError(e) {
     // a third. So we will add additional handlers optionally
     const preprocessorHandlers = PREPROCESSOR_HANDLERS;
     if (e instanceof customErrors_1.BundlerError) {
-        preprocessorHandlers.push(...PREPROCESSOR_BUNDLER_HANDLERS);
+        preprocessorHandlers.unshift(...PREPROCESSOR_BUNDLER_HANDLERS);
     }
     // Run preprocessor handlers first
     // The idea is that preprocessor handlers can either decode the error
@@ -76,5 +70,4 @@ function decodeError(e) {
     }
     return decodedError;
 }
-exports.decodeError = decodeError;
 //# sourceMappingURL=errorDecoder.js.map

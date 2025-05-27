@@ -4,7 +4,7 @@ export interface PrivLevels {
     hash: string;
 }
 export declare function getProxyDeployBytecode(masterContractAddr: string, privLevels: PrivLevels[], opts?: {
-    privSlot: number;
+    privSlot: string;
 }): string;
 export declare function getStorageSlotsFromArtifact(buildInfo: any): {
     privSlot: any;

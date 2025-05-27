@@ -1,19 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAAVEPositions = void 0;
+exports.getAAVEPositions = getAAVEPositions;
 const tslib_1 = require("tslib");
-const uuid_1 = require("uuid");
 const DeFiAAVEPosition_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiAAVEPosition.json"));
+const uuid_1 = require("../../../utils/uuid");
 const deployless_1 = require("../../deployless/deployless");
 const defiAddresses_1 = require("../defiAddresses");
 const helpers_1 = require("../helpers");
 const types_1 = require("../types");
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
 async function getAAVEPositions(userAddr, provider, network) {
-    const networkId = network.id;
-    if (networkId && !defiAddresses_1.AAVE_V3[networkId])
+    const { chainId } = network;
+    if (chainId && !defiAddresses_1.AAVE_V3[chainId.toString()])
         return null;
-    const { poolAddr } = defiAddresses_1.AAVE_V3[networkId];
+    const { poolAddr } = defiAddresses_1.AAVE_V3[chainId.toString()];
     const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiAAVEPosition_json_1.default, network.rpcNoStateOverride);
     const [[result0], [result1], [result2]] = await Promise.all([
         deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 0, 15], {}),
@@ -25,23 +25,27 @@ async function getAAVEPositions(userAddr, provider, network) {
         .map((asset) => ({
         address: asset[0],
         symbol: asset[1],
-        balance: asset[2],
-        decimals: asset[3],
-        price: asset[4],
-        borrowAssetBalance: asset[5],
-        stableBorrowAssetBalance: asset[6],
-        currentLiquidityRate: asset[7],
-        currentVariableBorrowRate: asset[8],
-        currentStableBorrowRate: asset[9],
-        aaveAddress: asset[10],
-        aaveSymbol: asset[11],
-        aaveDecimals: asset[12],
-        aaveSDebtAddr: asset[13],
-        aaveSDebtSymbol: asset[14],
-        aaveSDebtDecimals: asset[15],
-        aaveVDebtAddr: asset[16],
-        aaveVDebtSymbol: asset[17],
-        aaveVDebtDecimals: asset[18]
+        name: asset[2],
+        balance: asset[3],
+        decimals: asset[4],
+        price: asset[5],
+        borrowAssetBalance: asset[6],
+        stableBorrowAssetBalance: asset[7],
+        currentLiquidityRate: asset[8],
+        currentVariableBorrowRate: asset[9],
+        currentStableBorrowRate: asset[10],
+        aaveAddress: asset[11],
+        aaveSymbol: asset[12],
+        aaveName: asset[13],
+        aaveDecimals: asset[14],
+        aaveSDebtAddr: asset[15],
+        aaveSDebtSymbol: asset[16],
+        aaveSDebtName: asset[17],
+        aaveSDebtDecimals: asset[18],
+        aaveVDebtAddr: asset[19],
+        aaveVDebtSymbol: asset[20],
+        aaveVDebtName: asset[21],
+        aaveVDebtDecimals: asset[22]
     }))
         .filter((t) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0);
     const accountData = {
@@ -56,7 +60,7 @@ async function getAAVEPositions(userAddr, provider, network) {
         accountData.healthFactor = null;
     }
     const position = {
-        id: (0, uuid_1.v4)(),
+        id: (0, uuid_1.generateUuid)(),
         additionalData: {
             healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
             positionInUSD: 0,
@@ -82,6 +86,7 @@ async function getAAVEPositions(userAddr, provider, network) {
             assetsResult.push({
                 address: asset.address,
                 symbol: asset.symbol,
+                name: asset.name,
                 decimals: Number(asset.decimals),
                 amount: asset.balance,
                 priceIn,
@@ -93,6 +98,7 @@ async function getAAVEPositions(userAddr, provider, network) {
                 protocolAsset: {
                     address: asset.aaveAddress,
                     symbol: asset.aaveSymbol,
+                    name: asset.aaveName,
                     decimals: asset.aaveDecimals
                 }
             });
@@ -101,6 +107,7 @@ async function getAAVEPositions(userAddr, provider, network) {
             assetsResult.push({
                 address: asset.address,
                 symbol: asset.symbol,
+                name: asset.name,
                 decimals: Number(asset.decimals),
                 amount: asset.stableBorrowAssetBalanc,
                 priceIn,
@@ -112,6 +119,7 @@ async function getAAVEPositions(userAddr, provider, network) {
                 protocolAsset: {
                     address: asset.aaveSDebtAddr,
                     symbol: asset.aaveSDebtSymbol,
+                    name: asset.aaveSDebtName,
                     decimals: asset.aaveSDebtDecimals
                 }
             });
@@ -120,6 +128,7 @@ async function getAAVEPositions(userAddr, provider, network) {
             assetsResult.push({
                 address: asset.address,
                 symbol: asset.symbol,
+                name: asset.name,
                 decimals: Number(asset.decimals),
                 amount: asset.borrowAssetBalance,
                 priceIn,
@@ -131,6 +140,7 @@ async function getAAVEPositions(userAddr, provider, network) {
                 protocolAsset: {
                     address: asset.aaveVDebtAddr,
                     symbol: asset.aaveVDebtSymbol,
+                    name: asset.name,
                     decimals: asset.aaveVDebtDecimals
                 }
             });
@@ -142,11 +152,10 @@ async function getAAVEPositions(userAddr, provider, network) {
         return null;
     return {
         providerName: 'AAVE v3',
-        networkId,
+        chainId,
         type: 'lending',
         positions: [position],
         positionInUSD: position.additionalData.positionInUSD
     };
 }
-exports.getAAVEPositions = getAAVEPositions;
 //# sourceMappingURL=aaveV3.js.map

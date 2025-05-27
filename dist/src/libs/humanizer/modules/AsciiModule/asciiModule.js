@@ -10,6 +10,10 @@ const asciiModule = (accountOp, currentIrCalls) => {
             return call;
         if (call.fullVisualization && !(0, utils_1.checkIfUnknownAction)(call?.fullVisualization))
             return call;
+        // assuming that if there are only 4 bytes it is probably just contract method call
+        // and further logic is irrelevant
+        if (call.data.length === '0x12345678'.length)
+            return call;
         let messageAsText;
         try {
             messageAsText = (0, ethers_1.toUtf8String)(call.data);

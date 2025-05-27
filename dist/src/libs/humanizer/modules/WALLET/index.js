@@ -66,10 +66,6 @@ const WALLETModule = (_, irCalls) => {
                     fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](call)
                 };
             }
-            return {
-                ...call,
-                fullVisualization: (0, utils_1.getUnknownVisualization)('staking', call)
-            };
         }
         if (matcher.supplyController[call.data.slice(0, 10)]) {
             return {

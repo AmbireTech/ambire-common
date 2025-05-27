@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.reverseLookupEns = exports.getBip44Items = exports.resolveENSDomain = exports.isCorrectAddress = void 0;
+exports.isCorrectAddress = isCorrectAddress;
+exports.resolveENSDomain = resolveENSDomain;
+exports.getBip44Items = getBip44Items;
+exports.reverseLookupEns = reverseLookupEns;
 const tslib_1 = require("tslib");
 // @ts-ignore
 const bip44_constants_1 = tslib_1.__importDefault(require("bip44-constants"));
@@ -34,13 +37,12 @@ async function resolveForCoin(resolver, bip44Item) {
 function isCorrectAddress(address) {
     return !(ADDRESS_ZERO === address) && (0, ethers_1.isAddress)(address);
 }
-exports.isCorrectAddress = isCorrectAddress;
 // @TODO: Get RPC provider url from settings controller
 async function resolveENSDomain(domain, bip44Item) {
     const normalizedDomainName = normalizeDomain(domain);
     if (!normalizedDomainName)
         return '';
-    const ethereum = networks_1.networks.find((x) => x.id === 'ethereum');
+    const ethereum = networks_1.networks.find((n) => n.chainId === 1n);
     const provider = (0, provider_1.getRpcProvider)(ethereum.rpcUrls, ethereum.chainId);
     const resolver = await provider.getResolver(normalizedDomainName);
     if (!resolver)
@@ -63,15 +65,12 @@ async function resolveENSDomain(domain, bip44Item) {
         provider?.destroy();
     }
 }
-exports.resolveENSDomain = resolveENSDomain;
 function getBip44Items(coinTicker) {
     if (!coinTicker)
         return null;
     return bip44_constants_1.default.filter((item) => item[1] === coinTicker);
 }
-exports.getBip44Items = getBip44Items;
 async function reverseLookupEns(address, provider) {
     return provider.lookupAddress(address);
 }
-exports.reverseLookupEns = reverseLookupEns;
 //# sourceMappingURL=ensDomains.js.map

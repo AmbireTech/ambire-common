@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPaymasterData = exports.getPaymasterStubData = exports.getPaymasterService = void 0;
+exports.getPaymasterService = getPaymasterService;
+exports.getAmbirePaymasterService = getAmbirePaymasterService;
+exports.getPaymasterStubData = getPaymasterStubData;
+exports.getPaymasterData = getPaymasterData;
 const ethers_1 = require("ethers");
 const deploy_1 = require("../../consts/deploy");
 const provider_1 = require("../../services/provider");
@@ -8,18 +11,31 @@ const userOperation_1 = require("../userOperation/userOperation");
 function getPaymasterService(chainId, capabilities) {
     if (!capabilities || !capabilities.paymasterService)
         return undefined;
+    // this means it's v2
+    if ('url' in capabilities.paymasterService) {
+        const paymasterService = capabilities.paymasterService;
+        paymasterService.id = new Date().getTime();
+        return paymasterService;
+    }
     // hex may come with a leading zero or not. Prepare for both
-    const chainIdHex = (0, ethers_1.toBeHex)(chainId);
-    const chainIdQuantity = (0, ethers_1.toQuantity)(chainId);
-    const paymasterService = chainIdHex in capabilities.paymasterService
-        ? capabilities.paymasterService[chainIdHex]
-        : capabilities.paymasterService[chainIdQuantity];
-    if (!paymasterService)
+    const chainIds = Object.keys(capabilities.paymasterService);
+    const chainIdHex = (0, ethers_1.toBeHex)(chainId).toLowerCase();
+    const chainIdQuantity = (0, ethers_1.toQuantity)(chainId).toLowerCase();
+    const foundChainId = chainIds.find((id) => id.toLowerCase() === chainIdHex || id.toLowerCase() === chainIdQuantity);
+    if (!foundChainId)
         return undefined;
+    const paymasterService = capabilities.paymasterService[foundChainId];
     paymasterService.id = new Date().getTime();
     return paymasterService;
 }
-exports.getPaymasterService = getPaymasterService;
+function getAmbirePaymasterService(baseAcc, relayerUrl) {
+    if (!baseAcc.isSponsorable())
+        return undefined;
+    return {
+        url: `${relayerUrl}/v2/sponsorship`,
+        id: new Date().getTime()
+    };
+}
 function getPaymasterStubData(service, userOp, network) {
     const provider = (0, provider_1.getRpcProvider)([service.url], network.chainId);
     return provider.send('pm_getPaymasterStubData', [
@@ -29,7 +45,6 @@ function getPaymasterStubData(service, userOp, network) {
         service.context
     ]);
 }
-exports.getPaymasterStubData = getPaymasterStubData;
 async function getPaymasterData(service, userOp, network) {
     const provider = (0, provider_1.getRpcProvider)([service.url], network.chainId);
     return provider.send('pm_getPaymasterData', [
@@ -39,5 +54,4 @@ async function getPaymasterData(service, userOp, network) {
         service.context
     ]);
 }
-exports.getPaymasterData = getPaymasterData;
 //# sourceMappingURL=erc7677.js.map

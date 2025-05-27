@@ -1,6 +1,7 @@
 import { Provider } from 'ethers';
 import { Account, AccountOnchainState } from '../../interfaces/account';
 import { Network } from '../../interfaces/network';
+import { BaseAccount } from '../account/BaseAccount';
 import { AccountOp } from '../accountOp/accountOp';
 export declare const MIN_GAS_PRICE = 1000000000n;
 export interface GasPriceRecommendation {
@@ -18,4 +19,5 @@ export declare function getGasPriceRecommendations(provider: Provider, network: 
     blockGasLimit: bigint;
 }>;
 export declare function getProbableCallData(account: Account, accountOp: AccountOp, accountState: AccountOnchainState, network: Network): string;
+export declare function getBroadcastGas(baseAcc: BaseAccount, op: AccountOp): bigint;
 //# sourceMappingURL=gasPrice.d.ts.map

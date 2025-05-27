@@ -1,33 +1,25 @@
 import { AccountId } from '../../interfaces/account';
+import { EIP7702Auth } from '../../consts/7702';
 import { Key } from '../../interfaces/keystore';
-import { NetworkId } from '../../interfaces/network';
+import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge';
 import { PaymasterService } from '../erc7677/types';
 import { UserOperation } from '../userOperation/types';
-import { Call } from './types';
+import { AccountOpStatus, Call } from './types';
 export interface GasFeePayment {
-    isERC4337: boolean;
     isGasTank: boolean;
     paidBy: string;
     inToken: string;
-    feeTokenNetworkId?: NetworkId;
+    feeTokenChainId?: bigint;
     amount: bigint;
     simulatedGasLimit: bigint;
     gasPrice: bigint;
+    broadcastOption: string;
     maxPriorityFeePerGas?: bigint;
     isSponsored?: boolean;
 }
-export declare enum AccountOpStatus {
-    Pending = "pending",
-    BroadcastedButNotConfirmed = "broadcasted-but-not-confirmed",
-    Success = "success",
-    Failure = "failure",
-    Rejected = "rejected",
-    UnknownButPastNonce = "unknown-but-past-nonce",
-    BroadcastButStuck = "broadcast-but-stuck"
-}
 export interface AccountOp {
     accountAddr: string;
-    networkId: NetworkId;
+    chainId: bigint;
     signingKeyAddr: Key['addr'] | null;
     signingKeyType: Key['type'] | null;
     nonce: bigint | null;
@@ -44,6 +36,13 @@ export interface AccountOp {
     meta?: {
         entryPointAuthorization?: string;
         paymasterService?: PaymasterService;
+        swapTxn?: SwapAndBridgeSendTxRequest;
+        walletSendCallsVersion?: string;
+        delegation?: EIP7702Auth;
+        setDelegation?: boolean;
+    };
+    flags?: {
+        hideActivityBanner?: boolean;
     };
 }
 /**
@@ -67,7 +66,6 @@ export declare function canBroadcast(op: AccountOp, accountIsEOA: boolean): bool
  */
 export declare function isAccountOpsIntentEqual(accountOps1: AccountOp[], accountOps2: AccountOp[]): boolean;
 export declare function getSignableCalls(op: AccountOp): [string, string, string][];
-export declare function getSignableCallsForBundlerEstimate(op: AccountOp): [string, string, string][];
 export declare function getSignableHash(addr: AccountId, chainId: bigint, nonce: bigint, calls: [string, string, string][]): Uint8Array;
 /**
  * This function returns the hash as a Uint8Array instead of string

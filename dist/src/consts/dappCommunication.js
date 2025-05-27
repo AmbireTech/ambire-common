@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS = void 0;
 const ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS = [
+    'https://rewards.ambire.com',
+    'https://rewards-staging.ambire.com',
     'https://legends.ambire.com',
     'https://legends-staging.ambire.com',
     'http://localhost:19006',

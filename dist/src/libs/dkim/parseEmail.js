@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = parseEmail;
 const tslib_1 = require("tslib");
 /*
   parse and return email data
@@ -60,5 +61,4 @@ async function parseEmail(email) {
         };
     });
 }
-exports.default = parseEmail;
 //# sourceMappingURL=parseEmail.js.map

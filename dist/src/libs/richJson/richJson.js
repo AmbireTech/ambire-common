@@ -15,8 +15,9 @@
  * Additionally, JSON.serialize and JSON.parse do not properly serialize the Error object, so we extend that functionality here as well.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parse = exports.stringify = void 0;
-function stringify(obj) {
+exports.stringify = stringify;
+exports.parse = parse;
+function stringify(obj, opts) {
     return JSON.stringify(obj, (key, value) => {
         if (typeof value === 'bigint') {
             return { $bigint: value.toString() };
@@ -30,9 +31,8 @@ function stringify(obj) {
             return error;
         }
         return value;
-    });
+    }, opts?.pretty ? 4 : 0);
 }
-exports.stringify = stringify;
 function parse(json) {
     return JSON.parse(json, (key, value) => {
         if (value?.$bigint) {
@@ -51,5 +51,4 @@ function parse(json) {
         return value;
     });
 }
-exports.parse = parse;
 //# sourceMappingURL=richJson.js.map

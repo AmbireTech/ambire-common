@@ -1,9 +1,13 @@
 "use strict";
 /* eslint-disable import/no-extraneous-dependencies */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.hasRelayerSupport = exports.canForce4337 = exports.migrateNetworkPreferencesToNetworks = exports.getFeatures = exports.getFeaturesByNetworkProperties = exports.getNetworkInfo = exports.getNetworksWithFailedRPC = exports.is4337Enabled = exports.relayerAdditionalNetworks = void 0;
+exports.getNetworksWithFailedRPC = exports.relayerAdditionalNetworks = void 0;
+exports.is4337Enabled = is4337Enabled;
+exports.getNetworkInfo = getNetworkInfo;
+exports.getFeaturesByNetworkProperties = getFeaturesByNetworkProperties;
+exports.getFeatures = getFeatures;
+exports.hasRelayerSupport = hasRelayerSupport;
 const deploy_1 = require("../../consts/deploy");
-const networks_1 = require("../../consts/networks");
 const bundler_1 = require("../../services/bundlers/bundler");
 const provider_1 = require("../../services/provider");
 const simulateDeployCall_1 = require("../deployless/simulateDeployCall");
@@ -28,25 +32,20 @@ exports.relayerAdditionalNetworks = [
 ];
 // 4337 network support
 // if it is supported on the network (hasBundlerSupport),
-// we check if the user has specifically enabled it through settings (force4337)
-// if he has not, we check if the network is predefinedNetwork and we
+// we check if the network is predefinedNetwork and we
 // have specifically disabled 4337
 // finally, we fallback to the bundler support
-function is4337Enabled(hasBundlerSupport, network, force4337) {
+function is4337Enabled(hasBundlerSupport, network) {
     if (!hasBundlerSupport)
         return false;
-    // the user has chosen to use 4337
-    if (force4337 !== undefined)
-        return force4337;
     // if we have set it specifically
     if (network && network.predefined)
         return network.erc4337.enabled;
     // this will be true in this case
     return hasBundlerSupport;
 }
-exports.is4337Enabled = is4337Enabled;
 const getNetworksWithFailedRPC = ({ providers }) => {
-    return Object.keys(providers).filter((networkId) => typeof providers[networkId].isWorking === 'boolean' && !providers[networkId].isWorking);
+    return Object.keys(providers).filter((chainId) => typeof providers[chainId].isWorking === 'boolean' && !providers[chainId].isWorking);
 };
 exports.getNetworksWithFailedRPC = getNetworksWithFailedRPC;
 async function retryRequest(init, counter = 0) {
@@ -60,9 +59,17 @@ async function retryRequest(init, counter = 0) {
     });
     return result;
 }
-async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalArgs) {
+/**
+ * Fetches detailed network information from an RPC provider.
+ * Used when adding a new network, updating network info, or when the RPC provider is changed,
+ * And once every 24 hours for custom networks.
+ *
+ * - Checks smart account (SA) support, singleton contract, and state override capabilities.
+ * - Determines if the network supports ERC-4337 and Account Abstraction.
+ * - Fetches additional metadata from external sources (e.g., CoinGecko).
+ */
+async function getNetworkInfo(fetch, rpcUrl, chainId, callback, network) {
     let networkInfo = {
-        force4337: optionalArgs?.force4337,
         chainId,
         isSAEnabled: 'LOADING',
         hasSingleton: 'LOADING',
@@ -102,7 +109,6 @@ async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalArgs) {
                 const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses;
                 const areContractsDeployed = factoryCode !== '0x';
                 // const has4337 = entryPointCode !== '0x' && hasBundler
-                const predefinedNetwork = networks_1.networks.find((net) => net.chainId === chainId);
                 // Ambire support is as follows:
                 // - either the addresses match after simulation, that's perfect
                 // - or we can't do the simulation with this RPC but we have the factory
@@ -113,12 +119,12 @@ async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalArgs) {
                     hasSingleton: singletonCode !== '0x',
                     isSAEnabled: supportsAmbire && singletonCode !== '0x',
                     areContractsDeployed,
-                    rpcNoStateOverride: predefinedNetwork && predefinedNetwork.rpcNoStateOverride === true
+                    rpcNoStateOverride: network && network.rpcNoStateOverride === true
                         ? true
                         : !saSupport.supportsStateOverride,
                     erc4337: {
-                        enabled: is4337Enabled(hasBundlerSupport, predefinedNetwork, optionalArgs?.force4337),
-                        hasPaymaster: predefinedNetwork ? predefinedNetwork.erc4337.hasPaymaster : false,
+                        enabled: is4337Enabled(hasBundlerSupport, network),
+                        hasPaymaster: network ? network.erc4337.hasPaymaster : false,
                         hasBundlerSupport
                     }
                 };
@@ -160,9 +166,13 @@ async function getNetworkInfo(fetch, rpcUrl, chainId, callback, optionalArgs) {
     callback(networkInfo);
     provider.destroy();
 }
-exports.getNetworkInfo = getNetworkInfo;
+/**
+ * Determines supported features for a network based on its properties.
+ *
+ * Smart Accounts, ERC-4337, transaction simulation, and price tracking are supported.
+ */
 // call this if you have the network props already calculated
-function getFeaturesByNetworkProperties(networkInfo) {
+function getFeaturesByNetworkProperties(networkInfo, network) {
     const features = [
         {
             id: 'saSupport',
@@ -182,7 +192,7 @@ function getFeaturesByNetworkProperties(networkInfo) {
     ];
     if (!networkInfo)
         return features.map((f) => ({ ...f, level: 'initial' }));
-    const { flagged, isSAEnabled, areContractsDeployed, erc4337, rpcNoStateOverride, nativeAssetId, chainId, hasSingleton, force4337 } = networkInfo;
+    const { flagged, isSAEnabled, areContractsDeployed, erc4337, rpcNoStateOverride, nativeAssetId, hasSingleton } = networkInfo;
     const updateFeature = (id, update) => {
         const foundFeature = features.find((f) => f.id === id);
         if (foundFeature) {
@@ -199,43 +209,43 @@ function getFeaturesByNetworkProperties(networkInfo) {
             }
         ];
     }
-    if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton, force4337].every((p) => p !== 'LOADING')) {
-        if (!isSAEnabled) {
+    if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
+        const canBroadcast = erc4337.enabled || network?.hasRelayer;
+        if (!isSAEnabled || !canBroadcast) {
             updateFeature('saSupport', {
                 level: 'danger',
                 title: 'Smart contract wallets are not supported',
                 msg: hasSingleton
                     ? 'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
-                    : 'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
+                    : "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
             });
         }
-        const predefinedNetSettings = networks_1.networks.find((net) => net.chainId === chainId);
         const erc4337Settings = {
-            enabled: is4337Enabled(erc4337.enabled, predefinedNetSettings, force4337),
-            hasPaymaster: predefinedNetSettings
-                ? predefinedNetSettings.erc4337.hasPaymaster
+            enabled: is4337Enabled(erc4337.enabled, network),
+            hasPaymaster: network
+                ? network.erc4337.hasPaymaster
                 : erc4337.hasPaymaster
         };
         const title = erc4337Settings?.enabled
             ? 'Ambire Smart Accounts via ERC-4337 (Account Abstraction)'
             : 'Ambire Smart Accounts';
-        if (isSAEnabled && areContractsDeployed) {
+        if (canBroadcast && isSAEnabled && areContractsDeployed) {
             updateFeature('saSupport', {
                 title,
                 level: 'success',
                 msg: "This network supports Smart Accounts, and Ambire Wallet's smart contracts are deployed."
             });
         }
-        else if (isSAEnabled && !areContractsDeployed) {
+        else if (canBroadcast && isSAEnabled && !areContractsDeployed) {
             updateFeature('saSupport', {
                 title,
                 level: 'warning',
-                msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using a Basic Account and the Deploy contracts option to unlock the Smart Accounts feature. Otherwise, only Basic Accounts (EOAs) can be used on this network."
+                msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using an EOA account and the deploy contracts option to unlock the Smart Accounts feature. Otherwise, only EOA accounts can be used on this network."
             });
         }
     }
     if ([rpcNoStateOverride].every((p) => p !== 'LOADING')) {
-        const isPredefinedNetwork = networks_1.networks.find((net) => net.chainId === chainId);
+        const isPredefinedNetwork = network?.predefined;
         if (!rpcNoStateOverride && isPredefinedNetwork) {
             updateFeature('simulation', {
                 level: 'success',
@@ -269,66 +279,12 @@ function getFeaturesByNetworkProperties(networkInfo) {
     }
     return features;
 }
-exports.getFeaturesByNetworkProperties = getFeaturesByNetworkProperties;
 // call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
-function getFeatures(networkInfo) {
-    return getFeaturesByNetworkProperties(networkInfo);
+function getFeatures(networkInfo, network) {
+    return getFeaturesByNetworkProperties(networkInfo, network);
 }
-exports.getFeatures = getFeatures;
-// Since v4.24.0, a new Network interface has been introduced,
-// that replaces the old NetworkDescriptor, NetworkPreference, and CustomNetwork.
-// Previously, only NetworkPreferences were stored, with other network properties
-// being calculated in a getter each time the networks were needed.
-// Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
-// This function migrates the data from the old NetworkPreferences to the new structure
-// to ensure compatibility and prevent breaking the extension after updating to v4.24.0
-async function migrateNetworkPreferencesToNetworks(networkPreferences) {
-    const predefinedNetworkIds = networks_1.networks.map((n) => n.id);
-    const customNetworkIds = Object.keys(networkPreferences).filter((k) => !predefinedNetworkIds.includes(k));
-    const networksToStore = {};
-    networks_1.networks.forEach((n) => {
-        networksToStore[n.id] = n;
-    });
-    customNetworkIds.forEach((networkId) => {
-        const preference = networkPreferences[networkId];
-        const networkInfo = {
-            chainId: preference.chainId,
-            isSAEnabled: preference.isSAEnabled ?? false,
-            isOptimistic: preference.isOptimistic ?? false,
-            rpcNoStateOverride: preference.rpcNoStateOverride ?? true,
-            erc4337: preference.erc4337 ?? {
-                enabled: false,
-                hasPaymaster: false,
-                hasBundlerSupport: false
-            },
-            areContractsDeployed: preference.areContractsDeployed ?? false,
-            feeOptions: { is1559: preference.is1559 ?? false },
-            platformId: preference.platformId ?? '',
-            nativeAssetId: preference.nativeAssetId ?? '',
-            flagged: preference.flagged ?? false,
-            hasSingleton: preference.hasSingleton ?? false
-        };
-        delete preference.is1559;
-        networksToStore[networkId] = {
-            id: networkId,
-            ...preference,
-            ...networkInfo,
-            features: getFeaturesByNetworkProperties(networkInfo),
-            hasRelayer: !!exports.relayerAdditionalNetworks.find((net) => net.chainId === preference.chainId),
-            predefined: false
-        };
-    });
-    return networksToStore;
-}
-exports.migrateNetworkPreferencesToNetworks = migrateNetworkPreferencesToNetworks;
-// is the user allowed to change the network settings to 4337
-function canForce4337(network) {
-    return network && network.allowForce4337;
-}
-exports.canForce4337 = canForce4337;
 function hasRelayerSupport(network) {
     return (network.hasRelayer || !!exports.relayerAdditionalNetworks.find((net) => net.chainId === network.chainId));
 }
-exports.hasRelayerSupport = hasRelayerSupport;
 //# sourceMappingURL=networks.js.map

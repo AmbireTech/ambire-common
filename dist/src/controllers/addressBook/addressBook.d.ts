@@ -1,8 +1,8 @@
 import { Account } from '../../interfaces/account';
-import { Storage } from '../../interfaces/storage';
 import { AccountsController } from '../accounts/accounts';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { SelectedAccountController } from '../selectedAccount/selectedAccount';
+import { StorageController } from '../storage/storage';
 export type Contact = {
     name: string;
     address: Account['addr'];
@@ -19,7 +19,7 @@ export type Contacts = Array<Contact>;
  */
 export declare class AddressBookController extends EventEmitter {
     #private;
-    constructor(storage: Storage, accounts: AccountsController, selectedAccount: SelectedAccountController);
+    constructor(storage: StorageController, accounts: AccountsController, selectedAccount: SelectedAccountController);
     get contacts(): (Contact | {
         name: string;
         address: string;

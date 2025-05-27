@@ -1,12 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.networks = void 0;
+exports.ARBITRUM_CHAIN_ID = exports.networks = void 0;
 const bundlers_1 = require("./bundlers");
 const networks = [
     {
-        id: 'ethereum',
         name: 'Ethereum',
         nativeAssetSymbol: 'ETH',
+        has7702: false,
+        nativeAssetName: 'Ether',
         rpcUrls: ['https://invictus.ambire.com/ethereum'],
         selectedRpcUrl: 'https://invictus.ambire.com/ethereum',
         rpcNoStateOverride: false,
@@ -23,13 +24,13 @@ const networks = [
         feeOptions: { is1559: true },
         predefined: true,
         wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-        disableEstimateGas: true,
-        allowForce4337: true
+        disableEstimateGas: true
     },
     {
-        id: 'polygon',
         name: 'Polygon',
         nativeAssetSymbol: 'POL',
+        has7702: false,
+        nativeAssetName: 'Polygon',
         rpcUrls: ['https://invictus.ambire.com/polygon'],
         selectedRpcUrl: 'https://invictus.ambire.com/polygon',
         rpcNoStateOverride: false,
@@ -53,13 +54,13 @@ const networks = [
         predefined: true,
         wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
         oldNativeAssetSymbols: ['MATIC'],
-        disableEstimateGas: true,
-        allowForce4337: true
+        disableEstimateGas: true
     },
     {
-        id: 'optimism',
-        name: 'Optimism',
+        name: 'OP Mainnet',
         nativeAssetSymbol: 'ETH',
+        has7702: false,
+        nativeAssetName: 'Ether',
         rpcUrls: ['https://invictus.ambire.com/optimism'],
         selectedRpcUrl: 'https://invictus.ambire.com/optimism',
         rpcNoStateOverride: false,
@@ -70,7 +71,8 @@ const networks = [
             hasPaymaster: true,
             hasBundlerSupport: true,
             bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
-            defaultBundler: bundlers_1.BICONOMY
+            defaultBundler: bundlers_1.BICONOMY,
+            increasePreVerGas: 5
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -90,9 +92,10 @@ const networks = [
         wrappedAddr: '0x4200000000000000000000000000000000000006'
     },
     {
-        id: 'avalanche',
         name: 'Avalanche',
         nativeAssetSymbol: 'AVAX',
+        has7702: false,
+        nativeAssetName: 'Avalanche',
         rpcUrls: ['https://invictus.ambire.com/avalanche'],
         selectedRpcUrl: 'https://invictus.ambire.com/avalanche',
         rpcNoStateOverride: false,
@@ -119,9 +122,10 @@ const networks = [
         wrappedAddr: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7'
     },
     {
-        id: 'arbitrum',
         name: 'Arbitrum',
         nativeAssetSymbol: 'ETH',
+        has7702: false,
+        nativeAssetName: 'Ether',
         rpcUrls: ['https://invictus.ambire.com/arbitrum'],
         selectedRpcUrl: 'https://invictus.ambire.com/arbitrum',
         rpcNoStateOverride: false,
@@ -149,9 +153,10 @@ const networks = [
         wrappedAddr: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
     },
     {
-        id: 'base',
         name: 'Base',
         nativeAssetSymbol: 'ETH',
+        has7702: false,
+        nativeAssetName: 'Ether',
         rpcUrls: ['https://invictus.ambire.com/base'],
         selectedRpcUrl: 'https://invictus.ambire.com/base',
         rpcNoStateOverride: false,
@@ -162,7 +167,8 @@ const networks = [
             hasPaymaster: true,
             hasBundlerSupport: true,
             bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
-            defaultBundler: bundlers_1.PIMLICO
+            defaultBundler: bundlers_1.PIMLICO,
+            increasePreVerGas: 5
         },
         isSAEnabled: true,
         areContractsDeployed: true,
@@ -181,9 +187,10 @@ const networks = [
         wrappedAddr: '0x4200000000000000000000000000000000000006'
     },
     {
-        id: 'scroll',
         name: 'Scroll',
         nativeAssetSymbol: 'ETH',
+        has7702: false,
+        nativeAssetName: 'Ether',
         rpcUrls: ['https://invictus.ambire.com/scroll'],
         selectedRpcUrl: 'https://invictus.ambire.com/scroll',
         rpcNoStateOverride: false,
@@ -204,9 +211,69 @@ const networks = [
         feeOptions: { is1559: false },
         predefined: true,
         disableEstimateGas: true,
-        wrappedAddr: '0x5300000000000000000000000000000000000004',
-        allowForce4337: true
+        wrappedAddr: '0x5300000000000000000000000000000000000004'
+    },
+    {
+        name: 'Binance Smart Chain',
+        nativeAssetSymbol: 'BNB',
+        has7702: true,
+        nativeAssetName: 'Binance Coin',
+        rpcUrls: ['https://invictus.ambire.com/binance-smart-chain'],
+        selectedRpcUrl: 'https://invictus.ambire.com/binance-smart-chain',
+        rpcNoStateOverride: false,
+        chainId: 56n,
+        explorerUrl: 'https://bscscan.com/',
+        erc4337: {
+            enabled: false,
+            hasPaymaster: true,
+            hasBundlerSupport: true,
+            bundlers: [bundlers_1.PIMLICO, bundlers_1.BICONOMY],
+            defaultBundler: bundlers_1.PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: true,
+        platformId: 'binance-smart-chain',
+        nativeAssetId: 'binancecoin',
+        hasSingleton: true,
+        features: [],
+        feeOptions: { is1559: true },
+        predefined: true,
+        disableEstimateGas: true,
+        wrappedAddr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+    },
+    {
+        name: 'Mantle',
+        nativeAssetSymbol: 'MNT',
+        has7702: false,
+        nativeAssetName: 'Mantle',
+        rpcUrls: ['https://invictus.ambire.com/mantle'],
+        selectedRpcUrl: 'https://invictus.ambire.com/mantle',
+        rpcNoStateOverride: false,
+        chainId: 5000n,
+        explorerUrl: 'https://mantlescan.xyz/',
+        erc4337: {
+            enabled: true,
+            hasPaymaster: true,
+            hasBundlerSupport: true
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: false,
+        platformId: 'mantle',
+        nativeAssetId: 'mantle',
+        hasSingleton: true,
+        isOptimistic: true,
+        features: [],
+        feeOptions: {
+            is1559: true,
+            minBaseFeeEqualToLastBlock: true
+        },
+        predefined: true,
+        disableEstimateGas: true,
+        wrappedAddr: '0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8'
     }
 ];
 exports.networks = networks;
+exports.ARBITRUM_CHAIN_ID = 42161n;
 //# sourceMappingURL=networks.js.map

@@ -10,12 +10,19 @@ import { UserOperation } from '../userOperation/types';
  * Use this mainly as a typehint to prevent dependancy cicles
  */
 export declare abstract class AbstractPaymaster {
-    abstract init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider): void;
+    /**
+     * If there's a sponsorship from pm_getPaymasterStubData,
+     * it will get recorded here. Use it for the final broadcast
+     */
+    sponsorDataEstimation: PaymasterEstimationData | undefined;
+    abstract init(op: AccountOp, userOp: UserOperation, account: Account, network: Network, provider: RPCProvider): void;
     abstract shouldIncludePayment(): boolean;
+    abstract getFeeCallType(feeTokens: TokenResult[]): string | undefined;
     abstract getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined;
     abstract getEstimationData(): PaymasterEstimationData | null;
     abstract isSponsored(): boolean;
     abstract isUsable(): boolean;
+    abstract canAutoRetryOnFailure(): boolean;
     abstract call(acc: Account, op: AccountOp, userOp: UserOperation, network: Network): Promise<PaymasterSuccessReponse | PaymasterErrorReponse>;
 }
 //# sourceMappingURL=abstractPaymaster.d.ts.map

@@ -20,7 +20,7 @@ export declare class Portfolio {
     private batchedGecko;
     private deploylessTokens;
     private deploylessNfts;
-    constructor(fetch: Fetch, provider: Provider | JsonRpcProvider, network: Network, velcroUrl?: string);
+    constructor(fetch: Fetch, provider: Provider | JsonRpcProvider, network: Network, velcroUrl?: string, customBatcher?: Function);
     get(accountAddr: string, opts?: Partial<GetOptions>): Promise<PortfolioLibGetResult>;
 }
 //# sourceMappingURL=portfolio.d.ts.map

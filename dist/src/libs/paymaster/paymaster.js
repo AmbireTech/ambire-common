@@ -1,9 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Paymaster = exports.getPaymasterDataForEstimate = void 0;
+exports.Paymaster = void 0;
+exports.getPaymasterDataForEstimate = getPaymasterDataForEstimate;
 const tslib_1 = require("tslib");
 /* eslint-disable no-console */
 const ethers_1 = require("ethers");
+const AmbireFactory_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
 const EntryPoint_json_1 = tslib_1.__importDefault(require("../../../contracts/compiled/EntryPoint.json"));
 const addresses_1 = require("../../consts/addresses");
 const deploy_1 = require("../../consts/deploy");
@@ -14,6 +16,7 @@ const customErrors_1 = require("../errorDecoder/customErrors");
 const errorHumanizer_1 = require("../errorHumanizer");
 const broadcastErrorHumanizer_1 = require("../errorHumanizer/broadcastErrorHumanizer");
 const estimateHelpers_1 = require("../estimate/estimateHelpers");
+const relayerCall_1 = require("../relayerCall/relayerCall");
 const userOperation_1 = require("../userOperation/userOperation");
 const abstractPaymaster_1 = require("./abstractPaymaster");
 function getPaymasterDataForEstimate() {
@@ -25,28 +28,41 @@ function getPaymasterDataForEstimate() {
         paymasterData: abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, (0, userOperation_1.getSigForCalculations)()])
     };
 }
-exports.getPaymasterDataForEstimate = getPaymasterDataForEstimate;
 class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
     callRelayer;
     type = 'None';
-    sponsorDataEstimation;
     paymasterService = null;
     network = null;
     provider = null;
     errorCallback = undefined;
-    constructor(callRelayer, errorCallback) {
+    // this is a temporary solution where the live relayer doesn't have
+    // a chain id paymaster route open yet as it's not merged
+    ambirePaymasterUrl;
+    constructor(relayerUrl, fetch, errorCallback) {
         super();
-        this.callRelayer = callRelayer;
+        this.callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
         this.errorCallback = errorCallback;
     }
-    async init(op, userOp, network, provider) {
+    async init(op, userOp, account, network, provider) {
         this.network = network;
         this.provider = provider;
+        this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`;
         if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
             try {
                 this.paymasterService = op.meta.paymasterService;
+                // when requesting stub data with an empty account, send over
+                // the deploy data as per EIP-7677 standard
+                const localOp = { ...userOp };
+                if (BigInt(localOp.nonce) === 0n && account.creation) {
+                    const factoryInterface = new ethers_1.Interface(AmbireFactory_json_1.default.abi);
+                    localOp.factory = account.creation.factoryAddr;
+                    localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+                        account.creation.bytecode,
+                        account.creation.salt
+                    ]);
+                }
                 const response = await Promise.race([
-                    (0, erc7677_1.getPaymasterStubData)(op.meta.paymasterService, userOp, network),
+                    (0, erc7677_1.getPaymasterStubData)(op.meta.paymasterService, localOp, network),
                     new Promise((_resolve, reject) => {
                         setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000);
                     })
@@ -89,13 +105,33 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
         this.type = 'None';
     }
     shouldIncludePayment() {
-        return this.type === 'Ambire' || this.type === 'ERC7677';
+        return (this.type === 'Ambire' ||
+            (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === deploy_1.AMBIRE_PAYMASTER));
+    }
+    // get the fee call type used in the estimation
+    // we use this to understand whether we should re-estimate on broadcast
+    getFeeCallType(feeTokens) {
+        if (!this.network)
+            throw new Error('network not set, did you call init?');
+        if (this.type === 'Ambire') {
+            const feeToken = (0, estimateHelpers_1.getFeeTokenForEstimate)(feeTokens);
+            if (!feeToken)
+                return undefined;
+            if (feeToken.flags.onGasTank)
+                return 'gasTank';
+            if (feeToken.address === ethers_1.ZeroAddress)
+                return 'native';
+            return 'erc20';
+        }
+        if (this.type === 'ERC7677')
+            return 'gasTank';
+        return undefined;
     }
     getFeeCallForEstimation(feeTokens) {
         if (!this.network)
             throw new Error('network not set, did you call init?');
         if (this.type === 'Ambire') {
-            const feeToken = (0, estimateHelpers_1.getFeeTokenForEstimate)(feeTokens, this.network);
+            const feeToken = (0, estimateHelpers_1.getFeeTokenForEstimate)(feeTokens);
             if (!feeToken)
                 return undefined;
             return (0, calls_1.getFeeCall)(feeToken);
@@ -179,11 +215,11 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
         const localUserOp = { ...userOp };
         localUserOp.paymaster = deploy_1.AMBIRE_PAYMASTER;
         return this.#retryPaymasterRequest(() => {
-            return this.callRelayer(`/v2/paymaster/${op.networkId}/sign`, 'POST', {
+            return this.callRelayer(this.ambirePaymasterUrl, 'POST', {
                 userOperation: (0, userOperation_1.getCleanUserOp)(localUserOp)[0],
                 paymaster: deploy_1.AMBIRE_PAYMASTER,
-                bytecode: acc.creation.bytecode,
-                salt: acc.creation.salt,
+                bytecode: acc.creation?.bytecode,
+                salt: acc.creation?.salt,
                 key: acc.associatedKeys[0],
                 // eslint-disable-next-line no-underscore-dangle
                 rpcUrl: this.provider._getConnection().url,
@@ -220,6 +256,9 @@ class Paymaster extends abstractPaymaster_1.AbstractPaymaster {
         if (this.type === 'ERC7677')
             return this.#erc7677Call(op, userOp, network);
         throw new Error('Paymaster not configured. Please contact support');
+    }
+    canAutoRetryOnFailure() {
+        return this.type === 'Ambire';
     }
 }
 exports.Paymaster = Paymaster;

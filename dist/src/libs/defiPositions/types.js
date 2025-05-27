@@ -6,10 +6,10 @@ var AssetType;
     AssetType[AssetType["Liquidity"] = 0] = "Liquidity";
     AssetType[AssetType["Collateral"] = 1] = "Collateral";
     AssetType[AssetType["Borrow"] = 2] = "Borrow";
-})(AssetType = exports.AssetType || (exports.AssetType = {}));
+})(AssetType || (exports.AssetType = AssetType = {}));
 var DeFiPositionsError;
 (function (DeFiPositionsError) {
     DeFiPositionsError["AssetPriceError"] = "AssetPriceError";
     DeFiPositionsError["CriticalError"] = "CriticalError";
-})(DeFiPositionsError = exports.DeFiPositionsError || (exports.DeFiPositionsError = {}));
+})(DeFiPositionsError || (exports.DeFiPositionsError = DeFiPositionsError = {}));
 //# sourceMappingURL=types.js.map

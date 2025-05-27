@@ -6,13 +6,17 @@ const tslib_1 = require("tslib");
 /* eslint-disable new-cap */
 /* eslint-disable @typescript-eslint/no-shadow */
 const aes_js_1 = tslib_1.__importDefault(require("aes-js"));
-// import { entropyToMnemonic } from 'bip39'
 const eth_crypto_1 = require("eth-crypto");
 const ethers_1 = require("ethers");
-const scrypt_js_1 = tslib_1.__importDefault(require("scrypt-js"));
+// import { entropyToMnemonic } from 'bip39'
 const EmittableError_1 = tslib_1.__importDefault(require("../../classes/EmittableError"));
 const derivation_1 = require("../../consts/derivation");
+const entropyGenerator_1 = require("../../libs/entropyGenerator/entropyGenerator");
 const keys_1 = require("../../libs/keys/keys");
+const scryptAdapter_1 = require("../../libs/scrypt/scryptAdapter");
+const shortenAddress_1 = tslib_1.__importDefault(require("../../utils/shortenAddress"));
+const uuid_1 = require("../../utils/uuid");
+const wait_1 = tslib_1.__importDefault(require("../../utils/wait"));
 const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 };
 const CIPHER = 'aes-128-ctr';
@@ -21,8 +25,8 @@ const STATUS_WRAPPED_METHODS = {
     unlockWithSecret: 'INITIAL',
     addSecret: 'INITIAL',
     addSeed: 'INITIAL',
-    moveTempSeedToKeystoreSeeds: 'INITIAL',
-    deleteSavedSeed: 'INITIAL',
+    updateSeed: 'INITIAL',
+    deleteSeed: 'INITIAL',
     removeSecret: 'INITIAL',
     addKeys: 'INITIAL',
     addKeysExternallyStored: 'INITIAL',
@@ -64,60 +68,45 @@ class KeystoreController extends eventEmitter_1.default {
     #keystoreSecrets = [];
     #storage;
     #keystoreSeeds = [];
-    // when importing a seed, save it temporary here before deciding
-    // whether to place it in #keystoreSeeds or delete it
-    //
-    // this should be done only if there isn't a saved seed already
     #tempSeed = null;
     #keystoreSigners;
     #keystoreKeys = [];
+    #internalKeysToAddOnKeystoreReady = [];
+    #externalKeysToAddOnKeystoreReady = [];
     keyStoreUid;
-    isReadyToStoreKeys = false;
+    #isReadyToStoreKeys = false;
     errorMessage = '';
     statuses = STATUS_WRAPPED_METHODS;
     // Holds the initial load promise, so that one can wait until it completes
     #initialLoadPromise;
     #windowManager;
-    constructor(_storage, _keystoreSigners, windowManager) {
+    #scryptAdapter;
+    constructor(platform, _storage, _keystoreSigners, windowManager) {
         super();
         this.#storage = _storage;
         this.#keystoreSigners = _keystoreSigners;
         this.#mainKey = null;
         this.keyStoreUid = null;
         this.#windowManager = windowManager;
+        this.#scryptAdapter = new scryptAdapter_1.ScryptAdapter(platform);
         this.#initialLoadPromise = this.#load();
     }
     async #load() {
         try {
-            const [keystoreSeeds, keyStoreUid, keystoreKeys, keyPreferences] = await Promise.all([
+            const [keystoreSeeds, keyStoreUid, keystoreKeys] = await Promise.all([
                 this.#storage.get('keystoreSeeds', []),
                 this.#storage.get('keyStoreUid', null),
-                this.#storage.get('keystoreKeys', []),
-                this.#storage.get('keyPreferences', [])
+                this.#storage.get('keystoreKeys', [])
             ]);
             this.keyStoreUid = keyStoreUid;
-            if ((0, keys_1.getShouldMigrateKeystoreSeedsWithoutHdPath)(keystoreSeeds)) {
-                // Cast to the old type (string[]) to avoid TS errors
-                const preMigrationKeystoreSeeds = keystoreSeeds;
-                this.#keystoreSeeds = (0, keys_1.migrateKeystoreSeedsWithoutHdPathTemplate)(preMigrationKeystoreSeeds);
-                await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
-            }
-            else {
-                this.#keystoreSeeds = keystoreSeeds;
-            }
-            const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0;
-            if (shouldMigrateKeyPreferencesToKeystoreKeys) {
-                this.#keystoreKeys = (0, keys_1.migrateKeyPreferencesToKeystoreKeys)(keyPreferences, keystoreKeys);
-                await this.#storage.set('keystoreKeys', this.#keystoreKeys);
-                await this.#storage.remove('keyPreferences');
-            }
-            else {
-                this.#keystoreKeys = keystoreKeys;
-            }
-            if ((0, keys_1.getShouldMigrateKeyMetaNullToKeyMetaCreatedAt)(this.#keystoreKeys)) {
-                this.#keystoreKeys = (0, keys_1.migrateKeyMetaNullToKeyMetaCreatedAt)(this.#keystoreKeys);
-                await this.#storage.set('keystoreKeys', this.#keystoreKeys);
-            }
+            this.#keystoreSeeds = keystoreSeeds.map((s) => {
+                if (s.id)
+                    return s;
+                // Migrate the old seed structure to the new one for cases where the prev versions
+                // of the extension supported only one saved seed which lacked id and label props.
+                return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' };
+            });
+            this.#keystoreKeys = keystoreKeys;
         }
         catch (e) {
             this.emitError({
@@ -147,6 +136,21 @@ class KeystoreController extends eventEmitter_1.default {
     }
     get isUnlocked() {
         return !!this.#mainKey;
+    }
+    get hasTempSeed() {
+        return !!this.#tempSeed;
+    }
+    get isReadyToStoreKeys() {
+        return this.#isReadyToStoreKeys;
+    }
+    set isReadyToStoreKeys(val) {
+        this.#isReadyToStoreKeys = val;
+        if (val && this.#internalKeysToAddOnKeystoreReady.length) {
+            this.#addKeys(this.#internalKeysToAddOnKeystoreReady);
+        }
+        if (val && this.#externalKeysToAddOnKeystoreReady.length) {
+            this.#addKeysExternallyStored(this.#externalKeysToAddOnKeystoreReady);
+        }
     }
     async getKeyStoreUid() {
         const uid = this.keyStoreUid;
@@ -181,8 +185,14 @@ class KeystoreController extends eventEmitter_1.default {
                 error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
             });
         }
-        // @TODO: progressCallback?
-        const key = await scrypt_js_1.default.scrypt(getBytesForSecret(secret), (0, ethers_1.getBytes)(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => { });
+        await (0, wait_1.default)(0); // a trick to prevent UI freeze while the CPU is busy
+        const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), (0, ethers_1.getBytes)(scryptParams.salt), {
+            N: scryptParams.N,
+            r: scryptParams.r,
+            p: scryptParams.p,
+            dkLen: scryptParams.dkLen
+        });
+        await (0, wait_1.default)(0);
         const iv = (0, ethers_1.getBytes)(aesEncrypted.iv);
         const derivedKey = key.slice(0, 16);
         const macPrefix = key.slice(16, 32);
@@ -200,7 +210,7 @@ class KeystoreController extends eventEmitter_1.default {
         this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) };
     }
     async unlockWithSecret(secretId, secret) {
-        await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret));
+        await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret), true);
     }
     async #addSecret(secretId, secret, extraEntropy = '', leaveUnlocked = false) {
         await this.#initialLoadPromise;
@@ -212,13 +222,13 @@ class KeystoreController extends eventEmitter_1.default {
                 error: new Error(`keystore: trying to add duplicate secret ${secretId}`)
             });
         let mainKey = this.#mainKey;
+        const entropyGenerator = new entropyGenerator_1.EntropyGenerator();
         // We are not unlocked
         if (!mainKey) {
             if (!this.#keystoreSecrets.length) {
-                const key = (0, ethers_1.getBytes)((0, ethers_1.keccak256)((0, ethers_1.concat)([(0, ethers_1.randomBytes)(32), (0, ethers_1.toUtf8Bytes)(extraEntropy)]))).slice(0, 16);
                 mainKey = {
-                    key,
-                    iv: (0, ethers_1.randomBytes)(16)
+                    key: entropyGenerator.generateRandomBytes(16, extraEntropy),
+                    iv: entropyGenerator.generateRandomBytes(16, extraEntropy)
                 };
             }
             else
@@ -231,9 +241,16 @@ class KeystoreController extends eventEmitter_1.default {
                 this.#mainKey = mainKey;
             }
         }
-        const salt = (0, ethers_1.randomBytes)(32);
-        const key = await scrypt_js_1.default.scrypt(getBytesForSecret(secret), salt, scryptDefaults.N, scryptDefaults.r, scryptDefaults.p, scryptDefaults.dkLen, () => { });
-        const iv = (0, ethers_1.randomBytes)(16);
+        const salt = entropyGenerator.generateRandomBytes(32, extraEntropy);
+        await (0, wait_1.default)(0); // a trick to prevent UI freeze while the CPU is busy
+        const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
+            N: scryptDefaults.N,
+            r: scryptDefaults.r,
+            p: scryptDefaults.p,
+            dkLen: scryptDefaults.dkLen
+        });
+        await (0, wait_1.default)(0);
+        const iv = entropyGenerator.generateRandomBytes(16, extraEntropy);
         const derivedKey = key.slice(0, 16);
         const macPrefix = key.slice(16, 32);
         const counter = new aes_js_1.default.Counter(iv);
@@ -261,7 +278,7 @@ class KeystoreController extends eventEmitter_1.default {
         this.isReadyToStoreKeys = true;
     }
     async addSecret(secretId, secret, extraEntropy, leaveUnlocked) {
-        await this.withStatus('addSecret', () => this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked));
+        await this.withStatus('addSecret', () => this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked), true);
     }
     async #removeSecret(secretId) {
         await this.#initialLoadPromise;
@@ -302,6 +319,14 @@ class KeystoreController extends eventEmitter_1.default {
             };
         });
     }
+    get seeds() {
+        return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase }) => ({
+            id,
+            label: label || 'Unnamed Recovery Seed',
+            hdPathTemplate,
+            withPassphrase: !!seedPassphrase
+        }));
+    }
     async #getEncryptedSeedPhrase(seed, seedPassphrase) {
         await this.#initialLoadPromise;
         if (this.#mainKey === null)
@@ -317,15 +342,6 @@ class KeystoreController extends eventEmitter_1.default {
                 error: new Error('keystore: trying to add an invalid seed phrase')
             });
         }
-        // Currently we support only one seed phrase to be added to the keystore
-        // this fist seed phrase will become the saved seed phrase of the wallet
-        if (this.#keystoreSeeds.length) {
-            throw new EmittableError_1.default({
-                message: 'You can have only one saved seed in the extension',
-                level: 'major',
-                error: new Error('keystore: seed phase already added. Storing multiple seed phrases not supported yet')
-            });
-        }
         // Set up the cipher
         const counter = new aes_js_1.default.Counter(this.#mainKey.iv); // TS compiler fails to detect we check for null above
         const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter); // TS compiler fails to detect we check for null above\
@@ -336,7 +352,7 @@ class KeystoreController extends eventEmitter_1.default {
                 : null
         };
     }
-    async addSeedToTemp({ seed, seedPassphrase, hdPathTemplate }) {
+    async addTempSeed({ seed, seedPassphrase, hdPathTemplate }) {
         const validHdPath = derivation_1.DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate);
         if (!validHdPath)
             throw new EmittableError_1.default({
@@ -344,8 +360,7 @@ class KeystoreController extends eventEmitter_1.default {
                 level: 'major',
                 error: new Error('keystore: hd path to temp seed incorrect')
             });
-        const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(seed, seedPassphrase);
-        this.#tempSeed = { seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate };
+        this.#tempSeed = { seed, seedPassphrase, hdPathTemplate };
         this.emitUpdate();
     }
     deleteTempSeed(shouldUpdate = true) {
@@ -353,46 +368,59 @@ class KeystoreController extends eventEmitter_1.default {
         if (shouldUpdate)
             this.emitUpdate();
     }
-    async #moveTempSeedToKeystoreSeeds() {
-        if (this.#mainKey === null)
-            throw new EmittableError_1.default({
-                message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
-                level: 'major',
-                error: new Error('keystore: needs to be unlocked')
-            });
-        // Currently we support only one seed phrase to be added to the keystore
-        // this fist seed phrase will become the saved seed phrase of the wallet
-        if (this.#keystoreSeeds.length) {
-            throw new EmittableError_1.default({
-                message: 'You can have only one saved seed in the extension',
-                level: 'major',
-                error: new Error('keystore: seed phase already added. Storing multiple seed phrases not supported yet')
-            });
-        }
-        if (!this.#tempSeed) {
-            throw new EmittableError_1.default({
-                message: 'Imported seed no longer exists in the extension. If you want to save it, please re-import it',
-                level: 'major',
-                error: new Error('keystore: imported seed deleted although a request to save it was made')
-            });
-        }
-        this.#keystoreSeeds.push(this.#tempSeed);
-        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
+    async persistTempSeed() {
+        if (!this.#tempSeed)
+            return;
+        await this.#addSeed(this.#tempSeed);
         this.#tempSeed = null;
         this.emitUpdate();
     }
-    async moveTempSeedToKeystoreSeeds() {
-        await this.#initialLoadPromise;
-        await this.withStatus('moveTempSeedToKeystoreSeeds', () => this.#moveTempSeedToKeystoreSeeds());
-    }
     async #addSeed({ seed, seedPassphrase, hdPathTemplate }) {
         const { seed: seedPhrase, passphrase } = await this.#getEncryptedSeedPhrase(seed, seedPassphrase);
-        this.#keystoreSeeds.push({ seed: seedPhrase, seedPassphrase: passphrase, hdPathTemplate });
+        const existingEntry = this.#keystoreSeeds.find((entry) => entry.seed === seedPhrase && entry.seedPassphrase === seedPassphrase);
+        if (existingEntry)
+            return;
+        const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`;
+        const newEntry = {
+            id: (0, uuid_1.generateUuid)(),
+            label,
+            seed: seedPhrase,
+            seedPassphrase: passphrase,
+            hdPathTemplate
+        };
+        this.#keystoreSeeds.push(newEntry);
         await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
         this.emitUpdate();
     }
     async addSeed(keystoreSeed) {
-        await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed));
+        await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true);
+    }
+    async #updateSeed({ id, label, hdPathTemplate }) {
+        if (!label && !hdPathTemplate)
+            return;
+        const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id);
+        if (!keystoreSeed)
+            return;
+        if (label)
+            keystoreSeed.label = label;
+        if (hdPathTemplate)
+            keystoreSeed.hdPathTemplate = hdPathTemplate;
+        const updatedKeystoreSeeds = this.#keystoreSeeds.map((s) => s.id === keystoreSeed.id ? keystoreSeed : s);
+        this.#keystoreSeeds = updatedKeystoreSeeds;
+        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
+        this.emitUpdate();
+    }
+    async updateSeed({ id, label, hdPathTemplate }) {
+        await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate }), true);
+    }
+    async deleteSeed(id) {
+        await this.withStatus('deleteSeed', () => this.#deleteSeed(id));
+    }
+    async #deleteSeed(id) {
+        await this.#initialLoadPromise;
+        this.#keystoreSeeds = this.#keystoreSeeds.filter((s) => s.id !== id);
+        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
+        this.emitUpdate();
     }
     async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate) {
         if (!nextHdPathTemplate)
@@ -408,26 +436,17 @@ class KeystoreController extends eventEmitter_1.default {
         this.#tempSeed.hdPathTemplate = nextHdPathTemplate;
         this.emitUpdate();
     }
-    async changeSavedSeedHdPathTemplateIfNeeded(nextHdPathTemplate) {
-        if (!nextHdPathTemplate)
-            return; // should never happen
-        await this.#initialLoadPromise;
-        if (!this.isUnlocked)
-            throw new Error('keystore: not unlocked');
-        if (!this.#keystoreSeeds.length)
-            throw new Error('keystore: no seed phrase added yet');
-        const isTheSameHdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate === nextHdPathTemplate;
-        if (isTheSameHdPathTemplate)
-            return;
-        // As of v4.33.0 we support only one seed phrase (saved seed) to be added to the keystore
-        this.#keystoreSeeds[0].hdPathTemplate = nextHdPathTemplate;
-        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
-        this.emitUpdate();
-    }
     async #addKeysExternallyStored(keysToAdd) {
         await this.#initialLoadPromise;
         if (!keysToAdd.length)
             return;
+        if (!this.isReadyToStoreKeys) {
+            this.#externalKeysToAddOnKeystoreReady = [
+                ...this.#externalKeysToAddOnKeystoreReady,
+                ...keysToAdd
+            ];
+            return;
+        }
         // Strip out keys with duplicated private keys. One unique key is enough.
         const uniqueKeys = [];
         const uniqueKeysToAdd = keysToAdd.filter(({ addr, type }) => {
@@ -458,12 +477,19 @@ class KeystoreController extends eventEmitter_1.default {
         await this.#storage.set('keystoreKeys', nextKeys);
     }
     async addKeysExternallyStored(keysToAdd) {
-        await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd));
+        await this.withStatus('addKeysExternallyStored', () => this.#addKeysExternallyStored(keysToAdd), true);
     }
     async #addKeys(keysToAdd) {
         await this.#initialLoadPromise;
         if (!keysToAdd.length)
             return;
+        if (!this.isReadyToStoreKeys) {
+            this.#internalKeysToAddOnKeystoreReady = [
+                ...this.#internalKeysToAddOnKeystoreReady,
+                ...keysToAdd
+            ];
+            return;
+        }
         if (this.#mainKey === null)
             throw new EmittableError_1.default({
                 message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
@@ -494,7 +520,7 @@ class KeystoreController extends eventEmitter_1.default {
                 type,
                 label,
                 dedicatedToOneSA,
-                privKey: (0, ethers_1.hexlify)(aesCtr.encrypt(aes_js_1.default.utils.hex.toBytes(privateKey))),
+                privKey: (0, ethers_1.hexlify)(aesCtr.encrypt(aes_js_1.default.utils.hex.toBytes(privateKey))), // TODO: consider a MAC?
                 meta
             };
         })
@@ -507,7 +533,7 @@ class KeystoreController extends eventEmitter_1.default {
         await this.#storage.set('keystoreKeys', nextKeys);
     }
     async addKeys(keysToAdd) {
-        await this.withStatus('addKeys', () => this.#addKeys(keysToAdd));
+        await this.withStatus('addKeys', () => this.#addKeys(keysToAdd), true);
     }
     async removeKey(addr, type) {
         await this.#initialLoadPromise;
@@ -553,12 +579,17 @@ class KeystoreController extends eventEmitter_1.default {
         const decryptedPrivateKey = await this.#getPrivateKey(keyAddress);
         this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` });
     }
-    async sendSeedToUi() {
-        const decrypted = await this.getSavedSeed();
+    async sendSeedToUi(id) {
+        const decrypted = await this.getSavedSeed(id);
         this.#windowManager.sendWindowUiMessage({
             seed: decrypted.seed,
             seedPassphrase: decrypted.seedPassphrase
         });
+    }
+    async sendTempSeedToUi() {
+        if (!this.#tempSeed)
+            return;
+        this.#windowManager.sendWindowUiMessage({ tempSeed: this.#tempSeed });
     }
     async #getPrivateKey(keyAddress) {
         await this.#initialLoadPromise;
@@ -642,33 +673,39 @@ class KeystoreController extends eventEmitter_1.default {
         // @ts-ignore TODO: Figure out the correct type definition
         return new SignerInitializer(key);
     }
-    async getSavedSeed() {
+    async getSavedSeed(id) {
         await this.#initialLoadPromise;
         if (!this.isUnlocked)
             throw new Error('keystore: not unlocked');
         if (!this.#keystoreSeeds.length)
             throw new Error('keystore: no seed phrase added yet');
-        const hdPathTemplate = this.#keystoreSeeds[0].hdPathTemplate;
-        const encryptedSeedBytes = (0, ethers_1.getBytes)(this.#keystoreSeeds[0].seed);
+        const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id);
+        if (!keystoreSeed)
+            throw new Error(`keystore seed with id:${id} not found`);
+        const encryptedSeedBytes = (0, ethers_1.getBytes)(keystoreSeed.seed);
         // @ts-ignore
         const counter = new aes_js_1.default.Counter(this.#mainKey.iv);
         // @ts-ignore
         const aesCtr = new aes_js_1.default.ModeOfOperation.ctr(this.#mainKey.key, counter);
         const decryptedSeedBytes = aesCtr.decrypt(encryptedSeedBytes);
         const decryptedSeed = new TextDecoder().decode(decryptedSeedBytes);
-        if (this.#keystoreSeeds[0].seedPassphrase) {
-            const encryptedSeedPassphraseBytes = (0, ethers_1.getBytes)(this.#keystoreSeeds[0].seedPassphrase);
+        if (keystoreSeed.seedPassphrase) {
+            const encryptedSeedPassphraseBytes = (0, ethers_1.getBytes)(keystoreSeed.seedPassphrase);
             const decryptedSeedPassphraseBytes = aesCtr.decrypt(encryptedSeedPassphraseBytes);
             const decryptedSeedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes);
             return {
+                ...keystoreSeed,
                 seed: decryptedSeed,
-                seedPassphrase: decryptedSeedPassphrase,
-                hdPathTemplate
+                seedPassphrase: decryptedSeedPassphrase
             };
         }
-        return { seed: decryptedSeed, hdPathTemplate };
+        return {
+            ...keystoreSeed,
+            seed: decryptedSeed,
+            seedPassphrase: ''
+        };
     }
-    async #changeKeystorePassword(newSecret, oldSecret) {
+    async #changeKeystorePassword(newSecret, oldSecret, extraEntropy) {
         await this.#initialLoadPromise;
         // In the case the user wants to change their device password,
         // they should also provide the previous password (oldSecret).
@@ -696,10 +733,10 @@ class KeystoreController extends eventEmitter_1.default {
                 error: new Error('keystore: not unlocked')
             });
         await this.#removeSecret('password');
-        await this.#addSecret('password', newSecret, '', true);
+        await this.#addSecret('password', newSecret, extraEntropy, true);
     }
-    async changeKeystorePassword(newSecret, oldSecret) {
-        await this.withStatus('changeKeystorePassword', () => this.#changeKeystorePassword(newSecret, oldSecret));
+    async changeKeystorePassword(newSecret, oldSecret, extraEntropy) {
+        await this.withStatus('changeKeystorePassword', () => this.#changeKeystorePassword(newSecret, oldSecret, extraEntropy));
     }
     async updateKeyPreferences(keys) {
         await this.withStatus('updateKeyPreferences', async () => this.#updateKeyPreferences(keys));
@@ -714,15 +751,6 @@ class KeystoreController extends eventEmitter_1.default {
         await this.#storage.set('keystoreKeys', this.#keystoreKeys);
         this.emitUpdate();
     }
-    async deleteSavedSeed() {
-        await this.withStatus('deleteSavedSeed', () => this.#deleteSavedSeed());
-    }
-    async #deleteSavedSeed() {
-        await this.#initialLoadPromise;
-        this.#keystoreSeeds = [];
-        await this.#storage.set('keystoreSeeds', this.#keystoreSeeds);
-        this.emitUpdate();
-    }
     resetErrorState() {
         this.errorMessage = '';
         this.emitUpdate();
@@ -730,41 +758,57 @@ class KeystoreController extends eventEmitter_1.default {
     get hasPasswordSecret() {
         return this.#keystoreSecrets.some((x) => x.id === 'password');
     }
-    get hasKeystoreSavedSeed() {
-        return !!this.#keystoreSeeds.length;
-    }
     get hasKeystoreTempSeed() {
         return !!this.#tempSeed;
     }
-    get banners() {
-        if (!this.#tempSeed)
-            return [];
-        return [
-            {
-                id: 'tempSeed',
-                type: 'warning',
-                category: 'temp-seed-not-confirmed',
-                title: 'You have an unsaved imported seed',
-                text: '',
-                actions: [
-                    {
-                        label: 'Check',
-                        actionName: 'confirm-temp-seed'
-                    }
-                ]
-            }
-        ];
+    getAccountKeys(acc) {
+        return this.keys.filter((key) => acc.associatedKeys.includes(key.addr));
+    }
+    getFeePayerKey(op) {
+        const feePayerKeys = this.keys.filter((key) => key.addr === op.gasFeePayment.paidBy);
+        const feePayerKey = 
+        // Temporarily prioritize the key with the same type as the signing key.
+        // TODO: Implement a way to choose the key type to broadcast with.
+        feePayerKeys.find((key) => key.type === op.signingKeyType) || feePayerKeys[0];
+        if (!feePayerKey) {
+            const missingKeyAddr = (0, shortenAddress_1.default)(op.gasFeePayment.paidBy, 13);
+            const accAddr = (0, shortenAddress_1.default)(op.accountAddr, 13);
+            return new Error(`Key with address ${missingKeyAddr} for account with address ${accAddr} not found. 'Please try again or contact support if the problem persists.'`);
+        }
+        return feePayerKey;
+    }
+    isKeyIteratorInitializedWithTempSeed(keyIterator) {
+        if (!this.#tempSeed || !keyIterator || keyIterator.subType !== 'seed')
+            return false;
+        return !!keyIterator.isSeedMatching && keyIterator.isSeedMatching(this.#tempSeed.seed);
+    }
+    async getKeystoreSeed(keyIterator) {
+        if (!keyIterator || keyIterator.subType !== 'seed')
+            return null;
+        if (keyIterator.getEncryptedSeed) {
+            const encryptedKeyIteratorSeed = await keyIterator.getEncryptedSeed(this.#getEncryptedSeedPhrase.bind(this));
+            return (this.#keystoreSeeds.find((s) => s.seed === encryptedKeyIteratorSeed?.seed &&
+                (s.seedPassphrase || '') === (encryptedKeyIteratorSeed?.passphrase || '')) || null);
+        }
+        return null;
+    }
+    async updateKeystoreKeys() {
+        const keystoreKeys = await this.#storage.get('keystoreKeys', []);
+        this.#keystoreKeys = keystoreKeys;
+        this.emitUpdate();
     }
     toJSON() {
         return {
             ...this,
             ...super.toJSON(),
+            // includes the getters in the stringified instance
             isUnlocked: this.isUnlocked,
             keys: this.keys,
+            seeds: this.seeds,
             hasPasswordSecret: this.hasPasswordSecret,
-            hasKeystoreSavedSeed: this.hasKeystoreSavedSeed,
             hasKeystoreTempSeed: this.hasKeystoreTempSeed,
-            banners: this.banners
+            hasTempSeed: this.hasTempSeed,
+            isReadyToStoreKeys: this.isReadyToStoreKeys
         };
     }
 }

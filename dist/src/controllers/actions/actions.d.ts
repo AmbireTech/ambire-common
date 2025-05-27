@@ -1,10 +1,10 @@
 import { Account } from '../../interfaces/account';
-import { AccountOpAction, Action, BenzinAction, DappRequestAction, SignMessageAction, SwitchAccountAction } from '../../interfaces/actions';
+import { AccountOpAction, Action, BenzinAction, DappRequestAction, SignMessageAction, SwapAndBridgeAction, SwitchAccountAction } from '../../interfaces/actions';
 import { NotificationManager } from '../../interfaces/notification';
 import { WindowManager, WindowProps } from '../../interfaces/window';
 import EventEmitter from '../eventEmitter/eventEmitter';
 import { SelectedAccountController } from '../selectedAccount/selectedAccount';
-export type { SwitchAccountAction, Action, AccountOpAction, SignMessageAction, BenzinAction, DappRequestAction };
+export type { AccountOpAction, Action, BenzinAction, DappRequestAction, SignMessageAction, SwitchAccountAction, SwapAndBridgeAction };
 export type ActionPosition = 'first' | 'last';
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window';
 /**
@@ -23,7 +23,7 @@ export declare class ActionsController extends EventEmitter {
     actionWindow: {
         windowProps: WindowProps;
         openWindowPromise?: Promise<WindowProps>;
-        focusWindowPromise?: Promise<void>;
+        focusWindowPromise?: Promise<WindowProps>;
         loaded: boolean;
         pendingMessage: {
             message: string;

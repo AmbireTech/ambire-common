@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUniV3Positions = void 0;
+exports.getUniV3Positions = getUniV3Positions;
 const tslib_1 = require("tslib");
 const DeFiUniswapV3Positions_json_1 = tslib_1.__importDefault(require("../../../../contracts/compiled/DeFiUniswapV3Positions.json"));
 const deployless_1 = require("../../deployless/deployless");
@@ -8,10 +8,10 @@ const defiAddresses_1 = require("../defiAddresses");
 const types_1 = require("../types");
 const univ3Math_1 = require("./helpers/univ3Math");
 async function getUniV3Positions(userAddr, provider, network) {
-    const networkId = network.id;
-    if (networkId && !defiAddresses_1.UNISWAP_V3[networkId])
+    const { chainId } = network;
+    if (chainId && !defiAddresses_1.UNISWAP_V3[chainId.toString()])
         return null;
-    const { nonfungiblePositionManagerAddr, factoryAddr } = defiAddresses_1.UNISWAP_V3[networkId];
+    const { nonfungiblePositionManagerAddr, factoryAddr } = defiAddresses_1.UNISWAP_V3[chainId.toString()];
     const deploylessDeFiPositionsGetter = (0, deployless_1.fromDescriptor)(provider, DeFiUniswapV3Positions_json_1.default, network.rpcNoStateOverride);
     const [result] = await deploylessDeFiPositionsGetter.call('getUniV3Position', [
         userAddr,
@@ -21,8 +21,10 @@ async function getUniV3Positions(userAddr, provider, network) {
     const data = result.map((asset) => ({
         positionId: asset.positionId,
         token0Symbol: asset.token0Symbol,
+        token0Name: asset.token0Name,
         token0Decimals: asset.token0Decimals,
         token1Symbol: asset.token1Symbol,
+        token1Name: asset.token1Name,
         token1Decimals: asset.token1Decimals,
         feeGrowthGlobal0X128: asset.feeGrowthGlobal0X128,
         positionInfo: {
@@ -62,6 +64,7 @@ async function getUniV3Positions(userAddr, provider, network) {
                 {
                     address: pos.positionInfo.token0,
                     symbol: pos.token0Symbol,
+                    name: pos.token0Name,
                     decimals: Number(pos.token0Decimals),
                     amount: BigInt(tokenAmounts.amount0),
                     type: types_1.AssetType.Liquidity
@@ -69,6 +72,7 @@ async function getUniV3Positions(userAddr, provider, network) {
                 {
                     address: pos.positionInfo.token1,
                     symbol: pos.token1Symbol,
+                    name: pos.token1Name,
                     decimals: Number(pos.token1Decimals),
                     amount: BigInt(tokenAmounts.amount1),
                     type: types_1.AssetType.Liquidity
@@ -81,10 +85,9 @@ async function getUniV3Positions(userAddr, provider, network) {
         return null;
     return {
         providerName: 'Uniswap V3',
-        networkId,
+        chainId,
         type: 'liquidity-pool',
         positions
     };
 }
-exports.getUniV3Positions = getUniV3Positions;
 //# sourceMappingURL=uniV3.js.map

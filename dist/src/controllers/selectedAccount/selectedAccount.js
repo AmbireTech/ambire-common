@@ -33,6 +33,7 @@ class SelectedAccountController extends eventEmitter_1.default {
     account = null;
     portfolio = exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
     portfolioStartedLoadingAtTimestamp = null;
+    #isPortfolioLoadingFromScratch = true;
     dashboardNetworkFilter = null;
     #shouldDebounceFlags = {};
     defiPositions = [];
@@ -42,6 +43,7 @@ class SelectedAccountController extends eventEmitter_1.default {
     areControllersInitialized = false;
     // Holds the initial load promise, so that one can wait until it completes
     initialLoadPromise;
+    #cashbackStatusByAccount = {};
     constructor({ storage, accounts }) {
         super();
         this.#storage = storage;
@@ -52,8 +54,8 @@ class SelectedAccountController extends eventEmitter_1.default {
     async #load() {
         await this.#accounts.initialLoadPromise;
         const selectedAccountAddress = await this.#storage.get('selectedAccount', null);
-        const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress);
-        this.account = selectedAccount || null;
+        this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {});
+        this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null;
         this.isReady = true;
         this.emitUpdate();
     }
@@ -91,7 +93,7 @@ class SelectedAccountController extends eventEmitter_1.default {
             this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
                 if (!this.dashboardNetworkFilter)
                     return;
-                const dashboardFilteredNetwork = this.#networks.networks.find((n) => n.id === this.dashboardNetworkFilter);
+                const dashboardFilteredNetwork = this.#networks.networks.find((n) => n.chainId === this.dashboardNetworkFilter);
                 // reset the dashboardNetworkFilter if the network is removed
                 if (!dashboardFilteredNetwork)
                     this.setDashboardNetworkFilter(null);
@@ -134,6 +136,7 @@ class SelectedAccountController extends eventEmitter_1.default {
     resetSelectedAccountPortfolio(skipUpdate) {
         this.portfolio = exports.DEFAULT_SELECTED_ACCOUNT_PORTFOLIO;
         this.#portfolioErrors = [];
+        this.#isPortfolioLoadingFromScratch = true;
         if (!skipUpdate) {
             this.emitUpdate();
         }
@@ -147,18 +150,50 @@ class SelectedAccountController extends eventEmitter_1.default {
         const latestStateSelectedAccountWithDefiPositions = (0, selectedAccount_1.updatePortfolioStateWithDefiPositions)(latestStateSelectedAccount, defiPositionsAccountState, this.areDefiPositionsLoading);
         const pendingStateSelectedAccountWithDefiPositions = (0, selectedAccount_1.updatePortfolioStateWithDefiPositions)(pendingStateSelectedAccount, defiPositionsAccountState, this.areDefiPositionsLoading);
         const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter((action) => action.type === 'accountOp');
-        const newSelectedAccountPortfolio = (0, selectedAccount_1.calculateSelectedAccountPortfolio)(latestStateSelectedAccountWithDefiPositions, pendingStateSelectedAccountWithDefiPositions, this.portfolio, this.portfolioStartedLoadingAtTimestamp, defiPositionsAccountState, hasSignAccountOp);
+        const newSelectedAccountPortfolio = (0, selectedAccount_1.calculateSelectedAccountPortfolio)(latestStateSelectedAccountWithDefiPositions, pendingStateSelectedAccountWithDefiPositions, this.portfolio, this.portfolioStartedLoadingAtTimestamp, defiPositionsAccountState, hasSignAccountOp, this.#isPortfolioLoadingFromScratch);
+        // Reset the loading timestamp if the portfolio is ready
         if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
             this.portfolioStartedLoadingAtTimestamp = null;
         }
+        // Set the loading timestamp when the portfolio starts loading
         if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
             this.portfolioStartedLoadingAtTimestamp = Date.now();
         }
-        if (newSelectedAccountPortfolio.isReadyToVisualize ||
-            (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)) {
-            this.portfolio = newSelectedAccountPortfolio;
-            this.#updatePortfolioErrors(true);
+        // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
+        if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
+            this.#isPortfolioLoadingFromScratch = false;
         }
+        this.portfolio = newSelectedAccountPortfolio;
+        this.#updatePortfolioErrors(true);
+        this.updateCashbackStatus(skipUpdate);
+        if (!skipUpdate) {
+            this.emitUpdate();
+        }
+    }
+    async updateCashbackStatus(skipUpdate) {
+        if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result)
+            return;
+        const accountId = this.account.addr;
+        const gasTankResult = this.portfolio.latest.gasTank.result;
+        const isCashbackZero = gasTankResult.gasTankTokens?.[0]?.cashback === 0n;
+        const cashbackWasZeroBefore = this.#cashbackStatusByAccount[accountId] === 'no-cashback';
+        const notReceivedFirstCashbackBefore = this.#cashbackStatusByAccount[accountId] !== 'unseen-cashback';
+        if (isCashbackZero) {
+            await this.changeCashbackStatus('no-cashback', skipUpdate);
+        }
+        else if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
+            await this.changeCashbackStatus('unseen-cashback', skipUpdate);
+        }
+    }
+    async changeCashbackStatus(newStatus, skipUpdate) {
+        if (!this.account)
+            return;
+        const accountId = this.account.addr;
+        this.#cashbackStatusByAccount = {
+            ...this.#cashbackStatusByAccount,
+            [accountId]: newStatus
+        };
+        await this.#storage.set('cashbackStatusByAccount', this.#cashbackStatusByAccount);
         if (!skipUpdate) {
             this.emitUpdate();
         }
@@ -252,7 +287,8 @@ class SelectedAccountController extends eventEmitter_1.default {
         const errorBanners = (0, errors_1.getNetworksWithPortfolioErrorErrors)({
             networks: this.#networks.networks,
             selectedAccountLatest: this.portfolio.latest,
-            providers: this.#providers.providers
+            providers: this.#providers.providers,
+            isAllReady: this.portfolio.isAllReady
         });
         this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners];
         if (!skipUpdate) {
@@ -266,8 +302,8 @@ class SelectedAccountController extends eventEmitter_1.default {
         if (!this.account || !(0, account_1.isSmartAccount)(this.account))
             return [];
         if (!this.#accounts.accountStates[this.account.addr] ||
-            !this.#accounts.accountStates[this.account.addr].ethereum ||
-            !this.#accounts.accountStates[this.account.addr].ethereum.isV2)
+            !this.#accounts.accountStates[this.account.addr]['1'] ||
+            !this.#accounts.accountStates[this.account.addr]['1'].isV2)
             return [];
         if (!this.account.creation ||
             (0, ethers_1.getAddress)(this.account.creation.factoryAddr) === deploy_1.AMBIRE_ACCOUNT_FACTORY)
@@ -289,8 +325,13 @@ class SelectedAccountController extends eventEmitter_1.default {
             return [];
         return (0, banners_1.getFirstCashbackBanners)({
             selectedAccountAddr: this.account.addr,
-            cashbackStatusByAccount: this.#portfolio.cashbackStatusByAccount
+            cashbackStatusByAccount: this.#cashbackStatusByAccount
         });
+    }
+    get cashbackStatus() {
+        if (!this.account)
+            return undefined;
+        return this.#cashbackStatusByAccount[this.account.addr];
     }
     setDashboardNetworkFilter(networkFilter) {
         this.dashboardNetworkFilter = networkFilter;
@@ -301,6 +342,7 @@ class SelectedAccountController extends eventEmitter_1.default {
             ...this,
             ...super.toJSON(),
             firstCashbackBanner: this.firstCashbackBanner,
+            cashbackStatus: this.cashbackStatus,
             deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
             areDefiPositionsLoading: this.areDefiPositionsLoading,
             balanceAffectingErrors: this.balanceAffectingErrors

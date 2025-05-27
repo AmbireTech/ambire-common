@@ -16,10 +16,9 @@ class SignMessageController extends eventEmitter_1.default {
     #networks;
     #externalSignerControllers;
     #accounts;
-    // this is the signer from keystore.ts
-    // we don't have a correct return type at getSigner so
-    // I'm leaving it as any
+    #invite;
     #signer;
+    #onReset;
     isInitialized = false;
     statuses = STATUS_WRAPPED_METHODS;
     dapp = null;
@@ -27,13 +26,15 @@ class SignMessageController extends eventEmitter_1.default {
     signingKeyAddr = null;
     signingKeyType = null;
     signedMessage = null;
-    constructor(keystore, providers, networks, accounts, externalSignerControllers) {
+    constructor(keystore, providers, networks, accounts, externalSignerControllers, invite, onReset) {
         super();
         this.#keystore = keystore;
         this.#providers = providers;
         this.#networks = networks;
         this.#externalSignerControllers = externalSignerControllers;
         this.#accounts = accounts;
+        this.#invite = invite;
+        this.#onReset = onReset;
     }
     async init({ dapp, messageToSign }) {
         // In the unlikely case that the signMessage controller was already
@@ -42,7 +43,7 @@ class SignMessageController extends eventEmitter_1.default {
         if (this.isInitialized)
             this.reset();
         await this.#accounts.initialLoadPromise;
-        if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
+        if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
             if (dapp) {
                 this.dapp = dapp;
             }
@@ -61,6 +62,8 @@ class SignMessageController extends eventEmitter_1.default {
     reset() {
         if (!this.isInitialized)
             return;
+        if (this.#onReset)
+            this.#onReset();
         this.isInitialized = false;
         this.dapp = null;
         this.messageToSign = null;
@@ -92,28 +95,28 @@ class SignMessageController extends eventEmitter_1.default {
             if (!account) {
                 throw new Error('Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.');
             }
-            const network = this.#networks.networks.find(
-            // @ts-ignore this.messageToSign is not null and it has a check
-            // but typescript malfunctions here
-            (n) => n.id === this.messageToSign.networkId);
+            const network = this.#networks.networks.find((n) => n.chainId === this.messageToSign.chainId);
             if (!network) {
                 throw new Error('Network not supported on Ambire. Please contract support.');
             }
-            const accountState = this.#accounts.accountStates[account.addr][network.id];
+            const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()];
             let signature;
+            // It is defined when messageToSign.content.kind === 'message'
+            let hexMessage;
             try {
                 if (this.messageToSign.content.kind === 'message') {
                     const message = this.messageToSign.content.message;
-                    this.messageToSign.content.message = (0, ethers_1.isHexString)(message)
-                        ? message
-                        : (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(message.toString()));
-                    signature = await (0, signMessage_1.getPlainTextSignature)(this.messageToSign.content.message, network, account, accountState, this.#signer);
+                    hexMessage = (0, ethers_1.isHexString)(message) ? message : (0, ethers_1.hexlify)((0, ethers_1.toUtf8Bytes)(message));
+                    signature = await (0, signMessage_1.getPlainTextSignature)(hexMessage, network, account, accountState, this.#signer, this.#invite.isOG);
                 }
                 if (this.messageToSign.content.kind === 'typedMessage') {
                     if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
                         throw new Error('It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.');
                     }
-                    signature = await (0, signMessage_1.getEIP712Signature)(this.messageToSign.content, account, accountState, this.#signer, network);
+                    signature = await (0, signMessage_1.getEIP712Signature)(this.messageToSign.content, account, accountState, this.#signer, network, this.#invite.isOG);
+                }
+                if (this.messageToSign.content.kind === 'authorization-7702') {
+                    signature = this.#signer.sign7702(this.messageToSign.content.message);
                 }
             }
             catch (error) {
@@ -123,43 +126,37 @@ class SignMessageController extends eventEmitter_1.default {
             if (!signature) {
                 throw new Error('Ambire was not able to retrieve the signature. Please try again or contact support if the problem persists.');
             }
-            // if the account is not deployed, it should be wrapped with EIP-6492
-            // magic bytes
-            signature =
-                account.creation && !accountState.isDeployed
-                    ? // https://eips.ethereum.org/EIPS/eip-6492
-                        (0, signMessage_1.wrapCounterfactualSign)(signature, account.creation)
-                    : signature;
-            const personalMsgToValidate = typeof this.messageToSign.content.message === 'string'
-                ? (0, hexStringToUint8Array_1.default)(this.messageToSign.content.message)
-                : this.messageToSign.content.message;
-            const isValidSignature = await (0, signMessage_1.verifyMessage)({
+            const verifyMessageParams = {
                 network,
-                provider: this.#providers.providers[network?.id || 'ethereum'],
+                provider: this.#providers.providers[network?.chainId.toString() || '1'],
                 // the signer is always the account even if the actual
                 // signature is from a key that has privs to the account
                 signer: this.messageToSign?.accountAddr,
-                signature,
-                // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
-                message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
-                typedData: this.messageToSign.content.kind === 'typedMessage'
-                    ? {
-                        domain: this.messageToSign.content.domain,
-                        types: this.messageToSign.content.types,
-                        message: this.messageToSign.content.message
-                    }
-                    : undefined
-            });
+                signature: (0, signMessage_1.getVerifyMessageSignature)(signature, account, accountState),
+                // eslint-disable-next-line no-nested-ternary
+                ...(this.messageToSign.content.kind === 'message'
+                    ? { message: (0, hexStringToUint8Array_1.default)(hexMessage) }
+                    : this.messageToSign.content.kind === 'typedMessage'
+                        ? {
+                            typedData: {
+                                domain: this.messageToSign.content.domain,
+                                types: this.messageToSign.content.types,
+                                message: this.messageToSign.content.message
+                            }
+                        }
+                        : { authorization: this.messageToSign.content.message })
+            };
+            const isValidSignature = await (0, signMessage_1.verifyMessage)(verifyMessageParams);
             if (!isValidSignature) {
                 throw new Error('Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.');
             }
             this.signedMessage = {
                 fromActionId: this.messageToSign.fromActionId,
                 accountAddr: this.messageToSign.accountAddr,
-                networkId: this.messageToSign.networkId,
+                chainId: this.messageToSign.chainId,
                 content: this.messageToSign.content,
                 timestamp: new Date().getTime(),
-                signature,
+                signature: (0, signMessage_1.getAppFormatted)(signature, account, accountState),
                 dapp: this.dapp
             };
             return this.signedMessage;

@@ -4,20 +4,20 @@ const getAccountNetworksWithPositions = (accountId, accountState, oldNetworksWit
     const networksWithPositions = {
         ...oldNetworksWithPositionsByAccounts[accountId]
     };
-    Object.keys(accountState).forEach((networkId) => {
-        if (!providers[networkId])
+    Object.keys(accountState).forEach((chainId) => {
+        if (!providers[chainId])
             return;
-        const isRPCDown = !providers[networkId].isWorking;
-        const { positionsByProvider, error, providerErrors } = accountState[networkId];
+        const isRPCDown = !providers[chainId].isWorking;
+        const { positionsByProvider, error, providerErrors } = accountState[chainId];
         // RPC is down or an error occurred
         if (error || isRPCDown || providerErrors?.length)
             return;
-        networksWithPositions[networkId] = positionsByProvider.reduce((networksWithPositionsByProviders, provider) => {
+        networksWithPositions[chainId] = positionsByProvider.reduce((networksWithPositionsByProviders, provider) => {
             if (networksWithPositionsByProviders.includes(provider.providerName))
                 return networksWithPositionsByProviders;
             networksWithPositionsByProviders.push(provider.providerName);
             return networksWithPositionsByProviders;
-        }, networksWithPositions[networkId] || []);
+        }, networksWithPositions[chainId] || []);
     });
     return networksWithPositions;
 };

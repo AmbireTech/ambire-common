@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getEoaSimulationStateOverride = void 0;
+exports.getEoaSimulationStateOverride = getEoaSimulationStateOverride;
 const tslib_1 = require("tslib");
 const ethers_1 = require("ethers");
 const AmbireAccount_json_1 = tslib_1.__importDefault(require("../../contracts/compiled/AmbireAccount.json"));
@@ -24,5 +24,4 @@ function getEoaSimulationStateOverride(accountAddr) {
         }
     };
 }
-exports.getEoaSimulationStateOverride = getEoaSimulationStateOverride;
 //# sourceMappingURL=simulationStateOverride.js.map
