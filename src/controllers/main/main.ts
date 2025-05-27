@@ -1691,6 +1691,10 @@ export class MainController extends EventEmitter {
       })
       return
     }
+    if (userRequest.length === 1) {
+      this.addUserRequest(userRequest[0], 'last', actionExecutionType)
+      return
+    }
 
     for (let i = 0; i < userRequest.length; i++) {
       if (i === 0) {
