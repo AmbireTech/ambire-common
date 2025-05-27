@@ -1006,7 +1006,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (!searchTerm) return // should never happen
 
-    const normalizedSearchTerm = searchTerm.toLowerCase()
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase()
     this.toTokenSearchTerm = normalizedSearchTerm
 
     const { exactMatches, partialMatches } = this.#toTokenList.reduce(
