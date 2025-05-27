@@ -4,6 +4,8 @@ export const getHdPathFromTemplate = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, ind
   return hdPathTemplate.replace('<account>', index.toString())
 }
 
+export const getHdPathWithoutRoot = (hdPath: string) => hdPath.slice(2)
+
 const HARDENED_OFFSET = 0x80000000
 export const getHDPathIndices = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, insertIdx = 0) => {
   const path = hdPathTemplate.split('/').slice(1)
