@@ -982,5 +982,37 @@ export default [
     symbol: 'UNI',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/12504/standard/uniswap-logo.png?1720676669'
+  },
+  {
+    // USDC.e
+    address: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
+    chainId: 57073n,
+    symbol: 'USDC.e',
+    decimals: 6,
+    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
+  },
+  {
+    // USD₮0
+    address: '0x0200C29006150606B650577BBE7B6248F58470c1',
+    chainId: 57073n,
+    symbol: 'USD₮0',
+    decimals: 6,
+    icon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
+  },
+  {
+    // WETH
+    address: '0x4200000000000000000000000000000000000006',
+    chainId: 57073n,
+    symbol: 'WETH',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/32315/small/weth_%281%29.png?1697365181'
+  },
+  {
+    // kBTC
+    address: '0x73E0C0d45E048D25Fc26Fa3159b0aA04BfA4Db98',
+    chainId: 57073n,
+    symbol: 'kBTC',
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/50879/standard/kBTC.png?1730321084'
   }
 ]
