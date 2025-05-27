@@ -14,25 +14,33 @@
  * Additionally, JSON.serialize and JSON.parse do not properly serialize the Error object, so we extend that functionality here as well.
  */
 
-export function stringify(obj: any): string {
-  return JSON.stringify(obj, (key, value) => {
-    if (typeof value === 'bigint') {
-      return { $bigint: value.toString() }
-    }
+interface Options {
+  pretty?: boolean
+}
 
-    if (value instanceof Error) {
-      const error: any = {}
+export function stringify(obj: any, opts?: Options): string {
+  return JSON.stringify(
+    obj,
+    (key, value) => {
+      if (typeof value === 'bigint') {
+        return { $bigint: value.toString() }
+      }
 
-      Object.getOwnPropertyNames(value).forEach((propName) => {
-        // @ts-ignore
-        error[propName] = value[propName]
-      })
+      if (value instanceof Error) {
+        const error: any = {}
 
-      return error
-    }
+        Object.getOwnPropertyNames(value).forEach((propName) => {
+          // @ts-ignore
+          error[propName] = value[propName]
+        })
 
-    return value
-  })
+        return error
+      }
+
+      return value
+    },
+    opts?.pretty ? 4 : 0
+  )
 }
 
 export function parse(json: string) {

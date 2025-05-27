@@ -3,6 +3,7 @@ import { toBeHex, toQuantity } from 'ethers'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
+import { BaseAccount } from '../account/BaseAccount'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp } from '../userOperation/userOperation'
 import {
@@ -14,21 +15,41 @@ import {
 
 export function getPaymasterService(
   chainId: bigint,
-  capabilities?: { paymasterService?: PaymasterCapabilities }
+  capabilities?: { paymasterService?: PaymasterCapabilities | PaymasterService }
 ): PaymasterService | undefined {
   if (!capabilities || !capabilities.paymasterService) return undefined
 
-  // hex may come with a leading zero or not. Prepare for both
-  const chainIdHex = toBeHex(chainId) as `0x${string}`
-  const chainIdQuantity = toQuantity(chainId) as `0x${string}`
-  const paymasterService =
-    chainIdHex in capabilities.paymasterService
-      ? capabilities.paymasterService[chainIdHex]
-      : capabilities.paymasterService[chainIdQuantity]
-  if (!paymasterService) return undefined
+  // this means it's v2
+  if ('url' in capabilities.paymasterService) {
+    const paymasterService = capabilities.paymasterService
+    paymasterService.id = new Date().getTime()
+    return paymasterService
+  }
 
+  // hex may come with a leading zero or not. Prepare for both
+  const chainIds = Object.keys(capabilities.paymasterService)
+  const chainIdHex = toBeHex(chainId).toLowerCase() as `0x${string}`
+  const chainIdQuantity = toQuantity(chainId).toLowerCase() as `0x${string}`
+  const foundChainId: any = chainIds.find(
+    (id) => id.toLowerCase() === chainIdHex || id.toLowerCase() === chainIdQuantity
+  )
+  if (!foundChainId) return undefined
+
+  const paymasterService = capabilities.paymasterService[foundChainId]
   paymasterService.id = new Date().getTime()
   return paymasterService
+}
+
+export function getAmbirePaymasterService(
+  baseAcc: BaseAccount,
+  relayerUrl: string
+): PaymasterService | undefined {
+  if (!baseAcc.isSponsorable()) return undefined
+
+  return {
+    url: `${relayerUrl}/v2/sponsorship`,
+    id: new Date().getTime()
+  }
 }
 
 export function getPaymasterStubData(

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import {
   AccountOpAction,
@@ -7,6 +8,7 @@ import {
   BenzinAction,
   DappRequestAction,
   SignMessageAction,
+  SwapAndBridgeAction,
   SwitchAccountAction
 } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
@@ -14,7 +16,6 @@ import { WindowManager, WindowProps } from '../../interfaces/window'
 // eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
-import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter/eventEmitter'
 // Kind of inevitable, the AccountsController has SelectedAccountController, which has ActionsController
 // eslint-disable-next-line import/no-cycle
@@ -22,18 +23,23 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 // TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
 export type {
-  SwitchAccountAction,
-  Action,
   AccountOpAction,
-  SignMessageAction,
+  Action,
   BenzinAction,
-  DappRequestAction
+  DappRequestAction,
+  SignMessageAction,
+  SwitchAccountAction,
+  SwapAndBridgeAction
 }
 
 export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
+const SWAP_AND_BRIDGE_WINDOW_SIZE = {
+  width: 640,
+  height: 640
+}
 /**
  * The ActionsController is responsible for storing the converted userRequests
  * from the MainController into actions. After adding an action an action-window will be opened with the first action form actionsQueue
@@ -55,7 +61,7 @@ export class ActionsController extends EventEmitter {
   actionWindow: {
     windowProps: WindowProps
     openWindowPromise?: Promise<WindowProps>
-    focusWindowPromise?: Promise<void>
+    focusWindowPromise?: Promise<WindowProps>
     loaded: boolean
     pendingMessage: {
       message: string
@@ -90,6 +96,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'switchAccount') {
         return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
+      }
+      if (a.type === 'swapAndBridge') {
+        return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
       }
 
       return true
@@ -161,7 +170,15 @@ export class ActionsController extends EventEmitter {
     executionType: ActionExecutionType = 'open-action-window'
   ) {
     // remove the benzin action if a new actions is added
-    this.actionsQueue = this.actionsQueue.filter((a) => a.type !== 'benzin')
+    this.actionsQueue = this.actionsQueue.filter((a) => {
+      if (a.type === 'benzin') return false
+
+      if (a.type === 'switchAccount') {
+        return a.userRequest.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
+      }
+
+      return true
+    })
     if (this.currentAction && this.currentAction.type === 'benzin') {
       this.currentAction = null
     }
@@ -207,57 +224,49 @@ export class ActionsController extends EventEmitter {
 
   removeAction(actionId: Action['id'], shouldOpenNextAction: boolean = true) {
     this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
-    if (shouldOpenNextAction) {
-      this.#setCurrentAction(this.visibleActionsQueue[0] || null)
+
+    if (!this.visibleActionsQueue.length) {
+      this.#setCurrentAction(null)
+    } else if (shouldOpenNextAction) {
+      this.#setCurrentAction(this.visibleActionsQueue[0])
     }
   }
 
   #setCurrentAction(nextAction: Action | null) {
     this.currentAction = nextAction
+    this.emitUpdate()
 
-    if (nextAction && nextAction.id === this.currentAction?.id) {
+    if (nextAction) {
       this.openActionWindow()
-      this.emitUpdate()
       return
     }
 
-    if (!this.currentAction) {
-      !!this.actionWindow.windowProps?.id &&
-        this.#windowManager.remove(this.actionWindow.windowProps.id)
-    } else {
-      this.openActionWindow()
-    }
+    if (!this.actionWindow.windowProps?.id) return
 
-    this.emitUpdate()
+    this.#windowManager.remove(this.actionWindow.windowProps.id)
   }
 
   setCurrentActionById(actionId: Action['id']) {
     const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
-    if (!action) {
-      const entryPointAction = this.visibleActionsQueue.find(
-        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-      )
-
-      if (entryPointAction) this.#setCurrentAction(entryPointAction)
-
-      return
-    }
-
+    if (!action)
+      throw new EmittableError({
+        message:
+          'Failed to open request window. If the issue persists, please reject the request and try again.',
+        level: 'major',
+        error: new Error(`Action not found. Id: ${actionId}`)
+      })
     this.#setCurrentAction(action)
   }
 
   setCurrentActionByIndex(actionIndex: number) {
     const action = this.visibleActionsQueue[actionIndex]
-
-    if (!action) {
-      const entryPointAction = this.visibleActionsQueue.find(
-        (a) => a.id.toString() === ENTRY_POINT_AUTHORIZATION_REQUEST_ID
-      )
-      if (entryPointAction) this.#setCurrentAction(entryPointAction)
-
-      return
-    }
-
+    if (!action)
+      throw new EmittableError({
+        message:
+          'Failed to open request window. If the issue persists, please reject the request and try again.',
+        level: 'major',
+        error: new Error(`Action not found. Index: ${actionIndex}`)
+      })
     this.#setCurrentAction(action)
   }
 
@@ -279,14 +288,29 @@ export class ActionsController extends EventEmitter {
     if (this.actionWindow.windowProps) {
       this.focusActionWindow()
     } else {
+      let customSize
+
+      if (this.currentAction?.type === 'swapAndBridge') {
+        customSize = SWAP_AND_BRIDGE_WINDOW_SIZE
+      }
+
       try {
-        this.actionWindow.openWindowPromise = this.#windowManager.open().finally(() => {
-          this.actionWindow.openWindowPromise = undefined
-        })
+        this.actionWindow.openWindowPromise = this.#windowManager
+          .open({
+            customSize
+          })
+          .finally(() => {
+            this.actionWindow.openWindowPromise = undefined
+          })
         this.actionWindow.windowProps = await this.actionWindow.openWindowPromise
         this.emitUpdate()
       } catch (err) {
-        console.error('Error opening action window:', err)
+        this.emitError({
+          message:
+            'Failed to open a new request window. Please restart your browser if the issue persists.',
+          level: 'major',
+          error: err as Error
+        })
       }
     }
   }
@@ -302,9 +326,21 @@ export class ActionsController extends EventEmitter {
         .finally(() => {
           this.actionWindow.focusWindowPromise = undefined
         })
+
+      const newActionWindowProps = await this.actionWindow.focusWindowPromise
+
+      if (newActionWindowProps) {
+        this.actionWindow.windowProps = newActionWindowProps
+      }
+
       this.emitUpdate()
     } catch (err) {
-      console.error('Error focusing action window:', err)
+      this.emitError({
+        message:
+          'Failed to focus the request window. Please restart your browser if the issue persists.',
+        level: 'major',
+        error: err as Error
+      })
     }
   }
 
@@ -340,6 +376,9 @@ export class ActionsController extends EventEmitter {
       }
       if (a.type === 'switchAccount') {
         return a.userRequest.meta.switchToAccountAddr !== address
+      }
+      if (a.type === 'swapAndBridge') {
+        return a.userRequest.meta.accountAddr !== address
       }
 
       return true

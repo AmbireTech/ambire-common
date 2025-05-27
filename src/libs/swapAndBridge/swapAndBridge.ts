@@ -1,21 +1,24 @@
-import { Contract, getAddress, Interface, MaxUint256 } from 'ethers'
+import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  ActiveRoute,
-  SocketAPIBridgeUserTx,
-  SocketAPISendTransactionRequest,
-  SocketAPIStep,
-  SocketAPIToken,
   SocketAPIUserTx,
+  SwapAndBridgeActiveRoute,
+  SwapAndBridgeRoute,
+  SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
-import { SignUserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../account/account'
+import {
+  AMBIRE_WALLET_TOKEN_ON_BASE,
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM
+} from '../../services/socket/constants'
+import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
+import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
@@ -37,11 +40,62 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   return 0
 }
 
+export const attemptToSortTokensByMarketCap = async ({
+  fetch,
+  chainId,
+  tokens
+}: {
+  fetch: Fetch
+  chainId: number
+  tokens: SwapAndBridgeToToken[]
+}) => {
+  try {
+    const tokenAddressesByMarketCapRes = await fetch(
+      `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`
+    )
+
+    if (tokenAddressesByMarketCapRes.status !== 200)
+      throw new Error(`Got status ${tokenAddressesByMarketCapRes.status} from the API.`)
+
+    const tokenAddressesByMarketCap = await tokenAddressesByMarketCapRes.json()
+
+    // Highest market cap comes first from the response
+    const addressPriority = new Map(
+      tokenAddressesByMarketCap.data.map((addr: string, index: number) => [addr, index])
+    )
+
+    // Sort the result by the market cap response order position (highest first)
+    return tokens.sort((a, b) => {
+      const aPriority = addressPriority.get(a.address)
+      const bPriority = addressPriority.get(b.address)
+
+      if (aPriority !== undefined && bPriority !== undefined)
+        return (aPriority as number) - (bPriority as number)
+
+      if (aPriority !== undefined) return -1
+      if (bPriority !== undefined) return 1
+      return 0
+    })
+  } catch (e) {
+    // Fail silently, no biggie
+    console.error(`Sorting Swap & Bridge tokens by market for network with id ${chainId} failed`, e)
+    return tokens
+  }
+}
+
+export const sortNativeTokenFirst = (tokens: SwapAndBridgeToToken[]) => {
+  return tokens.sort((a, b) => {
+    if (a.address === ZeroAddress) return -1
+    if (b.address === ZeroAddress) return 1
+    return 0
+  })
+}
+
 export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  return tokenListResponse.sort((a: SocketAPIToken, b: SocketAPIToken) => {
+  return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
     const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
     const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
 
@@ -54,8 +108,8 @@ export const sortTokenListResponse = (
       if (comparisonResult !== 0) return comparisonResult
     }
 
-    // Otherwise, just alphabetical
-    return (a.name || '').localeCompare(b.name || '')
+    // Otherwise, don't change, persist the order from the service provider
+    return 0
   })
 }
 
@@ -91,52 +145,27 @@ export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
   )
 }
 
-export const convertPortfolioTokenToSocketAPIToken = (
+export const convertPortfolioTokenToSwapAndBridgeToToken = (
   portfolioToken: TokenResult,
   chainId: number
-): SocketAPIToken => {
+): SwapAndBridgeToToken => {
   const { address, decimals, symbol } = portfolioToken
   // Although name and symbol will be the same, it's better than having "No name" in the UI (valid use-case)
   const name = symbol
   // Fine for not having both icon props, because this would fallback to the
   // icon discovery method used for the portfolio tokens
   const icon = ''
-  const logoURI = ''
 
-  return { address, chainId, decimals, symbol, name, icon, logoURI }
+  return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getQuoteRouteSteps = (userTxs: SocketAPIUserTx[]) => {
-  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
-    if (tx.userTxType === 'fund-movr') {
-      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
-    }
-    if (tx.userTxType === 'dex-swap') {
-      stepsAcc.push({
-        chainId: tx.chainId,
-        fromAmount: tx.fromAmount,
-        fromAsset: tx.fromAsset,
-        gasFees: tx.gasFees,
-        minAmountOut: tx.minAmountOut,
-        protocol: tx.protocol,
-        swapSlippage: tx.swapSlippage,
-        toAmount: tx.toAmount,
-        toAsset: tx.toAsset,
-        type: 'swap',
-        userTxIndex: tx.userTxIndex
-      })
-    }
-    return stepsAcc
-  }, [])
-}
-
-const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
+const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]) => {
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
-    r.route.userTxs.forEach((tx) => {
-      if ((tx as SocketAPIBridgeUserTx).serviceTime) {
-        serviceTimes.push((tx as SocketAPIBridgeUserTx).serviceTime)
+    r.route?.userTxs.forEach((tx) => {
+      if (tx.serviceTime) {
+        serviceTimes.push(tx.serviceTime)
       }
     })
   )
@@ -145,24 +174,27 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: ActiveRoute[]) => {
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
-  if (!minServiceTime) return 7000
+  if (!minServiceTime) return 30000
 
-  if (minServiceTime < 60) return 5000
-  if (minServiceTime <= 180) return 6000
-  if (minServiceTime <= 300) return 8000
-  if (minServiceTime <= 600) return 12000
+  // the absolute minimum needs to be 30s, it's not a game changer
+  // if the user waits an additional 15s to get a status check
+  // but it's a game changer if we brick the API with a 429
+  if (minServiceTime <= 300) return 30000
+  if (minServiceTime <= 600) return 60000
 
-  return 15000
+  return 30000
 }
 
+// If you have approval that has not been spent (in some smart contracts), the transaction may revert
 const buildRevokeApprovalIfNeeded = async (
-  userTx: SocketAPISendTransactionRequest,
+  userTx: SwapAndBridgeSendTxRequest,
   account: Account,
+  state: AccountOnchainState,
   provider: RPCProvider
 ): Promise<Call | undefined> => {
   if (!userTx.approvalData) return
   const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider)
-  const requiredAmount = isSmartAccount(account)
+  const requiredAmount = !isBasicAccount(account, state)
     ? BigInt(userTx.approvalData.minimumApprovalAmount)
     : MaxUint256
   const approveCallData = erc20Contract.interface.encodeFunctionData('approve', [
@@ -193,150 +225,73 @@ const buildRevokeApprovalIfNeeded = async (
   }
 }
 
-const buildSwapAndBridgeUserRequests = async (
-  userTx: SocketAPISendTransactionRequest,
-  networkId: string,
+const getSwapAndBridgeCalls = async (
+  userTx: SwapAndBridgeSendTxRequest,
   account: Account,
-  provider: RPCProvider
-) => {
-  if (isSmartAccount(account)) {
-    const calls: Call[] = []
-    if (userTx.approvalData) {
-      const erc20Interface = new Interface(ERC20.abi)
-
-      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
-      if (revokeApproval) calls.push(revokeApproval)
-
-      calls.push({
-        to: userTx.approvalData.approvalTokenAddress,
-        value: BigInt('0'),
-        data: erc20Interface.encodeFunctionData('approve', [
-          userTx.approvalData.allowanceTarget,
-          BigInt(userTx.approvalData.minimumApprovalAmount)
-        ]),
-        fromUserRequestId: userTx.activeRouteId
-      } as Call)
-    }
-
-    calls.push({
-      to: userTx.txTarget,
-      value: BigInt(userTx.value),
-      data: userTx.txData,
-      fromUserRequestId: userTx.activeRouteId
-    } as Call)
-
-    return [
-      {
-        id: userTx.activeRouteId,
-        action: {
-          kind: 'calls' as const,
-          calls
-        },
-        meta: {
-          isSignAction: true,
-          networkId,
-          accountAddr: account.addr,
-          activeRouteId: userTx.activeRouteId,
-          isSwapAndBridgeCall: true
-        }
-      } as SignUserRequest
-    ]
-  }
-  const requests: SignUserRequest[] = []
-  let shouldBuildSwapOrBridgeTx = true
+  provider: RPCProvider,
+  state: AccountOnchainState
+): Promise<Call[]> => {
+  const calls: Call[] = []
   if (userTx.approvalData) {
     const erc20Interface = new Interface(ERC20.abi)
-    let shouldApprove = true
-    try {
-      const erc20Contract = new Contract(
-        userTx.approvalData.approvalTokenAddress,
-        ERC20.abi,
-        provider
-      )
-      const allowance = await erc20Contract.allowance(
-        userTx.approvalData.owner,
-        userTx.approvalData.allowanceTarget
-      )
-      // check if an approval already exists
-      if (BigInt(allowance) >= BigInt(userTx.approvalData.minimumApprovalAmount))
-        shouldApprove = false
-    } catch (error) {
-      console.error(error)
-    }
 
-    if (shouldApprove) {
-      const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, provider)
-      if (revokeApproval) {
-        requests.push({
-          id: `${userTx.activeRouteId}-revoke-approval`,
-          action: { kind: 'calls' as const, calls: [revokeApproval] },
-          meta: {
-            isSignAction: true,
-            networkId,
-            accountAddr: account.addr,
-            isSwapAndBridgeCall: true,
-            activeRouteId: userTx.activeRouteId
-          }
-        } as SignUserRequest)
-      }
-      requests.push({
-        id: `${userTx.activeRouteId}-approval`,
-        action: {
-          kind: 'calls' as const,
-          calls: [
-            {
-              to: userTx.approvalData.approvalTokenAddress,
-              value: BigInt('0'),
-              data: erc20Interface.encodeFunctionData('approve', [
-                userTx.approvalData.allowanceTarget,
-                MaxUint256 // approve the max possible amount for better UX on BA
-              ]),
-              fromUserRequestId: `${userTx.activeRouteId}-approval`
-            } as Call
-          ]
-        },
-        meta: {
-          isSignAction: true,
-          networkId,
-          accountAddr: account.addr,
-          isSwapAndBridgeCall: true,
-          activeRouteId: userTx.activeRouteId
-        }
-      } as SignUserRequest)
-      // first build only the approval tx and then when confirmed this func will be called a second time
-      // and then only the swap or bridge tx will be created
-      shouldBuildSwapOrBridgeTx = false
-    }
+    const revokeApproval = await buildRevokeApprovalIfNeeded(userTx, account, state, provider)
+    if (revokeApproval) calls.push(revokeApproval)
+
+    calls.push({
+      to: userTx.approvalData.approvalTokenAddress,
+      value: BigInt('0'),
+      data: erc20Interface.encodeFunctionData('approve', [
+        userTx.approvalData.allowanceTarget,
+        BigInt(userTx.approvalData.minimumApprovalAmount)
+      ]),
+      fromUserRequestId: userTx.activeRouteId
+    } as Call)
   }
 
-  if (shouldBuildSwapOrBridgeTx) {
-    requests.push({
+  calls.push({
+    to: userTx.txTarget,
+    value: BigInt(userTx.value),
+    data: userTx.txData,
+    fromUserRequestId: userTx.activeRouteId
+  })
+
+  return calls
+}
+
+const buildSwapAndBridgeUserRequests = async (
+  userTx: SwapAndBridgeSendTxRequest,
+  chainId: bigint,
+  account: Account,
+  provider: RPCProvider,
+  state: AccountOnchainState,
+  paymasterService?: PaymasterService
+) => {
+  return [
+    {
       id: userTx.activeRouteId,
       action: {
         kind: 'calls' as const,
-        calls: [
-          {
-            to: userTx.txTarget,
-            value: BigInt(userTx.value),
-            data: userTx.txData,
-            fromUserRequestId: userTx.activeRouteId
-          } as Call
-        ]
+        calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
       },
       meta: {
-        isSignAction: true,
-        networkId,
+        isSignAction: true as true,
+        chainId,
         accountAddr: account.addr,
+        activeRouteId: userTx.activeRouteId,
         isSwapAndBridgeCall: true,
-        activeRouteId: userTx.activeRouteId
+        paymasterService
       }
-    } as SignUserRequest)
-  }
-  return requests
+    }
+  ]
 }
 
 export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
   userTxType === 'fund-movr'
+
+export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
+  return route.userTxs.some((userTx) => getIsBridgeTxn(userTx.userTxType))
+}
 
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
@@ -353,16 +308,49 @@ export const getIsNetworkSupported = (
   return supportedChainIds.includes(network.chainId)
 }
 
-const getActiveRoutesForAccount = (accountAddress: string, activeRoutes: ActiveRoute[]) => {
+const getActiveRoutesForAccount = (
+  accountAddress: string,
+  activeRoutes: SwapAndBridgeActiveRoute[]
+) => {
   return activeRoutes.filter(
-    (r) => getAddress(r.route.sender || r.route.userAddress) === accountAddress
+    (r) => getAddress(r.route?.sender || r.route?.userAddress || '') === accountAddress
   )
 }
 
+/**
+ * Since v4.41.0 we request the shortlist from our service provider, which might
+ * not include the Ambire $WALLET token. So adding it manually on the supported chains.
+ */
+const addCustomTokensIfNeeded = ({
+  tokens,
+  chainId
+}: {
+  tokens: SwapAndBridgeToToken[]
+  chainId: number
+}) => {
+  const newTokens = [...tokens]
+
+  if (chainId === 1) {
+    const shouldAddAmbireWalletToken = newTokens.every(
+      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_ETHEREUM.address
+    )
+    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+  }
+  if (chainId === 8453) {
+    const shouldAddAmbireWalletToken = newTokens.every(
+      (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_BASE.address
+    )
+    if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_BASE)
+  }
+
+  return newTokens
+}
+
 export {
-  getQuoteRouteSteps,
+  addCustomTokensIfNeeded,
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  buildSwapAndBridgeUserRequests,
-  getActiveRoutesForAccount
+  getSwapAndBridgeCalls
 }

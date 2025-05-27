@@ -1,14 +1,12 @@
-import { NetworkId } from '../../interfaces/network'
-
 export interface CustomToken {
   address: string
-  networkId: NetworkId
+  chainId: bigint
   standard: 'ERC20' | 'ERC721'
 }
 
 export interface TokenPreference {
   address: string
-  networkId: NetworkId
+  chainId: bigint
   isHidden?: boolean
 }
 

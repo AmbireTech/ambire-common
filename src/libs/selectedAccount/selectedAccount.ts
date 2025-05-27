@@ -25,15 +25,15 @@ export const updatePortfolioStateWithDefiPositions = (
   if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
     return portfolioAccountState
 
-  Object.keys(portfolioAccountState).forEach((networkId) => {
-    const networkState = portfolioAccountState[networkId]
+  Object.keys(portfolioAccountState).forEach((chainId) => {
+    const networkState = portfolioAccountState[chainId]
 
-    if (!networkState?.result || defiPositionsAccountState[networkId]?.isLoading) return
+    if (!networkState?.result || defiPositionsAccountState[chainId]?.isLoading) return
 
     const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
 
-    const positions = defiPositionsAccountState[networkId] || {}
+    const positions = defiPositionsAccountState[chainId] || {}
 
     positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
       if (posByProv.type === 'liquidity-pool') {
@@ -48,7 +48,7 @@ export const updatePortfolioStateWithDefiPositions = (
             const tokenInPortfolio = tokens.find((t) => {
               return (
                 t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
-                t.networkId === networkId &&
+                t.chainId.toString() === chainId &&
                 !t.flags.rewardsType &&
                 !t.flags.onGasTank
               )
@@ -93,6 +93,7 @@ export const updatePortfolioStateWithDefiPositions = (
               networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
               // Get the price from defiPositions
               tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
+              tokenInPortfolio.flags.defiTokenType = a.type
             } else {
               const positionAsset: TokenResult = {
                 amount: a.amount,
@@ -101,13 +102,14 @@ export const updatePortfolioStateWithDefiPositions = (
                 decimals: Number(a.protocolAsset!.decimals),
                 address: a.protocolAsset!.address,
                 symbol: a.protocolAsset!.symbol,
-                networkId,
+                name: a.protocolAsset!.name,
+                chainId: BigInt(chainId),
                 flags: {
                   canTopUpGasTank: false,
                   isFeeToken: false,
                   onGasTank: false,
                   rewardsType: null,
-                  isDefiToken: true
+                  defiTokenType: a.type
                   // @BUG: defi positions tokens can't be hidden and can be added as custom
                   // because processTokens is called in the portfolio
                   // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
@@ -121,9 +123,9 @@ export const updatePortfolioStateWithDefiPositions = (
     })
 
     // eslint-disable-next-line no-param-reassign
-    portfolioAccountState[networkId]!.result!.total.usd = networkBalance
+    portfolioAccountState[chainId]!.result!.total.usd = networkBalance
     // eslint-disable-next-line no-param-reassign
-    portfolioAccountState[networkId]!.result!.tokens = tokens
+    portfolioAccountState[chainId]!.result!.tokens = tokens
   })
 
   return portfolioAccountState
@@ -132,12 +134,12 @@ export const updatePortfolioStateWithDefiPositions = (
 const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
-  Object.keys(portfolioState).forEach((networkId) => {
-    const networkState = portfolioState[networkId]
+  Object.keys(portfolioState).forEach((chainId) => {
+    const networkState = portfolioState[chainId]
     if (!networkState) return
 
     if (!networkState.result) {
-      strippedState[networkId] = networkState
+      strippedState[chainId] = networkState
       return
     }
 
@@ -145,28 +147,23 @@ const stripPortfolioState = (portfolioState: AccountState) => {
     const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
       networkState.result
 
-    strippedState[networkId] = {
-      ...networkState,
-      result
-    }
+    strippedState[chainId] = { ...networkState, result }
   })
 
   return strippedState
 }
 
 export const isNetworkReady = (networkData: NetworkState | undefined) => {
-  return (
-    networkData && (networkData.isReady || networkData?.criticalError) && !networkData.isLoading
-  )
+  return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
 const calculateTokenArray = (
-  networkId: string,
+  chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
   isPendingValid: boolean
 ) => {
-  if (networkId === 'gasTank' || networkId === 'rewards') {
+  if (chainId === 'gasTank' || chainId === 'rewards') {
     return latestTokens
   }
   // If the pending state is older or there are no pending tokens
@@ -200,8 +197,9 @@ export function calculateSelectedAccountPortfolio(
   accountPortfolio: SelectedAccountPortfolio | null,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp?: boolean
-) {
+  hasSignAccountOp: boolean,
+  isLoadingFromScratch: boolean
+): SelectedAccountPortfolio {
   const now = Date.now()
   const shouldShowPartialResult =
     portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
@@ -225,7 +223,7 @@ export function calculateSelectedAccountPortfolio(
       networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
       latest: latestStateSelectedAccount,
       pending: pendingStateSelectedAccount
-    } as SelectedAccountPortfolio
+    }
   }
 
   let selectedAccountData = latestStateSelectedAccount
@@ -270,7 +268,8 @@ export function calculateSelectedAccountPortfolio(
   Object.keys(selectedAccountData).forEach((network: string) => {
     const networkData = selectedAccountData[network]
     const result = networkData?.result
-    if (networkData && isNetworkReady(networkData) && result) {
+
+    if (networkData && result) {
       const networkTotal = Number(result?.total?.usd) || 0
       newTotalBalance += networkTotal
 
@@ -289,8 +288,14 @@ export function calculateSelectedAccountPortfolio(
       collections.push(...networkCollections)
     }
 
-    // The total balance and token list are affected by the defi positions
-    if (!isNetworkReady(networkData) || defiPositionsAccountState[network]?.isLoading) {
+    if (
+      // The network is not ready
+      !isNetworkReady(networkData) ||
+      // The networks is ready but the previous state isn't satisfactory and the network is still loading
+      (isLoadingFromScratch && networkData?.isLoading) ||
+      // The total balance and token list are affected by the defi positions
+      defiPositionsAccountState[network]?.isLoading
+    ) {
       isAllReady = false
     }
   })

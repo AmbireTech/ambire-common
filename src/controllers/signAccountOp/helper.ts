@@ -1,13 +1,17 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
-import { Network } from '../../interfaces/network'
-import { Warning, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
+import { Price } from '../../interfaces/assets'
+import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
-import { Price, TokenResult } from '../../libs/portfolio'
+import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
+
+export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
+export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
+export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -25,26 +29,30 @@ function getFeeSpeedIdentifier(
   }${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`
 }
 
+function getUsdAmount(usdPrice: number, tokenDecimals: number, gasAmount: bigint): string {
+  const usdPriceFormatted = BigInt(usdPrice * 1e18)
+
+  // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
+  return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + tokenDecimals)
+}
+
 function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
   const usdPrice = token.priceIn.find(isUsd)?.price
 
   if (!usdPrice) return ''
 
-  const usdPriceFormatted = BigInt(usdPrice * 1e18)
-
-  // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals)
+  return getUsdAmount(usdPrice, token.decimals, gasAmount)
 }
 
 function getSignificantBalanceDecreaseWarning(
   latest: AccountState,
   pending: AccountState,
-  networkId: Network['id'],
+  chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const latestNetworkData = latest?.[networkId]
-  const pendingNetworkData = pending?.[networkId]
+  const latestNetworkData = latest?.[chainId.toString()]
+  const pendingNetworkData = pending?.[chainId.toString()]
   const canDetermineIfBalanceWillDecrease =
     latestNetworkData &&
     !latestNetworkData.isLoading &&
@@ -92,7 +100,8 @@ const getFeeTokenPriceUnavailableWarning = (
 
 export {
   getFeeSpeedIdentifier,
-  getTokenUsdAmount,
+  getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getFeeTokenPriceUnavailableWarning
+  getTokenUsdAmount,
+  getUsdAmount
 }

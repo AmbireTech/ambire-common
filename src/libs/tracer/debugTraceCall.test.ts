@@ -1,9 +1,11 @@
-import { Interface, JsonRpcProvider, MaxUint256, solidityPackedKeccak256 } from 'ethers'
+import { Interface, MaxUint256, solidityPackedKeccak256, toBeHex } from 'ethers'
 
 import { beforeAll, expect } from '@jest/globals'
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
+import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { ERC20, ERC721 } from '../humanizer/const/abis'
 import { debugTraceCall } from './debugTraceCall'
 
@@ -14,7 +16,7 @@ const ACCOUNT_ADDRESS = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
 
 // @TODO add minting and burning test
 describe('Debug tracecall detection for transactions', () => {
-  const provider = new JsonRpcProvider('https://invictus.ambire.com/optimism')
+  const provider = getRpcProvider(['https://invictus.ambire.com/optimism'], 10n)
   let account: Account
   let accountOp: AccountOp
   const nftIface: Interface = new Interface(ERC721)
@@ -43,13 +45,13 @@ describe('Debug tracecall detection for transactions', () => {
     }
     accountOp = {
       accountAddr: ACCOUNT_ADDRESS,
-      networkId: 'optimism',
+      chainId: 10n,
       signingKeyAddr: '"0x02be1F941b6B777D4c30f110E997704fFc26B379"',
       signingKeyType: 'internal',
       gasLimit: null,
       gasFeePayment: {
         paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        isERC4337: false,
+        broadcastOption: BROADCAST_OPTIONS.byRelayer,
         isGasTank: false,
         inToken: '0x0000000000000000000000000000000000000000',
         amount: 5205038755874012n,
@@ -71,19 +73,22 @@ describe('Debug tracecall detection for transactions', () => {
     state = {
       accountAddr: ACCOUNT_ADDRESS,
       nonce: 1n,
+      eoaNonce: 1n,
       erc4337Nonce: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
       isDeployed: true,
-      associatedKeysPriviliges: {
-        '0x02be1F941b6B777D4c30f110E997704fFc26B379':
-          '0x0000000000000000000000000000000000000000000000000000000000000002'
-      },
       isV2: true,
+      associatedKeys: {
+        '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA': toBeHex(1, 32)
+      },
+      isSmarterEoa: false,
       balance: 989858878709479465n,
       isEOA: false,
       isErc4337Enabled: false,
       currentBlock: 60529438n,
       deployError: false,
-      isErc4337Nonce: false
+      isErc4337Nonce: false,
+      delegatedContract: null,
+      delegatedContractName: null
     }
   })
 
@@ -143,21 +148,10 @@ describe('Debug tracecall detection for transactions', () => {
       }
     }
 
-    const res = await debugTraceCall(
-      account,
-      accountOp,
-      provider,
-      state,
-      // a lot of gas
-      100000000000000n,
-      [{ name: 'fast', gasPrice: 338318181550000000n }],
-      true,
-      overrideData
-    )
+    const res = await debugTraceCall(account, accountOp, provider, state, true, overrideData)
 
     expect(res.nfts.length).toBe(1)
     expect(res.nfts[0][0]).toBe(NFT_ADDRESS)
-    expect(res.nfts[0][1]).toContain(0n)
     expect(res.nfts[0][1]).toContain(25n)
     expect(res.tokens.length).toBe(2)
     expect(res.tokens).toContain(USDC_ADDRESS_OPTIMISM)

@@ -3,7 +3,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getToken } from '../../utils'
-import { LidoModule } from '.'
+import { LidoModule } from './'
 
 // @TODO
 // https://github.com/AmbireTech/ambire-app/issues/2376
@@ -17,7 +17,7 @@ const transactions = [
 ]
 const accountOp: AccountOp = {
   accountAddr: '0x6969174FD72466430a46e18234D0b530c9FD5f49',
-  networkId: 'arbitrum',
+  chainId: 42161n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,

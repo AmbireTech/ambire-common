@@ -1,18 +1,21 @@
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { StorageController } from '../storage/storage'
 import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
 
 const DAPP_CONNECT_REQUEST: DappUserRequest = {
@@ -49,7 +52,7 @@ const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
     accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
     isSignAction: true,
     isWalletSendCalls: false,
-    networkId: 'optimism',
+    chainId: 10n,
     paymasterService: undefined
   },
   session: { name: '', icon: '', origin: '' },
@@ -83,18 +86,18 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
     ],
     gasFeePayment: {
       amount: 7936n,
-      feeTokenNetworkId: SIGN_ACCOUNT_OP_REQUEST.meta.networkId,
+      feeTokenChainId: SIGN_ACCOUNT_OP_REQUEST.meta.chainId,
       gasPrice: 1101515n,
       inToken: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-      isERC4337: true,
       isGasTank: false,
       maxPriorityFeePerGas: 1100000n,
       paidBy: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
-      simulatedGasLimit: 2580640n
+      simulatedGasLimit: 2580640n,
+      broadcastOption: BROADCAST_OPTIONS.byBundler
     },
     gasLimit: null,
     meta: {},
-    networkId: SIGN_ACCOUNT_OP_REQUEST.meta.networkId,
+    chainId: SIGN_ACCOUNT_OP_REQUEST.meta.chainId,
     nonce: 2n,
     signature: '',
     signingKeyAddr: '',
@@ -103,29 +106,7 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
 }
 
 describe('Actions Controller', () => {
-  const event = new EventEmitter()
-  let windowId = 0
-  const windowManager = {
-    event,
-    focus: () => Promise.resolve(),
-    open: () => {
-      windowId++
-      return Promise.resolve({
-        id: windowId,
-        top: 0,
-        left: 0,
-        width: 100,
-        height: 100,
-        focused: true
-      })
-    },
-    remove: () => {
-      event.emit('windowRemoved', windowId)
-      return Promise.resolve()
-    },
-    sendWindowToastMessage: () => {},
-    sendWindowUiMessage: () => {}
-  }
+  const { windowManager, getWindowId, eventEmitter: event } = mockWindowManager()
 
   const notificationManager = {
     create: () => Promise.resolve()
@@ -155,13 +136,15 @@ describe('Actions Controller', () => {
     }
   ]
   const providers = Object.fromEntries(
-    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
 
   let providersCtrl: ProvidersController
+  const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -178,14 +161,17 @@ describe('Actions Controller', () => {
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)
     accountsCtrl = new AccountsController(
-      storage,
+      storageCtrl,
       providersCtrl,
       networksCtrl,
       () => {},
       () => {},
       () => {}
     )
-    selectedAccountCtrl = new SelectedAccountController({ storage, accounts: accountsCtrl })
+    selectedAccountCtrl = new SelectedAccountController({
+      storage: storageCtrl,
+      accounts: accountsCtrl
+    })
     await accountsCtrl.initialLoadPromise
     await networksCtrl.initialLoadPromise
     await providersCtrl.initialLoadPromise
@@ -321,7 +307,6 @@ describe('Actions Controller', () => {
       action: { kind: 'benzin' },
       meta: {
         isSignAction: true,
-        networkId: '',
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         chainId: 1n
       }
@@ -388,7 +373,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    event.emit('windowRemoved', windowId)
+    event.emit('windowRemoved', getWindowId())
   })
   test('select back the first account', (done) => {
     let emitCounter = 0
@@ -478,7 +463,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    event.emit('windowFocusChange', windowId)
+    event.emit('windowFocusChange', getWindowId())
   })
   test('should remove actions from actionsQueue', (done) => {
     let emitCounter = 0

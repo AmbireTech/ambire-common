@@ -1,6 +1,7 @@
 import { TypedDataDomain } from 'ethers'
 import { ethers } from 'hardhat'
 
+import { PackedUserOperation } from 'libs/userOperation/types'
 import { abiCoder } from './config'
 
 /**
@@ -71,6 +72,115 @@ function wrapExternallyValidated(sig: string) {
  */
 function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
+}
+
+function getExecute712Data(
+  chainId: bigint,
+  nonce: bigint,
+  txns: [string, string, string][],
+  verifyingAddr: string,
+  executeHash: string
+) {
+  const calls = txns.map((txn) => ({
+    to: txn[0],
+    value: txn[1],
+    data: txn[2]
+  }))
+
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: verifyingAddr,
+    salt: ethers.toBeHex(0, 32)
+  }
+  const types = {
+    Transaction: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' }
+    ],
+    AmbireExecuteAccountOp: [
+      { name: 'account', type: 'address' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'calls', type: 'Transaction[]' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const value = {
+    account: verifyingAddr,
+    chainId,
+    nonce,
+    calls,
+    hash: executeHash
+  }
+
+  return {
+    domain,
+    types,
+    value
+  }
+}
+
+function getUserOp712Data(
+  chainId: bigint,
+  txns: [string, string, string][],
+  packedUserOp: PackedUserOperation,
+  userOpHash: string
+) {
+  const calls = txns.map((txn) => ({
+    to: txn[0],
+    value: txn[1],
+    data: txn[2]
+  }))
+
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: packedUserOp.sender,
+    salt: ethers.toBeHex(0, 32)
+  }
+  const types = {
+    Transaction: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' }
+    ],
+    Ambire4337AccountOp: [
+      { name: 'account', type: 'address' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      { name: 'initCode', type: 'bytes' },
+      { name: 'accountGasLimits', type: 'bytes32' },
+      { name: 'preVerificationGas', type: 'uint256' },
+      { name: 'gasFees', type: 'bytes32' },
+      { name: 'paymasterAndData', type: 'bytes' },
+      { name: 'callData', type: 'bytes' },
+      { name: 'calls', type: 'Transaction[]' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const value = {
+    account: packedUserOp.sender,
+    chainId,
+    nonce: packedUserOp.nonce,
+    initCode: packedUserOp.initCode,
+    accountGasLimits: packedUserOp.accountGasLimits,
+    preVerificationGas: packedUserOp.preVerificationGas,
+    gasFees: packedUserOp.gasFees,
+    paymasterAndData: packedUserOp.paymasterAndData,
+    callData: packedUserOp.callData,
+    calls,
+    hash: userOpHash
+  }
+
+  return {
+    domain,
+    types,
+    value
+  }
 }
 
 function wrapTypedData(chainId: bigint, verifyingAddr: string, executeHash: string) {
@@ -144,13 +254,15 @@ function getRawTypedDataFinalDigest(
 }
 
 export {
+  getExecute712Data,
+  getRawTypedDataFinalDigest,
+  getUserOp712Data,
+  wrapCancel,
   wrapEIP712,
   wrapEthSign,
-  wrapSchnorr,
+  wrapExternallyValidated,
   wrapMultiSig,
   wrapRecover,
-  wrapCancel,
-  wrapExternallyValidated,
-  wrapTypedData,
-  getRawTypedDataFinalDigest
+  wrapSchnorr,
+  wrapTypedData
 }

@@ -1,11 +1,14 @@
 import { Transaction } from 'ethers'
 
+import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { GasFeePayment } from '../libs/accountOp/accountOp'
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
+import { Hex } from './hex'
 import { Network } from './network'
+import { EIP7702Signature } from './signatures'
 import { TypedMessage } from './userRequest'
 
 /**
@@ -33,7 +36,7 @@ export interface ExternalSignerController {
   cleanUp: () => void // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
-  retrieveAddresses: (paths: string[]) => Promise<string[]> // Ledger specific
+  retrieveAddresses?: (paths: string[]) => Promise<string[]> // Ledger specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
@@ -56,12 +59,14 @@ export interface TxnRequest {
   type?: number
 }
 
-export interface KeystoreSigner {
+export interface KeystoreSignerInterface {
   key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
+  sign7702: (hex: string) => EIP7702Signature
+  signTransactionTypeFour: (txnRequest: TxnRequest, eip7702Auth: EIP7702Auth) => Hex
 }
 
 export type ScryptParams = {
@@ -104,12 +109,14 @@ export type InternalKey = {
   dedicatedToOneSA: boolean
   meta: {
     createdAt: number | null
+    fromSeedId?: string
+    [key: string]: any
   }
 }
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | string
+  type: 'trezor' | 'ledger' | 'lattice'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -118,39 +125,42 @@ export type ExternalKey = {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
     createdAt: number | null
+    [key: string]: any
   }
 }
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
 
 export type KeystoreSeed = {
+  id: string
+  label: string
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
 }
 
 export type KeystoreSignerType = {
-  new (key: Key, privateKey?: string): KeystoreSigner
+  new (key: Key, privateKey?: string): KeystoreSignerInterface
 }
 
 /**
  * The keys that are ready to be added to the user's keystore (by the Main Controller).
  * They are needed as an intermediate step during the accounts import flow
- * (for the accounts that were just imported by the AccountAdder Controller).
+ * (for the accounts that were just imported by the AccountPicker Controller).
  */
 export type ReadyToAddKeys = {
   internal: {
-    addr: Key['addr']
+    addr: InternalKey['addr']
     label: string
-    type: 'internal'
+    type: InternalKey['type']
     privateKey: string
-    dedicatedToOneSA: Key['dedicatedToOneSA']
+    dedicatedToOneSA: InternalKey['dedicatedToOneSA']
     meta: InternalKey['meta']
   }[]
   external: {
-    addr: Key['addr']
+    addr: ExternalKey['addr']
     label: string
-    type: Key['type']
+    type: ExternalKey['type']
     dedicatedToOneSA: Key['dedicatedToOneSA']
     meta: ExternalKey['meta']
   }[]

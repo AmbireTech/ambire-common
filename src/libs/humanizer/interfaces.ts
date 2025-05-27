@@ -1,5 +1,5 @@
 import { Account } from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -95,7 +95,7 @@ export interface HumanizerMeta {
 
 export interface HumanizerOptions {
   network?: Network
-  networkId?: NetworkId
+  chainId?: bigint
 }
 
 export type DataToHumanize = AccountOp | Message

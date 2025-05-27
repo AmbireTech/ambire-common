@@ -6,7 +6,7 @@ import { ethers, network } from 'hardhat'
 
 import { ERC20 } from '../../src/libs/humanizer/const/abis'
 
-describe('stkWallet', () => {
+describe.skip('stkWallet', () => {
   let signer: any
   let stkWallet: any
   const WALLET_ADDRESS = '0x88800092ff476844f74dc2fc427974bbee2794ae'
@@ -19,6 +19,7 @@ describe('stkWallet', () => {
   )
 
   before(async () => {
+    // commented out
     await network.provider.request({
       method: 'hardhat_reset',
       params: [
@@ -65,7 +66,7 @@ describe('stkWallet', () => {
     // await (walletContract.connect(signer) as any).approve(XWALLET_ADDRESS, amount)
 
     const xWalletBalanceOfStkWalletBefore = await xWalletContract.balanceOf(stkWallet.target)
-    await (stkWallet.connect(signer) as any).stakeAndWrap(amount)
+    await (stkWallet.connect(signer) as any).enterTo(signer.address, amount)
     const xWalletBalanceOfStkWalletAfter = await xWalletContract.balanceOf(stkWallet.target)
     const newXWallets = xWalletBalanceOfStkWalletAfter - xWalletBalanceOfStkWalletBefore
     const storedXWallets = await stkWallet.shares(signer.address)

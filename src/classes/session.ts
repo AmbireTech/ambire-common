@@ -5,6 +5,7 @@ export interface SessionProp {
   icon?: string
   name?: string
   tabId?: number
+  isWeb3App?: boolean
 }
 
 // Each instance of a Session represents an active connection between a dApp and the wallet.
@@ -18,7 +19,12 @@ export class Session {
 
   tabId: number | null = null
 
+  // requestIds start from 0 but the default val should not be the fist req
+  lastHandledRequestId: number = -1
+
   messenger: Messenger | null = null
+
+  isWeb3App: boolean = false
 
   sendMessage(event: any, data: any) {
     if (this.messenger) {

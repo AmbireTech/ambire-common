@@ -1,24 +1,16 @@
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
-import { Action, Banner } from '../../interfaces/banner'
+import { Action, Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
-import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { CashbackStatusByAccount } from '../portfolio/interfaces'
-import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
-const getBridgeBannerTitle = (routeStatus: ActiveRoute['routeStatus']) => {
-  switch (routeStatus) {
-    case 'completed':
-      return 'Bridge request completed'
-    case 'in-progress':
-      return 'Bridge request in progress'
-    default:
-      return 'Bridge request awaiting signature'
-  }
-}
-
-const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
+const getBridgeActionText = (
+  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
+  isBridgeTxn: boolean
+) => {
   if (isBridgeTxn) {
     return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
   }
@@ -26,8 +18,14 @@ const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTx
   return routeStatus === 'completed' ? 'Swapped' : 'Swap'
 }
 
-const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?: Network[]) => {
-  const steps = getQuoteRouteSteps(route.route.userTxs)
+const getBridgeBannerText = (
+  route: SwapAndBridgeActiveRoute,
+  isBridgeTxn: boolean,
+  networks?: Network[]
+) => {
+  const steps = route.route?.steps || []
+  if (!steps[0]) return '' // should never happen
+
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
@@ -44,21 +42,16 @@ const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?
     }
   }
 
-  const stepsIndexText = `(step ${
-    route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
-  } of ${route.route.totalUserTx})`
-
-  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : ''}`
+  return `${actionText} ${assetsText}`
 }
 
 export const getBridgeBanners = (
-  activeRoutes: ActiveRoute[],
-  accountOpActions: AccountOpAction[],
-  networks: Network[]
+  activeRoutes: SwapAndBridgeActiveRoute[],
+  accountOpActions: AccountOpAction[]
 ): Banner[] => {
-  const isBridgeTxn = (route: ActiveRoute) =>
-    route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-  const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
+  const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
+    !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+  const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
         (call) =>
@@ -69,63 +62,70 @@ export const getBridgeBanners = (
     })
   }
 
-  return activeRoutes
-    .filter(isBridgeTxn)
-    .filter((route) => {
-      if (route.routeStatus === 'failed') return false
-      if (route.routeStatus !== 'ready') return true
-      // If the route is ready to be signed, we should display the banner only if it's not turned into an account op
-      // because when it does get turned into an account op, there will be a different banner for that
-      return !isRouteTurnedIntoAccountOp(route)
-    })
-    .map((r) => {
-      const actions: Action[] = []
+  const filteredRoutes = activeRoutes.filter(isBridgeTxn).filter((route) => {
+    if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
+      return true
+    return !isRouteTurnedIntoAccountOp(route)
+  })
 
-      if (r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve') {
-        actions.push({
-          label: 'Details',
-          actionName: 'open-swap-and-bridge-tab'
-        })
-      }
+  const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
+  const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
+  const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
+  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes]
 
-      if (r.routeStatus === 'completed') {
-        actions.push({
+  let title = ''
+  let text = ''
+  let type: BannerType
+  if (inProgressRoutes.length > 0) {
+    type = 'info'
+    title = `Bridge${allRoutes.length > 1 ? 's' : ''} in progress`
+    text = `You have ${allRoutes.length} pending bridge${allRoutes.length > 1 ? 's' : ''}`
+  } else if (failedRoutes.length > 0) {
+    type = 'error'
+    title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+      completedRoutes.length > 1
+        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }`
+  } else {
+    type = 'success'
+    title = `Bridge${completedRoutes.length > 1 ? 's' : ''} completed`
+    text = `You have ${completedRoutes.length} completed bridge${
+      completedRoutes.length > 1 ? 's' : ''
+    }.`
+  }
+
+  const banners: Banner[] = []
+  if (allRoutes.length > 0) {
+    banners.push({
+      id: 'bridge-in-progress',
+      type,
+      category: 'bridge-in-progress',
+      title,
+      text,
+      actions: [
+        {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteId: r.activeRouteId }
-        })
-      }
-
-      if (r.routeStatus === 'ready') {
-        const isNextTnxForBridging = r.route.currentUserTxIndex >= 1
-
-        actions.push(
-          {
-            label: 'Reject',
-            actionName: 'reject-bridge',
-            meta: { activeRouteId: r.activeRouteId }
-          },
-          {
-            label: isNextTnxForBridging ? 'Proceed to Next Step' : 'Open',
-            actionName: 'proceed-bridge',
-            meta: { activeRouteId: r.activeRouteId }
+          meta: {
+            activeRouteIds: allRoutes.map((r) => r.activeRouteId),
+            isHideStyle: true
           }
-        )
-      }
-
-      return {
-        id: `bridge-${r.activeRouteId}`,
-        type: r.routeStatus === 'completed' ? 'success' : 'info',
-        category: `bridge-${r.routeStatus}`,
-        title: getBridgeBannerTitle(r.routeStatus),
-        text: getBridgeBannerText(r, true, networks),
-        actions
-      }
+        },
+        {
+          label: 'View',
+          actionName: 'view-bridge'
+        }
+      ]
     })
+  }
+
+  return banners
 }
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
+  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
   if (!requests.length) return []
 
   return [
@@ -145,19 +145,19 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
 }
 
 const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
+  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
   chainId: bigint,
   nonSwapAndBridgeTxns: number,
   networks: Network[]
 ) => {
   const swapsAndBridges: string[] = []
   const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return BigInt(route.route.fromChainId) === chainId
+    return route.route && BigInt(route.route.fromChainId) === chainId
   })
 
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+      const isBridgeTxn = !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
       const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
@@ -187,7 +187,7 @@ export const getAccountOpBanners = ({
   selectedAccount: string
   accounts: Account[]
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: ActiveRoute[]
+  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []
@@ -197,7 +197,7 @@ export const getAccountOpBanners = ({
   if (account?.creation) {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
       actions.forEach((action) => {
-        const network = networks.filter((n) => n.id === netId)[0]
+        const network = networks.filter((n) => n.chainId.toString() === netId)[0]
         const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
           const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
             (route) => route.activeRouteId === call.fromUserRequestId
@@ -241,7 +241,7 @@ export const getAccountOpBanners = ({
     })
   } else {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
-      const network = networks.filter((n) => n.id === netId)[0]
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
       const nonSwapAndBridgeTxns = actions.reduce((prev, action) => {
         action.accountOp.calls.forEach((call) => {
           const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
@@ -323,9 +323,7 @@ export const getFirstCashbackBanners = ({
 }): Banner[] => {
   const banners: Banner[] = []
 
-  const shouldShowBanner =
-    !!cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackReceivedAt &&
-    !cashbackStatusByAccount[selectedAccountAddr]?.firstCashbackSeenAt
+  const shouldShowBanner = cashbackStatusByAccount[selectedAccountAddr] === 'unseen-cashback'
 
   if (shouldShowBanner) {
     banners.push({

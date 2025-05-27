@@ -12,11 +12,11 @@ export async function getUniV3Positions(
   provider: Provider | JsonRpcProvider,
   network: Network
 ): Promise<PositionsByProvider | null> {
-  const networkId = network.id
-  if (networkId && !UNISWAP_V3[networkId as keyof typeof UNISWAP_V3]) return null
+  const { chainId } = network
+  if (chainId && !UNISWAP_V3[chainId.toString() as keyof typeof UNISWAP_V3]) return null
 
   const { nonfungiblePositionManagerAddr, factoryAddr } =
-    UNISWAP_V3[networkId as keyof typeof UNISWAP_V3]
+    UNISWAP_V3[chainId.toString() as keyof typeof UNISWAP_V3]
 
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
@@ -32,8 +32,10 @@ export async function getUniV3Positions(
   const data = result.map((asset: any) => ({
     positionId: asset.positionId,
     token0Symbol: asset.token0Symbol,
+    token0Name: asset.token0Name,
     token0Decimals: asset.token0Decimals,
     token1Symbol: asset.token1Symbol,
+    token1Name: asset.token1Name,
     token1Decimals: asset.token1Decimals,
     feeGrowthGlobal0X128: asset.feeGrowthGlobal0X128,
     positionInfo: {
@@ -79,6 +81,7 @@ export async function getUniV3Positions(
           {
             address: pos.positionInfo.token0,
             symbol: pos.token0Symbol,
+            name: pos.token0Name,
             decimals: Number(pos.token0Decimals),
             amount: BigInt(tokenAmounts.amount0),
             type: AssetType.Liquidity
@@ -86,6 +89,7 @@ export async function getUniV3Positions(
           {
             address: pos.positionInfo.token1,
             symbol: pos.token1Symbol,
+            name: pos.token1Name,
             decimals: Number(pos.token1Decimals),
             amount: BigInt(tokenAmounts.amount1),
             type: AssetType.Liquidity
@@ -99,7 +103,7 @@ export async function getUniV3Positions(
 
   return {
     providerName: 'Uniswap V3',
-    networkId,
+    chainId,
     type: 'liquidity-pool',
     positions
   }

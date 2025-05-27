@@ -3,13 +3,16 @@ import { getAddress } from 'ethers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { NetworkId } from '../../interfaces/network'
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
-import { Storage } from '../../interfaces/storage'
+import {
+  CashbackStatus,
+  CashbackStatusByAccount,
+  SelectedAccountPortfolio
+} from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
+import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 // eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithDeFiPositionsErrorErrors,
@@ -32,6 +35,7 @@ import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -46,7 +50,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 }
 
 export class SelectedAccountController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #accounts: AccountsController
 
@@ -66,7 +70,9 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
-  dashboardNetworkFilter: NetworkId | null = null
+  #isPortfolioLoadingFromScratch = true
+
+  dashboardNetworkFilter: bigint | string | null = null
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -83,7 +89,9 @@ export class SelectedAccountController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor({ storage, accounts }: { storage: Storage; accounts: AccountsController }) {
+  #cashbackStatusByAccount: CashbackStatusByAccount = {}
+
+  constructor({ storage, accounts }: { storage: StorageController; accounts: AccountsController }) {
     super()
 
     this.#storage = storage
@@ -96,10 +104,8 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
     const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-
-    const selectedAccount = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress)
-
-    this.account = selectedAccount || null
+    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+    this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
 
     this.emitUpdate()
@@ -157,7 +163,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
         if (!this.dashboardNetworkFilter) return
         const dashboardFilteredNetwork = this.#networks!.networks.find(
-          (n) => n.id === this.dashboardNetworkFilter
+          (n) => n.chainId === this.dashboardNetworkFilter
         )
 
         // reset the dashboardNetworkFilter if the network is removed
@@ -209,6 +215,7 @@ export class SelectedAccountController extends EventEmitter {
   resetSelectedAccountPortfolio(skipUpdate?: boolean) {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
+    this.#isPortfolioLoadingFromScratch = true
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -248,24 +255,63 @@ export class SelectedAccountController extends EventEmitter {
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp
+      hasSignAccountOp,
+      this.#isPortfolioLoadingFromScratch
     )
 
+    // Reset the loading timestamp if the portfolio is ready
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = null
     }
 
+    // Set the loading timestamp when the portfolio starts loading
     if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
       this.portfolioStartedLoadingAtTimestamp = Date.now()
     }
 
-    if (
-      newSelectedAccountPortfolio.isReadyToVisualize ||
-      (!this.portfolio?.tokens?.length && newSelectedAccountPortfolio.tokens.length)
-    ) {
-      this.portfolio = newSelectedAccountPortfolio
-      this.#updatePortfolioErrors(true)
+    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
+    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
+      this.#isPortfolioLoadingFromScratch = false
     }
+
+    this.portfolio = newSelectedAccountPortfolio
+    this.#updatePortfolioErrors(true)
+    this.updateCashbackStatus(skipUpdate)
+
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
+  }
+
+  async updateCashbackStatus(skipUpdate?: boolean) {
+    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
+
+    const accountId = this.account.addr
+    const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
+
+    const isCashbackZero = gasTankResult.gasTankTokens?.[0]?.cashback === 0n
+    const cashbackWasZeroBefore = this.#cashbackStatusByAccount[accountId] === 'no-cashback'
+    const notReceivedFirstCashbackBefore =
+      this.#cashbackStatusByAccount[accountId] !== 'unseen-cashback'
+
+    if (isCashbackZero) {
+      await this.changeCashbackStatus('no-cashback', skipUpdate)
+    } else if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
+      await this.changeCashbackStatus('unseen-cashback', skipUpdate)
+    }
+  }
+
+  async changeCashbackStatus(newStatus: CashbackStatus, skipUpdate?: boolean) {
+    if (!this.account) return
+
+    const accountId = this.account.addr
+
+    this.#cashbackStatusByAccount = {
+      ...this.#cashbackStatusByAccount,
+      [accountId]: newStatus
+    }
+
+    await this.#storage.set('cashbackStatusByAccount', this.#cashbackStatusByAccount)
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -385,7 +431,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
-      providers: this.#providers.providers
+      providers: this.#providers.providers,
+      isAllReady: this.portfolio.isAllReady
     })
 
     this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]
@@ -404,8 +451,8 @@ export class SelectedAccountController extends EventEmitter {
 
     if (
       !this.#accounts.accountStates[this.account.addr] ||
-      !this.#accounts.accountStates[this.account.addr].ethereum ||
-      !this.#accounts.accountStates[this.account.addr].ethereum.isV2
+      !this.#accounts.accountStates[this.account.addr]['1'] ||
+      !this.#accounts.accountStates[this.account.addr]['1'].isV2
     )
       return []
 
@@ -433,11 +480,17 @@ export class SelectedAccountController extends EventEmitter {
 
     return getFirstCashbackBanners({
       selectedAccountAddr: this.account.addr,
-      cashbackStatusByAccount: this.#portfolio.cashbackStatusByAccount
+      cashbackStatusByAccount: this.#cashbackStatusByAccount
     })
   }
 
-  setDashboardNetworkFilter(networkFilter: NetworkId | null) {
+  get cashbackStatus(): CashbackStatus | undefined {
+    if (!this.account) return undefined
+
+    return this.#cashbackStatusByAccount[this.account.addr]
+  }
+
+  setDashboardNetworkFilter(networkFilter: bigint | string | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
   }
@@ -447,6 +500,7 @@ export class SelectedAccountController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       firstCashbackBanner: this.firstCashbackBanner,
+      cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading,
       balanceAffectingErrors: this.balanceAffectingErrors

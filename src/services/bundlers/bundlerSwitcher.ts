@@ -1,6 +1,7 @@
 /* eslint-disable class-methods-use-this */
 
 import { BUNDLER } from '../../consts/bundlers'
+import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { Bundler } from './bundler'
 import { getBundlerByName, getDefaultBundler } from './getBundler'
@@ -12,21 +13,17 @@ export class BundlerSwitcher {
 
   protected usedBundlers: BUNDLER[] = []
 
-  // a function to retrieve the current sign account op state
-  protected getSignAccountOpStatus: Function
+  /**
+   * This service is stateless so we're allowing a method
+   * to jump in and forbid updates if the controller state forbids them
+   */
+  hasControllerForbiddenUpdates: Function
 
-  // TODO:
-  // no typehints here as importing typehints from signAccountOp causes
-  // a dependancy cicle. Types should be removed from signAccountOp in
-  // a different file before proceeding to fix this
-  protected noStateUpdateStatuses: any[] = []
-
-  constructor(network: Network, getSignAccountOpStatus: Function, noStateUpdateStatuses: any[]) {
+  constructor(network: Network, hasControllerForbiddenUpdates: Function) {
     this.network = network
     this.bundler = getDefaultBundler(network)
     this.usedBundlers.push(this.bundler.getName())
-    this.getSignAccountOpStatus = getSignAccountOpStatus
-    this.noStateUpdateStatuses = noStateUpdateStatuses
+    this.hasControllerForbiddenUpdates = hasControllerForbiddenUpdates
   }
 
   protected hasBundlers() {
@@ -38,13 +35,12 @@ export class BundlerSwitcher {
     return this.bundler
   }
 
-  userHasCommitted(): boolean {
-    return this.noStateUpdateStatuses.includes(this.getSignAccountOpStatus())
-  }
+  canSwitch(acc: Account, bundlerError: Error | null): boolean {
+    // no fallbacks for EOAs
+    if (!acc.creation) return false
 
-  canSwitch(bundlerError: Error | null): boolean {
     // don't switch the bundler if the account op is in a state of signing
-    if (this.userHasCommitted()) return false
+    if (this.hasControllerForbiddenUpdates()) return false
 
     if (!this.hasBundlers()) return false
 

@@ -1,45 +1,100 @@
 /* eslint no-console: "off" */
 
-import { ethers } from 'ethers'
+import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
-import { trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
-import { getNativeToCheckFromEOAs, produceMemoryStore } from '../../../test/helpers'
+import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
+import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
-import { estimate } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
-import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { getTypedData } from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { EstimationController } from '../estimation/estimation'
+import { EstimationStatus } from '../estimation/types'
+import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 import { getFeeSpeedIdentifier } from './helper'
-import { SignAccountOpController, SigningStatus } from './signAccountOp'
+import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { SignAccountOpTesterController } from './signAccountOpTester'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-const errorCallback = () => {}
+
+const createEOAAccountOp = (account: Account) => {
+  const to = '0x0000000000000000000000000000000000000000'
+
+  const data = '0x'
+
+  const nativeToCheck: Account[] = [
+    {
+      addr: account.addr,
+      associatedKeys: [account.addr],
+      initialPrivileges: [],
+      creation: null,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: account.addr
+      }
+    }
+  ]
+  const feeTokens = [
+    {
+      address: '0x0000000000000000000000000000000000000000',
+      amount: 1n,
+      symbol: 'ETH',
+      name: 'Ether',
+      chainId: 1n,
+      decimals: 18,
+      priceIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: true,
+        isFeeToken: true
+      }
+    }
+  ]
+
+  const op = {
+    accountAddr: account.addr,
+    signingKeyAddr: null,
+    signingKeyType: null,
+    gasLimit: null,
+    gasFeePayment: null,
+    chainId: 1n,
+    nonce: null, // does not matter when estimating
+    calls: [{ to, value: BigInt(1), data }],
+    accountOpToExecuteBefore: null,
+    signature: null
+  }
+
+  return { op, nativeToCheck, feeTokens }
+}
 
 const createAccountOp = (
   account: Account,
-  networkId: NetworkId = 'ethereum'
+  chainId: bigint = 1n
 ): {
   op: AccountOp
   nativeToCheck: Account[]
@@ -73,7 +128,8 @@ const createAccountOp = (
       address: '0x0000000000000000000000000000000000000000',
       amount: 1n,
       symbol: 'ETH',
-      networkId: 'ethereum',
+      name: 'Ether',
+      chainId: 1n,
       decimals: 18,
       priceIn: [],
       flags: {
@@ -91,7 +147,7 @@ const createAccountOp = (
     signingKeyType: null,
     gasLimit: null,
     gasFeePayment: null,
-    networkId,
+    chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
     accountOpToExecuteBefore: null,
@@ -101,73 +157,19 @@ const createAccountOp = (
   return { op, nativeToCheck, feeTokens }
 }
 
-const createEOAAccountOp = (account: Account) => {
-  const to = '0x0000000000000000000000000000000000000000'
-
-  const data = '0x'
-
-  const nativeToCheck: Account[] = [
-    {
-      addr: account.addr,
-      associatedKeys: [account.addr],
-      initialPrivileges: [],
-      creation: null,
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: account.addr
-      }
-    }
-  ]
-  const feeTokens = [
-    {
-      address: '0x0000000000000000000000000000000000000000',
-      amount: 1n,
-      symbol: 'ETH',
-      networkId: 'ethereum',
-      decimals: 18,
-      priceIn: [],
-      flags: {
-        onGasTank: false,
-        rewardsType: null,
-        canTopUpGasTank: true,
-        isFeeToken: true
-      }
-    }
-  ]
-
-  const op = {
-    accountAddr: account.addr,
-    signingKeyAddr: null,
-    signingKeyType: null,
-    gasLimit: null,
-    gasFeePayment: null,
-    networkId: 'ethereum',
-    nonce: null, // does not matter when estimating
-    calls: [{ to, value: BigInt(1), data }],
-    accountOpToExecuteBefore: null,
-    signature: null
-  }
-
-  return { op, nativeToCheck, feeTokens }
-}
-
-const eoaSigner = {
-  privKey: '0x1941fd49fae923cae5ba789ac8ed2662066861960c7aa339443e76d309a80f6f',
-  keyPublicAddress: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
-  pass: 'testpass'
-}
-
-// add the eoaSigner as an associatedKey
-trezorSlot7v24337Deployed.associatedKeys.push(eoaSigner.keyPublicAddress)
-
-const eoaAccount: Account = {
-  addr: eoaSigner.keyPublicAddress,
-  associatedKeys: [eoaSigner.keyPublicAddress],
-  initialPrivileges: [],
-  creation: null,
-  preferences: {
-    label: DEFAULT_ACCOUNT_LABEL,
-    pfp: eoaSigner.keyPublicAddress
+const usdcFeeToken: TokenResult = {
+  amount: 54409383n,
+  chainId: 137n,
+  decimals: Number(6),
+  priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
+  symbol: 'USDC',
+  name: 'USD Coin',
+  address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
   }
 }
 
@@ -190,6 +192,58 @@ const otherEoa: Account = {
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x71c3D24a627f0416db45107353d8d0A5ae0402ae'
+  }
+}
+
+const nativeFeeTokenPolygon: TokenResult = {
+  address: '0x0000000000000000000000000000000000000000',
+  symbol: 'POL',
+  name: 'Polygon Ecosystem Token',
+  amount: 1000n,
+  chainId: 137n,
+  decimals: Number(18),
+  priceIn: [{ baseCurrency: 'usd', price: 5000 }],
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+}
+
+const eoaSigner = {
+  privKey: '0x1941fd49fae923cae5ba789ac8ed2662066861960c7aa339443e76d309a80f6f',
+  keyPublicAddress: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+  pass: 'testpass'
+}
+
+const v1Account = {
+  addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+  associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E', eoaSigner.keyPublicAddress],
+  initialPrivileges: [],
+  creation: {
+    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+    bytecode:
+      '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+  }
+}
+
+// add the eoaSigner as an associatedKey
+trezorSlot7v24337Deployed.associatedKeys.push(eoaSigner.keyPublicAddress)
+
+const eoaAccount: Account = {
+  addr: eoaSigner.keyPublicAddress,
+  associatedKeys: [eoaSigner.keyPublicAddress],
+  initialPrivileges: [],
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: eoaSigner.keyPublicAddress
   }
 }
 
@@ -235,57 +289,12 @@ const e2esmartAccount: Account = {
   }
 }
 
-const v1Account = {
-  addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-  associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E', eoaSigner.keyPublicAddress],
-  initialPrivileges: [],
-  creation: {
-    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-    bytecode:
-      '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-    salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-  },
-  preferences: {
-    label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
-  }
-}
-
 const nativeFeeToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
+  name: 'Ether',
   amount: 1000n,
-  networkId: 'ethereum',
-  decimals: Number(18),
-  priceIn: [{ baseCurrency: 'usd', price: 5000 }],
-  flags: {
-    onGasTank: false,
-    rewardsType: null,
-    canTopUpGasTank: true,
-    isFeeToken: true
-  }
-}
-
-// const nativeFeeTokenAvalanche: TokenResult = {
-//   address: '0x0000000000000000000000000000000000000000',
-//   symbol: 'AVAX',
-//   amount: 1000n,
-//   networkId: 'avalanche',
-//   decimals: Number(18),
-//   priceIn: [{ baseCurrency: 'usd', price: 100 }],
-//   flags: {
-//     onGasTank: false,
-//     rewardsType: null,
-//     canTopUpGasTank: true,
-//     isFeeToken: true
-//   }
-// }
-
-const nativeFeeTokenPolygon: TokenResult = {
-  address: '0x0000000000000000000000000000000000000000',
-  symbol: 'POL',
-  amount: 1000n,
-  networkId: 'polygon',
+  chainId: 1n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -299,8 +308,9 @@ const nativeFeeTokenPolygon: TokenResult = {
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'POL',
+  name: 'Polygon Ecosystem Token',
   amount: 323871237812612123123n,
-  networkId: 'polygon',
+  chainId: 137n,
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
   flags: {
@@ -311,29 +321,7 @@ const gasTankToken: TokenResult = {
   }
 }
 
-const usdcFeeToken: TokenResult = {
-  amount: 54409383n,
-  networkId: 'polygon',
-  decimals: Number(6),
-  priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
-  symbol: 'USDC',
-  address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-  flags: {
-    onGasTank: false,
-    rewardsType: null,
-    canTopUpGasTank: true,
-    isFeeToken: true
-  }
-}
-
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const init = async (
   account: Account,
@@ -343,13 +331,19 @@ const init = async (
     feeTokens: TokenResult[]
   },
   signer: any,
-  estimationMock?: EstimateResult,
-  gasPricesMock?: gasPricesLib.GasRecommendation[],
+  estimationOrMock: FullEstimationSummary,
+  gasPricesOrMock: { [key: string]: GasRecommendation[] },
   updateWholePortfolio?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
-  await storage.set('accounts', [account])
-  const keystore = new KeystoreController(storage, { internal: KeystoreSigner }, windowManager)
+  const storageCtrl = new StorageController(storage)
+  await storageCtrl.set('accounts', [account])
+  const keystore = new KeystoreController(
+    'default',
+    storageCtrl,
+    { internal: KeystoreSigner },
+    windowManager
+  )
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
@@ -368,8 +362,9 @@ const init = async (
 
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
-    storage,
+    storageCtrl,
     fetch,
+    relayerUrl,
     (net) => {
       providersCtrl.setProvider(net)
     },
@@ -380,7 +375,7 @@ const init = async (
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
-    storage,
+    storageCtrl,
     providersCtrl,
     networksCtrl,
     () => {},
@@ -388,50 +383,33 @@ const init = async (
     () => {}
   )
   await accountsCtrl.initialLoadPromise
+  await waitForAccountsCtrlFirstLoad(accountsCtrl)
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
   const portfolio = new PortfolioController(
-    storage,
+    storageCtrl,
     fetch,
     providersCtrl,
     networksCtrl,
     accountsCtrl,
+    keystore,
     'https://staging-relayer.ambire.com',
     velcroUrl
   )
-  const { op, nativeToCheck, feeTokens } = accountOp
-  const network = networksCtrl.networks.find((x) => x.id === op.networkId)!
+  const { op } = accountOp
+  const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  const getSignAccountOpStatus = () => {
-    return null
-  }
-  const noStateUpdateStatuses: any[] = []
-  const prices =
-    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network)).gasPrice
-  const estimation =
-    estimationMock ||
-    (await estimate(
-      provider,
-      network,
-      account,
-      op,
-      accountsCtrl.accountStates,
-      getNativeToCheckFromEOAs(nativeToCheck, account),
-      feeTokens,
-      errorCallback,
-      new BundlerSwitcher(network, getSignAccountOpStatus, noStateUpdateStatuses)
-    ))
-
-  if (portfolio.getLatestPortfolioState(account.addr)[op.networkId]!.result) {
-    portfolio!.getLatestPortfolioState(account.addr)[op.networkId]!.result!.tokens = [
+  if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
+    portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
         amount: 1n,
-        networkId: op.networkId,
+        chainId: op.chainId,
         decimals: Number(18),
         symbol: 'ETH',
+        name: 'Ether',
         address: '0x0000000000000000000000000000000000000000',
         flags: {
           onGasTank: false,
@@ -443,9 +421,10 @@ const init = async (
       },
       {
         amount: 54409383n,
-        networkId: op.networkId,
+        chainId: op.chainId,
         decimals: Number(6),
         symbol: 'USDC',
+        name: 'USD Coin',
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         flags: {
           onGasTank: false,
@@ -457,105 +436,131 @@ const init = async (
       }
     ]
   }
-  const controller = new SignAccountOpController(
+
+  const bundlerSwitcher = new BundlerSwitcher(network, () => {
+    return false
+  })
+  const estimationController = new EstimationController(
+    keystore,
     accountsCtrl,
+    networksCtrl,
+    providers,
+    portfolio,
+    bundlerSwitcher
+  )
+  estimationController.estimation = estimationOrMock
+  estimationController.hasEstimated = true
+  estimationController.status = EstimationStatus.Success
+  estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
+    ? estimationOrMock.ambireEstimation.feePaymentOptions
+    : estimationOrMock.providerEstimation!.feePaymentOptions
+  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => ({
+    estimation: estimationController,
+    readyToSign: true,
+    isSignRequestStillActive: () => true
+  }))
+  gasPriceController.gasPrices = gasPricesOrMock
+  const controller = new SignAccountOpTesterController(
+    accountsCtrl,
+    networksCtrl,
     keystore,
     portfolio,
     {},
     account,
-    networks.find((n) => n.id === op.networkId)!,
+    network,
+    provider,
     1,
     op,
     () => {},
-    () => {}
+    true,
+    () => {},
+    estimationController,
+    gasPriceController
   )
+  controller.update({
+    hasNewEstimation: true,
+    gasPrices: gasPricesOrMock[network.chainId.toString()]
+  })
 
-  return { controller, prices, estimation }
+  return { controller }
 }
 
 describe('SignAccountOp Controller ', () => {
-  test('Default options', async () => {
-    // Please note that in this test case, we intentionally refrain from mocking the estimation and gasPrices libraries.
-    // The reason is that we aim to simulate the signing process as realistically as possible and prefer to depend on the actual underlying libraries rather than using mocks.
-    const { controller, estimation, prices } = await init(
-      v1Account,
-      createAccountOp(v1Account),
-      eoaSigner
-    )
-
-    controller.update({
-      gasPrices: prices,
-      estimation
-    })
-
-    // It sets a default signer
-    expect(controller.accountOp.signingKeyAddr).toEqual(eoaSigner.keyPublicAddress)
-    expect(controller.accountOp.signingKeyType).toEqual('internal')
-  })
-
   test('Signing [EOA]: EOA account paying with a native token', async () => {
-    const { controller, estimation, prices } = await init(
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n, // 1 ETH
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const { controller } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 ETH
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'ETH',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
       },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
-        }
-      ]
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
     )
 
     controller.update({
-      gasPrices: prices,
-      estimation,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
-      paidBy: eoaAccount.addr
+      paidBy: eoaAccount.addr,
+      speed: FeeSpeed.Fast
     })
 
     await controller.sign()
@@ -567,10 +572,10 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
-      isERC4337: false,
+      broadcastOption: BROADCAST_OPTIONS.bySelf,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
-      feeTokenNetworkId: 'ethereum',
+      feeTokenChainId: 1n,
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
       maxPriorityFeePerGas: 300n,
@@ -582,61 +587,71 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [EOA]: should emit an error if the availableAmount is 0', async () => {
-    const { controller, estimation, prices } = await init(
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 0n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 100000n,
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const { controller } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 0n,
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'ETH',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        // even if availableAmount is 0, there is no error from the
-        // estimation. It is singAccountOp's responsibility to disable signing
-        error: null
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
       },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
-        }
-      ]
+      {
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
     )
 
     let errorCount = 0
@@ -644,12 +659,12 @@ describe('SignAccountOp Controller ', () => {
     ;(controller as any).emitError = mockEmitError
 
     controller.update({
-      gasPrices: prices,
-      estimation,
+      hasNewEstimation: true,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
-      paidBy: eoaAccount.addr
+      paidBy: eoaAccount.addr,
+      speed: FeeSpeed.Fast
     })
 
     await controller.sign()
@@ -658,61 +673,71 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [EOA]: should emit an error if the availableAmount is lower than required', async () => {
-    const { controller, estimation, prices } = await init(
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 100000n,
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const { controller } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1n,
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'ETH',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        // even if availableAmount is lower than required, there is no error in
-        // the estimation. SingAccountOp should disable signing
-        error: null
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
       },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
-        }
-      ]
+      {
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
     )
 
     let errorCount = 0
@@ -720,8 +745,6 @@ describe('SignAccountOp Controller ', () => {
     ;(controller as any).emitError = mockEmitError
 
     controller.update({
-      gasPrices: prices,
-      estimation,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
       feeToken: nativeFeeToken,
@@ -734,131 +757,137 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
-    const networkId = 'polygon'
-    const network = networks.find((net) => net.id === networkId)!
-    const { controller, estimation, prices } = await init(
+    const chainId = 137n
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: usdcFeeToken.address,
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const network = networks.find((n) => n.chainId === chainId)!
+    const { controller } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.id),
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        gasUsed: 50000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 50000n,
-            addedNative: 0n,
-            token: {
-              address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-              amount: 1n,
-              symbol: 'usdt',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [
-                {
-                  baseCurrency: 'usd',
-                  price: 1
-                }
-              ],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: smartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: usdcFeeToken.address,
-              amount: 1n,
-              symbol: 'usdc',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [
-                {
-                  baseCurrency: 'usd',
-                  price: 1
-                }
-              ],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        providerEstimation: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
       },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n
-        }
-      ]
+      {
+        '137': [
+          {
+            name: 'slow',
+            baseFeePerGas: 1000000000n,
+            maxPriorityFeePerGas: 1000000000n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 2000000000n,
+            maxPriorityFeePerGas: 2000000000n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 5000000000n,
+            maxPriorityFeePerGas: 5000000000n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 7000000000n,
+            maxPriorityFeePerGas: 7000000000n
+          }
+        ]
+      }
     )
-
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
-
-    controller.update({
-      gasPrices: prices,
-      estimation
-    })
 
     controller.update({
       feeToken: usdcFeeToken,
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
+      signingKeyType: 'internal',
+      hasNewEstimation: true
     })
 
-    expect(controller.availableFeeOptions.length).toBe(3)
-    controller.availableFeeOptions.forEach((option) => {
+    expect(controller.estimation.availableFeeOptions.length).toBe(3)
+    controller.estimation.availableFeeOptions.forEach((option) => {
       const identifier = getFeeSpeedIdentifier(option, smartAccount.addr, null)
       expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
       expect(controller.feeSpeeds[identifier].length).not.toBe(0)
@@ -871,17 +900,16 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    expect(controller.accountOp!.gasFeePayment?.isERC4337).toBe(false)
     expect(controller.accountOp!.gasFeePayment?.paidBy).toBe(smartAccount.addr)
 
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
+      hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyTypedData(
+    const signerAddr = verifyTypedData(
       typedData.domain,
       typedData.types,
       typedData.message,
@@ -906,47 +934,59 @@ describe('SignAccountOp Controller ', () => {
     // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
+})
 
-  describe('Negative cases', () => {
-    suppressConsoleBeforeEach()
+describe('Negative cases', () => {
+  suppressConsoleBeforeEach()
 
-    test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
-      const networkId = 'polygon'
-      const network = networks.find((net) => net.id === networkId)!
-      const feeTokenResult = {
-        address: usdcFeeToken.address,
-        amount: 1n,
-        symbol: 'usdc',
-        networkId: 'polygon',
-        decimals: 6,
-        // we make the priceIn empty for this test
-        priceIn: [],
-        flags: {
-          onGasTank: false,
-          rewardsType: null,
-          canTopUpGasTank: true,
-          isFeeToken: true
-        }
+  test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
+    const chainId = 137n
+    const network = networks.find((n) => n.chainId === chainId)!
+    const feeTokenResult = {
+      address: usdcFeeToken.address,
+      amount: 1n,
+      symbol: 'usdc',
+      name: 'USD Coin',
+      chainId: 137n,
+      decimals: 6,
+      // we make the priceIn empty for this test
+      priceIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: true,
+        isFeeToken: true
       }
-      const { controller, estimation, prices } = await init(
-        smartAccount,
-        createAccountOp(smartAccount, network.id),
-        eoaSigner,
-        {
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: feeTokenResult
+      }
+    ]
+    const { controller } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, network.chainId),
+      eoaSigner,
+      {
+        providerEstimation: {
           gasUsed: 50000n,
-          currentAccountNonce: 0,
-          feePaymentOptions: [
-            {
-              paidBy: smartAccount.addr,
-              availableAmount: 500000000n,
-              gasUsed: 50000n,
-              addedNative: 0n,
-              token: feeTokenResult
-            }
-          ],
-          error: null
+          feePaymentOptions
         },
-        [
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        '137': [
           {
             name: 'slow',
             baseFeePerGas: 1000000000n,
@@ -968,153 +1008,153 @@ describe('SignAccountOp Controller ', () => {
             maxPriorityFeePerGas: 7000000000n
           }
         ]
-      )
+      }
+    )
 
-      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-      jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
-
-      controller.update({
-        gasPrices: prices,
-        estimation,
-        feeToken: feeTokenResult,
-        paidBy: smartAccount.addr,
-        signingKeyAddr: eoaSigner.keyPublicAddress,
-        signingKeyType: 'internal'
-      })
-
-      expect(controller.availableFeeOptions.length).toBe(1)
-      const identifier = getFeeSpeedIdentifier(
-        controller.availableFeeOptions[0],
-        smartAccount.addr,
-        null
-      )
-      expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
-      expect(controller.feeSpeeds[identifier].length).toBe(0)
-
-      const errors = controller.errors
-      expect(errors.length).toBe(1)
-      expect(errors[0]).toBe(
-        `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
-      )
-      expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
-      await controller.sign()
-
-      expect(controller.accountOp?.signature).toBe(null)
+    controller.update({
+      hasNewEstimation: true,
+      feeToken: feeTokenResult,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
     })
-  })
 
+    expect(controller.estimation.availableFeeOptions.length).toBe(1)
+    const identifier = getFeeSpeedIdentifier(
+      controller.estimation.availableFeeOptions[0],
+      smartAccount.addr,
+      null
+    )
+    expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
+    expect(controller.feeSpeeds[identifier].length).toBe(0)
+
+    const errors = controller.errors
+    expect(errors.length).toBe(1)
+    expect(errors[0].title).toBe(
+      `Currently, ${controller.estimation.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+    )
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+    await controller.sign()
+
+    expect(controller.accountOp?.signature).toBe(null)
+  })
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
-    const networkId = 'polygon'
-    const network = networks.find((net) => net.id === networkId)!
+    const chainId = 137n
+    const network = networks.find((n) => n.chainId === chainId)!
     network.erc4337.enabled = false
-    const { controller, estimation, prices } = await init(
+    const feePaymentOptions = [
+      {
+        paidBy: e2esmartAccount.addr,
+        availableAmount: 500000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: true,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: e2esmartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: e2esmartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const { controller } = await init(
       e2esmartAccount,
-      createAccountOp(e2esmartAccount, network.id),
+      createAccountOp(e2esmartAccount, network.chainId),
       eoaSigner,
       {
-        gasUsed: 50000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: e2esmartAccount.addr,
-            availableAmount: 500000000000000000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: true,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: e2esmartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 50000n,
-            addedNative: 0n,
-            token: {
-              address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-              amount: 1n,
-              symbol: 'usdt',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: e2esmartAccount.addr,
-            availableAmount: 500000000n,
-            gasUsed: 25000n,
-            addedNative: 0n,
-            token: {
-              address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-              amount: 1n,
-              symbol: 'usdc',
-              networkId: 'polygon',
-              decimals: 6,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        providerEstimation: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
       },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n
-        }
-      ],
+      {
+        '137': [
+          {
+            name: 'slow',
+            baseFeePerGas: 1000000000n,
+            maxPriorityFeePerGas: 1000000000n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 2000000000n,
+            maxPriorityFeePerGas: 2000000000n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 5000000000n,
+            maxPriorityFeePerGas: 5000000000n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 7000000000n,
+            maxPriorityFeePerGas: 7000000000n
+          }
+        ]
+      },
       true
     )
 
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
-
-    controller.update({
-      gasPrices: prices,
-      estimation
-    })
-
     // @ts-ignore
     controller.update({
+      hasNewEstimation: true,
       feeToken: gasTankToken,
       paidBy: e2esmartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
@@ -1130,11 +1170,11 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
+      hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyTypedData(
+    const signerAddr = verifyTypedData(
       typedData.domain,
       typedData.types,
       typedData.message,
@@ -1147,7 +1187,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.status).toEqual({ type: 'done' })
 
     // We expect the fee payment call to be added.
-    const abiCoder = new ethers.AbiCoder()
+    const abiCoder = new AbiCoder()
     expect(controller.accountOp.feeCall!.to).toEqual(FEE_COLLECTOR)
     expect(controller.accountOp.feeCall!.value).toEqual(0n)
     expect(controller.accountOp.feeCall!.data).toEqual(
@@ -1160,213 +1200,93 @@ describe('SignAccountOp Controller ', () => {
     // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
-
   test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions but 1 feeSpeed as both feePaymentOptions are EOA', async () => {
-    const network = networks.find((net) => net.id === 'polygon')!
-    const { controller, estimation, prices } = await init(
+    const network = networks.find((n) => n.chainId === 137n)!
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n, // 1 POL
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: trezorEoa.addr,
+        availableAmount: 2000000000000000000n, // 1 POL
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: otherEoa.addr,
+        availableAmount: 3000000000000000000n, // 1 POL
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const { controller } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.id),
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 POL
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: trezorEoa.addr,
-            availableAmount: 2000000000000000000n, // 1 POL
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          },
-          {
-            paidBy: otherEoa.addr,
-            availableAmount: 3000000000000000000n, // 1 POL
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'POL',
-              networkId: 'polygon',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
-      },
-      [
-        {
-          name: 'slow',
-          baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
-        },
-        {
-          name: 'medium',
-          baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
-        },
-        {
-          name: 'fast',
-          baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
-        },
-        {
-          name: 'ape',
-          baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
-        }
-      ]
-    )
-
-    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
-
-    controller.update({
-      gasPrices: prices,
-      estimation,
-      feeToken: nativeFeeTokenPolygon,
-      paidBy: eoaSigner.keyPublicAddress,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
-    })
-
-    expect(controller.availableFeeOptions.length).toBe(3)
-    const firstIdentity = getFeeSpeedIdentifier(
-      controller.availableFeeOptions[0],
-      smartAccount.addr,
-      null
-    )
-    const secondIdentity = getFeeSpeedIdentifier(
-      controller.availableFeeOptions[1],
-      smartAccount.addr,
-      null
-    )
-    expect(firstIdentity).toBe(secondIdentity)
-    expect(Object.keys(controller.feeSpeeds).length).toBe(1)
-    expect(controller.feeSpeeds[firstIdentity]).not.toBe(undefined)
-    expect(controller.feeSpeeds[firstIdentity].length).toBe(4)
-
-    await controller.sign()
-
-    if (!controller.accountOp?.signature) {
-      console.log('Signing errors:', controller.errors)
-      throw new Error('Signing failed!')
-    }
-
-    expect(controller.accountOp.gasFeePayment).toEqual({
-      paidBy: eoaSigner.keyPublicAddress,
-      isERC4337: false,
-      isGasTank: false,
-      inToken: '0x0000000000000000000000000000000000000000',
-      feeTokenNetworkId: 'polygon',
-      amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
-      simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
-      maxPriorityFeePerGas: 300n,
-      gasPrice: 600n
-    })
-
-    const typedData = getTypedData(
-      network.chainId,
-      controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
-    )
-    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    delete typedData.types.EIP712Domain
-    const signerAddr = ethers.verifyTypedData(
-      typedData.domain,
-      typedData.types,
-      typedData.message,
-      unwrappedSig
-    )
-
-    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
-    expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)
-
-    // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
-    expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
-
-    // If signing is successful, we expect controller's status to be done
-    expect(controller.status).toEqual({ type: 'done' })
-  })
-
-  describe('Negative cases', () => {
-    suppressConsoleBeforeEach()
-
-    test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
-      const network = networks.find((net) => net.id === 'polygon')!
-      const { controller, estimation, prices } = await init(
-        smartAccount,
-        createAccountOp(smartAccount, network.id),
-        eoaSigner,
-        {
+        providerEstimation: {
           gasUsed: 10000n,
-          currentAccountNonce: 0,
-          feePaymentOptions: [
-            {
-              paidBy: eoaAccount.addr,
-              availableAmount: 100n, // not enough
-              gasUsed: 0n,
-              addedNative: 5000n,
-              token: {
-                address: '0x0000000000000000000000000000000000000000',
-                amount: 1n,
-                symbol: 'POL',
-                networkId: 'polygon',
-                decimals: 18,
-                priceIn: [],
-                flags: {
-                  onGasTank: false,
-                  rewardsType: null,
-                  canTopUpGasTank: true,
-                  isFeeToken: true
-                }
-              }
-            }
-          ],
-          error: null
+          feePaymentOptions
         },
-        [
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        '137': [
           {
             name: 'slow',
             baseFeePerGas: 100n,
@@ -1388,67 +1308,213 @@ describe('SignAccountOp Controller ', () => {
             maxPriorityFeePerGas: 400n
           }
         ]
-      )
+      }
+    )
 
-      // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-      // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-      jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
-
-      controller.update({
-        gasPrices: prices,
-        estimation,
-        feeToken: nativeFeeTokenPolygon,
-        paidBy: eoaSigner.keyPublicAddress,
-        signingKeyAddr: eoaSigner.keyPublicAddress,
-        signingKeyType: 'internal'
-      })
-
-      const errors = controller.errors
-      expect(errors.length).toBe(1)
-      expect(errors[0]).toBe(
-        'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC and others'
-      )
-
-      expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
-      await controller.sign()
-
-      expect(controller.signedAccountOp?.signature).toBeFalsy()
+    controller.update({
+      hasNewEstimation: true,
+      feeToken: nativeFeeTokenPolygon,
+      paidBy: eoaSigner.keyPublicAddress,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
     })
-  })
 
-  test('Signing [V1 with EOA payment]: working case', async () => {
-    const { controller, estimation, prices } = await init(
-      v1Account,
-      createAccountOp(v1Account),
+    expect(controller.estimation.availableFeeOptions.length).toBe(3)
+    const firstIdentity = getFeeSpeedIdentifier(
+      controller.estimation.availableFeeOptions[0],
+      smartAccount.addr,
+      null
+    )
+    const secondIdentity = getFeeSpeedIdentifier(
+      controller.estimation.availableFeeOptions[1],
+      smartAccount.addr,
+      null
+    )
+    expect(firstIdentity).toBe(secondIdentity)
+    expect(Object.keys(controller.feeSpeeds).length).toBe(1)
+    expect(controller.feeSpeeds[firstIdentity]).not.toBe(undefined)
+    expect(controller.feeSpeeds[firstIdentity].length).toBe(4)
+
+    await controller.sign()
+
+    if (!controller.accountOp?.signature) {
+      console.log('Signing errors:', controller.errors)
+      throw new Error('Signing failed!')
+    }
+
+    expect(controller.accountOp.gasFeePayment!.paidBy).toEqual(eoaSigner.keyPublicAddress)
+    expect(controller.accountOp.gasFeePayment!.broadcastOption).toEqual(
+      BROADCAST_OPTIONS.byOtherEOA
+    )
+    expect(controller.accountOp.gasFeePayment!.isGasTank).toEqual(false)
+    expect(controller.accountOp.gasFeePayment!.inToken).toEqual(
+      '0x0000000000000000000000000000000000000000'
+    )
+    expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
+
+    const typedData = getTypedData(
+      network.chainId,
+      controller.accountOp.accountAddr,
+      hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
+    )
+    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
+    delete typedData.types.EIP712Domain
+    const signerAddr = verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
+
+    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
+    expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)
+
+    // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
+    expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
+
+    // If signing is successful, we expect controller's status to be done
+    expect(controller.status).toEqual({ type: 'done' })
+  })
+})
+
+describe('Negative cases', () => {
+  suppressConsoleBeforeEach()
+
+  test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
+    const network = networks.find((n) => n.chainId === 137n)!
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 100n, // not enough
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const { controller } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, network.chainId),
       eoaSigner,
       {
-        gasUsed: 10000n,
-        currentAccountNonce: 0,
-        feePaymentOptions: [
-          {
-            paidBy: eoaAccount.addr,
-            availableAmount: 1000000000000000000n, // 1 ETH
-            gasUsed: 0n,
-            addedNative: 5000n,
-            token: {
-              address: '0x0000000000000000000000000000000000000000',
-              amount: 1n,
-              symbol: 'eth',
-              networkId: 'ethereum',
-              decimals: 18,
-              priceIn: [],
-              flags: {
-                onGasTank: false,
-                rewardsType: null,
-                canTopUpGasTank: true,
-                isFeeToken: true
-              }
-            }
-          }
-        ],
-        error: null
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
       },
-      [
+      {
+        '137': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+
+    controller.update({
+      hasNewEstimation: true,
+      feeToken: nativeFeeTokenPolygon,
+      paidBy: eoaSigner.keyPublicAddress,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    const errors = controller.errors
+    expect(errors.length).toBe(1)
+    expect(errors[0].title).toBe(
+      'Insufficient funds to cover the fee. Available fee options: USDC in Gas Tank, POL, WMATIC, WSTETH, WBTC, WETH, DAI, USDT, USDC.E, USDC, RETH, AAVE, LINK and others'
+    )
+    expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
+    await controller.sign()
+
+    expect(controller.signedAccountOp?.signature).toBeFalsy()
+  })
+})
+
+test('Signing [V1 with EOA payment]: working case', async () => {
+  const feePaymentOptions = [
+    {
+      paidBy: eoaAccount.addr,
+      availableAmount: 1000000000000000000n, // 1 ETH
+      gasUsed: 0n,
+      addedNative: 5000n,
+      token: {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 1n,
+        symbol: 'eth',
+        name: 'Ether',
+        chainId: 1n,
+        decimals: 18,
+        priceIn: [],
+        flags: {
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true,
+          isFeeToken: true
+        }
+      }
+    }
+  ]
+  const { controller } = await init(
+    v1Account,
+    createAccountOp(v1Account),
+    eoaSigner,
+    {
+      providerEstimation: {
+        gasUsed: 10000n,
+        feePaymentOptions
+      },
+      ambireEstimation: {
+        deploymentGas: 0n,
+        gasUsed: 10000n,
+        feePaymentOptions,
+        ambireAccountNonce: 0,
+        flags: {}
+      },
+      flags: {}
+    },
+    {
+      '1': [
         {
           name: 'slow',
           baseFeePerGas: 100n,
@@ -1470,148 +1536,34 @@ describe('SignAccountOp Controller ', () => {
           maxPriorityFeePerGas: 400n
         }
       ]
-    )
-
-    controller.update({
-      gasPrices: prices,
-      estimation,
-      feeToken: nativeFeeToken,
-      paidBy: eoaSigner.keyPublicAddress,
-      signingKeyAddr: eoaSigner.keyPublicAddress,
-      signingKeyType: 'internal'
-    })
-
-    await controller.sign()
-
-    if (!controller.accountOp?.signature) {
-      console.log('Signing errors:', controller.errors)
-      throw new Error('Signing failed!')
     }
+  )
 
-    const message = accountOpSignableHash(controller.accountOp, 1n)
-    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(message, unwrappedSig)
-
-    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
-    expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)
-
-    // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
-    expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
-
-    // If signing is successful, we expect controller's status to be done
-    expect(controller.status).toEqual({ type: 'done' })
+  controller.update({
+    hasNewEstimation: true,
+    feeToken: nativeFeeToken,
+    paidBy: eoaSigner.keyPublicAddress,
+    signingKeyAddr: eoaSigner.keyPublicAddress,
+    signingKeyType: 'internal'
   })
 
-  // TODO:
-  // Commenting out the below test as it now requires a paymaster
-  // which in turns means we have to call the relayer with a valid signature
+  await controller.sign()
 
-  // test('Signing [ERC-4337]: Smart account paying in native', async () => {
-  //   const accOpInfo = createAccountOp(trezorSlot7v24337Deployed, 'avalanche')
-  //   const accOp = accOpInfo.op
-  //   const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-  //   const userOp = getUserOperation(
-  //     trezorSlot7v24337Deployed,
-  //     accountStates[accOp.accountAddr][accOp.networkId],
-  //     accOp
-  //   )
-  //   userOp.verificationGasLimit = toBeHex(6000n)
-  //   userOp.callGasLimit = toBeHex(12000n)
-  //   const { controller, estimation, prices } = await init(
-  //     trezorSlot7v24337Deployed,
-  //     accOpInfo,
-  //     eoaSigner,
-  //     {
-  //       gasUsed: 200000n,
-  //       nonce: 0,
-  //       erc4337estimation: { userOp, gasUsed: 200000n },
-  //       feePaymentOptions: [
-  //         {
-  //           address: '0x0000000000000000000000000000000000000000',
-  //           paidBy: trezorSlot7v24337Deployed.addr,
-  //           availableAmount: ethers.parseEther('10'),
-  //           gasUsed: 25000n,
-  //           addedNative: 0n,
-  //           isGasTank: false
-  //         }
-  //       ],
-  //       error: null,
-  //     },
-  //     [
-  //       {
-  //         name: 'slow',
-  //         baseFeePerGas: 1000000000n,
-  //         maxPriorityFeePerGas: 1000000000n
-  //       },
-  //       {
-  //         name: 'medium',
-  //         baseFeePerGas: 2000000000n,
-  //         maxPriorityFeePerGas: 2000000000n
-  //       },
-  //       {
-  //         name: 'fast',
-  //         baseFeePerGas: 5000000000n,
-  //         maxPriorityFeePerGas: 5000000000n
-  //       },
-  //       {
-  //         name: 'ape',
-  //         baseFeePerGas: 7000000000n,
-  //         maxPriorityFeePerGas: 7000000000n
-  //       }
-  //     ]
-  //   )
+  if (!controller.accountOp?.signature) {
+    console.log('Signing errors:', controller.errors)
+    throw new Error('Signing failed!')
+  }
 
-  //   expect(controller.accountOp.asUserOperation).toBe(undefined)
+  const message = accountOpSignableHash(controller.accountOp, 1n)
+  const unwrappedSig = controller.accountOp.signature.slice(0, -2)
+  const signerAddr = verifyMessage(message, unwrappedSig)
 
-  //   // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
-  //   // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-  //   jest.spyOn(controller, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
+  // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
+  expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)
 
-  //   controller.update({
-  //     gasPrices: prices,
-  //     estimation
-  //   })
+  // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
+  expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
 
-  //   controller.update({
-  //     feeToken: nativeFeeTokenAvalanche,
-  //     paidBy: trezorSlot7v24337Deployed.addr,
-  //     signingKeyAddr: eoaSigner.keyPublicAddress,
-  //     signingKeyType: 'internal'
-  //   })
-
-  //   await controller.sign()
-
-  //   if (!controller.accountOp?.signature) {
-  //     console.log('Signing errors:', controller.errors)
-  //     throw new Error('Signing failed!')
-  //   }
-
-  //   expect(controller.accountOp!.gasFeePayment?.isERC4337).toBe(true)
-  //   expect(controller.accountOp.asUserOperation!.requestType).toBe('standard')
-
-  //   const entryPoint: any = new ethers.BaseContract(
-  //     ERC_4337_ENTRYPOINT,
-  //     EntryPointAbi,
-  //     providers.avalanche
-  //   )
-  //   const typedData = getTypedData(
-  //     43114n, // avalanche
-  //     controller.accountOp.accountAddr,
-  //     await entryPoint.getUserOpHash(controller.accountOp.asUserOperation!)
-  //   )
-  //   delete typedData.types.EIP712Domain
-  //   const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-  //   expect(controller.accountOp.signature.slice(-2)).toBe('01')
-  //   const signerAddr = ethers.verifyTypedData(
-  //     typedData.domain,
-  //     typedData.types,
-  //     typedData.message,
-  //     unwrappedSig
-  //   )
-
-  //   // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
-  //   expect(eoaAccount.addr).toEqual(signerAddr)
-  //   // If signing is successful, we expect controller's status to be done
-  //   expect(controller.status).toEqual({ type: 'done' })
-  // })
+  // If signing is successful, we expect controller's status to be done
+  expect(controller.status).toEqual({ type: 'done' })
 })

@@ -1,10 +1,10 @@
+import { Account } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { Paymaster } from '../../libs/paymaster/paymaster'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { UserOperation } from '../../libs/userOperation/types'
 import { failedPaymasters } from './FailedPaymasters'
 
@@ -14,22 +14,30 @@ import { failedPaymasters } from './FailedPaymasters'
 // so we init the PaymasterFactory in the main controller and use it
 // throught the app as a singleton
 export class PaymasterFactory {
-  callRelayer: Function | undefined = undefined
+  relayerUrl: string | undefined
+
+  fetch: Fetch | undefined
 
   errorCallback: Function | undefined = undefined
 
   init(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.relayerUrl = relayerUrl
+    this.fetch = fetch
     this.errorCallback = errorCallback
   }
 
   async create(
     op: AccountOp,
     userOp: UserOperation,
+    account: Account,
     network: Network,
     provider: RPCProvider
   ): Promise<AbstractPaymaster> {
-    if (this.callRelayer === undefined || this.errorCallback === undefined)
+    if (
+      this.relayerUrl === undefined ||
+      this.fetch === undefined ||
+      this.errorCallback === undefined
+    )
       throw new Error('call init first')
 
     // check whether the sponsorship has failed and if it has,
@@ -40,8 +48,8 @@ export class PaymasterFactory {
       if (localOp.meta && localOp.meta.paymasterService) localOp.meta.paymasterService.failed = true
     }
 
-    const paymaster = new Paymaster(this.callRelayer, this.errorCallback)
-    await paymaster.init(localOp, userOp, network, provider)
+    const paymaster = new Paymaster(this.relayerUrl, this.fetch, this.errorCallback)
+    await paymaster.init(localOp, userOp, account, network, provider)
     return paymaster
   }
 }

@@ -16,6 +16,7 @@ contract BalanceGetter is Simulation {
 
   struct TokenInfo {
     string symbol;
+    string name;
     uint256 amount;
     uint8 decimals;
     bytes error;
@@ -31,6 +32,7 @@ contract BalanceGetter is Simulation {
   ) external view returns (TokenInfo memory info) {
     info.amount = token.balanceOf(address(account));
     info.symbol = token.symbol();
+    info.name = token.name();
     info.decimals = token.decimals();
   }
 
@@ -42,7 +44,7 @@ contract BalanceGetter is Simulation {
     TokenInfo[] memory results = new TokenInfo[](len);
     for (uint256 i = 0; i < len; i++) {
       if (tokenAddrs[i] == address(0)) {
-        results[i] = TokenInfo('ETH', address(account).balance, 18, bytes(''));
+        results[i] = TokenInfo('ETH', 'Ether', address(account).balance, 18, bytes(''));
       } else {
         try this.getERC20TokenInfo(account, IERC20(tokenAddrs[i])) returns (TokenInfo memory info) {
           results[i] = info;
@@ -64,7 +66,11 @@ contract BalanceGetter is Simulation {
 
   // Compare the tokens balances before (balancesA) and after simulation (balancesB)
   // and return the delta (with simulation)
-  function getDelta(TokenInfo[] memory balancesA, TokenInfo[] memory balancesB, address[] calldata tokenAddrs) public returns (TokenInfo[] memory) {
+  function getDelta(
+    TokenInfo[] memory balancesA,
+    TokenInfo[] memory balancesB,
+    address[] calldata tokenAddrs
+  ) public returns (TokenInfo[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < balancesA.length; i++) {
@@ -75,7 +81,6 @@ contract BalanceGetter is Simulation {
 
     TokenInfo[] memory delta = new TokenInfo[](deltaSize);
     deltaAddressesMapping = new address[](deltaSize);
-
 
     // Second loop to populate the delta array
     // Separate index for the delta array
@@ -130,7 +135,11 @@ contract BalanceGetter is Simulation {
       (TokenInfo[] memory resultsAfterSimulation, ) = getBalances(account, tokenAddrs);
       afterSimulation.balances = resultsAfterSimulation;
 
-      (TokenInfo[] memory deltaAfter) = getDelta(before.balances, afterSimulation.balances, tokenAddrs);
+      TokenInfo[] memory deltaAfter = getDelta(
+        before.balances,
+        afterSimulation.balances,
+        tokenAddrs
+      );
       afterSimulation.balances = deltaAfter;
     }
 

@@ -10,18 +10,43 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
+import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
+import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
 import { StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
+const providers = Object.fromEntries(
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
+)
+const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: Network, netIndex: number) => {
+          return [network.chainId.toString(), result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
+
 describe('Portfolio', () => {
   const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-  const ethereum = networks.find((x) => x.id === 'ethereum')
+  const ethereum = networks.find((n) => n.chainId === 1n)
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
-  const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
+  const provider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
   const portfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 
   async function getNonce(address: string) {
@@ -52,10 +77,14 @@ describe('Portfolio', () => {
     // This allows us to predict the number of requests in advance.
     // If more advanced testing is required, we'll need to count the number of hints and calculate the expected
     // number of paginated requests accordingly.
-    await Promise.all([
+    const [result1, result2] = await Promise.all([
       portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
     ])
+
+    const tokens =
+      (result1.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0) +
+      (result2.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0)
 
     stopMonitoring()
 
@@ -78,7 +107,8 @@ describe('Portfolio', () => {
 
     expect(multiHintsReqs.length).toEqual(1)
     expect(nativePriceReqs.length).toEqual(1)
-    expect(tokenPriceReqs.length).toEqual(1)
+    // Expect tokenPriceReqs to be paginated. 40 is the max tokens per request.
+    expect(tokenPriceReqs.length).toEqual(Math.ceil(tokens / 40))
     expect(rpcReqs.length).toEqual(1)
   })
 
@@ -88,7 +118,7 @@ describe('Portfolio', () => {
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       // fake sig, doesn't matter
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
@@ -115,8 +145,13 @@ describe('Portfolio', () => {
         pfp: PORTFOLIO_TESTS_V2.addr
       }
     } as Account
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
-      simulation: { accountOps: [accountOp], account }
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr]['1']
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
@@ -149,7 +184,7 @@ describe('Portfolio', () => {
       signingKeyType: 'internal',
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'),
       signature: spoofSig,
       accountOpToExecuteBefore: null,
@@ -171,8 +206,13 @@ describe('Portfolio', () => {
       }
     }
 
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', {
-      simulation: { accountOps: [accountOp], account }
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+      }
     })
 
     const collection = postSimulation.collections.find((c) => c.symbol === 'NFT Fiesta')
@@ -195,21 +235,17 @@ describe('Portfolio', () => {
   })
 
   test('simulation works for EOAs', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
-      nonce: BigInt(EOA_SIMULATION_NONCE),
+      chainId: 1n,
+      nonce: await getNonce('0xD8293ad21678c6F09Da139b4B62D38e514a03B78'),
       signature: '0x',
       calls: [
-        await getSafeSendUSDTTransaction(
-          acc,
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          5259434n
-        )
+        await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
       ]
     }
     const account: Account = {
@@ -222,38 +258,19 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [accountOp], account },
-      isEOA: true
-    })
-    const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
-    if (!entry || entry.amountPostSimulation === undefined) {
-      throw new Error('Entry not found or `amountPostSimulation` is not calculated')
-    }
-    expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
-  })
-
-  test('simulation works with empty account ops', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
-    const account: Account = {
-      addr: acc,
-      associatedKeys: [acc],
-      creation: null,
-      initialPrivileges: [],
-      preferences: {
-        label: DEFAULT_ACCOUNT_LABEL,
-        pfp: acc
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
       }
-    }
-    const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [], account },
-      isEOA: true
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
     }
-    expect(entry.amount - entry.amountPostSimulation).toBe(0n)
+    expect(entry.amount - entry.amountPostSimulation).toBe(209434n)
   })
 
   test('simulation works for smart accounts imported as EOAs', async () => {
@@ -263,7 +280,7 @@ describe('Portfolio', () => {
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
@@ -284,9 +301,13 @@ describe('Portfolio', () => {
         pfp: acc
       }
     }
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(acc, {
-      simulation: { accountOps: [accountOp], account },
-      isEOA: true
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'ETH')
     if (!entry || entry.amountPostSimulation === undefined) {
@@ -296,21 +317,17 @@ describe('Portfolio', () => {
   })
 
   test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: 0n,
       signature: '0x',
       calls: [
-        await getSafeSendUSDTTransaction(
-          acc,
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          5259434n
-        )
+        await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
       ]
     }
     const account = {
@@ -328,9 +345,14 @@ describe('Portfolio', () => {
         pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
       }
     }
+    const accountStates = await getAccountsInfo([account])
     try {
       await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp], account }
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        }
       })
       // should throw an error and never come here
       expect(true).toBe(false)
@@ -343,7 +365,11 @@ describe('Portfolio', () => {
     accountOp.nonce = 99999999999999999999999999999999999999999n
     try {
       await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        simulation: { accountOps: [accountOp], account }
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        }
       })
       // should throw an error and never come here
       expect(true).toBe(false)
@@ -354,14 +380,14 @@ describe('Portfolio', () => {
     }
   })
 
-  test('simulation should revert with SV_NO_KEYS for an account we do not posses the assoicated key for', async () => {
+  test('simulation should revert with SV_NO_KEYS for an account we do not posses the associated key for', async () => {
     const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: BigInt(EOA_SIMULATION_NONCE),
       signature: '0x',
       calls: [
@@ -375,13 +401,7 @@ describe('Portfolio', () => {
     const account: Account = {
       addr: acc,
       associatedKeys: [],
-      creation: {
-        // Those parameters are not relevant
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      },
+      creation: null,
       initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
@@ -390,9 +410,13 @@ describe('Portfolio', () => {
     }
 
     try {
+      const accountStates = await getAccountsInfo([account])
       await portfolio.get(acc, {
-        simulation: { accountOps: [accountOp], account },
-        isEOA: true
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        }
       })
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: no keys')
@@ -400,33 +424,23 @@ describe('Portfolio', () => {
   })
 
   test('simulation should revert with SV_WRONG_KEYS for an account that we pass a wrong associated key', async () => {
-    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
-      nonce: BigInt(EOA_SIMULATION_NONCE),
+      chainId: 1n,
+      nonce: await getNonce(acc),
       signature: '0x',
       calls: [
-        await getSafeSendUSDTTransaction(
-          acc,
-          '0xe5a4dad2ea987215460379ab285df87136e83bea',
-          5259434n
-        )
+        await getSafeSendUSDTTransaction(acc, '0xe5a4dad2ea987215460379ab285df87136e83bea', 209434n)
       ]
     }
     const account: Account = {
       addr: acc,
       associatedKeys: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
-      creation: {
-        // Those parameters are not relevant
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      },
+      creation: null,
       initialPrivileges: [],
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
@@ -435,9 +449,13 @@ describe('Portfolio', () => {
     }
 
     try {
+      const accountStates = await getAccountsInfo([account])
       await portfolio.get(acc, {
-        simulation: { accountOps: [accountOp], account },
-        isEOA: true
+        simulation: {
+          accountOps: [accountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        }
       })
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
@@ -450,7 +468,7 @@ describe('Portfolio', () => {
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
@@ -477,8 +495,13 @@ describe('Portfolio', () => {
       }
     }
 
+    const accountStates = await getAccountsInfo([account])
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
-      simulation: { accountOps: [accountOp], account }
+      simulation: {
+        accountOps: [accountOp],
+        account,
+        state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+      }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
 
@@ -497,7 +520,7 @@ describe('Portfolio', () => {
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'ethereum',
+      chainId: 1n,
       nonce: await getNonce(PORTFOLIO_TESTS_V2.addr),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
@@ -521,8 +544,13 @@ describe('Portfolio', () => {
     const secondAccountOp = { ...accountOp }
     secondAccountOp.nonce = accountOp.nonce + 2n // wrong, should be +1n
     try {
+      const accountStates = await getAccountsInfo([account])
       await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
-        simulation: { accountOps: [accountOp, secondAccountOp], account }
+        simulation: {
+          accountOps: [accountOp, secondAccountOp],
+          account,
+          state: accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
+        }
       })
       // portfolio.get should revert and not come here
       expect(true).toBe(false)

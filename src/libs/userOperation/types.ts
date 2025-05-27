@@ -1,7 +1,23 @@
+import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
+import { Hex } from '../../interfaces/hex'
 import { Call } from '../accountOp/types'
 
-export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
+export type UserOpRequestType = 'standard' | 'activator' | 'recovery' | '7702'
+
+export interface PackedUserOperation {
+  sender: string
+  nonce: bigint
+  initCode: Hex
+  callData: Hex
+  // callGasLimit + verificationGasLimit
+  accountGasLimits: Hex
+  preVerificationGas: bigint
+  // maxFeePerGas + maxPriorityFeePerGas
+  gasFees: Hex
+  paymasterAndData: Hex
+  signature?: Hex
+}
 
 export interface UserOperation {
   sender: string
@@ -25,6 +41,7 @@ export interface UserOperation {
   // which bundler is responsible for submitting and fetching info
   // about this userOp
   bundler: BUNDLER
+  eip7702Auth?: EIP7702Auth
 }
 
 export interface UserOperationEventData {

@@ -4,8 +4,10 @@ pragma solidity ^0.8.7;
 import '../libs/Transaction.sol';
 
 interface IAmbireAccount {
-	function privileges(address addr) external returns (bytes32);
-	function nonce() external returns (uint);
+	struct AmbireStorage {
+		mapping(address => bytes32) privileges;
+		uint256 nonce;
+	}
 
 	struct RecoveryInfo {
 		address[] keys;
@@ -15,6 +17,10 @@ interface IAmbireAccount {
 		Transaction[] calls;
 		bytes signature;
 	}
+
+	// storage access methods
+	function nonce() external view returns (uint256);
+	function privileges(address key) external view returns (bytes32);
 
 	function setAddrPrivilege(address addr, bytes32 priv) external payable;
 	function tryCatch(address to, uint value, bytes calldata data) external payable;

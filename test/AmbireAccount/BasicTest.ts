@@ -1,7 +1,7 @@
 import { hashMessage } from 'ethers'
 import { ethers } from 'hardhat'
 
-import { wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
+import { getExecute712Data, wrapEIP712 } from '../ambireSign'
 import {
   abiCoder,
   addressFour,
@@ -28,6 +28,29 @@ describe('Basic Ambire Account tests', () => {
       }
     ])
     ambireAccountAddress = addr
+  })
+  it('should successfully perform execute and validate that the nonce has moved', async () => {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const txns: [string, string, string][] = [
+      [addressTwo, ethers.parseEther('0.01').toString(), '0x'],
+      [addressThree, ethers.parseEther('0.01').toString(), '0x']
+    ]
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txns]
+      )
+    )
+    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const s = wrapEIP712(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
+    await contract.execute(txns, s)
+    const nonceAfterExecute = await contract.nonce()
+    expect(nonceAfterExecute).to.equal(nonce + 1n)
   })
   it('ONLY_ACCOUNT_CAN_CALL on setAddrPrivilege', async () => {
     const [signer] = await ethers.getSigners()
@@ -62,15 +85,23 @@ describe('Basic Ambire Account tests', () => {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
-    const normalTxns = [[addressTwo, ethers.parseEther('0.01'), '0x00']]
+    const normalTxns: [string, string, string][] = [
+      [addressTwo, ethers.parseEther('0.01').toString(), '0x00']
+    ]
     const executeHash = ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
         [ambireAccountAddress, chainId, nonce, normalTxns]
       )
     )
-    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
-    const s = wrapEthSign(
+    const typedData = getExecute712Data(
+      chainId,
+      nonce,
+      normalTxns,
+      ambireAccountAddress,
+      executeHash
+    )
+    const s = wrapEIP712(
       await signer2.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     await expect(contract.execute(normalTxns, s)).to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
@@ -78,7 +109,9 @@ describe('Basic Ambire Account tests', () => {
   it('fail on downgrading my own key priviledge', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    const txns = [getPriviledgeTxn(ambireAccountAddress, addressOne, false)]
+    const txns: [string, string, string][] = [
+      getPriviledgeTxn(ambireAccountAddress, addressOne, false)
+    ]
     const nonce = await contract.nonce()
     const executeHash = ethers.keccak256(
       abiCoder.encode(
@@ -86,8 +119,8 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
-    const s = wrapEthSign(
+    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const s = wrapEIP712(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     await expect(contract.execute(txns, s)).to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
@@ -179,9 +212,9 @@ describe('Basic Ambire Account tests', () => {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
-    const firstBatch = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
+    const firstBatch: [string, string, string][] = [
+      [addressTwo, ethers.parseEther('0.01').toString(), '0x00'],
+      [addressThree, ethers.parseEther('0.01').toString(), '0x00']
     ]
     const executeHash = ethers.keccak256(
       abiCoder.encode(
@@ -189,22 +222,35 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, firstBatch]
       )
     )
-    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
-    const s = wrapEthSign(
+    const typedData = getExecute712Data(
+      chainId,
+      nonce,
+      firstBatch,
+      ambireAccountAddress,
+      executeHash
+    )
+    const s = wrapEIP712(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
-    const secondBatch = [
-      [addressOne, ethers.parseEther('0.01'), '0x00'],
-      [addressFour, ethers.parseEther('0.01'), '0x00']
+    const secondBatch: [string, string, string][] = [
+      [addressOne, ethers.parseEther('0.01').toString(), '0x00'],
+      [addressFour, ethers.parseEther('0.01').toString(), '0x00']
     ]
+    const incrementedNonce = nonce + ethers.toBigInt(1)
     const executeHash2 = ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, chainId, nonce + ethers.toBigInt(1), secondBatch]
+        [ambireAccountAddress, chainId, incrementedNonce, secondBatch]
       )
     )
-    const typedData2 = wrapTypedData(chainId, ambireAccountAddress, executeHash2)
-    const s2 = wrapEthSign(
+    const typedData2 = getExecute712Data(
+      chainId,
+      incrementedNonce,
+      secondBatch,
+      ambireAccountAddress,
+      executeHash2
+    )
+    const s2 = wrapEIP712(
       await signer.signTypedData(typedData2.domain, typedData2.types, typedData2.value)
     )
     const balance = await provider.getBalance(ambireAccountAddress)
@@ -216,37 +262,14 @@ describe('Basic Ambire Account tests', () => {
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.04'))
   })
-  it('should successfully perform execute and validate that the nonce has moved', async () => {
-    const [signer] = await ethers.getSigners()
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await sendFunds(ambireAccountAddress, 1)
-    const nonce = await contract.nonce()
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
-    ]
-    const executeHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, chainId, nonce, txns]
-      )
-    )
-    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
-    const s = wrapEthSign(
-      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
-    )
-    await contract.execute(txns, s)
-    const nonceAfterExecute = await contract.nonce()
-    expect(nonceAfterExecute).to.equal(nonce + 1n)
-  })
   it('should successfully execute a txn using accountOpSignableHash', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
+    const txns: [string, string, string][] = [
+      [addressTwo, ethers.parseEther('0.01').toString(), '0x00'],
+      [addressThree, ethers.parseEther('0.01').toString(), '0x00']
     ]
     const executeHash = ethers.keccak256(
       abiCoder.encode(
@@ -254,8 +277,8 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
-    const s = wrapEthSign(
+    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const s = wrapEIP712(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     const balance = await provider.getBalance(ambireAccountAddress)
@@ -263,16 +286,6 @@ describe('Basic Ambire Account tests', () => {
     const receipt = await txn.wait()
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.02'))
-  })
-  it('should not allow a txn with a signature length of 65 to execute as it should be rendered unprotected', async () => {
-    const [signer] = await ethers.getSigners()
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
-    ]
-    const s = await signer.signMessage('message does not matter')
-    await expect(contract.execute(txns, s)).to.be.revertedWith('SV_USED_UNBOUND')
   })
   it('should allow a signed message to validate for the signer with a signature length of 65', async () => {
     const [signer] = await ethers.getSigners()

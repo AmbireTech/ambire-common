@@ -3,12 +3,13 @@ import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
+import { EIP7702Auth } from '../../consts/7702'
 import { Key } from '../../interfaces/keystore'
-import { NetworkId } from '../../interfaces/network'
+import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
-import { Call } from './types'
+import { AccountOpStatus, Call } from './types'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -17,27 +18,17 @@ import { Call } from './types'
 // 3) isGasTank and isERC4337 can both be true
 // 4) whether those values are sane will be checked in an additional function (currently `canBroadcast`); for example, this function is meant to ensure that in case of an EOA, the fee is always paid in native
 export interface GasFeePayment {
-  isERC4337: boolean
   isGasTank: boolean
   paidBy: string
   inToken: string
   // optional, because older versions of the extension did not have this stored locally
-  feeTokenNetworkId?: NetworkId
+  feeTokenChainId?: bigint
   amount: bigint
   simulatedGasLimit: bigint
   gasPrice: bigint
+  broadcastOption: string
   maxPriorityFeePerGas?: bigint
   isSponsored?: boolean
-}
-
-export enum AccountOpStatus {
-  Pending = 'pending',
-  BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
-  Success = 'success',
-  Failure = 'failure',
-  Rejected = 'rejected',
-  UnknownButPastNonce = 'unknown-but-past-nonce',
-  BroadcastButStuck = 'broadcast-but-stuck'
 }
 
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to
@@ -45,7 +36,7 @@ export enum AccountOpStatus {
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
   accountAddr: string
-  networkId: NetworkId
+  chainId: bigint
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: Key['addr'] | null
   signingKeyType: Key['type'] | null
@@ -81,6 +72,13 @@ export interface AccountOp {
     // pass the entry point authorization signature for the deploy 4337 txn
     entryPointAuthorization?: string
     paymasterService?: PaymasterService
+    swapTxn?: SwapAndBridgeSendTxRequest
+    walletSendCallsVersion?: string
+    delegation?: EIP7702Auth
+    setDelegation?: boolean
+  }
+  flags?: {
+    hideActivityBanner?: boolean
   }
 }
 
@@ -149,9 +147,9 @@ export function isAccountOpsIntentEqual(
   accountOps2: AccountOp[]
 ): boolean {
   const createIntent = (accountOps: AccountOp[]) => {
-    return accountOps.map(({ accountAddr, networkId, calls }) => ({
+    return accountOps.map(({ accountAddr, chainId, calls }) => ({
       accountAddr,
-      networkId,
+      chainId,
       calls
     }))
   }
@@ -162,16 +160,6 @@ export function isAccountOpsIntentEqual(
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
-  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
-  return callsToSign
-}
-
-export function getSignableCallsForBundlerEstimate(op: AccountOp): [string, string, string][] {
-  const callsToSign = getSignableCalls(op)
-  // add the fee call one more time when doing a bundler estimate
-  // this is because the feeCall during estimation is fake (approve instead
-  // of transfer, incorrect amount) and more ofteh than not, this causes
-  // a lower estimation than the real one, causing bad UX in the process
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
 }

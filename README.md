@@ -39,3 +39,11 @@ yarn generate:contractInfo
 ## Editor Config
 
 Make sure your code editor has plugins that support the following configuration files: `.editorconfig`, `.prettierrc`, `tsconfig.json`, `eslintrc.js`, [`import-sorter.json`](https://github.com/SoominHan/import-sorter).
+
+## Deploy scripts
+
+How to deploy Ambire 7702:
+
+- npx hardhat compile
+- npx hardhat run scripts/deploy7702.js --network optimism
+- npx hardhat verify --network optimism 0xfe77D030Ac0531f5A62bAe502712b1F1cf976DD9

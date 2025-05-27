@@ -28,7 +28,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
       await contract.revertWithReason('Transaction too old')
     } catch (error: any) {
       const { reason } = decodeError(error)
-      const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+      const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, error)
 
       expect(message).toBe(
         `${MESSAGE_PREFIX} the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.`
@@ -38,7 +38,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
   it('Rpc timeout', () => {
     const error = new Error('rpc-timeout')
     const { reason } = decodeError(error)
-    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, error)
 
     expect(message).toBe(
       `${MESSAGE_PREFIX} of a problem with the RPC on this network. Please try again later, change the RPC or contact support for assistance.`
@@ -48,7 +48,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
     const error = new MockBundlerError('paymaster deposit too low')
 
     const { reason } = decodeError(error)
-    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, error)
 
     expect(message).toBe(`${MESSAGE_PREFIX} ${insufficientPaymasterFunds}`)
   })
@@ -57,7 +57,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
       await contract.revertWithReason('insufficient funds')
     } catch (error: any) {
       const { reason } = decodeError(error)
-      const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+      const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, error)
 
       expect(message).toBe(
         `${MESSAGE_PREFIX} of insufficient funds for the transaction fee. Please add more fee tokens to your account and try again.`
@@ -69,7 +69,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
       await contract.revertWithReason('transfer amount exceeds balance')
     } catch (error: any) {
       const { reason } = decodeError(error)
-      const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+      const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, error)
 
       expect(message).toBe(
         `${MESSAGE_PREFIX} the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.`
@@ -79,12 +79,16 @@ describe('Estimation/Broadcast common errors are humanized', () => {
   it('Returns null for unhandled error', () => {
     const reason = 'nema pari'
 
-    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX)
+    const message = humanizeEstimationOrBroadcastError(reason, MESSAGE_PREFIX, new Error(reason))
 
     expect(message).toBe(null)
   })
   it('Relayer is down', () => {
-    const message = humanizeEstimationOrBroadcastError(RELAYER_DOWN_MESSAGE, MESSAGE_PREFIX)
+    const message = humanizeEstimationOrBroadcastError(
+      RELAYER_DOWN_MESSAGE,
+      MESSAGE_PREFIX,
+      new Error(RELAYER_DOWN_MESSAGE)
+    )
 
     expect(message).toBe(
       `${MESSAGE_PREFIX} the Ambire relayer is temporarily down.\nPlease try again or contact Ambire support for assistance.`

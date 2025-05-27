@@ -1,4 +1,6 @@
 export enum ErrorType {
+  /** Error due to network connectivity issues when making HTTP requests */
+  ConnectivityError = 'ConnectivityError',
   /** Reference, Type, Syntax and Range errors (JS/TS) */
   CodeError = 'CodeError',
   /** Error due to contract reverting, identified by prefix 0x08c379a0 */

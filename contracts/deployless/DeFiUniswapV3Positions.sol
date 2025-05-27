@@ -58,13 +58,16 @@ interface IUniswapV3Factory {
 
 interface IERC20 {
     function symbol() external view returns (string memory);
+    function name() external view returns (string memory);
     function decimals() external view returns (uint8);
 }
 
 struct UniV3PositionsData {
     string token0Symbol;
+    string token0Name;
     uint8 token0Decimals;
     string token1Symbol;
+    string token1Name;
     uint8 token1Decimals;
     Position positionInfo;
     PoolSlot0 poolSlot0;
@@ -74,35 +77,44 @@ struct UniV3PositionsData {
     uint256 positionId;
 }
 
-contract UniswapV3Positions {
-    function getPositions(address userAddr, address nonfungiblePositionManagerAddr, address factoryAddr) external view returns (UniV3PositionsData[] memory) {
-        uint256 tokensAmount = INonfungiblePositionManager(nonfungiblePositionManagerAddr).balanceOf(userAddr);
-        UniV3PositionsData[] memory positions = new UniV3PositionsData[](tokensAmount);
+contract DeFiUniswapV3Positions {
+    function getUniV3Position(address userAddr, address positionManagementAddr, address factoryAddr) external view returns (UniV3PositionsData[] memory result) {
+        uint256 tokensAmount = INonfungiblePositionManager(positionManagementAddr).balanceOf(userAddr);
+
+        uint256 numberOfPositionsToReturn = 0;
         for (uint256 i = 0; i < tokensAmount; i++) {
-            uint256 tokenId = INonfungiblePositionManager(nonfungiblePositionManagerAddr).tokenOfOwnerByIndex(userAddr, i);            
-            Position memory positionInfo = INonfungiblePositionManager(nonfungiblePositionManagerAddr).positions(tokenId);
+            uint256 tokenId = INonfungiblePositionManager(positionManagementAddr).tokenOfOwnerByIndex(userAddr, i);            
+            Position memory positionInfo = INonfungiblePositionManager(positionManagementAddr).positions(tokenId);
+            if(positionInfo.liquidity != 0) numberOfPositionsToReturn++;
+            
+        }
+        UniV3PositionsData[] memory positions = new UniV3PositionsData[](numberOfPositionsToReturn);
+
+        uint256 returnArrayIndex = 0;
+        for (uint256 i = 0; i < tokensAmount; i++) {
+            uint256 tokenId = INonfungiblePositionManager(positionManagementAddr).tokenOfOwnerByIndex(userAddr, i);            
+            Position memory positionInfo = INonfungiblePositionManager(positionManagementAddr).positions(tokenId);
+            
+            if(positionInfo.liquidity == 0) continue;
+
             address poolAddr = IUniswapV3Factory(factoryAddr).getPool(positionInfo.token0, positionInfo.token1, positionInfo.fee);
 
             // outputData
-            positions[i].positionId = tokenId;
-            positions[i].positionInfo = positionInfo;
-            positions[i].poolSlot0 = IUniswapV3Pool(poolAddr).slot0();
-            positions[i].feeGrowthGlobal0X128 = IUniswapV3Pool(poolAddr).feeGrowthGlobal0X128();
-            // positions[i].upperTickData = IUniswapV3Pool(poolAddr).ticks(positionInfo.tickUpper);
-            // positions[i].lowerTickData = IUniswapV3Pool(poolAddr).ticks(positionInfo.tickLower);
-            positions[i].token0Symbol = IERC20(positionInfo.token0).symbol();
-            positions[i].token0Decimals = IERC20(positionInfo.token0).decimals();
-            positions[i].token1Symbol = IERC20(positionInfo.token1).symbol();
-            positions[i].token1Decimals = IERC20(positionInfo.token1).decimals();
+            positions[returnArrayIndex].positionId = returnArrayIndex;
+            positions[returnArrayIndex].positionInfo = positionInfo;
+            positions[returnArrayIndex].poolSlot0 = IUniswapV3Pool(poolAddr).slot0();
+            positions[returnArrayIndex].feeGrowthGlobal0X128 = IUniswapV3Pool(poolAddr).feeGrowthGlobal0X128();
+            // positions[returnArrayIndex].upperTickData = IUniswapV3Pool(poolAddr).ticks(positionInfo.tickUpper);
+            // positions[returnArrayIndex].lowerTickData = IUniswapV3Pool(poolAddr).ticks(positionInfo.tickLower);
+            positions[returnArrayIndex].token0Symbol = IERC20(positionInfo.token0).symbol();
+            positions[returnArrayIndex].token0Name = IERC20(positionInfo.token0).name();
+            positions[returnArrayIndex].token1Name = IERC20(positionInfo.token1).name();
+            positions[returnArrayIndex].token0Decimals = IERC20(positionInfo.token0).decimals();
+            positions[returnArrayIndex].token1Symbol = IERC20(positionInfo.token1).symbol();
+            positions[returnArrayIndex].token1Decimals = IERC20(positionInfo.token1).decimals();
+            returnArrayIndex++;
         }
         return positions;
-    } 
-}
 
-contract DeFiUniswapV3Positions {
-    UniswapV3Positions position = new UniswapV3Positions();
-    function getUniV3Position(address userAddr, address positionManagementAddr, address factoryAddr) external view returns (UniV3PositionsData[] memory result) {
-        result = position.getPositions(userAddr, positionManagementAddr, factoryAddr);
-        return result;
     }
 }

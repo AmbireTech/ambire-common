@@ -83,7 +83,7 @@ const parseOrder = (order: any): Order => {
 
 const dedupe1155Orders = (orders: Order[]): any[] => {
   if (orders.length <= 30) return orders
-  const uniqueOrders = [...new Set(orders.map(stringify))]
+  const uniqueOrders = [...new Set(orders.map((o) => stringify(o)))]
   if (uniqueOrders.length > 1) return orders
   if (orders[0].items.length > 1) return orders
   if (orders[0].payment.length > 1) return orders

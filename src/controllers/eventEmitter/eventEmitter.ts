@@ -13,7 +13,7 @@ export type ErrorRef = {
 }
 
 export type Statuses<T extends string> = {
-  [key in T]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR'
+  [key in T]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' | string
 }
 
 export default class EventEmitter {

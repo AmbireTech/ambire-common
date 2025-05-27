@@ -9,12 +9,17 @@ export type WindowProps = {
   width: number
   height: number
   focused: boolean
+  createdFromWindowId?: number
 } | null
 
 export interface WindowManager {
   event: EventEmitter
-  open: (route?: string) => Promise<WindowProps>
-  focus: (windowProps: WindowProps) => Promise<void>
+  open: (options?: {
+    route?: string
+    customSize?: { width: number; height: number }
+  }) => Promise<WindowProps>
+  focus: (windowProps: WindowProps) => Promise<WindowProps>
+  closePopupWithUrl: (url: string) => Promise<void>
   remove: (winId: WindowId) => Promise<void>
   sendWindowToastMessage: (
     message: string,

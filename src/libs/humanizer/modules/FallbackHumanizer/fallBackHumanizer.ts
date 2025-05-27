@@ -65,6 +65,8 @@ export const fallbackHumanizer: HumanizerCallModule = (
               knownSigHashes[call.data.slice(0, 10)].signature
                 .split('function ')
                 .filter((x) => x !== '')[0]
+                .split('(')
+                .filter((x) => x !== '')[0]
                 .split(' returns')
                 .filter((x) => x !== '')[0]
             }`
@@ -77,8 +79,8 @@ export const fallbackHumanizer: HumanizerCallModule = (
         )
       } else {
         visualization.push(
-          getAction('Unknown action'),
-          getLabel('to'),
+          getAction('Interacting'),
+          getLabel('with'),
           getAddressVisualization(call.to)
         )
       }
@@ -93,7 +95,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
       ...call,
       fullVisualization: visualization.length
         ? visualization
-        : [getAction('No data, no value, call to'), getAddressVisualization(call.to)]
+        : [getAction('Empty call to'), getAddressVisualization(call.to)]
     }
   })
 

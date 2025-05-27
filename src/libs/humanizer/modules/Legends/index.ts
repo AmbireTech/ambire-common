@@ -53,7 +53,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
         getAction('Pick character'),
         getImage(characterTypes[heroType]?.image || characterTypes[0].image),
         getLabel(characterTypes[heroType]?.type || characterTypes[0].type, true),
-        getLabel('for Ambire Legends')
+        getLabel('for Ambire Rewards')
       ]
     },
     [iface.getFunction('getDailyReward')?.selector!]: () => [
@@ -84,7 +84,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     [iface.getFunction('invite')?.selector!]: (call: IrCall) => {
       const [invitee] = iface.parseTransaction(call)!.args
 
-      return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Legends')]
+      return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Rewards')]
     },
     [iface.getFunction('claimXpFromFeedback')?.selector!]: () => {
       return [getAction('Claim XP'), getLabel('from'), getLabel('feedback form', true)]

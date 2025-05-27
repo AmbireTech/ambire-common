@@ -1,7 +1,7 @@
 import { Fetch } from '../../interfaces/fetch'
-import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export enum INVITE_STATUS {
@@ -24,13 +24,13 @@ const DEFAULT_STATE = {
 }
 
 /**
- * As of v4.20.0, an invite verification flow is introduced as a first step upon
- * extension installation. This flow requires users to provide a valid invite
- * code before they can use the Ambire extension. This controller manages the
- * verification of these invite codes and persisting the current invite status.
+ * As of v5.1.0, invite code is no longer required for using the extension. In
+ * v4.20.0, a mandatory invite verification flow is introduced as a first step
+ * upon extension installation. The controller is still used to manage OG status
+ * and other invite-related data.
  */
 export class InviteController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #callRelayer: Function
 
@@ -55,7 +55,7 @@ export class InviteController extends EventEmitter {
   }: {
     relayerUrl: string
     fetch: Fetch
-    storage: Storage
+    storage: StorageController
   }) {
     super()
 

@@ -1,6 +1,5 @@
 import { Interface, MaxUint256 } from 'ethers'
 
-import { NetworkId } from '../../../../interfaces/network'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { AaveV3Pool } from '../../const/abis'
 import { IrCall } from '../../interfaces'
@@ -27,8 +26,8 @@ Fetched via
   pool address is taken from
   https://aave.com/docs/resources/addresses
 */
-const AAVE_TOKENS_BY_INDEX: { [network: NetworkId]: string[] } = {
-  optimism: [
+const AAVE_TOKENS_BY_INDEX: { [chainId: string]: string[] } = {
+  '10': [
     '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1',
     '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
     '0x7f5c764cbc14f9669b88837ca1490cca17c31607',
@@ -44,7 +43,7 @@ const AAVE_TOKENS_BY_INDEX: { [network: NetworkId]: string[] } = {
     '0x9bcef72be871e61ed4fbbc7630889bee758eb81d',
     '0x0b2c639c533813f4aa9d7837caf62653d097ff85'
   ],
-  arbitrum: [
+  '42161': [
     '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1',
     '0xf97f4df75117a78c1a5a0dbb814af92458539fb4',
     '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
@@ -64,7 +63,7 @@ const AAVE_TOKENS_BY_INDEX: { [network: NetworkId]: string[] } = {
     '0x7dff72693f6a4149b17e7c6314655f6a9f7c8b33',
     '0x2416092f143378750bb29b79ed961ab195cceea5'
   ],
-  avalanche: [
+  '43114': [
     '0xd586e7f844cea2f87f50152665bcbc2c279d8d70',
     '0x5947bb275c521040051d82396192181b413227a3',
     '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
@@ -79,7 +78,7 @@ const AAVE_TOKENS_BY_INDEX: { [network: NetworkId]: string[] } = {
     '0x152b9d0fdc40c096757f570a51e494bd4b943e50',
     '0x00000000efe302beaa2b3e6e1b18d08d69a9012a'
   ],
-  polygon: [
+  '137': [
     '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063',
     '0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39',
     '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
@@ -102,7 +101,7 @@ const AAVE_TOKENS_BY_INDEX: { [network: NetworkId]: string[] } = {
     '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd',
     '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'
   ],
-  base: [
+  '8453': [
     '0x4200000000000000000000000000000000000006',
     '0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22',
     '0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca',
@@ -184,10 +183,10 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
       const { args } = iface.parseTransaction(call)!.args
       const amountAsString = args.slice(30, 62)
       const tokenIndex = Number(`0x${args.slice(62)}`)
-      if (!AAVE_TOKENS_BY_INDEX[accountOp.networkId])
+      if (!AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()])
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
-      if (tokenIndex >= AAVE_TOKENS_BY_INDEX[accountOp.networkId].length)
+      if (tokenIndex >= AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()].length)
         return [getAction('Withdraw'), getLabel('from'), getAddressVisualization(call.to)]
 
       // stores amount inn uint128 instead of uint256, but max value is treated as max value
@@ -195,7 +194,7 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
 
       return [
         getAction('Withdraw'),
-        getToken(AAVE_TOKENS_BY_INDEX[accountOp.networkId][tokenIndex], amount),
+        getToken(AAVE_TOKENS_BY_INDEX[accountOp.chainId.toString()][tokenIndex], amount),
         getLabel('from'),
         getAddressVisualization(call.to)
       ]

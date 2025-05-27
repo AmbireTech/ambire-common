@@ -1,6 +1,7 @@
 import { expect } from '@jest/globals'
+import { AccountOp } from '../accountOp/accountOp'
+import { AccountOpStatus } from '../accountOp/types'
 import { calculatePendingAmounts } from './pendingAmountsHelper'
-import { AccountOp, AccountOpStatus } from '../accountOp/accountOp'
 
 describe('Portfolio -> Pending Amounts Helper', () => {
   describe('calculatePendingAmounts', () => {

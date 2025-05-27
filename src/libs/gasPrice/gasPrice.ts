@@ -4,6 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 
@@ -163,10 +164,17 @@ export async function getGasPriceRecommendations(
     if (lastBlock.gasUsed > gasTarget) {
       const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
       expectedBaseFee += baseFeeDelta === 0n ? 1n : baseFeeDelta
-    } else if (lastBlock.gasUsed < gasTarget) {
-      const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
-      expectedBaseFee -= baseFeeDelta
     }
+
+    // <Bobby>: commenting out the decrease as it's really bad UX
+    // if the user chooses slow on Ethereum and the next block doesn't
+    // actually meet the base fee and starts going up from there, the user
+    // will need to do an RBF or wait ~forever for the txn to complete
+    // the below code is good in theory, bad in practise
+    // else if (lastBlock.gasUsed < gasTarget) {
+    //   const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
+    //   expectedBaseFee -= baseFeeDelta
+    // }
 
     // if the estimated fee is below the chain minimum, set it to the min
     const minBaseFee = getNetworkMinBaseFee(network, lastBlock)
@@ -260,4 +268,16 @@ export function getProbableCallData(
   }
 
   return estimationCallData
+}
+
+export function getBroadcastGas(baseAcc: BaseAccount, op: AccountOp): bigint {
+  const calldata = baseAcc.getBroadcastCalldata(op)
+  if (calldata === '0x') return 0n
+
+  const FIXED_OVERHEAD = 21000n
+  const bytes = Buffer.from(baseAcc.getBroadcastCalldata(op).substring(2))
+  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
+  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+  return txDataGas + FIXED_OVERHEAD
 }

@@ -7,10 +7,9 @@ import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { getAccountDeployParams, getSpoof, isSmartAccount } from '../account/account'
+import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
-import { GasRecommendation } from '../gasPrice/gasPrice'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
 const NFT_COLLECTION_LIMIT = 100
@@ -18,7 +17,7 @@ const NFT_COLLECTION_LIMIT = 100
 // if it's SA, make the data execute or deployAndExecute,
 // set the spoof+addr and pass all the calls
 function getFunctionParams(account: Account, op: AccountOp, accountState: AccountOnchainState) {
-  if (!account.creation) {
+  if (isBasicAccount(account, accountState) && op.calls.length === 1) {
     const call = op.calls[0]
     return {
       to: call.to,
@@ -28,20 +27,31 @@ function getFunctionParams(account: Account, op: AccountOp, accountState: Accoun
     }
   }
 
+  if (isBasicAccount(account, accountState)) {
+    const saAbi = new Interface(AmbireAccount.abi)
+    const callData = saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
+    return {
+      to: account.addr,
+      value: 0,
+      data: callData,
+      from: DEPLOYLESS_SIMULATION_FROM
+    }
+  }
+
   const saAbi = new Interface(AmbireAccount.abi)
   const factoryAbi = new Interface(AmbireFactory.abi)
   const callData = accountState.isDeployed
     ? saAbi.encodeFunctionData('execute', [getSignableCalls(op), getSpoof(account)])
     : factoryAbi.encodeFunctionData('deployAndExecute', [
-        account.creation.bytecode,
-        account.creation.salt,
+        account.creation!.bytecode,
+        account.creation!.salt,
         getSignableCalls(op),
         getSpoof(account)
       ])
 
   return {
     from: DEPLOYLESS_SIMULATION_FROM,
-    to: accountState.isDeployed ? account.addr : account.creation.factoryAddr,
+    to: accountState.isDeployed ? account.addr : account.creation!.factoryAddr,
     value: 0,
     data: callData
   }
@@ -52,8 +62,6 @@ export async function debugTraceCall(
   op: AccountOp,
   provider: JsonRpcProvider,
   accountState: AccountOnchainState,
-  gasUsed: bigint,
-  gasPrices: GasRecommendation[],
   supportsStateOverride: boolean,
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
@@ -61,18 +69,21 @@ export async function debugTraceCall(
     blockTag: 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract,
-    isEOA: !isSmartAccount(account)
+    isEOA: isBasicAccount(account, accountState),
+    simulation: {
+      accountOps: [op],
+      account,
+      state: accountState
+    }
   }
   const deploylessOpts = getDeploylessOpts(account.addr, supportsStateOverride, opts)
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const simulationOps = [
-    [isSmartAccount(account) ? op.nonce : BigInt(EOA_SIMULATION_NONCE), op.calls.map(callToTuple)]
+    [
+      !isBasicAccount(account, accountState) ? op.nonce : BigInt(EOA_SIMULATION_NONCE),
+      op.calls.map(callToTuple)
+    ]
   ]
-  const fast = gasPrices.find((gas: any) => gas.name === 'fast')
-  if (!fast) return { tokens: [], nfts: [] }
-
-  const gasPrice =
-    'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
 
   const params = getFunctionParams(account, op, accountState)
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
@@ -81,9 +92,7 @@ export async function debugTraceCall(
         to: params.to,
         value: toQuantity(params.value.toString()),
         data: params.data,
-        from: params.from,
-        gasPrice: toQuantity(gasPrice.toString()),
-        gas: toQuantity(gasUsed.toString())
+        from: params.from
       },
       'latest',
       {
@@ -116,6 +125,7 @@ export async function debugTraceCall(
         disableStorage: true,
         stateOverrides: supportsStateOverride
           ? {
+              // TODO: if it's an EOA, add the EOA state override data
               [params.from]: {
                 balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
               },
@@ -159,7 +169,7 @@ export async function debugTraceCall(
   )
 
   const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = await Promise.all([
-    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], opts),
+    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
     getNftsPromise
   ])
 

@@ -10,18 +10,24 @@ import {
   UserRejectionHandler
 } from './handlers'
 import BiconomyEstimationErrorHandler from './handlers/biconomy'
+import InternalHandler from './handlers/internal'
 import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
+// The order of these handlers is important!
+// Preprocessor handlers must be ordered by least specific to most specific
+// Why- because error reasons are overwritten by subsequent matching handlers
+// Error handlers must be ordered by most specific to least specific
+// Why- because the first valid reason cannot be overwritten by subsequent handlers
 const PREPROCESSOR_BUNDLER_HANDLERS = [
   BiconomyEstimationErrorHandler,
   PimlicoEstimationErrorHandler
 ]
-
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
+  InternalHandler,
   RpcErrorHandler,
   CustomErrorHandler,
   PanicErrorHandler,
@@ -33,23 +39,6 @@ const ERROR_HANDLERS = [
 // additionalHandlers is a list of handlers we want to add only for
 // specific decodeError cases (e.g. bundler estimation)
 export function decodeError(e: Error): DecodedError {
-  // Otherwise regular JS/TS errors will be handled
-  // as RPC errors which is confusing.
-  if (
-    e instanceof TypeError ||
-    e instanceof ReferenceError ||
-    e instanceof SyntaxError ||
-    e instanceof RangeError
-  ) {
-    console.error('Encountered a code error', e)
-
-    return {
-      type: ErrorType.CodeError,
-      reason: e.name,
-      data: null
-    }
-  }
-
   const errorData = getDataFromError(e)
 
   let decodedError: DecodedError = {
@@ -64,7 +53,7 @@ export function decodeError(e: Error): DecodedError {
   // a third. So we will add additional handlers optionally
   const preprocessorHandlers = PREPROCESSOR_HANDLERS
   if (e instanceof BundlerError) {
-    preprocessorHandlers.push(...PREPROCESSOR_BUNDLER_HANDLERS)
+    preprocessorHandlers.unshift(...PREPROCESSOR_BUNDLER_HANDLERS)
   }
 
   // Run preprocessor handlers first

@@ -37,9 +37,20 @@ export type DappRequestAction = {
   userRequest: DappUserRequest
 }
 
+export type SwapAndBridgeAction = {
+  id: UserRequest['id']
+  type: 'swapAndBridge'
+  userRequest: {
+    meta: {
+      accountAddr: Account['addr']
+    }
+  }
+}
+
 export type Action =
   | SwitchAccountAction
   | AccountOpAction
   | SignMessageAction
   | BenzinAction
   | DappRequestAction
+  | SwapAndBridgeAction

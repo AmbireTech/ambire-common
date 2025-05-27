@@ -2,31 +2,34 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-constant-condition */
 
-import { Interface } from 'ethers'
+import { Contract, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { Account, AccountStates } from '../../interfaces/account'
+import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { EIP7702Auth } from '../../consts/7702'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
-import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
+import { BaseAccount } from '../account/BaseAccount'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
-import { estimationErrorFormatted } from './errors'
 import { estimateWithRetries } from './estimateWithRetries'
-import { EstimateResult, FeePaymentOption } from './interfaces'
+import { Erc4337GasLimits, EstimationFlags } from './interfaces'
 
 async function estimate(
+  baseAcc: BaseAccount,
   bundler: Bundler,
   network: Network,
   userOp: UserOperation,
-  isEdgeCase: boolean,
   errorCallback: Function
 ): Promise<{
   gasPrice: GasSpeeds | Error
@@ -59,23 +62,24 @@ async function estimate(
   }
 
   const nonFatalErrors: Error[] = []
+  const estimateErrorCallback = (e: Error) => {
+    const decodedError = bundler.decodeBundlerError(e)
+
+    // if the bundler estimation fails, add a nonFatalError so we can react to
+    // it on the FE. The BE at a later stage decides if this error is actually
+    // fatal (at estimate.ts -> estimate4337)
+    nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
+
+    if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
+      nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
+    }
+
+    return getHumanReadableEstimationError(decodedError)
+  }
+
+  const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
   const initializeRequests = () => [
-    bundler.estimate(userOp, network, isEdgeCase).catch((e: Error) => {
-      const decodedError = bundler.decodeBundlerError(e)
-
-      // if the bundler estimation fails, add a nonFatalError so we can react to
-      // it on the FE. The BE at a later stage decides if this error is actually
-      // fatal (at estimate.ts -> estimate4337)
-      nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
-
-      if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
-        nonFatalErrors.push(
-          new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
-        )
-      }
-
-      return getHumanReadableEstimationError(decodedError)
-    })
+    bundler.estimate(userOp, network, stateOverride).catch(estimateErrorCallback)
   ]
 
   const estimation = await estimateWithRetries(
@@ -83,57 +87,51 @@ async function estimate(
     'estimation-bundler',
     errorCallback
   )
+  const foundError = Array.isArray(estimation)
+    ? estimation.find((res) => res instanceof Error)
+    : null
   return {
     gasPrice,
-    estimation,
+    estimation: foundError ?? estimation,
     nonFatalErrors
   }
 }
 
 export async function bundlerEstimate(
-  account: Account,
-  accountStates: AccountStates,
+  baseAcc: BaseAccount,
+  accountState: AccountOnchainState,
   op: AccountOp,
   network: Network,
   feeTokens: TokenResult[],
   provider: RPCProvider,
   switcher: BundlerSwitcher,
-  errorCallback: Function
-): Promise<EstimateResult> {
-  // we pass an empty array of feePaymentOptions as they are built
-  // in an upper level using the balances from Estimation.sol.
-  // balances from Estimation.sol reflect the balances after pending txn exec
-  const feePaymentOptions: FeePaymentOption[] = []
+  errorCallback: Function,
+  eip7702Auth?: EIP7702Auth
+): Promise<Erc4337GasLimits | Error | null> {
+  if (!baseAcc.supportsBundlerEstimation()) return null
 
+  const account = baseAcc.getAccount()
   const localOp = { ...op }
-  const accountState = accountStates[localOp.accountAddr][localOp.networkId]
-  // if there's no entryPointAuthorization, we cannot do the estimation on deploy
-  if (!accountState.isDeployed && (!op.meta || !op.meta.entryPointAuthorization))
-    return estimationErrorFormatted(
-      new Error('Entry point privileges not granted. Please contact support'),
-      { feePaymentOptions }
-    )
-
   const initialBundler = switcher.getBundler()
   const userOp = getUserOperation(
     account,
     accountState,
     localOp,
     initialBundler.getName(),
-    !accountState.isDeployed ? op.meta!.entryPointAuthorization : undefined
+    op.meta?.entryPointAuthorization,
+    eip7702Auth
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
   const ambireAccount = new Interface(AmbireAccount.abi)
-  const isEdgeCase = !accountState.isErc4337Enabled && accountState.isDeployed
   userOp.signature = getSigForCalculations()
 
-  const paymaster = await paymasterFactory.create(op, userOp, network, provider)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  const paymaster = await paymasterFactory.create(op, userOp, account, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCallsForBundlerEstimate(localOp)
-  ])
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {
     const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData
@@ -147,38 +145,47 @@ export async function bundlerEstimate(
       userOp.paymasterVerificationGasLimit = paymasterEstimationData.paymasterVerificationGasLimit
   }
 
+  const flags: EstimationFlags = {}
   while (true) {
     // estimate
     const bundler = switcher.getBundler()
-    const estimations = await estimate(bundler, network, userOp, isEdgeCase, errorCallback)
+    const estimations = await estimate(baseAcc, bundler, network, userOp, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
       const gasData = estimations.estimation[0]
       return {
-        gasUsed: BigInt(gasData.callGasLimit),
-        currentAccountNonce: Number(op.nonce),
-        feePaymentOptions,
-        erc4337GasLimits: {
-          preVerificationGas: gasData.preVerificationGas,
-          verificationGasLimit: gasData.verificationGasLimit,
-          callGasLimit: gasData.callGasLimit,
-          paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
-          paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-          gasPrice: estimations.gasPrice as GasSpeeds,
-          paymaster
-        },
-        error: null
+        preVerificationGas: gasData.preVerificationGas,
+        verificationGasLimit: gasData.verificationGasLimit,
+        callGasLimit: gasData.callGasLimit,
+        paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
+        paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
+        gasPrice: estimations.gasPrice as GasSpeeds,
+        paymaster,
+        flags,
+        feeCallType
       }
     }
 
-    // if there's an error but we can't switch, return the error
-    if (!switcher.canSwitch(estimations.estimation)) {
-      return estimationErrorFormatted(estimations.estimation as Error, {
-        feePaymentOptions,
-        nonFatalErrors: estimations.nonFatalErrors
-      })
+    // try again if the error is 4337_INVALID_NONCE
+    if (
+      estimations.nonFatalErrors.length &&
+      estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
+    ) {
+      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+      let accountNonce = null
+      // infinite loading is fine here as this is how 4337_INVALID_NONCE error
+      // was handled in previous cases and worked pretty well: retry until fix
+      while (!accountNonce) {
+        accountNonce = await ep.getNonce(account.addr, 0, { blockTag: 'pending' }).catch(() => null)
+      }
+      userOp.nonce = toBeHex(accountNonce)
+      flags.has4337NonceDiscrepancy = true
+      continue
     }
+
+    // if there's an error but we can't switch, return the error
+    if (!switcher.canSwitch(account, estimations.estimation)) return estimations.estimation
 
     // try again
     switcher.switch()

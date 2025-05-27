@@ -6,6 +6,7 @@ import './ExternalSigValidator.sol';
 import './libs/erc4337/PackedUserOperation.sol';
 import './libs/erc4337/UserOpHelper.sol';
 import './deployless/IAmbireAccount.sol';
+import './libs/Eip712HashBuilder.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -17,17 +18,14 @@ contract AmbireAccount is IAmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
-	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// @dev This is how we understand if msg.sender is the entry point
-	bytes32 private constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
+	bytes32 constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
 
 	// Externally validated signatures
 	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
-	// Variables
-	mapping(address => bytes32) public privileges;
-	uint256 public nonce;
+	bytes32 constant AMBIRE_STORAGE_POSITION = keccak256("ambire.smart.contracts.storage");
 
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
@@ -67,27 +65,25 @@ contract AmbireAccount is IAmbireAccount {
 	}
 
 	/**
-	 * @notice  fallback method: currently used to call the fallback handler
-	 * which is set by the user and can be changed
+	 * @notice  nothing to do here
 	 * @dev     this contract can accept ETH with calldata, hence payable
 	 */
 	fallback() external payable {
-		// We store the fallback handler at this magic slot
-		address fallbackHandler = address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT])));
-		if (fallbackHandler == address(0)) return;
+	}
+
+	function getAmbireStorage() internal pure returns (AmbireStorage storage ds) {
+		bytes32 position = AMBIRE_STORAGE_POSITION;
 		assembly {
-			// we can use addr 0 because logic is taking full control of the
-			// execution making sure it returns itself and does not
-			// rely on any further Solidity code.
-			calldatacopy(0, 0, calldatasize())
-			let result := delegatecall(gas(), fallbackHandler, 0, calldatasize(), 0, 0)
-			let size := returndatasize()
-			returndatacopy(0, 0, size)
-			if eq(result, 0) {
-				revert(0, size)
-			}
-			return(0, size)
+			ds.slot := position
 		}
+	}
+
+	function nonce() external view returns (uint256) {
+		return getAmbireStorage().nonce;
+	}
+
+	function privileges(address key) public virtual view returns (bytes32) {
+		return getAmbireStorage().privileges[key];
 	}
 
 	/**
@@ -100,7 +96,7 @@ contract AmbireAccount is IAmbireAccount {
 	 */
 	function setAddrPrivilege(address addr, bytes32 priv) external payable {
 		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
-		privileges[addr] = priv;
+		getAmbireStorage().privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
@@ -144,9 +140,9 @@ contract AmbireAccount is IAmbireAccount {
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		address signerKey;
 		uint8 sigMode = uint8(signature[signature.length - 1]);
-		uint256 currentNonce = nonce;
+		uint256 currentNonce = getAmbireStorage().nonce;
 		// we increment the nonce here (not using `nonce++` to save some gas)
-		nonce = currentNonce + 1;
+		getAmbireStorage().nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool isValidSig;
@@ -157,18 +153,22 @@ contract AmbireAccount is IAmbireAccount {
 				revert('SIGNATURE_VALIDATION_FAIL');
 			}
 		} else {
-			signerKey = SignatureValidator.recoverAddr(
-				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
+			(signerKey, ) = SignatureValidator.recoverAddrAllowUnprotected(
+				Eip712HashBuilder.getExecute712Hash(
+					currentNonce,
+					calls,
+					keccak256(abi.encode(address(this), block.chainid, currentNonce, calls))
+				),
 				signature,
 				true
 			);
-			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+			require(privileges(signerKey) != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
 		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
-		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
+		require(privileges(signerKey) != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
 	/**
@@ -185,10 +185,10 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   calls  the transaction we're executing
 	 */
 	function executeBySender(Transaction[] calldata calls) external payable {
-		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+		require(privileges(msg.sender) != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(calls);
 		// again, anti-bricking
-		require(privileges[msg.sender] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
+		require(privileges(msg.sender) != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
 	/**
@@ -253,7 +253,7 @@ contract AmbireAccount is IAmbireAccount {
 	 */
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
 		(address recovered, bool usedUnprotected) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, false);
-		if (uint256(privileges[recovered]) > (usedUnprotected ? 1 : 0)) {
+		if (uint256(privileges(recovered)) > (usedUnprotected ? 1 : 0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
 			return 0x1626ba7e;
 		} else {
@@ -267,15 +267,12 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   interfaceID  the interface we're signaling support for
 	 * @return  bool  do we support the interface or not
 	 */
-	function supportsInterface(bytes4 interfaceID) external view returns (bool) {
+	function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
 		bool supported = interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
 			interfaceID == 0x150b7a02 || // ERC721TokenReceiver
 			interfaceID == 0x4e2312e0 || // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
 			interfaceID == 0x0a417632; // used for checking whether the account is v2 or not
-		if (supported) return true;
-		address payable fallbackHandler = payable(address(uint160(uint256(privileges[FALLBACK_HANDLER_SLOT]))));
-		if (fallbackHandler == address(0)) return false;
-		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
+		return supported;
 	}
 
 	//
@@ -335,7 +332,7 @@ contract AmbireAccount is IAmbireAccount {
 			return SIG_VALIDATION_SUCCESS;
 		}
 
-		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
+		require(privileges(msg.sender) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
 		// @estimation
 		// paying should happen even if signature validation fails
@@ -347,8 +344,12 @@ contract AmbireAccount is IAmbireAccount {
 		}
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature, true);
-		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
+		(address signer, ) = SignatureValidator.recoverAddrAllowUnprotected(
+			Eip712HashBuilder.getUserOp712Hash(op, userOpHash),
+			op.signature,
+			true
+		);
+		if (privileges(signer) == bytes32(0)) return SIG_VALIDATION_FAILED;
 
 		return SIG_VALIDATION_SUCCESS;
 	}
@@ -377,7 +378,7 @@ contract AmbireAccount is IAmbireAccount {
 		// the privileges key
 		(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
 		require(
-			privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
+			privileges(signerKey) == keccak256(abi.encode(validatorAddr, validatorData)),
 			'EXTERNAL_VALIDATION_NOT_SET'
 		);
 

@@ -41,6 +41,7 @@ module.exports = {
     'react/no-unstable-nested-components': 'off',
     'react-hooks/exhaustive-deps': 'warn',
     'react/react-in-jsx-scope': 'off',
-    '@typescript-eslint/no-floating-promises': 'warn'
+    '@typescript-eslint/no-floating-promises': 'warn',
+    "semi": ["error", "never"]
   }
 }

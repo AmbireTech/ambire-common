@@ -1,24 +1,26 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { Account, AccountPreferences, AccountStates } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
-import { Storage } from '../../interfaces/storage'
 import {
-  getUniqueAccountsArray,
-  migrateAccountPreferencesToAccounts
-} from '../../libs/account/account'
+  Account,
+  AccountOnchainState,
+  AccountPreferences,
+  AccountStates
+} from '../../interfaces/account'
+import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
+import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
-  updateAccountPreferences: 'INITIAL'
+  updateAccountPreferences: 'INITIAL',
+  addAccounts: 'INITIAL'
 } as const
 
 export class AccountsController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
   #networks: NetworksController
 
@@ -29,14 +31,14 @@ export class AccountsController extends EventEmitter {
   accountStates: AccountStates = {}
 
   accountStatesLoadingState: {
-    [networkId: string]: boolean
+    [chainId: string]: boolean
   } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   #onAddAccounts: (accounts: Account[]) => void
 
-  #updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void
+  #updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void
 
   #onAccountStateUpdate: () => void
 
@@ -44,11 +46,11 @@ export class AccountsController extends EventEmitter {
   initialLoadPromise: Promise<void>
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     providers: ProvidersController,
     networks: NetworksController,
     onAddAccounts: (accounts: Account[]) => void,
-    updateProviderIsWorking: (networkId: NetworkId, isWorking: boolean) => void,
+    updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
     onAccountStateUpdate: () => void
   ) {
     super()
@@ -66,19 +68,8 @@ export class AccountsController extends EventEmitter {
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
-    const [accounts, accountPreferences] = await Promise.all([
-      this.#storage.get('accounts', []),
-      this.#storage.get('accountPreferences', undefined)
-    ])
-    if (accountPreferences) {
-      this.accounts = getUniqueAccountsArray(
-        migrateAccountPreferencesToAccounts(accountPreferences, accounts)
-      )
-      await this.#storage.set('accounts', this.accounts)
-      await this.#storage.remove('accountPreferences')
-    } else {
-      this.accounts = getUniqueAccountsArray(accounts)
-    }
+    const accounts = await this.#storage.get('accounts', [])
+    this.accounts = getUniqueAccountsArray(accounts)
 
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
@@ -88,14 +79,14 @@ export class AccountsController extends EventEmitter {
     this.#updateAccountStates(this.accounts)
   }
 
-  async updateAccountStates(blockTag: string | number = 'latest', networks: NetworkId[] = []) {
+  async updateAccountStates(blockTag: string | number = 'latest', networks: bigint[] = []) {
     await this.#updateAccountStates(this.accounts, blockTag, networks)
   }
 
   async updateAccountState(
     accountAddr: Account['addr'],
     blockTag: 'pending' | 'latest' = 'latest',
-    networks: NetworkId[] = []
+    networks: bigint[] = []
   ) {
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
 
@@ -107,19 +98,19 @@ export class AccountsController extends EventEmitter {
   async #updateAccountStates(
     accounts: Account[],
     blockTag: string | number = 'latest',
-    updateOnlyNetworksWithIds: NetworkId[] = []
+    updateOnlyNetworksWithIds: bigint[] = []
   ) {
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
     const networksToUpdate = this.#networks.networks.filter((network) => {
-      if (this.accountStatesLoadingState[network.id]) return false
+      if (this.accountStatesLoadingState[network.chainId.toString()]) return false
       if (!updateOnlyPassedNetworks) return true
 
-      return updateOnlyNetworksWithIds.includes(network.id)
+      return updateOnlyNetworksWithIds.includes(network.chainId)
     })
 
     networksToUpdate.forEach((network) => {
-      this.accountStatesLoadingState[network.id] = true
+      this.accountStatesLoadingState[network.chainId.toString()] = true
     })
     this.emitUpdate()
 
@@ -127,13 +118,13 @@ export class AccountsController extends EventEmitter {
       networksToUpdate.map(async (network) => {
         try {
           const networkAccountStates = await getAccountState(
-            this.#providers.providers[network.id],
+            this.#providers.providers[network.chainId.toString()],
             network,
             accounts,
             blockTag
           )
 
-          this.#updateProviderIsWorking(network.id, true)
+          this.#updateProviderIsWorking(network.chainId, true)
 
           networkAccountStates.forEach((accountState) => {
             const addr = accountState.accountAddr
@@ -142,13 +133,13 @@ export class AccountsController extends EventEmitter {
               this.accountStates[addr] = {}
             }
 
-            this.accountStates[addr][network.id] = accountState
+            this.accountStates[addr][network.chainId.toString()] = accountState
           })
         } catch (err) {
           console.error(`account state update error for ${network.name}: `, err)
-          this.#updateProviderIsWorking(network.id, false)
+          this.#updateProviderIsWorking(network.chainId, false)
         } finally {
-          this.accountStatesLoadingState[network.id] = false
+          this.accountStatesLoadingState[network.chainId.toString()] = false
         }
         this.emitUpdate()
       })
@@ -157,7 +148,7 @@ export class AccountsController extends EventEmitter {
     this.#onAccountStateUpdate()
   }
 
-  async addAccounts(accounts: Account[] = []) {
+  async #addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
     // eslint-disable-next-line no-param-reassign
     accounts = accounts.map((a) => ({ ...a, addr: getAddress(a.addr) }))
@@ -198,10 +189,15 @@ export class AccountsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async removeAccountData(address: Account['addr']) {
+  async addAccounts(accounts: Account[] = []) {
+    await this.withStatus('addAccounts', async () => this.#addAccounts(accounts), true)
+  }
+
+  removeAccountData(address: Account['addr']) {
     this.accounts = this.accounts.filter((acc) => acc.addr !== address)
 
     delete this.accountStates[address]
+
     this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
   }
@@ -221,7 +217,7 @@ export class AccountsController extends EventEmitter {
       if (isAddress(account.preferences.pfp)) {
         account.preferences.pfp = getAddress(account.preferences.pfp)
       }
-      return { ...acc, preferences: account.preferences, newlyAdded: false }
+      return { ...acc, preferences: account.preferences }
     })
 
     await this.#storage.set('accounts', this.accounts)
@@ -230,6 +226,40 @@ export class AccountsController extends EventEmitter {
 
   get areAccountStatesLoading() {
     return Object.values(this.accountStatesLoadingState).some((isLoading) => isLoading)
+  }
+
+  // Get the account states or in the rare case of it being undefined,
+  // fetch it.
+  // This is a precaution method as we had bugs in the past where we assumed
+  // the account state to be fetched only for it to haven't been.
+  // This ensures production doesn't blow up and it 99.9% of cases it
+  // should not call the promise
+  async getOrFetchAccountStates(addr: string): Promise<{ [chainId: string]: AccountOnchainState }> {
+    if (!this.accountStates[addr]) await this.updateAccountState(addr, 'latest')
+    return this.accountStates[addr]
+  }
+
+  // Get the account state or in the rare case of it being undefined,
+  // fetch it.
+  // This is a precaution method as we had bugs in the past where we assumed
+  // the account state to be fetched only for it to haven't been.
+  // This ensures production doesn't blow up and it 99.9% of cases it
+  // should not call the promise
+  async getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
+    if (!this.accountStates[addr][chainId.toString()])
+      await this.updateAccountState(addr, 'latest', [chainId])
+
+    return this.accountStates[addr][chainId.toString()]
+  }
+
+  resetAccountsNewlyAddedState() {
+    this.accounts = this.accounts.map((a) => ({ ...a, newlyAdded: false }))
+    this.emitUpdate()
+  }
+
+  async forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
+    await this.updateAccountState(addr, 'pending', [chainId])
+    return this.accountStates[addr][chainId.toString()]
   }
 
   toJSON() {

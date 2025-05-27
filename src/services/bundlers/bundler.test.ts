@@ -34,12 +34,12 @@ import { Pimlico } from './pimlico'
 const to = '0x706431177041C87BEb1C25Fa29b92057Cb3c7089'
 
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
-const optimism = networks.find((net) => net.id === 'optimism')!
-const arbitrum = networks.find((net) => net.id === 'arbitrum')!
+const optimism = networks.find((n) => n.chainId === 10n)!
+const arbitrum = networks.find((n) => n.chainId === 42161n)!
 const gnosis: Network = {
-  id: 'gnosis',
   name: 'Gnosis',
   nativeAssetSymbol: 'XDAI',
+  nativeAssetName: 'XDAI',
   rpcUrls: ['https://invictus.ambire.com/gnosis'],
   selectedRpcUrl: 'https://invictus.ambire.com/gnosis',
   rpcNoStateOverride: true,
@@ -56,6 +56,7 @@ const gnosis: Network = {
   platformId: 'xdai',
   nativeAssetId: 'xdai',
   hasSingleton: true,
+  has7702: false,
   features: [],
   feeOptions: {
     is1559: true,
@@ -64,9 +65,9 @@ const gnosis: Network = {
   predefined: false
 }
 const baseSepolia: Network = {
-  id: 'baseSepolia',
   name: 'Base Sepolia',
   nativeAssetSymbol: 'ETH',
+  nativeAssetName: 'Ether',
   rpcUrls: ['https://sepolia.base.org'],
   selectedRpcUrl: 'https://sepolia.base.org',
   rpcNoStateOverride: false,
@@ -84,6 +85,7 @@ const baseSepolia: Network = {
   nativeAssetId: '',
   hasSingleton: true,
   features: [],
+  has7702: false,
   feeOptions: {
     is1559: true
   },
@@ -133,9 +135,9 @@ const smartAccDeployedOnGnosisButNo4337: Account = {
 }
 
 const mantle: Network = {
-  id: 'mantle',
   name: 'mantle',
   nativeAssetSymbol: 'MNT',
+  nativeAssetName: 'Mantle',
   rpcUrls: ['https://mantle-rpc.publicnode.com'],
   selectedRpcUrl: 'https://mantle-rpc.publicnode.com',
   rpcNoStateOverride: false,
@@ -148,6 +150,7 @@ const mantle: Network = {
   isSAEnabled: true,
   areContractsDeployed: true,
   hasRelayer: false,
+  has7702: false,
   platformId: 'mantle',
   nativeAssetId: 'mantle',
   hasSingleton: true,
@@ -158,9 +161,9 @@ const mantle: Network = {
   predefined: false
 }
 const base: Network = {
-  id: 'base',
   name: 'base',
   nativeAssetSymbol: 'ETH',
+  nativeAssetName: 'Ether',
   rpcUrls: ['https://mainnet.base.org'],
   selectedRpcUrl: 'https://mainnet.base.org',
   rpcNoStateOverride: false,
@@ -174,6 +177,7 @@ const base: Network = {
   areContractsDeployed: true,
   hasRelayer: false,
   platformId: 'base',
+  has7702: false,
   nativeAssetId: 'base',
   hasSingleton: true,
   features: [],
@@ -249,7 +253,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: arbitrum.id,
+        chainId: arbitrum.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 10000000000000n, data: '0x' }],
@@ -257,10 +261,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [arbitrum]
       const providers = {
-        [arbitrum.id]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
+        [arbitrum.chainId.toString()]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
-      const accountState = accountStates[opArb.accountAddr][opArb.networkId]
+      const accountState = accountStates[opArb.accountAddr][opArb.chainId.toString()]
       const bundler = new Biconomy()
       const userOp = getUserOperation(
         smartAccNew,
@@ -295,7 +299,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: arbitrum.id,
+        chainId: arbitrum.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -303,10 +307,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [arbitrum]
       const providers = {
-        [arbitrum.id]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
+        [arbitrum.chainId.toString()]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
-      const accountState = accountStates[opArb.accountAddr][opArb.networkId]
+      const accountState = accountStates[opArb.accountAddr][opArb.chainId.toString()]
       const bundler = new Biconomy()
       const userOp = getUserOperation(
         smartAccNew,
@@ -345,7 +349,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: arbitrum.id,
+        chainId: arbitrum.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [
@@ -362,10 +366,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [arbitrum]
       const providers = {
-        [arbitrum.id]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
+        [arbitrum.chainId.toString()]: getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
-      const accountState = accountStates[opArb.accountAddr][opArb.networkId]
+      const accountState = accountStates[opArb.accountAddr][opArb.chainId.toString()]
       const bundler = new Biconomy()
       const userOp = getUserOperation(
         smartAccNew,
@@ -405,7 +409,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -413,10 +417,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const accountState = accountStates[opOptimism.accountAddr][opOptimism.chainId.toString()]
       const bundler = new Pimlico() // use pimlico for these tests
       const userOp = getUserOperation(
         smartAcc,
@@ -462,7 +466,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -470,10 +474,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const accountState = accountStates[opOptimism.accountAddr][opOptimism.chainId.toString()]
       const bundler = new Pimlico()
       const userOp = getUserOperation(
         smartAcc,
@@ -519,7 +523,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [
@@ -536,10 +540,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+      const accountState = accountStates[opOptimism.accountAddr][opOptimism.chainId.toString()]
       const bundler = new Pimlico()
       const userOp = getUserOperation(
         smartAcc,
@@ -569,14 +573,15 @@ describe('Bundler tests', () => {
     })
   })
   describe('Estimation tests: gnosis/baseSepolia, deployed account with no erc-4337', () => {
-    test('should estimate successfully because of state override on base sepolia', async () => {
+    // NOTE: we no longer do this
+    test.skip('should estimate successfully because of state override on base sepolia', async () => {
       const opBaseSepolia: AccountOp = {
         accountAddr: smartAccDeployedOnGnosisButNo4337.addr,
         signingKeyAddr: smartAccDeployedOnGnosisButNo4337.associatedKeys[0],
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'baseSepolia',
+        chainId: 84532n,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -584,12 +589,13 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [baseSepolia]
       const providers = {
-        [baseSepolia.id]: getRpcProvider(baseSepolia.rpcUrls, baseSepolia.chainId)
+        [baseSepolia.chainId.toString()]: getRpcProvider(baseSepolia.rpcUrls, baseSepolia.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [
         smartAccDeployedOnGnosisButNo4337
       ])
-      const accountState = accountStates[opBaseSepolia.accountAddr][opBaseSepolia.networkId]
+      const accountState =
+        accountStates[opBaseSepolia.accountAddr][opBaseSepolia.chainId.toString()]
       const bundler = getDefaultBundler(baseSepolia)
       const userOp = getUserOperation(
         smartAccDeployedOnGnosisButNo4337,
@@ -606,7 +612,7 @@ describe('Bundler tests', () => {
       userOp.paymasterData = paymasterAndData.paymasterData
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
-      const bundlerEstimate = await bundler.estimate(userOp, baseSepolia, true)
+      const bundlerEstimate = await bundler.estimate(userOp, baseSepolia)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -620,7 +626,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'gnosis',
+        chainId: 100n,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -628,12 +634,12 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [gnosis]
       const providers = {
-        [gnosis.id]: getRpcProvider(gnosis.rpcUrls, gnosis.chainId)
+        [gnosis.chainId.toString()]: getRpcProvider(gnosis.rpcUrls, gnosis.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [
         smartAccDeployedOnGnosisButNo4337
       ])
-      const accountState = accountStates[opGnosis.accountAddr][opGnosis.networkId]
+      const accountState = accountStates[opGnosis.accountAddr][opGnosis.chainId.toString()]
       const bundler = getDefaultBundler(gnosis)
       const userOp = getUserOperation(
         smartAccDeployedOnGnosisButNo4337,
@@ -651,7 +657,7 @@ describe('Bundler tests', () => {
       userOp.signature = getSigForCalculations()
       userOp.nonce = '0x0'
       try {
-        await bundler.estimate(userOp, gnosis, true)
+        await bundler.estimate(userOp, gnosis)
         expect(true).toBe(false)
       } catch (e: any) {
         expect(e.message.includes('AA23 reverted validateUserOp: not from entryPoint')).not.toBe(-1)
@@ -673,7 +679,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: mantle.id,
+        chainId: mantle.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -681,10 +687,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [mantle]
       const providers = {
-        [mantle.id]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
+        [mantle.chainId.toString()]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const accountState = accountStates[opMantle.accountAddr][opMantle.chainId.toString()]
       const bundler = getDefaultBundler(mantle)
       const userOp = getUserOperation(
         smartAcc,
@@ -722,7 +728,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: mantle.id,
+        chainId: mantle.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [
@@ -738,10 +744,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [mantle]
       const providers = {
-        [mantle.id]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
+        [mantle.chainId.toString()]: getRpcProvider(mantle.rpcUrls, mantle.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opMantle.accountAddr][opMantle.networkId]
+      const accountState = accountStates[opMantle.accountAddr][opMantle.chainId.toString()]
       const bundler = getDefaultBundler(mantle)
       const userOp = getUserOperation(
         smartAcc,
@@ -786,7 +792,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: base.id,
+        chainId: base.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -794,10 +800,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [base]
       const providers = {
-        [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
+        [base.chainId.toString()]: getRpcProvider(base.rpcUrls, base.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
-      const accountState = accountStates[opBase.accountAddr][opBase.networkId]
+      const accountState = accountStates[opBase.accountAddr][opBase.chainId.toString()]
       const bundler = getDefaultBundler(mantle)
       const userOp = getUserOperation(
         smartAcc,
@@ -836,7 +842,7 @@ describe('Bundler tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: 'base',
+        chainId: 8453n,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('1'), data: '0x' }],
@@ -844,10 +850,10 @@ describe('Bundler tests', () => {
       }
       const usedNetworks = [base]
       const providers = {
-        [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
+        [base.chainId.toString()]: getRpcProvider(base.rpcUrls, base.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-      const accountState = accountStates[opBase.accountAddr][opBase.networkId]
+      const accountState = accountStates[opBase.accountAddr][opBase.chainId.toString()]
       const bundler = getDefaultBundler(base)
       const userOp = getUserOperation(smartAccDeployed, accountState, opBase, bundler.getName())
       const ambireInterface = new Interface(AmbireAccount.abi)
@@ -861,12 +867,6 @@ describe('Bundler tests', () => {
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterVerificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('paymasterPostOpGasLimit')
-      const estimateWithStateOverride = await bundler.estimate(userOp, base, true)
-      expect(estimateWithStateOverride).toHaveProperty('preVerificationGas')
-      expect(estimateWithStateOverride).toHaveProperty('verificationGasLimit')
-      expect(estimateWithStateOverride).toHaveProperty('callGasLimit')
-      expect(estimateWithStateOverride).toHaveProperty('paymasterVerificationGasLimit')
-      expect(estimateWithStateOverride).toHaveProperty('paymasterPostOpGasLimit')
     })
   })
 })

@@ -86,7 +86,7 @@ describe('typed message tests', () => {
     messageTemplate = {
       fromActionId: 'randomActionId',
       accountAddr: address1,
-      networkId: 'ethereum',
+      chainId: 1n,
       signature: null,
       content: {
         kind: 'typedMessage',
@@ -136,13 +136,10 @@ describe('typed message tests', () => {
 
   test('permit2 single module', () => {
     const expectedSingleVisualization = [
-      getAction('Permit'),
-      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getAction('Approve'),
+      getAddressVisualization(address2),
       getLabel('to use'),
       getToken(WETH_ADDRESS, 1000000000000000000n),
-      getLabel('for time period'),
-      getDeadline(968187600n),
-      getLabel('this whole signatuere'),
       getDeadline(968187600n)
     ]
     ;(messageTemplate.content as TypedMessage).types = {
@@ -158,23 +155,14 @@ describe('typed message tests', () => {
 
   test('permit2 module batch permit', () => {
     const expectedBatchVisualization = [
-      getLabel('Permit #1'),
-      getAction('Permit'),
-      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getAction('Approve'),
+      getAddressVisualization(address2),
       getLabel('to use'),
       getToken(WETH_ADDRESS, 1000000000000000000n),
-      getLabel('for time period'),
-      getDeadline(968187600n),
-      getLabel('this whole signatuere'),
-      getDeadline(968187600n),
-      getLabel('Permit #2'),
-      getAction('Permit'),
-      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('and'),
+      getAddressVisualization(address2),
       getLabel('to use'),
       getToken(WETH_ADDRESS, 500000000000000000n),
-      getLabel('for time period'),
-      getDeadline(969187600n),
-      getLabel('this whole signatuere'),
       getDeadline(968187600n)
     ]
     ;(messageTemplate.content as TypedMessage).types = {

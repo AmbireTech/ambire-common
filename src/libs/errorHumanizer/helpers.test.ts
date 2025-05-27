@@ -37,7 +37,7 @@ describe('Generic error fallbacks work', () => {
   })
   it('Null error type', () => {
     const LAST_RESORT_ERROR_MESSAGE =
-      'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
+      'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
     // @ts-ignore
     const message = getGenericMessageFromType(null, null, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
 
@@ -71,7 +71,7 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(message).toBe(
-      `${MESSAGE_PREFIX} it will revert onchain. Error code: The contract reverted\n`
+      `${MESSAGE_PREFIX} it will revert onchain. Error code: The contract reverted`
     )
   })
   it('Innercall failure error with no reason', () => {
@@ -85,5 +85,16 @@ describe('Generic error fallbacks work', () => {
     expect(message).toBe(
       `${MESSAGE_PREFIX} it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.`
     )
+  })
+  it('Error reason is not included in the message if withReason is false', () => {
+    const message = getGenericMessageFromType(
+      ErrorType.InnerCallFailureError,
+      'The contract reverted',
+      MESSAGE_PREFIX,
+      '',
+      false
+    )
+
+    expect(message).toBe(`${MESSAGE_PREFIX} it will revert onchain.`)
   })
 })

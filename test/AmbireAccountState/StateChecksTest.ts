@@ -21,7 +21,7 @@ describe('Account state checks tests', () => {
     } = await deployAmbireAccountHardhatNetwork([
       {
         addr: signer.address,
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
       }
     ])
     ambireAccountAddress = addr
@@ -112,7 +112,7 @@ describe('Account state checks tests', () => {
       expect(oneAcc[1]).to.equal('0x')
       expect(oneAcc[2]).to.equal(0n)
       expect(oneAcc[3].length).to.equal(1)
-      oneAcc[3].map((priv: any) => expect(priv).to.equal(ethers.toBeHex(1, 32)))
+      oneAcc[3].map((priv: any) => expect(priv).to.equal(ethers.toBeHex(2, 32)))
       expect(oneAcc[4]).to.equal(true)
       expect(oneAcc[5]).to.equal(0n)
       expect(oneAcc[6]).to.equal(false)

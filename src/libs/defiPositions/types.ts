@@ -1,5 +1,4 @@
-import { Network, NetworkId } from '../../interfaces/network'
-import { Price } from '../portfolio'
+import { Price } from '../../interfaces/assets'
 
 export enum AssetType {
   Liquidity,
@@ -17,6 +16,7 @@ export type ProviderName = 'AAVE v3' | 'Uniswap V3'
 export interface PositionAsset {
   address: string
   symbol: string
+  name: string
   decimals: number
   amount: bigint
   simulationAmount?: bigint
@@ -30,6 +30,7 @@ export interface PositionAsset {
   protocolAsset?: {
     address: string
     symbol: string
+    name: string
     decimals: number
   }
 }
@@ -39,7 +40,7 @@ export interface DeFiPositionsState {
 }
 
 export interface AccountState {
-  [networkId: string]: NetworkState
+  [chainId: string]: NetworkState
 }
 
 export interface ProviderError {
@@ -56,7 +57,7 @@ export interface NetworkState {
 }
 
 export type NetworksWithPositions = {
-  [networkId: NetworkId]: ProviderName[]
+  [chainId: string]: ProviderName[]
 }
 
 export type NetworksWithPositionsByAccounts = {
@@ -65,7 +66,7 @@ export type NetworksWithPositionsByAccounts = {
 
 export type PositionsByProvider = {
   providerName: ProviderName
-  networkId: Network['id']
+  chainId: bigint
   type: 'lending' | 'liquidity-pool'
   positions: Position[]
   positionInUSD?: number

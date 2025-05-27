@@ -1,3 +1,4 @@
+import { Hex } from './hex'
 import { Network } from './network'
 
 export type AccountId = string
@@ -19,6 +20,8 @@ export interface Account {
   email?: string
   newlyCreated?: boolean
   newlyAdded?: boolean
+  disable7702Popup?: boolean
+  disable7702Banner?: boolean
 }
 
 export interface AccountCreation {
@@ -32,10 +35,10 @@ export interface AccountCreation {
 export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
-  // this is a number and not a bigint because of ethers (it uses number for nonces)
+  eoaNonce: bigint | null
   nonce: bigint
   erc4337Nonce: bigint
-  associatedKeysPriviliges: { [key: string]: string }
+  associatedKeys: { [key: string]: string }
   deployError: boolean
   balance: bigint
   isEOA: boolean
@@ -43,11 +46,14 @@ export interface AccountOnchainState {
   isErc4337Nonce: boolean
   isV2: boolean
   currentBlock: bigint
+  isSmarterEoa: boolean
+  delegatedContract: Hex | null
+  delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
 }
 
 export type AccountStates = {
   [accountId: string]: {
-    [networkId: string]: AccountOnchainState
+    [chainId: string]: AccountOnchainState
   }
 }
 

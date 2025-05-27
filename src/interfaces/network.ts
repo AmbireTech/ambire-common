@@ -1,6 +1,6 @@
 import { BUNDLER } from '../consts/bundlers'
 
-export type NetworkId = string
+export type ChainId = bigint
 
 export interface Erc4337settings {
   enabled: boolean
@@ -8,6 +8,9 @@ export interface Erc4337settings {
   hasBundlerSupport?: boolean
   bundlers?: BUNDLER[]
   defaultBundler?: BUNDLER
+  // increase the bundler estimation & gas price by a percent so we get
+  // "txn underpriced" errors less often
+  increasePreVerGas?: number
 }
 
 interface FeeOptions {
@@ -21,8 +24,8 @@ interface FeeOptions {
   minBaseFeeEqualToLastBlock?: boolean
 }
 
+/** Current network configuration and statuses, which may change over time */
 export interface NetworkInfo {
-  force4337?: boolean
   chainId: bigint
   isSAEnabled: boolean
   hasSingleton: boolean
@@ -30,7 +33,7 @@ export interface NetworkInfo {
   rpcNoStateOverride: boolean
   erc4337: Erc4337settings
   areContractsDeployed: boolean
-  feeOptions: { is1559: boolean }
+  feeOptions: FeeOptions
   platformId: string
   nativeAssetId: string
   flagged: boolean
@@ -47,40 +50,38 @@ export interface NetworkFeature {
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
-// NetworkId is a string: this is our internal identifier for the network
-// chainId is a number and is the chainID used for replay protection (EIP-155)
-// we need this distinction because:
-// 1) it's easier to work with the string identifier, for example if we have an object segmented by networks it's easier to debug with string IDs
-// 2) multiple distinct networks may (rarely) run the same chainId
 export interface Network {
-  id: NetworkId
+  chainId: bigint
   name: string
   nativeAssetSymbol: string
-  chainId: bigint
+  nativeAssetName: string
   rpcUrls: string[]
   explorerUrl: string
   selectedRpcUrl: string
-  erc4337: Erc4337settings
-  rpcNoStateOverride: boolean
-  feeOptions: FeeOptions
-  isSAEnabled: boolean
-  areContractsDeployed: boolean
+  erc4337: NetworkInfo['erc4337']
+  rpcNoStateOverride: NetworkInfo['rpcNoStateOverride']
+  feeOptions: NetworkInfo['feeOptions']
+  isSAEnabled: NetworkInfo['isSAEnabled']
+  areContractsDeployed: NetworkInfo['areContractsDeployed']
   features: NetworkFeature[]
   hasRelayer: boolean
-  hasSingleton: boolean
-  platformId: string
-  nativeAssetId: string
+  hasSingleton: NetworkInfo['hasSingleton']
+  platformId: NetworkInfo['platformId']
+  nativeAssetId: NetworkInfo['nativeAssetId']
   iconUrls?: string[]
-  reestimateOn?: number
-  isOptimistic?: boolean
-  flagged?: boolean
+  isOptimistic?: NetworkInfo['isOptimistic']
+  flagged?: NetworkInfo['flagged']
   predefined: boolean
   wrappedAddr?: string
   blockGasLimit?: bigint
   oldNativeAssetSymbols?: string[]
   disableEstimateGas?: boolean
-  force4337?: boolean
+  predefinedConfigVersion?: number
+  // Last time the network details were updated from the rpc for custom and no SA networks
+  lastUpdatedNetworkInfo?: number
+  has7702: boolean
   allowForce4337?: boolean
+  disabled?: boolean
 }
 
 export interface AddNetworkRequestParams {
@@ -89,6 +90,7 @@ export interface AddNetworkRequestParams {
   selectedRpcUrl: Network['selectedRpcUrl']
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
+  nativeAssetName: Network['nativeAssetName']
   explorerUrl: Network['explorerUrl']
   iconUrls: Network['iconUrls']
 }
@@ -122,3 +124,59 @@ export interface ChainlistNetwork {
     icon?: string
   }[]
 }
+
+export type RelayerNetwork = {
+  /**
+   * Mechanism to merge incoming config with user storage. If versions match -
+   * prioritize user changed values. If incoming config version is higher, override user config.
+   */
+  predefinedConfigVersion: number
+  ambireId: string
+  platformId: string
+  name: string
+  iconUrls: string[]
+  explorerUrl: string
+  rpcUrls: string[]
+  selectedRpcUrl: string
+  native: {
+    symbol: string
+    name: string
+    coingeckoId: string
+    icon: string
+    decimals: number
+    wrapped: {
+      address: string
+      symbol: string
+      name: string
+      coingeckoId: string
+      icon: string
+      decimals: number
+    }
+    oldNativeAssetSymbols?: string[]
+  }
+  isOptimistic: boolean
+  disableEstimateGas: boolean
+  feeOptions: {
+    is1559: boolean
+    elasticityMultiplier?: number
+    baseFeeMaxChangeDenominator?: number
+    feeIncrease?: number
+    minBaseFee?: number
+    minBaseFeeEqualToLastBlock?: boolean
+  }
+  has7702?: boolean
+  smartAccounts?: {
+    hasRelayer: boolean
+    erc4337: {
+      enabled: boolean
+      hasPaymaster: boolean
+      hasBundlerSupport?: boolean
+      bundlers?: [bundler: BUNDLER]
+      defaultBundler?: BUNDLER
+      increasePreVerGas?: number
+    }
+  }
+  disabledByDefault?: boolean
+}
+
+export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

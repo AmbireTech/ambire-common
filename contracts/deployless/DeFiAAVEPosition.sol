@@ -109,6 +109,7 @@ struct ReserveDataIronclad {
 struct TokenFromBalance {
     address addr;
     string symbol;
+    string name;
     uint256 balance;
     uint8 decimals;
     uint256 price;
@@ -120,14 +121,17 @@ struct TokenFromBalance {
     
     address aaveAddr;
     string aaveSymbol;
+    string aaveName;
     uint8 aaveDecimals;
     
     address aaveSDebtAddr;
     string aaveSDebtSymbol;
+    string aaveSDebtName;
     uint8 aaveSDebtDecimals;
     
     address aaveVDebtAddr;
     string aaveVDebtSymbol;
+    string aaveVDebtName;
     uint8 aaveVDebtDecimals;
     
 }
@@ -152,6 +156,7 @@ interface IATOKEN {
     function balanceOf(address) external view returns (uint256);
     function decimals() external view returns (uint8);
     function symbol() external view returns (string memory);
+    function name() external view returns (string memory);
     function POOL() external view returns (address);
     function scaledBalanceOf(address) external view returns (uint256);
     function scaledTotalSupply() external view returns (uint256);
@@ -196,6 +201,9 @@ contract CALLS {
     function getTokenSymbol(address tokenAddr) external view returns (string memory) {
         return IATOKEN(tokenAddr).symbol();
     }
+    function getTokenName(address tokenAddr) external view returns (string memory) {
+        return IATOKEN(tokenAddr).name();
+    }
 
     function getTokenDecimals(address tokenAddr) external view returns (uint8) {
         return IATOKEN(tokenAddr).decimals();
@@ -235,8 +243,27 @@ contract AAVEPosition {
         }
     }
 
+    function getTokenNameTry(address tokenAddr) internal view returns (OutcomeString memory outcome) {
+        try calls.getTokenName(tokenAddr) returns (string memory result) {
+            outcome.str = result;
+            outcome.success = true;
+        } catch (bytes memory err) {
+            outcome.err = err;
+            outcome.success = false;
+        }
+    }
+
     function getTokenSymbol(address baseAddr) internal view returns (string memory outcome) {
         OutcomeString memory result = getTokenSymbolTry(baseAddr);
+        if (result.success) {
+            outcome = result.str;
+        } else {
+            outcome = 'error';
+        }
+    }
+    
+    function getTokenName(address baseAddr) internal view returns (string memory outcome) {
+        OutcomeString memory result = getTokenNameTry(baseAddr);
         if (result.success) {
             outcome = result.str;
         } else {
@@ -311,6 +338,7 @@ contract AAVEPosition {
                 aToken.addr = reserves[i];
                 aToken.balance = IATOKEN(reserveData.aTokenAddress).balanceOf(userAddr);
                 aToken.symbol = getTokenSymbol(reserves[i]);
+                aToken.name = getTokenName(reserves[i]);
                 aToken.decimals = IATOKEN(reserves[i]).decimals();
                 aToken.price = price;
                 aToken.borrowAssetBalance = IATOKEN(reserveData.variableDebtTokenAddress).balanceOf(userAddr);
@@ -321,14 +349,17 @@ contract AAVEPosition {
                 
                 aToken.aaveAddr = reserveData.aTokenAddress;
                 aToken.aaveSymbol = getTokenSymbol(reserveData.aTokenAddress);
+                aToken.aaveName = getTokenName(reserveData.aTokenAddress);
                 aToken.aaveDecimals = getTokenDecimals(reserveData.aTokenAddress);
 
                 aToken.aaveSDebtAddr = reserveData.stableDebtTokenAddress;
                 aToken.aaveSDebtSymbol = getTokenSymbol(reserveData.stableDebtTokenAddress);
+                aToken.aaveSDebtName = getTokenName(reserveData.stableDebtTokenAddress);
                 aToken.aaveSDebtDecimals = getTokenDecimals(reserveData.stableDebtTokenAddress);
 
                 aToken.aaveVDebtAddr = reserveData.variableDebtTokenAddress;
                 aToken.aaveVDebtSymbol = getTokenSymbol(reserveData.variableDebtTokenAddress);
+                aToken.aaveVDebtName = getTokenName(reserveData.variableDebtTokenAddress);
                 aToken.aaveVDebtDecimals = getTokenDecimals(reserveData.variableDebtTokenAddress);
 
                 userBalance[pos] = aToken;
@@ -340,6 +371,7 @@ contract AAVEPosition {
                 aToken.addr = reserves[i];
                 aToken.balance = IATOKEN(reserveData.aTokenAddress).balanceOf(userAddr);
                 aToken.symbol = getTokenSymbol(reserves[i]);
+                aToken.name = getTokenName(reserves[i]);
                 aToken.decimals = IATOKEN(reserveData.aTokenAddress).decimals();
                 aToken.price = price;
                 aToken.borrowAssetBalance = IATOKEN(reserveData.variableDebtTokenAddress).balanceOf(userAddr);
@@ -350,14 +382,17 @@ contract AAVEPosition {
                 
                 aToken.aaveAddr = reserveData.aTokenAddress;
                 aToken.aaveSymbol = getTokenSymbol(reserveData.aTokenAddress);
+                aToken.aaveName = getTokenName(reserveData.aTokenAddress);
                 aToken.aaveDecimals = getTokenDecimals(reserveData.aTokenAddress);
 
                 aToken.aaveSDebtAddr = reserveData.stableDebtTokenAddress;
                 aToken.aaveSDebtSymbol = getTokenSymbol(reserveData.stableDebtTokenAddress);
+                aToken.aaveSDebtName = getTokenName(reserveData.stableDebtTokenAddress);
                 aToken.aaveSDebtDecimals = getTokenDecimals(reserveData.stableDebtTokenAddress);
 
                 aToken.aaveVDebtAddr = reserveData.variableDebtTokenAddress;
                 aToken.aaveVDebtSymbol = getTokenSymbol(reserveData.variableDebtTokenAddress);
+                aToken.aaveVDebtName = getTokenName(reserveData.variableDebtTokenAddress);
                 aToken.aaveVDebtDecimals = getTokenDecimals(reserveData.variableDebtTokenAddress);
 
                 userBalance[pos] = aToken;

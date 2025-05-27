@@ -11,7 +11,7 @@ contract Spoof {
   function getSpoof(
     IAmbireAccount account,
     address[] memory associatedKeys
-  ) public returns (bytes memory spoofSig) {
+  ) public view returns (bytes memory spoofSig) {
     require(associatedKeys.length > 0, 'Spoof failed: no keys');
 
     for (uint i = 0; i != associatedKeys.length; i++) {

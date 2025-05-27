@@ -1,9 +1,13 @@
+import { TransactionReceipt, ZeroAddress } from 'ethers'
+
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
+import { AccountOpStatus, Call } from './types'
 
 /*
  * AccountOpIdentifiedBy
@@ -30,7 +34,7 @@ import { AccountOp } from './accountOp'
  * database ID record
  */
 export type AccountOpIdentifiedBy = {
-  type: 'Transaction' | 'UserOperation' | 'Relayer'
+  type: 'Transaction' | 'UserOperation' | 'Relayer' | 'MultipleTxns'
   identifier: string
   bundler?: BUNDLER
 }
@@ -42,27 +46,69 @@ export interface SubmittedAccountOp extends AccountOp {
   timestamp: number
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
-  flags?: {
-    hideActivityBanner?: boolean
-  }
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Transaction'
+  return identifiedBy && identifiedBy.type === 'Transaction'
 }
 
 export function isIdentifiedByUserOpHash(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'UserOperation'
+  return identifiedBy && identifiedBy.type === 'UserOperation'
 }
 
 export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Relayer'
+  return identifiedBy && identifiedBy.type === 'Relayer'
+}
+
+export function isIdentifiedByMultipleTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
+  return identifiedBy && identifiedBy.type === 'MultipleTxns'
 }
 
 export function getDappIdentifier(op: SubmittedAccountOp) {
   let hash = `${op.identifiedBy.type}:${op.identifiedBy.identifier}`
   if (op.identifiedBy?.bundler) hash = `${hash}:${op.identifiedBy.bundler}`
   return hash
+}
+
+export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
+  call: Call
+  callIndex: number
+} {
+  // get the first BroadcastedButNotConfirmed call if any
+  for (let i = 0; i < op.calls.length; i++) {
+    const currentCall = op.calls[i]
+    if (currentCall.status === AccountOpStatus.BroadcastedButNotConfirmed)
+      return { call: currentCall, callIndex: i }
+  }
+
+  // if no BroadcastedButNotConfirmed, get the last one
+  return { call: op.calls[op.calls.length - 1], callIndex: op.calls.length - 1 }
+}
+
+export async function fetchFrontRanTxnId(
+  identifiedBy: AccountOpIdentifiedBy,
+  foundTxnId: string,
+  network: Network,
+  counter = 0
+): Promise<string> {
+  // try to find the probably front ran txn id 5 times and if it can't,
+  // return the already found one. It could've really failed
+  if (counter >= 5) return foundTxnId
+
+  const userOpHash = identifiedBy.identifier
+  const bundler = identifiedBy.bundler
+    ? getBundlerByName(identifiedBy.bundler)
+    : getDefaultBundler(network)
+  const bundlerResult = await bundler.getStatus(network, userOpHash)
+  if (
+    !bundlerResult.transactionHash ||
+    bundlerResult.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
+  ) {
+    await wait(2000)
+    return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1)
+  }
+
+  return bundlerResult.transactionHash
 }
 
 export async function fetchTxnId(
@@ -77,6 +123,22 @@ export async function fetchTxnId(
       status: 'success',
       txnId: identifiedBy.identifier
     }
+
+  if (isIdentifiedByMultipleTxn(identifiedBy)) {
+    if (op) {
+      return {
+        status: 'success',
+        txnId: getMultipleBroadcastUnconfirmedCallOrLast(op).call.txnId as string
+      }
+    }
+
+    // always return the last txn id if no account op
+    const txnIds = identifiedBy.identifier.split('-')
+    return {
+      status: 'success',
+      txnId: txnIds[txnIds.length - 1]
+    }
+  }
 
   if (isIdentifiedByUserOpHash(identifiedBy)) {
     const userOpHash = identifiedBy.identifier
@@ -138,6 +200,7 @@ export async function fetchTxnId(
   try {
     response = await callRelayer(`/v2/get-txn-id/${id}`)
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.log(`relayer responded with an error when trying to find the txnId: ${e}`)
     return {
       status: 'not_found',
@@ -163,28 +226,39 @@ export async function fetchTxnId(
   }
 }
 
-export async function pollTxnId(
-  identifiedBy: AccountOpIdentifiedBy,
-  network: Network,
-  fetchFn: Fetch,
-  callRelayer: Function,
-  failCount = 0
-): Promise<string | null> {
-  // allow 8 retries and declate fetching the txnId a failure after
-  if (failCount >= 8) return null
+export function updateOpStatus(
+  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][chainId][index]
+  // so we could mutate it from inside this method
+  opReference: SubmittedAccountOp,
+  status: AccountOpStatus,
+  receipt?: TransactionReceipt
+): SubmittedAccountOp | null {
+  if (opReference.identifiedBy.type === 'MultipleTxns') {
+    const callIndex = getMultipleBroadcastUnconfirmedCallOrLast(opReference).callIndex
+    // eslint-disable-next-line no-param-reassign
+    opReference.calls[callIndex].status = status
 
-  const fetchTxnIdResult = await fetchTxnId(identifiedBy, network, fetchFn, callRelayer)
-  if (fetchTxnIdResult.status === 'rejected') return null
+    // if there's a receipt, add the fee
+    if (receipt) {
+      // eslint-disable-next-line no-param-reassign
+      opReference.calls[callIndex].fee = {
+        inToken: ZeroAddress,
+        amount: receipt.fee
+      }
+    }
 
-  if (fetchTxnIdResult.status === 'not_found') {
-    const delayPromise = () =>
-      new Promise((resolve) => {
-        setTimeout(resolve, 1500)
-      })
-    await delayPromise()
-    const increase = failCount + 1
-    return pollTxnId(identifiedBy, network, fetchFn, callRelayer, increase)
+    if (callIndex === opReference.calls.length - 1) {
+      // eslint-disable-next-line no-param-reassign
+      opReference.status = status
+      return opReference
+    }
+
+    // returning null here means the accountOp as a whole is still not ready
+    // to be updated as there are still pending transaction to be confirmed
+    return null
   }
 
-  return fetchTxnIdResult.txnId
+  // eslint-disable-next-line no-param-reassign
+  opReference.status = status
+  return opReference
 }

@@ -4,7 +4,7 @@ import { toBeHex } from 'ethers'
 
 /* eslint-disable import/no-extraneous-dependencies */
 import { BUNDLER } from '../../consts/bundlers'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
@@ -12,8 +12,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { decodeError } from '../../libs/errorDecoder'
 import { BundlerError } from '../../libs/errorDecoder/customErrors'
 import { DecodedError } from '../../libs/errorDecoder/types'
-import { BundlerEstimateResult } from '../../libs/estimate/interfaces'
-import { privSlot } from '../../libs/proxyDeploy/deploy'
+import { BundlerEstimateResult, BundlerStateOverride } from '../../libs/estimate/interfaces'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
@@ -66,39 +65,44 @@ export abstract class Bundler {
   private async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride = false
+    stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
-
-    if (shouldStateOverride) {
-      return provider.send('eth_estimateUserOperationGas', [
-        getCleanUserOp(userOperation)[0],
-        ERC_4337_ENTRYPOINT,
-        {
-          [userOperation.sender]: {
-            stateDiff: {
-              // add privileges to the entry point
-              [privSlot(0, 'uint256', ERC_4337_ENTRYPOINT, 'uint256')]: ENTRY_POINT_MARKER
-            }
-          }
-        }
-      ])
-    }
-
-    return provider.send('eth_estimateUserOperationGas', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
+    return stateOverride
+      ? provider.send('eth_estimateUserOperationGas', [
+          getCleanUserOp(userOperation)[0],
+          ERC_4337_ENTRYPOINT,
+          stateOverride
+        ])
+      : provider.send('eth_estimateUserOperationGas', [
+          getCleanUserOp(userOperation)[0],
+          ERC_4337_ENTRYPOINT
+        ])
   }
 
   async estimate(
     userOperation: UserOperation,
     network: Network,
-    shouldStateOverride = false
+    stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
-    const estimatiton = await this.sendEstimateReq(userOperation, network, shouldStateOverride)
+    const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
+
+    // Whole formula:
+    // final = estimation + estimation * percentage
+    // if percentage = 5% then percentage = 5/100 => 1/20
+    // final = estimation + estimation / 20
+    // here, we calculate the division (20 above)
+    const division = network.erc4337.increasePreVerGas
+      ? BigInt(100 / network.erc4337.increasePreVerGas)
+      : undefined
+
+    // transform
+    const preVerificationGas = division
+      ? BigInt(estimatiton.preVerificationGas) + BigInt(estimatiton.preVerificationGas) / division
+      : BigInt(estimatiton.preVerificationGas)
+
     return {
-      preVerificationGas: toBeHex(estimatiton.preVerificationGas) as Hex,
+      preVerificationGas: toBeHex(preVerificationGas) as Hex,
       verificationGasLimit: toBeHex(estimatiton.verificationGasLimit) as Hex,
       callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
       paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex,
@@ -133,6 +137,7 @@ export abstract class Bundler {
 
   // use this request to check if the bundler supports the network
   static async isNetworkSupported(fetch: Fetch, chainId: bigint) {
+    if (chainId === 146n) return true
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200

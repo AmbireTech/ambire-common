@@ -1,19 +1,23 @@
 /* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key } from '../../interfaces/keystore'
+import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
+import { Hex } from '../../interfaces/hex'
+import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { KeystoreController } from '../keystore/keystore'
+import { StorageController } from '../storage/storage'
 import { EmailVaultController, EmailVaultState } from './emailVault'
 
-class InternalSigner {
+class InternalSigner implements KeystoreSignerInterface {
   key
 
   privKey
@@ -34,6 +38,16 @@ class InternalSigner {
   signMessage() {
     return Promise.resolve('')
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702(hex: string): EIP7702Signature {
+    throw new Error('not supported')
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
 }
 
 const keystoreSigners = { internal: InternalSigner }
@@ -42,29 +56,22 @@ const getRandomEmail = () => {
   return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 let storage: Storage
+let storageCtrl: StorageController
 let keystore: KeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
-    ;[storage, keystore] = [
-      produceMemoryStore(),
-      new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
-    ]
+    storage = produceMemoryStore()
+    storageCtrl = new StorageController(storage)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
   })
   test('login first time', async () => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
 
     expect(ev.emailVaultStates.email[email]).toMatchObject({
@@ -77,7 +84,7 @@ describe('happy cases', () => {
   })
   test('login into existing', async () => {
     const evLib = new EmailVault(fetch, relayerUrl)
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
     await fetch(`${relayerUrl}/email-vault/confirm-key/${email}/${keys.key}/${keys.secret}`)
     // createing
@@ -95,7 +102,7 @@ describe('happy cases', () => {
     })
   })
   test('upload keystore secret', async () => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
@@ -106,7 +113,7 @@ describe('happy cases', () => {
     expect(newSecrets[key!]).toMatchObject({ key, type: 'keyStore' })
   })
   test('recoverKeyStore', async () => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
 
     await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
@@ -124,10 +131,15 @@ describe('happy cases', () => {
   // once the staging-relayer is updated we can continue with this.
   // (updating the staging would break the old version of the controller, we have to migrate both common and relayer at the same time)
   test('full keystore sync', async () => {
-    const [storage2, keystore2] = [
-      produceMemoryStore(),
-      new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
-    ]
+    const storage2 = produceMemoryStore()
+    const storageCtrl2 = new StorageController(storage2)
+    const keystore2 = new KeystoreController(
+      'default',
+      storageCtrl2,
+      keystoreSigners,
+      windowManager
+    )
+
     const keys = [
       {
         address: '0xDba1BA86e823FB82ee6181af6c32811000Ea7139',
@@ -139,7 +151,7 @@ describe('happy cases', () => {
       }
     ]
     // ev 1
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
+    const ev = new EmailVaultController(storageCtrl2, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret', '', false)
@@ -170,7 +182,7 @@ describe('happy cases', () => {
     ])
 
     // ev 2
-    const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2, testingOptions)
+    const ev2 = new EmailVaultController(storageCtrl2, fetch, relayerUrl, keystore2, testingOptions)
     await ev2.getEmailVaultInfo(email)
     await keystore2.addSecret('smth2', 'secret2', '', false)
     await keystore2.unlockWithSecret('smth2', 'secret2')
@@ -193,7 +205,7 @@ describe('happy cases', () => {
   })
 
   test('cancel login attempt', (done) => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore)
 
     setTimeout(() => {
       expect(ev.currentState).toBe(EmailVaultState.WaitingEmailConfirmation)

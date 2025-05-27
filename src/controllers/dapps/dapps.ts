@@ -2,8 +2,9 @@ import { Session, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
-import { Storage } from '../../interfaces/storage'
+import { patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { StorageController } from '../storage/storage'
 
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
@@ -15,17 +16,17 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export class DappsController extends EventEmitter {
   #dapps: Dapp[] = []
 
-  #storage: Storage
+  #storage: StorageController
 
   dappSessions: { [key: string]: Session } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(_storage: Storage) {
+  constructor(storage: StorageController) {
     super()
 
-    this.#storage = _storage
+    this.#storage = storage
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -61,28 +62,22 @@ export class DappsController extends EventEmitter {
   }
 
   async #load() {
-    // eslint-disable-next-line prefer-const
-    let [storedDapps, dappSessions] = await Promise.all([
-      this.#storage.get('dapps', []),
-      this.#storage.get('dappSessions', {})
-    ])
+    // Before extension version 4.55.0, dappSessions were stored in storage.
+    // This logic is no longer needed, so we remove the data from the user's storage.
+    // Keeping this here as a reminder to handle future use of the `dappSessions` key with caution.
+    this.#storage.remove('dappSessions')
+    const storedDapps = await this.#storage.get('dapps', [])
 
-    this.#dapps = storedDapps
-    Object.keys(dappSessions).forEach((sessionId) => {
-      const session = new Session(dappSessions[sessionId])
-      this.dappSessions[sessionId] = session
-    })
+    this.#dapps = patchStorageApps(storedDapps)
     this.emitUpdate()
   }
 
   #dappSessionsSet(sessionId: string, session: Session) {
     this.dappSessions[sessionId] = session
-    this.#storage.set('dappSessions', this.dappSessions)
   }
 
   #dappSessionsDelete(sessionId: string) {
     delete this.dappSessions[sessionId]
-    this.#storage.set('dappSessions', this.dappSessions)
   }
 
   #createDappSession = (data: SessionProp) => {
@@ -108,6 +103,20 @@ export class DappsController extends EventEmitter {
     this.dappSessions[key].setMessenger(messenger)
   }
 
+  setSessionLastHandledRequestsId = (key: string, id: number, isWeb3AppRequest?: boolean) => {
+    if (id > this.dappSessions[key].lastHandledRequestId) {
+      this.dappSessions[key].lastHandledRequestId = id
+      if (isWeb3AppRequest && !this.dappSessions[key].isWeb3App) {
+        this.dappSessions[key].isWeb3App = true
+        this.emitUpdate()
+      }
+    }
+  }
+
+  resetSessionLastHandledRequestsId = (key: string) => {
+    this.dappSessions[key].lastHandledRequestId = -1
+  }
+
   setSessionProp = (key: string, props: SessionProp) => {
     this.dappSessions[key].setProp(props)
   }
@@ -117,17 +126,22 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  broadcastDappSessionEvent = (ev: any, data?: any, origin?: string) => {
+  broadcastDappSessionEvent = async (
+    ev: any,
+    data?: any,
+    origin?: string,
+    skipPermissionCheck?: boolean
+  ) => {
+    await this.initialLoadPromise
+
     let dappSessions: { key: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((key) => {
-      if (this.dappSessions[key] && this.hasPermission(this.dappSessions[key].origin)) {
-        dappSessions.push({
-          key,
-          data: this.dappSessions[key]
-        })
+      const hasPermissionToBroadcast =
+        skipPermissionCheck || this.hasPermission(this.dappSessions[key].origin)
+      if (this.dappSessions[key] && hasPermissionToBroadcast) {
+        dappSessions.push({ key, data: this.dappSessions[key] })
       }
     })
-
     if (origin) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
     }
@@ -141,7 +155,6 @@ export class DappsController extends EventEmitter {
         }
       }
     })
-    this.emitUpdate()
   }
 
   addDapp(dapp: Dapp) {

@@ -56,6 +56,24 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Transaction underpriced'],
     message: 'it is underpriced. Please select a higher transaction speed and try again.'
   },
+  // TODO: Figure out a more elegant way to handle errors with dynamic messages
+  {
+    reasons: ['Insufficient ETH for transaction calls'],
+    message: "you don't have enough ETH to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient AVAX for transaction calls'],
+    message: "you don't have enough AVAX to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient BNB for transaction calls'],
+    message: "you don't have enough BNB to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient POL for transaction calls'],
+    message: "you don't have enough POL to cover the gas costs for this transaction."
+  },
+  // End of TODO
   // Smart Accounts
   {
     reasons: ['Sponsorship failed.'],
@@ -74,8 +92,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['user nonce too low'],
-    message:
-      'the user nonce is too low. Is there a pending transaction? Please try broadcasting again.'
+    message: 'of a pending transaction. Please try broadcasting again.'
   },
   // dApp interactions
   {
@@ -83,24 +100,35 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'the input token amount is too low. Please increase the token amount and try again.'
   },
   {
-    reasons: ['INSUFFICIENT_OUTPUT_AMOUNT'],
-    message:
-      'the slippage tolerance was exceeded. Please reduce the slippage tolerance in the app and try again.'
+    reasons: ['INSUFFICIENT_OUTPUT_AMOUNT', 'return amount is not enough'],
+    message: 'the slippage tolerance was exceeded.'
+  },
+  {
+    // another slippage error but this time with a prompt for the user to
+    // try and change the from amount. @Li.Fi. errors
+    reasons: ['0x275c273c'],
+    message: 'the slippage tolerance was exceeded. Please try changing the from amount.'
   },
   {
     reasons: ['80'],
     message:
-      "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation."
+      "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation.",
+    isExactMatch: true
   },
   {
     reasons: ['STF'],
     message:
-      'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
+      'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.',
+    isExactMatch: true
   },
   {
-    reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old'],
+    reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old', 'BAL#508', 'SWAP_DEADLINE'],
     message:
       'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
+  },
+  {
+    reasons: ['0x7b36c479', '0x81ceff30'],
+    message: 'of a Swap failure. Please try performing the same swap again.'
   },
   // bundler
   {
@@ -126,10 +154,20 @@ const BROADCAST_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Max fee per gas less than block base fee'],
     message:
       'the fee set for the transaction is lower than the network’s current base fee. Please try again with a higher fee.'
+  },
+  {
+    reasons: ['ConnectivityError'],
+    message:
+      'of a network error. Please check your internet connection and broadcast the transaction again.'
   }
 ]
 
 const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
+  {
+    reasons: ['ConnectivityError'],
+    message:
+      'of a network error. Please check your internet connection or contact support if the issue persists.'
+  },
   {
     reasons: ['SPOOF_ERROR', 'INSUFFICIENT_PRIVILEGE'],
     message:
@@ -144,12 +182,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'contracts allowed',
       'ontract is not allowed'
     ],
-    message: 'this app does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
-  },
-  // Contract errors
-  {
-    reasons: ['0x7b36c479', '0x81ceff30'],
-    message: 'of a Swap failure. Please try performing the same swap again.'
+    message: 'this app does not support Smart Account wallets. Use an EOA account instead.'
   },
   {
     reasons: ['ERC721: token already minted'],
@@ -189,8 +222,8 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
 ]
 
 export {
-  BROADCAST_OR_ESTIMATION_ERRORS,
   BROADCAST_ERRORS,
+  BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds
 }

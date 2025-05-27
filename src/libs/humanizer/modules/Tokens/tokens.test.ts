@@ -9,7 +9,7 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: 'ethereum',
+  chainId: 1n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,
@@ -140,9 +140,14 @@ describe('Tokens', () => {
   // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const irCalls = genericErc20Humanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
-      networkId: 'ethereum'
-    })
+    const irCalls = genericErc20Humanizer(
+      accountOp,
+      accountOp.calls,
+      humanizerInfo as HumanizerMeta,
+      {
+        chainId: 1n
+      }
+    )
     expect(irCalls.length).toBe(transactions.erc20.length)
     irCalls.forEach((c) => {
       expect(
@@ -157,9 +162,14 @@ describe('Tokens', () => {
 
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    const irCalls = genericErc721Humanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {
-      networkId: 'ethereum'
-    })
+    const irCalls = genericErc721Humanizer(
+      accountOp,
+      accountOp.calls,
+      humanizerInfo as HumanizerMeta,
+      {
+        chainId: 1n
+      }
+    )
 
     expect(irCalls.length).toBe(transactions.erc721.length)
     irCalls.forEach((c) => {

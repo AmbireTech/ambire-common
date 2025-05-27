@@ -5,20 +5,27 @@
 /* eslint-disable max-classes-per-file */
 
 import { Encrypted } from 'eth-crypto'
-import { ethers, Wallet } from 'ethers'
-import { EventEmitter } from 'stream'
+import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { ExternalKey, Key } from '../../interfaces/keystore'
+import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
+import {
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  LEGACY_POPULAR_DERIVATION_TEMPLATE
+} from '../../consts/derivation'
+import { Hex } from '../../interfaces/hex'
+import { ExternalKey, InternalKey, Key, TxnRequest } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
+import { StorageController } from '../storage/storage'
 import { KeystoreController } from './keystore'
 
-export class InternalSigner {
+class InternalSigner {
   key
 
   privKey
@@ -38,6 +45,19 @@ export class InternalSigner {
 
   signMessage() {
     return Promise.resolve('')
+  }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
   }
 }
 
@@ -60,16 +80,22 @@ class LedgerSigner {
   signMessage() {
     return Promise.resolve('')
   }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
 }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 let keystore: KeystoreController
 const pass = 'hoiHoi'
@@ -82,8 +108,9 @@ const keyPublicAddress = new ethers.Wallet(privKey).address
 
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
+  const storageCtrl = new StorageController(storage)
   test('should initialize', () => {
-    keystore = new KeystoreController(storage, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
     expect(keystore).toBeDefined()
   })
 
@@ -504,45 +531,47 @@ describe('KeystoreController', () => {
     const keysWithSamePublicAddress = keystore.keys.filter(
       (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
     )
-
     // First remove the internal key
-    const internalKeyToRemove = keysWithSamePublicAddress.find((x) => x.type === 'internal')
-
+    const internalKeyToRemove = keysWithSamePublicAddress.find(
+      (x) => x.type === 'internal'
+    ) as InternalKey
     expect(keysWithSamePublicAddress.length).toBeGreaterThanOrEqual(2)
-
     await keystore.removeKey(internalKeyToRemove?.addr || '', internalKeyToRemove?.type || '')
-
     expect(keystore.keys.length).toBe(keyLengthBefore - 1)
-
     const keysWithSamePublicAddressAfter = keystore.keys.filter(
       (x) => x.addr === '0xe95DB32209A2E132B262Ab12BAFf8F6007e30254'
     )
-
-    const hwWalletKeyToRemove = keysWithSamePublicAddressAfter.find((x) => x.type === 'trezor')
-
+    const hwWalletKeyToRemove = keysWithSamePublicAddressAfter.find(
+      (x) => x.type === 'trezor'
+    ) as ExternalKey
     // Make sure the trezor key is not removed
     expect(hwWalletKeyToRemove).toBeDefined()
-
     // Remove the trezor key
     await keystore.removeKey(hwWalletKeyToRemove?.addr || '', hwWalletKeyToRemove?.type || '')
-
     // Make sure both keys are removed
     expect(keystore.keys.length).toBe(keyLengthBefore - 2)
   })
-  test('should add keystore default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreSavedSeed).toBeFalsy()
+  test('should add keystore seed phrase', async () => {
+    expect(keystore.seeds.length).toBe(0)
     expect(keystore.isUnlocked).toBeTruthy()
     await keystore.addSeed({
       seed: process.env.SEED,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
+    expect(keystore.seeds.length).toBe(1)
+    expect(keystore.seeds[0].label).toBe('Recovery Phrase 1')
+    expect(keystore.seeds[0].hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
   })
-  test('should get default seed phrase', async () => {
-    expect(!!keystore.hasKeystoreSavedSeed).toBeTruthy()
-    const decryptedSavedSeedPhrase = await keystore.getSavedSeed()
-    expect(decryptedSavedSeedPhrase.seed).toEqual(process.env.SEED)
-    expect(decryptedSavedSeedPhrase.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
+  test('should update existing seed', async () => {
+    expect(keystore.seeds.length).toBe(1)
+    await keystore.updateSeed({
+      id: keystore.seeds[0].id,
+      label: 'New Label',
+      hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE
+    })
+    expect(keystore.seeds.length).toBe(1)
+    expect(keystore.seeds[0].label).toBe('New Label')
+    expect(keystore.seeds[0].hdPathTemplate).toBe(LEGACY_POPULAR_DERIVATION_TEMPLATE)
   })
 })
 
@@ -553,8 +582,13 @@ describe('import/export with pub key test', () => {
   let uid2: string
 
   beforeEach(async () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
-    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners, windowManager)
+    const storage = produceMemoryStore()
+    const storage2 = produceMemoryStore()
+    const storageCtrl = new StorageController(storage)
+    const storageCtrl2 = new StorageController(storage2)
+
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
+    keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, windowManager)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')

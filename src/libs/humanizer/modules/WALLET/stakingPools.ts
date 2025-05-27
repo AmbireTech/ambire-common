@@ -36,31 +36,16 @@ export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisuali
     [iface.getFunction('leave')?.selector!]: (call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
 
-      return [
-        getAction('Leave'),
-        getLabel('with'),
-        getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-        getAddressVisualization(call.to)
-      ]
+      return [getAction('Leave'), getLabel('with'), getToken(call.to, shares)]
     },
     [iface.getFunction('withdraw')?.selector!]: (call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
-      return [
-        getAction('Withdraw'),
-        getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-        getLabel('from'),
-        getAddressVisualization(call.to)
-      ]
+      return [getAction('Withdraw'), getToken(call.to, shares)]
     },
 
     [iface.getFunction('rageLeave')?.selector!]: (call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
-      return [
-        getAction('Rage leave'),
-        getLabel('with'),
-        getToken(STAKING_POOLS[call.to.toLowerCase()].baseToken, shares),
-        getAddressVisualization(call.to)
-      ]
+      return [getAction('Rage leave'), getLabel('with'), getToken(call.to, shares)]
     }
   }
 }

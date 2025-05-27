@@ -56,24 +56,19 @@ export type Action =
       actionName: 'backup-keystore-secret'
     }
   | {
-      label: 'Switch'
-      actionName: 'switch-default-wallet'
-      meta: {}
-    }
-  | {
       label: 'Reject'
       actionName: 'reject-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteIds: string[] }
     }
   | {
       label: 'Proceed to Next Step' | 'Open'
       actionName: 'proceed-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteId: string }
     }
   | {
       label: 'Close'
       actionName: 'close-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteIds: string[]; isHideStyle: boolean }
     }
   | {
       label: 'Details'
@@ -82,11 +77,7 @@ export type Action =
   | {
       label: 'Hide'
       actionName: 'hide-activity-banner'
-      meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
-    }
-  | {
-      label: 'Check'
-      actionName: 'confirm-temp-seed'
+      meta: { timestamp: number; addr: string; chainId: bigint; isHideStyle: boolean }
     }
   | {
       label: 'Open'
@@ -103,4 +94,13 @@ export type Action =
   | {
       label: 'Dismiss'
       actionName: 'dismiss-email-vault'
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-7702-banner'
+      meta: { accountAddr: string }
+    }
+  | {
+      label: 'View'
+      actionName: 'view-bridge'
     }
