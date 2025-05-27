@@ -50,7 +50,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           getToken(WALLET_STAKING_ADDR, shareAmount)
         ]
       },
-      [stkWalletIface.getFunction('stakeAndWrap')!.selector]: ({ data }: IrCall) => {
+      [stkWalletIface.getFunction('enter')!.selector]: ({ data }: IrCall) => {
         const [amount] = stkWalletIface.parseTransaction({ data })!.args
 
         return [
@@ -80,8 +80,10 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
         fullVisualization: matcher.supplyController[call.data.slice(0, 10)](call)
       }
     }
-
-    if (call.to === STK_WALLET && matcher.stkWallet[call.data.slice(0, 10)]) {
+    if (
+      call.to.toLowerCase() === STK_WALLET.toLowerCase() &&
+      matcher.stkWallet[call.data.slice(0, 10)]
+    ) {
       return {
         ...call,
         fullVisualization: matcher.stkWallet[call.data.slice(0, 10)](call)
