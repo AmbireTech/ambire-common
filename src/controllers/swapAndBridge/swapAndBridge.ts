@@ -576,7 +576,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode?: 'fiat' | 'token'
       fromSelectedToken?: TokenResult | null
       toChainId?: bigint | number
-      toSelectedToken?: SwapAndBridgeToToken | null
+      toSelectedTokenAddr?: SwapAndBridgeToToken['address'] | null
       routePriority?: 'output' | 'time'
     },
     updateProps?: {
@@ -590,7 +590,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode,
       fromSelectedToken,
       toChainId,
-      toSelectedToken,
+      toSelectedTokenAddr,
       routePriority
     } = props
     const { emitUpdate = true, updateQuote = true } = updateProps || {}
@@ -708,9 +708,11 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
-    if (typeof toSelectedToken !== 'undefined') {
-      this.toSelectedToken = toSelectedToken
-    }
+    const nextToToken = toSelectedTokenAddr
+      ? this.#toTokenList.find((t) => t.address === toSelectedTokenAddr)
+      : undefined
+
+    if (nextToToken) this.toSelectedToken = { ...nextToToken }
 
     if (routePriority) {
       this.routePriority = routePriority
@@ -723,7 +725,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
-      shouldUpdateToTokenList ? this.updateToTokenList(true, toSelectedToken?.address) : undefined,
+      shouldUpdateToTokenList ? this.updateToTokenList(true, nextToToken?.address) : undefined,
       updateQuote ? this.updateQuote({ debounce: true }) : undefined
     ])
   }
