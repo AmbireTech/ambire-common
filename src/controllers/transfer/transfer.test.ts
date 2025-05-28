@@ -1,7 +1,12 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable class-methods-use-this */
+/* eslint-disable @typescript-eslint/no-useless-constructor */
+/* eslint-disable max-classes-per-file */
+
 import fetch from 'node-fetch'
-
 import { expect } from '@jest/globals'
-
+import { hexlify, randomBytes } from 'ethers'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -13,12 +18,19 @@ import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
-import { Contacts } from '../addressBook/addressBook'
+import { AddressBookController, Contacts } from '../addressBook/addressBook'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
+import { KeystoreController } from '../keystore/keystore'
+import { mockWindowManager } from '../../../test/helpers/window'
+import { Key, TxnRequest } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
+import { Hex } from '../../interfaces/hex'
+import { EIP7702Auth } from '../../consts/7702'
+import { PortfolioController } from '../portfolio/portfolio'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -81,10 +93,107 @@ const accountsCtrl = new AccountsController(
   () => {}
 )
 
+// TODO - this mocks are being duplicated across the tests. Should reuse it.
+class InternalSigner {
+  key
+
+  privKey
+
+  constructor(_key: Key, _privKey?: string) {
+    this.key = _key
+    this.privKey = _privKey
+  }
+
+  signRawTransaction() {
+    return Promise.resolve('')
+  }
+
+  signTypedData() {
+    return Promise.resolve('')
+  }
+
+  signMessage() {
+    return Promise.resolve('')
+  }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
+}
+
+class LedgerSigner {
+  key
+
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  constructor(_key: Key) {
+    this.key = _key
+  }
+
+  signRawTransaction() {
+    return Promise.resolve('')
+  }
+
+  signTypedData() {
+    return Promise.resolve('')
+  }
+
+  signMessage() {
+    return Promise.resolve('')
+  }
+
+  sign7702(hex: string): EIP7702Signature {
+    return {
+      yParity: '0x00',
+      r: hexlify(randomBytes(32)) as Hex,
+      s: hexlify(randomBytes(32)) as Hex
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
+}
+
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl
 })
+
+const windowManager = mockWindowManager().windowManager
+const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
+const keystoreController = new KeystoreController(
+  'default',
+  storageCtrl,
+  keystoreSigners,
+  windowManager
+)
+
+const addressBookController = new AddressBookController(
+  storageCtrl,
+  accountsCtrl,
+  selectedAccountCtrl
+)
+
+const portfolioController = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystoreController,
+  relayerUrl,
+  velcroUrl
+)
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
@@ -96,14 +205,19 @@ const getTokens = async () => {
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
     transferController = new TransferController(
-      produceMemoryStore(),
+      storageCtrl,
       humanizerInfo as HumanizerMeta,
-      PLACEHOLDER_SELECTED_ACCOUNT,
-      networksCtrl.networks,
-      selectedAccountCtrl.portfolio,
-      false,
-      '0.0.0'
+      selectedAccountCtrl,
+      networksCtrl,
+      addressBookController,
+      accountsCtrl,
+      keystoreController,
+      portfolioController,
+      {},
+      providers,
+      relayerUrl
     )
+
     await transferController.update({
       contacts: CONTACTS
     })
@@ -235,7 +349,7 @@ describe('Transfer Controller', () => {
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
     expect(transferController.recipientAddress).toBe('')
-    expect(transferController.selectedToken).toBeDefined()
+    expect(transferController.selectedToken).toBeNull()
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.addressState).toEqual({
       fieldValue: '',
