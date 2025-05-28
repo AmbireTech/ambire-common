@@ -927,7 +927,7 @@ export class SwapAndBridgeController extends EventEmitter {
       )
     }
 
-    return this.#toTokenList
+    return this.#toTokenList.slice(0, TO_TOKEN_LIST_LIMIT)
   }
 
   async #addToTokenByAddress(address: string) {
