@@ -5,7 +5,6 @@ import { AddressStateOptional } from './domains'
 
 export interface TransferUpdate {
   humanizerInfo?: HumanizerMeta
-  contacts?: Contacts
   selectedToken?: TokenResult
   amount?: string
   addressState?: AddressStateOptional

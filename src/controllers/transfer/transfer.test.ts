@@ -68,8 +68,99 @@ const providers = Object.fromEntries(
 )
 
 let providersCtrl: ProvidersController
+
+const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
+
+const account = {
+  addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+  initialPrivileges: [],
+  associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+  creation: {
+    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+    salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+  }
+}
+
+const account2 = {
+  addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+  associatedKeys: [],
+  initialPrivileges: [],
+  creation: {
+    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+    salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  }
+}
+
+const account3 = {
+  addr: '0x018D034c782db8462d864996dE3c297bcf66f86A',
+  initialPrivileges: [
+    [
+      '0xdD6487aa74f0158733e8a36E466A98f4aEE9c179',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0xdD6487aa74f0158733e8a36E466A98f4aEE9c179'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027f9405c22160986551985df269a2a18b4e60aa0a1347bd75cbcea777ea18692b1c553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x018D034c782db8462d864996dE3c297bcf66f86A'
+  }
+}
+
+const account4 = {
+  addr: '0x3e2D734349654166a2Ad92CaB2437A76a70B650a',
+  initialPrivileges: [
+    [
+      '0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  creation: {
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027ff33cc417366b7e38d2706a67ab46f85465661c28b864b521441180d15df82251553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x3e2D734349654166a2Ad92CaB2437A76a70B650a'
+  }
+}
+
+const emptyAccount = {
+  addr: EMPTY_ACCOUNT_ADDR,
+  initialPrivileges: [],
+  associatedKeys: [],
+  creation: null,
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: EMPTY_ACCOUNT_ADDR
+  }
+}
+
 const storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
+
+storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
+
 const networksCtrl = new NetworksController(
   storageCtrl,
   fetch,
@@ -214,13 +305,13 @@ describe('Transfer Controller', () => {
       keystoreController,
       portfolioController,
       {},
-      providers,
+      providersCtrl,
       relayerUrl
     )
 
-    await transferController.update({
-      contacts: CONTACTS
-    })
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(account)
+
     expect(transferController.isInitialized).toBe(true)
   })
   test('should set address state', async () => {
