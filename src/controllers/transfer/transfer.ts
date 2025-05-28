@@ -667,6 +667,7 @@ export class TransferController extends EventEmitter {
   destroyLatestBroadcastedAccountOp() {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
+    this.emitUpdate()
   }
 
   unloadScreen(forceUnload: boolean) {
