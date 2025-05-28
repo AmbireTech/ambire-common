@@ -968,6 +968,9 @@ export class SwapAndBridgeController extends EventEmitter {
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
     )
 
+    // Re-trigger search, because of the updated #toTokenList
+    await this.searchToToken(token.address)
+
     this.#emitUpdateIfNeeded()
     return token
   }
