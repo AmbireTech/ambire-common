@@ -82,7 +82,7 @@ const NETWORK_MISMATCH_MESSAGE =
   'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
 
 // For performance reasons, limit the max number of tokens in the to token list
-const TO_TOKEN_LIST_LIMIT = 50
+const TO_TOKEN_LIST_LIMIT = 100
 
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
