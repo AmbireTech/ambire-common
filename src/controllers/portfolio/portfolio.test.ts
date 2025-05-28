@@ -142,7 +142,7 @@ const prepareTest = () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
-  const keystore = new KeystoreController(storageCtrl, {}, windowManager)
+  const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
     storageCtrl,

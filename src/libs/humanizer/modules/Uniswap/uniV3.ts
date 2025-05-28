@@ -9,8 +9,7 @@ import {
   getDeadline,
   getLabel,
   getRecipientText,
-  getToken,
-  getUnknownVisualization
+  getToken
 } from '../../utils'
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText, parsePath, uniReduce } from './utils'
@@ -33,7 +32,9 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         }
       )
       const res = uniReduce(parsed)
-      return res.length ? [...res, getDeadline(deadline)] : getUnknownVisualization('Uni V3', call)
+      return res.length
+        ? [...res, getDeadline(deadline)]
+        : [getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)]
     },
     // 0xac9650d8
     [ifaceV32.getFunction('multicall(bytes[])')?.selector!]: (
@@ -55,7 +56,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       accountOp: AccountOp,
       call: IrCall
     ): HumanizerVisualization[] => {
-      const [prevBlockHash, calls] = ifaceV32.parseTransaction(call)?.args || []
+      const [, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
         (data: string): HumanizerVisualization[] => {
@@ -66,7 +67,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       )
       return parsed.length
         ? uniReduce(parsed)
-        : [...getUnknownVisualization('Uni V3', call), getLabel(`after block ${prevBlockHash}`)]
+        : [getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)]
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x04e45aaf
@@ -321,7 +322,9 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
         return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Unknown action')]
       })
 
-      return parsed.length ? uniReduce(parsed) : getUnknownVisualization('Uni V3', call)
+      return parsed.length
+        ? uniReduce(parsed)
+        : [getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)]
     },
     // -------------------------------------------------------------------------------------------------
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature

@@ -182,7 +182,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'contracts allowed',
       'ontract is not allowed'
     ],
-    message: 'this app does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
+    message: 'this app does not support Smart Account wallets. Use an EOA account instead.'
   },
   {
     reasons: ['ERC721: token already minted'],

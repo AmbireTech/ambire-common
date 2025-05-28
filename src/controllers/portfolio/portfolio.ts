@@ -1,10 +1,10 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
+import { STK_WALLET } from '../../consts/addresses'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { canBecomeSmarter, isBasicAccount, isSmartAccount } from '../../libs/account/account'
-import { KeystoreController } from '../keystore/keystore'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -37,6 +37,7 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
@@ -480,14 +481,14 @@ export class PortfolioController extends EventEmitter {
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 
     const rewardsTokens = [
-      res.data.rewards.xWalletClaimableBalance || [],
+      res.data.rewards.stkWalletClaimableBalance || [],
       res.data.rewards.walletClaimableBalance || []
     ]
       .flat()
       .map((t: any) => ({
         ...t,
         chainId: BigInt(t.chainId || 1),
-        symbol: t.address === '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935' ? 'xWALLET' : t.symbol,
+        symbol: t.address === STK_WALLET ? 'stkWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
 

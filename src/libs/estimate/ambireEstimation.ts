@@ -146,7 +146,7 @@ export async function ambireEstimateGas(
       if (
         !token.flags.onGasTank &&
         token.address === ZeroAddress &&
-        !baseAcc.canUseReceivingNativeForFee() &&
+        !baseAcc.canUseReceivingNativeForFee(token.amount) &&
         feeTokenOutcomes[key].amount > token.amount
       )
         availableAmount = token.amount
@@ -168,10 +168,7 @@ export async function ambireEstimateGas(
           token.address === ZeroAddress
             ? l1GasEstimation.feeWithNativePayment
             : l1GasEstimation.feeWithTransferPayment,
-        token: {
-          ...token,
-          amount: availableAmount
-        }
+        token
       }
     }
   )

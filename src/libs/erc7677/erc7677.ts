@@ -15,9 +15,16 @@ import {
 
 export function getPaymasterService(
   chainId: bigint,
-  capabilities?: { paymasterService?: PaymasterCapabilities }
+  capabilities?: { paymasterService?: PaymasterCapabilities | PaymasterService }
 ): PaymasterService | undefined {
   if (!capabilities || !capabilities.paymasterService) return undefined
+
+  // this means it's v2
+  if ('url' in capabilities.paymasterService) {
+    const paymasterService = capabilities.paymasterService
+    paymasterService.id = new Date().getTime()
+    return paymasterService
+  }
 
   // hex may come with a leading zero or not. Prepare for both
   const chainIds = Object.keys(capabilities.paymasterService)

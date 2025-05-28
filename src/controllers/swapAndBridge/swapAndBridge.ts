@@ -1,5 +1,4 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
-import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -51,6 +50,7 @@ import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, ActionsController } from '../actions/actions'
@@ -539,11 +539,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   unloadScreen(sessionId: string, forceUnload?: boolean) {
     const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
-    const signAccountOpCtrlStatus = this.signAccountOpController?.status?.type
-    const isSigningOrBroadcasting =
-      signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
-    const shouldPersistState =
-      ((isFormDirty && sessionId === 'popup') || isSigningOrBroadcasting) && !forceUnload
+    const shouldPersistState = isFormDirty && sessionId === 'popup' && !forceUnload
 
     if (shouldPersistState) return
 
@@ -750,7 +746,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
-  reset(shouldEmit?: boolean) {
+    reset(shouldEmit?: boolean) {
     this.resetForm()
     this.fromChainId = 1
     this.fromSelectedToken = null
@@ -1139,7 +1135,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
       return
 
-    const quoteId = uuidv4()
+    const quoteId = generateUuid()
     this.#updateQuoteId = quoteId
 
     const updateQuoteFunction = async () => {
@@ -1897,13 +1893,22 @@ export class SwapAndBridgeController extends EventEmitter {
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      // if the chain id has changed, we need to destroy the sign account op
+      if (
+        this.signAccountOpController.accountOp.meta &&
+        this.signAccountOpController.accountOp.meta.swapTxn &&
+        this.signAccountOpController.accountOp.meta.swapTxn.chainId !== userTxn.chainId
+      ) {
+        this.destroySignAccountOp()
+      } else {
+        this.signAccountOpController.update({ calls })
 
-      // add the real swapTxn
-      if (!this.signAccountOpController.accountOp.meta)
-        this.signAccountOpController.accountOp.meta = {}
-      this.signAccountOpController.accountOp.meta.swapTxn = userTxn
-      return
+        // add the real swapTxn
+        if (!this.signAccountOpController.accountOp.meta)
+          this.signAccountOpController.accountOp.meta = {}
+        this.signAccountOpController.accountOp.meta.swapTxn = userTxn
+        return
+      }
     }
 
     const baseAcc = getBaseAccount(

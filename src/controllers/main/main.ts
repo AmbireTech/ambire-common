@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/brace-style */
-/* eslint-disable no-await-in-loop */
-
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -21,6 +20,7 @@ import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
@@ -79,7 +79,10 @@ import {
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { getHdPathFromTemplate } from '../../utils/hdPath'
 import shortenAddress from '../../utils/shortenAddress'
+/* eslint-disable no-await-in-loop */
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
@@ -108,24 +111,30 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
+  SIGN_ACCOUNT_OP_TRANSFER,
   SignAccountOpType
 } from '../signAccountOp/helper'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { TransferController } from '../transfer/transfer'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 
 const STATUS_WRAPPED_METHODS = {
-  signAccountOp: 'INITIAL',
-  broadcastSignedAccountOp: 'INITIAL',
   removeAccount: 'INITIAL',
   handleAccountPickerInitLedger: 'INITIAL',
   handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   buildSwapAndBridgeUserRequest: 'INITIAL',
-  selectAccount: 'INITIAL'
+  selectAccount: 'INITIAL',
+  signAndBroadcastAccountOp: 'INITIAL'
 } as const
+
+type CustomStatuses = {
+  signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
+}
 
 export class MainController extends EventEmitter {
   #storageAPI: Storage
@@ -179,6 +188,8 @@ export class MainController extends EventEmitter {
 
   swapAndBridge: SwapAndBridgeController
 
+  transfer: TransferController
+
   signAccountOp: SignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
@@ -206,7 +217,7 @@ export class MainController extends EventEmitter {
 
   isOffline: boolean = false
 
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
 
   #windowManager: WindowManager
 
@@ -221,13 +232,12 @@ export class MainController extends EventEmitter {
    * Prevents rejected hardware wallet signatures from affecting new requests
    * when a user closes an action window and starts a new one.
    */
-  #broadcastCallId: number | null = null
-
-  #isBroadcastAwaitingHWSignature: boolean = false
+  #signAndBroadcastCallId: string | null = null
 
   #relayerUrl: string
 
   constructor({
+    platform,
     storageAPI,
     fetch,
     relayerUrl,
@@ -238,6 +248,7 @@ export class MainController extends EventEmitter {
     windowManager,
     notificationManager
   }: {
+    platform: Platform
     storageAPI: Storage
     fetch: Fetch
     relayerUrl: string
@@ -256,13 +267,17 @@ export class MainController extends EventEmitter {
 
     this.storage = new StorageController(this.#storageAPI)
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
-    this.keystore = new KeystoreController(this.storage, keystoreSigners, windowManager)
+    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController(
       this.storage,
       this.fetch,
       relayerUrl,
       async (network: Network) => {
+        if (network.disabled) {
+          await this.removeNetworkData(network.chainId)
+          return
+        }
         this.providers.setProvider(network)
         await this.reloadSelectedAccount({ chainId: network.chainId })
       },
@@ -335,7 +350,12 @@ export class MainController extends EventEmitter {
       this.networks,
       this.accounts,
       this.#externalSignerControllers,
-      this.invite
+      this.invite,
+      () => {
+        if (this.signMessage.signingKeyType === 'trezor') {
+          this.#handleTrezorCleanup()
+        }
+      }
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
@@ -416,6 +436,19 @@ export class MainController extends EventEmitter {
         )
       }
     })
+    this.transfer = new TransferController(
+      this.storage,
+      humanizerInfo as HumanizerMeta,
+      this.selectedAccount,
+      this.networks,
+      this.addressBook,
+      this.accounts,
+      this.keystore,
+      this.portfolio,
+      this.#externalSignerControllers,
+      this.providers,
+      relayerUrl
+    )
     this.domains = new DomainsController(this.providers.providers)
 
     this.#initialLoadPromise = this.#load()
@@ -526,6 +559,7 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.reset()
+    this.transfer.resetForm()
     await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
@@ -639,90 +673,109 @@ export class MainController extends EventEmitter {
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
-    const signAccountOp =
-      type === SIGN_ACCOUNT_OP_MAIN
-        ? this.signAccountOp
-        : this.swapAndBridge.signAccountOpController
-
-    // if the accountOp has a swapTxn, start the route as the user is broadcasting it
-    if (signAccountOp?.accountOp.meta?.swapTxn) {
-      await this.swapAndBridge.addActiveRoute({
-        activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
-        userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
+    if (this.statuses.signAndBroadcastAccountOp !== 'INITIAL') {
+      this.emitError({
+        level: 'major',
+        message: 'The signing process is already in progress.',
+        error: new Error(
+          'The signing process is already in progress. (handleSignAndBroadcastAccountOp)'
+        )
       })
+      return
     }
 
-    if (type === SIGN_ACCOUNT_OP_SWAP) {
-      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
-        // if an error has ocurred while signing and we're back to SigningStatus.ReadyToSign,
-        // override the pending results as they will be incorrect
-        if (
-          this.swapAndBridge.signAccountOpController &&
-          this.swapAndBridge.signAccountOpController.status?.type === SigningStatus.ReadyToSign
-        ) {
-          this.portfolio.overridePendingResults(
-            this.swapAndBridge.signAccountOpController.accountOp
-          )
-        }
-      })
+    const signAndBroadcastCallId = generateUuid()
+    this.#signAndBroadcastCallId = signAndBroadcastCallId
+
+    this.statuses.signAndBroadcastAccountOp = 'SIGNING'
+    this.forceEmitUpdate()
+
+    let signAccountOp: SignAccountOpController | null
+
+    if (type === SIGN_ACCOUNT_OP_MAIN) {
+      signAccountOp = this.signAccountOp
+    } else if (type === SIGN_ACCOUNT_OP_SWAP) {
+      signAccountOp = this.swapAndBridge.signAccountOpController
+    } else {
+      signAccountOp = this.transfer.signAccountOpController
     }
 
-    await this.withStatus(
-      'signAccountOp',
-      async () => {
-        const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
-        if (wasAlreadySigned) return Promise.resolve()
+    // It's vital that everything that can throw an error is wrapped in a try/catch block
+    // to prevent signAndBroadcastAccountOp from being stuck in the SIGNING state
+    try {
+      // if the accountOp has a swapTxn, start the route as the user is broadcasting it
+      if (signAccountOp?.accountOp.meta?.swapTxn) {
+        await this.swapAndBridge.addActiveRoute({
+          activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
+          userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
+        })
+      }
 
+      const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
+
+      if (!wasAlreadySigned) {
         if (!signAccountOp) {
           const message =
             'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
 
-          const error = new EmittableError({ level: 'major', message })
-          return Promise.reject(error)
+          throw new EmittableError({ level: 'major', message })
         }
 
         // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
         this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
+          if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
+
           this.#signAccountOpSigningPromise = undefined
         })
 
-        return this.#signAccountOpSigningPromise
-      },
-      true
-    )
-
-    // Error handling on the prev step will notify the user, it's fine to return here
-    if (signAccountOp?.status?.type !== SigningStatus.Done) {
-      // remove the active route on signing failure
-      if (signAccountOp?.accountOp.meta?.swapTxn) {
-        this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+        await this.#signAccountOpSigningPromise
       }
-      return
-    }
-    const broadcastCallId = Date.now()
 
-    try {
-      await this.#broadcastSignedAccountOp(signAccountOp, type, broadcastCallId)
-      this.statuses.broadcastSignedAccountOp = 'SUCCESS'
-      await this.forceEmitUpdate()
+      if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
+
+      // Error handling on the prev step will notify the user, it's fine to return here
+      if (signAccountOp?.status?.type !== SigningStatus.Done) {
+        // remove the active route on signing failure
+        if (signAccountOp?.accountOp.meta?.swapTxn) {
+          this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+        }
+        this.statuses.signAndBroadcastAccountOp = 'ERROR'
+        await this.forceEmitUpdate()
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.#signAndBroadcastCallId = null
+        await this.forceEmitUpdate()
+        return
+      }
+
+      await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
+      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
+        this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+        await this.forceEmitUpdate()
+      }
     } catch (error: any) {
-      if (broadcastCallId === this.#broadcastCallId) {
+      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         if ('message' in error && 'level' in error && 'error' in error) {
           this.emitError(error)
         } else {
+          const hasSigned = signAccountOp?.status?.type === SigningStatus.Done
+
           this.emitError({
             level: 'major',
-            message: error.message || 'Unknown error occurred while broadcasting the transaction',
+            message:
+              error.message ||
+              `Unknown error occurred while ${
+                !hasSigned ? 'signing the transaction' : 'broadcasting the transaction'
+              }`,
             error
           })
         }
-        this.statuses.broadcastSignedAccountOp = 'ERROR'
+        this.statuses.signAndBroadcastAccountOp = 'ERROR'
         await this.forceEmitUpdate()
       }
     } finally {
-      if (broadcastCallId === this.#broadcastCallId) {
-        this.statuses.broadcastSignedAccountOp = 'INITIAL'
-        this.#broadcastCallId = null
+      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.#signAndBroadcastCallId = null
         await this.forceEmitUpdate()
       }
     }
@@ -760,22 +813,43 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  destroySignAccOp() {
-    if (!this.signAccountOp) return
+  #abortHWSign(signAccountOp: SignAccountOpController) {
+    if (!signAccountOp) return
+
+    const isAwaitingHWSignature =
+      (signAccountOp.accountOp.signingKeyType !== 'internal' &&
+        this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
+      (this.feePayerKey?.type !== 'internal' &&
+        this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
 
     // Reset these flags only if we were awaiting a HW signature
     // to broadcast a transaction.
-    if (this.#isBroadcastAwaitingHWSignature) {
-      this.statuses.broadcastSignedAccountOp = 'INITIAL'
-      this.#isBroadcastAwaitingHWSignature = false
-      this.#broadcastCallId = null
+    // If the user is using a hot wallet we can sign the transaction immediately
+    // and once its signed there is no way to cancel the broadcast. Once the user
+    // On the other hand HWs can be in 'SIGNING' or 'BROADCASTING' state
+    // and be able to 'cancel' the broadcast.
+    if (isAwaitingHWSignature) {
+      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+      this.#signAndBroadcastCallId = null
     }
 
+    const isSignerTrezor =
+      signAccountOp.accountOp.signingKeyType === 'trezor' || this.feePayerKey?.type === 'trezor'
+
+    if (isSignerTrezor) {
+      this.#handleTrezorCleanup()
+    }
+    this.#signAccountOpSigningPromise = undefined
+  }
+
+  destroySignAccOp() {
+    if (!this.signAccountOp) return
+
+    this.#abortHWSign(this.signAccountOp)
     this.feePayerKey = null
     this.signAccountOp.reset()
     this.signAccountOp = null
     this.signAccOpInitError = null
-    this.#signAccountOpSigningPromise = undefined
 
     // NOTE: no need to update the portfolio here as an update is
     // fired upon removeUserRequest
@@ -928,7 +1002,8 @@ export class MainController extends EventEmitter {
       if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
-      await ledgerCtrl.unlock(hdPathTemplate)
+      const pathToUnlock = getHdPathFromTemplate(hdPathTemplate, 0)
+      await ledgerCtrl.unlock(pathToUnlock)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
@@ -1293,41 +1368,66 @@ export class MainController extends EventEmitter {
   }
 
   /**
-   * Don't allow the user to open new action windows if there's a pending to sign swap action.
+   * Don't allow the user to open new action windows
+   * if there's a pending to sign action (swap and bridge or transfer)
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
    * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge one is still pending.
+   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
    * @returns {boolean} - true if an error was thrown
    * @throws {Error} - if throwRpcError is true
    */
-  async #swapAndBridgeActionSafeguard(throwRpcError = false): Promise<boolean> {
-    const pendingSwapAction = this.actions.visibleActionsQueue.find(
-      ({ type }) => type === 'swapAndBridge'
+  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
+    const pendingAction = this.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
     )
 
-    if (!pendingSwapAction) return false
+    if (!pendingAction) return false
 
-    const isSigning = this.statuses.broadcastSignedAccountOp !== 'INITIAL'
+    const isSigningOrBroadcasting =
+      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
+      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
 
-    // The swap and bridge is done/forgotten so we can remove the action
-    if (!isSigning) {
-      this.actions.removeAction(pendingSwapAction.id)
-      this.swapAndBridge.reset()
+    // The swap and bridge or transfer is done/forgotten so we can remove the action
+    if (!isSigningOrBroadcasting) {
+      this.actions.removeAction(pendingAction.id)
+
+      if (pendingAction.type === 'swapAndBridge') {
+        this.swapAndBridge.reset()
+      } else {
+        this.transfer.resetForm()
+      }
+
       // TODO: remove this ugly fix.
       // Issue: https://github.com/AmbireTech/ambire-app/issues/4469
       await wait(500)
       return false
     }
 
+    const errors = {
+      swapAndBridge: {
+        message: 'Please complete the pending swap action.',
+        error: 'Pending swap action',
+        rpcError: 'You have a pending swap action. Please complete it before signing.'
+      },
+      transfer: {
+        message: 'Please complete the pending transfer action.',
+        error: 'Pending transfer action',
+        rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      }
+    }
+
+    const error = errors[pendingAction.type as keyof typeof errors]
+
     this.actions.focusActionWindow()
     this.emitError({
       level: 'major',
-      message: 'Please complete the pending swap action.',
-      error: new Error('Pending swap action')
+      message: error.message,
+      error: new Error(error.error)
     })
 
     if (throwRpcError) {
       throw ethErrors.rpc.transactionRejected({
-        message: 'You have a pending swap action. Please complete it before signing.'
+        message: error.rpcError
       })
     }
 
@@ -1343,7 +1443,7 @@ export class MainController extends EventEmitter {
     }
   ) {
     await this.#initialLoadPromise
-    await this.#swapAndBridgeActionSafeguard(true)
+    await this.#guardHWSigning(true)
 
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
@@ -1566,24 +1666,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    const network = this.networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
-
-    if (!network) {
-      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-    }
-
-    this.userRequestWaitingAccountSwitch.push(userRequest)
-    await this.addUserRequest(
-      buildSwitchAccountUserRequest({
-        nextUserRequest: userRequest,
-        chainId: network.chainId,
-        selectedAccountAddr: userRequest.meta.accountAddr,
-        session: dappPromise.session,
-        dappPromise
-      }),
-      'last',
-      'open-action-window'
-    )
+    await this.#addSwitchAccountUserRequest(userRequest)
   }
 
   async buildTransferUserRequest(
@@ -1885,11 +1968,21 @@ export class MainController extends EventEmitter {
   async addUserRequest(
     req: UserRequest,
     actionPosition: ActionPosition = 'last',
-    actionExecutionType: ActionExecutionType = 'open-action-window'
+    actionExecutionType: ActionExecutionType = 'open-action-window',
+    allowAccountSwitch: boolean = false
   ) {
-    const shouldSkipAddUserRequest = await this.#swapAndBridgeActionSafeguard()
+    const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
     if (shouldSkipAddUserRequest) return
+
+    if (
+      allowAccountSwitch &&
+      req.meta.isSignAction &&
+      req.meta.accountAddr !== this.selectedAccount.account?.addr
+    ) {
+      await this.#addSwitchAccountUserRequest(req)
+      return
+    }
 
     if (req.action.kind === 'calls') {
       ;(req.action as Calls).calls.forEach((_, i) => {
@@ -2100,13 +2193,14 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetwork(chainId: bigint) {
-    await this.networks.removeNetwork(chainId)
-
+  async removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
     this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
-    this.activity.removeNetworkData(chainId)
+    // Don't remove user activity for now because removing networks
+    // is no longer possible in the UI. Users can only disable networks
+    // and it doesn't make sense to delete their activity
+    // this.activity.removeNetworkData(chainId)
   }
 
   async resolveAccountOpAction(
@@ -2224,9 +2318,72 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #addSwitchAccountUserRequest(req: UserRequest) {
+    this.userRequestWaitingAccountSwitch.push(req)
+    await this.addUserRequest(
+      buildSwitchAccountUserRequest({
+        nextUserRequest: req,
+        selectedAccountAddr: req.meta.accountAddr,
+        session: req.dappPromise ? req.dappPromise.session : undefined,
+        dappPromise: req.dappPromise
+      }),
+      'last',
+      'open-action-window'
+    )
+  }
+
+  onOneClickSwapClose() {
+    const signAccountOp = this.swapAndBridge.signAccountOpController
+
+    // Always unload the screen when the action window is closed
+    this.swapAndBridge.unloadScreen('action-window', true)
+
+    if (!signAccountOp) return
+
+    // Remove the active route if it exists
+    if (signAccountOp.accountOp.meta?.swapTxn) {
+      this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
+    }
+
+    this.#abortHWSign(signAccountOp)
+
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
+
+    this.updateSelectedAccountPortfolio(true, network)
+    this.emitUpdate()
+  }
+
+  onOneClickTransferClose() {
+    const signAccountOp = this.transfer.signAccountOpController
+
+    // Always unload the screen when the action window is closed
+    this.transfer.unloadScreen(true)
+
+    if (!signAccountOp) return
+
+    this.#abortHWSign(signAccountOp)
+
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
+
+    this.updateSelectedAccountPortfolio(true, network)
+    this.emitUpdate()
+  }
+
+  async #handleTrezorCleanup() {
+    try {
+      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
+    } catch (e) {
+      console.error('Error while removing Trezor window', e)
+    }
+  }
+
   /**
    * There are 4 ways to broadcast an AccountOp:
-   *   1. For basic accounts (EOA), there is only one way to do that. After
+   *   1. For EOAs, there is only one way to do that. After
    *   signing the transaction, the serialized signed transaction object gets
    *   send to the network.
    *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
@@ -2240,9 +2397,9 @@ export class MainController extends EventEmitter {
   async #broadcastSignedAccountOp(
     signAccountOp: SignAccountOpController,
     type: SignAccountOpType,
-    callId: number
+    callId: string
   ) {
-    if (this.statuses.broadcastSignedAccountOp !== 'INITIAL') {
+    if (this.statuses.signAndBroadcastAccountOp !== 'SIGNING') {
       this.throwBroadcastAccountOp({
         signAccountOp,
         message: 'Pending broadcast. Please try again in a bit.'
@@ -2290,9 +2447,7 @@ export class MainController extends EventEmitter {
       return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
-    this.statuses.broadcastSignedAccountOp = 'LOADING'
-    this.#broadcastCallId = callId
-
+    this.statuses.signAndBroadcastAccountOp = 'BROADCASTING'
     await this.forceEmitUpdate()
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -2317,7 +2472,8 @@ export class MainController extends EventEmitter {
     const rawTxnBroadcast = [
       BROADCAST_OPTIONS.bySelf,
       BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA
+      BROADCAST_OPTIONS.byOtherEOA,
+      BROADCAST_OPTIONS.delegation
     ]
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
@@ -2339,7 +2495,7 @@ export class MainController extends EventEmitter {
       try {
         const feePayerKey = this.keystore.getFeePayerKey(accountOp)
         if (feePayerKey instanceof Error) {
-          return await this.throwBroadcastAccountOp({
+          return this.throwBroadcastAccountOp({
             signAccountOp,
             message: feePayerKey.message,
             accountState
@@ -2351,7 +2507,6 @@ export class MainController extends EventEmitter {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) {
           signer.init(this.#externalSignerControllers[feePayerKey.type])
-          this.#isBroadcastAwaitingHWSignature = true
         }
 
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
@@ -2370,11 +2525,20 @@ export class MainController extends EventEmitter {
             accountOp.gasFeePayment.broadcastOption,
             accountOp.calls[i]
           )
-          const signedTxn = await signer.signRawTransaction(rawTxn)
-          if (callId !== this.#broadcastCallId) {
+          const signedTxn =
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
+              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              : await signer.signRawTransaction(rawTxn)
+          if (callId !== this.#signAndBroadcastCallId) {
             return
           }
-          multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
+            multipleTxnsBroadcastRes.push({
+              hash: await provider.send('eth_sendRawTransaction', [signedTxn])
+            })
+          } else {
+            multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
+          }
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
           // send the txn to the relayer if it's an EOA sending for itself
@@ -2389,7 +2553,7 @@ export class MainController extends EventEmitter {
             })
           }
         }
-        if (callId !== this.#broadcastCallId) return
+        if (callId !== this.#signAndBroadcastCallId) return
         transactionRes = {
           nonce,
           identifiedBy: {
@@ -2400,7 +2564,7 @@ export class MainController extends EventEmitter {
             txnLength === 1 ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-') : undefined
         }
       } catch (error: any) {
-        if (this.#broadcastCallId !== callId) return
+        if (this.#signAndBroadcastCallId !== callId) return
         // eslint-disable-next-line no-console
         console.error('Error broadcasting', error)
         // for multiple txn cases
@@ -2416,11 +2580,10 @@ export class MainController extends EventEmitter {
             }
           }
         } else {
-          return await this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
+          return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
         }
       } finally {
-        if (this.#broadcastCallId === callId) {
-          this.#isBroadcastAwaitingHWSignature = false
+        if (this.#signAndBroadcastCallId === callId) {
           signAccountOp.update({ signedTransactionsCount: null })
         }
       }
@@ -2520,7 +2683,7 @@ export class MainController extends EventEmitter {
       }
     }
 
-    if (this.#broadcastCallId !== callId) return
+    if (this.#signAndBroadcastCallId !== callId) return
 
     if (!transactionRes)
       return this.throwBroadcastAccountOp({
@@ -2528,7 +2691,14 @@ export class MainController extends EventEmitter {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+    // simulate the swap & bridge only after a successful broadcast
+    if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
+      signAccountOp?.portfolioSimulate().then(() => {
+        this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+      })
+    } else {
+      this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
+    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
@@ -2601,6 +2771,12 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.resetForm()
     }
 
+    if (type === SIGN_ACCOUNT_OP_TRANSFER) {
+      this.transfer.latestBroadcastedToken = this.transfer.selectedToken
+      this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      this.transfer.resetForm()
+    }
+
     await this.#notificationManager.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -2670,7 +2846,7 @@ export class MainController extends EventEmitter {
     let message = humanReadableMessage
     let isReplacementFeeLow = false
 
-    this.statuses.broadcastSignedAccountOp = 'ERROR'
+    this.statuses.signAndBroadcastAccountOp = 'ERROR'
     this.forceEmitUpdate()
 
     if (originalMessage) {
@@ -2694,7 +2870,7 @@ export class MainController extends EventEmitter {
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with a Basic Account'
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
       } else if (originalMessage.includes('user nonce') && isRelayer) {
         if (this.signAccountOp) {
           this.accounts
@@ -2734,9 +2910,7 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    return Promise.reject(
-      new EmittableError({ level: 'major', message, error: _err || new Error(message) })
-    )
+    throw new EmittableError({ level: 'major', message, error: _err || new Error(message) })
   }
 
   get isSignRequestStillActive(): boolean {

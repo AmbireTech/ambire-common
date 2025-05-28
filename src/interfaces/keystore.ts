@@ -1,10 +1,12 @@
 import { Transaction } from 'ethers'
 
+import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { GasFeePayment } from '../libs/accountOp/accountOp'
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
+import { Hex } from './hex'
 import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 import { TypedMessage } from './userRequest'
@@ -37,7 +39,7 @@ export interface ExternalSignerController {
   retrieveAddresses?: (paths: string[]) => Promise<string[]> // Ledger specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
-  transport?: any // Ledger specific
+  singerEth?: any // Ledger specific
   appName?: string // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
@@ -64,6 +66,7 @@ export interface KeystoreSignerInterface {
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
   sign7702: (hex: string) => EIP7702Signature
+  signTransactionTypeFour: (txnRequest: TxnRequest, eip7702Auth: EIP7702Auth) => Hex
 }
 
 export type ScryptParams = {
