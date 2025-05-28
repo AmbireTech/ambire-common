@@ -28,3 +28,16 @@ export const unstETH = [
   'function claimWithdrawalsTo(uint256[] calldata _requestIds, uint256[] calldata _hints, address _recipient)',
   'function claimWithdrawal(uint256 _requestId)'
 ]
+
+export const stETH = [
+  'function totalSupply() view returns (uint256)',
+  'function unsafeChangeDepositedValidators(uint256 _newDepositedValidators)',
+  'function increaseAllowance(address _spender, uint256 _addedValue) returns (bool)',
+  'function receiveELRewards() payable',
+  'function transferSharesFrom(address _sender, address _recipient, uint256 _sharesAmount) returns (uint256)',
+  'function receiveWithdrawals() payable',
+  'function transferShares(address _recipient, uint256 _sharesAmount) returns (uint256)',
+  'function submit(address _referral) payable returns (uint256)',
+  'function deposit(uint256 _maxDepositsCount, uint256 _stakingModuleId, bytes _depositCalldata)',
+  'function permit(address _owner, address _spender, uint256 _value, uint256 _deadline, uint8 _v, bytes32 _r, bytes32 _s)',
+]
