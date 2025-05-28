@@ -620,7 +620,7 @@ export class TransferController extends EventEmitter {
     if (!this.signAccountOpController || this.#reestimateAbortController) return
 
     this.#reestimateAbortController = new AbortController()
-    const signal = this.#reestimateAbortController.signal
+    const signal = this.#reestimateAbortController!.signal
 
     const loop = async () => {
       while (!signal.aborted) {
