@@ -11,13 +11,23 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     [iface.getFunction('approve(address token, address spender, uint160 amount, uint48 expiration)')
       ?.selector!]: (call: IrCall) => {
       const { token, spender, amount, expiration } = iface.parseTransaction(call)!.args
-      return [
-        getAction('Approve'),
-        getAddressVisualization(spender),
-        getLabel('to use'),
-        getToken(token, amount),
-        getDeadline(expiration)
-      ]
+      const expirationHumanization = expiration > 0 ? getDeadline(expiration) : getLabel('now')
+
+      if (amount > 0)
+        return [
+          getAction('Approve'),
+          getAddressVisualization(spender),
+          getLabel('to use'),
+          getToken(token, amount),
+          expirationHumanization
+        ]
+      else
+        return [
+          getAction('Revoke approval'),
+          getToken(token, amount),
+          getLabel('for'),
+          getAddressVisualization(spender),
+        ]
     }
   }
   const newCalls = calls.map((call) => {

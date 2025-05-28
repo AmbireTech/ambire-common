@@ -96,19 +96,6 @@ export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): b
   return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
 }
 
-export function getUnknownVisualization(name: string, call: IrCall): HumanizerVisualization[] {
-  const unknownVisualization = [
-    getAction(`Unknown action (${name})`),
-    getLabel('to'),
-    getAddressVisualization(call.to)
-  ]
-  if (call.value)
-    unknownVisualization.push(
-      ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, call.value)]
-    )
-  return unknownVisualization
-}
-
 export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Wrap'), getToken(address, amount)]
 }
