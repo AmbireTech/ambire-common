@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/FallbackHumanizer/index.ts"],"names":[],"mappings":";;AAAA,2DAAuD;AAEvD,kBAAe,qCAAiB,CAAA","sourcesContent":["import { fallbackHumanizer } from './fallBackHumanizer'\n\nexport default fallbackHumanizer\n"]}

@@ -1,0 +1,1 @@
+{"version":3,"file":"featureFlags.js","sourceRoot":"","sources":["../../../src/consts/featureFlags.ts"],"names":[],"mappings":";;;AAIa,QAAA,YAAY,GAAiB;AACxC,YAAY;CACb,CAAA","sourcesContent":["export interface FeatureFlags {\n  [key: string]: boolean\n}\n\nexport const featureFlags: FeatureFlags = {\n  // None yet!\n}\n"]}
