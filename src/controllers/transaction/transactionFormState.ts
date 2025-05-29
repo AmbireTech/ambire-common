@@ -847,7 +847,11 @@ export class TransactionFormState extends EventEmitter {
   }
 
   get recipientAddress() {
-    return this.addressState.ensAddress || this.addressState.fieldValue
+    return (
+      this.addressState.ensAddress ||
+      this.addressState.interopAddress ||
+      this.addressState.fieldValue
+    )
   }
 
   get maxFromAmount(): string {
@@ -888,6 +892,7 @@ export class TransactionFormState extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      name: 'TransactionFormState',
       supportedChainIds: this.supportedChainIds,
       maxFromAmount: this.maxFromAmount,
       recipientAddress: this.recipientAddress
