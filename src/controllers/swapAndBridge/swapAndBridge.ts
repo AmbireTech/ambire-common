@@ -63,7 +63,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { noStateUpdateStatuses, SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -710,7 +710,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const nextToToken = toSelectedTokenAddr
       ? this.#toTokenList.find((t) => t.address === toSelectedTokenAddr)
-      : undefined
+      : null
 
     if (nextToToken) this.toSelectedToken = { ...nextToToken }
 
@@ -2067,7 +2067,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      toTokenList: this.toTokenShortList,
+      toTokenShortList: this.toTokenShortList,
       maxFromAmount: this.maxFromAmount,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,

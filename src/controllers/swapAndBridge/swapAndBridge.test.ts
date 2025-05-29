@@ -224,7 +224,9 @@ describe('SwapAndBridge Controller', () => {
         done()
       }
     })
-    swapAndBridgeController.updateForm({ toSelectedToken: swapAndBridgeController.toTokenList[0] })
+    swapAndBridgeController.updateForm({
+      toSelectedToken: swapAndBridgeController.toTokenShortList[0]
+    })
   })
   test('should update fromAmount', (done) => {
     let emitCounter = 0
