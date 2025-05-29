@@ -3,7 +3,7 @@ import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { decodeError } from '../errorDecoder'
 import { DecodedError } from '../errorDecoder/types'
-import { ESTIMATION_ERRORS } from './errors'
+import { ESTIMATION_ERRORS, noPrefixReasons } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
@@ -14,7 +14,8 @@ const LAST_RESORT_ERROR_MESSAGE =
 
 function getPrefix(reason: string | null): string {
   if (!reason) return MESSAGE_PREFIX
-  return !reason.includes('pimlico: 500') ? MESSAGE_PREFIX : ''
+  const hasNoPrefix = noPrefixReasons.filter((noPrefix) => reason.includes(noPrefix)).length
+  return hasNoPrefix === 0 ? MESSAGE_PREFIX : ''
 }
 
 export function getHumanReadableEstimationError(e: Error | DecodedError) {
