@@ -906,7 +906,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (addressToSelect) {
         const token = this.#toTokenList.find((t) => t.address === addressToSelect)
         if (token) {
-          await this.updateForm({ toSelectedToken: token }, { emitUpdate: false })
+          await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
           this.updateToTokenListStatus = 'INITIAL'
           this.#emitUpdateIfNeeded()
           return
@@ -1053,12 +1053,7 @@ export class SwapAndBridgeController extends EventEmitter {
         {
           fromAmount: '',
           fromAmountFieldMode: 'token',
-          toSelectedToken: this.fromSelectedToken
-            ? {
-                ...this.fromSelectedToken,
-                chainId: Number(this.fromSelectedToken.chainId)
-              }
-            : null
+          toSelectedTokenAddr: this.fromSelectedToken?.address || null
         },
         {
           emitUpdate: false,
@@ -2072,7 +2067,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      toTokenList: this.toTokenList,
+      toTokenList: this.toTokenShortList,
       maxFromAmount: this.maxFromAmount,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,
