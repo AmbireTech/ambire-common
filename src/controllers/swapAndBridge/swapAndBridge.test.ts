@@ -189,8 +189,8 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-    expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+    expect(swapAndBridgeController.toTokenShortList).toHaveLength(3)
+    expect(swapAndBridgeController.toTokenShortList).not.toContainEqual(
       expect.objectContaining({
         address: swapAndBridgeController.fromSelectedToken?.address
       })

@@ -918,7 +918,12 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#emitUpdateIfNeeded()
   }
 
-  get toTokenList(): SwapAndBridgeToToken[] {
+  /**
+   * Returns the short list of tokens for the "to" token list, because the full
+   * list (stored in #toTokenList) could be HUGE, causing the controller to be
+   * HUGE as well, that leads to performance problems.
+   */
+  get toTokenShortList(): SwapAndBridgeToToken[] {
     const isSwapping = this.fromChainId === this.toChainId
     if (isSwapping) {
       return (
