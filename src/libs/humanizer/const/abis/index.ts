@@ -3,6 +3,7 @@ import { AaveLendingPoolV2, AaveV3Pool, AaveWethGatewayV2 } from './Aave'
 import { Across } from './Across'
 import { KyberSwap } from './KyberSwap'
 import { Legends } from './Legends'
+import { Lifi } from './Lifi'
 import { SocketViaAcross } from './socket'
 import { RouteProcessor } from './Sushi'
 import { ERC20, ERC721, WETH } from './Tokens'
@@ -28,5 +29,6 @@ export {
   OneInch,
   KyberSwap,
   SocketViaAcross,
-  Legends
+  Legends,
+  Lifi
 }
