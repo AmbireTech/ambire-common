@@ -538,7 +538,7 @@ export class TransactionFormState extends EventEmitter {
     this.fromAmount = ''
     this.fromAmountInFiat = ''
     this.fromAmountFieldMode = 'token'
-    this.toSelectedToken = null
+    // this.toSelectedToken = null
     this.quote = null
     // this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
