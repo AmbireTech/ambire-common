@@ -48,7 +48,7 @@ async function resolveENSDomain(domain: string, bip44Item?: number[][]): Promise
   try {
     const ethAddress = await resolver.getAddress()
     const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
-    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress
+    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || ''
   } catch (e: any) {
     // If the error comes from an internal server error don't
     // show it to the user, because it happens when a domain
