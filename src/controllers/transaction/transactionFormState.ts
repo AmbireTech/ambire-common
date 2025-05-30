@@ -535,6 +535,7 @@ export class TransactionFormState extends EventEmitter {
     // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
     // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
     // while resetting all other state related to the form.
+    this.toAmount = ''
     this.fromAmount = ''
     this.fromAmountInFiat = ''
     this.fromAmountFieldMode = 'token'
