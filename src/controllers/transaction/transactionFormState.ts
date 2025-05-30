@@ -213,7 +213,7 @@ export class TransactionFormState extends EventEmitter {
           this.fromChainId = Number(network.chainId)
           // Don't update the selected token programmatically if the user
           // has selected it manually
-          if (!this.toSelectedToken) {
+          if (!this.toSelectedToken && !this.addressState.interopAddress) {
             // defaults to swap after network change (should keep fromChainId and toChainId in sync after fromChainId update)
             this.toChainId = Number(network.chainId)
             shouldUpdateToTokenList = true
