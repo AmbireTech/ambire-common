@@ -1,8 +1,6 @@
 import EventEmitter from '../../eventEmitter/eventEmitter'
 import { ControllersTransactionDependecies } from '../dependencies'
 import { TransactionFormState } from '../transactionFormState'
-import { TokenResult } from '../../../libs/portfolio'
-import { SwapAndBridgeQuote } from '../../../interfaces/swapAndBridge'
 
 export class IntentController extends EventEmitter {
   formPreviousState: any
@@ -122,9 +120,17 @@ export class IntentController extends EventEmitter {
 
   public setQuote(quote: any) {
     this.quote = quote
+    this.emitUpdate()
   }
 
   public setTransaction(transactions: any) {
     this.transactions = transactions
+    this.emitUpdate()
+  }
+
+  public setQuoteAndTransaction(quote: any, transactions: any) {
+    this.quote = quote
+    this.transactions = transactions
+    this.emitUpdate()
   }
 }
