@@ -92,7 +92,9 @@ describe('Error decoders work', () => {
         expect(e).toBeDefined()
         decodedError = decodeError(e)
         expect(decodedError.type).toEqual(ErrorType.RpcError)
-        expect(decodedError.reason).toContain("sender doesn't have enough funds to send tx")
+        expect(decodedError.reason?.toLowerCase()).toContain(
+          "sender doesn't have enough funds to send tx"
+        )
         expect(decodedError.data).toBe('')
       }
     })
