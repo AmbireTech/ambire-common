@@ -36,7 +36,12 @@ async function deployImplementation() {
 }
 
 async function deployProxy() {
-  const INITIAL_IMPLEMENTATION = '0xf7759895bfe7Ae439Ab6Da3441DA0d9b9b45002e'
+  // initial implementation address is almost irrelevant, it just need to be consistent across
+  // networks
+  // the factory address is picked because 1) we are sure it is deployed on that chain and 2)
+  // because it is not able to write to storage
+  // it should be changed after the proxy is deployed
+  const INITIAL_IMPLEMENTATION = FACTORY_ADDRESS
   const [signer] = await ethers.getSigners()
 
   const RewardsProxy = await ethers.getContractFactory('AmbireRewardsNFT')
