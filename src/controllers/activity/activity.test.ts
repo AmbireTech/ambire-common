@@ -2,8 +2,9 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
-import { relayerUrl } from '../../../test/config'
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
@@ -11,7 +12,9 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -112,6 +115,7 @@ networks.forEach((network) => {
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
 let providersCtrl: ProvidersController
+let portfolioCtrl: PortfolioController
 let accountsCtrl: AccountsController
 let selectedAccountCtrl: SelectedAccountController
 let networksCtrl: NetworksController
@@ -128,6 +132,7 @@ const prepareTest = async () => {
     selectedAccountCtrl,
     providersCtrl,
     networksCtrl,
+    portfolioCtrl,
     () => Promise.resolve()
   )
 
@@ -151,6 +156,7 @@ const prepareSignedMessagesTest = async () => {
     selectedAccountCtrl,
     providersCtrl,
     networksCtrl,
+    portfolioCtrl,
     () => Promise.resolve()
   )
 
@@ -180,6 +186,18 @@ describe('Activity Controller ', () => {
       }
     )
     providersCtrl = new ProvidersController(networksCtrl)
+    const windowManager = mockWindowManager().windowManager
+    const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+    portfolioCtrl = new PortfolioController(
+      storageCtrl,
+      fetch,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      keystore,
+      relayerUrl,
+      velcroUrl
+    )
     providersCtrl.providers = providers
     accountsCtrl = new AccountsController(
       storageCtrl,
@@ -503,6 +521,7 @@ describe('Activity Controller ', () => {
         selectedAccountCtrl,
         providersCtrl,
         networksCtrl,
+        portfolioCtrl,
         () => Promise.resolve()
       )
 
@@ -752,6 +771,7 @@ describe('Activity Controller ', () => {
       selectedAccountCtrl,
       providersCtrl,
       networksCtrl,
+      portfolioCtrl,
       () => Promise.resolve()
     )
 
