@@ -13,8 +13,10 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { getTransferTokens } from '../../libs/logs/parseLogs'
+import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable import/no-extraneous-dependencies */
+import { getTransferLogTokens } from '../../libs/logs/parseLogs'
+import { getTokensWithoutError } from '../../libs/portfolio/getOnchainBalances'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
@@ -132,6 +134,8 @@ export class ActivityController extends EventEmitter {
 
   #networks: NetworksController
 
+  #portfolio: PortfolioController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
@@ -146,6 +150,7 @@ export class ActivityController extends EventEmitter {
     selectedAccount: SelectedAccountController,
     providers: ProvidersController,
     networks: NetworksController,
+    portfolio: PortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
@@ -156,6 +161,7 @@ export class ActivityController extends EventEmitter {
     this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
+    this.#portfolio = portfolio
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load()
   }
@@ -458,14 +464,20 @@ export class ActivityController extends EventEmitter {
 
                     receipt.logs
 
-                    // record data from the logs
+                    // learn tokens from the transfer logs
                     if (isSuccess) {
-                      await getTransferTokens(
+                      const foundTokens = await getTransferLogTokens(
                         receipt.logs,
-                        accountOp.accountAddr,
-                        network,
-                        provider
+                        accountOp.accountAddr
                       )
+                      const noErrorTokens = await getTokensWithoutError(
+                        provider,
+                        accountOp.accountAddr,
+                        foundTokens
+                      )
+                      if (noErrorTokens.length) {
+                        this.#portfolio.addTokensToBeLearned(noErrorTokens, accountOp.chainId)
+                      }
                     }
 
                     return
