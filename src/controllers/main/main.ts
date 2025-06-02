@@ -2,6 +2,7 @@
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -78,6 +79,7 @@ import {
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { getHdPathFromTemplate } from '../../utils/hdPath'
 import shortenAddress from '../../utils/shortenAddress'
 /* eslint-disable no-await-in-loop */
 import { generateUuid } from '../../utils/uuid'
@@ -109,12 +111,15 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
+  SIGN_ACCOUNT_OP_TRANSFER,
   SignAccountOpType
 } from '../signAccountOp/helper'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { TransferController } from '../transfer/transfer'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 
 const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
@@ -182,6 +187,8 @@ export class MainController extends EventEmitter {
   signMessage: SignMessageController
 
   swapAndBridge: SwapAndBridgeController
+
+  transfer: TransferController
 
   signAccountOp: SignAccountOpController | null = null
 
@@ -429,6 +436,19 @@ export class MainController extends EventEmitter {
         )
       }
     })
+    this.transfer = new TransferController(
+      this.storage,
+      humanizerInfo as HumanizerMeta,
+      this.selectedAccount,
+      this.networks,
+      this.addressBook,
+      this.accounts,
+      this.keystore,
+      this.portfolio,
+      this.#externalSignerControllers,
+      this.providers,
+      relayerUrl
+    )
     this.domains = new DomainsController(this.providers.providers)
 
     this.#initialLoadPromise = this.#load()
@@ -539,6 +559,7 @@ export class MainController extends EventEmitter {
     }
     this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.reset()
+    this.transfer.resetForm()
     await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
@@ -669,10 +690,15 @@ export class MainController extends EventEmitter {
     this.statuses.signAndBroadcastAccountOp = 'SIGNING'
     this.forceEmitUpdate()
 
-    const signAccountOp =
-      type === SIGN_ACCOUNT_OP_MAIN
-        ? this.signAccountOp
-        : this.swapAndBridge.signAccountOpController
+    let signAccountOp: SignAccountOpController | null
+
+    if (type === SIGN_ACCOUNT_OP_MAIN) {
+      signAccountOp = this.signAccountOp
+    } else if (type === SIGN_ACCOUNT_OP_SWAP) {
+      signAccountOp = this.swapAndBridge.signAccountOpController
+    } else {
+      signAccountOp = this.transfer.signAccountOpController
+    }
 
     // It's vital that everything that can throw an error is wrapped in a try/catch block
     // to prevent signAndBroadcastAccountOp from being stuck in the SIGNING state
@@ -976,7 +1002,8 @@ export class MainController extends EventEmitter {
       if (ledgerCtrl.walletSDK) await ledgerCtrl.cleanUp()
 
       const hdPathTemplate = BIP44_LEDGER_DERIVATION_TEMPLATE
-      await ledgerCtrl.unlock(hdPathTemplate)
+      const pathToUnlock = getHdPathFromTemplate(hdPathTemplate, 0)
+      await ledgerCtrl.unlock(pathToUnlock)
 
       if (!ledgerCtrl.walletSDK) {
         const message = 'Could not establish connection with the Ledger device'
@@ -1341,43 +1368,66 @@ export class MainController extends EventEmitter {
   }
 
   /**
-   * Don't allow the user to open new action windows if there's a pending to sign swap action.
+   * Don't allow the user to open new action windows
+   * if there's a pending to sign action (swap and bridge or transfer)
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
    * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge one is still pending.
+   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
    * @returns {boolean} - true if an error was thrown
    * @throws {Error} - if throwRpcError is true
    */
-  async #swapAndBridgeActionSafeguard(throwRpcError = false): Promise<boolean> {
-    const pendingSwapAction = this.actions.visibleActionsQueue.find(
-      ({ type }) => type === 'swapAndBridge'
+  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
+    const pendingAction = this.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
     )
 
-    if (!pendingSwapAction) return false
+    if (!pendingAction) return false
 
     const isSigningOrBroadcasting =
       this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
       this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
 
-    // The swap and bridge is done/forgotten so we can remove the action
+    // The swap and bridge or transfer is done/forgotten so we can remove the action
     if (!isSigningOrBroadcasting) {
-      this.actions.removeAction(pendingSwapAction.id)
-      this.swapAndBridge.reset()
+      this.actions.removeAction(pendingAction.id)
+
+      if (pendingAction.type === 'swapAndBridge') {
+        this.swapAndBridge.reset()
+      } else {
+        this.transfer.resetForm()
+      }
+
       // TODO: remove this ugly fix.
       // Issue: https://github.com/AmbireTech/ambire-app/issues/4469
       await wait(500)
       return false
     }
 
+    const errors = {
+      swapAndBridge: {
+        message: 'Please complete the pending swap action.',
+        error: 'Pending swap action',
+        rpcError: 'You have a pending swap action. Please complete it before signing.'
+      },
+      transfer: {
+        message: 'Please complete the pending transfer action.',
+        error: 'Pending transfer action',
+        rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      }
+    }
+
+    const error = errors[pendingAction.type as keyof typeof errors]
+
     this.actions.focusActionWindow()
     this.emitError({
       level: 'major',
-      message: 'Please complete the pending swap action.',
-      error: new Error('Pending swap action')
+      message: error.message,
+      error: new Error(error.error)
     })
 
     if (throwRpcError) {
       throw ethErrors.rpc.transactionRejected({
-        message: 'You have a pending swap action. Please complete it before signing.'
+        message: error.rpcError
       })
     }
 
@@ -1393,7 +1443,7 @@ export class MainController extends EventEmitter {
     }
   ) {
     await this.#initialLoadPromise
-    await this.#swapAndBridgeActionSafeguard(true)
+    await this.#guardHWSigning(true)
 
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
@@ -1921,7 +1971,7 @@ export class MainController extends EventEmitter {
     actionExecutionType: ActionExecutionType = 'open-action-window',
     allowAccountSwitch: boolean = false
   ) {
-    const shouldSkipAddUserRequest = await this.#swapAndBridgeActionSafeguard()
+    const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
     if (shouldSkipAddUserRequest) return
 
@@ -2305,6 +2355,24 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  onOneClickTransferClose() {
+    const signAccountOp = this.transfer.signAccountOpController
+
+    // Always unload the screen when the action window is closed
+    this.transfer.unloadScreen(true)
+
+    if (!signAccountOp) return
+
+    this.#abortHWSign(signAccountOp)
+
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
+
+    this.updateSelectedAccountPortfolio(true, network)
+    this.emitUpdate()
+  }
+
   async #handleTrezorCleanup() {
     try {
       await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
@@ -2623,9 +2691,9 @@ export class MainController extends EventEmitter {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    // simulate the swap & bridge only after a succesfull broadcast
-    if (type === SIGN_ACCOUNT_OP_SWAP) {
-      this.swapAndBridge.signAccountOpController?.simulateSwapOrBridge().then(() => {
+    // simulate the swap & bridge only after a successful broadcast
+    if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
+      signAccountOp?.portfolioSimulate().then(() => {
         this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
       })
     } else {
@@ -2701,6 +2769,12 @@ export class MainController extends EventEmitter {
     // visualize the success page on the FE instead of resetting the form
     if (type === SIGN_ACCOUNT_OP_SWAP) {
       this.swapAndBridge.resetForm()
+    }
+
+    if (type === SIGN_ACCOUNT_OP_TRANSFER) {
+      this.transfer.latestBroadcastedToken = this.transfer.selectedToken
+      this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      this.transfer.resetForm()
     }
 
     await this.#notificationManager.create({

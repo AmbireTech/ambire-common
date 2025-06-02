@@ -1,7 +1,7 @@
 import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { unstETH, WrappedStETH } from '../../const/abis/Lido'
+import { stETH, unstETH, WrappedStETH } from '../../const/abis/Lido'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
@@ -10,6 +10,7 @@ const ST_ETH_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
 const UNWRAP_CONTRACT_ADDR = '0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1'
 const wrapIface = new Interface(WrappedStETH)
 const unwrapIface = new Interface(unstETH)
+const stethIface = new Interface(stETH)
 export const LidoModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const newCalls = calls.map((call) => {
     if (isAddress(call.to) && getAddress(call.to) === WRAPPED_ST_ETH_ADDRESS) {
@@ -49,6 +50,13 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[
         if (_recipient.toLowerCase() !== accOp.accountAddr.toLowerCase())
           fullVisualization.push(getLabel('and send to'), getAddressVisualization(_recipient))
         return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
+      }
+    } else if (isAddress(call.to) && getAddress(call.to) === ST_ETH_ADDRESS) {
+      if (call.data.startsWith(stethIface.getFunction('submit')!.selector)) {
+        return {
+          ...call,
+          fullVisualization: [getAction('Stake'), getToken(ST_ETH_ADDRESS, call.value)]
+        }
       }
     }
     return call
