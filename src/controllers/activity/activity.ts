@@ -16,7 +16,6 @@ import { AccountOpStatus } from '../../libs/accountOp/types'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable import/no-extraneous-dependencies */
 import { getTransferLogTokens } from '../../libs/logs/parseLogs'
-import { getTokensWithoutError } from '../../libs/portfolio/getOnchainBalances'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
@@ -470,13 +469,8 @@ export class ActivityController extends EventEmitter {
                         receipt.logs,
                         accountOp.accountAddr
                       )
-                      const noErrorTokens = await getTokensWithoutError(
-                        provider,
-                        accountOp.accountAddr,
-                        foundTokens
-                      )
-                      if (noErrorTokens.length) {
-                        this.#portfolio.addTokensToBeLearned(noErrorTokens, accountOp.chainId)
+                      if (foundTokens.length) {
+                        this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
                       }
                     }
 

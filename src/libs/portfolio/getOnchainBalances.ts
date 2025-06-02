@@ -1,12 +1,10 @@
-import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
-import { RPCProvider } from '../../interfaces/provider'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
-import { Deployless, DeploylessMode, fromDescriptor, parseErr } from '../deployless/deployless'
+import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { getFlags, overrideSymbol } from './helpers'
 import {
   CollectionResult,
@@ -321,15 +319,4 @@ export async function getTokens(
       afterNonce
     }
   ]
-}
-
-export async function getTokensWithoutError(provider: RPCProvider, acc: string, tokens: string[]) {
-  const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
-  const [tokensWithErr] = await deploylessTokens.call('getBalances', [acc, tokens], {
-    blockTag: 'latest',
-    mode: DeploylessMode.ProxyContract
-  })
-  return tokens.filter((addr: string, i: number) => {
-    return tokensWithErr[i].error === '0x'
-  })
 }
