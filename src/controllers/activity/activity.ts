@@ -15,7 +15,7 @@ import {
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable import/no-extraneous-dependencies */
-import { getTransferLogTokens } from '../../libs/logs/parseLogs'
+import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
@@ -460,8 +460,6 @@ export class ActivityController extends EventEmitter {
                     if (accountOp.isSingletonDeploy && receipt.status) {
                       await this.#onContractsDeployed(network)
                     }
-
-                    receipt.logs
 
                     // learn tokens from the transfer logs
                     if (isSuccess) {
