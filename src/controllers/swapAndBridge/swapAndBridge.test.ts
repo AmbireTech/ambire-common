@@ -80,6 +80,19 @@ const inviteCtrl = new InviteController({
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystore,
+  relayerUrl,
+  velcroUrl
+)
+
 const activityCtrl = new ActivityController(
   storageCtrl,
   fetch,
@@ -88,12 +101,11 @@ const activityCtrl = new ActivityController(
   selectedAccountCtrl,
   providersCtrl,
   networksCtrl,
+  portfolioCtrl,
   () => Promise.resolve()
 )
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
-
-const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
 
 const accounts = [
   {
@@ -145,17 +157,6 @@ const PORTFOLIO_TOKENS = [
     name: 'Ether'
   }
 ]
-
-const portfolioCtrl = new PortfolioController(
-  storageCtrl,
-  fetch,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  keystore,
-  relayerUrl,
-  velcroUrl
-)
 
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {

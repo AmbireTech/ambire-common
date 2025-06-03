@@ -13,7 +13,9 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable import/no-extraneous-dependencies */
+import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
@@ -131,6 +133,8 @@ export class ActivityController extends EventEmitter {
 
   #networks: NetworksController
 
+  #portfolio: PortfolioController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
@@ -145,6 +149,7 @@ export class ActivityController extends EventEmitter {
     selectedAccount: SelectedAccountController,
     providers: ProvidersController,
     networks: NetworksController,
+    portfolio: PortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
@@ -155,6 +160,7 @@ export class ActivityController extends EventEmitter {
     this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
+    this.#portfolio = portfolio
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load()
   }
@@ -454,6 +460,18 @@ export class ActivityController extends EventEmitter {
                     if (accountOp.isSingletonDeploy && receipt.status) {
                       await this.#onContractsDeployed(network)
                     }
+
+                    // learn tokens from the transfer logs
+                    if (isSuccess) {
+                      const foundTokens = await getTransferLogTokens(
+                        receipt.logs,
+                        accountOp.accountAddr
+                      )
+                      if (foundTokens.length) {
+                        this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                      }
+                    }
+
                     return
                   }
 

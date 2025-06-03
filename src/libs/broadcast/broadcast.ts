@@ -145,7 +145,12 @@ export async function getTxnData(
 
   if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
     const otherEOACall = getByOtherEOATxnData(account, op, accountState)
-    const gasLimit = await estimateGas(provider, account.addr, otherEOACall, nonce)
+    const gasLimit = await estimateGas(
+      provider,
+      (op.gasFeePayment as GasFeePayment).paidBy,
+      otherEOACall,
+      nonce
+    )
     return { ...otherEOACall, gasLimit }
   }
 
