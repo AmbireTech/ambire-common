@@ -63,7 +63,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { noStateUpdateStatuses, SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
@@ -739,7 +739,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
 
-    reset(shouldEmit?: boolean) {
+  reset(shouldEmit?: boolean) {
     this.resetForm()
     this.fromChainId = 1
     this.fromSelectedToken = null
@@ -1582,10 +1582,10 @@ export class SwapAndBridgeController extends EventEmitter {
   /**
    * Find the next route in line and try to re-estimate with it
    */
-  async onEstimationFailure() {
+  async onEstimationFailure(activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId']) {
     if (!this.quote || !this.quote.selectedRoute || this.isAutoSelectRouteDisabled) return
 
-    const routeId = this.quote.selectedRoute.routeId
+    const routeId = activeRouteId ?? this.quote.selectedRoute.routeId
     let routeIndex = null
     this.quote.routes.forEach((route, i) => {
       if (route.routeId === routeId) {
