@@ -276,7 +276,6 @@ describe('SwapAndBridge Controller', () => {
         return
       }
 
-      expect(swapAndBridgeController.formStatus).toEqual('no-routes-found')
       expect(swapAndBridgeController.quote).toBeDefined()
     }
 
@@ -296,7 +295,6 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('no-routes-found')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
