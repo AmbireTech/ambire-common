@@ -13,6 +13,7 @@ import BiconomyEstimationErrorHandler from './handlers/biconomy'
 import InternalHandler from './handlers/internal'
 import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
+import UnknownWithMessageHandler from './handlers/unknownWithMessage'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
@@ -27,6 +28,7 @@ const PREPROCESSOR_BUNDLER_HANDLERS = [
 ]
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
+  UnknownWithMessageHandler,
   InternalHandler,
   RpcErrorHandler,
   CustomErrorHandler,

@@ -36,6 +36,8 @@ function getGenericMessageFromType(
     case ErrorType.PanicError:
     case ErrorType.RevertError:
       return `${messagePrefix} of a contract error.${messageSuffixNoSupport}`
+    case ErrorType.UnknownWithMessage:
+      return `Unexpected error:${messageSuffixNoSupport.replace('Error code:', '')}`
     default:
       return lastResortMessage
   }

@@ -22,7 +22,9 @@ export enum ErrorType {
   /** Error due to the user rejecting a transaction */
   UserRejectionError = 'UserRejectionError',
   /** Error due to an inner call failure during estimation */
-  InnerCallFailureError = 'InnerCallFailureError'
+  InnerCallFailureError = 'InnerCallFailureError',
+  /** Unknown error but a message for what is the cause is passed in the Error object */
+  UnknownWithMessage = 'UnknownWithMessage'
 }
 
 export type DecodedError = {
