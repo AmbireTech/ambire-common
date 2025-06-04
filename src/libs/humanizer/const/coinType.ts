@@ -1229,7 +1229,7 @@ export const registeredCoinTypes: { [n: number]: any[] } = {
   9003: ['0x8000232b', 'LOOP', 'Loopring'],
   9004: ['0x8000232c', 'STRK', 'StarkNet'],
   9005: ['0x8000232d', 'AVAXC', 'Avalanche C-Chain'],
-  9006: ['0x8000232e', 'BSC', 'Binance Smart Chain'],
+  9006: ['0x8000232e', 'BSC', 'BNB Smart Chain'],
   9797: ['0x80002645', 'NRG', 'Energi'],
   9888: ['0x800026a0', 'BTF', 'Bitcoin Faith'],
   9969: ['0x800026f1', 'OSMI', 'Osmium'],
