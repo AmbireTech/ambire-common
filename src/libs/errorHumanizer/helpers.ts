@@ -7,9 +7,11 @@ function getGenericMessageFromType(
   reason: DecodedError['reason'],
   messagePrefix: string,
   lastResortMessage: string,
-  withReason = true
+  originalError?: any
 ): string {
-  const messageSuffixNoSupport = withReason ? getErrorCodeStringFromReason(reason ?? '') : ''
+  const messageSuffixNoSupport = getErrorCodeStringFromReason(
+    reason || originalError?.message || originalError?.error?.message || ''
+  )
   const messageSuffix = `${messageSuffixNoSupport}\nPlease try again or contact Ambire support for assistance.`
   const origin = errorType?.split('Error')?.[0] || ''
 
@@ -22,8 +24,14 @@ function getGenericMessageFromType(
     case ErrorType.BundlerError:
       return `${messagePrefix} it's invalid.${messageSuffixNoSupport}`
     case ErrorType.CodeError:
-    case ErrorType.UnknownError:
       return `${messagePrefix} of an unknown error.${messageSuffix}`
+    case ErrorType.UnknownError: {
+      if (messageSuffixNoSupport) {
+        return `Unknown error:${messageSuffix.replace('Error code: ', '')}`
+      }
+
+      return `${messagePrefix} of an unknown error.${messageSuffix}`
+    }
     case ErrorType.InnerCallFailureError:
       return isReasonValid(reason)
         ? `${messagePrefix} it will revert onchain.${messageSuffixNoSupport}`
