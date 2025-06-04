@@ -55,10 +55,13 @@ async function estimateGas(
   from: string,
   call: Call,
   nonce: number,
+  error?: Error,
   counter: number = 0
 ): Promise<bigint> {
   // this should happen only in the case of internet issues
-  if (counter > 10) throw new Error('Failed estimating gas from broadcast')
+  if (counter > 10) {
+    throw new Error(`Failed estimating gas for broadcast${error ? `: ${error.message}` : ''}`)
+  }
 
   const callEstimateGas = provider
     .send('eth_estimateGas', [
@@ -97,7 +100,7 @@ async function estimateGas(
   // the error is most likely because of an incorrect RPC pending state
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
     await wait(1500)
-    return estimateGas(provider, from, call, nonce, counter + 1)
+    return estimateGas(provider, from, call, nonce, gasLimit, counter + 1)
   }
 
   return gasLimit
