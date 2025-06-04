@@ -1,4 +1,5 @@
 import { Interface, toQuantity } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -7,6 +8,7 @@ import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -55,10 +57,17 @@ async function estimateGas(
   from: string,
   call: Call,
   nonce: number,
+  error?: Error,
   counter: number = 0
 ): Promise<bigint> {
   // this should happen only in the case of internet issues
-  if (counter > 10) throw new Error('Failed estimating gas from broadcast')
+  if (counter > 10) {
+    throw new Error(
+      `Failed estimating gas for broadcast${
+        error ? `: ${getErrorCodeStringFromReason(error.message)}` : ''
+      }`
+    )
+  }
 
   const callEstimateGas = provider
     .send('eth_estimateGas', [
@@ -97,7 +106,7 @@ async function estimateGas(
   // the error is most likely because of an incorrect RPC pending state
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
     await wait(1500)
-    return estimateGas(provider, from, call, nonce, counter + 1)
+    return estimateGas(provider, from, call, nonce, gasLimit, counter + 1)
   }
 
   return gasLimit
