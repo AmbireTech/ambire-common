@@ -213,7 +213,7 @@ const networks: Network[] = [
     wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
-    name: 'Binance Smart Chain',
+    name: 'BNB Smart Chain',
     nativeAssetSymbol: 'BNB',
     has7702: true,
     nativeAssetName: 'Binance Coin',
