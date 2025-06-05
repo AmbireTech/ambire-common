@@ -22,7 +22,7 @@ export function getHumanReadableBroadcastError(e: Error | DecodedError) {
 
   const decodedError = e instanceof Error ? decodeError(e as Error) : (e as DecodedError)
   const commonError = humanizeEstimationOrBroadcastError(
-    decodedError.reason,
+    decodedError,
     getPrefix(decodedError.reason),
     e
   )
@@ -30,7 +30,7 @@ export function getHumanReadableBroadcastError(e: Error | DecodedError) {
     commonError,
     BROADCAST_ERRORS,
     MESSAGE_PREFIX,
-    decodedError.reason,
+    decodedError,
     e
   )
 
