@@ -1,9 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAmbireAccountAddress = void 0;
+exports.getAmbireAccountAddress = getAmbireAccountAddress;
 const ethers_1 = require("ethers");
 function getAmbireAccountAddress(factoryAddress, bytecode) {
-    return ethers_1.ethers.getCreate2Address(factoryAddress, ethers_1.ethers.toBeHex(0, 32), ethers_1.ethers.keccak256(bytecode));
+    return (0, ethers_1.getCreate2Address)(factoryAddress, (0, ethers_1.toBeHex)(0, 32), (0, ethers_1.keccak256)(bytecode));
 }
-exports.getAmbireAccountAddress = getAmbireAccountAddress;
 //# sourceMappingURL=getAmbireAddressTwo.js.map

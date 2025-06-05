@@ -1,0 +1,1 @@
+{"version":3,"file":"platform.js","sourceRoot":"","sources":["../../../src/interfaces/platform.ts"],"names":[],"mappings":"","sourcesContent":["export type Platform =\n  | 'default'\n  | 'browser-webkit'\n  | 'browser-gecko'\n  | 'mobile-android'\n  | 'mobile-ios'\n"]}

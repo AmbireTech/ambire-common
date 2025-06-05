@@ -1,0 +1,1 @@
+{"version":3,"file":"Pancake.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/const/abis/Pancake.ts"],"names":[],"mappings":";;;AAAa,QAAA,OAAO,GAAG;IACrB,qFAAqF;CACtF,CAAA","sourcesContent":["export const Pancake = [\n  'function approve(address token, address spender, uint160 amount, uint48 expiration)'\n]\n"]}

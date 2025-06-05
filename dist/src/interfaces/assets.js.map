@@ -1,0 +1,1 @@
+{"version":3,"file":"assets.js","sourceRoot":"","sources":["../../../src/interfaces/assets.ts"],"names":[],"mappings":"","sourcesContent":["export interface Price {\n  baseCurrency: string\n  price: number\n}\n"]}

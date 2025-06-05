@@ -1,0 +1,1 @@
+{"version":3,"file":"biconomy.d.ts","sourceRoot":"","sources":["../../../../../src/libs/errorDecoder/handlers/biconomy.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,YAAY,EAAE,YAAY,EAAa,MAAM,UAAU,CAAA;AAEhE,cAAM,8BAA+B,YAAW,YAAY;IACnD,OAAO,CAAC,IAAI,EAAE,MAAM,EAAE,KAAK,EAAE,GAAG;IAMhC,MAAM,CAAC,IAAI,EAAE,MAAM,EAAE,KAAK,EAAE,GAAG,GAAG,YAAY;CAgBtD;AAED,eAAe,8BAA8B,CAAA"}

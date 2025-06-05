@@ -1,0 +1,1 @@
+{"version":3,"file":"notification.js","sourceRoot":"","sources":["../../../src/interfaces/notification.ts"],"names":[],"mappings":"","sourcesContent":["export interface NotificationManager {\n  create: ({\n    title,\n    message,\n    icon\n  }: {\n    title: string\n    message: string\n    icon?: string\n  }) => Promise<void>\n}\n"]}
