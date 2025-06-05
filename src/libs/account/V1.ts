@@ -30,7 +30,9 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    return feePaymentOptions.filter((opt) => isNative(opt.token) || opt.availableAmount > 0n)
+    return feePaymentOptions.filter(
+      (opt) => (isNative(opt.token) && opt.paidBy === this.account.addr) || opt.availableAmount > 0n
+    )
   }
 
   getGasUsed(
