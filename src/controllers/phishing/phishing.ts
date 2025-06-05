@@ -109,14 +109,20 @@ export class PhishingController extends EventEmitter {
         .then((metadata) => fetch(metadata.download_url))
         .then((rawRes) => rawRes.json())
         .then((data) => data.blacklist)
-        .catch(() => []),
+        .catch((e) => {
+          console.error('Failed to fetch blacklist1:', e)
+          return []
+        }),
       this.#fetch(PHANTOM_BLACKLIST_URL, headers)
         .then((res) => res.json())
         .then((metadata) => fetch(metadata.download_url))
         .then((res) => res.text())
         .then((text) => jsYaml.load(text))
         .then((data: any) => (data && data.length ? data.map((i: { url: string }) => i.url) : []))
-        .catch(() => [])
+        .catch((e) => {
+          console.error('Failed to fetch blacklist2:', e)
+          return []
+        })
     ])
 
     let [metamaskBlacklist, phantomBlacklist] = results.map((result) =>
