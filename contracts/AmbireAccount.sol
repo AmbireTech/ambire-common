@@ -301,37 +301,6 @@ contract AmbireAccount is IAmbireAccount {
 	function validateUserOp(PackedUserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external payable returns (uint256)
 	{
-		// enable running executeMultiple operation through the entryPoint if
-		// a paymaster sponsors it with a commitment one-time nonce.
-		// two use cases:
-		// 1) enable 4337 on a network by giving privileges to the entryPoint
-		// 2) key recovery. If the key is lost, we cannot sign the userOp,
-		// so we have to go to `execute` to trigger the recovery logic
-		// Why executeMultiple but not execute?
-		// executeMultiple allows us to combine recovery + fee payment calls.
-		// The fee payment call will be with a signature from the new key
-		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.executeMultiple.selector) {
-			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
-			// @estimation-no-revert
-			if (op.signature.length != 0) return SIG_VALIDATION_FAILED;
-
-			require(
-				op.paymasterAndData.length >= UserOpHelper.PAYMASTER_DATA_OFFSET &&
-				bytes20(op.paymasterAndData[:UserOpHelper.PAYMASTER_ADDR_OFFSET]) != bytes20(0),
-				'validateUserOp: paymaster required in execute() mode'
-			);
-
-			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
-			uint256 targetNonce = uint256(keccak256(
-				abi.encode(op.initCode, op.callData, op.accountGasLimits, op.preVerificationGas, op.gasFees, op.paymasterAndData)
-			)) << 64;
-
-			// @estimation-no-revert
-			if (op.nonce != targetNonce) return SIG_VALIDATION_FAILED;
-
-			return SIG_VALIDATION_SUCCESS;
-		}
-
 		require(privileges(msg.sender) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
 		// @estimation
