@@ -96,7 +96,7 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(message).toBe(
-      'Unknown error: Servers stop working between 2AM and 8AM\nPlease try again or contact Ambire support for assistance.'
+      'We encountered an unexpected issue: Servers stop working between 2AM and 8AM\nPlease try again or contact Ambire support for assistance.'
     )
   })
 })

@@ -27,7 +27,7 @@ function getGenericMessageFromType(
       return `${messagePrefix} of an unknown error.${messageSuffix}`
     case ErrorType.UnknownError: {
       if (messageSuffixNoSupport) {
-        return `Unknown error:${messageSuffix.replace('Error code: ', '')}`
+        return `We encountered an unexpected issue:${messageSuffix.replace('Error code: ', '')}`
       }
 
       return `${messagePrefix} of an unknown error.${messageSuffix}`
