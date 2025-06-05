@@ -81,6 +81,9 @@ const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 const NETWORK_MISMATCH_MESSAGE =
   'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
 
+// For performance reasons, limit the max number of tokens in the to token list
+const TO_TOKEN_LIST_LIMIT = 100
+
 export enum SwapAndBridgeFormStatus {
   Empty = 'empty',
   Invalid = 'invalid',
@@ -169,6 +172,10 @@ export class SwapAndBridgeController extends EventEmitter {
   toChainId: number | null = 1
 
   toSelectedToken: SwapAndBridgeToToken | null = null
+
+  toTokenSearchTerm: string = ''
+
+  toTokenSearchResults: SwapAndBridgeToToken[] = []
 
   quote: SwapAndBridgeQuote | null = null
 
@@ -569,7 +576,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode?: 'fiat' | 'token'
       fromSelectedToken?: TokenResult | null
       toChainId?: bigint | number
-      toSelectedToken?: SwapAndBridgeToToken | null
+      toSelectedTokenAddr?: SwapAndBridgeToToken['address'] | null
       routePriority?: 'output' | 'time'
     },
     updateProps?: {
@@ -583,7 +590,7 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode,
       fromSelectedToken,
       toChainId,
-      toSelectedToken,
+      toSelectedTokenAddr,
       routePriority
     } = props
     const { emitUpdate = true, updateQuote = true } = updateProps || {}
@@ -701,9 +708,11 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
-    if (typeof toSelectedToken !== 'undefined') {
-      this.toSelectedToken = toSelectedToken
-    }
+    const nextToToken = toSelectedTokenAddr
+      ? this.#toTokenList.find((t) => t.address === toSelectedTokenAddr)
+      : null
+
+    if (nextToToken) this.toSelectedToken = { ...nextToToken }
 
     if (routePriority) {
       this.routePriority = routePriority
@@ -716,7 +725,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
-      shouldUpdateToTokenList ? this.updateToTokenList(true, toSelectedToken?.address) : undefined,
+      shouldUpdateToTokenList ? this.updateToTokenList(true, nextToToken?.address) : undefined,
       updateQuote ? this.updateQuote({ debounce: true }) : undefined
     ])
   }
@@ -897,7 +906,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (addressToSelect) {
         const token = this.#toTokenList.find((t) => t.address === addressToSelect)
         if (token) {
-          await this.updateForm({ toSelectedToken: token }, { emitUpdate: false })
+          await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
           this.updateToTokenListStatus = 'INITIAL'
           this.#emitUpdateIfNeeded()
           return
@@ -909,14 +918,23 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#emitUpdateIfNeeded()
   }
 
-  get toTokenList(): SwapAndBridgeToToken[] {
+  /**
+   * Returns the short list of tokens for the "to" token list, because the full
+   * list (stored in #toTokenList) could be HUGE, causing the controller to be
+   * HUGE as well, that leads to performance problems.
+   */
+  get toTokenShortList(): SwapAndBridgeToToken[] {
     const isSwapping = this.fromChainId === this.toChainId
     if (isSwapping) {
-      // Swaps between same "from" and "to" tokens are not feasible, filter them out
-      return this.#toTokenList.filter((t) => t.address !== this.fromSelectedToken?.address)
+      return (
+        this.#toTokenList
+          // Swaps between same "from" and "to" tokens are not feasible, filter them out
+          .filter((t) => t.address !== this.fromSelectedToken?.address)
+          .slice(0, TO_TOKEN_LIST_LIMIT)
+      )
     }
 
-    return this.#toTokenList
+    return this.#toTokenList.slice(0, TO_TOKEN_LIST_LIMIT)
   }
 
   async #addToTokenByAddress(address: string) {
@@ -957,6 +975,9 @@ export class SwapAndBridgeController extends EventEmitter {
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
     )
 
+    // Re-trigger search, because of the updated #toTokenList
+    await this.searchToToken(token.address)
+
     this.#emitUpdateIfNeeded()
     return token
   }
@@ -983,6 +1004,44 @@ export class SwapAndBridgeController extends EventEmitter {
   addToTokenByAddress = async (address: string) =>
     this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true)
 
+  async searchToToken(searchTerm: string) {
+    // Reset the search results
+    this.toTokenSearchTerm = ''
+    this.toTokenSearchResults = []
+    this.#emitUpdateIfNeeded()
+
+    if (!searchTerm) return // should never happen
+
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+    this.toTokenSearchTerm = normalizedSearchTerm
+
+    const { exactMatches, partialMatches } = this.#toTokenList.reduce(
+      (result, token) => {
+        const fieldsToSearch = [
+          token.address.toLowerCase(),
+          token.symbol.toLowerCase(),
+          token.name.toLowerCase()
+        ]
+
+        // Prioritize exact matches, partial matches come after
+        const isExactMatch = fieldsToSearch.some((field) => field === normalizedSearchTerm)
+        const isPartialMatch = fieldsToSearch.some((field) => field.includes(normalizedSearchTerm))
+
+        if (isExactMatch) {
+          result.exactMatches.push(token)
+        } else if (isPartialMatch) {
+          result.partialMatches.push(token)
+        }
+
+        return result
+      },
+      { exactMatches: [] as SwapAndBridgeToToken[], partialMatches: [] as SwapAndBridgeToToken[] }
+    )
+
+    this.toTokenSearchResults = [...exactMatches, ...partialMatches].slice(0, TO_TOKEN_LIST_LIMIT)
+    this.#emitUpdateIfNeeded()
+  }
+
   async switchFromAndToTokens() {
     this.switchTokensStatus = 'LOADING'
     this.#emitUpdateIfNeeded()
@@ -994,12 +1053,7 @@ export class SwapAndBridgeController extends EventEmitter {
         {
           fromAmount: '',
           fromAmountFieldMode: 'token',
-          toSelectedToken: this.fromSelectedToken
-            ? {
-                ...this.fromSelectedToken,
-                chainId: Number(this.fromSelectedToken.chainId)
-              }
-            : null
+          toSelectedTokenAddr: this.fromSelectedToken?.address || null
         },
         {
           emitUpdate: false,
@@ -1916,6 +1970,16 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#portfolio.overridePendingResults(this.signAccountOpController!.accountOp)
       this.emitError(error)
     })
+    // if the estimation emits an error, handle it
+    this.signAccountOpController.estimation.onUpdate(() => {
+      if (
+        this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+        this.signAccountOpController.estimation.status === EstimationStatus.Error
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.onEstimationFailure(this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
+      }
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reestimate(userTxn)
@@ -2013,7 +2077,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      toTokenList: this.toTokenList,
+      toTokenShortList: this.toTokenShortList,
       maxFromAmount: this.maxFromAmount,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,

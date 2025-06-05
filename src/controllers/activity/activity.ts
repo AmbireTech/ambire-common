@@ -607,7 +607,7 @@ export class ActivityController extends EventEmitter {
         .map((accountOp) => {
           const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)!
 
-          const url = `https://benzin.ambire.com/${getBenzinUrlParams({
+          const url = `https://explorer.ambire.com/${getBenzinUrlParams({
             chainId: network.chainId,
             txnId: accountOp.txnId,
             identifiedBy: accountOp.identifiedBy
