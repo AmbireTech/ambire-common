@@ -71,7 +71,9 @@ describe('Estimation errors are humanized', () => {
 
     const humanizedError = getHumanReadableEstimationError(error)
 
-    expect(humanizedError.message).toBe(`${MESSAGE_PREFIX} it will revert onchain.`)
+    expect(humanizedError.message).toBe(
+      `${MESSAGE_PREFIX} it will revert onchain. Error code: 0x12345678`
+    )
     expect(humanizedError.isFallbackMessage).toBe(true)
     expect(humanizedError.cause).toBe('0x12345678')
   })

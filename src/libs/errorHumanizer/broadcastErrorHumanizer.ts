@@ -45,7 +45,8 @@ export function getHumanReadableBroadcastError(e: Error | DecodedError) {
         decodedError.type,
         decodedError.reason,
         MESSAGE_PREFIX,
-        LAST_RESORT_ERROR_MESSAGE
+        LAST_RESORT_ERROR_MESSAGE,
+        e
       )
     }
   }
