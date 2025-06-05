@@ -31,7 +31,7 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
   let isFallbackMessage = false
   const decodedError = e instanceof Error ? decodeError(e as Error) : (e as DecodedError)
   const commonError = humanizeEstimationOrBroadcastError(
-    decodedError.reason,
+    decodedError,
     getPrefix(decodedError.reason),
     e
   )
@@ -39,7 +39,7 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
     commonError,
     ESTIMATION_ERRORS,
     MESSAGE_PREFIX,
-    decodedError.reason,
+    decodedError,
     e
   )
 

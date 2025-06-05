@@ -64,4 +64,4 @@ class BundlerError extends Error {
   }
 }
 
-export { InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError, BundlerError }
+export { BundlerError, InnerCallFailureError, RelayerPaymasterError, SponsorshipPaymasterError }
