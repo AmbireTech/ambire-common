@@ -415,7 +415,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
+          "We encountered an unexpected issue: I'm a teapot\nPlease try again or contact Ambire support for assistance."
         )
       }
     })
