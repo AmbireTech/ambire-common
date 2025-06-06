@@ -452,7 +452,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return (
       !!this.quote &&
       !!this.quote.routes &&
-      this.quote.routes.length > 1 &&
+      this.quote.routes.length > 0 &&
       this.updateQuoteStatus !== 'LOADING'
     )
   }
