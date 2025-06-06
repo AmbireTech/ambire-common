@@ -59,7 +59,7 @@ const STATUS_WRAPPED_METHODS = {
   updateKeyPreferences: 'INITIAL'
 } as const
 
-function getBytesForSecret(secret: string): ArrayLike<number> {
+function getBytesForSecret(secret: string) {
   // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
   return toUtf8Bytes(secret, 'NFKC')
 }
