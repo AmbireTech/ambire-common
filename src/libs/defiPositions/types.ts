@@ -19,6 +19,7 @@ export interface PositionAsset {
   name: string
   decimals: number
   amount: bigint
+  iconUrl: string
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
@@ -67,7 +68,22 @@ export type NetworksWithPositionsByAccounts = {
 export type PositionsByProvider = {
   providerName: ProviderName
   chainId: bigint
-  type: 'lending' | 'liquidity-pool'
+  iconUrl: string
+  type:
+    | 'common'
+    | 'locked'
+    | 'lending'
+    | 'leveraged_farming'
+    | 'vesting'
+    | 'reward'
+    | 'options_seller'
+    | 'options_buyer'
+    | 'insurance_seller'
+    | 'insurance_buyer'
+    | 'perpetuals'
+    | 'nft_common'
+    | 'nft_lending'
+    | 'nft_fraction'
   positions: Position[]
   positionInUSD?: number
 }
