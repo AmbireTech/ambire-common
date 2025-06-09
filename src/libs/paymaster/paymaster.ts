@@ -249,7 +249,9 @@ export class Paymaster extends AbstractPaymaster {
 
       const convertedError =
         this.type === 'ERC7677' ? new SponsorshipPaymasterError() : new RelayerPaymasterError(e)
-      const { message } = getHumanReadableBroadcastError(convertedError)
+      const message = convertedError.isHumanized
+        ? convertedError.message
+        : getHumanReadableBroadcastError(convertedError).message
       return {
         success: false,
         message,

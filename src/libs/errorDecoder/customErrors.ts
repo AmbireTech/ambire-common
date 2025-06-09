@@ -30,21 +30,19 @@ class InnerCallFailureError extends Error {
 }
 
 class RelayerPaymasterError extends Error {
-  constructor(error: any) {
-    let message = ''
-    if (error.errorState && error.errorState[0]) {
-      message = error.errorState[0].message
-    } else if (error.message) {
-      message = error.message
-    }
+  isHumanized: boolean
 
-    super(message)
+  constructor(error: any) {
+    super(error.message)
     this.name = 'PaymasterError'
-    this.message = message
+    this.message = error.message
+    this.isHumanized = error.isHumanized || false
   }
 }
 
 class SponsorshipPaymasterError extends Error {
+  isHumanized: boolean = false
+
   constructor() {
     const message = 'Sponsorship failed.'
     super(message)

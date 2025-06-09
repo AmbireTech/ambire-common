@@ -71,10 +71,9 @@ export async function relayerCall(
 ): Promise<any> {
   const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
   if (!res.success) {
-    const firstError =
-      res.errorState && res.errorState.length ? res.errorState[0].message : res.message
+    const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res
     throw new RelayerError(
-      firstError,
+      firstError.message,
       { url: this.url, path, method, body, headers },
       { res },
       firstError?.isHumanized || false
