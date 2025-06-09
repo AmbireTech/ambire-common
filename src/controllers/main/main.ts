@@ -54,6 +54,8 @@ import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/bro
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
+/* eslint-disable no-await-in-loop */
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
@@ -81,8 +83,6 @@ import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import shortenAddress from '../../utils/shortenAddress'
-/* eslint-disable no-await-in-loop */
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
@@ -670,7 +670,7 @@ export class MainController extends EventEmitter {
       )
     }
 
-    this.emitUpdate()
+    this.forceEmitUpdate()
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
