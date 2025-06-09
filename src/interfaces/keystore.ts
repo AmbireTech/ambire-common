@@ -1,4 +1,4 @@
-import { Transaction } from 'ethers'
+import { Transaction, TypedDataField } from 'ethers'
 
 import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
@@ -169,3 +169,5 @@ export type ReadyToAddKeys = {
 export type KeyPreferences = {
   label: string
 }
+
+export type EIP712Types = Record<string, TypedDataField[]>
