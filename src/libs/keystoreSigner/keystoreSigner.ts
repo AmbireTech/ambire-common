@@ -17,6 +17,7 @@ import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
+import { filterNotUsedEIP712Types } from '../signMessage/signMessage'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -46,15 +47,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   async signTypedData(typedMessage: TypedMessage) {
-    // remove EIP712Domain because otherwise signTypedData throws: ambiguous primary types or unused types
-    if (typedMessage.types.EIP712Domain) {
-      // eslint-disable-next-line no-param-reassign
-      delete typedMessage.types.EIP712Domain
-    }
-    // @ts-ignore
     const sig = await this.#signer.signTypedData(
       typedMessage.domain,
-      typedMessage.types,
+      filterNotUsedEIP712Types(typedMessage.types, typedMessage.primaryType),
       typedMessage.message
     )
 

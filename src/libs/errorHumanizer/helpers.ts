@@ -2,6 +2,12 @@ import { getErrorCodeStringFromReason, isReasonValid } from '../errorDecoder/hel
 import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { ErrorHumanizerError } from './types'
 
+/**
+ * If we fail to match the error reason to a human-readable error,
+ * we return a generic message based on the error type.
+ * This is a last resort to provide some context to the user.
+ * The returned error message will contain the error reason if available
+ */
 function getGenericMessageFromType(
   errorType: ErrorType,
   reason: DecodedError['reason'],
@@ -49,14 +55,40 @@ function getGenericMessageFromType(
   }
 }
 
+/**
+ * The relayer may return an error that is already ready to be displayed to the user.
+ * Note: As the relayer is called directly and used as a paymaster
+ */
+function getHumanizedRelayerError(decodedError: DecodedError, originalError: any) {
+  if (
+    decodedError.type !== ErrorType.RelayerError &&
+    decodedError.type !== ErrorType.PaymasterError
+  )
+    return null
+
+  if (!originalError.isHumanized) return null
+
+  return originalError.message
+}
+
+/**
+ * A function that takes information about an error and attempts to return a human-readable error message by
+ * matching the error reason against a list of known errors.
+ */
 const getHumanReadableErrorMessage = (
   commonError: string | null,
   errors: ErrorHumanizerError[],
   messagePrefix: string,
-  reason: DecodedError['reason'],
+  decodedError: DecodedError,
   e: any
 ) => {
   if (commonError) return commonError
+
+  const alreadyHumanizedError = getHumanizedRelayerError(decodedError, e)
+
+  if (alreadyHumanizedError) return alreadyHumanizedError
+
+  const { reason } = decodedError
 
   const checkAgainst = reason || e?.error?.message || e?.message
   let message = null

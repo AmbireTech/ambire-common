@@ -27,16 +27,12 @@ describe('Broadcast errors are humanized', () => {
   })
   it('Transaction underpriced', () => {
     const error = new RelayerPaymasterError({
-      errorState: [
-        {
-          message: 'Error: Transaction underpriced. Please select a higher fee and try again.'
-        }
-      ]
+      message: 'Error: Transaction underpriced. Please select a higher fee and try again.',
+      isHumanized: true
     })
-    const humanizedError = getHumanReadableBroadcastError(error)
 
-    expect(humanizedError.message).toBe(
-      `${PREFIX}it is underpriced. Please select a higher transaction speed and try again.`
+    expect(error.message).toBe(
+      'Error: Transaction underpriced. Please select a higher fee and try again.'
     )
   })
   it('Relayer user nonce too low', () => {

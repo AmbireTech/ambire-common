@@ -62,7 +62,12 @@ export class V2 extends BaseAccount {
 
     const hasRelayer = !this.network.erc4337.enabled && this.network.hasRelayer
     return feePaymentOptions.filter(
-      (opt) => isNative(opt.token) || (opt.availableAmount > 0n && (hasPaymaster || hasRelayer))
+      (opt) =>
+        // always show account native, even if not enough
+        (isNative(opt.token) && opt.paidBy === this.account.addr) ||
+        // show EOA native only if it has amount to pay the fee
+        (isNative(opt.token) && opt.availableAmount > 0n) ||
+        (opt.availableAmount > 0n && (hasPaymaster || hasRelayer))
     )
   }
 
