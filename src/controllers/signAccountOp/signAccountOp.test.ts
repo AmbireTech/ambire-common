@@ -21,7 +21,7 @@ import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { getTypedData } from '../../libs/signMessage/signMessage'
+import { filterNotUsedEIP712Types, getTypedData } from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -907,11 +907,10 @@ describe('SignAccountOp Controller ', () => {
       controller.accountOp.accountAddr,
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
-    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = verifyTypedData(
       typedData.domain,
-      typedData.types,
+      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
       typedData.message,
       unwrappedSig
     )
@@ -1172,11 +1171,10 @@ describe('Negative cases', () => {
       controller.accountOp.accountAddr,
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
-    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = verifyTypedData(
       typedData.domain,
-      typedData.types,
+      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
       typedData.message,
       unwrappedSig
     )
@@ -1360,10 +1358,9 @@ describe('Negative cases', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    delete typedData.types.EIP712Domain
     const signerAddr = verifyTypedData(
       typedData.domain,
-      typedData.types,
+      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
       typedData.message,
       unwrappedSig
     )
