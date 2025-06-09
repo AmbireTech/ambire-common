@@ -231,7 +231,8 @@ export class SignMessageController extends EventEmitter {
               typedData: {
                 domain: this.messageToSign.content.domain,
                 types: this.messageToSign.content.types,
-                message: this.messageToSign.content.message
+                message: this.messageToSign.content.message,
+                primaryType: this.messageToSign.content.primaryType
               }
             }
           : { authorization: this.messageToSign.content.message })
