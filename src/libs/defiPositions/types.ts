@@ -3,7 +3,8 @@ import { Price } from '../../interfaces/assets'
 export enum AssetType {
   Liquidity,
   Collateral,
-  Borrow
+  Borrow,
+  Reward
 }
 
 export enum DeFiPositionsError {
