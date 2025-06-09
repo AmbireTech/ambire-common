@@ -1,8 +1,9 @@
+import { DecodedError } from '../errorDecoder/types'
 import { BROADCAST_OR_ESTIMATION_ERRORS } from './errors'
 import { getHumanReadableErrorMessage } from './helpers'
 
 const humanizeEstimationOrBroadcastError = (
-  reason: string | null,
+  decodedError: DecodedError,
   prefix: string,
   originalError: any
 ): string | null => {
@@ -10,7 +11,7 @@ const humanizeEstimationOrBroadcastError = (
     null,
     BROADCAST_OR_ESTIMATION_ERRORS,
     prefix,
-    reason,
+    decodedError,
     originalError
   )
 }
