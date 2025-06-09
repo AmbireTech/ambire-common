@@ -408,17 +408,6 @@ export async function verifyMessage({
       throw new Error("Either 'message' or 'typedData' must be provided.")
     }
 
-    // To resolve the "ambiguous primary types or unused types" error, remove
-    // the `EIP712Domain` from `types` object. The domain type is inbuilt in
-    // the EIP712 standard and hence TypedDataEncoder so you do not need to
-    // specify it in the types, see:
-    // {@link https://ethereum.stackexchange.com/a/151930}
-    const typesWithoutEIP712Domain = { ...typedData.types }
-    if (typesWithoutEIP712Domain.EIP712Domain) {
-      // eslint-disable-next-line no-param-reassign
-      delete typesWithoutEIP712Domain.EIP712Domain
-    }
-
     try {
       // the final digest for AmbireReadableOperation is the execute hash
       // as it's wrapped in mode.standard and onchain gets transformed to

@@ -20,6 +20,7 @@ import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
+  filterNotUsedEIP712Types,
   getAmbireReadableTypedData,
   getAuthorizationHash,
   getEIP712Signature,
@@ -412,7 +413,11 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
-      TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message),
+      TypedDataEncoder.hash(
+        typedData.domain,
+        filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
+        typedData.message
+      ),
       eip712Sig
     )
     expect(isValidSig).toBe(contractSuccess)
