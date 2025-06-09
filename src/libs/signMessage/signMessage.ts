@@ -23,7 +23,7 @@ import { EIP7702Auth } from '../../consts/7702'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { KeystoreSignerInterface } from '../../interfaces/keystore'
+import { EIP712Types, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
@@ -91,6 +91,49 @@ interface AmbireReadableOperation {
   chainId: bigint
   nonce: bigint
   calls: { to: Hex; value: bigint; data: Hex }[]
+}
+
+// this is for cases where the type is an array
+function getBaseType(type: string): string {
+  if (type.endsWith('[]')) {
+    return type.slice(0, -2)
+  }
+  return type
+}
+
+// remove all types found in types that don't exist in types[primaryType]
+// as otherwise, ethers6 throws an error
+//
+// This one also deletes EIP712Domain if found and not used
+export function filterNotUsedEIP712Types(types: EIP712Types, primaryType: string): EIP712Types {
+  const toVisit = [primaryType]
+  const visited = new Set<string>()
+
+  while (toVisit.length > 0) {
+    const current = toVisit.pop()!
+    // eslint-disable-next-line no-continue
+    if (visited.has(current)) continue
+
+    visited.add(current)
+
+    const fields = types[current] || []
+    // eslint-disable-next-line no-restricted-syntax
+    for (const field of fields) {
+      const baseType = getBaseType(field.type)
+      if (types[baseType] && !visited.has(baseType)) {
+        toVisit.push(baseType)
+      }
+    }
+  }
+
+  // Build the filtered types
+  const filtered: EIP712Types = {}
+  // eslint-disable-next-line no-restricted-syntax
+  for (const typeName of visited) {
+    filtered[typeName] = types[typeName]
+  }
+
+  return filtered
 }
 
 export const getAmbireReadableTypedData = (
@@ -316,6 +359,7 @@ type Props = {
         domain: TypedDataDomain
         types: Record<string, Array<TypedDataField>>
         message: Record<string, any>
+        primaryType: string
       }
       message?: never
       authorization?: never
@@ -364,17 +408,6 @@ export async function verifyMessage({
       throw new Error("Either 'message' or 'typedData' must be provided.")
     }
 
-    // To resolve the "ambiguous primary types or unused types" error, remove
-    // the `EIP712Domain` from `types` object. The domain type is inbuilt in
-    // the EIP712 standard and hence TypedDataEncoder so you do not need to
-    // specify it in the types, see:
-    // {@link https://ethereum.stackexchange.com/a/151930}
-    const typesWithoutEIP712Domain = { ...typedData.types }
-    if (typesWithoutEIP712Domain.EIP712Domain) {
-      // eslint-disable-next-line no-param-reassign
-      delete typesWithoutEIP712Domain.EIP712Domain
-    }
-
     try {
       // the final digest for AmbireReadableOperation is the execute hash
       // as it's wrapped in mode.standard and onchain gets transformed to
@@ -392,7 +425,7 @@ export async function verifyMessage({
       } else {
         finalDigest = TypedDataEncoder.hash(
           typedData.domain,
-          typesWithoutEIP712Domain,
+          filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
           typedData.message
         )
       }

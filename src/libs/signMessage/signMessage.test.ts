@@ -20,6 +20,7 @@ import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
+  filterNotUsedEIP712Types,
   getAmbireReadableTypedData,
   getAuthorizationHash,
   getEIP712Signature,
@@ -33,28 +34,28 @@ import {
 const ethereumNetwork = networks.find((n) => n.chainId === 1n)!
 const polygonNetwork = networks.find((n) => n.chainId === 137n)!
 const contractSuccess = '0x1626ba7e'
-const unsupportedNetwork = {
-  id: 'zircuit mainnet',
-  name: 'Zircuit Mainnet',
-  nativeAssetSymbol: 'ETH',
-  nativeAssetName: 'Ether',
-  rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
-  selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
-  rpcNoStateOverride: false,
-  chainId: 48900n,
-  explorerUrl: 'https://explorer.zircuit.com',
-  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-  isSAEnabled: false,
-  areContractsDeployed: false,
-  hasRelayer: false,
-  platformId: 'zircuit',
-  nativeAssetId: 'weth',
-  hasSingleton: false,
-  features: [],
-  feeOptions: { is1559: true },
-  predefined: false,
-  has7702: false
-}
+// const unsupportedNetwork = {
+//   id: 'zircuit mainnet',
+//   name: 'Zircuit Mainnet',
+//   nativeAssetSymbol: 'ETH',
+//   nativeAssetName: 'Ether',
+//   rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
+//   selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
+//   rpcNoStateOverride: false,
+//   chainId: 48900n,
+//   explorerUrl: 'https://explorer.zircuit.com',
+//   erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+//   isSAEnabled: false,
+//   areContractsDeployed: false,
+//   hasRelayer: false,
+//   platformId: 'zircuit',
+//   nativeAssetId: 'weth',
+//   hasSingleton: false,
+//   features: [],
+//   feeOptions: { is1559: true },
+//   predefined: false,
+//   has7702: false
+// }
 
 const eoaSigner = {
   privKey: '0x8ad1e4982a3a2e5ef35db11d498d48ab33cbe91bb258802bc8703c943c5a256a',
@@ -412,7 +413,11 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
-      TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message),
+      TypedDataEncoder.hash(
+        typedData.domain,
+        filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
+        typedData.message
+      ),
       eip712Sig
     )
     expect(isValidSig).toBe(contractSuccess)
