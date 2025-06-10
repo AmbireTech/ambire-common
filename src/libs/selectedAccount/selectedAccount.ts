@@ -95,7 +95,6 @@ export const updatePortfolioStateWithDefiPositions = (
             shouldAddPositionUSDAmountToTheTotalBalance = false
             // Get the price from defiPositions
             tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
-            tokenInPortfolio.flags.defiTokenType = a.type
           }
         })
 
