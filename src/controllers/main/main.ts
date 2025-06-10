@@ -2127,7 +2127,6 @@ export class MainController extends EventEmitter {
           this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
         }
         this.emitUpdate()
-
         return
       }
 
