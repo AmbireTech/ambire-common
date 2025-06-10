@@ -33,9 +33,10 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
 ) & { isHidden?: boolean; id: number; content?: string; isBold?: boolean }
-export interface IrCall extends Call {
+export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  to?: string
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
