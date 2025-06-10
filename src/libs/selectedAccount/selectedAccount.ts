@@ -32,7 +32,6 @@ export const updatePortfolioStateWithDefiPositions = (
 
     const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
-
     const positions = defiPositionsAccountState[chainId] || {}
 
     positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
@@ -101,7 +100,8 @@ export const updatePortfolioStateWithDefiPositions = (
         })
 
         if (shouldAddPositionUSDAmountToTheTotalBalance) {
-          networkBalance += pos.additionalData.collateralInUSD || pos.additionalData.positionInUSD
+          networkBalance +=
+            pos.additionalData.collateralInUSD || pos.additionalData.positionInUSD || 0
         }
       })
     })
