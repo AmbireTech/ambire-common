@@ -7,6 +7,8 @@ export interface Dapp {
   chainId: number
   favorite: boolean
   blacklisted?: boolean
+  grantedPermissionId?: string
+  grantedPermissionAt?: number
 }
 
 export interface DappProviderRequest {
