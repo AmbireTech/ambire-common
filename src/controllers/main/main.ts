@@ -1229,17 +1229,16 @@ export class MainController extends EventEmitter {
 
   #batchCallsFromUserRequests(accountAddr: AccountId, chainId: bigint): Call[] {
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    const callRequests = this.userRequests.filter(
-      (r) => r.action.kind === 'calls'
-    ) as SignUserRequest[]
-    console.log(callRequests)
-    return callRequests.reduce((uCalls: Call[], req) => {
-      if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
-        const { calls } = req.action as Calls
-        calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
-      }
-      return uCalls
-    }, [])
+    return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
+      (uCalls: Call[], req) => {
+        if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
+          const { calls } = req.action as Calls
+          calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
+        }
+        return uCalls
+      },
+      []
+    )
   }
 
   async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainId?: bigint }) {
@@ -1453,7 +1452,6 @@ export class MainController extends EventEmitter {
     const dapp = this.dapps.getDapp(request.origin)
 
     if (kind === 'calls') {
-      console.log('da eba putkata ti')
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
       const network = this.networks.networks.find(
         (n) => Number(n.chainId) === Number(dapp?.chainId)
@@ -2108,7 +2106,6 @@ export class MainController extends EventEmitter {
     // update the pending stuff to be signed
     const { action, meta } = req
     if (action.kind === 'calls') {
-      console.log('enter here??')
       const network = this.networks.networks.find((net) => net.chainId === meta.chainId)!
       const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
       if (!account)
@@ -2131,16 +2128,13 @@ export class MainController extends EventEmitter {
         }
         this.emitUpdate()
 
-        console.log('why?')
         return
       }
 
-      console.log(1)
       accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
         meta.accountAddr,
         meta.chainId
       )
-      console.log(2)
       if (accountOpAction.accountOp.calls.length) {
         this.actions.addOrUpdateAction(accountOpAction)
 
