@@ -17,7 +17,8 @@ import {
   erc721Module,
   legendsMessageModule,
   openseaMessageModule,
-  permit2Module
+  permit2Module,
+  zealyMessageModule
 } from './messageModules'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
@@ -94,6 +95,7 @@ const humanizerTMModules = [
   legendsMessageModule,
   ensMessageModule,
   openseaMessageModule,
+  zealyMessageModule,
   eip7702AuthorizationModule
 ]
 
