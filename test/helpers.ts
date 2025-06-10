@@ -211,7 +211,7 @@ async function buildUserOp(
         validUntil,
         validAfter,
         userOp.sender,
-        options.signedNonce ?? userOp.nonce,
+        userOp.nonce,
         userOp.initCode,
         userOp.callData,
         userOp.accountGasLimits,
