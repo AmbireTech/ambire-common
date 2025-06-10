@@ -22,6 +22,7 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       accountOp: AccountOp,
       call: IrCall
     ) => {
+      if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
       const [deadline, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
@@ -56,6 +57,8 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       accountOp: AccountOp,
       call: IrCall
     ): HumanizerVisualization[] => {
+      if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
+
       const [, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping()
       const parsed: HumanizerVisualization[][] = calls.map(
@@ -313,6 +316,8 @@ const uniV3Mapping = (): HumanizerUniMatcher => {
       accountOp: AccountOp,
       call: IrCall
     ): HumanizerVisualization[] => {
+      if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
+
       const args = ifaceV3.parseTransaction(call)?.args || []
       const calls = args[args.length - 1]
       const mappingResult = uniV3Mapping()
