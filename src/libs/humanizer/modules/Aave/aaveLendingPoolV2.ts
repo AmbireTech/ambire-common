@@ -9,6 +9,7 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
   const iface = new Interface(AaveLendingPoolV2)
   const matcher = {
     [iface.getFunction('deposit')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
       const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Deposit'),
@@ -19,6 +20,8 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       ]
     },
     [iface.getFunction('withdraw')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Withdraw'),
@@ -29,6 +32,8 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       ]
     },
     [iface.getFunction('repay')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       const [asset, amount /* rateMode */, , onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Repay'),
@@ -39,6 +44,8 @@ export const aaveLendingPoolV2 = (): { [key: string]: Function } => {
       ]
     },
     [iface.getFunction('borrow')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       const [asset, amount] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Borrow'),

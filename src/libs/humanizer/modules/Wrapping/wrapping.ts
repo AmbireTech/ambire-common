@@ -12,6 +12,7 @@ export const wrappingModule: HumanizerCallModule = (
 ) => {
   const iface = new Interface(WETH)
   const newCalls = irCalls.map((call: IrCall) => {
+    if (!call.to) return call
     const knownAddressData = humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (
       knownAddressData?.name === 'Wrapped ETH' ||
