@@ -23,7 +23,6 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
-import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../errorHumanizer/broadcastErrorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
@@ -250,7 +249,9 @@ export class Paymaster extends AbstractPaymaster {
 
       const convertedError =
         this.type === 'ERC7677' ? new SponsorshipPaymasterError() : new RelayerPaymasterError(e)
-      const { message } = getHumanReadableBroadcastError(convertedError)
+      const message = convertedError.isHumanized
+        ? convertedError.message
+        : getHumanReadableBroadcastError(convertedError).message
       return {
         success: false,
         message,
@@ -302,12 +303,7 @@ export class Paymaster extends AbstractPaymaster {
       return getPaymasterData(this.paymasterService as PaymasterService, localUserOp, network)
     })
 
-    if (
-      !response.success &&
-      (response as PaymasterErrorReponse).message !== PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE &&
-      op.meta &&
-      op.meta.paymasterService
-    ) {
+    if (!response.success && op.meta && op.meta.paymasterService) {
       failedPaymasters.addFailedSponsorship(op.meta.paymasterService.id)
     }
 

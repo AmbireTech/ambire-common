@@ -33,13 +33,15 @@ export const asciiModule: HumanizerCallModule = (
       : []
     return {
       ...call,
-      fullVisualization: [
-        getAction('Send this message'),
-        getLabel('to'),
-        getAddressVisualization(call.to),
-        getText(messageAsText),
-        ...sendNativeHumanization
-      ]
+      fullVisualization: call.to
+        ? [
+            getAction('Send this message'),
+            getLabel('to'),
+            getAddressVisualization(call.to),
+            getText(messageAsText),
+            ...sendNativeHumanization
+          ]
+        : [getAction('Send this message'), getText(messageAsText), ...sendNativeHumanization]
     }
   })
   return newCalls

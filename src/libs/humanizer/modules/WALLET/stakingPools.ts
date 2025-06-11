@@ -25,6 +25,7 @@ export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisuali
   const iface = new Interface(StakingPool)
   return {
     [iface.getFunction('enter')?.selector!]: (call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { amount } = iface.parseTransaction(call)!.args
       return [
         getAction('Deposit'),
@@ -34,16 +35,19 @@ export const StakingPools = (): { [key: string]: (c: IrCall) => HumanizerVisuali
       ]
     },
     [iface.getFunction('leave')?.selector!]: (call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { shares } = iface.parseTransaction(call)!.args
 
       return [getAction('Leave'), getLabel('with'), getToken(call.to, shares)]
     },
     [iface.getFunction('withdraw')?.selector!]: (call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { shares } = iface.parseTransaction(call)!.args
       return [getAction('Withdraw'), getToken(call.to, shares)]
     },
 
     [iface.getFunction('rageLeave')?.selector!]: (call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { shares } = iface.parseTransaction(call)!.args
       return [getAction('Rage leave'), getLabel('with'), getToken(call.to, shares)]
     }
