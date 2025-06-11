@@ -274,7 +274,7 @@ export class LiFiAPI {
     if (response.status === 429) {
       const error =
         'Our service provider received too many requests, temporarily preventing your request from being processed.'
-      throw new SwapAndBridgeProviderApiError(error, 'Too many requests')
+      throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
     }
 
     let responseBody: T
