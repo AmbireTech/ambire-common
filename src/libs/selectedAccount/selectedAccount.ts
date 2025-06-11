@@ -56,7 +56,7 @@ export const updatePortfolioStateWithDefiPositions = (
 
         let shouldAddPositionUSDAmountToTheTotalBalance = true
 
-        pos.assets.forEach((a) => {
+        pos.assets.filter(Boolean).forEach((a) => {
           if (a.protocolAsset) {
             tokensToLearn[chainId] = Array.from(
               new Set([...(tokensToLearn[chainId] || []), getAddress(a.protocolAsset.address)])

@@ -342,7 +342,9 @@ export class SelectedAccountController extends EventEmitter {
     const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
       const positions = provider.positions
         .map((position) => {
-          const assets = position.assets.sort((a, b) => sortByValue(a.value, b.value))
+          const assets = position.assets
+            .filter(Boolean)
+            .sort((a, b) => sortByValue(a.value, b.value))
 
           return { ...position, assets }
         })
