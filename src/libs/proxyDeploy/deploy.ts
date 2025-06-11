@@ -7,7 +7,7 @@ function evmPush(data: any) {
   const opCode = data.length + 95
   const opCodeBuf = Buffer.alloc(1)
   opCodeBuf.writeUInt8(opCode, 0)
-  return Buffer.concat([opCodeBuf, data])
+  return Buffer.concat([Uint8Array.from(opCodeBuf), Uint8Array.from(data)])
 }
 
 // @TODO: fix the any
@@ -20,9 +20,9 @@ function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, val
   // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
   const slot = privSlot(slotNumber, keyType, key, valueType).slice(2)
   return Buffer.concat([
-    evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
-    evmPush(Buffer.from(slot, 'hex')),
-    Buffer.from('55', 'hex')
+    Uint8Array.from(evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf)),
+    Uint8Array.from(evmPush(Buffer.from(slot, 'hex'))),
+    Uint8Array.from(Buffer.from('55', 'hex'))
   ])
 }
 
@@ -39,14 +39,14 @@ export function getProxyDeployBytecode(
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
-    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'uint256', addr, 'uint256', hash))
+    privLevels.map(({ addr, hash }) => Uint8Array.from(sstoreCode(slotNumber, 'uint256', addr, 'uint256', hash)))
   )
   const initial = Buffer.from('3d602d80', 'hex')
   // NOTE: this means we can't support offset>256
   // @TODO solve this case; this will remove the "max 3 privLevels" restriction
   const offset = storage.length + initial.length + 6 // 6 more bytes including the push added later on
   if (offset > 256) throw new Error('getProxyDeployBytecode: internal: offset>256')
-  const initialCode = Buffer.concat([storage, initial, evmPush(Buffer.from([offset]))])
+  const initialCode = Buffer.concat([Uint8Array.from(storage), Uint8Array.from(initial), Uint8Array.from(evmPush(Buffer.from([offset])))])
   const masterAddrBuf = Buffer.from(masterContractAddr.slice(2).replace(/^(00)+/, ''), 'hex')
 
   // TO DO: check if masterAddrBuf.length actually makes sense

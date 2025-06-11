@@ -1,129 +1,58 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.estimate = void 0;
-const ethers_1 = require("ethers");
-const deployless_1 = require("../deployless/deployless");
-const account_1 = require("../account/account");
-const Estimation_json_1 = __importDefault(require("../../../contracts/compiled/Estimation.json"));
-const AmbireAccount_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
-const AmbireAccountFactory_json_1 = __importDefault(require("../../../contracts/compiled/AmbireFactory.json"));
-async function estimate(provider, network, account, op, nativeToCheck, feeTokens, opts, fromAddrHavingNative, blockFrom = '0x0000000000000000000000000000000000000001', blockTag = 'latest') {
-    if (!account.creation) {
-        if (op.calls.length !== 1) {
-            throw new Error("EOA can't have more than one call!");
-        }
-        const call = op.calls[0];
-        const nonce = await provider.getTransactionCount(account.addr);
-        const [gasUsed, balance] = await Promise.all([
-            provider.estimateGas({
-                from: account.addr,
-                to: call.to,
-                value: call.value,
-                data: call.data,
-                nonce
-            }),
-            provider.getBalance(account.addr)
-        ]);
-        return {
-            gasUsed,
-            nonce,
-            feePaymentOptions: [
-                {
-                    paidBy: account.addr,
-                    availableAmount: balance
-                }
-            ]
-        };
-    }
-    const deploylessEstimator = (0, deployless_1.fromDescriptor)(provider, Estimation_json_1.default, !network.rpcNoStateOverride);
-    // @TODO - .env or passed as parameter?
-    const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348';
-    const calculateAnomalies = opts?.calculateAnomalies && fromAddrHavingNative;
-    const args = [
-        account.addr,
-        ...(0, account_1.getAccountDeployParams)(account),
-        // @TODO can pass 0 here for the addr
-        [
-            account.addr,
-            op.accountOpToExecuteBefore?.nonce || 0,
-            op.accountOpToExecuteBefore?.calls || [],
-            op.accountOpToExecuteBefore?.signature || '0x'
-        ],
-        [account.addr, op.nonce || 1, op.calls, '0x'],
-        account.associatedKeys,
-        feeTokens,
-        relayerAddress,
-        calculateAnomalies ? [fromAddrHavingNative].concat(nativeToCheck) : nativeToCheck
-    ];
-    // @TODO explain this
-    const simulationGasPrice = 500000000n;
-    const simulationGasLimit = 500000n;
-    const gasPrice = `0x${Number(simulationGasPrice).toString(16)}`;
-    const gasLimit = `0x${Number(simulationGasLimit).toString(16)}`;
-    /* eslint-disable prefer-const */
-    let [[deployment, accountOpToExecuteBefore, accountOp, nonce, feeTokenOutcomes, , nativeAssetBalances]] = await deploylessEstimator.call('estimate', args, {
-        from: blockFrom,
-        blockTag,
-        gasPrice: calculateAnomalies ? gasPrice : undefined,
-        gasLimit: calculateAnomalies ? gasLimit : undefined
-    });
-    /* eslint-enable prefer-const */
-    let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed;
-    if (opts?.calculateRefund) {
-        const IAmbireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
-        const IAmbireAccountFactory = new ethers_1.Interface(AmbireAccountFactory_json_1.default.abi);
-        const accountCalldata = op.accountOpToExecuteBefore
-            ? IAmbireAccount.encodeFunctionData('executeMultiple', [
-                [
-                    [op.accountOpToExecuteBefore.calls, op.accountOpToExecuteBefore.signature],
-                    [op.calls, op.signature]
-                ]
-            ])
-            : IAmbireAccount.encodeFunctionData('execute', [op.calls, op.signature]);
-        const factoryCalldata = IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
-            account.creation.bytecode,
-            account.creation.salt,
-            [[account.addr, 0, accountCalldata]],
-            op.signature
-        ]);
-        const estimatedGas = await provider.estimateGas({
-            from: '0x0000000000000000000000000000000000000001',
-            to: account.creation.factoryAddr,
-            data: factoryCalldata
-        });
-        const estimatedRefund = gasUsed - estimatedGas;
-        // As of EIP-3529, the max refund is 1/5th of the entire cost
-        if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n)
-            gasUsed = estimatedGas;
-    }
-    let addedNative;
-    if (calculateAnomalies) {
-        const nativeFromBalance = await provider.getBalance(fromAddrHavingNative);
-        // @TODO - Both balances are equal, but they shouldn't be as the contract balance should include the fee
-        console.log({ nativeFromBalance, contractNativeFromBalance: nativeAssetBalances[0] });
-        addedNative =
-            nativeFromBalance - (nativeAssetBalances[0] - simulationGasPrice * simulationGasLimit);
-        nativeAssetBalances = nativeAssetBalances.slice(1);
-    }
-    const feeTokenOptions = feeTokenOutcomes.map((token, key) => ({
-        address: feeTokens[key],
-        paidBy: account.addr,
-        availableAmount: token.amount,
-        gasUsed: token.gasUsed
-    }));
-    const nativeTokenOptions = nativeAssetBalances.map((balance, key) => ({
-        paidBy: nativeToCheck[key],
-        availableAmount: balance
-    }));
+exports.getEstimation = getEstimation;
+exports.getEstimationSummary = getEstimationSummary;
+const ambireEstimation_1 = require("./ambireEstimation");
+const estimateBundler_1 = require("./estimateBundler");
+const estimateWithRetries_1 = require("./estimateWithRetries");
+const providerEstimateGas_1 = require("./providerEstimateGas");
+// get all possible estimation combinations and leave it to the implementation
+// to decide which one is relevant depending on the case.
+// there are 3 estimations:
+// estimateGas(): the rpc method for retrieving gas
+// estimateBundler(): ask the 4337 bundler for a gas price
+// Estimation.sol: our own implementation
+// each has an use case in diff scenarious:
+// - EOA: if payment is native, use estimateGas(); otherwise estimateBundler()
+// - SA: if ethereum, use Estimation.sol; otherwise estimateBundler()
+async function getEstimation(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck, switcher, errorCallback) {
+    const ambireEstimation = (0, ambireEstimation_1.ambireEstimateGas)(baseAcc, accountState, op, network, provider, feeTokens, nativeToCheck);
+    const bundlerEstimation = (0, estimateBundler_1.bundlerEstimate)(baseAcc, accountState, op, network, feeTokens, provider, switcher, errorCallback);
+    const providerEstimation = (0, providerEstimateGas_1.providerEstimateGas)(baseAcc.getAccount(), op, provider, accountState, network, feeTokens);
+    const estimations = await (0, estimateWithRetries_1.estimateWithRetries)(() => [ambireEstimation, bundlerEstimation, providerEstimation], 'estimation-deployless', errorCallback, 12000);
+    // this is only if we hit a timeout 5 consecutive times
+    if (estimations instanceof Error)
+        return estimations;
+    const ambireGas = estimations[0];
+    const bundlerGas = estimations[1];
+    const providerGas = estimations[2];
+    const fullEstimation = {
+        provider: providerGas,
+        ambire: ambireGas,
+        bundler: bundlerGas,
+        flags: {}
+    };
+    const criticalError = baseAcc.getEstimationCriticalError(fullEstimation, op);
+    if (criticalError)
+        return criticalError;
+    // TODO: if the bundler is the preferred method of estimation, re-estimate
+    // we can switch it if there's no ambire gas error
+    let flags = {};
+    if (!(ambireGas instanceof Error) && ambireGas)
+        flags = { ...ambireGas.flags };
+    if (!(bundlerGas instanceof Error) && bundlerGas)
+        flags = { ...bundlerGas.flags };
+    fullEstimation.flags = flags;
+    return fullEstimation;
+}
+function getEstimationSummary(estimation) {
     return {
-        gasUsed,
-        nonce,
-        addedNative,
-        feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
+        providerEstimation: estimation.provider && !(estimation.provider instanceof Error)
+            ? estimation.provider
+            : undefined,
+        ambireEstimation: estimation.ambire && !(estimation.ambire instanceof Error) ? estimation.ambire : undefined,
+        bundlerEstimation: estimation.bundler && !(estimation.bundler instanceof Error) ? estimation.bundler : undefined,
+        flags: estimation.flags
     };
 }
-exports.estimate = estimate;
 //# sourceMappingURL=estimate.js.map

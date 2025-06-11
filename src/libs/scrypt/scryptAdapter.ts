@@ -22,7 +22,7 @@ export class ScryptAdapter {
 
     if (this.#platform === 'browser-gecko') {
       // noble/hashes scrypt returns Uint8Array directly
-      return nobleScrypt(password, salt, { N, r, p, dkLen })
+      return nobleScrypt(Uint8Array.from(password), salt, { N, r, p, dkLen })
     }
 
     // scrypt-js returns Promise<ArrayLike<number>>

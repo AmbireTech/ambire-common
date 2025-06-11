@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../../../src/libs/humanizer/modules/Wrapping/index.ts"],"names":[],"mappings":";;AAAA,yCAA2C;AAE3C,kBAAe,yBAAc,CAAA","sourcesContent":["import { wrappingModule } from './wrapping'\n\nexport default wrappingModule\n"]}

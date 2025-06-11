@@ -1,0 +1,49 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AMBIRE_FEE_TAKER_ADDRESSES = exports.AMBIRE_WALLET_TOKEN_ON_BASE = exports.AMBIRE_WALLET_TOKEN_ON_ETHEREUM = exports.FEE_PERCENT = exports.ETH_ON_OPTIMISM_LEGACY_ADDRESS = exports.NULL_ADDRESS = exports.ZERO_ADDRESS = void 0;
+exports.ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+// Some services (like Socket) use the null token address to represent the
+// native token as the ZERO_ADDRESS is not standard for it.
+exports.NULL_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+exports.ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000';
+/**
+ * The % of fee to be cut from the source input token amount.
+ * Can be up to three decimal places and cannot be more than 5%.
+ */
+exports.FEE_PERCENT = 0.25;
+const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
+    name: 'Ambire Wallet',
+    symbol: 'WALLET',
+    decimals: 18,
+    icon: '' // will fallback to get the icon from the same place as the portfolio
+};
+exports.AMBIRE_WALLET_TOKEN_ON_ETHEREUM = {
+    chainId: 1,
+    address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+    ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
+};
+exports.AMBIRE_WALLET_TOKEN_ON_BASE = {
+    chainId: 8453,
+    address: '0x0BbbEad62f7647AE8323d2cb243A0DB74B7C2b80',
+    ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
+};
+exports.AMBIRE_FEE_TAKER_ADDRESSES = {
+    324: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    1101: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    5000: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    34443: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    43114: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    59144: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    534352: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    1313161554: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    81457: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+    1: '0xDCe4f65Aa650B3FaFEa9892E807C1770d6e9c618',
+    10: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+    137: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+    8453: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+    56: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+    42161: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+    100: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
+    7777777: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001'
+};
+//# sourceMappingURL=constants.js.map

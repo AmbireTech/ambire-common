@@ -1,0 +1,91 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InviteController = exports.INVITE_STATUS = void 0;
+const tslib_1 = require("tslib");
+const relayerCall_1 = require("../../libs/relayerCall/relayerCall");
+const eventEmitter_1 = tslib_1.__importDefault(require("../eventEmitter/eventEmitter"));
+// eslint-disable-next-line @typescript-eslint/naming-convention
+var INVITE_STATUS;
+(function (INVITE_STATUS) {
+    INVITE_STATUS["UNVERIFIED"] = "UNVERIFIED";
+    INVITE_STATUS["VERIFIED"] = "VERIFIED";
+})(INVITE_STATUS || (exports.INVITE_STATUS = INVITE_STATUS = {}));
+const DEFAULT_STATE = {
+    status: INVITE_STATUS.UNVERIFIED,
+    verifiedAt: null,
+    verifiedCode: null,
+    becameOGAt: null
+};
+/**
+ * As of v5.1.0, invite code is no longer required for using the extension. In
+ * v4.20.0, a mandatory invite verification flow is introduced as a first step
+ * upon extension installation. The controller is still used to manage OG status
+ * and other invite-related data.
+ */
+class InviteController extends eventEmitter_1.default {
+    #storage;
+    #callRelayer;
+    #state = DEFAULT_STATE;
+    inviteStatus = INVITE_STATUS.UNVERIFIED;
+    verifiedCode = null;
+    /**
+     * Whether the user has become an Ambire OG (Original Gangster), a status that
+     * comes with specific privileges (e.g. early access to new or experimental features).
+     */
+    isOG = false;
+    #initialLoadPromise;
+    constructor({ relayerUrl, fetch, storage }) {
+        super();
+        this.#storage = storage;
+        this.#callRelayer = relayerCall_1.relayerCall.bind({ url: relayerUrl, fetch });
+        this.#initialLoadPromise = this.#load();
+    }
+    async #load() {
+        const nextState = await this.#storage.get('invite', this.#state);
+        this.#state = { ...DEFAULT_STATE, ...nextState };
+        this.inviteStatus = this.#state.status;
+        this.verifiedCode = this.#state.verifiedCode;
+        this.isOG = !!this.#state.becameOGAt;
+        this.emitUpdate();
+    }
+    /**
+     * Verifies an invite code and if verified successfully, persists the invite
+     * status (and some meta information) in the storage.
+     */
+    async verify(code) {
+        await this.#initialLoadPromise;
+        try {
+            const res = await this.#callRelayer(`/promotions/extension-key/${code}`, 'GET');
+            if (!res.success)
+                throw new Error(res.message || "Couldn't verify the invite code");
+            this.inviteStatus = INVITE_STATUS.VERIFIED;
+            this.verifiedCode = code;
+            this.emitUpdate();
+            const verifiedAt = Date.now();
+            await this.#storage.set('invite', {
+                ...this.#state,
+                status: INVITE_STATUS.VERIFIED,
+                verifiedAt,
+                verifiedCode: code
+            });
+        }
+        catch (error) {
+            this.emitError(error);
+        }
+    }
+    async becomeOG() {
+        await this.#initialLoadPromise;
+        const becameOGAt = Date.now();
+        await this.#storage.set('invite', { ...this.#state, becameOGAt });
+        this.isOG = true;
+        this.emitUpdate();
+    }
+    async revokeOG() {
+        await this.#initialLoadPromise;
+        await this.#storage.set('invite', { ...this.#state, becameOGAt: null });
+        this.isOG = false;
+        this.emitUpdate();
+    }
+}
+exports.InviteController = InviteController;
+//# sourceMappingURL=invite.js.map
