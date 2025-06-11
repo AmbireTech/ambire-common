@@ -1420,8 +1420,6 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
-    // @TODO: Consider if we want to display a skeleton loader if updateQuote is called
-    // by the interval
     if (!skipStatusUpdate) {
       this.updateQuoteStatus = 'LOADING'
       this.removeError('no-routes')
