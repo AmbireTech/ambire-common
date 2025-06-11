@@ -1477,7 +1477,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
       // Display the error in the UI only if it has a shortMessage
       // as we don't have much space and there is a default error message
-      if ('shortMessage' in humanizedError && humanizedError.shortMessage) {
+      if (
+        'shortMessage' in humanizedError &&
+        humanizedError.shortMessage &&
+        typeof humanizedError.shortMessage === 'string'
+      ) {
         return {
           success: false,
           id: 'no-routes',
