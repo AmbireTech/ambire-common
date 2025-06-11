@@ -236,7 +236,12 @@ export class SelectedAccountController extends EventEmitter {
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
       latestStateSelectedAccount,
       defiPositionsAccountState,
-      this.areDefiPositionsLoading
+      this.areDefiPositionsLoading,
+      (tokensToLearn: { [key: string]: string[] }) => {
+        Object.entries(tokensToLearn).forEach(([chainId, tokens]) => {
+          this.#portfolio!.addTokensToBeLearned(tokens, BigInt(chainId))
+        })
+      }
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(

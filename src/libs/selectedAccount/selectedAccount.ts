@@ -1,3 +1,5 @@
+import { getAddress } from 'ethers'
+
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
@@ -20,8 +22,10 @@ import {
 export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
   defiPositionsAccountState: DefiPositionsAccountState,
-  areDefiPositionsLoading: boolean
+  areDefiPositionsLoading: boolean,
+  learnTokens: (tokensToLearn: { [key: string]: string[] }) => void
 ) => {
+  const tokensToLearn: { [key: string]: string[] } = {}
   if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
     return portfolioAccountState
 
@@ -53,6 +57,12 @@ export const updatePortfolioStateWithDefiPositions = (
         let shouldAddPositionUSDAmountToTheTotalBalance = true
 
         pos.assets.forEach((a) => {
+          if (a.protocolAsset) {
+            tokensToLearn[chainId] = Array.from(
+              new Set([...(tokensToLearn[chainId] || []), getAddress(a.protocolAsset.address)])
+            )
+          }
+
           function isTokenPriceWithinHalfPercent(price1: any, price2: any) {
             const diff = Math.abs(price1 - price2)
             const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2)) // 0.5% of the larger value
@@ -111,6 +121,7 @@ export const updatePortfolioStateWithDefiPositions = (
     portfolioAccountState[chainId]!.result!.tokens = tokens
   })
 
+  !!learnTokens && learnTokens(tokensToLearn)
   return portfolioAccountState
 }
 
