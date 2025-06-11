@@ -1395,6 +1395,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
         this.quoteRoutesStatuses = {}
+        this.updateQuoteStatus = 'INITIAL'
         this.#emitUpdateIfNeeded()
       }
       return
