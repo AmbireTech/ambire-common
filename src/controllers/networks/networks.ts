@@ -237,8 +237,8 @@ export class NetworksController extends EventEmitter {
           }
           // update the selectedRpcUrl on disabledByDefault networks as we can
           // determine better which RPC is the best for our custom networks
-          // if (relayerNetwork.disabledByDefault)
-          //   updatedNetworks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
+          if (relayerNetwork.disabledByDefault)
+            updatedNetworks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
         } else {
           updatedNetworks[chainId.toString()] = {
             ...storedNetwork,
