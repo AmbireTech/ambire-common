@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -33,6 +33,7 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 import { MAYAN_BRIDGE } from './consts'
+import { getHumanReadableErrorMessage } from './helpers'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
   token: LiFiToken,
@@ -285,8 +286,14 @@ export class LiFiAPI {
     }
 
     if (!response.ok) {
-      const message = JSON.stringify(responseBody)
-      const error = `${errorPrefix} Our service provider upstream error: <${message}>`
+      const humanizedMessage = getHumanReadableErrorMessage(errorPrefix, responseBody)
+
+      if (humanizedMessage) {
+        throw new SwapAndBridgeProviderApiError(humanizedMessage)
+      }
+
+      const fallbackMessage = JSON.stringify(responseBody)
+      const error = `${errorPrefix} Our service provider upstream error: <${fallbackMessage}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
