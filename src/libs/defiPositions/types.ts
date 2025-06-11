@@ -70,6 +70,7 @@ export type PositionsByProvider = {
   providerName: ProviderName
   chainId: bigint
   iconUrl: string
+  siteUrl: string
   type:
     | 'common'
     | 'locked'

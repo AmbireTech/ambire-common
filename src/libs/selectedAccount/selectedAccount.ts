@@ -23,7 +23,7 @@ export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
   defiPositionsAccountState: DefiPositionsAccountState,
   areDefiPositionsLoading: boolean,
-  learnTokens: (tokensToLearn: { [key: string]: string[] }) => void
+  learnTokens?: (tokensToLearn: { [key: string]: string[] }) => void
 ) => {
   const tokensToLearn: { [key: string]: string[] } = {}
   if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
@@ -61,6 +61,41 @@ export const updatePortfolioStateWithDefiPositions = (
             tokensToLearn[chainId] = Array.from(
               new Set([...(tokensToLearn[chainId] || []), getAddress(a.protocolAsset.address)])
             )
+
+            if (a.protocolAsset?.name) {
+              const protocolTokenInPortfolio = tokens.find((t) => {
+                return (
+                  t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+                  t.chainId.toString() === chainId &&
+                  !t.flags.rewardsType &&
+                  !t.flags.onGasTank
+                )
+              })
+              if (!protocolTokenInPortfolio) {
+                const positionAsset: TokenResult = {
+                  amount: a.amount,
+                  // Only list the borrowed asset with no price
+                  priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
+                  decimals: Number(a.protocolAsset!.decimals),
+                  address: a.protocolAsset!.address,
+                  symbol: a.protocolAsset!.symbol,
+                  name: a.protocolAsset!.name,
+                  chainId: BigInt(chainId),
+                  flags: {
+                    canTopUpGasTank: false,
+                    isFeeToken: false,
+                    onGasTank: false,
+                    rewardsType: null,
+                    defiTokenType: a.type
+                    // @BUG: defi positions tokens can't be hidden and can be added as custom
+                    // because processTokens is called in the portfolio
+                    // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
+                  }
+                }
+
+                tokens.push(positionAsset)
+              }
+            }
           }
 
           function isTokenPriceWithinHalfPercent(price1: any, price2: any) {
