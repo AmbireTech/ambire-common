@@ -1477,6 +1477,8 @@ export class SwapAndBridgeController extends EventEmitter {
     } catch (error: any) {
       const humanizedError = getHumanReadableSwapAndBridgeError(error)
 
+      // Display the error in the UI only if it has a shortMessage
+      // as we don't have much space and there is a default error message
       if ('shortMessage' in humanizedError && humanizedError.shortMessage) {
         return {
           success: false,
