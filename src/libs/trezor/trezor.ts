@@ -9,6 +9,8 @@ export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: str
   if (errorCode === 'Method_Interrupted')
     return 'Closing the Trezor popup interrupted the connection.'
 
+  if (errorCode === 'Method_Cancel') return 'Permission not granted.'
+
   if (errorCode === 'Failure_ActionCancelled') return 'Rejected by your Trezor device.'
 
   if (
