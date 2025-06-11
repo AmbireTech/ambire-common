@@ -220,6 +220,16 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #providers: ProvidersController
 
+  /**
+   * A possibly outdated instance of the SignAccountOpController. Please always
+   * read the public getter `signAccountOpController` to get the up-to-date
+   * instance. If updating a route consists of:
+   * QUOTE FETCH -> ROUTE START -> ROUTE ESTIMATION
+   *
+   * This instance may be outdated during QUOTE FETCH -> ROUTE START
+   * The reason is that the controller is not immediately destroyed after the
+   * form changes, but instead is being updated after the route is started.
+   */
   #signAccountOpController: SignAccountOpController | null = null
 
   #portfolioUpdate: Function
@@ -389,6 +399,10 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
+  /**
+   * Returns an instance of the SignAccountOpController that is ALWAYS up-to-date with the current
+   * quote and the current form state.
+   */
   get signAccountOpController() {
     const controllerFromQuoteId = this.#signAccountOpController?.accountOp.meta?.fromQuoteId
 
