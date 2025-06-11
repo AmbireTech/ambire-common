@@ -1513,20 +1513,6 @@ export class MainController extends EventEmitter {
         },
         dappPromise
       } as SignUserRequest
-
-      const accountState = await this.accounts.getOrFetchAccountOnChainState(
-        accountAddr,
-        network.chainId
-      )
-      if (isBasicAccount(this.selectedAccount.account, accountState)) {
-        const otherUserRequestFromSameDapp = this.userRequests.find(
-          (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
-        )
-
-        if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
-          actionPosition = 'first'
-        }
-      }
     } else if (kind === 'message') {
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
 

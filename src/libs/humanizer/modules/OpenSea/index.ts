@@ -113,6 +113,7 @@ const humanizerOrder = ({ items, payment, end }: Order) => {
 
 export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   return irCalls.map((call: IrCall) => {
+    if (!call.to) return call
     if (
       [
         iface.getFunction('fulfillBasicOrder_efficient_6GL6yc')!.selector,

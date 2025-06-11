@@ -118,6 +118,8 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
     [iface.getFunction(
       'supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)'
     )?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { asset, amount, onBehalfOf, referralCode } = iface.parseTransaction(call)!.args
       return [
@@ -146,6 +148,8 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
       accountOp: AccountOp,
       call: IrCall
     ) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { args } = iface.parseTransaction(call)!.args
       return [getAction('Repay with token A'), getLabel('to'), getAddressVisualization(call.to)]
@@ -154,6 +158,8 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
       accountOp: AccountOp,
       call: IrCall
     ) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { args } = iface.parseTransaction(call)!.args
       return [getAction('Repay with permit'), getLabel('to'), getAddressVisualization(call.to)]
@@ -161,6 +167,8 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
     [iface.getFunction(
       'supplyWithPermit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode, uint256 deadline, uint8 permitV, bytes32 permitR, bytes32 permitS)'
     )?.selector!]: (accountOp: AccountOp, call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { asset, amount, onBehalfOf, referralCode, deadline, permitV, permitR, bytes32 } =
         iface.parseTransaction(call)!.args
@@ -179,6 +187,8 @@ export const aaveV3Pool = (): { [key: string]: Function } => {
       accountOp: AccountOp,
       call: IrCall
     ) => {
+      if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
+
       // @TODO  do some hecks for network OR
       const { args } = iface.parseTransaction(call)!.args
       const amountAsString = args.slice(30, 62)

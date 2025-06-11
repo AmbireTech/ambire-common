@@ -64,6 +64,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
   }
   const newCalls = irCalls.map((call: IrCall) => {
     if (
+      call.to &&
       stakingAddresses.includes(call.to.toLowerCase()) &&
       (!call.fullVisualization || checkIfUnknownAction(call.fullVisualization))
     ) {
@@ -81,6 +82,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
       }
     }
     if (
+      call.to &&
       call.to.toLowerCase() === STK_WALLET.toLowerCase() &&
       matcher.stkWallet[call.data.slice(0, 10)]
     ) {

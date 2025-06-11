@@ -1,4 +1,4 @@
-import { getAddress, Interface, ZeroAddress } from 'ethers'
+import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Legends } from '../../const/abis/Legends'
@@ -92,9 +92,11 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   }
   const newCalls = calls.map((call) => {
     if (
-      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
-        getAddress(call.to)
-      ) ||
+      (call.to &&
+        isAddress(call.to) &&
+        ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
+          getAddress(call.to)
+        )) ||
       !matcher[call.data.slice(0, 10)]
     )
       return call
