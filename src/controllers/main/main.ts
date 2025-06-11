@@ -1696,7 +1696,10 @@ export class MainController extends EventEmitter {
     await this.addUserRequest(userRequest, 'last', actionExecutionType)
   }
 
-  async buildSwapAndBridgeUserRequest(activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']) {
+  async buildSwapAndBridgeUserRequest(
+    openActionWindow: boolean,
+    activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
+  ) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
@@ -1793,7 +1796,11 @@ export class MainController extends EventEmitter {
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
+            this.addUserRequest(
+              swapAndBridgeUserRequests[i],
+              'last',
+              openActionWindow ? 'open-action-window' : 'queue'
+            )
           } else {
             await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }
