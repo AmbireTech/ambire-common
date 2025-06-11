@@ -94,6 +94,10 @@ export const updatePortfolioStateWithDefiPositions = (
                 }
 
                 tokens.push(positionAsset)
+              } else {
+                protocolTokenInPortfolio.priceIn =
+                  a.type === AssetType.Collateral ? [a.priceIn] : []
+                protocolTokenInPortfolio.flags.defiTokenType = a.type
               }
             }
           }
