@@ -14,7 +14,7 @@ export class ScryptAdapter {
   }
 
   async scrypt(
-    password: ArrayLike<number>,
+    password: Uint8Array<ArrayBufferLike>,
     salt: Uint8Array,
     params: NormalizedScryptParams
   ): Promise<Uint8Array> {
