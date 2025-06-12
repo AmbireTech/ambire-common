@@ -349,7 +349,7 @@ const addCustomTokensIfNeeded = ({
 // the celo native token is at an address 0x471EcE3750Da237f93B8E339c536989b8978a438
 // and LiFi doesn't work if we pass address 0 for this. We map it only for
 // lifi to make the swap work in this case
-const getLiFiTokenAddress = (chainId: number, tokenAddr: string) => {
+const lifiMapTokenAddr = (chainId: number, tokenAddr: string) => {
   if (tokenAddr !== ZeroAddress) return tokenAddr
   // celo chain
   if (chainId !== 42220) return tokenAddr
@@ -363,6 +363,6 @@ export {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  getLiFiTokenAddress,
-  getSwapAndBridgeCalls
+  getSwapAndBridgeCalls,
+  lifiMapTokenAddr
 }
