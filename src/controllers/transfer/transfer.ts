@@ -2,33 +2,33 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
+import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { Call } from '../../libs/accountOp/types'
+import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
+import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
+import { getAddressFromAddressState } from '../../utils/domains'
 import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+import wait from '../../utils/wait'
+import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { randomId } from '../../libs/humanizer/utils'
-import { AccountsController } from '../accounts/accounts'
-import { KeystoreController } from '../keystore/keystore'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
-import { ProvidersController } from '../providers/providers'
-import { NetworksController } from '../networks/networks'
-import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
-import { Call } from '../../libs/accountOp/types'
-import { getAddressFromAddressState } from '../../utils/domains'
-import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
-import { EstimationStatus } from '../estimation/types'
-import wait from '../../utils/wait'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 import { StorageController } from '../storage/storage'
 
 const CONVERSION_PRECISION = 16
@@ -268,12 +268,7 @@ export class TransferController extends EventEmitter {
 
     // Validate the amount
     if (this.selectedToken) {
-      validationFormMsgsNew.amount = validateSendTransferAmount(
-        this.amount,
-        Number(this.maxAmount),
-        Number(this.maxAmountInFiat),
-        this.selectedToken
-      )
+      validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
     return validationFormMsgsNew
