@@ -1,3 +1,5 @@
+import { truncateReason } from 'libs/errorDecoder/helpers'
+
 import EmittableError from '../../classes/EmittableError'
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
@@ -56,7 +58,7 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
   }
 
   return new ErrorHumanizerError(errorMessage, {
-    cause: decodedError.reason,
+    cause: decodedError.reason || (e instanceof Error ? truncateReason(e?.message) : ''),
     isFallbackMessage
   })
 }
