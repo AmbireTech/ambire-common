@@ -2,6 +2,7 @@ import EmittableError from '../../classes/EmittableError'
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { decodeError } from '../errorDecoder'
+import { truncateReason } from '../errorDecoder/helpers'
 import { DecodedError } from '../errorDecoder/types'
 import { ESTIMATION_ERRORS, noPrefixReasons } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
@@ -50,12 +51,13 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
       decodedError.reason,
       MESSAGE_PREFIX,
       LAST_RESORT_ERROR_MESSAGE,
-      e
+      e,
+      false
     )
   }
 
   return new ErrorHumanizerError(errorMessage, {
-    cause: decodedError.reason,
+    cause: decodedError.reason || (e instanceof Error ? truncateReason(e?.message) : ''),
     isFallbackMessage
   })
 }

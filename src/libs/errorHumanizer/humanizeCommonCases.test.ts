@@ -3,6 +3,7 @@ import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { decodeError } from '../errorDecoder'
 import { DecodedError, ErrorType } from '../errorDecoder/types'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
@@ -46,12 +47,14 @@ describe('Estimation/Broadcast common errors are humanized', () => {
     )
   })
   it('Paymaster deposit too low', async () => {
+    const consoleSuppressor = suppressConsole()
     const error = new MockBundlerError('paymaster deposit too low')
 
     const decodedError = decodeError(error)
     const message = humanizeEstimationOrBroadcastError(decodedError, MESSAGE_PREFIX, error)
 
     expect(message).toBe(`${MESSAGE_PREFIX} ${insufficientPaymasterFunds}`)
+    consoleSuppressor.restore()
   })
   it('Insufficient funds for gas', async () => {
     try {
