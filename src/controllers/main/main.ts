@@ -1694,6 +1694,9 @@ export class MainController extends EventEmitter {
     }
 
     await this.addUserRequest(userRequest, 'last', actionExecutionType)
+
+    // reset the transfer form after adding a req
+    this.transfer.resetForm()
   }
 
   async buildSwapAndBridgeUserRequest(
