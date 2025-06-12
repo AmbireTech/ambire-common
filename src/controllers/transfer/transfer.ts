@@ -280,13 +280,7 @@ export class TransferController extends EventEmitter {
     // if the amount is set, it's enough in topUp mode
     if (this.isTopUp) {
       return (
-        this.selectedToken &&
-        validateSendTransferAmount(
-          this.amount,
-          Number(this.maxAmount),
-          Number(this.maxAmountInFiat),
-          this.selectedToken
-        ).success
+        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
       )
     }
 
