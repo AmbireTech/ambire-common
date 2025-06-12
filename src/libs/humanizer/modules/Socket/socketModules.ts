@@ -113,6 +113,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         'swapAndBridge(uint32 swapId, bytes swapData, (address receiverAddress, uint64 toChainId, uint32 maxSlippage, uint64 nonce, bytes32 metadata) celerBridgeData) payable'
       )?.selector
     }`]: (call: IrCall) => {
+      if (!call.to) throw Error('Humanizer: should not be in socket humanizer when !call.to')
       const {
         swapId,
         swapData,
@@ -1017,7 +1018,7 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
     let dataToUse = call.data
-
+    if (!call.to) return call
     if (call.data.startsWith(preControllerIface.getFunction('executeController')!.selector)) {
       const [[controllerId, newData]] = preControllerIface.parseTransaction(call)!.args
       dataToUse = newData

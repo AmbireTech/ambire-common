@@ -3,7 +3,7 @@ import { describe, test } from '@jest/globals'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { AccountOp } from '../accountOp/accountOp'
-import { IrCall } from './interfaces'
+import { Call } from '../accountOp/types'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -28,7 +28,7 @@ const accountOp: AccountOp = {
   // "remembered" at the time of signing in order to visualize history properly
   // humanizerMeta: {}
 }
-const transactions: { [key: string]: Array<IrCall> } = {
+const transactions: { [key: string]: Call[] } = {
   uniV3: [
     // first part of this has recipient 0x000...000. idk why
     // muticall

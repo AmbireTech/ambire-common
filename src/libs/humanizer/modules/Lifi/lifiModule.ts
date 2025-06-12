@@ -10,7 +10,7 @@ const LIFI_ROUTER = '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE'
 export const LifiModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   const iface = new Interface(Lifi)
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
-    if (call.to.toLowerCase() === LIFI_ROUTER.toLowerCase()) {
+    if (call.to && call.to.toLowerCase() === LIFI_ROUTER.toLowerCase()) {
       return {
         ...call,
         fullVisualization: [

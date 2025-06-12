@@ -67,7 +67,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
-  id: 'to-token-list-fetch-failed' // ...
+  id: 'to-token-list-fetch-failed' | 'no-routes'
   title: string
   text?: string
   level: 'error' | 'warning'
@@ -220,7 +220,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #providers: ProvidersController
 
-  signAccountOpController: SignAccountOpController | null = null
+  /**
+   * A possibly outdated instance of the SignAccountOpController. Please always
+   * read the public getter `signAccountOpController` to get the up-to-date
+   * instance. If updating a route consists of:
+   * QUOTE FETCH -> ROUTE START -> ROUTE ESTIMATION
+   *
+   * This instance may be outdated during QUOTE FETCH -> ROUTE START
+   * The reason is that the controller is not immediately destroyed after the
+   * form changes, but instead is being updated after the route is started.
+   */
+  #signAccountOpController: SignAccountOpController | null = null
 
   #portfolioUpdate: Function
 
@@ -389,13 +399,27 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
+  /**
+   * Returns an instance of the SignAccountOpController that is ALWAYS up-to-date with the current
+   * quote and the current form state.
+   */
+  get signAccountOpController() {
+    const controllerFromQuoteId = this.#signAccountOpController?.accountOp.meta?.fromQuoteId
+
+    const isSignAccountOpCtrlStale =
+      controllerFromQuoteId && controllerFromQuoteId !== this.#updateQuoteId
+
+    if (isSignAccountOpCtrlStale) return null
+
+    return this.#signAccountOpController
+  }
+
   get formStatus() {
     if (this.hasProceeded) return SwapAndBridgeFormStatus.Proceeded
 
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
-    if (this.updateQuoteStatus === 'LOADING' && !this.quote)
-      return SwapAndBridgeFormStatus.FetchingRoutes
+    if (this.updateQuoteStatus === 'LOADING') return SwapAndBridgeFormStatus.FetchingRoutes
     if (!this.quote?.routes.filter((route) => !route.hasFailed).length)
       return SwapAndBridgeFormStatus.NoRoutesFound
 
@@ -744,6 +768,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.destroySignAccountOp()
     this.hasProceeded = false
     this.isAutoSelectRouteDisabled = false
+    this.#updateQuoteId = undefined
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -1143,7 +1168,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const quoteId = generateUuid()
     this.#updateQuoteId = quoteId
 
-    const updateQuoteFunction = async () => {
+    const updateQuoteFunction = async (): Promise<boolean | undefined> => {
       if (!this.#selectedAccount.account) return
       if (!this.#getIsFormValidToFetchQuote()) return
       if (!this.fromAmount || !this.fromSelectedToken || !this.toSelectedToken) return
@@ -1374,10 +1399,13 @@ export class SwapAndBridgeController extends EventEmitter {
           }
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
-        await this.initSignAccountOpIfNeeded()
+
+        return true
       } catch (error: any) {
         const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
+
+        return false
       }
     }
 
@@ -1385,13 +1413,16 @@ export class SwapAndBridgeController extends EventEmitter {
       if (this.quote || this.quoteRoutesStatuses) {
         this.quote = null
         this.quoteRoutesStatuses = {}
+        this.updateQuoteStatus = 'INITIAL'
+        this.removeError('no-routes')
         this.#emitUpdateIfNeeded()
       }
       return
     }
 
-    if (!skipStatusUpdate && !this.quote) {
+    if (!skipStatusUpdate) {
       this.updateQuoteStatus = 'LOADING'
+      this.removeError('no-routes')
       this.#emitUpdateIfNeeded()
     }
 
@@ -1399,13 +1430,29 @@ export class SwapAndBridgeController extends EventEmitter {
     if (debounce) await wait(500)
     if (this.#updateQuoteId !== quoteId) return
 
-    await updateQuoteFunction()
+    const isSuccessful = await updateQuoteFunction()
+
+    if (this.#updateQuoteId !== quoteId) return
 
     this.updateQuoteStatus = 'INITIAL'
     this.#emitUpdateIfNeeded()
+
+    if (isSuccessful) {
+      await this.initSignAccountOpIfNeeded(quoteId)
+    } else {
+      // @TODO: This is correct, right?
+      this.destroySignAccountOp()
+      this.emitUpdate()
+    }
   }
 
-  async getRouteStartUserTx(shouldThrowOnError = true): Promise<SwapAndBridgeSendTxRequest | null> {
+  async getRouteStartUserTx(): Promise<
+    | (
+        | (SwapAndBridgeSendTxRequest & { success: true })
+        | (SwapAndBridgeErrorType & { success: false })
+      )
+    | null
+  > {
     if (
       this.formStatus !== SwapAndBridgeFormStatus.ReadyToEstimate &&
       this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit
@@ -1421,12 +1468,28 @@ export class SwapAndBridgeController extends EventEmitter {
         route: this.quote!.selectedRoute
       })
 
-      return routeResult
-    } catch (error: any) {
-      if (shouldThrowOnError) {
-        const { message } = getHumanReadableSwapAndBridgeError(error)
-        throw new EmittableError({ error, level: 'minor', message })
+      return {
+        ...routeResult,
+        success: true
       }
+    } catch (error: any) {
+      const humanizedError = getHumanReadableSwapAndBridgeError(error)
+
+      // Display the error in the UI only if it has a shortMessage
+      // as we don't have much space and there is a default error message
+      if (
+        'shortMessage' in humanizedError &&
+        humanizedError.shortMessage &&
+        typeof humanizedError.shortMessage === 'string'
+      ) {
+        return {
+          success: false,
+          id: 'no-routes',
+          title: humanizedError.shortMessage,
+          level: 'error'
+        }
+      }
+
       return null
     }
   }
@@ -1636,7 +1699,10 @@ export class SwapAndBridgeController extends EventEmitter {
   /**
    * Find the next route in line and try to re-estimate with it
    */
-  async onEstimationFailure(activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId']) {
+  async onEstimationFailure(
+    activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId'],
+    error?: SwapAndBridgeErrorType | null
+  ) {
     if (!this.quote || !this.quote.selectedRoute || this.isAutoSelectRouteDisabled) return
 
     const routeId = activeRouteId ?? this.quote.selectedRoute.routeId
@@ -1654,6 +1720,13 @@ export class SwapAndBridgeController extends EventEmitter {
       this.quote.routes = []
       this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
+
+      // Emit an error only if there are no routes left
+      // and one is provided
+      if (error) {
+        this.addOrUpdateError(error)
+      }
+
       return
     }
 
@@ -1835,11 +1908,11 @@ export class SwapAndBridgeController extends EventEmitter {
   destroySignAccountOp() {
     if (!this.signAccountOpController) return
     this.signAccountOpController.reset()
-    this.signAccountOpController = null
+    this.#signAccountOpController = null
     this.hasProceeded = false
   }
 
-  async initSignAccountOpIfNeeded() {
+  async initSignAccountOpIfNeeded(updateQuoteId?: string) {
     // no updates if the user has commited
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
@@ -1869,13 +1942,17 @@ export class SwapAndBridgeController extends EventEmitter {
       network.chainId
     )
 
-    const userTxn = await this.getRouteStartUserTx(false)
+    if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
+
+    const userTxn = await this.getRouteStartUserTx()
+
+    if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
 
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
-    if (!userTxn) {
+    if (!userTxn || !userTxn.success) {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.onEstimationFailure()
+      this.onEstimationFailure(undefined, userTxn)
       return
     }
 
@@ -1894,6 +1971,9 @@ export class SwapAndBridgeController extends EventEmitter {
       provider,
       accountState
     )
+
+    if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
+
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
@@ -1912,6 +1992,7 @@ export class SwapAndBridgeController extends EventEmitter {
         if (!this.signAccountOpController.accountOp.meta)
           this.signAccountOpController.accountOp.meta = {}
         this.signAccountOpController.accountOp.meta.swapTxn = userTxn
+        this.signAccountOpController.accountOp.meta.fromQuoteId = updateQuoteId
         return
       }
     }
@@ -1938,11 +2019,12 @@ export class SwapAndBridgeController extends EventEmitter {
       },
       meta: {
         swapTxn: userTxn,
-        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+        fromQuoteId: updateQuoteId
       }
     }
 
-    this.signAccountOpController = new SignAccountOpController(
+    this.#signAccountOpController = new SignAccountOpController(
       this.#accounts,
       this.#networks,
       this.#keystore,
@@ -1963,15 +2045,15 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
 
     // propagate updates from signAccountOp here
-    this.signAccountOpController.onUpdate(() => {
+    this.#signAccountOpController.onUpdate(() => {
       this.emitUpdate()
     })
-    this.signAccountOpController.onError((error) => {
+    this.#signAccountOpController.onError((error) => {
       this.#portfolio.overridePendingResults(this.signAccountOpController!.accountOp)
       this.emitError(error)
     })
     // if the estimation emits an error, handle it
-    this.signAccountOpController.estimation.onUpdate(() => {
+    this.#signAccountOpController.estimation.onUpdate(() => {
       if (
         this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
         this.signAccountOpController.estimation.status === EstimationStatus.Error
@@ -2088,7 +2170,8 @@ export class SwapAndBridgeController extends EventEmitter {
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
       supportedChainIds: this.supportedChainIds,
-      swapSignErrors: this.swapSignErrors
+      swapSignErrors: this.swapSignErrors,
+      signAccountOpController: this.signAccountOpController
     }
   }
 }
