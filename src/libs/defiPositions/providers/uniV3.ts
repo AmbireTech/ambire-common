@@ -75,7 +75,8 @@ export async function getUniV3Positions(
         id: pos.positionId.toString(),
         additionalData: {
           inRange: tokenAmounts.isInRage,
-          liquidity: pos.positionInfo.liquidity
+          liquidity: pos.positionInfo.liquidity,
+          name: 'Liquidity Pool'
         },
         assets: [
           {
@@ -104,7 +105,9 @@ export async function getUniV3Positions(
   return {
     providerName: 'Uniswap V3',
     chainId,
-    type: 'liquidity-pool',
+    iconUrl: '',
+    siteUrl: 'https://app.uniswap.org/swap',
+    type: 'common',
     positions
   }
 }
