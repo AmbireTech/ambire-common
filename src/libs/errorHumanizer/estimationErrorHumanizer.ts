@@ -50,7 +50,8 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
       decodedError.reason,
       MESSAGE_PREFIX,
       LAST_RESORT_ERROR_MESSAGE,
-      e
+      e,
+      false
     )
   }
 
