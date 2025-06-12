@@ -22,10 +22,8 @@ import {
 export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
   defiPositionsAccountState: DefiPositionsAccountState,
-  areDefiPositionsLoading: boolean,
-  learnTokens?: (tokensToLearn: { [key: string]: string[] }) => void
+  areDefiPositionsLoading: boolean
 ) => {
-  const tokensToLearn: { [key: string]: string[] } = {}
   if (!portfolioAccountState || !defiPositionsAccountState || areDefiPositionsLoading)
     return portfolioAccountState
 
@@ -58,10 +56,6 @@ export const updatePortfolioStateWithDefiPositions = (
 
         pos.assets.filter(Boolean).forEach((a) => {
           if (a.protocolAsset) {
-            tokensToLearn[chainId] = Array.from(
-              new Set([...(tokensToLearn[chainId] || []), getAddress(a.protocolAsset.address)])
-            )
-
             if (a.protocolAsset?.name) {
               const protocolTokenInPortfolio = tokens.find((t) => {
                 return (
@@ -92,7 +86,17 @@ export const updatePortfolioStateWithDefiPositions = (
                     // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
                   }
                 }
+                const tokenBalanceUSD = positionAsset.priceIn[0]?.price
+                  ? Number(
+                      safeTokenAmountAndNumberMultiplication(
+                        BigInt(positionAsset.amount),
+                        positionAsset.decimals,
+                        positionAsset.priceIn[0].price
+                      )
+                    )
+                  : undefined
 
+                networkBalance += tokenBalanceUSD || 0
                 tokens.push(positionAsset)
               } else {
                 protocolTokenInPortfolio.priceIn =
@@ -123,6 +127,15 @@ export const updatePortfolioStateWithDefiPositions = (
                   )
                 )
               : undefined
+
+            if (a.protocolAsset?.symbol && a.protocolAsset.address) {
+              return (
+                t.chainId.toString() === chainId &&
+                !t.flags.rewardsType &&
+                !t.flags.onGasTank &&
+                t.address === getAddress(a.address)
+              )
+            }
 
             return (
               // chains should match
@@ -160,7 +173,6 @@ export const updatePortfolioStateWithDefiPositions = (
     portfolioAccountState[chainId]!.result!.tokens = tokens
   })
 
-  !!learnTokens && learnTokens(tokensToLearn)
   return portfolioAccountState
 }
 
