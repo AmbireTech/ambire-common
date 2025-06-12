@@ -20,8 +20,11 @@ function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, val
   // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
   const slot = privSlot(slotNumber, keyType, key, valueType).slice(2)
   return Buffer.concat([
+    // @ts-ignore TODO: fix mismatching types
     evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
+    // @ts-ignore TODO: fix mismatching types
     evmPush(Buffer.from(slot, 'hex')),
+    // @ts-ignore TODO: fix mismatching types
     Buffer.from('55', 'hex')
   ])
 }
@@ -39,6 +42,7 @@ export function getProxyDeployBytecode(
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
+    // @ts-ignore TODO: fix mismatching types
     privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'uint256', addr, 'uint256', hash))
   )
   const initial = Buffer.from('3d602d80', 'hex')
@@ -46,6 +50,7 @@ export function getProxyDeployBytecode(
   // @TODO solve this case; this will remove the "max 3 privLevels" restriction
   const offset = storage.length + initial.length + 6 // 6 more bytes including the push added later on
   if (offset > 256) throw new Error('getProxyDeployBytecode: internal: offset>256')
+  // @ts-ignore TODO: fix mismatching types
   const initialCode = Buffer.concat([storage, initial, evmPush(Buffer.from([offset]))])
   const masterAddrBuf = Buffer.from(masterContractAddr.slice(2).replace(/^(00)+/, ''), 'hex')
 

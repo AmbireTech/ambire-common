@@ -165,7 +165,9 @@ export class DappsController extends EventEmitter {
       this.updateDapp(dapp.url, {
         chainId: dapp.chainId,
         isConnected: dapp.isConnected,
-        favorite: dapp.favorite
+        favorite: dapp.favorite,
+        grantedPermissionId: dapp.grantedPermissionId,
+        grantedPermissionAt: dapp.grantedPermissionAt
       })
       return
     }

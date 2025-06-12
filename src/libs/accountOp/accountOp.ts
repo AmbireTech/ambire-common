@@ -1,9 +1,9 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
-import { SINGLETON } from '../../consts/deploy'
-import { AccountId } from '../../interfaces/account'
 // eslint-disable-next-line import/no-cycle
 import { EIP7702Auth } from '../../consts/7702'
+import { SINGLETON } from '../../consts/deploy'
+import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
@@ -76,6 +76,8 @@ export interface AccountOp {
     walletSendCallsVersion?: string
     delegation?: EIP7702Auth
     setDelegation?: boolean
+    /** Used to determine if the account op is up-to-date with the latest quote */
+    fromQuoteId?: string
   }
   flags?: {
     hideActivityBanner?: boolean
