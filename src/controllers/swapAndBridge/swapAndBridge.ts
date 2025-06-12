@@ -38,6 +38,7 @@ import {
   getActiveRoutesForAccount,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
+  getLiFiTokenAddress,
   getSwapAndBridgeCalls,
   sortPortfolioTokenList,
   sortTokenListResponse
@@ -1212,10 +1213,10 @@ export class SwapAndBridgeController extends EventEmitter {
         const quoteResult = await this.#serviceProviderAPI.quote({
           fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
-          fromTokenAddress: this.fromSelectedToken.address,
+          fromTokenAddress: getLiFiTokenAddress(this.fromChainId!, this.fromSelectedToken.address),
           toAsset: this.toSelectedToken,
           toChainId: this.toChainId!,
-          toTokenAddress: this.toSelectedToken.address,
+          toTokenAddress: getLiFiTokenAddress(this.toChainId!, this.toSelectedToken.address),
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
           isSmartAccount: !isBasicAccount(
@@ -1462,9 +1463,12 @@ export class SwapAndBridgeController extends EventEmitter {
     try {
       const routeResult = await this.#serviceProviderAPI.startRoute({
         fromChainId: this.quote!.fromChainId,
-        fromAssetAddress: this.quote!.fromAsset.address,
+        fromAssetAddress: getLiFiTokenAddress(
+          this.quote!.fromChainId,
+          this.quote!.fromAsset.address
+        ),
         toChainId: this.quote!.toChainId,
-        toAssetAddress: this.quote!.toAsset.address,
+        toAssetAddress: getLiFiTokenAddress(this.quote!.toChainId, this.quote!.toAsset.address),
         route: this.quote!.selectedRoute
       })
 
