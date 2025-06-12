@@ -105,6 +105,7 @@ describe('Generic error fallbacks work', () => {
       'The contract reverted',
       MESSAGE_PREFIX,
       '',
+      new Error('The contract reverted'),
       false
     )
 

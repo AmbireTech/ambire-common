@@ -86,6 +86,8 @@ const truncateReason = (reason?: string): string => {
 const getErrorCodeStringFromReason = (reason?: string, withSpace = true): string => {
   const truncatedReason = truncateReason(reason)
 
+  if (!truncatedReason) return ''
+
   return `${withSpace ? ' ' : ''}Error code: ${truncatedReason}`
 }
 

@@ -1,9 +1,8 @@
-import { truncateReason } from 'libs/errorDecoder/helpers'
-
 import EmittableError from '../../classes/EmittableError'
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { decodeError } from '../errorDecoder'
+import { truncateReason } from '../errorDecoder/helpers'
 import { DecodedError } from '../errorDecoder/types'
 import { ESTIMATION_ERRORS, noPrefixReasons } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
