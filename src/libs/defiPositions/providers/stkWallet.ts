@@ -6,7 +6,7 @@ export function getStakedWalletPositions(stkWallet?: TokenResult): PositionsByPr
   if (!stkWallet) return null
 
   const positionInUSD = getAssetValue(
-    stkWallet.amount,
+    BigInt(stkWallet.amount),
     Number(stkWallet.decimals),
     stkWallet.priceIn
   )
