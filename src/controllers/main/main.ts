@@ -550,15 +550,15 @@ export class MainController extends EventEmitter {
     // call closeActionWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like actionsCtrl, signAccountOpCtrl, signMessageCtrl...
     if (this.actions?.currentAction?.type !== 'switchAccount') {
-      this.actions.closeActionWindow()
+      await this.actions.closeActionWindow()
     }
     const swapAndBridgeSigningAction = this.actions.visibleActionsQueue.find(
       ({ type }) => type === 'swapAndBridge'
     )
     if (swapAndBridgeSigningAction) {
-      this.actions.removeAction(swapAndBridgeSigningAction.id)
+      await this.actions.removeAction(swapAndBridgeSigningAction.id)
     }
-    this.selectedAccount.setAccount(accountToSelect)
+    await this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.reset()
     this.transfer.resetForm()
     await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
@@ -975,7 +975,7 @@ export class MainController extends EventEmitter {
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
-    this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
 
     await this.#notificationManager.create({
       title: 'Done!',
@@ -1390,7 +1390,7 @@ export class MainController extends EventEmitter {
 
     // The swap and bridge or transfer is done/forgotten so we can remove the action
     if (!isSigningOrBroadcasting) {
-      this.actions.removeAction(pendingAction.id)
+      await this.actions.removeAction(pendingAction.id)
 
       if (pendingAction.type === 'swapAndBridge') {
         this.swapAndBridge.reset()
@@ -1398,9 +1398,6 @@ export class MainController extends EventEmitter {
         this.transfer.resetForm()
       }
 
-      // TODO: remove this ugly fix.
-      // Issue: https://github.com/AmbireTech/ambire-app/issues/4469
-      await wait(500)
       return false
     }
 
@@ -1419,7 +1416,7 @@ export class MainController extends EventEmitter {
 
     const error = errors[pendingAction.type as keyof typeof errors]
 
-    this.actions.focusActionWindow()
+    await this.actions.focusActionWindow()
     this.emitError({
       level: 'major',
       message: error.message,
@@ -1726,7 +1723,7 @@ export class MainController extends EventEmitter {
         }
 
         if (activeRoute) {
-          this.removeUserRequest(activeRoute.activeRouteId, {
+          await this.removeUserRequest(activeRoute.activeRouteId, {
             shouldRemoveSwapAndBridgeRoute: false,
             shouldOpenNextRequest: false
           })
@@ -1750,11 +1747,11 @@ export class MainController extends EventEmitter {
                 )
               )
             ) {
-              this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
+              await this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
                 shouldRemoveSwapAndBridgeRoute: false,
                 shouldOpenNextRequest: false
               })
-              this.removeUserRequest(`${activeRouteId}-approval`, {
+              await this.removeUserRequest(`${activeRouteId}-approval`, {
                 shouldRemoveSwapAndBridgeRoute: false,
                 shouldOpenNextRequest: false
               })
@@ -1799,7 +1796,7 @@ export class MainController extends EventEmitter {
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            this.addUserRequest(
+            await this.addUserRequest(
               swapAndBridgeUserRequests[i],
               'last',
               openActionWindow ? 'open-action-window' : 'queue'
@@ -1833,7 +1830,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  buildClaimWalletUserRequest(token: TokenResult) {
+  async buildClaimWalletUserRequest(token: TokenResult) {
     if (!this.selectedAccount.account) return
 
     const claimableRewardsData =
@@ -1847,10 +1844,10 @@ export class MainController extends EventEmitter {
       claimableRewardsData
     })
 
-    this.addUserRequest(userRequest)
+    await this.addUserRequest(userRequest)
   }
 
-  buildMintVestingUserRequest(token: TokenResult) {
+  async buildMintVestingUserRequest(token: TokenResult) {
     if (!this.selectedAccount.account) return
 
     const addrVestingData = this.selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
@@ -1862,10 +1859,10 @@ export class MainController extends EventEmitter {
       addrVestingData
     })
 
-    this.addUserRequest(userRequest)
+    await this.addUserRequest(userRequest)
   }
 
-  resolveUserRequest(data: any, requestId: UserRequest['id']) {
+  async resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
@@ -1873,17 +1870,17 @@ export class MainController extends EventEmitter {
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
     if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
-      setTimeout(() => {
-        this.removeUserRequest(requestId)
+      setTimeout(async () => {
+        await this.removeUserRequest(requestId)
         this.emitUpdate()
       }, 300)
     } else {
-      this.removeUserRequest(requestId)
+      await this.removeUserRequest(requestId)
       this.emitUpdate()
     }
   }
 
-  rejectUserRequest(err: string, requestId: UserRequest['id']) {
+  async rejectUserRequest(err: string, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return
 
@@ -1897,17 +1894,17 @@ export class MainController extends EventEmitter {
         isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
         userRequest.meta.isSwapAndBridgeCall
       ) {
-        this.removeUserRequest(userRequest.meta.activeRouteId)
-        this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
-        this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
+        await this.removeUserRequest(userRequest.meta.activeRouteId)
+        await this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
+        await this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
       }
     }
 
     userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-    this.removeUserRequest(requestId)
+    await this.removeUserRequest(requestId)
   }
 
-  rejectSignAccountOpCall(callId: string) {
+  async rejectSignAccountOpCall(callId: string) {
     if (!this.signAccountOp) return
 
     const { calls, chainId, accountAddr } = this.signAccountOp.accountOp
@@ -1923,7 +1920,7 @@ export class MainController extends EventEmitter {
 
         if (userRequest.action.calls.length === 0) {
           // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
-          this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+          await this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
         } else {
           const accountOpAction = makeAccountOpAction({
             account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
@@ -1933,7 +1930,7 @@ export class MainController extends EventEmitter {
             actionsQueue: this.actions.actionsQueue
           })
 
-          this.actions.addOrUpdateAction(accountOpAction)
+          await this.actions.addOrUpdateAction(accountOpAction)
           this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
         }
       }
@@ -1948,7 +1945,7 @@ export class MainController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
+  async removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
     const userRequest = this.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
         r.id as string
@@ -1956,7 +1953,7 @@ export class MainController extends EventEmitter {
     )
 
     if (userRequest) {
-      this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+      await this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
@@ -2012,7 +2009,7 @@ export class MainController extends EventEmitter {
         )
 
         // Remove the request as it's already added
-        this.removeUserRequest(req.id)
+        await this.removeUserRequest(req.id)
 
         // Show a toast
         throw new EmittableError({
@@ -2043,7 +2040,7 @@ export class MainController extends EventEmitter {
         userRequests: this.userRequests,
         actionsQueue: this.actions.actionsQueue
       })
-      this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
+      await this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
       if (this.signAccountOp) {
         if (this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
@@ -2077,7 +2074,7 @@ export class MainController extends EventEmitter {
       if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
       if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
 
-      this.actions.addOrUpdateAction(
+      await this.actions.addOrUpdateAction(
         {
           id,
           type: actionType,
@@ -2094,7 +2091,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonable
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(
+  async removeUserRequest(
     id: UserRequest['id'],
     options?: {
       shouldRemoveSwapAndBridgeRoute: boolean
@@ -2145,7 +2142,7 @@ export class MainController extends EventEmitter {
         meta.chainId
       )
       if (accountOpAction.accountOp.calls.length) {
-        this.actions.addOrUpdateAction(accountOpAction)
+        await this.actions.addOrUpdateAction(accountOpAction)
 
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
@@ -2154,7 +2151,10 @@ export class MainController extends EventEmitter {
         if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
           this.destroySignAccOp()
         }
-        this.actions.removeAction(`${meta.accountAddr}-${meta.chainId}`, shouldOpenNextRequest)
+        await this.actions.removeAction(
+          `${meta.accountAddr}-${meta.chainId}`,
+          shouldOpenNextRequest
+        )
         if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
       }
       if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
@@ -2168,7 +2168,7 @@ export class MainController extends EventEmitter {
         this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
 
       if (!isSelectedAccountSwitched) {
-        this.actions.removeAction(id)
+        await this.actions.removeAction(id)
       } else {
         ;(async () => {
           // eslint-disable-next-line no-restricted-syntax
@@ -2179,7 +2179,7 @@ export class MainController extends EventEmitter {
         })()
       }
     } else {
-      this.actions.removeAction(id, shouldOpenNextRequest)
+      await this.actions.removeAction(id, shouldOpenNextRequest)
     }
     this.emitUpdate()
   }
@@ -2238,7 +2238,7 @@ export class MainController extends EventEmitter {
       await this.addUserRequest(benzinUserRequest, 'first')
     }
 
-    this.actions.removeAction(actionId)
+    await this.actions.removeAction(actionId)
 
     // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
@@ -2252,7 +2252,7 @@ export class MainController extends EventEmitter {
           hash: getDappIdentifier(submittedAccountOp)
         })
 
-        this.removeUserRequest(walletSendCallsUserReq.id, {
+        await this.removeUserRequest(walletSendCallsUserReq.id, {
           shouldRemoveSwapAndBridgeRoute: false,
           // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
           // we don't want to update the account portfolio immediately, as we would lose the simulation.
@@ -2276,7 +2276,7 @@ export class MainController extends EventEmitter {
           })
         }
 
-        this.removeUserRequest(uReq.id, {
+        await this.removeUserRequest(uReq.id, {
           shouldRemoveSwapAndBridgeRoute: false,
           // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
           // we don't want to update the account portfolio immediately, as we would lose the simulation.
@@ -2288,12 +2288,12 @@ export class MainController extends EventEmitter {
       }
     }
 
-    this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
+    await this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
     this.emitUpdate()
   }
 
-  rejectAccountOpAction(
+  async rejectAccountOpAction(
     err: string,
     actionId: AccountOpAction['id'],
     shouldOpenNextAction: boolean
@@ -2306,10 +2306,10 @@ export class MainController extends EventEmitter {
     if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
       this.destroySignAccOp()
     }
-    this.actions.removeAction(actionId, shouldOpenNextAction)
+    await this.actions.removeAction(actionId, shouldOpenNextAction)
     // eslint-disable-next-line no-restricted-syntax
     for (const call of accountOp.calls) {
-      if (call.fromUserRequestId) this.rejectUserRequest(err, call.fromUserRequestId)
+      if (call.fromUserRequestId) await this.rejectUserRequest(err, call.fromUserRequestId)
     }
 
     this.emitUpdate()
