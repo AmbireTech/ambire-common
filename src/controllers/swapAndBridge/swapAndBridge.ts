@@ -655,7 +655,7 @@ export class SwapAndBridgeController extends EventEmitter {
           this.fromAmountInFiat = fromAmount
 
           // Get the number of decimals
-          const amountInFiatDecimals = fromAmount.split('.')[1]?.length || 0
+          const amountInFiatDecimals = 10
           const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
           // Convert the numbers to big int
