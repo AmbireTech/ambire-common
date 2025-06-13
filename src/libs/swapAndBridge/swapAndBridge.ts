@@ -357,6 +357,11 @@ const lifiMapTokenAddr = (chainId: number, tokenAddr: string) => {
   return '0x471EcE3750Da237f93B8E339c536989b8978a438'
 }
 
+const lifiTokenListFilter = (t: SwapAndBridgeToToken) => {
+  // disabled tokens, this one is CELO as an addr on CELO chain (exists as native)
+  return !(t.chainId === 42220 && t.address === '0x471EcE3750Da237f93B8E339c536989b8978a438')
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
@@ -364,5 +369,6 @@ export {
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getSwapAndBridgeCalls,
-  lifiMapTokenAddr
+  lifiMapTokenAddr,
+  lifiTokenListFilter
 }

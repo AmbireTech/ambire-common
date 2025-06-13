@@ -39,6 +39,7 @@ import {
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
+  lifiTokenListFilter,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -926,6 +927,11 @@ export class SwapAndBridgeController extends EventEmitter {
       [...toTokenList, ...additionalTokensFromPortfolio],
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
     )
+
+    // if the provider is lifi, filter out tokens that are not supported by it
+    if (this.#serviceProviderAPI.id === 'lifi') {
+      this.#toTokenList = this.#toTokenList.filter(lifiTokenListFilter)
+    }
 
     if (!this.toSelectedToken) {
       if (addressToSelect) {
