@@ -1,7 +1,7 @@
 import { AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
-import { getAAVEPositions } from '../../libs/defiPositions/providers'
+import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
   AccountState,
@@ -103,9 +103,10 @@ export class DefiPositionsController extends EventEmitter {
 
   async updatePositions(opts?: { chainId?: bigint; maxDataAgeMs?: number }) {
     const { chainId, maxDataAgeMs } = opts || {}
-    if (!this.#selectedAccount.account) return
+    const selectedAccount = this.#selectedAccount.account
+    if (!selectedAccount) return
 
-    const selectedAccountAddr = this.#selectedAccount.account.addr
+    const selectedAccountAddr = selectedAccount.addr
     const networksToUpdate = chainId
       ? this.#networks.networks.filter((n) => n.chainId === chainId)
       : this.#networks.networks
@@ -127,88 +128,147 @@ export class DefiPositionsController extends EventEmitter {
     const prepareNetworks = () => {
       // eslint-disable-next-line no-restricted-syntax
       for (const n of networksToUpdate) {
-        initNetworkState(selectedAccountAddr, n.chainId.toString())
-        this.#state[selectedAccountAddr][n.chainId.toString()].isLoading = true
-        this.#state[selectedAccountAddr][n.chainId.toString()].positionsByProvider = []
-        this.#state[selectedAccountAddr][n.chainId.toString()].updatedAt = undefined
+        const chain = n.chainId.toString()
+        initNetworkState(selectedAccountAddr, chain)
+        Object.assign(this.#state[selectedAccountAddr][chain], {
+          isLoading: true,
+          updatedAt: undefined
+        })
       }
     }
 
+    const lower = (s: string) => s.toLowerCase()
+
+    const fetchCustomPositions = async (
+      addr: string,
+      provider: any,
+      network: any,
+      previous: PositionsByProvider[]
+    ): Promise<PositionsByProvider[]> => {
+      const [aave, uniV3] = await Promise.all([
+        getAAVEPositions(addr, provider, network).catch((e: any) => {
+          console.error('getAAVEPositions error:', e)
+          this.#setProviderError(addr, network.chainId, 'AAVE v3', e?.message || 'Unknown error')
+          return previous.find((p) => p.providerName === 'AAVE v3') || null
+        }),
+        getUniV3Positions(addr, provider, network).catch((e: any) => {
+          console.error('getUniV3Positions error:', e)
+          this.#setProviderError(addr, network.chainId, 'Uniswap V3', e?.message || 'Unknown error')
+          return previous.find((p) => p.providerName === 'Uniswap V3') || null
+        })
+      ])
+
+      return [aave, uniV3].filter(Boolean) as PositionsByProvider[]
+    }
+
     const updateSingleNetwork = async (
-      n: any,
+      network: any,
       debankPositionsByProvider: PositionsByProvider[]
     ) => {
-      initNetworkState(selectedAccountAddr, n.chainId.toString())
+      const chain = network.chainId.toString()
+      initNetworkState(selectedAccountAddr, chain)
 
-      if (this.#getCanSkipUpdate(selectedAccountAddr, n.chainId, maxDataAgeMs)) return
+      if (this.#getCanSkipUpdate(selectedAccountAddr, network.chainId, maxDataAgeMs)) return
 
-      const state = this.#state[selectedAccountAddr][n.chainId.toString()]
-      state.isLoading = true
-      state.providerErrors = []
-      state.error = undefined
+      const state = this.#state[selectedAccountAddr][chain]
+      Object.assign(state, {
+        isLoading: true,
+        providerErrors: [],
+        error: undefined
+      })
       this.emitUpdate()
 
       const previousPositions = state.positionsByProvider
-      let customAavePosition: PositionsByProvider | null = null
+      let customPositions: PositionsByProvider[] = []
+
       try {
-        customAavePosition = await getAAVEPositions(
+        customPositions = await fetchCustomPositions(
           selectedAccountAddr,
-          this.#providers.providers[n.chainId.toString()],
-          n
-        ).catch((e) => {
-          console.error('getAAVEPositions error:', e)
-          this.#setProviderError(
-            selectedAccountAddr,
-            n.chainId,
-            'AAVE v3',
-            e?.message || 'Unknown error'
-          )
-          return previousPositions.find((p) => p.providerName === 'AAVE v3') || null
-        })
+          this.#providers.providers[chain],
+          network,
+          previousPositions
+        )
 
-        if (customAavePosition) {
-          const hasErrors = !!state.providerErrors?.length
-
-          this.#state[selectedAccountAddr][n.chainId.toString()] = {
-            ...state,
-            isLoading: false,
-            positionsByProvider: [customAavePosition],
-            updatedAt: hasErrors ? state.updatedAt : Date.now()
+        if (customPositions.length) {
+          let error: any
+          try {
+            customPositions =
+              (await this.#updatePositionsByProviderAssetPrices(
+                customPositions,
+                network.chainId
+              )) || customPositions
+          } catch (e) {
+            console.error(`#setAssetPrices error for ${selectedAccountAddr} on ${network.name}:`, e)
+            error = DeFiPositionsError.AssetPriceError
           }
 
-          await this.#setAssetPrices(selectedAccountAddr, n.chainId).catch((e) => {
-            console.error(`#setAssetPrices error for ${selectedAccountAddr} on ${n.name}:`, e)
-            this.#state[selectedAccountAddr][n.chainId.toString()].error =
-              DeFiPositionsError.AssetPriceError
-          })
+          const hasErrors = !!state.providerErrors?.length
+          const filteredPrevious = previousPositions.filter(
+            (prev) =>
+              !customPositions.some((c) => lower(c.providerName) === lower(prev.providerName))
+          )
+
+          this.#state[selectedAccountAddr][chain] = {
+            ...state,
+            isLoading: false,
+            positionsByProvider: [...filteredPrevious, ...customPositions],
+            updatedAt: hasErrors ? state.updatedAt : Date.now(),
+            error
+          }
         }
       } catch (e) {
-        console.error(`updatePositions error on ${n.name}`, e)
-        this.#state[selectedAccountAddr][n.chainId.toString()] = {
+        console.error(`updatePositions error on ${network.name}`, e)
+        this.#state[selectedAccountAddr][chain] = {
           isLoading: false,
           positionsByProvider: previousPositions || [],
           error: DeFiPositionsError.CriticalError
         }
       }
 
-      // Update with latest fetched positions if available
-      const chainPositions = debankPositionsByProvider.filter(
-        (p) => String(p.chainId) === String(n.chainId)
+      const positionsByProvider = debankPositionsByProvider.filter(
+        (p) => String(p.chainId) === String(network.chainId)
       )
 
-      let positionsByProvider = chainPositions
+      const positionMap = new Map(positionsByProvider.map((p) => [lower(p.providerName), p]))
 
-      if (customAavePosition) {
-        positionsByProvider = positionsByProvider.filter(
-          (p) => p.providerName.toLowerCase() !== customAavePosition!.providerName.toLowerCase()
-        )
-        positionsByProvider.push(customAavePosition)
+      // eslint-disable-next-line no-restricted-syntax
+      for (const custom of customPositions) {
+        const key = lower(custom.providerName)
+
+        if (custom.providerName === 'Uniswap V3') {
+          const debankUni = positionMap.get(key)
+          if (debankUni) {
+            const merged = {
+              ...debankUni,
+              positions: debankUni.positions.map((pos) => {
+                const match = custom.positions.find(
+                  (p) => p.id === pos.additionalData.positionIndex
+                )
+                return match
+                  ? {
+                      ...pos,
+                      additionalData: {
+                        ...pos.additionalData,
+                        inRange: match.additionalData.inRange
+                      }
+                    }
+                  : pos
+              })
+            } as PositionsByProvider
+
+            positionMap.set(key, merged)
+            // eslint-disable-next-line no-continue
+            continue
+          }
+        }
+
+        positionMap.set(key, custom)
       }
 
-      this.#state[selectedAccountAddr][n.chainId.toString()] = {
+      this.#state[selectedAccountAddr][chain] = {
         isLoading: false,
-        positionsByProvider,
-        updatedAt: Date.now() // use `body.timestamp` if needed
+        positionsByProvider: Array.from(positionMap.values()),
+        updatedAt: Date.now()
       }
     }
 
@@ -219,48 +279,49 @@ export class DefiPositionsController extends EventEmitter {
       const body = await resp.json()
       if (resp.status !== 200 || body?.message || body?.error) throw body
 
-      const positionsByProvider = (body.data as PositionsByProvider[]) || []
+      const debankPositions = (body.data as PositionsByProvider[]) || []
 
-      await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, positionsByProvider)))
+      await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))
     } catch (err) {
       console.error('Top-level fetch error:', err)
 
       await Promise.all(
         networksToUpdate.map(async (n) => {
-          initNetworkState(selectedAccountAddr, n.chainId.toString())
+          const chain = n.chainId.toString()
+          initNetworkState(selectedAccountAddr, chain)
 
           if (this.#getCanSkipUpdate(selectedAccountAddr, n.chainId, maxDataAgeMs)) return
 
-          this.#state[selectedAccountAddr][n.chainId.toString()].isLoading = true
-          this.#state[selectedAccountAddr][n.chainId.toString()].providerErrors = []
-          this.#state[selectedAccountAddr][n.chainId.toString()].error = undefined
+          Object.assign(this.#state[selectedAccountAddr][chain], {
+            isLoading: true,
+            providerErrors: [],
+            error: undefined
+          })
         })
       )
     } finally {
       this.emitUpdate()
     }
 
-    // If this function is ever deleted, we should add an emitUpdate after the Promise.all
-    // to ensure the UI is updated when the user changes the selected account and the positions
-    // are retrieved from cache.
     await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
   }
 
-  async #setAssetPrices(accountAddr: string, chainId: bigint) {
+  async #updatePositionsByProviderAssetPrices(
+    positionsByProvider: PositionsByProvider[],
+    chainId: bigint
+  ) {
     const platformId = this.#networks.networks.find((n) => n.chainId === chainId)?.platformId
 
     // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
     // since it would return nothing.
     // This can happen when adding a custom network that doesn't have a CoinGecko platform ID.
-    if (!platformId) throw new Error('Missing `platformId`')
+    if (!platformId) return null
 
     const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
 
-    const networkState = this.#state[accountAddr][chainId.toString()]
-
     const addresses: string[] = []
 
-    networkState.positionsByProvider.forEach((providerPos) => {
+    positionsByProvider.forEach((providerPos) => {
       providerPos.positions.forEach((p) => {
         p.assets.forEach((a) => {
           addresses.push(a.address)
@@ -280,13 +341,10 @@ export class DefiPositionsController extends EventEmitter {
     // eslint-disable-next-line no-prototype-builtins
     if (body.hasOwnProperty('error')) throw body
 
-    const positionsByProviderWithPrices = this.#state[accountAddr][
-      chainId.toString()
-    ].positionsByProvider.map((positionsByProvider) => {
-      if (positionsByProvider.providerName.toLowerCase().includes('aave'))
-        return positionsByProvider
+    const positionsByProviderWithPrices = positionsByProvider.map((posByProvider) => {
+      if (posByProvider.providerName.toLowerCase().includes('aave')) return posByProvider
 
-      const updatedPositions = positionsByProvider.positions.map((position) => {
+      const updatedPositions = posByProvider.positions.map((position) => {
         let positionInUSD = position.additionalData.positionInUSD || 0
 
         const updatedAssets = position.assets.map((asset) => {
@@ -312,7 +370,7 @@ export class DefiPositionsController extends EventEmitter {
         }
       })
 
-      let positionInUSD = positionsByProvider.positionInUSD
+      let positionInUSD = posByProvider.positionInUSD
 
       // Already set in the corresponding lib
       if (!positionInUSD) {
@@ -321,10 +379,10 @@ export class DefiPositionsController extends EventEmitter {
         }, 0)
       }
 
-      return { ...positionsByProvider, positions: updatedPositions, positionInUSD }
+      return { ...posByProvider, positions: updatedPositions, positionInUSD }
     })
 
-    this.#state[accountAddr][chainId.toString()].positionsByProvider = positionsByProviderWithPrices
+    return positionsByProviderWithPrices
   }
 
   removeNetworkData(chainId: bigint) {
