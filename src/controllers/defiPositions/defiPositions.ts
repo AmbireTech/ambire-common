@@ -120,7 +120,8 @@ export class DefiPositionsController extends EventEmitter {
         this.#state[addr][chain] = {
           isLoading: false,
           positionsByProvider: [],
-          updatedAt: undefined
+          updatedAt: undefined,
+          providerErrors: []
         }
       }
     }
@@ -132,7 +133,8 @@ export class DefiPositionsController extends EventEmitter {
         initNetworkState(selectedAccountAddr, chain)
         Object.assign(this.#state[selectedAccountAddr][chain], {
           isLoading: true,
-          updatedAt: undefined
+          updatedAt: undefined,
+          providerErrors: []
         })
       }
     }
@@ -219,6 +221,7 @@ export class DefiPositionsController extends EventEmitter {
       } catch (e) {
         console.error(`updatePositions error on ${network.name}`, e)
         this.#state[selectedAccountAddr][chain] = {
+          providerErrors: this.#state[selectedAccountAddr][chain].providerErrors || [],
           isLoading: false,
           positionsByProvider: previousPositions || [],
           error: DeFiPositionsError.CriticalError
@@ -266,6 +269,7 @@ export class DefiPositionsController extends EventEmitter {
       }
 
       this.#state[selectedAccountAddr][chain] = {
+        providerErrors: this.#state[selectedAccountAddr][chain].providerErrors || [],
         isLoading: false,
         positionsByProvider: Array.from(positionMap.values()),
         updatedAt: Date.now()
