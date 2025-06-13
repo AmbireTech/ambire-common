@@ -12,7 +12,7 @@ export enum DeFiPositionsError {
   CriticalError = 'CriticalError'
 }
 
-export type ProviderName = 'AAVE v3' | 'Uniswap V3'
+export type ProviderName = 'AAVE v3' | 'Uniswap V3' | 'Ambire' | string
 
 export interface PositionAsset {
   address: string
