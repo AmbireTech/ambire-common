@@ -659,7 +659,10 @@ export class SwapAndBridgeController extends EventEmitter {
           const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
           // Convert the numbers to big int
-          const amountInFiatBigInt = parseUnits(fromAmountFormatted, amountInFiatDecimals)
+          const amountInFiatBigInt = parseUnits(
+            getSanitizedAmount(fromAmountFormatted, amountInFiatDecimals),
+            amountInFiatDecimals
+          )
 
           this.fromAmount = formatUnits(
             (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,

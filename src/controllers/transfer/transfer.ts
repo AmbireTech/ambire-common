@@ -450,7 +450,10 @@ export class TransferController extends EventEmitter {
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       // Convert the numbers to big int
-      const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals)
+      const amountInFiatBigInt = parseUnits(
+        getSanitizedAmount(fieldValue, amountInFiatDecimals),
+        amountInFiatDecimals
+      )
 
       this.amount = formatUnits(
         (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
