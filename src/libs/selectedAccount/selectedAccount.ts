@@ -98,10 +98,26 @@ export const updatePortfolioStateWithDefiPositions = (
 
                 networkBalance += tokenBalanceUSD || 0
                 tokens.push(positionAsset)
-              } else {
+              } else if (
+                !protocolTokenInPortfolio.priceIn.length &&
+                protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow
+              ) {
                 protocolTokenInPortfolio.priceIn =
                   a.type === AssetType.Collateral ? [a.priceIn] : []
                 protocolTokenInPortfolio.flags.defiTokenType = a.type
+
+                if (a.type !== AssetType.Borrow) {
+                  const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
+                    ? Number(
+                        safeTokenAmountAndNumberMultiplication(
+                          BigInt(protocolTokenInPortfolio.amount),
+                          protocolTokenInPortfolio.decimals,
+                          protocolTokenInPortfolio.priceIn[0].price
+                        )
+                      )
+                    : undefined
+                  networkBalance += tokenBalanceUSD || 0
+                }
               }
             }
           }
