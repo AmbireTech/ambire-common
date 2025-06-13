@@ -3,7 +3,8 @@ import { Price } from '../../interfaces/assets'
 export enum AssetType {
   Liquidity,
   Collateral,
-  Borrow
+  Borrow,
+  Reward
 }
 
 export enum DeFiPositionsError {
@@ -11,7 +12,7 @@ export enum DeFiPositionsError {
   CriticalError = 'CriticalError'
 }
 
-export type ProviderName = 'AAVE v3' | 'Uniswap V3'
+export type ProviderName = 'AAVE v3' | 'Uniswap V3' | 'Ambire' | string
 
 export interface PositionAsset {
   address: string
@@ -19,9 +20,10 @@ export interface PositionAsset {
   name: string
   decimals: number
   amount: bigint
+  iconUrl: string
   simulationAmount?: bigint
   amountPostSimulation?: bigint
-  priceIn: Price[]
+  priceIn: Price
   value?: number
   type: AssetType
   additionalData?: {
@@ -67,7 +69,23 @@ export type NetworksWithPositionsByAccounts = {
 export type PositionsByProvider = {
   providerName: ProviderName
   chainId: bigint
-  type: 'lending' | 'liquidity-pool'
+  iconUrl: string
+  siteUrl: string
+  type:
+    | 'common'
+    | 'locked'
+    | 'lending'
+    | 'leveraged_farming'
+    | 'vesting'
+    | 'reward'
+    | 'options_seller'
+    | 'options_buyer'
+    | 'insurance_seller'
+    | 'insurance_buyer'
+    | 'perpetuals'
+    | 'nft_common'
+    | 'nft_lending'
+    | 'nft_fraction'
   positions: Position[]
   positionInUSD?: number
 }

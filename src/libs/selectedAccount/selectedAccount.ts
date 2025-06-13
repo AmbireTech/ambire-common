@@ -1,3 +1,5 @@
+import { getAddress } from 'ethers'
+
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioState,
@@ -32,93 +34,152 @@ export const updatePortfolioStateWithDefiPositions = (
 
     const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
-
     const positions = defiPositionsAccountState[chainId] || {}
 
     positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
-      if (posByProv.type === 'liquidity-pool') {
-        networkBalance += posByProv.positionInUSD || 0
-        return
-      }
-
       posByProv.positions.forEach((pos) => {
-        pos.assets
-          .filter((a) => a.type !== AssetType.Liquidity && a.protocolAsset)
-          .forEach((a) => {
-            const tokenInPortfolio = tokens.find((t) => {
-              return (
-                t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
-                t.chainId.toString() === chainId &&
-                !t.flags.rewardsType &&
-                !t.flags.onGasTank
-              )
-            })
+        if (pos.additionalData?.pool?.controller) {
+          const tokenInPortfolio = tokens.find((t) => {
+            return (
+              t.address.toLowerCase() ===
+                (pos.additionalData?.pool?.controller || '').toLowerCase() &&
+              t.chainId.toString() === chainId &&
+              !t.flags.rewardsType &&
+              !t.flags.onGasTank
+            )
+          })
 
-            if (tokenInPortfolio?.flags.isHidden) return
+          if (tokenInPortfolio) return
+        }
 
-            // Add only the balance of the collateral tokens to the network balance
-            if (a.type === AssetType.Collateral) {
-              const protocolPriceUSD = a.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
+        let shouldAddPositionUSDAmountToTheTotalBalance = true
 
-              const protocolTokenBalanceUSD = protocolPriceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(tokenInPortfolio?.amountPostSimulation || a.amount),
-                      Number(a.protocolAsset!.decimals),
-                      protocolPriceUSD
+        pos.assets.filter(Boolean).forEach((a) => {
+          if (a.protocolAsset) {
+            if (a.protocolAsset?.name) {
+              const protocolTokenInPortfolio = tokens.find((t) => {
+                return (
+                  t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+                  t.chainId.toString() === chainId &&
+                  !t.flags.rewardsType &&
+                  !t.flags.onGasTank
+                )
+              })
+              if (!protocolTokenInPortfolio) {
+                const positionAsset: TokenResult = {
+                  amount: a.amount,
+                  // Only list the borrowed asset with no price
+                  priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
+                  decimals: Number(a.protocolAsset!.decimals),
+                  address: a.protocolAsset!.address,
+                  symbol: a.protocolAsset!.symbol,
+                  name: a.protocolAsset!.name,
+                  chainId: BigInt(chainId),
+                  flags: {
+                    canTopUpGasTank: false,
+                    isFeeToken: false,
+                    onGasTank: false,
+                    rewardsType: null,
+                    defiTokenType: a.type
+                    // @BUG: defi positions tokens can't be hidden and can be added as custom
+                    // because processTokens is called in the portfolio
+                    // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
+                  }
+                }
+                const tokenBalanceUSD = positionAsset.priceIn[0]?.price
+                  ? Number(
+                      safeTokenAmountAndNumberMultiplication(
+                        BigInt(positionAsset.amount),
+                        positionAsset.decimals,
+                        positionAsset.priceIn[0].price
+                      )
                     )
-                  )
-                : undefined
+                  : undefined
 
-              networkBalance += protocolTokenBalanceUSD || 0
-            }
+                networkBalance += tokenBalanceUSD || 0
+                tokens.push(positionAsset)
+              } else if (
+                !protocolTokenInPortfolio.priceIn.length &&
+                protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow
+              ) {
+                protocolTokenInPortfolio.priceIn =
+                  a.type === AssetType.Collateral ? [a.priceIn] : []
+                protocolTokenInPortfolio.flags.defiTokenType = a.type
 
-            if (tokenInPortfolio) {
-              const priceUSD = tokenInPortfolio.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
-
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(tokenInPortfolio.amountPostSimulation || tokenInPortfolio.amount),
-                      tokenInPortfolio.decimals,
-                      priceUSD
-                    )
-                  )
-                : undefined
-
-              networkBalance -= tokenBalanceUSD || 0 // deduct portfolio token balance
-              // Get the price from defiPositions
-              tokenInPortfolio.priceIn = a.type === AssetType.Collateral ? a.priceIn : []
-              tokenInPortfolio.flags.defiTokenType = a.type
-            } else {
-              const positionAsset: TokenResult = {
-                amount: a.amount,
-                // Only list the borrowed asset with no price
-                priceIn: a.type === AssetType.Collateral ? a.priceIn : [],
-                decimals: Number(a.protocolAsset!.decimals),
-                address: a.protocolAsset!.address,
-                symbol: a.protocolAsset!.symbol,
-                name: a.protocolAsset!.name,
-                chainId: BigInt(chainId),
-                flags: {
-                  canTopUpGasTank: false,
-                  isFeeToken: false,
-                  onGasTank: false,
-                  rewardsType: null,
-                  defiTokenType: a.type
-                  // @BUG: defi positions tokens can't be hidden and can be added as custom
-                  // because processTokens is called in the portfolio
-                  // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
+                if (a.type !== AssetType.Borrow) {
+                  const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
+                    ? Number(
+                        safeTokenAmountAndNumberMultiplication(
+                          BigInt(protocolTokenInPortfolio.amount),
+                          protocolTokenInPortfolio.decimals,
+                          protocolTokenInPortfolio.priceIn[0].price
+                        )
+                      )
+                    : undefined
+                  networkBalance += tokenBalanceUSD || 0
                 }
               }
-
-              tokens.push(positionAsset)
             }
+          }
+
+          function isTokenPriceWithinHalfPercent(price1: any, price2: any) {
+            const diff = Math.abs(price1 - price2)
+            const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2)) // 0.5% of the larger value
+            return diff <= threshold
+          }
+
+          // search the asset in the portfolio tokens
+          const tokenInPortfolio = tokens.find((t) => {
+            const priceUSD = t.priceIn.find(
+              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+            )?.price
+
+            const tokenBalanceUSD = priceUSD
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(t.amountPostSimulation || t.amount),
+                    t.decimals,
+                    priceUSD
+                  )
+                )
+              : undefined
+
+            if (a.protocolAsset?.symbol && a.protocolAsset.address) {
+              return (
+                t.chainId.toString() === chainId &&
+                !t.flags.rewardsType &&
+                !t.flags.onGasTank &&
+                t.address === getAddress(a.address)
+              )
+            }
+
+            return (
+              // chains should match
+              t.chainId.toString() === chainId &&
+              !t.flags.rewardsType &&
+              !t.flags.onGasTank &&
+              // the portfolio token should contain the original asset symbol
+              t.symbol.toLowerCase().includes(a.symbol.toLowerCase()) &&
+              // but should be a different token symbol
+              t.symbol.toLowerCase() !== a.symbol.toLowerCase() &&
+              // and prices should have no more than 5% diff
+              isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value)
+            )
           })
+
+          if (tokenInPortfolio?.flags.isHidden) return
+
+          if (tokenInPortfolio) {
+            shouldAddPositionUSDAmountToTheTotalBalance = false
+            // Get the price from defiPositions
+            tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
+          }
+        })
+
+        if (shouldAddPositionUSDAmountToTheTotalBalance) {
+          networkBalance +=
+            pos.additionalData.collateralInUSD || pos.additionalData.positionInUSD || 0
+        }
       })
     })
 

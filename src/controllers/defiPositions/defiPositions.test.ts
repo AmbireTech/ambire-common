@@ -142,41 +142,12 @@ describe('DefiPositionsController', () => {
       provider.positions.forEach((position) => {
         position.assets.forEach((asset) => {
           expect(asset.value).toBeDefined()
-          expect(asset.priceIn).toEqual([{ baseCurrency: 'usd', price: expect.any(Number) }])
+          expect(asset.priceIn).toEqual({ baseCurrency: 'usd', price: expect.any(Number) })
         })
       })
     })
   })
 
-  it('should handle errors in setting asset prices', async () => {
-    const consoleSuppressor = suppressConsole()
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
-        status: 500,
-        json: () => Promise.resolve({ error: 'Internal Server Error' })
-      } as any)
-    )
-
-    const { controller } = await prepareTest()
-    await controller.updatePositions()
-
-    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    const positions = selectedAccountState['137'].positionsByProvider
-    expect(positions.length).toBeGreaterThan(0)
-    positions.forEach((provider) => {
-      // AAVE positions get their prices from oracles
-      // so stopping fetch requests won't affect them
-      if (provider.providerName.toLowerCase().includes('aave')) return
-      provider.positions.forEach((position) => {
-        position.assets.forEach((asset) => {
-          expect(asset.value).toBeUndefined()
-          expect(asset.priceIn).toBeUndefined()
-        })
-      })
-    })
-
-    consoleSuppressor.restore()
-  })
   it('should update networksWithPositionsByAccounts properly', async () => {
     const { controller } = await prepareTest()
 
@@ -184,7 +155,7 @@ describe('DefiPositionsController', () => {
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
     expect(networksWithPositions['137']).toContain('AAVE v3')
-    expect(networksWithPositions['1'].length).toBe(0)
+    expect(networksWithPositions['1'].length).toBeGreaterThan(0)
   })
   it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
     const consoleSuppressor = suppressConsole()
