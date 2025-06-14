@@ -123,8 +123,6 @@ const validateSendTransferAddress = (
 
 const validateSendTransferAmount = (
   amount: string,
-  maxAmount: number,
-  maxAmountInFiat: number,
   selectedAsset: TokenResult
 ): ValidateReturnType => {
   const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
@@ -156,9 +154,7 @@ const validateSendTransferAmount = (
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${Number(maxAmount) || 0} ${
-            selectedAsset?.symbol
-          }${maxAmountInFiat ? `/ ${Number(maxAmountInFiat)} USD.` : ''}`
+          message: 'Insufficient amount.'
         }
       }
     }
