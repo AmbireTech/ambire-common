@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -11,6 +12,7 @@ import {
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
+import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 // eslint-disable-next-line import/no-cycle
@@ -76,8 +78,6 @@ export class SelectedAccountController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  defiPositions: PositionsByProvider[] = []
-
   #portfolioErrors: SelectedAccountBalanceError[] = []
 
   #defiPositionsErrors: SelectedAccountBalanceError[] = []
@@ -90,6 +90,25 @@ export class SelectedAccountController extends EventEmitter {
   initialLoadPromise: Promise<void>
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
+
+  #_defiPositions: PositionsByProvider[] = []
+
+  set defiPositions(val: PositionsByProvider[]) {
+    this.#_defiPositions = val
+  }
+
+  get defiPositions() {
+    const stkWalletToken = this.portfolio.tokens.find(
+      (t) => t.chainId === 1n && t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
+    )
+    const ambireStakedWalletDefiPosition = getStakedWalletPositions(stkWalletToken)
+
+    if (ambireStakedWalletDefiPosition) {
+      return [ambireStakedWalletDefiPosition, ...this.#_defiPositions]
+    }
+
+    return this.#_defiPositions
+  }
 
   constructor({ storage, accounts }: { storage: StorageController; accounts: AccountsController }) {
     super()
@@ -337,7 +356,9 @@ export class SelectedAccountController extends EventEmitter {
     const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
       const positions = provider.positions
         .map((position) => {
-          const assets = position.assets.sort((a, b) => sortByValue(a.value, b.value))
+          const assets = position.assets
+            .filter(Boolean)
+            .sort((a, b) => sortByValue(a.value, b.value))
 
           return { ...position, assets }
         })
@@ -503,7 +524,8 @@ export class SelectedAccountController extends EventEmitter {
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       areDefiPositionsLoading: this.areDefiPositionsLoading,
-      balanceAffectingErrors: this.balanceAffectingErrors
+      balanceAffectingErrors: this.balanceAffectingErrors,
+      defiPositions: this.defiPositions
     }
   }
 }
