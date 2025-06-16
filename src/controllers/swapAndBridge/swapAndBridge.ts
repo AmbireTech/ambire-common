@@ -419,7 +419,8 @@ export class SwapAndBridgeController extends EventEmitter {
     if (this.hasProceeded) return SwapAndBridgeFormStatus.Proceeded
 
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
-    if (this.validateFromAmount.message) return SwapAndBridgeFormStatus.Invalid
+    if (this.validateFromAmount.message || this.swapSignErrors.length)
+      return SwapAndBridgeFormStatus.Invalid
     if (this.updateQuoteStatus === 'LOADING') return SwapAndBridgeFormStatus.FetchingRoutes
     if (!this.quote?.routes.filter((route) => !route.hasFailed).length)
       return SwapAndBridgeFormStatus.NoRoutesFound
@@ -1168,6 +1169,9 @@ export class SwapAndBridgeController extends EventEmitter {
     // no updates if the user has commited
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
       return
+
+    // no quote fetch if there are errors
+    if (this.swapSignErrors.length) return
 
     const quoteId = generateUuid()
     this.#updateQuoteId = quoteId
@@ -2153,6 +2157,18 @@ export class SwapAndBridgeController extends EventEmitter {
     ) {
       errors.push({
         title: 'Error detected in the pending batch. Please review it before proceeding'
+      })
+    }
+
+    // if we're bridging to ethereum, make the min from amount 10 usd
+    if (
+      isBridge &&
+      this.toChainId === 1 &&
+      this.fromAmountInFiat &&
+      Number(this.fromAmountInFiat) < 10
+    ) {
+      errors.push({
+        title: 'Min amount for bridging to Ethereum is $10'
       })
     }
 
