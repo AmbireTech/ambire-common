@@ -13,11 +13,17 @@ function getGenericMessageFromType(
   reason: DecodedError['reason'],
   messagePrefix: string,
   lastResortMessage: string,
-  originalError?: any
+  originalError?: any,
+  // Whether to include the reason in the message. This is needed
+  // for estimation errors where the reason is displayed separately
+  // and we don't want to repeat it in the message.
+  withReason = true
 ): string {
-  const messageSuffixNoSupport = getErrorCodeStringFromReason(
-    reason || originalError?.message || originalError?.error?.message || ''
-  )
+  const messageSuffixNoSupport = withReason
+    ? getErrorCodeStringFromReason(
+        reason || originalError?.message || originalError?.error?.message || ''
+      )
+    : ''
   const messageSuffix = `${messageSuffixNoSupport}\nPlease try again or contact Ambire support for assistance.`
   const origin = errorType?.split('Error')?.[0] || ''
 

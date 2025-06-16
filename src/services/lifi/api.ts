@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -29,6 +29,7 @@ import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  lifiMapTokenAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
@@ -41,7 +42,14 @@ const normalizeLiFiTokenToSwapAndBridgeToToken = (
 ): SwapAndBridgeToToken => {
   const { name, address, decimals, symbol, logoURI: icon } = token
 
-  return { name, address, decimals, symbol, icon, chainId: toChainId }
+  return {
+    name,
+    address: lifiMapTokenAddr(toChainId, address),
+    decimals,
+    symbol,
+    icon,
+    chainId: toChainId
+  }
 }
 
 const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] => {
@@ -408,9 +416,9 @@ export class LiFiAPI {
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
-      fromTokenAddress,
+      fromTokenAddress: lifiMapTokenAddr(fromChainId, fromTokenAddress),
       toChainId: toChainId.toString(),
-      toTokenAddress,
+      toTokenAddress: lifiMapTokenAddr(toChainId, toTokenAddress),
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
