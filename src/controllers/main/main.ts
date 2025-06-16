@@ -1747,11 +1747,11 @@ export class MainController extends EventEmitter {
                 )
               )
             ) {
-              await this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
+              this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
                 shouldRemoveSwapAndBridgeRoute: false,
                 shouldOpenNextRequest: false
               })
-              await this.removeUserRequest(`${activeRouteId}-approval`, {
+              this.removeUserRequest(`${activeRouteId}-approval`, {
                 shouldRemoveSwapAndBridgeRoute: false,
                 shouldOpenNextRequest: false
               })
@@ -1796,13 +1796,13 @@ export class MainController extends EventEmitter {
 
         for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
           if (i === 0) {
-            await this.addUserRequest(
+            this.addUserRequest(
               swapAndBridgeUserRequests[i],
               'last',
               openActionWindow ? 'open-action-window' : 'queue'
             )
           } else {
-            await this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
+            this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
           }
         }
 
@@ -1894,9 +1894,9 @@ export class MainController extends EventEmitter {
         isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
         userRequest.meta.isSwapAndBridgeCall
       ) {
-        await this.removeUserRequest(userRequest.meta.activeRouteId)
-        await this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
-        await this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
+        this.removeUserRequest(userRequest.meta.activeRouteId)
+        this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
+        this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
       }
     }
 
@@ -2174,7 +2174,7 @@ export class MainController extends EventEmitter {
           // eslint-disable-next-line no-restricted-syntax
           for (const r of requestsToAddOrRemove) {
             this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-            await this.addUserRequest(r)
+            this.addUserRequest(r)
           }
         })()
       }
@@ -2252,7 +2252,7 @@ export class MainController extends EventEmitter {
           hash: getDappIdentifier(submittedAccountOp)
         })
 
-        await this.removeUserRequest(walletSendCallsUserReq.id, {
+        this.removeUserRequest(walletSendCallsUserReq.id, {
           shouldRemoveSwapAndBridgeRoute: false,
           // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
           // we don't want to update the account portfolio immediately, as we would lose the simulation.
@@ -2276,7 +2276,7 @@ export class MainController extends EventEmitter {
           })
         }
 
-        await this.removeUserRequest(uReq.id, {
+        this.removeUserRequest(uReq.id, {
           shouldRemoveSwapAndBridgeRoute: false,
           // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
           // we don't want to update the account portfolio immediately, as we would lose the simulation.
