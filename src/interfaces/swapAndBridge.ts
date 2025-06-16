@@ -289,6 +289,13 @@ export type SocketAPISendTransactionRequest = {
   userTxIndex: number
   userTxType: 'fund-movr' | 'dex-swap'
   value: string
+  serviceFee: {
+    included: boolean
+    amount: string
+    amountUSD: string
+    description: string
+    name: string
+  }[]
 }
 
 export type SwapAndBridgeSendTxRequest = {
