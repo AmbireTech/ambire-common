@@ -89,6 +89,7 @@ import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
 import {
   AccountOpAction,
+  Action,
   ActionExecutionType,
   ActionPosition,
   ActionsController
@@ -206,7 +207,7 @@ export class MainController extends EventEmitter {
 
   userRequests: UserRequest[] = []
 
-  userRequestWaitingAccountSwitch: UserRequest[] = []
+  userRequestsWaitingAccountSwitch: UserRequest[] = []
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -373,11 +374,12 @@ export class MainController extends EventEmitter {
         const userRequestsToRejectOnWindowClose = this.userRequests.filter(
           (r) => r.action.kind !== 'calls'
         )
-        userRequestsToRejectOnWindowClose.forEach((r) =>
-          this.rejectUserRequest(ethErrors.provider.userRejectedRequest().message, r.id)
+        this.rejectUserRequests(
+          ethErrors.provider.userRejectedRequest().message,
+          userRequestsToRejectOnWindowClose.map((r) => r.id)
         )
 
-        this.userRequestWaitingAccountSwitch = []
+        this.userRequestsWaitingAccountSwitch = []
         this.emitUpdate()
       }
     })
@@ -1747,14 +1749,16 @@ export class MainController extends EventEmitter {
                 )
               )
             ) {
-              this.removeUserRequest(`${activeRouteId}-revoke-approval`, {
-                shouldRemoveSwapAndBridgeRoute: false,
-                shouldOpenNextRequest: false
-              })
-              this.removeUserRequest(`${activeRouteId}-approval`, {
-                shouldRemoveSwapAndBridgeRoute: false,
-                shouldOpenNextRequest: false
-              })
+              await this.removeUserRequests(
+                [
+                  `${activeRoute.activeRouteId}-approval`,
+                  `${activeRoute.activeRouteId}-revoke-approval`
+                ],
+                {
+                  shouldRemoveSwapAndBridgeRoute: false,
+                  shouldOpenNextRequest: false
+                }
+              )
             }
           }
         }
@@ -1794,17 +1798,11 @@ export class MainController extends EventEmitter {
           getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
 
-        for (let i = 0; i < swapAndBridgeUserRequests.length; i++) {
-          if (i === 0) {
-            this.addUserRequest(
-              swapAndBridgeUserRequests[i],
-              'last',
-              openActionWindow ? 'open-action-window' : 'queue'
-            )
-          } else {
-            this.addUserRequest(swapAndBridgeUserRequests[i], 'last', 'queue')
-          }
-        }
+        await this.addUserRequests(
+          swapAndBridgeUserRequests,
+          'last',
+          openActionWindow ? 'open-action-window' : 'queue'
+        )
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           await this.swapAndBridge.addActiveRoute({
@@ -1880,28 +1878,39 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async rejectUserRequest(err: string, requestId: UserRequest['id']) {
-    const userRequest = this.userRequests.find((r) => r.id === requestId)
-    if (!userRequest) return
+  async rejectUserRequests(err: string, requestIds: UserRequest['id'][]) {
+    const userRequestsToRemove: string[] = []
 
-    // if the userRequest that is about to be removed is an approval request
-    // find and remove the associated pending transaction request if there is any
-    // this is valid scenario for a swap & bridge txs with a BA
-    if (userRequest.action.kind === 'calls') {
-      const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
+    requestIds.forEach((requestId) => {
+      const userRequest = this.userRequests.find((r) => r.id === requestId)
+      if (!userRequest) return
 
-      if (
-        isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
-        userRequest.meta.isSwapAndBridgeCall
-      ) {
-        this.removeUserRequest(userRequest.meta.activeRouteId)
-        this.removeUserRequest(`${userRequest.meta.activeRouteId}-approval`)
-        this.removeUserRequest(`${userRequest.meta.activeRouteId}-revoke-approval`)
+      // if the userRequest that is about to be removed is an approval request
+      // find and remove the associated pending transaction request if there is any
+      // this is valid scenario for a swap & bridge txs with a BA
+      if (userRequest.action.kind === 'calls') {
+        const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
+
+        if (
+          isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
+          userRequest.meta.isSwapAndBridgeCall
+        ) {
+          userRequestsToRemove.push(
+            userRequest.meta.activeRouteId,
+            `${userRequest.meta.activeRouteId}-approval`,
+            `${userRequest.meta.activeRouteId}-revoke-approval`
+          )
+        }
       }
-    }
 
-    userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-    await this.removeUserRequest(requestId)
+      userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
+    })
+
+    await this.removeUserRequests([...userRequestsToRemove, ...requestIds])
+  }
+
+  async rejectUserRequest(err: string, requestId: UserRequest['id']) {
+    await this.rejectUserRequests(err, [requestId])
   }
 
   async rejectSignAccountOpCall(callId: string) {
@@ -1959,8 +1968,8 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async addUserRequest(
-    req: UserRequest,
+  async addUserRequests(
+    reqs: UserRequest[],
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window',
     allowAccountSwitch: boolean = false
@@ -1969,130 +1978,107 @@ export class MainController extends EventEmitter {
 
     if (shouldSkipAddUserRequest) return
 
-    if (
-      allowAccountSwitch &&
-      req.meta.isSignAction &&
-      req.meta.accountAddr !== this.selectedAccount.account?.addr
-    ) {
-      await this.#addSwitchAccountUserRequest(req)
-      return
-    }
+    const actionsToAdd: Action[] = []
 
-    if (req.action.kind === 'calls') {
-      ;(req.action as Calls).calls.forEach((_, i) => {
-        ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
-      })
-    }
-    if (actionPosition === 'first') {
-      this.userRequests.unshift(req)
-    } else {
-      this.userRequests.push(req)
-    }
+    // eslint-disable-next-line no-restricted-syntax
+    for (const req of reqs) {
+      if (
+        allowAccountSwitch &&
+        req.meta.isSignAction &&
+        req.meta.accountAddr !== this.selectedAccount.account?.addr
+      ) {
+        await this.#addSwitchAccountUserRequest(req)
+        return
+      }
 
-    const { id, action, meta } = req
-    if (action.kind === 'calls') {
-      // @TODO
-      // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
-      // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
-      // and be recalculated when one gets dismissed
-      // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
-      // 4) manage recalc on removeUserRequest too in order to handle EOAs
-      // @TODO consider re-using this whole block in removeUserRequest
-      const accountInfo = await this.#ensureAccountInfo(meta.accountAddr, meta.chainId)
-      if (!accountInfo.hasAccountInfo) {
-        // Reject request if we couldn't load the account and account state for the request
-        req.dappPromise?.reject(
-          ethErrors.provider.custom({
-            code: 1001,
-            message: accountInfo.errorMessage
-          })
-        )
-
-        // Remove the request as it's already added
-        await this.removeUserRequest(req.id)
-
-        // Show a toast
-        throw new EmittableError({
-          level: 'major',
-          message: accountInfo.errorMessage,
-          error: new Error(
-            `Couldn't retrieve account information for network with id ${meta.chainId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network.`
-          )
+      if (req.action.kind === 'calls') {
+        ;(req.action as Calls).calls.forEach((_, i) => {
+          ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
         })
       }
-
-      if (this.#signAccountOpSigningPromise) {
-        console.error('addUserRequest called with active #signAccountOpSigningPromise')
-        await this.#signAccountOpSigningPromise
+      if (actionPosition === 'first') {
+        this.userRequests.unshift(req)
+      } else {
+        this.userRequests.push(req)
       }
 
-      const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-      const accountState = await this.accounts.getOrFetchAccountOnChainState(
-        meta.accountAddr,
-        meta.chainId
-      )
-      const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
+      const { id, action, meta } = req
+      if (action.kind === 'calls') {
+        const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+        const accountState = await this.accounts.getOrFetchAccountOnChainState(
+          meta.accountAddr,
+          meta.chainId
+        )
+        const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
 
-      const accountOpAction = makeAccountOpAction({
-        account,
-        chainId: meta.chainId,
-        nonce: accountState.nonce,
-        userRequests: this.userRequests,
-        actionsQueue: this.actions.actionsQueue
-      })
-      await this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
-      if (this.signAccountOp) {
-        if (this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
+        const accountOpAction = makeAccountOpAction({
+          account,
+          chainId: meta.chainId,
+          nonce: accountState.nonce,
+          userRequests: this.userRequests,
+          actionsQueue: this.actions.actionsQueue
+        })
+
+        actionsToAdd.push(accountOpAction)
+
+        if (this.signAccountOp) {
+          if (this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
+          }
+        } else {
+          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+          // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          this.updateSelectedAccountPortfolio(true, network)
         }
       } else {
-        // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
-        // It's necessary to continue operating with the token `amountPostSimulation` amount.
-        this.updateSelectedAccountPortfolio(true, network)
-      }
-    } else {
-      let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
+        let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
 
-      if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
-        actionType = 'signMessage'
+        if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
+          actionType = 'signMessage'
 
-        if (this.actions.visibleActionsQueue.find((a) => a.type === 'signMessage')) {
-          const msgReq = this.userRequests.find((uReq) => uReq.id === id)
-          if (!msgReq) return
-          msgReq.dappPromise?.reject(
-            ethErrors.provider.custom({
-              code: 1001,
-              message:
-                'Rejected: Please complete your pending message request before initiating a new one.'
-            })
-          )
-          this.userRequests.splice(this.userRequests.indexOf(msgReq), 1)
-          return
+          if (this.actions.visibleActionsQueue.find((a) => a.type === 'signMessage')) {
+            const msgReq = this.userRequests.find((uReq) => uReq.id === id)
+            if (!msgReq) return
+            msgReq.dappPromise?.reject(
+              ethErrors.provider.custom({
+                code: 1001,
+                message:
+                  'Rejected: Please complete your pending message request before initiating a new one.'
+              })
+            )
+            this.userRequests.splice(this.userRequests.indexOf(msgReq), 1)
+            return
+          }
         }
-      }
-      if (req.action.kind === 'benzin') actionType = 'benzin'
-      if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
-      if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
+        if (req.action.kind === 'benzin') actionType = 'benzin'
+        if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
+        if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
 
-      await this.actions.addOrUpdateAction(
-        {
+        actionsToAdd.push({
           id,
           type: actionType,
           userRequest: req as UserRequest as never
-        },
-        actionPosition,
-        actionExecutionType
-      )
+        })
+      }
     }
+
+    if (actionsToAdd.length)
+      this.actions.addOrUpdateActions(actionsToAdd, actionPosition, actionExecutionType)
 
     this.emitUpdate()
   }
 
-  // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
-  // first one sounds more reasonable
-  // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  async removeUserRequest(
-    id: UserRequest['id'],
+  async addUserRequest(
+    req: UserRequest,
+    actionPosition?: ActionPosition,
+    actionExecutionType?: ActionExecutionType,
+    allowAccountSwitch?: boolean
+  ) {
+    await this.addUserRequests([req], actionPosition, actionExecutionType, allowAccountSwitch)
+  }
+
+  async removeUserRequests(
+    ids: UserRequest['id'][],
     options?: {
       shouldRemoveSwapAndBridgeRoute: boolean
       shouldUpdateAccount?: boolean
@@ -2104,84 +2090,107 @@ export class MainController extends EventEmitter {
       shouldUpdateAccount = true,
       shouldOpenNextRequest = true
     } = options || {}
-    const req = this.userRequests.find((uReq) => uReq.id === id)
-    if (!req) return
 
-    // remove from the request queue
-    this.userRequests.splice(this.userRequests.indexOf(req), 1)
+    const actionsToAddOrUpdate: Action[] = []
+    const userRequestsToAdd: UserRequest[] = []
+    const actionsToRemove: string[] = []
 
-    // update the pending stuff to be signed
-    const { action, meta } = req
-    if (action.kind === 'calls') {
-      const network = this.networks.networks.find((net) => net.chainId === meta.chainId)!
-      const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
-      if (!account)
-        throw new Error(
-          `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
+    ids.forEach((id) => {
+      const req = this.userRequests.find((uReq) => uReq.id === id)
+
+      if (!req) return
+
+      // remove from the request queue
+      this.userRequests.splice(this.userRequests.indexOf(req), 1)
+
+      // update the pending stuff to be signed
+      const { action, meta } = req
+      if (action.kind === 'calls') {
+        const network = this.networks.networks.find((net) => net.chainId === meta.chainId)!
+        const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
+        if (!account)
+          throw new Error(
+            `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
+          )
+
+        const accountOpIndex = this.actions.actionsQueue.findIndex(
+          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.chainId}`
         )
+        const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
+          | AccountOpAction
+          | undefined
+        // accountOp has just been rejected or broadcasted
+        if (!accountOpAction) {
+          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
 
-      const accountOpIndex = this.actions.actionsQueue.findIndex(
-        (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.chainId}`
-      )
-      const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
-        | AccountOpAction
-        | undefined
-      // accountOp has just been rejected or broadcasted
-      if (!accountOpAction) {
-        if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+          if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
+            this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
+          }
+          return
+        }
 
+        accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
+          meta.accountAddr,
+          meta.chainId
+        )
+        if (accountOpAction.accountOp.calls.length) {
+          actionsToAddOrUpdate.push(accountOpAction)
+
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
+          }
+        } else {
+          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
+            this.destroySignAccOp()
+          }
+          actionsToRemove.push(`${meta.accountAddr}-${meta.chainId}`)
+          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+        }
         if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
           this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
         }
-        this.emitUpdate()
-        return
-      }
-
-      accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
-        meta.accountAddr,
-        meta.chainId
-      )
-      if (accountOpAction.accountOp.calls.length) {
-        await this.actions.addOrUpdateAction(accountOpAction)
-
-        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-        }
-      } else {
-        if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-          this.destroySignAccOp()
-        }
-        await this.actions.removeAction(
-          `${meta.accountAddr}-${meta.chainId}`,
-          shouldOpenNextRequest
+      } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
+        const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
+          (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
         )
-        if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
-      }
-      if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
-        this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
-      }
-    } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
-      const requestsToAddOrRemove = this.userRequestWaitingAccountSwitch.filter(
-        (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
-      )
-      const isSelectedAccountSwitched =
-        this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
+        const isSelectedAccountSwitched =
+          this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
 
-      if (!isSelectedAccountSwitched) {
-        await this.actions.removeAction(id)
+        if (!isSelectedAccountSwitched) {
+          actionsToRemove.push(id)
+        } else {
+          requestsToAddOrRemove.forEach((r) => {
+            this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+            userRequestsToAdd.push(r)
+          })
+        }
       } else {
-        ;(async () => {
-          // eslint-disable-next-line no-restricted-syntax
-          for (const r of requestsToAddOrRemove) {
-            this.userRequestWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-            this.addUserRequest(r)
-          }
-        })()
+        actionsToRemove.push(id as string)
       }
-    } else {
-      await this.actions.removeAction(id, shouldOpenNextRequest)
+    })
+
+    if (actionsToRemove.length) {
+      await this.actions.removeActions(actionsToRemove, shouldOpenNextRequest)
     }
+    if (userRequestsToAdd.length) {
+      await this.addUserRequests(userRequestsToAdd)
+    }
+    if (actionsToAddOrUpdate.length) {
+      await this.actions.addOrUpdateActions(actionsToAddOrUpdate)
+    }
+
     this.emitUpdate()
+  }
+
+  async removeUserRequest(
+    id: UserRequest['id'],
+    options?: {
+      shouldRemoveSwapAndBridgeRoute: boolean
+      shouldUpdateAccount?: boolean
+      shouldOpenNextRequest?: boolean
+    }
+  ) {
+    await this.removeUserRequests([id], options)
   }
 
   async addNetwork(network: AddNetworkRequestParams) {
@@ -2240,34 +2249,25 @@ export class MainController extends EventEmitter {
 
     await this.actions.removeAction(actionId)
 
+    const userRequestsToRemove: UserRequest['id'][] = []
+    const dappHandlers: any[] = []
+
     // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
-    // eslint-disable-next-line no-restricted-syntax
-    for (const call of calls) {
+    calls.forEach((call) => {
       const walletSendCallsUserReq = this.userRequests.find(
         (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
       )
+      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+
       if (walletSendCallsUserReq) {
         walletSendCallsUserReq.dappPromise?.resolve({
           hash: getDappIdentifier(submittedAccountOp)
         })
 
-        this.removeUserRequest(walletSendCallsUserReq.id, {
-          shouldRemoveSwapAndBridgeRoute: false,
-          // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
-          // we don't want to update the account portfolio immediately, as we would lose the simulation.
-          // The simulation is required to calculate the pending badges (see: calculatePendingAmounts()).
-          // Once the transaction is confirmed, delayed, or the user manually refreshes the portfolio,
-          // the account will be updated automatically.
-          shouldUpdateAccount: false
-        })
+        userRequestsToRemove.push(walletSendCallsUserReq.id)
       }
-    }
 
-    const dappHandlers = []
-    // eslint-disable-next-line no-restricted-syntax
-    for (const call of calls) {
-      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
       if (uReq) {
         if (uReq.dappPromise) {
           dappHandlers.push({
@@ -2276,17 +2276,19 @@ export class MainController extends EventEmitter {
           })
         }
 
-        this.removeUserRequest(uReq.id, {
-          shouldRemoveSwapAndBridgeRoute: false,
-          // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
-          // we don't want to update the account portfolio immediately, as we would lose the simulation.
-          // The simulation is required to calculate the pending badges (see: calculatePendingAmounts()).
-          // Once the transaction is confirmed, delayed, or the user manually refreshes the portfolio,
-          // the account will be updated automatically.
-          shouldUpdateAccount: false
-        })
+        userRequestsToRemove.push(uReq.id)
       }
-    }
+    })
+
+    await this.removeUserRequests(userRequestsToRemove, {
+      shouldRemoveSwapAndBridgeRoute: false,
+      // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
+      // we don't want to update the account portfolio immediately, as we would lose the simulation.
+      // The simulation is required to calculate the pending badges (see: calculatePendingAmounts()).
+      // Once the transaction is confirmed, delayed, or the user manually refreshes the portfolio,
+      // the account will be updated automatically.
+      shouldUpdateAccount: false
+    })
 
     await this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
@@ -2307,16 +2309,18 @@ export class MainController extends EventEmitter {
       this.destroySignAccOp()
     }
     await this.actions.removeAction(actionId, shouldOpenNextAction)
-    // eslint-disable-next-line no-restricted-syntax
-    for (const call of accountOp.calls) {
-      if (call.fromUserRequestId) await this.rejectUserRequest(err, call.fromUserRequestId)
-    }
+
+    const requestIdsToRemove = accountOp.calls
+      .filter((call) => !!call.fromUserRequestId)
+      .map((call) => call.fromUserRequestId)
+
+    await this.rejectUserRequests(err, requestIdsToRemove as string[])
 
     this.emitUpdate()
   }
 
   async #addSwitchAccountUserRequest(req: UserRequest) {
-    this.userRequestWaitingAccountSwitch.push(req)
+    this.userRequestsWaitingAccountSwitch.push(req)
     await this.addUserRequest(
       buildSwitchAccountUserRequest({
         nextUserRequest: req,
@@ -2744,10 +2748,12 @@ export class MainController extends EventEmitter {
 
       if (rejectedCalls.length) {
         // remove the user requests that were rejected
-        rejectedCalls.forEach((call) => {
-          if (!call.fromUserRequestId) return
-          this.rejectUserRequest('Transaction rejected by the bundler', call.fromUserRequestId)
-        })
+        await this.rejectUserRequests(
+          'Transaction rejected by the bundler',
+          rejectedCalls
+            .filter((call) => !!call.fromUserRequestId)
+            .map((call) => call.fromUserRequestId as string)
+        )
       }
     }
 

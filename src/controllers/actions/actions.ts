@@ -167,8 +167,8 @@ export class ActionsController extends EventEmitter {
     })
   }
 
-  async addOrUpdateAction(
-    newAction: Action,
+  async addOrUpdateActions(
+    newActions: Action[],
     position: ActionPosition = 'last',
     executionType: ActionExecutionType = 'open-action-window'
   ) {
@@ -186,37 +186,31 @@ export class ActionsController extends EventEmitter {
       this.currentAction = null
     }
 
-    const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
-    if (actionIndex !== -1) {
-      this.actionsQueue[actionIndex] = newAction
-      if (executionType !== 'queue') {
-        let currentAction = null
+    newActions.forEach((newAction) => {
+      const actionIndex = this.actionsQueue.findIndex((a) => a.id === newAction.id)
+
+      if (actionIndex !== -1) {
+        this.actionsQueue[actionIndex] = newAction
         if (executionType === 'open-action-window') {
           this.sendNewActionMessage(newAction, 'updated')
-          currentAction = this.visibleActionsQueue.find((a) => a.id === newAction.id) || null
         } else if (executionType === 'queue-but-open-action-window') {
           this.sendNewActionMessage(newAction, 'queued')
-          currentAction = this.currentAction || this.visibleActionsQueue[0] || null
         }
-        await this.#setCurrentAction(currentAction)
+      } else if (position === 'first') {
+        this.actionsQueue.unshift(newAction)
       } else {
-        this.emitUpdate()
+        this.actionsQueue.push(newAction)
       }
-      return
-    }
+    })
 
-    if (position === 'first') {
-      this.actionsQueue.unshift(newAction)
-    } else {
-      this.actionsQueue.push(newAction)
-    }
+    const nextAction = newActions[0]
 
     if (executionType !== 'queue') {
       let currentAction = null
       if (executionType === 'open-action-window') {
-        currentAction = this.visibleActionsQueue.find((a) => a.id === newAction.id) || null
+        currentAction = this.visibleActionsQueue.find((a) => a.id === nextAction.id) || null
       } else if (executionType === 'queue-but-open-action-window') {
-        this.sendNewActionMessage(newAction, 'queued')
+        this.sendNewActionMessage(nextAction, 'queued')
         currentAction = this.currentAction || this.visibleActionsQueue[0] || null
       }
       await this.#setCurrentAction(currentAction)
@@ -225,14 +219,26 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  async removeAction(actionId: Action['id'], shouldOpenNextAction: boolean = true) {
-    this.actionsQueue = this.actionsQueue.filter((a) => a.id !== actionId)
+  async addOrUpdateAction(
+    newAction: Action,
+    position?: ActionPosition,
+    executionType?: ActionExecutionType
+  ) {
+    await this.addOrUpdateActions([newAction], position, executionType)
+  }
+
+  async removeActions(actionIds: Action['id'][], shouldOpenNextAction: boolean = true) {
+    this.actionsQueue = this.actionsQueue.filter((a) => !actionIds.includes(a.id))
 
     if (!this.visibleActionsQueue.length) {
       await this.#setCurrentAction(null)
     } else if (shouldOpenNextAction) {
       await this.#setCurrentAction(this.visibleActionsQueue[0])
     }
+  }
+
+  async removeAction(actionId: Action['id'], shouldOpenNextAction?: boolean) {
+    await this.removeActions([actionId], shouldOpenNextAction)
   }
 
   async #awaitPendingPromises() {
