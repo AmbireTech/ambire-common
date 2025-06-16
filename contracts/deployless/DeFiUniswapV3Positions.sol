@@ -100,7 +100,7 @@ contract DeFiUniswapV3Positions {
             address poolAddr = IUniswapV3Factory(factoryAddr).getPool(positionInfo.token0, positionInfo.token1, positionInfo.fee);
 
             // outputData
-            positions[returnArrayIndex].positionId = returnArrayIndex;
+            positions[returnArrayIndex].positionId = tokenId;
             positions[returnArrayIndex].positionInfo = positionInfo;
             positions[returnArrayIndex].poolSlot0 = IUniswapV3Pool(poolAddr).slot0();
             positions[returnArrayIndex].feeGrowthGlobal0X128 = IUniswapV3Pool(poolAddr).feeGrowthGlobal0X128();

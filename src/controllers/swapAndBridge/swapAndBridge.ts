@@ -451,12 +451,7 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
-    return validateSendTransferAmount(
-      this.fromAmount,
-      Number(this.maxFromAmount),
-      Number(this.maxFromAmountInFiat),
-      fromSelectedTokenWithUpToDateAmount
-    )
+    return validateSendTransferAmount(this.fromAmount, fromSelectedTokenWithUpToDateAmount)
   }
 
   get activeRoutesInProgress() {
