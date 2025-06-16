@@ -278,34 +278,22 @@ export class DefiPositionsController extends EventEmitter {
 
     prepareNetworks()
 
+    let debankPositions: PositionsByProvider[] = []
+
     try {
       const resp = await this.#fetch(`https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`)
       const body = await resp.json()
       if (resp.status !== 200 || body?.message || body?.error) throw body
 
-      const debankPositions = (body.data as PositionsByProvider[]) || []
-
-      await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))
+      debankPositions = (body.data as PositionsByProvider[]) || []
     } catch (err) {
-      console.error('Top-level fetch error:', err)
-
-      await Promise.all(
-        networksToUpdate.map(async (n) => {
-          const chain = n.chainId.toString()
-          initNetworkState(selectedAccountAddr, chain)
-
-          if (this.#getCanSkipUpdate(selectedAccountAddr, n.chainId, maxDataAgeMs)) return
-
-          Object.assign(this.#state[selectedAccountAddr][chain], {
-            isLoading: true,
-            providerErrors: [],
-            error: undefined
-          })
-        })
-      )
-    } finally {
-      this.emitUpdate()
+      console.error('Debank fetch failed:', err)
+      // Proceed with empty debank positions
     }
+
+    await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))
+
+    this.emitUpdate()
 
     await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
   }
