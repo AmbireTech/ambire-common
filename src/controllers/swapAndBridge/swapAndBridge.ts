@@ -451,12 +451,7 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
-    return validateSendTransferAmount(
-      this.fromAmount,
-      Number(this.maxFromAmount),
-      Number(this.maxFromAmountInFiat),
-      fromSelectedTokenWithUpToDateAmount
-    )
+    return validateSendTransferAmount(this.fromAmount, fromSelectedTokenWithUpToDateAmount)
   }
 
   get activeRoutesInProgress() {
@@ -655,11 +650,14 @@ export class SwapAndBridgeController extends EventEmitter {
           this.fromAmountInFiat = fromAmount
 
           // Get the number of decimals
-          const amountInFiatDecimals = fromAmount.split('.')[1]?.length || 0
+          const amountInFiatDecimals = 10
           const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
           // Convert the numbers to big int
-          const amountInFiatBigInt = parseUnits(fromAmountFormatted, amountInFiatDecimals)
+          const amountInFiatBigInt = parseUnits(
+            getSanitizedAmount(fromAmountFormatted, amountInFiatDecimals),
+            amountInFiatDecimals
+          )
 
           this.fromAmount = formatUnits(
             (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
