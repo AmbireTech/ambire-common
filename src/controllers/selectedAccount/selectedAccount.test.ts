@@ -82,6 +82,7 @@ const defiPositionsCtrl = new DefiPositionsController({
   fetch,
   storage: storageCtrl,
   selectedAccount: selectedAccountCtrl,
+  keystore,
   networks: networksCtrl,
   providers: providersCtrl
 })

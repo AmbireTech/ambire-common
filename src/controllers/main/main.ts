@@ -318,6 +318,7 @@ export class MainController extends EventEmitter {
       fetch: this.fetch,
       storage: this.storage,
       selectedAccount: this.selectedAccount,
+      keystore: this.keystore,
       networks: this.networks,
       providers: this.providers
     })
@@ -1268,7 +1269,7 @@ export class MainController extends EventEmitter {
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
-      this.defiPositions.updatePositions({ chainId })
+      this.defiPositions.updatePositions({ chainId, forceUpdate: true })
     ])
   }
 

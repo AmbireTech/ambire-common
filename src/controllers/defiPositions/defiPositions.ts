@@ -12,6 +12,7 @@ import {
   ProviderName
 } from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 // eslint-disable-next-line import/no-cycle
@@ -20,6 +21,8 @@ import { StorageController } from '../storage/storage'
 
 export class DefiPositionsController extends EventEmitter {
   #selectedAccount: SelectedAccountController
+
+  #keystore: KeystoreController
 
   #providers: ProvidersController
 
@@ -35,16 +38,20 @@ export class DefiPositionsController extends EventEmitter {
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
+  sessionIds: string[] = []
+
   constructor({
     fetch,
     storage,
     selectedAccount,
+    keystore,
     providers,
     networks
   }: {
     fetch: Fetch
     storage: StorageController
     selectedAccount: SelectedAccountController
+    keystore: KeystoreController
     providers: ProvidersController
     networks: NetworksController
   }) {
@@ -53,6 +60,7 @@ export class DefiPositionsController extends EventEmitter {
     this.#fetch = fetch
     this.#storage = storage
     this.#selectedAccount = selectedAccount
+    this.#keystore = keystore
     this.#providers = providers
     this.#networks = networks
   }
@@ -101,8 +109,8 @@ export class DefiPositionsController extends EventEmitter {
     )
   }
 
-  async updatePositions(opts?: { chainId?: bigint; maxDataAgeMs?: number }) {
-    const { chainId, maxDataAgeMs } = opts || {}
+  async updatePositions(opts?: { chainId?: bigint; maxDataAgeMs?: number; forceUpdate?: boolean }) {
+    const { chainId, maxDataAgeMs, forceUpdate } = opts || {}
     const selectedAccount = this.#selectedAccount.account
     if (!selectedAccount) return
 
@@ -282,7 +290,16 @@ export class DefiPositionsController extends EventEmitter {
 
     try {
       const defiUrl = `https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`
-      const resp = await this.#fetch(defiUrl)
+
+      const hasKeys = this.#keystore.keys.some(({ addr }) =>
+        this.#selectedAccount.account!.associatedKeys.includes(addr)
+      )
+
+      const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
+
+      const resp = await this.#fetch(
+        shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl
+      )
       const body = await resp.json()
       if (resp.status !== 200 || body?.message || body?.error) throw body
 
@@ -398,6 +415,16 @@ export class DefiPositionsController extends EventEmitter {
     delete this.#networksWithPositionsByAccounts[accountAddr]
     this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts)
 
+    this.emitUpdate()
+  }
+
+  addSession(sessionId: string) {
+    this.sessionIds = [...new Set([...this.sessionIds, sessionId])]
+    this.emitUpdate()
+  }
+
+  removeSession(sessionId: string) {
+    this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     this.emitUpdate()
   }
 
