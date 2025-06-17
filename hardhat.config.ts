@@ -53,6 +53,18 @@ const config: HardhatUserConfig = {
     gnosis: {
       url: 'https://rpc.gnosischain.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    unichain: {
+      url: 'https://unichain-rpc.publicnode.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    berachain: {
+      url: 'https://rpc.berachain-apis.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    arbitrum: {
+      url: 'https://invictus.ambire.com/arbitrum',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -63,7 +75,10 @@ const config: HardhatUserConfig = {
       ethereum: process.env.ETHERSCAN_API_KEY,
       sepolia: process.env.ETHERSCAN_API_KEY,
       binance: process.env.BNB_API_KEY,
-      gnosis: process.env.GNOSIS_API_KEY
+      gnosis: process.env.GNOSIS_API_KEY,
+      unichain: process.env.BASESCAN_API_KEY,
+      berachain: process.env.BERACHAIN_API_KEY,
+      arbitrum: process.env.ARBITRUM_API_KEY
     },
     customChains: [
       {
@@ -120,6 +135,30 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.gnosisscan.io/api',
           browserURL: 'https://api.gnosisscan.io/'
+        }
+      },
+      {
+        network: 'unichain',
+        chainId: 130,
+        urls: {
+          apiURL: 'https://unichain.blockscout.com/api',
+          browserURL: 'https://unichain.blockscout.com/'
+        }
+      },
+      {
+        network: 'berachain',
+        chainId: 80094,
+        urls: {
+          apiURL: 'https://api.berascan.com/api',
+          browserURL: 'https://api.berascan.com'
+        }
+      },
+      {
+        network: 'arbitrum',
+        chainId: 42161,
+        urls: {
+          apiURL: 'https://api.arbiscan.io/api',
+          browserURL: 'https://api.arbiscan.io'
         }
       }
     ]
