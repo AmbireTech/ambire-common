@@ -277,7 +277,8 @@ export const getAccountOpBanners = ({
                 actionName: 'reject-accountOp',
                 meta: {
                   err: 'User rejected the transaction request.',
-                  actionId: actions[0].id
+                  actionId: actions[0].id,
+                  shouldOpenNextAction: false
                 }
               }
             : undefined,
