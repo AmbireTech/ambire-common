@@ -135,6 +135,14 @@ const validateSendTransferAmount = (
   }
 
   if (!(sanitizedAmount && Number(sanitizedAmount) > 0)) {
+    // The user has entered an amount that is outside of the valid range.
+    if (Number(amount) > 0) {
+      return {
+        success: false,
+        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1`
+      }
+    }
+
     return {
       success: false,
       message: 'The amount must be greater than 0.'
