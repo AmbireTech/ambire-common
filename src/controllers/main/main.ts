@@ -2328,7 +2328,9 @@ export class MainController extends EventEmitter {
       .filter((call) => !!call.fromUserRequestId)
       .map((call) => call.fromUserRequestId)
 
-    await this.rejectUserRequests(err, requestIdsToRemove as string[])
+    await this.rejectUserRequests(err, requestIdsToRemove as string[], {
+      shouldOpenNextRequest: shouldOpenNextAction
+    })
 
     this.emitUpdate()
   }
