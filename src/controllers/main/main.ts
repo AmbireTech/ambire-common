@@ -376,7 +376,13 @@ export class MainController extends EventEmitter {
         )
         this.rejectUserRequests(
           ethErrors.provider.userRejectedRequest().message,
-          userRequestsToRejectOnWindowClose.map((r) => r.id)
+          userRequestsToRejectOnWindowClose.map((r) => r.id),
+          // If the user closes a window and non-calls user requests exist,
+          // the window will reopen with the next request.
+          // For example: if the user has both a sign message and sign account op request,
+          // closing the window will reject the sign message request but immediately
+          // reopen the window for the sign account op request.
+          { shouldOpenNextRequest: false }
         )
 
         this.userRequestsWaitingAccountSwitch = []
@@ -1878,7 +1884,14 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async rejectUserRequests(err: string, requestIds: UserRequest['id'][]) {
+  async rejectUserRequests(
+    err: string,
+    requestIds: UserRequest['id'][],
+    options?: {
+      shouldRemoveSwapAndBridgeRoute?: boolean
+      shouldOpenNextRequest?: boolean
+    }
+  ) {
     const userRequestsToRemove: string[] = []
 
     requestIds.forEach((requestId) => {
@@ -1906,7 +1919,7 @@ export class MainController extends EventEmitter {
       userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
     })
 
-    await this.removeUserRequests([...userRequestsToRemove, ...requestIds])
+    await this.removeUserRequests([...userRequestsToRemove, ...requestIds], options)
   }
 
   async rejectUserRequest(err: string, requestId: UserRequest['id']) {
@@ -2080,7 +2093,7 @@ export class MainController extends EventEmitter {
   async removeUserRequests(
     ids: UserRequest['id'][],
     options?: {
-      shouldRemoveSwapAndBridgeRoute: boolean
+      shouldRemoveSwapAndBridgeRoute?: boolean
       shouldUpdateAccount?: boolean
       shouldOpenNextRequest?: boolean
     }
