@@ -3,11 +3,13 @@ import fetch from 'node-fetch'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -45,6 +47,9 @@ const prepareTest = async () => {
   const storageCtrl = new StorageController(storage)
   let providersCtrl: ProvidersController
 
+  const windowManager = mockWindowManager().windowManager
+  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
+
   const networksCtrl = new NetworksController(
     storageCtrl,
     fetch,
@@ -81,6 +86,7 @@ const prepareTest = async () => {
     fetch: global.fetch as any,
     storage: storageCtrl,
     selectedAccount: selectedAccountCtrl,
+    keystore: keystoreCtrl,
     providers: providersCtrl,
     networks: networksCtrl
   })
