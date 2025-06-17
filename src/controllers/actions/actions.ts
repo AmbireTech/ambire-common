@@ -124,6 +124,9 @@ export class ActionsController extends EventEmitter {
     this.#onActionWindowClose = onActionWindowClose
 
     this.#windowManager.event.on('windowRemoved', async (winId: number) => {
+      // When windowManager.focus is called, it may close and reopen the action window as part of its fallback logic.
+      // To avoid prematurely running the cleanup logic during that transition, we wait for focusWindowPromise to resolve.
+      await this.actionWindow.focusWindowPromise
       if (
         winId === this.actionWindow.windowProps?.id ||
         (!this.visibleActionsQueue.length && this.currentAction && this.actionWindow.windowProps)
