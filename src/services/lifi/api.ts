@@ -206,7 +206,9 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
     txType: 'eth_sendTransaction',
     userTxIndex: 0,
     userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
-    value: parentStep.transactionRequest.value
+    value: parentStep.transactionRequest.value,
+    serviceFee:
+      parentStep?.estimate?.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
   }
 }
 
