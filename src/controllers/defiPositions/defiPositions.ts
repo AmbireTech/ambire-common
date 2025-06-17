@@ -281,7 +281,8 @@ export class DefiPositionsController extends EventEmitter {
     let debankPositions: PositionsByProvider[] = []
 
     try {
-      const resp = await this.#fetch(`https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`)
+      const defiUrl = `https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`
+      const resp = await this.#fetch(defiUrl)
       const body = await resp.json()
       if (resp.status !== 200 || body?.message || body?.error) throw body
 
