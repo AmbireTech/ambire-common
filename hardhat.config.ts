@@ -65,6 +65,10 @@ const config: HardhatUserConfig = {
     arbitrum: {
       url: 'https://invictus.ambire.com/arbitrum',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    berachainBepolia: {
+      url: 'https://bepolia.rpc.berachain.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -78,7 +82,8 @@ const config: HardhatUserConfig = {
       gnosis: process.env.GNOSIS_API_KEY,
       unichain: process.env.BASESCAN_API_KEY,
       berachain: process.env.BERACHAIN_API_KEY,
-      arbitrum: process.env.ARBITRUM_API_KEY
+      arbitrum: process.env.ARBITRUM_API_KEY,
+      berachainBepolia: process.env.ETHERSCAN_API_KEY
     },
     customChains: [
       {
@@ -159,6 +164,15 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.arbiscan.io/api',
           browserURL: 'https://api.arbiscan.io'
+        }
+      },
+      {
+        network: 'berachainBepolia',
+        chainId: 80069,
+        urls: {
+          // these aren't correct, it's a testnet afterall
+          apiURL: 'https://api.testnet.berascan.com/api',
+          browserURL: 'https://api.testnet.berascan.com'
         }
       }
     ]
