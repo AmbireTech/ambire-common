@@ -22,6 +22,7 @@
     "events": "^3.3.0",
     "js-yaml": "^4.1.0",
     "scrypt-js": "^3.0.1",
+    "tldts": "^7.0.9",
     "uuid": "9.0.0"
   },
   "peerDependencies": {
