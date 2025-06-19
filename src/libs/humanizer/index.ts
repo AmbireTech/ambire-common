@@ -18,6 +18,7 @@ import {
   legendsMessageModule,
   openseaMessageModule,
   permit2Module,
+  snapshotModule,
   zealyMessageModule
 } from './messageModules'
 import OneInchModule from './modules/1Inch'
@@ -96,7 +97,8 @@ const humanizerTMModules = [
   ensMessageModule,
   openseaMessageModule,
   zealyMessageModule,
-  eip7702AuthorizationModule
+  eip7702AuthorizationModule,
+  snapshotModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
