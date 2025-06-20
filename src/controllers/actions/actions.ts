@@ -214,6 +214,8 @@ export class ActionsController extends EventEmitter {
 
     const nextAction = newActions[0]
 
+    console.log('Debug: Adding or updating actions with skipFocus:', skipFocus)
+
     if (executionType !== 'queue') {
       let currentAction = null
       if (executionType === 'open-action-window') {
@@ -236,6 +238,7 @@ export class ActionsController extends EventEmitter {
     executionType?: ActionExecutionType,
     skipFocus?: boolean
   ) {
+    console.log('Debug: addOrUpdateAction single')
     await this.addOrUpdateActions([newAction], position, executionType, skipFocus)
   }
 
