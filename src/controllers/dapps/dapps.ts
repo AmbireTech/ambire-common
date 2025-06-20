@@ -38,29 +38,22 @@ export class DappsController extends EventEmitter {
   }
 
   get dapps(): Dapp[] {
-    const predefinedDappsParsed = predefinedDapps.map(
-      ({ url, name, icon, description }): Omit<Dapp, 'id'> => ({
-        name,
-        description,
-        url,
-        icon,
-        isConnected: false,
-        chainId: 1,
-        favorite: false
-      })
-    )
+    const combined = [...this.#dapps, ...predefinedDapps]
 
-    const combined = [...this.#dapps, ...predefinedDappsParsed]
+    return combined.reduce((acc: Dapp[], curr): Dapp[] => {
+      const id = 'id' in curr ? curr.id : getDomainFromUrl(curr.url)
 
-    const combinedWithId = combined.map((d) => {
-      if ((d as Dapp).id) return d
-
-      return { id: getDomainFromUrl(d.url), ...d }
-    }) as Dapp[]
-
-    return combinedWithId.reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
-      if (!acc.some((dapp) => dapp.id === curr.id)) {
-        acc.push(curr)
+      if (!acc.some((dapp) => dapp.id === id)) {
+        acc.push({
+          id,
+          name: curr.name,
+          description: curr.description,
+          url: curr.url,
+          icon: curr.icon,
+          isConnected: 'isConnected' in curr ? curr.isConnected : false,
+          chainId: 'chainId' in curr ? curr.chainId : 1,
+          favorite: 'favorite' in curr ? curr.favorite : false
+        })
       }
 
       return acc
@@ -140,12 +133,12 @@ export class DappsController extends EventEmitter {
   ) => {
     await this.initialLoadPromise
 
-    let dappSessions: { key: string; data: Session }[] = []
-    Object.keys(this.dappSessions).forEach((key) => {
+    let dappSessions: { sessionId: string; data: Session }[] = []
+    Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
-        skipPermissionCheck || this.hasPermission(this.dappSessions[key].id)
-      if (this.dappSessions[key] && hasPermissionToBroadcast) {
-        dappSessions.push({ key, data: this.dappSessions[key] })
+        skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId].id)
+      if (this.dappSessions[sessionId] && hasPermissionToBroadcast) {
+        dappSessions.push({ sessionId, data: this.dappSessions[sessionId] })
       }
     })
     if (id) {
@@ -156,8 +149,8 @@ export class DappsController extends EventEmitter {
       try {
         dappSession.data.sendMessage?.(ev, data)
       } catch (e) {
-        if (this.dappSessions[dappSession.key]) {
-          this.deleteDappSession(dappSession.key)
+        if (this.dappSessions[dappSession.sessionId]) {
+          this.deleteDappSession(dappSession.sessionId)
         }
       }
     })

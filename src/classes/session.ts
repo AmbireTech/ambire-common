@@ -14,8 +14,14 @@ export interface SessionProp {
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
 export class Session {
+  /**
+  @state {string} id = the domain of the dapp
+   */
   id: string
 
+  /**
+  @state {string} origin = the url of the dapp
+   */
   origin: string
 
   tabId: number
