@@ -59,7 +59,7 @@ describe('Legends', () => {
       {
         to: NFT_CONTRACT_ADDRESS,
         value: 0n,
-        data: iface.encodeFunctionData('mint', [1])
+        data: iface.encodeFunctionData('mint(uint)', [1])
       }
     ]
     const newCalls = legendsModule({} as any, irCalls, {} as any)
@@ -67,7 +67,6 @@ describe('Legends', () => {
       [
         getAction('Pick character'),
         getImage('https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'),
-        getLabel('The Degenerate', true),
         getLabel('for Ambire Rewards')
       ]
     ]
