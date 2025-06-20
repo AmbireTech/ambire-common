@@ -216,7 +216,6 @@ export class DappsController extends EventEmitter {
     if (!id) return false
 
     const dapp = this.dapps.find((d) => d.id === id)
-    console.log('hasPermission', dapp)
     if (!dapp) return false
 
     return dapp.isConnected
