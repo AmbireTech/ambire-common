@@ -288,25 +288,28 @@ export class DefiPositionsController extends EventEmitter {
 
     let debankPositions: PositionsByProvider[] = []
 
-    try {
-      const defiUrl = `https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`
+    // Skip Debank call in testing mode — only fetch custom DeFi positions
+    if (process.env.IS_TESTING !== 'true') {
+      try {
+        const defiUrl = `https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`
 
-      const hasKeys = this.#keystore.keys.some(({ addr }) =>
-        this.#selectedAccount.account!.associatedKeys.includes(addr)
-      )
+        const hasKeys = this.#keystore.keys.some(({ addr }) =>
+          this.#selectedAccount.account!.associatedKeys.includes(addr)
+        )
 
-      const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
+        const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
 
-      const resp = await this.#fetch(
-        shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl
-      )
-      const body = await resp.json()
-      if (resp.status !== 200 || body?.message || body?.error) throw body
+        const resp = await this.#fetch(
+          shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl
+        )
+        const body = await resp.json()
+        if (resp.status !== 200 || body?.message || body?.error) throw body
 
-      debankPositions = (body.data as PositionsByProvider[]) || []
-    } catch (err) {
-      console.error('Debank fetch failed:', err)
-      // Proceed with empty debank positions
+        debankPositions = (body.data as PositionsByProvider[]) || []
+      } catch (err) {
+        console.error('Debank fetch failed:', err)
+        // Proceed with empty debank positions
+      }
     }
 
     await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))

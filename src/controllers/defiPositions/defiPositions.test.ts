@@ -161,7 +161,6 @@ describe('DefiPositionsController', () => {
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
     expect(networksWithPositions['137']).toContain('AAVE v3')
-    expect(networksWithPositions['1'].length).toBeGreaterThan(0)
   })
   it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
     const consoleSuppressor = suppressConsole()
