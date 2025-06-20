@@ -1,17 +1,12 @@
-import { parse } from 'tldts'
-
 import { Session, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
 import { patchStorageApps } from '../../libs/dapps/helpers'
+import getDomainFromUrl from '../../utils/getDomainFromUrl'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 
-const getDomain = (url: string): string | null => {
-  const result = parse(url)
-  return result.domain || null
-}
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
 // 2. Handling active sessions between dApps and the wallet
@@ -44,7 +39,7 @@ export class DappsController extends EventEmitter {
 
   get dapps(): Dapp[] {
     const predefinedDappsParsed = predefinedDapps.map(
-      ({ url, name, icon, description }): Dapp => ({
+      ({ url, name, icon, description }): Omit<Dapp, 'id'> => ({
         name,
         description,
         url,
@@ -57,8 +52,14 @@ export class DappsController extends EventEmitter {
 
     const combined = [...this.#dapps, ...predefinedDappsParsed]
 
-    return combined.reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
-      if (!acc.some((dapp) => getDomain(dapp.url) === getDomain(curr.url))) {
+    const combinedWithId = combined.map((d) => {
+      if ((d as Dapp).id) return d
+
+      return { id: getDomainFromUrl(d.url), ...d }
+    }) as Dapp[]
+
+    return combinedWithId.reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
+      if (!acc.some((dapp) => dapp.id === curr.id)) {
         acc.push(curr)
       }
 
@@ -140,7 +141,7 @@ export class DappsController extends EventEmitter {
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,
-    origin?: string,
+    id?: string,
     skipPermissionCheck?: boolean
   ) => {
     await this.initialLoadPromise
@@ -148,13 +149,13 @@ export class DappsController extends EventEmitter {
     let dappSessions: { key: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((key) => {
       const hasPermissionToBroadcast =
-        skipPermissionCheck || this.hasPermission(this.dappSessions[key].origin)
+        skipPermissionCheck || this.hasPermission(this.dappSessions[key].id)
       if (this.dappSessions[key] && hasPermissionToBroadcast) {
         dappSessions.push({ key, data: this.dappSessions[key] })
       }
     })
-    if (origin) {
-      dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
+    if (id) {
+      dappSessions = dappSessions.filter((dappSession) => dappSession.data.id === id)
     }
 
     dappSessions.forEach((dappSession) => {
@@ -171,14 +172,10 @@ export class DappsController extends EventEmitter {
   addDapp(dapp: Dapp) {
     if (!this.isReady) return
 
-    const domain = getDomain(dapp.url)
+    const doesAlreadyExist = this.dapps.find((d) => d.id === dapp.id)
 
-    if (!domain) return
-
-    const doesAlreadyExist = this.dapps.find((d) => getDomain(d.url) === domain)
-    console.log('doesAlreadyExist', doesAlreadyExist)
     if (doesAlreadyExist) {
-      this.updateDapp(dapp.url, {
+      this.updateDapp(dapp.id, {
         chainId: dapp.chainId,
         isConnected: dapp.isConnected,
         favorite: dapp.favorite,
@@ -191,50 +188,44 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  updateDapp(url: string, dapp: Partial<Dapp>) {
+  updateDapp(id: string, dapp: Partial<Dapp>) {
     if (!this.isReady) return
 
-    const domain = getDomain(url)
-    if (!domain) return
-
     this.dapps = this.dapps.map((d) => {
-      if (getDomain(d.url) === domain) return { ...d, ...dapp }
+      if (d.id === id) return { ...d, ...dapp }
       return d
     })
     this.emitUpdate()
   }
 
-  removeDapp(url: string) {
+  removeDapp(id: string) {
     if (!this.isReady) return
 
-    const domain = getDomain(url)
-    if (!domain) return
+    const dapp = this.dapps.find((d) => d.id === id)
+
+    if (!dapp) return
 
     // do not remove predefined dapps
-    if (predefinedDapps.find((d) => getDomain(d.url) === domain)) return
+    if (predefinedDapps.find((d) => d.url === dapp.url)) return
+    this.dapps = this.dapps.filter((d) => d.id !== id)
 
-    this.dapps = this.dapps.filter((d) => getDomain(d.url) !== domain)
     this.emitUpdate()
   }
 
-  hasPermission(url: string) {
-    const domain = getDomain(url)
-    if (!domain) return false
+  hasPermission(id: string) {
+    if (!id) return false
 
-    const dapp = this.dapps.find((d) => getDomain(d.url) === domain)
-
+    const dapp = this.dapps.find((d) => d.id === id)
+    console.log('hasPermission', dapp)
     if (!dapp) return false
 
     return dapp.isConnected
   }
 
-  getDapp(url: string) {
+  getDapp(id: string) {
     if (!this.isReady) return
 
-    const domain = getDomain(url)
-    if (!domain) return
-
-    return this.dapps.find((d) => getDomain(d.url) === domain)
+    return this.dapps.find((d) => d.id === id)
   }
 
   toJSON() {

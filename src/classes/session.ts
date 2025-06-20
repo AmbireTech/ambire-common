@@ -1,6 +1,8 @@
 import { Messenger } from '../interfaces/messenger'
+import getDomainFromUrl from '../utils/getDomainFromUrl'
 
 export interface SessionProp {
+  id?: string
   origin?: string
   icon?: string
   name?: string
@@ -11,6 +13,8 @@ export interface SessionProp {
 // Each instance of a Session represents an active connection between a dApp and the wallet.
 // For more details on how to use it, refer to the DappsController.
 export class Session {
+  id: string = ''
+
   origin: string = ''
 
   icon: string = ''
@@ -41,7 +45,10 @@ export class Session {
   }
 
   setProp({ origin, icon, name, tabId }: SessionProp) {
-    if (origin) this.origin = origin
+    if (origin) {
+      this.id = getDomainFromUrl(origin)
+      this.origin = origin
+    }
     if (icon) this.icon = icon
     if (name) this.name = name
     if (tabId) this.tabId = tabId

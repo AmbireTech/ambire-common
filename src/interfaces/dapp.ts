@@ -1,4 +1,5 @@
 export interface Dapp {
+  id: string
   name: string
   description: string
   url: string
@@ -14,7 +15,7 @@ export interface Dapp {
 export interface DappProviderRequest {
   method: string
   params?: any
-  session: { name: string; origin: string; icon: string }
+  session: { id: string; origin: string; name: string; icon: string }
   origin: string
   meta?: { [key: string]: any }
 }
