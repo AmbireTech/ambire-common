@@ -2,7 +2,6 @@ import { Messenger } from '../interfaces/messenger'
 import getDomainFromUrl from '../utils/getDomainFromUrl'
 
 export interface SessionProp {
-  id?: string
   origin?: string
   icon?: string
   name?: string
