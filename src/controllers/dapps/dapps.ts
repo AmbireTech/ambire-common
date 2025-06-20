@@ -1,4 +1,4 @@
-import { Session, SessionProp } from '../../classes/session'
+import { Session, SessionInitProps, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
@@ -19,7 +19,7 @@ export class DappsController extends EventEmitter {
 
   #storage: StorageController
 
-  dappSessions: { [key: string]: Session } = {}
+  dappSessions: { [sessionId: string]: Session } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
@@ -84,57 +84,51 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #dappSessionsSet(sessionId: string, session: Session) {
-    this.dappSessions[sessionId] = session
-  }
+  #createDappSession = (initProps: SessionInitProps) => {
+    const dappSession = new Session(initProps)
+    this.dappSessions[dappSession.sessionId] = dappSession
 
-  #dappSessionsDelete(sessionId: string) {
-    delete this.dappSessions[sessionId]
-  }
-
-  #createDappSession = (data: SessionProp) => {
-    const dappSession = new Session(data)
-    this.#dappSessionsSet(dappSession.sessionId, dappSession)
     this.emitUpdate()
 
     return dappSession
   }
 
-  getOrCreateDappSession = (data: SessionProp) => {
-    if (!data.tabId || !data.origin)
+  getOrCreateDappSession = (initProps: SessionInitProps) => {
+    if (!initProps.tabId || !initProps.origin)
       throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    if (this.dappSessions[`${data.tabId}-${data.origin}`]) {
-      return this.dappSessions[`${data.tabId}-${data.origin}`]
+    if (this.dappSessions[`${initProps.tabId}-${initProps.origin}`]) {
+      return this.dappSessions[`${initProps.tabId}-${initProps.origin}`]
     }
 
-    return this.#createDappSession(data)
+    return this.#createDappSession(initProps)
   }
 
-  setSessionMessenger = (key: string, messenger: Messenger) => {
-    this.dappSessions[key].setMessenger(messenger)
+  setSessionMessenger = (sessionId: string, messenger: Messenger) => {
+    this.dappSessions[sessionId].setMessenger(messenger)
   }
 
-  setSessionLastHandledRequestsId = (key: string, id: number, isWeb3AppRequest?: boolean) => {
-    if (id > this.dappSessions[key].lastHandledRequestId) {
-      this.dappSessions[key].lastHandledRequestId = id
-      if (isWeb3AppRequest && !this.dappSessions[key].isWeb3App) {
-        this.dappSessions[key].isWeb3App = true
+  setSessionLastHandledRequestsId = (sessionId: string, id: number, isWeb3AppRequest?: boolean) => {
+    if (id > this.dappSessions[sessionId].lastHandledRequestId) {
+      this.dappSessions[sessionId].lastHandledRequestId = id
+      if (isWeb3AppRequest && !this.dappSessions[sessionId].isWeb3App) {
+        this.dappSessions[sessionId].isWeb3App = true
         this.emitUpdate()
       }
     }
   }
 
-  resetSessionLastHandledRequestsId = (key: string) => {
-    this.dappSessions[key].lastHandledRequestId = -1
+  resetSessionLastHandledRequestsId = (sessionId: string) => {
+    this.dappSessions[sessionId].lastHandledRequestId = -1
   }
 
-  setSessionProp = (key: string, props: SessionProp) => {
-    this.dappSessions[key].setProp(props)
+  setSessionProp = (sessionId: string, props: SessionProp) => {
+    this.dappSessions[sessionId].setProp(props)
   }
 
-  deleteDappSession = (key: string) => {
-    this.#dappSessionsDelete(key)
+  deleteDappSession = (sessionId: string) => {
+    delete this.dappSessions[sessionId]
+
     this.emitUpdate()
   }
 
