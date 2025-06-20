@@ -10,50 +10,48 @@ const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
   '0x52d067EBB7b06F31AEB645Bd34f92c3Ac13a29ea',
   '0xcfbAec203431045E9589F70375AC5F529EE55511',
   '0xF51dF52d0a9BEeB7b6E4B6451e729108a115B863',
-  '0xb850AcfBC7720873242D27A38E4AE987f914Ef5B'
+  '0xb850AcfBC7720873242D27A38E4AE987f914Ef5B',
+  '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
 ]
 
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
   const iface = new Interface(Legends)
-  const characterTypes = [
-    {
-      type: 'Unknown',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png'
-    },
-    {
-      type: 'The Degenerate',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png'
-    },
-    {
-      type: 'The Codeweaver',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png'
-    },
-    {
-      type: 'The Layerbinder',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png'
-    },
-    {
-      type: 'The Custodian',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png'
-    },
-    {
-      type: 'The Warrior',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png'
-    },
-    {
-      type: 'The Shapeshifter',
-      image: 'https://relayer.ambire.com/legends/nft-image/avatar/shapeshifter-lvl0.png'
-    }
-  ]
+  const characterTypes: { [season: number]: string[] } = {
+    '0': [
+      'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/shapeshifter-lvl0.png'
+    ],
+    '1': [
+      'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
+      // @TODO move to staging or  prod
+      'https://localhost:1934/legends/nft-image/avatar/astro-cat-lvl0.png',
+      'https://localhost:1934/legends/nft-image/avatar/medal-bear-lvl0.png',
+      'https://localhost:1934/legends/nft-image/avatar/yellow-blue-lvl0.png'
+    ]
+  }
   const matcher = {
-    [iface.getFunction('mint')?.selector!]: (call: IrCall) => {
+    // legacy mint function
+    [iface.getFunction('mint(uint256)')?.selector!]: (call: IrCall) => {
       const [heroType] = iface.parseTransaction(call)!.args
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[heroType]?.image || characterTypes[0].image),
-        getLabel(characterTypes[heroType]?.type || characterTypes[0].type, true),
+        getImage(characterTypes[0][heroType] || characterTypes[0][0]),
         getLabel('for Ambire Rewards')
+      ]
+    },
+    [iface.getFunction('mint(uint characterType, uint season)')?.selector!]: (call: IrCall) => {
+      const [heroType, season] = iface.parseTransaction(call)!.args
+
+      return [
+        getAction('Pick character'),
+        getImage(characterTypes[season][heroType] || characterTypes[0][0]),
+        getLabel(`for Ambire Rewards season ${season}`)
       ]
     },
     [iface.getFunction('getDailyReward')?.selector!]: () => [
