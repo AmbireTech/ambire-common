@@ -1444,7 +1444,7 @@ export class MainController extends EventEmitter {
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
-      session: { name: string; origin: string; icon: string }
+      session: { id: string; name: string; origin: string; icon: string }
       resolve: (data: any) => void
       reject: (data: any) => void
     }
@@ -1455,7 +1455,7 @@ export class MainController extends EventEmitter {
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
-    const dapp = this.dapps.getDapp(request.origin)
+    const dapp = this.dapps.getDapp(request.session.id)
 
     if (kind === 'calls') {
       if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
