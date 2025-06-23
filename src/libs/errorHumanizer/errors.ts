@@ -136,7 +136,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'of low liquidity, slippage limits, or insufficient token approval.'
   },
   {
-    reasons: ['0x81ceff30'],
+    reasons: ['0x81ceff30', '0x2c5211c6'],
     message: 'of a Swap failure. Please try performing the same swap again.'
   },
   {
