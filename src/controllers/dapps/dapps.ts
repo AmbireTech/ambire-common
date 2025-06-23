@@ -1,4 +1,4 @@
-import { Session, SessionInitProps, SessionProp } from '../../classes/session'
+import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
@@ -90,9 +90,8 @@ export class DappsController extends EventEmitter {
     if (!initProps.tabId || !initProps.origin)
       throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    if (this.dappSessions[`${initProps.tabId}-${initProps.origin}`]) {
-      return this.dappSessions[`${initProps.tabId}-${initProps.origin}`]
-    }
+    const sessionId = getSessionId(initProps)
+    if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
     return this.#createDappSession(initProps)
   }

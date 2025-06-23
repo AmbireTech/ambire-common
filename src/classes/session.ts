@@ -3,12 +3,17 @@ import getDomainFromUrl from '../utils/getDomainFromUrl'
 
 export interface SessionInitProps {
   tabId: number
+  windowId: number
   origin: string
 }
 export interface SessionProp {
   icon?: string
   name?: string
   isWeb3App?: boolean
+}
+
+export function getSessionId({ tabId, windowId, origin }: SessionInitProps) {
+  return `${windowId}-${tabId}-${origin}`
 }
 
 // Each instance of a Session represents an active connection between a dApp and the wallet.
@@ -25,6 +30,8 @@ export class Session {
   origin: string
 
   tabId: number
+
+  windowId: number
 
   name: string = ''
 
@@ -48,10 +55,11 @@ export class Session {
     this.messenger.send('broadcast', { event, data }, { tabId: this.tabId })
   }
 
-  constructor({ tabId, origin }: SessionInitProps) {
+  constructor({ tabId, windowId, origin }: SessionInitProps) {
     this.id = getDomainFromUrl(origin)
     this.origin = origin
     this.tabId = tabId
+    this.windowId = windowId
   }
 
   setMessenger(messenger: Messenger) {
@@ -64,7 +72,11 @@ export class Session {
   }
 
   get sessionId() {
-    return `${this.tabId}-${this.origin}`
+    return getSessionId({
+      tabId: this.tabId,
+      windowId: this.windowId,
+      origin: this.origin
+    })
   }
 
   toJSON() {
