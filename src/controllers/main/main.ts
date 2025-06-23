@@ -22,7 +22,6 @@ import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -1953,7 +1952,7 @@ export class MainController extends EventEmitter {
             actionsQueue: this.actions.actionsQueue
           })
 
-          await this.actions.addOrUpdateAction(accountOpAction)
+          await this.actions.addOrUpdateAction(accountOpAction, undefined, undefined, true)
           this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
         }
       }
@@ -1986,7 +1985,8 @@ export class MainController extends EventEmitter {
     reqs: UserRequest[],
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window',
-    allowAccountSwitch: boolean = false
+    allowAccountSwitch: boolean = false,
+    skipFocus: boolean = false
   ) {
     const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
@@ -2077,7 +2077,12 @@ export class MainController extends EventEmitter {
     }
 
     if (actionsToAdd.length)
-      this.actions.addOrUpdateActions(actionsToAdd, actionPosition, actionExecutionType)
+      await this.actions.addOrUpdateActions(
+        actionsToAdd,
+        actionPosition,
+        actionExecutionType,
+        skipFocus
+      )
 
     this.emitUpdate()
   }
@@ -2086,9 +2091,16 @@ export class MainController extends EventEmitter {
     req: UserRequest,
     actionPosition?: ActionPosition,
     actionExecutionType?: ActionExecutionType,
-    allowAccountSwitch?: boolean
+    allowAccountSwitch?: boolean,
+    skipFocus?: boolean
   ) {
-    await this.addUserRequests([req], actionPosition, actionExecutionType, allowAccountSwitch)
+    await this.addUserRequests(
+      [req],
+      actionPosition,
+      actionExecutionType,
+      allowAccountSwitch,
+      skipFocus
+    )
   }
 
   async removeUserRequests(
@@ -2187,10 +2199,10 @@ export class MainController extends EventEmitter {
       await this.actions.removeActions(actionsToRemove, shouldOpenNextRequest)
     }
     if (userRequestsToAdd.length) {
-      await this.addUserRequests(userRequestsToAdd)
+      await this.addUserRequests(userRequestsToAdd, undefined, undefined, undefined, true)
     }
     if (actionsToAddOrUpdate.length) {
-      await this.actions.addOrUpdateActions(actionsToAddOrUpdate)
+      await this.actions.addOrUpdateActions(actionsToAddOrUpdate, undefined, undefined, true)
     }
 
     this.emitUpdate()
@@ -2258,7 +2270,7 @@ export class MainController extends EventEmitter {
         action: { kind: 'benzin' },
         meta
       }
-      await this.addUserRequest(benzinUserRequest, 'first')
+      await this.addUserRequest(benzinUserRequest, 'first', undefined, undefined, true)
     }
 
     await this.actions.removeAction(actionId)
