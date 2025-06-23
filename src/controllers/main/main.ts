@@ -1952,8 +1952,6 @@ export class MainController extends EventEmitter {
             actionsQueue: this.actions.actionsQueue
           })
 
-          console.log('Debug: rejectSignAccountOpCall')
-
           await this.actions.addOrUpdateAction(accountOpAction, undefined, undefined, true)
           this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
         }
