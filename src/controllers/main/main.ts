@@ -2201,7 +2201,7 @@ export class MainController extends EventEmitter {
       await this.actions.removeActions(actionsToRemove, shouldOpenNextRequest)
     }
     if (userRequestsToAdd.length) {
-      await this.addUserRequests(userRequestsToAdd)
+      await this.addUserRequests(userRequestsToAdd, undefined, undefined, undefined, true)
     }
     if (actionsToAddOrUpdate.length) {
       await this.actions.addOrUpdateActions(actionsToAddOrUpdate, undefined, undefined, true)
@@ -2272,7 +2272,7 @@ export class MainController extends EventEmitter {
         action: { kind: 'benzin' },
         meta
       }
-      await this.addUserRequest(benzinUserRequest, 'first')
+      await this.addUserRequest(benzinUserRequest, 'first', undefined, undefined, true)
     }
 
     await this.actions.removeAction(actionId)
