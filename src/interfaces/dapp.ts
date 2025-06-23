@@ -1,3 +1,5 @@
+import { Session } from '../classes/session'
+
 export interface Dapp {
   id: string
   name: string
@@ -15,7 +17,7 @@ export interface Dapp {
 export interface DappProviderRequest {
   method: string
   params?: any
-  session: { id: string; origin: string; name: string; icon: string }
+  session: Session
   origin: string
   meta?: { [key: string]: any }
 }
