@@ -116,7 +116,8 @@ export async function fetchTxnId(
   network: Network,
   fetchFn: Fetch,
   callRelayer: Function,
-  op?: AccountOp
+  op?: AccountOp,
+  refetchCounter?: number
 ): Promise<{ status: string; txnId: string | null }> {
   if (isIdentifiedByTxn(identifiedBy))
     return {
@@ -152,11 +153,29 @@ export async function fetchTxnId(
       bundler.getStatus(network, userOpHash)
     ])
 
-    if (bundlerResult.status === 'rejected')
+    if (bundlerResult.status === 'rejected') {
+      // the bundler sometimes wrongly returns a rejected status for an userOp
+      // only to broadcast the userOp later and for the user op to be included
+      // in the block. To prevent showing wrong information to the user,
+      // we try to refetch the user op 2 times before declaring it
+      // as rejected
+      if (!refetchCounter || refetchCounter < 2) {
+        await wait(2000)
+        return fetchTxnId(
+          identifiedBy,
+          network,
+          fetchFn,
+          callRelayer,
+          op,
+          typeof refetchCounter === 'undefined' ? 1 : refetchCounter + 1
+        )
+      }
+
       return {
         status: 'rejected',
         txnId: null
       }
+    }
 
     if (bundlerResult.transactionHash)
       return {
