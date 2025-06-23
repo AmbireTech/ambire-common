@@ -1,5 +1,5 @@
 import { Messenger } from '../interfaces/messenger'
-import getDomainFromUrl from '../utils/getDomainFromUrl'
+import { getDappIdFromUrl } from '../libs/dapps/helpers'
 
 export interface SessionInitProps {
   tabId: number
@@ -49,7 +49,7 @@ export class Session {
   }
 
   constructor({ tabId, origin }: SessionInitProps) {
-    this.id = getDomainFromUrl(origin)
+    this.id = getDappIdFromUrl(origin)
     this.origin = origin
     this.tabId = tabId
   }
