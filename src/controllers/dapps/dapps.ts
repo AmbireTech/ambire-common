@@ -192,7 +192,7 @@ export class DappsController extends EventEmitter {
     if (!dapp) return
 
     // do not remove predefined dapps
-    if (predefinedDapps.find((d) => d.url === dapp.url)) return
+    if (predefinedDapps.find((d) => getDappIdFromUrl(d.url) === dapp.id)) return
     this.dapps = this.dapps.filter((d) => d.id !== id)
 
     this.emitUpdate()
