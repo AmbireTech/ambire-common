@@ -16,4 +16,13 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
   }, [])
 }
 
-export { patchStorageApps }
+const getDappIdFromUrl = (url: string): string => {
+  try {
+    const { hostname } = new URL(url)
+    return hostname.startsWith('www.') ? hostname.slice(4) : hostname
+  } catch {
+    return url
+  }
+}
+
+export { patchStorageApps, getDappIdFromUrl }

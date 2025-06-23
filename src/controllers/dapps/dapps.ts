@@ -2,8 +2,7 @@ import { getSessionId, Session, SessionInitProps, SessionProp } from '../../clas
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
-import { patchStorageApps } from '../../libs/dapps/helpers'
-import getDomainFromUrl from '../../utils/getDomainFromUrl'
+import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 
@@ -41,7 +40,7 @@ export class DappsController extends EventEmitter {
     const combined = [...this.#dapps, ...predefinedDapps]
 
     return combined.reduce((acc: Dapp[], curr): Dapp[] => {
-      const id = 'id' in curr ? curr.id : getDomainFromUrl(curr.url)
+      const id = 'id' in curr ? curr.id : getDappIdFromUrl(curr.url)
 
       if (!acc.some((dapp) => dapp.id === id)) {
         acc.push({
@@ -192,7 +191,7 @@ export class DappsController extends EventEmitter {
     if (!dapp) return
 
     // do not remove predefined dapps
-    if (predefinedDapps.find((d) => d.url === dapp.url)) return
+    if (predefinedDapps.find((d) => getDappIdFromUrl(d.url) === dapp.id)) return
     this.dapps = this.dapps.filter((d) => d.id !== id)
 
     this.emitUpdate()

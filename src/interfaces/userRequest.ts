@@ -4,7 +4,6 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
-import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
 
