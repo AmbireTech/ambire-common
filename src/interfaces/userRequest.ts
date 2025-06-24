@@ -4,6 +4,7 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
+import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
 
@@ -63,7 +64,7 @@ export interface SignUserRequest {
   }
   // defined only when SignUserRequest is built from a DappRequest
   dappPromise?: {
-    session: { name: string; origin: string; icon: string }
+    session: DappProviderRequest['session']
     resolve: (data: any) => void
     reject: (data: any) => void
   }
@@ -81,7 +82,7 @@ export interface DappUserRequest {
     [key: string]: any
   }
   dappPromise: {
-    session: { name: string; origin: string; icon: string }
+    session: DappProviderRequest['session']
     resolve: (data: any) => void
     reject: (data: any) => void
   }

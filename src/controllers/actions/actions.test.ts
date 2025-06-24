@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -18,15 +19,17 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
 
+const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
+
 const DAPP_CONNECT_REQUEST: DappUserRequest = {
   id: 1,
   action: { kind: 'dappConnect', params: {} },
   meta: { isSignAction: false },
-  session: { name: '', icon: '', origin: '' },
+  session: MOCK_SESSION,
   dappPromise: {
     resolve: () => {},
     reject: () => {},
-    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+    session: MOCK_SESSION
   }
 }
 const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
@@ -55,11 +58,11 @@ const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
     chainId: 10n,
     paymasterService: undefined
   },
-  session: { name: '', icon: '', origin: '' },
+  session: MOCK_SESSION,
   dappPromise: {
     resolve: () => {},
     reject: () => {},
-    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+    session: MOCK_SESSION
   }
 }
 
