@@ -1666,7 +1666,8 @@ export class MainController extends EventEmitter {
     amount: string,
     recipientAddress: string,
     selectedToken: TokenResult,
-    actionExecutionType: ActionExecutionType = 'open-action-window'
+    actionExecutionType: ActionExecutionType = 'open-action-window',
+    windowId?: number
   ) {
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1986,7 +1987,8 @@ export class MainController extends EventEmitter {
     reqs: UserRequest[],
     actionPosition: ActionPosition = 'last',
     actionExecutionType: ActionExecutionType = 'open-action-window',
-    allowAccountSwitch: boolean = false
+    allowAccountSwitch: boolean = false,
+    windowId?: number
   ) {
     const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
@@ -2077,7 +2079,7 @@ export class MainController extends EventEmitter {
     }
 
     if (actionsToAdd.length)
-      this.actions.addOrUpdateActions(actionsToAdd, actionPosition, actionExecutionType)
+      this.actions.addOrUpdateActions(actionsToAdd, actionPosition, actionExecutionType, windowId)
 
     this.emitUpdate()
   }
@@ -2086,9 +2088,16 @@ export class MainController extends EventEmitter {
     req: UserRequest,
     actionPosition?: ActionPosition,
     actionExecutionType?: ActionExecutionType,
-    allowAccountSwitch?: boolean
+    allowAccountSwitch?: boolean,
+    windowId?: number
   ) {
-    await this.addUserRequests([req], actionPosition, actionExecutionType, allowAccountSwitch)
+    await this.addUserRequests(
+      [req],
+      actionPosition,
+      actionExecutionType,
+      allowAccountSwitch,
+      windowId
+    )
   }
 
   async removeUserRequests(
