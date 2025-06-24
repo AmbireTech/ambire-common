@@ -94,19 +94,6 @@ export class DefiPositionsController extends EventEmitter {
     if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
     const networkState = this.#state[accountAddr][chainId.toString()]
-    console.log(
-      chainId,
-      'hasUpdatedAt:',
-      !!networkState.updatedAt,
-      'maxDataAgeMs:',
-      maxDataAgeMs,
-      'error:',
-      networkState.error || networkState.providerErrors?.length,
-      'isLoading:',
-      networkState.isLoading,
-      '<:',
-      networkState.updatedAt && Date.now() - networkState.updatedAt < maxDataAgeMs
-    )
     if (!networkState.updatedAt) return false
 
     if (networkState.error || networkState.providerErrors?.length) return false
