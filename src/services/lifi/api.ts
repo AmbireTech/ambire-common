@@ -527,7 +527,14 @@ export class LiFiAPI {
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     }).catch((e) => e)
 
-    const statuses: { [key in LiFiRouteStatusResponse['status']]: SwapAndBridgeRouteStatus } = {
+    const statuses: {
+      DONE: SwapAndBridgeRouteStatus
+      FAILED: SwapAndBridgeRouteStatus
+      INVALID: SwapAndBridgeRouteStatus
+      NOT_FOUND: SwapAndBridgeRouteStatus
+      PENDING: SwapAndBridgeRouteStatus
+      REFUNDED: SwapAndBridgeRouteStatus
+    } = {
       DONE: 'completed',
       FAILED: null,
       INVALID: null,
