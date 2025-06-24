@@ -1443,7 +1443,7 @@ export class MainController extends EventEmitter {
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
-      session: { id: string; name: string; origin: string; icon: string }
+      session: DappProviderRequest['session']
       resolve: (data: any) => void
       reject: (data: any) => void
     }
