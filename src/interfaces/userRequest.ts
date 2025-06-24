@@ -1,9 +1,9 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
+import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
-import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
 
@@ -50,7 +50,7 @@ export interface Message {
 export interface SignUserRequest {
   id: string | number
   action: Calls | PlainTextMessage | TypedMessage | Authorization | { kind: 'benzin' }
-  session?: DappProviderRequest['session']
+  session?: Session
   meta: {
     isSignAction: true
     accountAddr: AccountId
@@ -75,7 +75,7 @@ export interface DappUserRequest {
     kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin' | 'switchAccount'>
     params: any
   }
-  session: DappProviderRequest['session']
+  session: Session
   meta: {
     isSignAction: false
     [key: string]: any
