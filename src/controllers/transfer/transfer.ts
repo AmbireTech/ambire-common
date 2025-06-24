@@ -350,6 +350,8 @@ export class TransferController extends EventEmitter {
     }
 
     if (shouldSetMaxAmount) {
+      console.log('Debug: Setting max amount in transfer controller')
+      this.amountFieldMode = 'token'
       this.#setAmount(this.maxAmount, true)
     }
 
@@ -434,9 +436,10 @@ export class TransferController extends EventEmitter {
 
   #setAmount(fieldValue: string, isProgrammaticUpdate = false) {
     if (isProgrammaticUpdate) {
+      console.log('Debug: Programmatic update of amount in transfer controller')
       // There is no problem in updating this first as there are no
       // emit updates in this method
-      this.amountUpdateCounter + 1
+      this.amountUpdateCounter += 1
     }
 
     if (!fieldValue) {
