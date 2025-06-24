@@ -507,8 +507,7 @@ export class LiFiAPI {
     fromChainId: number
     toChainId: number
     bridge?: string
-  }) {
-    // TODO: Swaps have no status check
+  }): Promise<SwapAndBridgeRouteStatus> {
     if (!bridge) return 'completed'
 
     const params = new URLSearchParams({
@@ -528,16 +527,29 @@ export class LiFiAPI {
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     }).catch((e) => e)
 
-    const statuses: { [key in LiFiRouteStatusResponse['status']]: SwapAndBridgeRouteStatus } = {
+    const statuses: {
+      DONE: SwapAndBridgeRouteStatus
+      FAILED: SwapAndBridgeRouteStatus
+      INVALID: SwapAndBridgeRouteStatus
+      NOT_FOUND: SwapAndBridgeRouteStatus
+      PENDING: SwapAndBridgeRouteStatus
+      REFUNDED: SwapAndBridgeRouteStatus
+    } = {
       DONE: 'completed',
       FAILED: null,
       INVALID: null,
       NOT_FOUND: null,
-      PENDING: null
+      PENDING: null,
+      // when the bridge has failed and the user has received back his tokens
+      REFUNDED: 'refunded'
     }
 
     if (response instanceof SwapAndBridgeProviderApiError) {
       return statuses.PENDING
+    }
+
+    if (response.substatus && response.substatus === 'REFUNDED') {
+      return statuses.REFUNDED
     }
 
     return statuses[response.status as LiFiRouteStatusResponse['status']]
