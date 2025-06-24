@@ -13,10 +13,10 @@ import {
   FromToken,
   SocketApiBridgeStep,
   SocketAPIBridgeUserTx,
-  SocketRouteStatus,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatus,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
@@ -1524,7 +1524,7 @@ export class SwapAndBridgeController extends EventEmitter {
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
-      let status: SocketRouteStatus = null
+      let status: SwapAndBridgeRouteStatus = null
       const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
         op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
       )
@@ -1573,6 +1573,15 @@ export class SwapAndBridgeController extends EventEmitter {
           activeRoute.activeRouteId,
           {
             routeStatus: 'ready',
+            error: undefined
+          },
+          true
+        )
+      } else if (status === 'refunded') {
+        this.updateActiveRoute(
+          activeRoute.activeRouteId,
+          {
+            routeStatus: 'refunded',
             error: undefined
           },
           true
@@ -1671,7 +1680,7 @@ export class SwapAndBridgeController extends EventEmitter {
         currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex] }
       }
 
-      if (activeRoute?.routeStatus === 'completed') {
+      if (activeRoute?.routeStatus === 'completed' || activeRoute?.routeStatus === 'refunded') {
         // Change the currentUserTxIndex to the length of the userTxs array
         // a.k.a. all transactions are completed
         const activeRouteRoute = currentActiveRoutes[activeRouteIndex].route
@@ -1773,6 +1782,12 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === fromUserRequestId)
     if (!activeRoute) return
+
+    // learn the additional step tokens so if the route fails alongs the way,
+    // the user has the token learnt in his portfolio
+    activeRoute.route?.steps.forEach((step) => {
+      this.#portfolio.addTokensToBeLearned([step.toAsset.address], BigInt(step.chainId))
+    })
 
     this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'in-progress' })
   }
