@@ -81,8 +81,32 @@ export class DefiPositionsController extends EventEmitter {
     })
   }
 
-  #getCanSkipUpdate(accountAddr: string, chainId: bigint, maxDataAgeMs = this.#minUpdateInterval) {
+  #getShouldSkipUpdate(
+    accountAddr: string,
+    chainId: bigint,
+    maxDataAgeMs = this.#minUpdateInterval,
+    forceUpdate?: boolean
+  ) {
+    const hasKeys = this.#keystore.keys.some(({ addr }) =>
+      this.#selectedAccount.account!.associatedKeys.includes(addr)
+    )
+    const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
+    if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
+
     const networkState = this.#state[accountAddr][chainId.toString()]
+    console.log(
+      chainId,
+      'hasUpdatedAt:',
+      !!networkState.updatedAt,
+      'maxDataAgeMs:',
+      maxDataAgeMs,
+      'error:',
+      networkState.error || networkState.providerErrors?.length,
+      'isLoading:',
+      networkState.isLoading,
+      '<:',
+      networkState.updatedAt && Date.now() - networkState.updatedAt < maxDataAgeMs
+    )
     if (!networkState.updatedAt) return false
 
     if (networkState.error || networkState.providerErrors?.length) return false
@@ -139,11 +163,6 @@ export class DefiPositionsController extends EventEmitter {
       for (const n of networksToUpdate) {
         const chain = n.chainId.toString()
         initNetworkState(selectedAccountAddr, chain)
-        Object.assign(this.#state[selectedAccountAddr][chain], {
-          isLoading: true,
-          updatedAt: undefined,
-          providerErrors: []
-        })
       }
     }
 
@@ -178,7 +197,10 @@ export class DefiPositionsController extends EventEmitter {
       const chain = network.chainId.toString()
       initNetworkState(selectedAccountAddr, chain)
 
-      if (this.#getCanSkipUpdate(selectedAccountAddr, network.chainId, maxDataAgeMs)) return
+      if (
+        this.#getShouldSkipUpdate(selectedAccountAddr, network.chainId, maxDataAgeMs, forceUpdate)
+      )
+        return
 
       const state = this.#state[selectedAccountAddr][chain]
       Object.assign(state, {
@@ -296,7 +318,6 @@ export class DefiPositionsController extends EventEmitter {
         const hasKeys = this.#keystore.keys.some(({ addr }) =>
           this.#selectedAccount.account!.associatedKeys.includes(addr)
         )
-
         const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
 
         const resp = await this.#fetch(
