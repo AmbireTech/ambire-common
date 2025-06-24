@@ -49,7 +49,14 @@ export const updatePortfolioStateWithDefiPositions = (
             )
           })
 
-          if (tokenInPortfolio) return
+          // Skip if the controller token is already in the portfolio and has a price in USD
+          // (custom tokens with no price can be added. In that case add the pos to the total balance)
+          if (
+            tokenInPortfolio &&
+            tokenInPortfolio.amount !== 0n &&
+            tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd')
+          )
+            return
         }
 
         let shouldAddPositionUSDAmountToTheTotalBalance = true

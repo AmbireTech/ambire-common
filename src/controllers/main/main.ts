@@ -500,8 +500,6 @@ export class MainController extends EventEmitter {
     const selectedAccountAddr = this.selectedAccount.account?.addr
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     if (!this.activity.broadcastedButNotConfirmed.length) {
-      // Update defi positions together with the portfolio for simplicity
-      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
     }
 
