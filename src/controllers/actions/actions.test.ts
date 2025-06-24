@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -22,7 +23,7 @@ const DAPP_CONNECT_REQUEST: DappUserRequest = {
   id: 1,
   action: { kind: 'dappConnect', params: {} },
   meta: { isSignAction: false },
-  session: { name: '', icon: '', origin: '' },
+  session: new Session({ tabId: 0, origin: '' }),
   dappPromise: {
     resolve: () => {},
     reject: () => {},
@@ -55,7 +56,7 @@ const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
     chainId: 10n,
     paymasterService: undefined
   },
-  session: { name: '', icon: '', origin: '' },
+  session: new Session({ tabId: 0, origin: '' }),
   dappPromise: {
     resolve: () => {},
     reject: () => {},
