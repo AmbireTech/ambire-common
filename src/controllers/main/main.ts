@@ -574,6 +574,7 @@ export class MainController extends EventEmitter {
     await this.forceEmitUpdate()
     await this.actions.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
+    await this.activity.forceEmitUpdate()
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
