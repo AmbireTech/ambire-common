@@ -19,6 +19,7 @@ import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 
+const ONE_MINUTE = 60000
 export class DefiPositionsController extends EventEmitter {
   #selectedAccount: SelectedAccountController
 
@@ -31,8 +32,6 @@ export class DefiPositionsController extends EventEmitter {
   #fetch: Fetch
 
   #storage: StorageController
-
-  #minUpdateInterval: number = 60 * 1000 // 1 minute
 
   #state: DeFiPositionsState = {}
 
@@ -81,11 +80,7 @@ export class DefiPositionsController extends EventEmitter {
     })
   }
 
-  #getShouldSkipUpdate(
-    accountAddr: string,
-    maxDataAgeMs = this.#minUpdateInterval,
-    forceUpdate?: boolean
-  ) {
+  #getShouldSkipUpdate(accountAddr: string, maxDataAgeMs = ONE_MINUTE, forceUpdate?: boolean) {
     const hasKeys = this.#keystore.keys.some(({ addr }) =>
       this.#selectedAccount.account!.associatedKeys.includes(addr)
     )
@@ -109,7 +104,7 @@ export class DefiPositionsController extends EventEmitter {
     if (!latestUpdatedAt) return false
 
     if (accountState.some((n) => n.providerErrors?.length || n.error)) {
-      maxDataAgeMs = this.#minUpdateInterval
+      maxDataAgeMs = ONE_MINUTE
     }
 
     const isWithinMinUpdateInterval = Date.now() - latestUpdatedAt < maxDataAgeMs
