@@ -13,9 +13,14 @@ class EtherspotEstimationErrorHandler implements ErrorHandler {
     const { message } = error?.error || error || {}
     const lowerCased = typeof message === 'string' ? message.toLowerCase() : ''
 
-    // TODO: expand with more error cases
     let reason = ''
-    if (lowerCased.includes('internal error')) {
+    if (
+      lowerCased.includes('internal error') ||
+      // etherspot don't support state override and therefore they cannot
+      // estimate our deploy transaction. That's why we scan for a aa20
+      // error and when encountered, fallback to another bundler
+      lowerCased.includes('aa20')
+    ) {
       reason = 'etherspot: 500'
     }
 
