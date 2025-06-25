@@ -29,7 +29,7 @@ import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
   convertPortfolioTokenToSwapAndBridgeToToken,
-  lifiMapTokenAddr,
+  lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
@@ -44,7 +44,7 @@ const normalizeLiFiTokenToSwapAndBridgeToToken = (
 
   return {
     name,
-    address: lifiMapTokenAddr(toChainId, address),
+    address: lifiMapNativeToAddr(toChainId, address),
     decimals,
     symbol,
     icon,
@@ -418,9 +418,9 @@ export class LiFiAPI {
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
-      fromTokenAddress: lifiMapTokenAddr(fromChainId, fromTokenAddress),
+      fromTokenAddress: lifiMapNativeToAddr(fromChainId, fromTokenAddress),
       toChainId: toChainId.toString(),
-      toTokenAddress: lifiMapTokenAddr(toChainId, toTokenAddress),
+      toTokenAddress: lifiMapNativeToAddr(toChainId, toTokenAddress),
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {

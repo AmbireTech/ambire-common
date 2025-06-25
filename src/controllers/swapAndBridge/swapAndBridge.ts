@@ -40,6 +40,7 @@ import {
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   lifiTokenListFilter,
+  mapNativeToAddr,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -611,9 +612,16 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode,
       fromSelectedToken,
       toChainId,
-      toSelectedTokenAddr,
       routePriority
     } = props
+
+    // map the token back
+    const chainId = toChainId ?? this.toChainId
+    const toSelectedTokenAddr =
+      chainId && props.toSelectedTokenAddr
+        ? mapNativeToAddr(this.#serviceProviderAPI.id, Number(chainId), props.toSelectedTokenAddr)
+        : undefined
+
     const { emitUpdate = true, updateQuote = true } = updateProps || {}
     let shouldUpdateToTokenList = false
 

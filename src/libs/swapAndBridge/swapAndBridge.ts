@@ -349,7 +349,7 @@ const addCustomTokensIfNeeded = ({
 // the celo native token is at an address 0x471EcE3750Da237f93B8E339c536989b8978a438
 // and LiFi doesn't work if we pass address 0 for this. We map it only for
 // lifi to make the swap work in this case
-const lifiMapTokenAddr = (chainId: number, tokenAddr: string) => {
+const lifiMapNativeToAddr = (chainId: number, tokenAddr: string) => {
   if (tokenAddr !== ZeroAddress) return tokenAddr
   // celo chain
   if (chainId !== 42220) return tokenAddr
@@ -362,6 +362,23 @@ const lifiTokenListFilter = (t: SwapAndBridgeToToken) => {
   return !(t.chainId === 42220 && t.address === '0x471EcE3750Da237f93B8E339c536989b8978a438')
 }
 
+/**
+ * Map the token address back to native when needed
+ */
+const mapNativeToAddr = (
+  serviceProviderId: 'lifi' | 'socket',
+  chainId: number,
+  tokenAddr: string
+) => {
+  if (serviceProviderId === 'socket') return tokenAddr
+
+  if (chainId !== 42220) return tokenAddr
+
+  if (tokenAddr !== '0x471EcE3750Da237f93B8E339c536989b8978a438') return tokenAddr
+
+  return ZeroAddress
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
@@ -369,6 +386,7 @@ export {
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getSwapAndBridgeCalls,
-  lifiMapTokenAddr,
-  lifiTokenListFilter
+  lifiMapNativeToAddr,
+  lifiTokenListFilter,
+  mapNativeToAddr
 }
