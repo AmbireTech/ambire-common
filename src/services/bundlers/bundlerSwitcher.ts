@@ -53,7 +53,8 @@ export class BundlerSwitcher {
     return (
       !bundlerError ||
       bundlerError.cause === 'biconomy: 400' ||
-      bundlerError.cause === 'pimlico: 500'
+      bundlerError.cause === 'pimlico: 500' ||
+      bundlerError.cause === 'etherspot: 500'
     )
   }
 

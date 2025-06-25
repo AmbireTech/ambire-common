@@ -105,8 +105,12 @@ export abstract class Bundler {
       preVerificationGas: toBeHex(preVerificationGas) as Hex,
       verificationGasLimit: toBeHex(estimatiton.verificationGasLimit) as Hex,
       callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
-      paymasterVerificationGasLimit: toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex,
-      paymasterPostOpGasLimit: toBeHex(estimatiton.paymasterPostOpGasLimit) as Hex
+      paymasterVerificationGasLimit: estimatiton.paymasterVerificationGasLimit
+        ? (toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex)
+        : '0x00',
+      paymasterPostOpGasLimit: estimatiton.paymasterPostOpGasLimit
+        ? (toBeHex(estimatiton.paymasterPostOpGasLimit) as Hex)
+        : '0x00'
     }
   }
 
