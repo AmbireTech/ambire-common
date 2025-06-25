@@ -6,6 +6,7 @@ import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
@@ -113,6 +114,7 @@ describe('Main Controller ', () => {
           }
         ]
       },
+      session: new Session(),
       meta: {
         isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -126,7 +128,7 @@ describe('Main Controller ', () => {
       // Even if someone manages to open a user request without having state for that network
       // (for example through a dApp) it will be handled in the UI
       if ('ethereum' in Object.keys(controller.accounts.accountStates)) {
-        await controller.addUserRequest(req)
+        await controller.addUserRequests([req])
         expect(controller.actions.actionsQueue.length).toBe(1)
       }
     })
@@ -144,6 +146,7 @@ describe('Main Controller ', () => {
           }
         ]
       },
+      session: new Session(),
       meta: {
         isSignAction: true,
         accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',

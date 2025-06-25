@@ -34,6 +34,11 @@ export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
+export type OpenActionWindowParams = {
+  skipFocus?: boolean
+  baseWindowId?: number
+}
+
 const SWAP_AND_BRIDGE_WINDOW_SIZE = {
   width: 640,
   height: 640
@@ -173,8 +178,17 @@ export class ActionsController extends EventEmitter {
 
   async addOrUpdateActions(
     newActions: Action[],
-    position: ActionPosition = 'last',
-    executionType: ActionExecutionType = 'open-action-window'
+    {
+      position = 'last',
+      executionType = 'open-action-window',
+      skipFocus = false,
+      baseWindowId = undefined
+    }: {
+      position?: ActionPosition
+      executionType?: ActionExecutionType
+      skipFocus?: boolean
+      baseWindowId?: number
+    } = {}
   ) {
     // remove the benzin action if a new actions is added
     this.actionsQueue = this.actionsQueue.filter((a) => {
@@ -217,18 +231,13 @@ export class ActionsController extends EventEmitter {
         this.sendNewActionMessage(nextAction, 'queued')
         currentAction = this.currentAction || this.visibleActionsQueue[0] || null
       }
-      await this.#setCurrentAction(currentAction)
+      await this.#setCurrentAction(currentAction, {
+        skipFocus,
+        baseWindowId
+      })
     } else {
       this.emitUpdate()
     }
-  }
-
-  async addOrUpdateAction(
-    newAction: Action,
-    position?: ActionPosition,
-    executionType?: ActionExecutionType
-  ) {
-    await this.addOrUpdateActions([newAction], position, executionType)
   }
 
   async removeActions(actionIds: Action['id'][], shouldOpenNextAction: boolean = true) {
@@ -237,7 +246,9 @@ export class ActionsController extends EventEmitter {
     if (!this.visibleActionsQueue.length) {
       await this.#setCurrentAction(null)
     } else if (shouldOpenNextAction) {
-      await this.#setCurrentAction(this.visibleActionsQueue[0])
+      await this.#setCurrentAction(this.visibleActionsQueue[0], {
+        skipFocus: true
+      })
     }
   }
 
@@ -251,19 +262,19 @@ export class ActionsController extends EventEmitter {
     await this.actionWindow.openWindowPromise
   }
 
-  async #setCurrentAction(nextAction: Action | null) {
+  async #setCurrentAction(nextAction: Action | null, params?: OpenActionWindowParams) {
     this.currentAction = nextAction
     this.emitUpdate()
 
     if (nextAction) {
-      await this.openActionWindow()
+      await this.openActionWindow(params)
       return
     }
 
     await this.closeActionWindow()
   }
 
-  async setCurrentActionById(actionId: Action['id']) {
+  async setCurrentActionById(actionId: Action['id'], params?: OpenActionWindowParams) {
     const action = this.visibleActionsQueue.find((a) => a.id.toString() === actionId.toString())
     if (!action)
       throw new EmittableError({
@@ -272,10 +283,10 @@ export class ActionsController extends EventEmitter {
         level: 'major',
         error: new Error(`Action not found. Id: ${actionId}`)
       })
-    await this.#setCurrentAction(action)
+    await this.#setCurrentAction(action, params)
   }
 
-  async setCurrentActionByIndex(actionIndex: number) {
+  async setCurrentActionByIndex(actionIndex: number, params?: OpenActionWindowParams) {
     const action = this.visibleActionsQueue[actionIndex]
     if (!action)
       throw new EmittableError({
@@ -284,7 +295,7 @@ export class ActionsController extends EventEmitter {
         level: 'major',
         error: new Error(`Action not found. Index: ${actionIndex}`)
       })
-    await this.#setCurrentAction(action)
+    await this.#setCurrentAction(action, params)
   }
 
   sendNewActionMessage(newAction: Action, type: 'queued' | 'updated') {
@@ -299,11 +310,12 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  async openActionWindow() {
+  async openActionWindow(params?: OpenActionWindowParams) {
+    const { skipFocus, baseWindowId } = params || {}
     await this.#awaitPendingPromises()
 
     if (this.actionWindow.windowProps) {
-      await this.focusActionWindow()
+      if (!skipFocus) await this.focusActionWindow()
     } else {
       let customSize
 
@@ -313,9 +325,7 @@ export class ActionsController extends EventEmitter {
 
       try {
         this.actionWindow.openWindowPromise = this.#windowManager
-          .open({
-            customSize
-          })
+          .open({ customSize, baseWindowId })
           .finally(() => {
             this.actionWindow.openWindowPromise = undefined
           })

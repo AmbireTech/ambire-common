@@ -1,3 +1,4 @@
+import { Session } from 'classes/session'
 import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -12,6 +13,7 @@ import {
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { UserRequest } from '../../interfaces/userRequest'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM
@@ -265,8 +267,9 @@ const buildSwapAndBridgeUserRequests = async (
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState,
-  paymasterService?: PaymasterService
-) => {
+  paymasterService?: PaymasterService,
+  windowId?: number
+): Promise<UserRequest[]> => {
   return [
     {
       id: userTx.activeRouteId,
@@ -274,6 +277,7 @@ const buildSwapAndBridgeUserRequests = async (
         kind: 'calls' as const,
         calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
       },
+      session: new Session({ windowId }),
       meta: {
         isSignAction: true as true,
         chainId,

@@ -352,7 +352,13 @@ export type SwapAndBridgeActiveRoute = {
     transactionData: { txHash: string }[] | null
     userAddress: string
   }
-  routeStatus: 'waiting-approval-to-resolve' | 'in-progress' | 'ready' | 'completed' | 'failed'
+  routeStatus:
+    | 'waiting-approval-to-resolve'
+    | 'in-progress'
+    | 'ready'
+    | 'completed'
+    | 'failed'
+    | 'refunded'
   error?: string
 }
 
@@ -370,7 +376,7 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
 
 export type SocketRouteStatus = 'ready' | 'completed' | null
 
-export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | null
+export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
 
 export type SocketAPISupportedChain = {
   chainId: number

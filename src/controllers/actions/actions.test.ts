@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
@@ -18,15 +19,17 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
 
+const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
+
 const DAPP_CONNECT_REQUEST: DappUserRequest = {
   id: 1,
   action: { kind: 'dappConnect', params: {} },
   meta: { isSignAction: false },
-  session: { name: '', icon: '', origin: '' },
+  session: MOCK_SESSION,
   dappPromise: {
     resolve: () => {},
     reject: () => {},
-    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+    session: MOCK_SESSION
   }
 }
 const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
@@ -55,11 +58,11 @@ const SIGN_ACCOUNT_OP_REQUEST: SignUserRequest = {
     chainId: 10n,
     paymasterService: undefined
   },
-  session: { name: '', icon: '', origin: '' },
+  session: MOCK_SESSION,
   dappPromise: {
     resolve: () => {},
     reject: () => {},
-    session: { name: 'Test dApp', origin: 'https://test-dApp.com', icon: '' }
+    session: MOCK_SESSION
   }
 }
 
@@ -204,7 +207,10 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION, 'last', 'open-action-window')
+    actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION], {
+      position: 'last',
+      executionType: 'open-action-window'
+    })
   })
   test('should set window loaded', (done) => {
     let emitCounter = 0
@@ -241,7 +247,10 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'queue-but-open-action-window')
+    actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
+      position: 'last',
+      executionType: 'queue-but-open-action-window'
+    })
   })
   test('should update a queued account op action by removing a call', (done) => {
     let emitCounter = 0
@@ -269,11 +278,10 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(
-      UPDATED_SIGN_ACCOUNT_OP_ACTION,
-      'last',
-      'queue-but-open-action-window'
-    )
+    actionsCtrl.addOrUpdateActions([UPDATED_SIGN_ACCOUNT_OP_ACTION], {
+      position: 'last',
+      executionType: 'queue-but-open-action-window'
+    })
   })
   test('should update the existing accountOp action by removing a call and open it', (done) => {
     let emitCounter = 0
@@ -299,12 +307,13 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(UPDATED_SIGN_ACCOUNT_OP_ACTION, 'last')
+    actionsCtrl.addOrUpdateActions([UPDATED_SIGN_ACCOUNT_OP_ACTION], { position: 'last' })
   })
   test('should add an action with priority', (done) => {
     const BЕNZIN_ACTION: SignUserRequest = {
       id: 3,
       action: { kind: 'benzin' },
+      session: new Session(),
       meta: {
         isSignAction: true,
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
@@ -331,7 +340,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(BENZIN_ACTION, 'first')
+    actionsCtrl.addOrUpdateActions([BENZIN_ACTION], { position: 'first' })
   })
   test('should have banners', () => {
     // one banner for all pending requests: "You have X pending app request(s)"
@@ -418,7 +427,7 @@ describe('Actions Controller', () => {
     })
 
     // Add actions to the queue
-    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION)
+    actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION])
   })
   test('should select action by index', (done) => {
     let emitCounter = 0
@@ -499,8 +508,14 @@ describe('Actions Controller', () => {
   })
   test('removeAccountData', async () => {
     // Add actions to the queue
-    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION, 'last', 'queue')
-    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'open-action-window')
+    actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION], {
+      position: 'last',
+      executionType: 'queue'
+    })
+    actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
+      position: 'last',
+      executionType: 'open-action-window'
+    })
 
     expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)
 

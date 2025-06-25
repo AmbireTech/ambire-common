@@ -1,3 +1,4 @@
+import { Session } from 'classes/session'
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
@@ -22,7 +23,6 @@ import { AddNetworkRequestParams, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -501,8 +501,6 @@ export class MainController extends EventEmitter {
     const selectedAccountAddr = this.selectedAccount.account?.addr
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     if (!this.activity.broadcastedButNotConfirmed.length) {
-      // Update defi positions together with the portfolio for simplicity
-      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
     }
 
@@ -1444,7 +1442,7 @@ export class MainController extends EventEmitter {
   async buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
-      session: { id: string; name: string; origin: string; icon: string }
+      session: DappProviderRequest['session']
       resolve: (data: any) => void
       reject: (data: any) => void
     }
@@ -1509,6 +1507,7 @@ export class MainController extends EventEmitter {
             value: call.value ? getBigInt(call.value) : 0n
           }))
         },
+        session: new Session({ windowId: request.session.windowId }),
         meta: {
           isSignAction: true,
           isWalletSendCalls,
@@ -1639,13 +1638,13 @@ export class MainController extends EventEmitter {
     // We can simply add the user request if it's not a sign operation
     // for another account
     if (!isASignOperationRequestedForAnotherAccount) {
-      await this.addUserRequest(
-        userRequest,
+      await this.addUserRequests([userRequest], {
         actionPosition,
-        actionPosition === 'first' || isSmartAccount(this.selectedAccount.account)
-          ? 'open-action-window'
-          : 'queue-but-open-action-window'
-      )
+        actionExecutionType:
+          actionPosition === 'first' || isSmartAccount(this.selectedAccount.account)
+            ? 'open-action-window'
+            : 'queue-but-open-action-window'
+      })
       return
     }
 
@@ -1686,7 +1685,8 @@ export class MainController extends EventEmitter {
       amount,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      windowId
     })
 
     if (!userRequest) {
@@ -1700,7 +1700,10 @@ export class MainController extends EventEmitter {
       return
     }
 
-    await this.addUserRequest(userRequest, 'last', actionExecutionType)
+    await this.addUserRequests([userRequest], {
+      actionPosition: 'last',
+      actionExecutionType
+    })
 
     // reset the transfer form after adding a req
     this.transfer.resetForm()
@@ -1708,7 +1711,8 @@ export class MainController extends EventEmitter {
 
   async buildSwapAndBridgeUserRequest(
     openActionWindow: boolean,
-    activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
+    activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId'],
+    windowId?: number
   ) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
@@ -1803,14 +1807,14 @@ export class MainController extends EventEmitter {
           this.selectedAccount.account,
           this.providers.providers[network.chainId.toString()],
           accountState,
-          getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+          getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+          windowId
         )
 
-        await this.addUserRequests(
-          swapAndBridgeUserRequests,
-          'last',
-          openActionWindow ? 'open-action-window' : 'queue'
-        )
+        await this.addUserRequests(swapAndBridgeUserRequests, {
+          actionPosition: 'last',
+          actionExecutionType: openActionWindow ? 'open-action-window' : 'queue'
+        })
 
         if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
           await this.swapAndBridge.addActiveRoute({
@@ -1836,7 +1840,7 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async buildClaimWalletUserRequest(token: TokenResult) {
+  async buildClaimWalletUserRequest(token: TokenResult, windowId?: number) {
     if (!this.selectedAccount.account) return
 
     const claimableRewardsData =
@@ -1847,13 +1851,14 @@ export class MainController extends EventEmitter {
     const userRequest: UserRequest = buildClaimWalletRequest({
       selectedAccount: this.selectedAccount.account.addr,
       selectedToken: token,
-      claimableRewardsData
+      claimableRewardsData,
+      windowId
     })
 
-    await this.addUserRequest(userRequest)
+    await this.addUserRequests([userRequest])
   }
 
-  async buildMintVestingUserRequest(token: TokenResult) {
+  async buildMintVestingUserRequest(token: TokenResult, windowId?: number) {
     if (!this.selectedAccount.account) return
 
     const addrVestingData = this.selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
@@ -1862,10 +1867,11 @@ export class MainController extends EventEmitter {
     const userRequest: UserRequest = buildMintVestingRequest({
       selectedAccount: this.selectedAccount.account.addr,
       selectedToken: token,
-      addrVestingData
+      addrVestingData,
+      windowId
     })
 
-    await this.addUserRequest(userRequest)
+    await this.addUserRequests([userRequest])
   }
 
   async resolveUserRequest(data: any, requestId: UserRequest['id']) {
@@ -1954,7 +1960,9 @@ export class MainController extends EventEmitter {
             actionsQueue: this.actions.actionsQueue
           })
 
-          await this.actions.addOrUpdateAction(accountOpAction)
+          await this.actions.addOrUpdateActions([accountOpAction], {
+            skipFocus: true
+          })
           this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
         }
       }
@@ -1985,16 +1993,24 @@ export class MainController extends EventEmitter {
 
   async addUserRequests(
     reqs: UserRequest[],
-    actionPosition: ActionPosition = 'last',
-    actionExecutionType: ActionExecutionType = 'open-action-window',
-    allowAccountSwitch: boolean = false,
-    windowId?: number
+    {
+      actionPosition = 'last',
+      actionExecutionType = 'open-action-window',
+      allowAccountSwitch = false,
+      skipFocus = false
+    }: {
+      actionPosition?: ActionPosition
+      actionExecutionType?: ActionExecutionType
+      allowAccountSwitch?: boolean
+      skipFocus?: boolean
+    } = {}
   ) {
     const shouldSkipAddUserRequest = await this.#guardHWSigning()
 
     if (shouldSkipAddUserRequest) return
 
     const actionsToAdd: Action[] = []
+    const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
 
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
@@ -2079,25 +2095,14 @@ export class MainController extends EventEmitter {
     }
 
     if (actionsToAdd.length)
-      this.actions.addOrUpdateActions(actionsToAdd, actionPosition, actionExecutionType, windowId)
+      await this.actions.addOrUpdateActions(actionsToAdd, {
+        position: actionPosition,
+        executionType: actionExecutionType,
+        skipFocus,
+        baseWindowId
+      })
 
     this.emitUpdate()
-  }
-
-  async addUserRequest(
-    req: UserRequest,
-    actionPosition?: ActionPosition,
-    actionExecutionType?: ActionExecutionType,
-    allowAccountSwitch?: boolean,
-    windowId?: number
-  ) {
-    await this.addUserRequests(
-      [req],
-      actionPosition,
-      actionExecutionType,
-      allowAccountSwitch,
-      windowId
-    )
   }
 
   async removeUserRequests(
@@ -2196,10 +2201,12 @@ export class MainController extends EventEmitter {
       await this.actions.removeActions(actionsToRemove, shouldOpenNextRequest)
     }
     if (userRequestsToAdd.length) {
-      await this.addUserRequests(userRequestsToAdd)
+      await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
     }
     if (actionsToAddOrUpdate.length) {
-      await this.actions.addOrUpdateActions(actionsToAddOrUpdate)
+      await this.actions.addOrUpdateActions(actionsToAddOrUpdate, {
+        skipFocus: true
+      })
     }
 
     this.emitUpdate()
@@ -2265,9 +2272,13 @@ export class MainController extends EventEmitter {
       const benzinUserRequest: SignUserRequest = {
         id: new Date().getTime(),
         action: { kind: 'benzin' },
+        session: new Session(),
         meta
       }
-      await this.addUserRequest(benzinUserRequest, 'first')
+      await this.addUserRequests([benzinUserRequest], {
+        actionPosition: 'first',
+        skipFocus: true
+      })
     }
 
     await this.actions.removeAction(actionId)
@@ -2346,15 +2357,19 @@ export class MainController extends EventEmitter {
 
   async #addSwitchAccountUserRequest(req: UserRequest) {
     this.userRequestsWaitingAccountSwitch.push(req)
-    await this.addUserRequest(
-      buildSwitchAccountUserRequest({
-        nextUserRequest: req,
-        selectedAccountAddr: req.meta.accountAddr,
-        session: req.dappPromise ? req.dappPromise.session : undefined,
-        dappPromise: req.dappPromise
-      }),
-      'last',
-      'open-action-window'
+    await this.addUserRequests(
+      [
+        buildSwitchAccountUserRequest({
+          nextUserRequest: req,
+          selectedAccountAddr: req.meta.accountAddr,
+          session: req.session || new Session(),
+          dappPromise: req.dappPromise
+        })
+      ],
+      {
+        actionPosition: 'last',
+        actionExecutionType: 'open-action-window'
+      }
     )
   }
 

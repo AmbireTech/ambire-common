@@ -2,9 +2,9 @@ import { Messenger } from '../interfaces/messenger'
 import { getDappIdFromUrl } from '../libs/dapps/helpers'
 
 export interface SessionInitProps {
-  tabId: number
-  windowId: number
-  origin: string
+  tabId?: number
+  windowId?: number
+  origin?: string
 }
 export interface SessionProp {
   icon?: string
@@ -13,7 +13,11 @@ export interface SessionProp {
 }
 
 export function getSessionId({ tabId, windowId, origin }: SessionInitProps) {
-  return `${windowId}-${tabId}-${origin}`
+  if (windowId) {
+    return `${windowId}-${tabId}-${origin}`
+  }
+
+  return `${tabId}-${origin}`
 }
 
 // Each instance of a Session represents an active connection between a dApp and the wallet.
@@ -31,7 +35,7 @@ export class Session {
 
   tabId: number
 
-  windowId: number
+  windowId?: number
 
   name: string = ''
 
@@ -55,10 +59,10 @@ export class Session {
     this.messenger.send('broadcast', { event, data }, { tabId: this.tabId })
   }
 
-  constructor({ tabId, windowId, origin }: SessionInitProps) {
+  constructor({ tabId, windowId, origin }: SessionInitProps = {}) {
     this.id = getDappIdFromUrl(origin)
-    this.origin = origin
-    this.tabId = tabId
+    this.origin = origin || 'internal'
+    this.tabId = tabId || Date.now()
     this.windowId = windowId
   }
 

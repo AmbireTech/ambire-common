@@ -17,6 +17,7 @@ export interface WindowManager {
   open: (options?: {
     route?: string
     customSize?: { width: number; height: number }
+    baseWindowId?: number
   }) => Promise<WindowProps>
   focus: (windowProps: WindowProps) => Promise<WindowProps>
   closePopupWithUrl: (url: string) => Promise<void>
