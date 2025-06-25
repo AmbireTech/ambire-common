@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 
-export type WindowId = number
+export type WindowId = number | 'popup'
 
 export type WindowProps = {
   id: WindowId
