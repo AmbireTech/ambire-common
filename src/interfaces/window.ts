@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 
-export type WindowId = number | 'popup'
+export type WindowId = number
 
 export type WindowProps = {
   id: WindowId
@@ -21,7 +21,7 @@ export interface WindowManager {
   }) => Promise<WindowProps>
   focus: (windowProps: WindowProps) => Promise<WindowProps>
   closePopupWithUrl: (url: string) => Promise<void>
-  remove: (winId: WindowId) => Promise<void>
+  remove: (winId: WindowId | 'popup') => Promise<void>
   sendWindowToastMessage: (
     message: string,
     options?: {
