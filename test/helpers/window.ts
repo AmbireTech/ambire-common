@@ -32,7 +32,9 @@ const mockWindowManager = (eventEmitter?: EventEmitter) => {
       event.emit('windowRemoved', windowId)
       return Promise.resolve()
     },
-    remove: () => {
+    remove: (id: number | 'popup') => {
+      if (id === 'popup') return Promise.resolve()
+
       event.emit('windowRemoved', windowId)
       return Promise.resolve()
     },

@@ -230,7 +230,6 @@ describe('Actions Controller', () => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
