@@ -9,21 +9,16 @@ class EtherspotEstimationErrorHandler implements ErrorHandler {
     return bundlerName && bundlerName === ETHERSPOT
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public handle(data: string, error: any): DecodedError {
-    const { message } = error?.error || error || {}
-    const lowerCased = typeof message === 'string' ? message.toLowerCase() : ''
-
-    let reason = ''
-    if (
-      lowerCased.includes('internal error') ||
-      // etherspot don't support state override and therefore they cannot
-      // estimate our deploy transaction. That's why we scan for a aa20
-      // error and when encountered, fallback to another bundler
-      lowerCased.includes('aa20')
-    ) {
-      reason = 'etherspot: 500'
-    }
-
+    // etherspot have multiple problems:
+    // - our deploys don't work as state override is not supported
+    // - our delegations don't work as state override is not supported
+    // - on enormous usage, we can hit the rate limit
+    // so we always "notify" the code to switch to another
+    // bundler and continue the execution no matter what the error is.
+    // This is the safest way to use etherspot atm
+    const reason = 'etherspot: 500'
     return {
       type: ErrorType.BundlerError,
       reason,

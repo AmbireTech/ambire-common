@@ -25,9 +25,15 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
  * Get the default bundler for the network without any extra logic.
  * If it's set, get it. If not, use pimlico
  */
-export function getDefaultBundler(network: Network): Bundler {
+export function getDefaultBundler(
+  network: Network,
+  opts: { canDelegate: boolean } = { canDelegate: false }
+): Bundler {
   // hardcode biconomy for Sonic as it's not supported by pimlico
   if (network.chainId === 146n) return getBundlerByName(BICONOMY)
+
+  // use pimlico on all 7702 accounts that don't have a set delegation
+  if (opts.canDelegate) return getBundlerByName(PIMLICO)
 
   const bundlerName = network.erc4337.defaultBundler ? network.erc4337.defaultBundler : PIMLICO
   return getBundlerByName(bundlerName)
