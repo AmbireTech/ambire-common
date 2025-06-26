@@ -18,16 +18,16 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
   const iface = new Interface(Legends)
   const characterTypes: { [season: number]: string[] } = {
     '0': [
-      'http://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
-      'http://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png',
-      'http://relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png',
-      'http://relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png',
-      'http://relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png',
-      'http://relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png',
-      'http://relayer.ambire.com/legends/nft-image/avatar/shapeshifter-lvl0.png'
+      'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/slime-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/sorceress-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/necromancer-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/penguin-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/orc-lvl0.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/shapeshifter-lvl0.png'
     ],
     '1': [
-      'http://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
+      'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
       'https://staging-relayer.ambire.com/legends/nft-image/avatar/astro-cat-lvl0.png',
       'https://staging-relayer.ambire.com/legends/nft-image/avatar/medal-bear-lvl0.png',
       'https://staging-relayer.ambire.com/legends/nft-image/avatar/yellow-blue-lvl0.png',
