@@ -19,6 +19,7 @@ import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 
+const ONE_MINUTE = 60000
 export class DefiPositionsController extends EventEmitter {
   #selectedAccount: SelectedAccountController
 
@@ -31,8 +32,6 @@ export class DefiPositionsController extends EventEmitter {
   #fetch: Fetch
 
   #storage: StorageController
-
-  #minUpdateInterval: number = 60 * 1000 // 1 minute
 
   #state: DeFiPositionsState = {}
 
@@ -81,15 +80,36 @@ export class DefiPositionsController extends EventEmitter {
     })
   }
 
-  #getCanSkipUpdate(accountAddr: string, chainId: bigint, maxDataAgeMs = this.#minUpdateInterval) {
-    const networkState = this.#state[accountAddr][chainId.toString()]
-    if (!networkState.updatedAt) return false
+  #getShouldSkipUpdate(accountAddr: string, maxDataAgeMs = ONE_MINUTE, forceUpdate?: boolean) {
+    const hasKeys = this.#keystore.keys.some(({ addr }) =>
+      this.#selectedAccount.account!.associatedKeys.includes(addr)
+    )
 
-    if (networkState.error || networkState.providerErrors?.length) return false
-    const isWithinMinUpdateInterval =
-      networkState.updatedAt && Date.now() - networkState.updatedAt < maxDataAgeMs
+    // force update the positions if forceUpdate is passed,
+    // the account has keys and a session with the DeFi tab is opened
+    const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
+    if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
-    return isWithinMinUpdateInterval || networkState.isLoading
+    let latestUpdatedAt: number | undefined = undefined
+
+    const accountState = Object.values(this.#state[accountAddr])
+    for (const network of accountState) {
+      if (typeof network.updatedAt === 'number') {
+        if (latestUpdatedAt === undefined || network.updatedAt > latestUpdatedAt) {
+          latestUpdatedAt = network.updatedAt
+        }
+      }
+    }
+
+    if (!latestUpdatedAt) return false
+
+    if (accountState.some((n) => n.providerErrors?.length || n.error)) {
+      maxDataAgeMs = ONE_MINUTE
+    }
+
+    const isWithinMinUpdateInterval = Date.now() - latestUpdatedAt < maxDataAgeMs
+
+    return isWithinMinUpdateInterval || accountState.some((n) => n.isLoading)
   }
 
   async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
@@ -125,12 +145,7 @@ export class DefiPositionsController extends EventEmitter {
 
     const initNetworkState = (addr: string, chain: string) => {
       if (!this.#state[addr][chain]) {
-        this.#state[addr][chain] = {
-          isLoading: false,
-          positionsByProvider: [],
-          updatedAt: undefined,
-          providerErrors: []
-        }
+        this.#state[addr][chain] = { isLoading: false, positionsByProvider: [], providerErrors: [] }
       }
     }
 
@@ -139,11 +154,6 @@ export class DefiPositionsController extends EventEmitter {
       for (const n of networksToUpdate) {
         const chain = n.chainId.toString()
         initNetworkState(selectedAccountAddr, chain)
-        Object.assign(this.#state[selectedAccountAddr][chain], {
-          isLoading: true,
-          updatedAt: undefined,
-          providerErrors: []
-        })
       }
     }
 
@@ -178,14 +188,8 @@ export class DefiPositionsController extends EventEmitter {
       const chain = network.chainId.toString()
       initNetworkState(selectedAccountAddr, chain)
 
-      if (this.#getCanSkipUpdate(selectedAccountAddr, network.chainId, maxDataAgeMs)) return
-
       const state = this.#state[selectedAccountAddr][chain]
-      Object.assign(state, {
-        isLoading: true,
-        providerErrors: [],
-        error: undefined
-      })
+      Object.assign(state, { isLoading: true, providerErrors: [], error: undefined })
       this.emitUpdate()
 
       const previousPositions = state.positionsByProvider
@@ -286,6 +290,8 @@ export class DefiPositionsController extends EventEmitter {
 
     prepareNetworks()
 
+    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
+
     let debankPositions: PositionsByProvider[] = []
 
     // Skip Debank call in testing mode — only fetch custom DeFi positions
@@ -296,7 +302,6 @@ export class DefiPositionsController extends EventEmitter {
         const hasKeys = this.#keystore.keys.some(({ addr }) =>
           this.#selectedAccount.account!.associatedKeys.includes(addr)
         )
-
         const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
 
         const resp = await this.#fetch(
@@ -313,7 +318,6 @@ export class DefiPositionsController extends EventEmitter {
     }
 
     await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))
-
     this.emitUpdate()
 
     await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])

@@ -1,6 +1,7 @@
 import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
+import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { DappProviderRequest } from './dapp'
@@ -50,7 +51,7 @@ export interface Message {
 export interface SignUserRequest {
   id: string | number
   action: Calls | PlainTextMessage | TypedMessage | Authorization | { kind: 'benzin' }
-  session?: DappProviderRequest['session']
+  session?: Session
   meta: {
     isSignAction: true
     accountAddr: AccountId
@@ -63,7 +64,7 @@ export interface SignUserRequest {
   }
   // defined only when SignUserRequest is built from a DappRequest
   dappPromise?: {
-    session: { name: string; origin: string; icon: string }
+    session: DappProviderRequest['session']
     resolve: (data: any) => void
     reject: (data: any) => void
   }
@@ -75,13 +76,13 @@ export interface DappUserRequest {
     kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin' | 'switchAccount'>
     params: any
   }
-  session: DappProviderRequest['session']
+  session: Session
   meta: {
     isSignAction: false
     [key: string]: any
   }
   dappPromise: {
-    session: { name: string; origin: string; icon: string }
+    session: DappProviderRequest['session']
     resolve: (data: any) => void
     reject: (data: any) => void
   }

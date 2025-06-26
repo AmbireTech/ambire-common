@@ -1,8 +1,8 @@
-import { Session, SessionProp } from '../../classes/session'
+import { Session, SessionInitProps, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
-import { patchStorageApps } from '../../libs/dapps/helpers'
+import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 
@@ -18,7 +18,7 @@ export class DappsController extends EventEmitter {
 
   #storage: StorageController
 
-  dappSessions: { [key: string]: Session } = {}
+  dappSessions: { [sessionId: string]: Session } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
@@ -37,20 +37,24 @@ export class DappsController extends EventEmitter {
   }
 
   get dapps(): Dapp[] {
-    const predefinedDappsParsed = predefinedDapps.map(
-      ({ url, name, icon, description }): Dapp => ({
-        name,
-        description,
-        url,
-        icon,
-        isConnected: false,
-        chainId: 1,
-        favorite: false
-      })
-    )
+    const combined = [...this.#dapps, ...predefinedDapps]
 
-    return [...this.#dapps, ...predefinedDappsParsed].reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
-      if (!acc.some(({ url }) => url === curr.url)) return [...acc, curr]
+    return combined.reduce((acc: Dapp[], curr): Dapp[] => {
+      const id = 'id' in curr ? curr.id : getDappIdFromUrl(curr.url)
+
+      if (!acc.some((dapp) => dapp.id === id)) {
+        acc.push({
+          id,
+          name: curr.name,
+          description: curr.description,
+          url: curr.url,
+          icon: curr.icon,
+          isConnected: 'isConnected' in curr ? curr.isConnected : false,
+          chainId: 'chainId' in curr ? curr.chainId : 1,
+          favorite: 'favorite' in curr ? curr.favorite : false
+        })
+      }
+
       return acc
     }, [])
   }
@@ -72,86 +76,80 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #dappSessionsSet(sessionId: string, session: Session) {
-    this.dappSessions[sessionId] = session
-  }
+  #createDappSession = (initProps: SessionInitProps) => {
+    const dappSession = new Session(initProps)
+    this.dappSessions[dappSession.sessionId] = dappSession
 
-  #dappSessionsDelete(sessionId: string) {
-    delete this.dappSessions[sessionId]
-  }
-
-  #createDappSession = (data: SessionProp) => {
-    const dappSession = new Session(data)
-    this.#dappSessionsSet(dappSession.sessionId, dappSession)
     this.emitUpdate()
 
     return dappSession
   }
 
-  getOrCreateDappSession = (data: SessionProp) => {
-    if (!data.tabId || !data.origin)
+  getOrCreateDappSession = (initProps: SessionInitProps) => {
+    if (!initProps.tabId || !initProps.origin)
       throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    if (this.dappSessions[`${data.tabId}-${data.origin}`]) {
-      return this.dappSessions[`${data.tabId}-${data.origin}`]
+    if (this.dappSessions[`${initProps.tabId}-${initProps.origin}`]) {
+      return this.dappSessions[`${initProps.tabId}-${initProps.origin}`]
     }
 
-    return this.#createDappSession(data)
+    return this.#createDappSession(initProps)
   }
 
-  setSessionMessenger = (key: string, messenger: Messenger) => {
-    this.dappSessions[key].setMessenger(messenger)
+  setSessionMessenger = (sessionId: string, messenger: Messenger) => {
+    this.dappSessions[sessionId].setMessenger(messenger)
   }
 
-  setSessionLastHandledRequestsId = (key: string, id: number, isWeb3AppRequest?: boolean) => {
-    if (id > this.dappSessions[key].lastHandledRequestId) {
-      this.dappSessions[key].lastHandledRequestId = id
-      if (isWeb3AppRequest && !this.dappSessions[key].isWeb3App) {
-        this.dappSessions[key].isWeb3App = true
+  setSessionLastHandledRequestsId = (sessionId: string, id: number, isWeb3AppRequest?: boolean) => {
+    if (id > this.dappSessions[sessionId].lastHandledRequestId) {
+      this.dappSessions[sessionId].lastHandledRequestId = id
+      if (isWeb3AppRequest && !this.dappSessions[sessionId].isWeb3App) {
+        this.dappSessions[sessionId].isWeb3App = true
         this.emitUpdate()
       }
     }
   }
 
-  resetSessionLastHandledRequestsId = (key: string) => {
-    this.dappSessions[key].lastHandledRequestId = -1
+  resetSessionLastHandledRequestsId = (sessionId: string) => {
+    this.dappSessions[sessionId].lastHandledRequestId = -1
   }
 
-  setSessionProp = (key: string, props: SessionProp) => {
-    this.dappSessions[key].setProp(props)
+  setSessionProp = (sessionId: string, props: SessionProp) => {
+    this.dappSessions[sessionId].setProp(props)
   }
 
-  deleteDappSession = (key: string) => {
-    this.#dappSessionsDelete(key)
+  deleteDappSession = (sessionId: string) => {
+    delete this.dappSessions[sessionId]
+
     this.emitUpdate()
   }
 
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,
-    origin?: string,
+    id?: string,
     skipPermissionCheck?: boolean
   ) => {
     await this.initialLoadPromise
 
-    let dappSessions: { key: string; data: Session }[] = []
-    Object.keys(this.dappSessions).forEach((key) => {
+    let dappSessions: { sessionId: string; data: Session }[] = []
+    Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
-        skipPermissionCheck || this.hasPermission(this.dappSessions[key].origin)
-      if (this.dappSessions[key] && hasPermissionToBroadcast) {
-        dappSessions.push({ key, data: this.dappSessions[key] })
+        skipPermissionCheck || this.hasPermission(this.dappSessions[sessionId].id)
+      if (this.dappSessions[sessionId] && hasPermissionToBroadcast) {
+        dappSessions.push({ sessionId, data: this.dappSessions[sessionId] })
       }
     })
-    if (origin) {
-      dappSessions = dappSessions.filter((dappSession) => dappSession.data.origin === origin)
+    if (id) {
+      dappSessions = dappSessions.filter((dappSession) => dappSession.data.id === id)
     }
 
     dappSessions.forEach((dappSession) => {
       try {
         dappSession.data.sendMessage?.(ev, data)
       } catch (e) {
-        if (this.dappSessions[dappSession.key]) {
-          this.deleteDappSession(dappSession.key)
+        if (this.dappSessions[dappSession.sessionId]) {
+          this.deleteDappSession(dappSession.sessionId)
         }
       }
     })
@@ -160,9 +158,10 @@ export class DappsController extends EventEmitter {
   addDapp(dapp: Dapp) {
     if (!this.isReady) return
 
-    const doesAlreadyExist = this.dapps.find((d) => d.url === dapp.url)
+    const doesAlreadyExist = this.dapps.find((d) => d.id === dapp.id)
+
     if (doesAlreadyExist) {
-      this.updateDapp(dapp.url, {
+      this.updateDapp(dapp.id, {
         chainId: dapp.chainId,
         isConnected: dapp.isConnected,
         favorite: dapp.favorite,
@@ -175,37 +174,43 @@ export class DappsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  updateDapp(url: string, dapp: Partial<Dapp>) {
+  updateDapp(id: string, dapp: Partial<Dapp>) {
     if (!this.isReady) return
 
     this.dapps = this.dapps.map((d) => {
-      if (d.url === url) return { ...d, ...dapp }
+      if (d.id === id) return { ...d, ...dapp }
       return d
     })
     this.emitUpdate()
   }
 
-  removeDapp(url: string) {
+  removeDapp(id: string) {
     if (!this.isReady) return
 
-    // do not remove predefined dapps
-    if (predefinedDapps.find((d) => d.url === url)) return
+    const dapp = this.dapps.find((d) => d.id === id)
 
-    this.dapps = this.dapps.filter((d) => d.url !== url)
+    if (!dapp) return
+
+    // do not remove predefined dapps
+    if (predefinedDapps.find((d) => getDappIdFromUrl(d.url) === dapp.id)) return
+    this.dapps = this.dapps.filter((d) => d.id !== id)
+
     this.emitUpdate()
   }
 
-  hasPermission(url: string) {
-    const dapp = this.dapps.find((d) => d.url === url)
+  hasPermission(id: string) {
+    if (!id) return false
+
+    const dapp = this.dapps.find((d) => d.id === id)
     if (!dapp) return false
 
     return dapp.isConnected
   }
 
-  getDapp(url: string) {
+  getDapp(id: string) {
     if (!this.isReady) return
 
-    return this.dapps.find((d) => d.url === url)
+    return this.dapps.find((d) => d.id === id)
   }
 
   toJSON() {
