@@ -36,6 +36,7 @@ export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'op
 
 export type OpenActionWindowParams = {
   skipFocus?: boolean
+  baseWindowId?: number
 }
 
 const SWAP_AND_BRIDGE_WINDOW_SIZE = {
@@ -177,9 +178,17 @@ export class ActionsController extends EventEmitter {
 
   async addOrUpdateActions(
     newActions: Action[],
-    position: ActionPosition = 'last',
-    executionType: ActionExecutionType = 'open-action-window',
-    skipFocus: boolean = false
+    {
+      position = 'last',
+      executionType = 'open-action-window',
+      skipFocus = false,
+      baseWindowId = undefined
+    }: {
+      position?: ActionPosition
+      executionType?: ActionExecutionType
+      skipFocus?: boolean
+      baseWindowId?: number
+    } = {}
   ) {
     // remove the benzin action if a new actions is added
     this.actionsQueue = this.actionsQueue.filter((a) => {
@@ -223,20 +232,12 @@ export class ActionsController extends EventEmitter {
         currentAction = this.currentAction || this.visibleActionsQueue[0] || null
       }
       await this.#setCurrentAction(currentAction, {
-        skipFocus
+        skipFocus,
+        baseWindowId
       })
     } else {
       this.emitUpdate()
     }
-  }
-
-  async addOrUpdateAction(
-    newAction: Action,
-    position?: ActionPosition,
-    executionType?: ActionExecutionType,
-    skipFocus?: boolean
-  ) {
-    await this.addOrUpdateActions([newAction], position, executionType, skipFocus)
   }
 
   async removeActions(actionIds: Action['id'][], shouldOpenNextAction: boolean = true) {
@@ -249,10 +250,6 @@ export class ActionsController extends EventEmitter {
         skipFocus: true
       })
     }
-  }
-
-  async removeAction(actionId: Action['id'], shouldOpenNextAction?: boolean) {
-    await this.removeActions([actionId], shouldOpenNextAction)
   }
 
   async #awaitPendingPromises() {
@@ -309,8 +306,8 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  async openActionWindow(params?: { skipFocus?: boolean }) {
-    const { skipFocus } = params || {}
+  async openActionWindow(params?: OpenActionWindowParams) {
+    const { skipFocus, baseWindowId } = params || {}
     await this.#awaitPendingPromises()
 
     if (this.actionWindow.windowProps) {
@@ -323,10 +320,9 @@ export class ActionsController extends EventEmitter {
       }
 
       try {
+        this.#windowManager.remove('popup') // no need to await this to speed up the action-window opening
         this.actionWindow.openWindowPromise = this.#windowManager
-          .open({
-            customSize
-          })
+          .open({ customSize, baseWindowId })
           .finally(() => {
             this.actionWindow.openWindowPromise = undefined
           })
@@ -351,6 +347,7 @@ export class ActionsController extends EventEmitter {
       return
 
     try {
+      this.#windowManager.remove('popup') // no need to await this to speed up the action-window opening
       this.actionWindow.focusWindowPromise = this.#windowManager
         .focus(this.actionWindow.windowProps)
         .finally(() => {
