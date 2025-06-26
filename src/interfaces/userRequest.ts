@@ -51,7 +51,7 @@ export interface Message {
 export interface SignUserRequest {
   id: string | number
   action: Calls | PlainTextMessage | TypedMessage | Authorization | { kind: 'benzin' }
-  session?: Session
+  session: Session
   meta: {
     isSignAction: true
     accountAddr: AccountId
