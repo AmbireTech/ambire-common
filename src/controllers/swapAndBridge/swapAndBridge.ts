@@ -691,6 +691,7 @@ export class SwapAndBridgeController extends EventEmitter {
     updateProps?: {
       emitUpdate?: boolean
       updateQuote?: boolean
+      shouldIncrementFromAmountUpdateCounter?: boolean
     }
   ) {
     const {
@@ -703,7 +704,11 @@ export class SwapAndBridgeController extends EventEmitter {
       shouldSetMaxAmount,
       routePriority
     } = props
-    const { emitUpdate = true, updateQuote = true } = updateProps || {}
+    const {
+      emitUpdate = true,
+      updateQuote = true,
+      shouldIncrementFromAmountUpdateCounter = false
+    } = updateProps || {}
     let shouldUpdateToTokenList = false
 
     // fromAmountFieldMode must be set before fromAmount so it
@@ -727,6 +732,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (fromAmountInFiat !== undefined) {
       this.fromAmountInFiat = fromAmountInFiat
+    }
+
+    if (shouldIncrementFromAmountUpdateCounter) {
+      this.fromAmountUpdateCounter += 1
     }
 
     if (fromSelectedToken) {
@@ -1120,7 +1129,8 @@ export class SwapAndBridgeController extends EventEmitter {
         },
         {
           emitUpdate: false,
-          updateQuote: false
+          updateQuote: false,
+          shouldIncrementFromAmountUpdateCounter: true
         }
       )
       this.fromSelectedToken = null
@@ -1172,7 +1182,8 @@ export class SwapAndBridgeController extends EventEmitter {
         },
         {
           emitUpdate: false,
-          updateQuote: false
+          updateQuote: false,
+          shouldIncrementFromAmountUpdateCounter: true
         }
       )
     }
