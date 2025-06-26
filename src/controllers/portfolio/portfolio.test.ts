@@ -331,7 +331,9 @@ describe('Portfolio Controller ', () => {
       )?.['1']!
       expect(latestState.isReady).toEqual(true)
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-      expect(latestState.result?.collections?.length).toBeGreaterThan(0)
+      // TODO – Switch to our test account,
+      //  as the current one no longer holds the NFT (it was transferred out and the portfolio is now empty).
+      // expect(latestState.result?.collections?.length).toBeGreaterThan(0)
       expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
       expect(pendingState).toBeDefined()
     })
@@ -374,12 +376,16 @@ describe('Portfolio Controller ', () => {
         if (latestState?.isReady && pendingState?.isReady) {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
+          // TODO – Switch to our test account,
+          //  as the current one no longer holds the NFT (it was transferred out and the portfolio is now empty).
+          // expect(latestState.result?.collections?.length).toBeGreaterThan(0)
           expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
 
           expect(pendingState.isReady).toEqual(true)
           expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-          expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
+          // TODO – Switch to our test account,
+          //  as the current one no longer holds the NFT (it was transferred out and the portfolio is now empty).
+          // expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
           expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
           done()
         }
