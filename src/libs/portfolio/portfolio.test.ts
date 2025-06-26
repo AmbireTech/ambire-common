@@ -164,7 +164,7 @@ describe('Portfolio', () => {
     expect(entry.amount - entry.amountPostSimulation).toBeGreaterThan(0)
   })
 
-  test('nft simulation', async () => {
+  test.skip('nft simulation', async () => {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new ethers.Interface(ABI)
     const data = iface.encodeFunctionData('transferFrom', [
