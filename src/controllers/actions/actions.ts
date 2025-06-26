@@ -198,7 +198,7 @@ export class ActionsController extends EventEmitter {
           this.sendNewActionMessage(newAction, 'queued')
           currentAction = this.currentAction || this.visibleActionsQueue[0] || null
         }
-        this.#setCurrentAction(currentAction)
+        this.#setCurrentAction(currentAction, false)
       } else {
         this.emitUpdate()
       }
@@ -219,7 +219,7 @@ export class ActionsController extends EventEmitter {
         this.sendNewActionMessage(newAction, 'queued')
         currentAction = this.currentAction || this.visibleActionsQueue[0] || null
       }
-      this.#setCurrentAction(currentAction)
+      this.#setCurrentAction(currentAction, false)
     } else {
       this.emitUpdate()
     }
@@ -235,11 +235,11 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  #setCurrentAction(nextAction: Action | null) {
+  #setCurrentAction(nextAction: Action | null, openActionWindow: boolean = true) {
     this.currentAction = nextAction
 
     if (nextAction && nextAction.id === this.currentAction?.id) {
-      this.openActionWindow()
+      if (openActionWindow) this.openActionWindow()
       this.emitUpdate()
       return
     }
@@ -247,9 +247,7 @@ export class ActionsController extends EventEmitter {
     if (!this.currentAction) {
       !!this.actionWindow.windowProps?.id &&
         this.#windowManager.remove(this.actionWindow.windowProps.id)
-    } else {
-      this.openActionWindow()
-    }
+    } else if (openActionWindow) this.openActionWindow()
 
     this.emitUpdate()
   }
