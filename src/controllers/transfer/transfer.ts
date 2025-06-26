@@ -74,6 +74,10 @@ export class TransferController extends EventEmitter {
 
   amountInFiat = ''
 
+  /**
+   * A counter used to trigger UI updates when the amount is changed programmatically
+   * by the controller.
+   */
   amountUpdateCounter = 0
 
   amountFieldMode: 'fiat' | 'token' = 'token'
