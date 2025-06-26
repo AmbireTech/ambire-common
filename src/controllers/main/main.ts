@@ -563,7 +563,7 @@ export class MainController extends EventEmitter {
       ({ type }) => type === 'swapAndBridge'
     )
     if (swapAndBridgeSigningAction) {
-      await this.actions.removeAction(swapAndBridgeSigningAction.id)
+      await this.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.reset()
@@ -1398,7 +1398,7 @@ export class MainController extends EventEmitter {
 
     // The swap and bridge or transfer is done/forgotten so we can remove the action
     if (!isSigningOrBroadcasting) {
-      await this.actions.removeAction(pendingAction.id)
+      await this.actions.removeActions([pendingAction.id])
 
       if (pendingAction.type === 'swapAndBridge') {
         this.swapAndBridge.reset()
@@ -1738,7 +1738,7 @@ export class MainController extends EventEmitter {
         }
 
         if (activeRoute) {
-          await this.removeUserRequest(activeRoute.activeRouteId, {
+          await this.removeUserRequests([activeRoute.activeRouteId], {
             shouldRemoveSwapAndBridgeRoute: false,
             shouldOpenNextRequest: false
           })
@@ -1884,11 +1884,11 @@ export class MainController extends EventEmitter {
     // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
     if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
       setTimeout(async () => {
-        await this.removeUserRequest(requestId)
+        await this.removeUserRequests([requestId])
         this.emitUpdate()
       }, 300)
     } else {
-      await this.removeUserRequest(requestId)
+      await this.removeUserRequests([requestId])
       this.emitUpdate()
     }
   }
@@ -1931,10 +1931,6 @@ export class MainController extends EventEmitter {
     await this.removeUserRequests([...userRequestsToRemove, ...requestIds], options)
   }
 
-  async rejectUserRequest(err: string, requestId: UserRequest['id']) {
-    await this.rejectUserRequests(err, [requestId])
-  }
-
   async rejectSignAccountOpCall(callId: string) {
     if (!this.signAccountOp) return
 
@@ -1951,7 +1947,7 @@ export class MainController extends EventEmitter {
 
         if (userRequest.action.calls.length === 0) {
           // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
-          await this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+          await this.rejectUserRequests('User rejected the transaction request.', [userRequest.id])
         } else {
           const accountOpAction = makeAccountOpAction({
             account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
@@ -1986,7 +1982,7 @@ export class MainController extends EventEmitter {
     )
 
     if (userRequest) {
-      await this.rejectUserRequest('User rejected the transaction request.', userRequest.id)
+      await this.rejectUserRequests('User rejected the transaction request.', [userRequest.id])
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
@@ -2213,17 +2209,6 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async removeUserRequest(
-    id: UserRequest['id'],
-    options?: {
-      shouldRemoveSwapAndBridgeRoute: boolean
-      shouldUpdateAccount?: boolean
-      shouldOpenNextRequest?: boolean
-    }
-  ) {
-    await this.removeUserRequests([id], options)
-  }
-
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
 
@@ -2282,7 +2267,7 @@ export class MainController extends EventEmitter {
       })
     }
 
-    await this.actions.removeAction(actionId)
+    await this.actions.removeActions([actionId])
 
     const userRequestsToRemove: UserRequest['id'][] = []
     const dappHandlers: any[] = []
@@ -2343,7 +2328,7 @@ export class MainController extends EventEmitter {
     if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
       this.destroySignAccOp()
     }
-    await this.actions.removeAction(actionId, shouldOpenNextAction)
+    await this.actions.removeActions([actionId], shouldOpenNextAction)
 
     const requestIdsToRemove = accountOp.calls
       .filter((call) => !!call.fromUserRequestId)

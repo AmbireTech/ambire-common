@@ -487,7 +487,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.removeAction(SIGN_ACCOUNT_OP_REQUEST.id)
+    actionsCtrl.removeActions([SIGN_ACCOUNT_OP_REQUEST.id])
   })
   test('should close the action window', (done) => {
     let emitCounter = 0

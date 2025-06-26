@@ -153,7 +153,7 @@ describe('Main Controller ', () => {
         chainId: 1n
       }
     }
-    await controller.removeUserRequest(req.id)
+    await controller.removeUserRequests([req.id])
     expect(controller.actions.actionsQueue.length).toBe(0)
     // console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set

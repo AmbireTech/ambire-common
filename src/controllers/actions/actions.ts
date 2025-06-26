@@ -252,10 +252,6 @@ export class ActionsController extends EventEmitter {
     }
   }
 
-  async removeAction(actionId: Action['id'], shouldOpenNextAction?: boolean) {
-    await this.removeActions([actionId], shouldOpenNextAction)
-  }
-
   async #awaitPendingPromises() {
     await this.actionWindow.closeWindowPromise
     await this.actionWindow.focusWindowPromise
