@@ -28,12 +28,11 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     ],
     '1': [
       'http://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
-      // @TODO move to staging or  prod
-      'http://localhost:1934/legends/nft-image/avatar/astro-cat-lvl0.png',
-      'http://localhost:1934/legends/nft-image/avatar/medal-bear-lvl0.png',
-      'http://localhost:1934/legends/nft-image/avatar/yellow-blue-lvl0.png',
-      'http://localhost:1934/legends/nft-image/avatar/black-lvl0.png',
-      'http://localhost:1934/legends/nft-image/avatar/green-lvl0.png'
+      'https://staging-relayer.ambire.com/legends/nft-image/avatar/astro-cat-lvl0.png',
+      'https://staging-relayer.ambire.com/legends/nft-image/avatar/medal-bear-lvl0.png',
+      'https://staging-relayer.ambire.com/legends/nft-image/avatar/yellow-blue-lvl0.png',
+      'https://staging-relayer.ambire.com/legends/nft-image/avatar/black-lvl0.png',
+      'https://staging-relayer.ambire.com/legends/nft-image/avatar/green-lvl0.png'
     ]
   }
   const matcher = {
