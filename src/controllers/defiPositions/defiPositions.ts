@@ -310,7 +310,10 @@ export class DefiPositionsController extends EventEmitter {
         const body = await resp.json()
         if (resp.status !== 200 || body?.message || body?.error) throw body
 
-        debankPositions = (body.data as PositionsByProvider[]) || []
+        debankPositions = ((body.data as PositionsByProvider[]) || []).map((p) => ({
+          ...p,
+          chainId: BigInt(p.chainId)
+        }))
       } catch (err) {
         console.error('Debank fetch failed:', err)
         // Proceed with empty debank positions

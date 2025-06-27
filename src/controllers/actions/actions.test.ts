@@ -207,7 +207,10 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION, 'last', 'open-action-window')
+    actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION], {
+      position: 'last',
+      executionType: 'open-action-window'
+    })
   })
   test('should set window loaded', (done) => {
     let emitCounter = 0
@@ -227,7 +230,6 @@ describe('Actions Controller', () => {
     let emitCounter = 0
     const unsubscribe = actionsCtrl.onUpdate(async () => {
       emitCounter++
-
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
@@ -244,7 +246,10 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'queue-but-open-action-window')
+    actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
+      position: 'last',
+      executionType: 'queue-but-open-action-window'
+    })
   })
   test('should update a queued account op action by removing a call', (done) => {
     let emitCounter = 0
@@ -272,11 +277,10 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(
-      UPDATED_SIGN_ACCOUNT_OP_ACTION,
-      'last',
-      'queue-but-open-action-window'
-    )
+    actionsCtrl.addOrUpdateActions([UPDATED_SIGN_ACCOUNT_OP_ACTION], {
+      position: 'last',
+      executionType: 'queue-but-open-action-window'
+    })
   })
   test('should update the existing accountOp action by removing a call and open it', (done) => {
     let emitCounter = 0
@@ -302,12 +306,13 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(UPDATED_SIGN_ACCOUNT_OP_ACTION, 'last')
+    actionsCtrl.addOrUpdateActions([UPDATED_SIGN_ACCOUNT_OP_ACTION], { position: 'last' })
   })
   test('should add an action with priority', (done) => {
     const BЕNZIN_ACTION: SignUserRequest = {
       id: 3,
       action: { kind: 'benzin' },
+      session: new Session(),
       meta: {
         isSignAction: true,
         accountAddr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
@@ -334,7 +339,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.addOrUpdateAction(BENZIN_ACTION, 'first')
+    actionsCtrl.addOrUpdateActions([BENZIN_ACTION], { position: 'first' })
   })
   test('should have banners', () => {
     // one banner for all pending requests: "You have X pending app request(s)"
@@ -421,7 +426,7 @@ describe('Actions Controller', () => {
     })
 
     // Add actions to the queue
-    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION)
+    actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION])
   })
   test('should select action by index', (done) => {
     let emitCounter = 0
@@ -482,7 +487,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    actionsCtrl.removeAction(SIGN_ACCOUNT_OP_REQUEST.id)
+    actionsCtrl.removeActions([SIGN_ACCOUNT_OP_REQUEST.id])
   })
   test('should close the action window', (done) => {
     let emitCounter = 0
@@ -502,8 +507,14 @@ describe('Actions Controller', () => {
   })
   test('removeAccountData', async () => {
     // Add actions to the queue
-    actionsCtrl.addOrUpdateAction(DAPP_CONNECT_ACTION, 'last', 'queue')
-    actionsCtrl.addOrUpdateAction(SIGN_ACCOUNT_OP_ACTION, 'last', 'open-action-window')
+    actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION], {
+      position: 'last',
+      executionType: 'queue'
+    })
+    actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
+      position: 'last',
+      executionType: 'open-action-window'
+    })
 
     expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)
 
