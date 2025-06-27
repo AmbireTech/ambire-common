@@ -125,9 +125,10 @@ export class Candide extends Bundler {
     stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
     const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
+    const addedPreVerGas = network.isOptimistic ? 50000n : 0n
 
     return {
-      preVerificationGas: toBeHex(estimatiton.preVerificationGas) as Hex,
+      preVerificationGas: toBeHex(BigInt(estimatiton.preVerificationGas) + addedPreVerGas) as Hex,
       verificationGasLimit: toBeHex(BigInt(estimatiton.verificationGasLimit) + 20000n) as Hex,
       callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
       paymasterVerificationGasLimit: estimatiton.paymasterVerificationGasLimit
