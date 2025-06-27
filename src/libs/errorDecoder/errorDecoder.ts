@@ -10,6 +10,7 @@ import {
   UserRejectionHandler
 } from './handlers'
 import BiconomyEstimationErrorHandler from './handlers/biconomy'
+import CandideEstimationErrorHandler from './handlers/candide'
 import EtherspotEstimationErrorHandler from './handlers/etherspot'
 import InternalHandler from './handlers/internal'
 import PimlicoEstimationErrorHandler from './handlers/pimlico'
@@ -25,7 +26,8 @@ import { DecodedError, ErrorType } from './types'
 const PREPROCESSOR_BUNDLER_HANDLERS = [
   BiconomyEstimationErrorHandler,
   PimlicoEstimationErrorHandler,
-  EtherspotEstimationErrorHandler
+  EtherspotEstimationErrorHandler,
+  CandideEstimationErrorHandler
 ]
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
