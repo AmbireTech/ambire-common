@@ -181,8 +181,4 @@ export class EOA7702 extends BaseAccount {
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
     return this.accountState.isSmarterEoa ? 'supported' : 'ready'
   }
-
-  getHasDelegated(): boolean {
-    return this.accountState.isSmarterEoa
-  }
 }

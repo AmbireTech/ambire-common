@@ -109,9 +109,4 @@ export abstract class BaseAccount {
   isSponsorable(): boolean {
     return false
   }
-
-  // only 7702 eoas can delegate
-  getHasDelegated(): boolean {
-    return false
-  }
 }
