@@ -41,7 +41,7 @@ export abstract class Bundler {
   /**
    * Each bundler has their own gas prices. Define and fetch them
    */
-  protected abstract getGasPrice(network: Network): Promise<GasSpeeds>
+  protected abstract getGasPrice(network: Network, provider: RPCProvider): Promise<GasSpeeds>
 
   /**
    * Each bundler has it's own handler for giving information back
@@ -62,7 +62,7 @@ export abstract class Bundler {
     return getRpcProvider([this.getUrl(network)], network.chainId)
   }
 
-  private async sendEstimateReq(
+  protected async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
     stateOverride?: BundlerStateOverride
@@ -149,6 +149,7 @@ export abstract class Bundler {
 
   async fetchGasPrices(
     network: Network,
+    provider: RPCProvider,
     errorCallback: Function,
     counter: number = 0
   ): Promise<GasSpeeds> {
@@ -159,7 +160,7 @@ export abstract class Bundler {
 
     try {
       response = await Promise.race([
-        this.getGasPrice(network),
+        this.getGasPrice(network, provider),
         new Promise((_resolve, reject) => {
           setTimeout(
             () => reject(new Error('fetching bundler gas prices failed, request too slow')),
@@ -178,7 +179,7 @@ export abstract class Bundler {
       }
 
       const increment = counter + 1
-      return this.fetchGasPrices(network, errorCallback, increment)
+      return this.fetchGasPrices(network, provider, errorCallback, increment)
     }
 
     const results = response as GasSpeeds

@@ -29,6 +29,7 @@ async function estimate(
   baseAcc: BaseAccount,
   bundler: Bundler,
   network: Network,
+  provider: RPCProvider,
   userOp: UserOperation,
   errorCallback: Function
 ): Promise<{
@@ -36,7 +37,7 @@ async function estimate(
   estimation: any
   nonFatalErrors: Error[]
 }> {
-  const gasPrice = await bundler.fetchGasPrices(network, errorCallback).catch(() => {
+  const gasPrice = await bundler.fetchGasPrices(network, provider, errorCallback).catch(() => {
     return new Error('Could not fetch gas prices, retrying...')
   })
 
@@ -149,7 +150,7 @@ export async function bundlerEstimate(
   while (true) {
     // estimate
     const bundler = switcher.getBundler()
-    const estimations = await estimate(baseAcc, bundler, network, userOp, errorCallback)
+    const estimations = await estimate(baseAcc, bundler, network, provider, userOp, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
