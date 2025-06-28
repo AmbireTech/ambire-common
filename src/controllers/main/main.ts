@@ -2633,7 +2633,7 @@ export class MainController extends EventEmitter {
           const switcher = signAccountOp.bundlerSwitcher
           signAccountOp.updateStatus(SigningStatus.ReadyToSign)
 
-          if (switcher.canSwitch(account, humanReadable)) {
+          if (switcher.canSwitch(baseAcc, humanReadable)) {
             switcher.switch()
             signAccountOp.simulate()
             signAccountOp.gasPrice.fetch()

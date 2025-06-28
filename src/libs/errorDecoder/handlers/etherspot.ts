@@ -11,13 +11,9 @@ class EtherspotEstimationErrorHandler implements ErrorHandler {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public handle(data: string, error: any): DecodedError {
-    // etherspot have multiple problems:
-    // - our deploys don't work as state override is not supported
-    // - our delegations don't work as state override is not supported
-    // - on enormous usage, we can hit the rate limit
-    // so we always "notify" the code to switch to another
-    // bundler and continue the execution no matter what the error is.
-    // This is the safest way to use etherspot atm
+    // the exact bundler errors are irrelevant as the ambire estimation returns
+    // the message. We just indicate here that the bundler switcher should
+    // switch to the next available bundler
     const reason = 'etherspot: 500'
     return {
       type: ErrorType.BundlerError,

@@ -38,3 +38,15 @@ export function getDefaultBundler(
   const bundlerName = network.erc4337.defaultBundler ? network.erc4337.defaultBundler : PIMLICO
   return getBundlerByName(bundlerName)
 }
+
+/**
+ * This method should be used in caution when you want to utilize all
+ * available bundlers on a network as the same time to find and fix a problem
+ */
+export function getAvailableBunlders(network: Network): Bundler[] {
+  if (!network.erc4337.bundlers) return [getDefaultBundler(network)]
+
+  return network.erc4337.bundlers?.map((bundler) => {
+    return getBundlerByName(bundler)
+  })
+}
