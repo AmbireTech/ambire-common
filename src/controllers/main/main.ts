@@ -352,12 +352,7 @@ export class MainController extends EventEmitter {
       this.networks,
       this.accounts,
       this.#externalSignerControllers,
-      this.invite,
-      () => {
-        if (this.signMessage.signingKeyType === 'trezor') {
-          this.#handleTrezorCleanup()
-        }
-      }
+      this.invite
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
@@ -822,7 +817,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #abortHWSign(signAccountOp: SignAccountOpController) {
+  #abortHWTransactionSign(signAccountOp: SignAccountOpController) {
     if (!signAccountOp) return
 
     const isAwaitingHWSignature =
@@ -842,19 +837,24 @@ export class MainController extends EventEmitter {
       this.#signAndBroadcastCallId = null
     }
 
-    const isSignerTrezor =
-      signAccountOp.accountOp.signingKeyType === 'trezor' || this.feePayerKey?.type === 'trezor'
+    const uniqueSigningKeys = [
+      ...new Set([signAccountOp.accountOp.signingKeyType, this.feePayerKey?.type])
+    ]
 
-    if (isSignerTrezor) {
-      this.#handleTrezorCleanup()
-    }
+    // Call the cleanup method for each unique signing key type
+    uniqueSigningKeys.forEach((keyType) => {
+      if (!keyType || keyType === 'internal') return
+
+      this.#externalSignerControllers[keyType]?.signingCleanup?.()
+    })
+
     this.#signAccountOpSigningPromise = undefined
   }
 
   destroySignAccOp() {
     if (!this.signAccountOp) return
 
-    this.#abortHWSign(this.signAccountOp)
+    this.#abortHWTransactionSign(this.signAccountOp)
     this.feePayerKey = null
     this.signAccountOp.reset()
     this.signAccountOp = null
@@ -2372,7 +2372,7 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    this.#abortHWSign(signAccountOp)
+    this.#abortHWTransactionSign(signAccountOp)
 
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
@@ -2390,7 +2390,7 @@ export class MainController extends EventEmitter {
 
     if (!signAccountOp) return
 
-    this.#abortHWSign(signAccountOp)
+    this.#abortHWTransactionSign(signAccountOp)
 
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
@@ -2398,14 +2398,6 @@ export class MainController extends EventEmitter {
 
     this.updateSelectedAccountPortfolio(true, network)
     this.emitUpdate()
-  }
-
-  async #handleTrezorCleanup() {
-    try {
-      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
-    } catch (e) {
-      console.error('Error while removing Trezor window', e)
-    }
   }
 
   /**
@@ -2641,7 +2633,7 @@ export class MainController extends EventEmitter {
           const switcher = signAccountOp.bundlerSwitcher
           signAccountOp.updateStatus(SigningStatus.ReadyToSign)
 
-          if (switcher.canSwitch(account, humanReadable)) {
+          if (switcher.canSwitch(baseAcc, humanReadable)) {
             switcher.switch()
             signAccountOp.simulate()
             signAccountOp.gasPrice.fetch()

@@ -186,7 +186,7 @@ export async function bundlerEstimate(
     }
 
     // if there's an error but we can't switch, return the error
-    if (!switcher.canSwitch(account, estimations.estimation)) return estimations.estimation
+    if (!switcher.canSwitch(baseAcc, estimations.estimation)) return estimations.estimation
 
     // try again
     switcher.switch()
