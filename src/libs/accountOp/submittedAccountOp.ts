@@ -119,8 +119,7 @@ export async function fetchTxnId(
   network: Network,
   fetchFn: Fetch,
   callRelayer: Function,
-  op?: AccountOp,
-  refetchCounter?: number
+  op?: AccountOp
 ): Promise<{ status: string; txnId: string | null }> {
   if (isIdentifiedByTxn(identifiedBy))
     return {
@@ -153,15 +152,20 @@ export async function fetchTxnId(
 
     let bundlerResult = await bundler.getStatus(network, userOpHash)
     if (bundlerResult.status === 'rejected') {
-      // wait a bit and query all available bundlers for this userOp
-      network.chainId === 1n ? await wait(12000) : await wait(4000)
+      // sometimes the bundlers return rejected by mistake
+      // if that's the case, make the user wait a bit longer, but then query
+      // all bundlers for the user op receipt to make sure it's really not mined
+      await wait(15000)
       const bundlers = getAvailableBunlders(network)
       const bundlerResults = await Promise.all(
-        bundlers.map((b) => b.getStatus(network, userOpHash))
+        bundlers.map((b) => b.getReceipt(userOpHash, network))
       )
       bundlerResults.forEach((res) => {
-        if (res.transactionHash) {
-          bundlerResult = res
+        if (res && res.receipt && res.receipt.transactionHash) {
+          bundlerResult = {
+            status: 'found',
+            transactionHash: res.receipt.transactionHash
+          }
         }
       })
       // if it's rejected even after searching all the bundlers,
