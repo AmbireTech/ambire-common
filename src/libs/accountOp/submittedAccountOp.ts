@@ -3,8 +3,11 @@ import { TransactionReceipt, ZeroAddress } from 'ethers'
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
-import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import {
+  getAvailableBunlders,
+  getBundlerByName,
+  getDefaultBundler
+} from '../../services/bundlers/getBundler'
 import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
@@ -148,32 +151,26 @@ export async function fetchTxnId(
       ? getBundlerByName(identifiedBy.bundler)
       : getDefaultBundler(network)
 
-    const [response, bundlerResult]: [any, any] = await Promise.all([
-      fetchUserOp(userOpHash, fetchFn),
-      bundler.getStatus(network, userOpHash)
-    ])
-
+    let bundlerResult = await bundler.getStatus(network, userOpHash)
     if (bundlerResult.status === 'rejected') {
-      // the bundler sometimes wrongly returns a rejected status for an userOp
-      // only to broadcast the userOp later and for the user op to be included
-      // in the block. To prevent showing wrong information to the user,
-      // we try to refetch the user op 2 times before declaring it
-      // as rejected
-      if (!refetchCounter || refetchCounter < 2) {
-        await wait(2000)
-        return fetchTxnId(
-          identifiedBy,
-          network,
-          fetchFn,
-          callRelayer,
-          op,
-          typeof refetchCounter === 'undefined' ? 1 : refetchCounter + 1
-        )
-      }
-
-      return {
-        status: 'rejected',
-        txnId: null
+      // wait a bit and query all available bundlers for this userOp
+      network.chainId === 1n ? await wait(12000) : await wait(4000)
+      const bundlers = getAvailableBunlders(network)
+      const bundlerResults = await Promise.all(
+        bundlers.map((b) => b.getStatus(network, userOpHash))
+      )
+      bundlerResults.forEach((res) => {
+        if (res.transactionHash) {
+          bundlerResult = res
+        }
+      })
+      // if it's rejected even after searching all the bundlers,
+      // we return rejected
+      if (bundlerResult.status === 'rejected') {
+        return {
+          status: 'rejected',
+          txnId: null
+        }
       }
     }
 
@@ -181,31 +178,6 @@ export async function fetchTxnId(
       return {
         status: 'success',
         txnId: bundlerResult.transactionHash
-      }
-
-    // on custom networks the response is null
-    if (!response)
-      return {
-        status: 'not_found',
-        txnId: null
-      }
-
-    // nothing we can do if we don't have information
-    if (response.status !== 200)
-      return {
-        status: 'not_found',
-        txnId: null
-      }
-
-    const data = await response.json()
-    const userOps = data.userOps
-
-    // if there are not user ops, it means the userOpHash is not
-    // indexed, yet, so we wait
-    if (userOps.length)
-      return {
-        status: 'success',
-        txnId: userOps[0].transactionHash
       }
 
     return {
