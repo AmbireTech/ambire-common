@@ -371,12 +371,10 @@ export class MainController extends EventEmitter {
         for (const r of this.userRequests) {
           if (r.action.kind === 'walletAddEthereumChain') {
             const chainId = r.action.params?.[0]?.chainId
-            console.log('onActionWindowClose', chainId)
             // eslint-disable-next-line no-continue
             if (!chainId) continue
 
             const network = this.networks.networks.find((n) => n.chainId === BigInt(chainId))
-            console.log('onActionWindowClose', network)
             if (network && !network.disabled) {
               await this.resolveUserRequest(null, r.id)
             }
