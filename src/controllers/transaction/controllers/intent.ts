@@ -3,15 +3,15 @@ import { ControllersTransactionDependecies } from '../dependencies'
 import { TransactionFormState } from '../transactionFormState'
 
 export class IntentController extends EventEmitter {
-  formPreviousState: any
+  public formPreviousState: any
 
-  publicClient: any | undefined = undefined
+  public publicClient: any | undefined = undefined
 
-  params: any = {}
+  public params: any = {}
 
-  quote: any = null
+  public quote: any = null
 
-  transactions = []
+  public transactions = []
 
   constructor(
     private readonly dependencies: ControllersTransactionDependecies,

@@ -13,6 +13,7 @@ const testnetNetworks: Network[] = [
     selectedRpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     rpcNoStateOverride: false,
     chainId: 11155111n,
+    iconUrls: ['https://icons.llamao.fi/icons/chains/rsz_ethereum.jpg'],
     explorerUrl: 'https://sepolia.etherscan.io',
     erc4337: {
       enabled: false,

@@ -27,10 +27,10 @@ import {
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { handleAmountConversion } from '../../libs/transaction/conversion'
 import { TokenResult } from '../../libs/portfolio'
-import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { isValidAddress } from '../../services/address'
+// import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { Contacts } from '../addressBook/addressBook'
-
 import { ControllersTransactionDependecies } from './dependencies'
 
 const DEFAULT_VALIDATION_FORM_MSGS = {
@@ -182,6 +182,24 @@ export class TransactionFormState extends EventEmitter {
     let shouldUpdateToTokenList = false
 
     if (addressState) {
+      // If fieldValue is empty or invalid address the toChainId should be the same as fromChainId, otherwise
+      // and old state could be stored and transactionType could be wrong
+      if (
+        !addressState.interopAddress &&
+        (!addressState.fieldValue || !isValidAddress(addressState.fieldValue))
+      ) {
+        this.toChainId = this.fromChainId
+      }
+
+      // If ensAddress is NOT empty or fieldValue is a valid address,
+      // toChainId should be the same as fromChainId
+      if (
+        !addressState.interopAddress &&
+        (addressState.ensAddress || isValidAddress(addressState.fieldValue))
+      ) {
+        this.toChainId = this.fromChainId
+      }
+
       this.addressState = {
         ...this.addressState,
         ...addressState
