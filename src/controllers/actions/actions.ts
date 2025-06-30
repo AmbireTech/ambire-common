@@ -85,7 +85,7 @@ export class ActionsController extends EventEmitter {
 
   currentAction: Action | null = null
 
-  #onActionWindowClose: () => void
+  #onActionWindowClose: () => Promise<void>
 
   get visibleActionsQueue(): Action[] {
     return this.actionsQueue.filter((a) => {
@@ -129,7 +129,7 @@ export class ActionsController extends EventEmitter {
           message: 'Queued pending transactions are available on your Dashboard.'
         })
       }
-      this.#onActionWindowClose()
+      await this.#onActionWindowClose()
       this.emitUpdate()
     }
   }
@@ -143,7 +143,7 @@ export class ActionsController extends EventEmitter {
     selectedAccount: SelectedAccountController
     windowManager: WindowManager
     notificationManager: NotificationManager
-    onActionWindowClose: () => void
+    onActionWindowClose: () => Promise<void>
   }) {
     super()
 
