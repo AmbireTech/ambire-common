@@ -10,6 +10,7 @@ import {
   UserRejectionHandler
 } from './handlers'
 import BiconomyEstimationErrorHandler from './handlers/biconomy'
+import EtherspotEstimationErrorHandler from './handlers/etherspot'
 import InternalHandler from './handlers/internal'
 import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
@@ -23,7 +24,8 @@ import { DecodedError, ErrorType } from './types'
 // Why- because the first valid reason cannot be overwritten by subsequent handlers
 const PREPROCESSOR_BUNDLER_HANDLERS = [
   BiconomyEstimationErrorHandler,
-  PimlicoEstimationErrorHandler
+  PimlicoEstimationErrorHandler,
+  EtherspotEstimationErrorHandler
 ]
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [

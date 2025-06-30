@@ -1,12 +1,12 @@
 /* eslint-disable class-methods-use-this */
-import { BICONOMY } from '../../../consts/bundlers'
+import { ETHERSPOT } from '../../../consts/bundlers'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
-class BiconomyEstimationErrorHandler implements ErrorHandler {
+class EtherspotEstimationErrorHandler implements ErrorHandler {
   public matches(data: string, error: any) {
     const { bundlerName } = error
 
-    return bundlerName && bundlerName === BICONOMY
+    return bundlerName && bundlerName === ETHERSPOT
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -14,7 +14,7 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
     // the exact bundler errors are irrelevant as the ambire estimation returns
     // the message. We just indicate here that the bundler switcher should
     // switch to the next available bundler
-    const reason = 'biconomy: 400'
+    const reason = 'etherspot: 500'
     return {
       type: ErrorType.BundlerError,
       reason,
@@ -23,4 +23,4 @@ class BiconomyEstimationErrorHandler implements ErrorHandler {
   }
 }
 
-export default BiconomyEstimationErrorHandler
+export default EtherspotEstimationErrorHandler

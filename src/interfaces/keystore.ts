@@ -34,6 +34,7 @@ export interface ExternalSignerController {
   unlockedPathKeyAddr: string
   walletSDK?: any // Either the wallet own SDK or its session, each wallet having specifics
   cleanUp: () => void // Trezor and Ledger specific
+  signingCleanup?: () => Promise<void> // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
   retrieveAddresses?: (paths: string[]) => Promise<string[]> // Ledger specific
@@ -67,6 +68,7 @@ export interface KeystoreSignerInterface {
   signMessage: (hex: string) => Promise<string>
   sign7702: (hex: string) => EIP7702Signature
   signTransactionTypeFour: (txnRequest: TxnRequest, eip7702Auth: EIP7702Auth) => Hex
+  signingCleanup?: () => Promise<void>
 }
 
 export type ScryptParams = {

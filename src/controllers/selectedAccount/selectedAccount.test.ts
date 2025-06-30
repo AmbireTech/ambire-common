@@ -278,7 +278,9 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
     })
     it('Defi error banner is displayed when there is a critical network error and the user has positions on that network/provider', async () => {
-      await defiPositionsCtrl.updatePositions()
+      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Otherwise, no update is emitted and the test cannot proceed.
+      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0 })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
@@ -294,14 +296,18 @@ describe('SelectedAccount Controller', () => {
       jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({
         '1': ['AAVE v3', 'Uniswap V3']
       }))
-      await defiPositionsCtrl.updatePositions()
+      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Otherwise, no update is emitted and the test cannot proceed.
+      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0 })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
     })
     it('Defi error banner is not displayed when there is a critical network error but the user has no positions', async () => {
       selectedAccountCtrl.defiPositions = []
-      await defiPositionsCtrl.updatePositions()
+      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Otherwise, no update is emitted and the test cannot proceed.
+      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0 })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
@@ -319,14 +325,18 @@ describe('SelectedAccount Controller', () => {
       jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({
         '1': []
       }))
-      await defiPositionsCtrl.updatePositions()
+      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Otherwise, no update is emitted and the test cannot proceed.
+      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0 })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
     })
     it("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
       selectedAccountCtrl.defiPositions = []
-      await defiPositionsCtrl.updatePositions()
+      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Otherwise, no update is emitted and the test cannot proceed.
+      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0 })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
@@ -342,7 +352,9 @@ describe('SelectedAccount Controller', () => {
       // This mocks the case where we have never fetched the positions
       // and there is a critical error but we don't want to show the banner
       jest.spyOn(defiPositionsCtrl, 'getNetworksWithPositions').mockImplementation(() => ({}))
-      await defiPositionsCtrl.updatePositions()
+      // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
+      // Otherwise, no update is emitted and the test cannot proceed.
+      await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0 })
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)
