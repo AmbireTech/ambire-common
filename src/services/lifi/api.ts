@@ -281,7 +281,7 @@ export class LiFiAPI {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider is temporarily unavailable. Error details: Request timeout out'
+                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout out'
               )
             )
           }, this.#requestTimeoutMs)
