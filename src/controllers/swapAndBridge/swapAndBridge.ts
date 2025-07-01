@@ -22,7 +22,7 @@ import {
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
-import { isBasicAccount } from '../../libs/account/account'
+import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
@@ -554,6 +554,19 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   get supportedChainIds(): Network['chainId'][] {
+    // if the account is smart, do not allow the user to bridge to
+    // a chain that doesn't support our smart accounts as those funds
+    // would be stuck
+    if (isSmartAccount(this.#selectedAccount.account)) {
+      return this.#cachedSupportedChains.data
+        .filter((c) => {
+          const network = this.#networks.networks.find((net) => net.chainId === BigInt(c.chainId))
+          if (!network) return false
+          return network.areContractsDeployed && (network.hasRelayer || network.erc4337.enabled)
+        })
+        .map((c) => BigInt(c.chainId))
+    }
+
     return this.#cachedSupportedChains.data.map((c) => BigInt(c.chainId))
   }
 
