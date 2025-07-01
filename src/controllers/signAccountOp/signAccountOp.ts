@@ -277,9 +277,13 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
-    this.bundlerSwitcher = new BundlerSwitcher(network, () => {
-      return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
-    })
+    this.bundlerSwitcher = new BundlerSwitcher(
+      network,
+      () => {
+        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+      },
+      { canDelegate: this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) }
+    )
     this.provider = provider
     this.estimation = new EstimationController(
       keystore,
@@ -1480,6 +1484,17 @@ export class SignAccountOpController extends EventEmitter {
     if (!paymaster.isUsable()) return { required: false }
 
     const localOp = { ...originalUserOp }
+
+    // some bundlers (etherspot) don't return values for paymaster gas limits
+    // so we need to set them manually
+    if (
+      localOp.paymasterVerificationGasLimit === undefined ||
+      BigInt(localOp.paymasterVerificationGasLimit) === 0n
+    ) {
+      const estimationData = paymaster.getEstimationData()!
+      localOp.paymasterVerificationGasLimit = estimationData.paymasterVerificationGasLimit
+      localOp.paymasterPostOpGasLimit = estimationData.paymasterPostOpGasLimit
+    }
 
     // persist the paymaster properties from the pm_stubData request if any
     if (paymaster.isSponsored() && paymaster.sponsorDataEstimation) {

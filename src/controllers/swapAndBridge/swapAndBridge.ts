@@ -40,6 +40,7 @@ import {
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   lifiTokenListFilter,
+  mapNativeToAddr,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -569,9 +570,11 @@ export class SwapAndBridgeController extends EventEmitter {
     sessionId: string,
     params?: {
       preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>
+      preselectedToToken?: Pick<TokenResult, 'address' | 'chainId'>
+      fromAmount?: string
     }
   ) {
-    const { preselectedFromToken } = params || {}
+    const { preselectedFromToken, preselectedToToken, fromAmount } = params || {}
     await this.#initialLoadPromise
 
     if (this.sessionIds.includes(sessionId)) return
@@ -605,7 +608,9 @@ export class SwapAndBridgeController extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#serviceProviderAPI.updateHealth()
     await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens, {
-      preselectedToken: preselectedFromToken
+      preselectedToken: preselectedFromToken,
+      preselectedToToken,
+      fromAmount
     })
     this.isTokenListLoading = false
     // Do not await on purpose as it's not critical for the controller state to be ready
@@ -700,15 +705,26 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode,
       fromSelectedToken,
       toChainId,
-      toSelectedTokenAddr,
       shouldSetMaxAmount,
       routePriority
     } = props
+
     const {
       emitUpdate = true,
       updateQuote = true,
       shouldIncrementFromAmountUpdateCounter = false
     } = updateProps || {}
+
+    // map the token back
+    const chainId = toChainId ?? this.toChainId
+    const toSelectedTokenAddr =
+      chainId && props.toSelectedTokenAddr
+        ? mapNativeToAddr(this.#serviceProviderAPI.id, Number(chainId), props.toSelectedTokenAddr)
+        : undefined
+    // when we init the form by using the retry button
+    const shouldNotResetFromAmount =
+      fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
+
     let shouldUpdateToTokenList = false
 
     // fromAmountFieldMode must be set before fromAmount so it
@@ -755,7 +771,8 @@ export class SwapAndBridgeController extends EventEmitter {
       }
 
       const shouldResetFromTokenAmount =
-        isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address
+        !shouldNotResetFromAmount &&
+        (isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
@@ -790,7 +807,10 @@ export class SwapAndBridgeController extends EventEmitter {
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
-      shouldUpdateToTokenList ? this.updateToTokenList(true, nextToToken?.address) : undefined,
+      shouldUpdateToTokenList
+        ? // we put toSelectedTokenAddr so that "retry" btn functionality works
+          this.updateToTokenList(true, nextToToken?.address || toSelectedTokenAddr)
+        : undefined,
       updateQuote ? this.updateQuote({ debounce: true }) : undefined
     ])
   }
@@ -831,9 +851,11 @@ export class SwapAndBridgeController extends EventEmitter {
     nextPortfolioTokenList: TokenResult[],
     params?: {
       preselectedToken?: Pick<TokenResult, 'address' | 'chainId'>
+      preselectedToToken?: Pick<TokenResult, 'address' | 'chainId'>
+      fromAmount?: string
     }
   ) {
-    const { preselectedToken } = params || {}
+    const { preselectedToken, preselectedToToken, fromAmount } = params || {}
     const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
@@ -869,7 +891,10 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
       await this.updateForm(
         {
-          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null
+          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null,
+          toSelectedTokenAddr: preselectedToToken?.address,
+          toChainId: preselectedToToken?.chainId,
+          fromAmount
         },
         {
           emitUpdate: false

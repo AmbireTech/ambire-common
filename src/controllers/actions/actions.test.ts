@@ -185,7 +185,7 @@ describe('Actions Controller', () => {
       selectedAccount: selectedAccountCtrl,
       windowManager,
       notificationManager,
-      onActionWindowClose: () => {}
+      onActionWindowClose: () => Promise.resolve()
     })
     expect(actionsCtrl).toBeDefined()
   })

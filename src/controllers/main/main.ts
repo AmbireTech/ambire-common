@@ -352,12 +352,7 @@ export class MainController extends EventEmitter {
       this.networks,
       this.accounts,
       this.#externalSignerControllers,
-      this.invite,
-      () => {
-        if (this.signMessage.signingKeyType === 'trezor') {
-          this.#handleTrezorCleanup()
-        }
-      }
+      this.invite
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
@@ -371,11 +366,25 @@ export class MainController extends EventEmitter {
       selectedAccount: this.selectedAccount,
       windowManager,
       notificationManager,
-      onActionWindowClose: () => {
+      onActionWindowClose: async () => {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const r of this.userRequests) {
+          if (r.action.kind === 'walletAddEthereumChain') {
+            const chainId = r.action.params?.[0]?.chainId
+            // eslint-disable-next-line no-continue
+            if (!chainId) continue
+
+            const network = this.networks.networks.find((n) => n.chainId === BigInt(chainId))
+            if (network && !network.disabled) {
+              await this.resolveUserRequest(null, r.id)
+            }
+          }
+        }
+
         const userRequestsToRejectOnWindowClose = this.userRequests.filter(
           (r) => r.action.kind !== 'calls'
         )
-        this.rejectUserRequests(
+        await this.rejectUserRequests(
           ethErrors.provider.userRejectedRequest().message,
           userRequestsToRejectOnWindowClose.map((r) => r.id),
           // If the user closes a window and non-calls user requests exist,
@@ -822,7 +831,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #abortHWSign(signAccountOp: SignAccountOpController) {
+  #abortHWTransactionSign(signAccountOp: SignAccountOpController) {
     if (!signAccountOp) return
 
     const isAwaitingHWSignature =
@@ -842,19 +851,24 @@ export class MainController extends EventEmitter {
       this.#signAndBroadcastCallId = null
     }
 
-    const isSignerTrezor =
-      signAccountOp.accountOp.signingKeyType === 'trezor' || this.feePayerKey?.type === 'trezor'
+    const uniqueSigningKeys = [
+      ...new Set([signAccountOp.accountOp.signingKeyType, this.feePayerKey?.type])
+    ]
 
-    if (isSignerTrezor) {
-      this.#handleTrezorCleanup()
-    }
+    // Call the cleanup method for each unique signing key type
+    uniqueSigningKeys.forEach((keyType) => {
+      if (!keyType || keyType === 'internal') return
+
+      this.#externalSignerControllers[keyType]?.signingCleanup?.()
+    })
+
     this.#signAccountOpSigningPromise = undefined
   }
 
   destroySignAccOp() {
     if (!this.signAccountOp) return
 
-    this.#abortHWSign(this.signAccountOp)
+    this.#abortHWTransactionSign(this.signAccountOp)
     this.feePayerKey = null
     this.signAccountOp.reset()
     this.signAccountOp = null
@@ -2372,7 +2386,7 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    this.#abortHWSign(signAccountOp)
+    this.#abortHWTransactionSign(signAccountOp)
 
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
@@ -2390,7 +2404,7 @@ export class MainController extends EventEmitter {
 
     if (!signAccountOp) return
 
-    this.#abortHWSign(signAccountOp)
+    this.#abortHWTransactionSign(signAccountOp)
 
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
@@ -2398,14 +2412,6 @@ export class MainController extends EventEmitter {
 
     this.updateSelectedAccountPortfolio(true, network)
     this.emitUpdate()
-  }
-
-  async #handleTrezorCleanup() {
-    try {
-      await this.#windowManager.closePopupWithUrl('https://connect.trezor.io/9/popup.html')
-    } catch (e) {
-      console.error('Error while removing Trezor window', e)
-    }
   }
 
   /**
@@ -2641,7 +2647,7 @@ export class MainController extends EventEmitter {
           const switcher = signAccountOp.bundlerSwitcher
           signAccountOp.updateStatus(SigningStatus.ReadyToSign)
 
-          if (switcher.canSwitch(account, humanReadable)) {
+          if (switcher.canSwitch(baseAcc, humanReadable)) {
             switcher.switch()
             signAccountOp.simulate()
             signAccountOp.gasPrice.fetch()

@@ -1,8 +1,9 @@
 /* eslint-disable class-methods-use-this */
 
 import { BUNDLER } from '../../consts/bundlers'
-import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { BaseAccount } from '../../libs/account/BaseAccount'
+import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { Bundler } from './bundler'
 import { getBundlerByName, getDefaultBundler } from './getBundler'
 
@@ -19,9 +20,13 @@ export class BundlerSwitcher {
    */
   hasControllerForbiddenUpdates: Function
 
-  constructor(network: Network, hasControllerForbiddenUpdates: Function) {
+  constructor(
+    network: Network,
+    hasControllerForbiddenUpdates: Function,
+    opts: { canDelegate: boolean } = { canDelegate: false }
+  ) {
     this.network = network
-    this.bundler = getDefaultBundler(network)
+    this.bundler = getDefaultBundler(network, opts)
     this.usedBundlers.push(this.bundler.getName())
     this.hasControllerForbiddenUpdates = hasControllerForbiddenUpdates
   }
@@ -35,10 +40,7 @@ export class BundlerSwitcher {
     return this.bundler
   }
 
-  canSwitch(acc: Account, bundlerError: Error | null): boolean {
-    // no fallbacks for EOAs
-    if (!acc.creation) return false
-
+  canSwitch(baseAcc: BaseAccount, bundlerError: Error | null): boolean {
     // don't switch the bundler if the account op is in a state of signing
     if (this.hasControllerForbiddenUpdates()) return false
 
@@ -50,10 +52,15 @@ export class BundlerSwitcher {
 
     if (availableBundlers.length === 0) return false
 
+    // only pimlico can do txn type 4 and if pimlico is
+    // not working, we have nothing to fallback to
+    if (baseAcc.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) return false
+
     return (
       !bundlerError ||
       bundlerError.cause === 'biconomy: 400' ||
-      bundlerError.cause === 'pimlico: 500'
+      bundlerError.cause === 'pimlico: 500' ||
+      bundlerError.cause === 'etherspot: 500'
     )
   }
 

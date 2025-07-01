@@ -136,12 +136,40 @@ const emptyAccount = {
   }
 }
 
+const ambireV2Account = {
+  addr: '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',
+  initialPrivileges: [
+    [
+      '0xF5102a9bd0Ca021D3cF262BeF81c25F704AF1615',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0xF5102a9bd0Ca021D3cF262BeF81c25F704AF1615'],
+  creation: {
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027f04f3c84c7bf7b333aca32e4d61247cc315ac4a0e396a5fc174276184ae537f84553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  preferences: {
+    label: 'Smart Account v2',
+    pfp: '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA'
+  }
+}
+
 const windowManager = mockWindowManager().windowManager
 
 const prepareTest = () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
-  storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
+  storageCtrl.set('accounts', [
+    account,
+    account2,
+    account3,
+    account4,
+    emptyAccount,
+    ambireV2Account
+  ])
   const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController(
@@ -321,14 +349,10 @@ describe('Portfolio Controller ', () => {
     test('Latest tokens are fetched and kept in the controller', async () => {
       const { controller } = prepareTest()
 
-      await controller.updateSelectedAccount(account.addr)
+      await controller.updateSelectedAccount(ambireV2Account.addr)
 
-      const latestState = controller.getLatestPortfolioState(
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      )?.['1']!
-      const pendingState = controller.getPendingPortfolioState(
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      )?.['1']!
+      const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']!
+      const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']!
       expect(latestState.isReady).toEqual(true)
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
       expect(latestState.result?.collections?.length).toBeGreaterThan(0)
@@ -365,12 +389,9 @@ describe('Portfolio Controller ', () => {
       const { controller } = prepareTest()
 
       controller.onUpdate(() => {
-        const latestState = controller.getLatestPortfolioState(
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        )?.['1']
-        const pendingState = controller.getPendingPortfolioState(
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        )?.['1']
+        const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
+        const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
+
         if (latestState?.isReady && pendingState?.isReady) {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
@@ -385,7 +406,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount(account.addr, undefined, undefined, {
+      controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
         forceUpdate: true
       })
     })
