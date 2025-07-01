@@ -2134,6 +2134,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#networks,
       this.#keystore,
       this.#portfolio,
+      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccount.account,
       network,

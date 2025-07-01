@@ -18,6 +18,7 @@ import { BUNDLER } from '../../consts/bundlers'
 import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Hex } from '../../interfaces/hex'
+import { ActivityController } from '../activity/activity'
 /* eslint-disable no-restricted-syntax */
 import {
   ERRORS,
@@ -241,11 +242,14 @@ export class SignAccountOpController extends EventEmitter {
    */
   #shouldSimulate: boolean
 
+  #activity: ActivityController
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -261,6 +265,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -1452,6 +1457,23 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.meta?.entryPointAuthorization,
       eip7702Auth
     )
+
+    // if broadcast but not confirmed for this network and an userOp,
+    // check if the nonces match. If they do, increment the current nonce
+    const notConfirmedUserOp = this.#activity.broadcastedButNotConfirmed.find(
+      (accOp) =>
+        accOp.chainId === this.#network.chainId &&
+        accOp.gasFeePayment &&
+        accOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byBundler
+    )
+    if (
+      notConfirmedUserOp &&
+      notConfirmedUserOp.asUserOperation &&
+      notConfirmedUserOp.asUserOperation.nonce === userOperation.nonce
+    ) {
+      userOperation.nonce = toBeHex(BigInt(userOperation.nonce) + 1n)
+    }
+
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
     userOperation.callGasLimit = toBeHex(
       BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
