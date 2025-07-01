@@ -320,6 +320,7 @@ export class MainController extends EventEmitter {
       storage: this.storage,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
+      accounts: this.accounts,
       networks: this.networks,
       providers: this.providers
     })

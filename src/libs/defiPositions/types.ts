@@ -56,6 +56,7 @@ export interface NetworkState {
   updatedAt?: number
   error?: string | null
   providerErrors?: ProviderError[]
+  lastFetchForNonce?: bigint
 }
 
 export type NetworksWithPositions = {

@@ -84,7 +84,8 @@ const defiPositionsCtrl = new DefiPositionsController({
   selectedAccount: selectedAccountCtrl,
   keystore,
   networks: networksCtrl,
-  providers: providersCtrl
+  providers: providersCtrl,
+  accounts: accountsCtrl
 })
 
 const notificationManager = {
