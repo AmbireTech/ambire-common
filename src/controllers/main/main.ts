@@ -366,11 +366,25 @@ export class MainController extends EventEmitter {
       selectedAccount: this.selectedAccount,
       windowManager,
       notificationManager,
-      onActionWindowClose: () => {
+      onActionWindowClose: async () => {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const r of this.userRequests) {
+          if (r.action.kind === 'walletAddEthereumChain') {
+            const chainId = r.action.params?.[0]?.chainId
+            // eslint-disable-next-line no-continue
+            if (!chainId) continue
+
+            const network = this.networks.networks.find((n) => n.chainId === BigInt(chainId))
+            if (network && !network.disabled) {
+              await this.resolveUserRequest(null, r.id)
+            }
+          }
+        }
+
         const userRequestsToRejectOnWindowClose = this.userRequests.filter(
           (r) => r.action.kind !== 'calls'
         )
-        this.rejectUserRequests(
+        await this.rejectUserRequests(
           ethErrors.provider.userRejectedRequest().message,
           userRequestsToRejectOnWindowClose.map((r) => r.id),
           // If the user closes a window and non-calls user requests exist,

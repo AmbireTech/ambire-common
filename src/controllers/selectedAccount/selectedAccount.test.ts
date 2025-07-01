@@ -95,7 +95,7 @@ const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
   windowManager,
   notificationManager,
-  onActionWindowClose: () => {}
+  onActionWindowClose: () => Promise.resolve()
 })
 
 const accounts = [
