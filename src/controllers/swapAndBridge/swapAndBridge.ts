@@ -169,6 +169,12 @@ export class SwapAndBridgeController extends EventEmitter {
 
   fromAmountInFiat: string = ''
 
+  /**
+   * A counter used to trigger UI updates when the amount is changed programmatically
+   * by the controller.
+   */
+  fromAmountUpdateCounter: number = 0
+
   fromAmountFieldMode: 'fiat' | 'token' = 'token'
 
   toChainId: number | null = 1
@@ -324,6 +330,87 @@ export class SwapAndBridgeController extends EventEmitter {
     if (shouldSkipUpdate) return
 
     super.emitUpdate()
+  }
+
+  #setFromAmountAndNotifyUI(amount: string) {
+    this.fromAmount = amount
+    this.fromAmountUpdateCounter += 1
+  }
+
+  #setFromAmountInFiatAndNotifyUI(amountInFiat: string) {
+    this.fromAmountInFiat = amountInFiat
+    this.fromAmountUpdateCounter += 1
+  }
+
+  #setFromAmountAmount(fromAmount: string, isProgrammaticUpdate = false) {
+    const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
+    this.fromAmount = fromAmount
+
+    if (isProgrammaticUpdate) {
+      // There is no problem in updating this first as there are no
+      // emit updates in this method
+      this.fromAmountUpdateCounter += 1
+    }
+
+    if (fromAmount === '') {
+      this.fromAmountInFiat = ''
+      return
+    }
+    const tokenPrice = this.fromSelectedToken?.priceIn.find(
+      (p) => p.baseCurrency === HARD_CODED_CURRENCY
+    )?.price
+
+    if (!tokenPrice) {
+      this.fromAmountInFiat = ''
+      return
+    }
+
+    if (
+      this.fromAmountFieldMode === 'fiat' &&
+      typeof this.fromSelectedToken?.decimals === 'number'
+    ) {
+      this.fromAmountInFiat = fromAmount
+
+      // Get the number of decimals
+      const amountInFiatDecimals = 10
+      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+      // Convert the numbers to big int
+      const amountInFiatBigInt = parseUnits(
+        getSanitizedAmount(fromAmountFormatted, amountInFiatDecimals),
+        amountInFiatDecimals
+      )
+
+      this.fromAmount = formatUnits(
+        (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
+        // Shift the decimal point by the number of decimals in the token price
+        amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
+      )
+
+      return
+    }
+    if (this.fromAmountFieldMode === 'token') {
+      this.fromAmount = fromAmount
+
+      if (!this.fromSelectedToken) return
+
+      const sanitizedFieldValue = getSanitizedAmount(
+        fromAmountFormatted,
+        this.fromSelectedToken.decimals
+      )
+      // Convert the field value to big int
+      const formattedAmount = parseUnits(sanitizedFieldValue, this.fromSelectedToken.decimals)
+
+      if (!formattedAmount) return
+
+      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
+
+      this.fromAmountInFiat = formatUnits(
+        formattedAmount * tokenPriceBigInt,
+        // Shift the decimal point by the number of decimals in the token price
+        this.fromSelectedToken.decimals + tokenPriceDecimals
+      )
+    }
   }
 
   async #load() {
@@ -599,6 +686,7 @@ export class SwapAndBridgeController extends EventEmitter {
     props: {
       fromAmount?: string
       fromAmountInFiat?: string
+      shouldSetMaxAmount?: boolean
       fromAmountFieldMode?: 'fiat' | 'token'
       fromSelectedToken?: TokenResult | null
       toChainId?: bigint | number
@@ -608,6 +696,7 @@ export class SwapAndBridgeController extends EventEmitter {
     updateProps?: {
       emitUpdate?: boolean
       updateQuote?: boolean
+      shouldIncrementFromAmountUpdateCounter?: boolean
     }
   ) {
     const {
@@ -616,8 +705,15 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmountFieldMode,
       fromSelectedToken,
       toChainId,
+      shouldSetMaxAmount,
       routePriority
     } = props
+
+    const {
+      emitUpdate = true,
+      updateQuote = true,
+      shouldIncrementFromAmountUpdateCounter = false
+    } = updateProps || {}
 
     // map the token back
     const chainId = toChainId ?? this.toChainId
@@ -629,7 +725,6 @@ export class SwapAndBridgeController extends EventEmitter {
     const shouldNotResetFromAmount =
       fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
 
-    const { emitUpdate = true, updateQuote = true } = updateProps || {}
     let shouldUpdateToTokenList = false
 
     // fromAmountFieldMode must be set before fromAmount so it
@@ -642,74 +737,21 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmountFieldMode = fromAmountFieldMode
     }
 
+    if (shouldSetMaxAmount) {
+      this.fromAmountFieldMode = 'token'
+      this.#setFromAmountAmount(this.maxFromAmount, true)
+    }
+
     if (fromAmount !== undefined) {
-      const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
-      this.fromAmount = fromAmount
-      ;(() => {
-        if (fromAmount === '') {
-          this.fromAmountInFiat = ''
-          return
-        }
-        const tokenPrice = this.fromSelectedToken?.priceIn.find(
-          (p) => p.baseCurrency === HARD_CODED_CURRENCY
-        )?.price
-
-        if (!tokenPrice) {
-          this.fromAmountInFiat = ''
-          return
-        }
-
-        if (
-          this.fromAmountFieldMode === 'fiat' &&
-          typeof this.fromSelectedToken?.decimals === 'number'
-        ) {
-          this.fromAmountInFiat = fromAmount
-
-          // Get the number of decimals
-          const amountInFiatDecimals = 10
-          const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-          // Convert the numbers to big int
-          const amountInFiatBigInt = parseUnits(
-            getSanitizedAmount(fromAmountFormatted, amountInFiatDecimals),
-            amountInFiatDecimals
-          )
-
-          this.fromAmount = formatUnits(
-            (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
-            // Shift the decimal point by the number of decimals in the token price
-            amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
-          )
-
-          return
-        }
-        if (this.fromAmountFieldMode === 'token') {
-          this.fromAmount = fromAmount
-
-          if (!this.fromSelectedToken) return
-
-          const sanitizedFieldValue = getSanitizedAmount(
-            fromAmountFormatted,
-            this.fromSelectedToken.decimals
-          )
-          // Convert the field value to big int
-          const formattedAmount = parseUnits(sanitizedFieldValue, this.fromSelectedToken.decimals)
-
-          if (!formattedAmount) return
-
-          const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-          this.fromAmountInFiat = formatUnits(
-            formattedAmount * tokenPriceBigInt,
-            // Shift the decimal point by the number of decimals in the token price
-            this.fromSelectedToken.decimals + tokenPriceDecimals
-          )
-        }
-      })()
+      this.#setFromAmountAmount(fromAmount)
     }
 
     if (fromAmountInFiat !== undefined) {
       this.fromAmountInFiat = fromAmountInFiat
+    }
+
+    if (shouldIncrementFromAmountUpdateCounter) {
+      this.fromAmountUpdateCounter += 1
     }
 
     if (fromSelectedToken) {
@@ -732,8 +774,8 @@ export class SwapAndBridgeController extends EventEmitter {
         !shouldNotResetFromAmount &&
         (isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
-        this.fromAmount = ''
-        this.fromAmountInFiat = ''
+        this.#setFromAmountAndNotifyUI('')
+        this.#setFromAmountInFiatAndNotifyUI('')
         this.fromAmountFieldMode = 'token'
       }
 
@@ -777,8 +819,8 @@ export class SwapAndBridgeController extends EventEmitter {
     // Preserve key form states instead of resetting the whole form to enhance UX and reduce confusion.
     // After form submission, maintain the state for fromSelectedToken, fromChainId, and toChainId,
     // while resetting all other state related to the form.
-    this.fromAmount = ''
-    this.fromAmountInFiat = ''
+    this.#setFromAmountAndNotifyUI('')
+    this.#setFromAmountInFiatAndNotifyUI('')
     this.fromAmountFieldMode = 'token'
     this.toSelectedToken = null
     this.quote = null
@@ -788,6 +830,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.hasProceeded = false
     this.isAutoSelectRouteDisabled = false
     this.#updateQuoteId = undefined
+    this.fromAmountUpdateCounter = 0
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -1111,7 +1154,8 @@ export class SwapAndBridgeController extends EventEmitter {
         },
         {
           emitUpdate: false,
-          updateQuote: false
+          updateQuote: false,
+          shouldIncrementFromAmountUpdateCounter: true
         }
       )
       this.fromSelectedToken = null
@@ -1163,7 +1207,8 @@ export class SwapAndBridgeController extends EventEmitter {
         },
         {
           emitUpdate: false,
-          updateQuote: false
+          updateQuote: false,
+          shouldIncrementFromAmountUpdateCounter: true
         }
       )
     }

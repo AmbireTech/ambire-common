@@ -74,6 +74,12 @@ export class TransferController extends EventEmitter {
 
   amountInFiat = ''
 
+  /**
+   * A counter used to trigger UI updates when the amount is changed programmatically
+   * by the controller.
+   */
+  amountUpdateCounter = 0
+
   amountFieldMode: 'fiat' | 'token' = 'token'
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
@@ -173,8 +179,8 @@ export class TransferController extends EventEmitter {
   set selectedToken(token: TokenResult | null) {
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
-      this.amount = ''
-      this.amountInFiat = ''
+      this.#setAmountAndNotifyUI('')
+      this.#setAmountInFiatAndNotifyUI('')
       this.amountFieldMode = 'token'
       return
     }
@@ -190,8 +196,8 @@ export class TransferController extends EventEmitter {
       if (!token.priceIn.length) {
         this.amountFieldMode = 'token'
       }
-      this.amount = ''
-      this.amountInFiat = ''
+      this.#setAmountAndNotifyUI('')
+      this.#setAmountInFiatAndNotifyUI('')
       this.#setSWWarningVisibleIfNeeded()
     }
   }
@@ -232,14 +238,15 @@ export class TransferController extends EventEmitter {
 
   resetForm() {
     this.selectedToken = null
-    this.amount = ''
-    this.amountInFiat = ''
+    this.#setAmountAndNotifyUI('')
+    this.#setAmountInFiatAndNotifyUI('')
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientHumanizerKnownTokenOrSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
+    this.amountUpdateCounter = 0
 
     this.destroySignAccountOp()
     this.emitUpdate()
@@ -316,6 +323,7 @@ export class TransferController extends EventEmitter {
     humanizerInfo,
     selectedToken,
     amount,
+    shouldSetMaxAmount,
     addressState,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
@@ -343,6 +351,11 @@ export class TransferController extends EventEmitter {
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#setAmount(amount)
+    }
+
+    if (shouldSetMaxAmount) {
+      this.amountFieldMode = 'token'
+      this.#setAmount(this.maxAmount, true)
     }
 
     if (addressState) {
@@ -414,7 +427,23 @@ export class TransferController extends EventEmitter {
     this.checkIsRecipientAddressUnknown()
   }
 
-  #setAmount(fieldValue: string) {
+  #setAmountAndNotifyUI(amount: string) {
+    this.amount = amount
+    this.amountUpdateCounter += 1
+  }
+
+  #setAmountInFiatAndNotifyUI(amountInFiat: string) {
+    this.amountInFiat = amountInFiat
+    this.amountUpdateCounter += 1
+  }
+
+  #setAmount(fieldValue: string, isProgrammaticUpdate = false) {
+    if (isProgrammaticUpdate) {
+      // There is no problem in updating this first as there are no
+      // emit updates in this method
+      this.amountUpdateCounter += 1
+    }
+
     if (!fieldValue) {
       this.amount = ''
       this.amountInFiat = ''
