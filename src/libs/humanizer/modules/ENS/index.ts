@@ -1,4 +1,4 @@
-import { getAddress, Interface, isAddress } from 'ethers'
+import { Interface, isAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { registeredCoinTypes } from '../../const/coinType'
@@ -33,7 +33,7 @@ const getDurationText = (duration: bigint): string => {
 export const ensModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
   // @TODO: set text and others
   return irCalls.map((call) => {
-    if (getAddress(call.to) === ENS_CONTROLLER) {
+    if (call.to && call.to.toLowerCase() === ENS_CONTROLLER.toLowerCase()) {
       if (call.data.slice(0, 10) === iface.getFunction('register')!.selector) {
         const {
           name,
@@ -115,7 +115,7 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: Ir
       }
     }
 
-    if (getAddress(call.to) === ENS_RESOLVER) {
+    if (call.to && call.to.toLowerCase() === ENS_RESOLVER.toLowerCase()) {
       if (resolverMatcher[call.data.slice(0, 10)])
         return { ...call, fullVisualization: resolverMatcher[call.data.slice(0, 10)](call.data) }
 
@@ -137,7 +137,8 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: Ir
       }
     }
     if (
-      getAddress(call.to) === BULK_RENEWAL &&
+      call.to &&
+      call.to.toLowerCase() === BULK_RENEWAL.toLowerCase() &&
       call.data.startsWith(iface.getFunction('renewAll')!.selector)
     ) {
       const { names, duration } = iface.decodeFunctionData('renewAll', call.data)

@@ -29,10 +29,12 @@ import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
 import { MAYAN_BRIDGE } from './consts'
+import { getHumanReadableErrorMessage } from './helpers'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
   token: LiFiToken,
@@ -40,7 +42,14 @@ const normalizeLiFiTokenToSwapAndBridgeToToken = (
 ): SwapAndBridgeToToken => {
   const { name, address, decimals, symbol, logoURI: icon } = token
 
-  return { name, address, decimals, symbol, icon, chainId: toChainId }
+  return {
+    name,
+    address: lifiMapNativeToAddr(toChainId, address),
+    decimals,
+    symbol,
+    icon,
+    chainId: toChainId
+  }
 }
 
 const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBridgeStep[] => {
@@ -197,7 +206,9 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
     txType: 'eth_sendTransaction',
     userTxIndex: 0,
     userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
-    value: parentStep.transactionRequest.value
+    value: parentStep.transactionRequest.value,
+    serviceFee:
+      parentStep?.estimate?.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
   }
 }
 
@@ -271,8 +282,9 @@ export class LiFiAPI {
     }
 
     if (response.status === 429) {
-      const error = `Our service provider received too many requests, temporarily preventing your request from being processed. ${errorPrefix}`
-      throw new SwapAndBridgeProviderApiError(error)
+      const error =
+        'Our service provider received too many requests, temporarily preventing your request from being processed.'
+      throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
     }
 
     let responseBody: T
@@ -285,8 +297,14 @@ export class LiFiAPI {
     }
 
     if (!response.ok) {
-      const message = JSON.stringify(responseBody)
-      const error = `${errorPrefix} Our service provider upstream error: <${message}>`
+      const humanizedMessage = getHumanReadableErrorMessage(errorPrefix, responseBody)
+
+      if (humanizedMessage) {
+        throw new SwapAndBridgeProviderApiError(humanizedMessage)
+      }
+
+      const fallbackMessage = JSON.stringify(responseBody)
+      const error = `${errorPrefix} Our service provider upstream error: <${fallbackMessage}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -400,9 +418,9 @@ export class LiFiAPI {
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
-      fromTokenAddress,
+      fromTokenAddress: lifiMapNativeToAddr(fromChainId, fromTokenAddress),
       toChainId: toChainId.toString(),
-      toTokenAddress,
+      toTokenAddress: lifiMapNativeToAddr(toChainId, toTokenAddress),
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
@@ -489,8 +507,7 @@ export class LiFiAPI {
     fromChainId: number
     toChainId: number
     bridge?: string
-  }) {
-    // TODO: Swaps have no status check
+  }): Promise<SwapAndBridgeRouteStatus> {
     if (!bridge) return 'completed'
 
     const params = new URLSearchParams({
@@ -510,16 +527,29 @@ export class LiFiAPI {
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     }).catch((e) => e)
 
-    const statuses: { [key in LiFiRouteStatusResponse['status']]: SwapAndBridgeRouteStatus } = {
+    const statuses: {
+      DONE: SwapAndBridgeRouteStatus
+      FAILED: SwapAndBridgeRouteStatus
+      INVALID: SwapAndBridgeRouteStatus
+      NOT_FOUND: SwapAndBridgeRouteStatus
+      PENDING: SwapAndBridgeRouteStatus
+      REFUNDED: SwapAndBridgeRouteStatus
+    } = {
       DONE: 'completed',
       FAILED: null,
       INVALID: null,
       NOT_FOUND: null,
-      PENDING: null
+      PENDING: null,
+      // when the bridge has failed and the user has received back his tokens
+      REFUNDED: 'refunded'
     }
 
     if (response instanceof SwapAndBridgeProviderApiError) {
       return statuses.PENDING
+    }
+
+    if (response.substatus && response.substatus === 'REFUNDED') {
+      return statuses.REFUNDED
     }
 
     return statuses[response.status as LiFiRouteStatusResponse['status']]

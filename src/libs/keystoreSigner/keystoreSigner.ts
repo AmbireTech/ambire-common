@@ -17,7 +17,7 @@ import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { getAuthorizationHash } from '../signMessage/signMessage'
+import { filterNotUsedEIP712Types, getAuthorizationHash } from '../signMessage/signMessage'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -47,15 +47,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   async signTypedData(typedMessage: TypedMessage) {
-    // remove EIP712Domain because otherwise signTypedData throws: ambiguous primary types or unused types
-    if (typedMessage.types.EIP712Domain) {
-      // eslint-disable-next-line no-param-reassign
-      delete typedMessage.types.EIP712Domain
-    }
-    // @ts-ignore
     const sig = await this.#signer.signTypedData(
       typedMessage.domain,
-      typedMessage.types,
+      filterNotUsedEIP712Types(typedMessage.types, typedMessage.primaryType),
       typedMessage.message
     )
 
@@ -125,8 +119,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
               eip7702Auth.address,
               eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
               eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
-              eip7702Auth.r,
-              eip7702Auth.s
+              // strip leading zeros
+              toBeHex(BigInt(eip7702Auth.r)),
+              toBeHex(BigInt(eip7702Auth.s))
             ]
           ]
         ])
@@ -158,13 +153,15 @@ export class KeystoreSigner implements KeystoreSignerInterface {
             eip7702Auth.address,
             eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
             eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
-            eip7702Auth.r,
-            eip7702Auth.s
+            // strip leading zeros
+            toBeHex(BigInt(eip7702Auth.r)),
+            toBeHex(BigInt(eip7702Auth.s))
           ]
         ],
         txnTypeFourSignature.yParity === '0x00' ? '0x' : txnTypeFourSignature.yParity,
-        txnTypeFourSignature.r,
-        txnTypeFourSignature.s
+        // strip leading zeros
+        toBeHex(BigInt(txnTypeFourSignature.r)),
+        toBeHex(BigInt(txnTypeFourSignature.s))
       ])
     ]) as Hex
   }

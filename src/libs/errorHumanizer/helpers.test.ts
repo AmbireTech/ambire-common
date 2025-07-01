@@ -86,12 +86,26 @@ describe('Generic error fallbacks work', () => {
       `${MESSAGE_PREFIX} it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.`
     )
   })
+  it('Error message is returned if the error is unknown', () => {
+    const message = getGenericMessageFromType(
+      ErrorType.UnknownError,
+      '',
+      MESSAGE_PREFIX,
+      '',
+      new Error('Servers stop working between 2AM and 8AM')
+    )
+
+    expect(message).toBe(
+      'We encountered an unexpected issue: Servers stop working between 2AM and 8AM\nPlease try again or contact Ambire support for assistance.'
+    )
+  })
   it('Error reason is not included in the message if withReason is false', () => {
     const message = getGenericMessageFromType(
       ErrorType.InnerCallFailureError,
       'The contract reverted',
       MESSAGE_PREFIX,
       '',
+      new Error('The contract reverted'),
       false
     )
 

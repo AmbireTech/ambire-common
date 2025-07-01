@@ -3,7 +3,8 @@ import { Interface, parseUnits } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
-import { FEE_COLLECTOR, SUPPLY_CONTROLLER_ADDR, WALLET_STAKING_ADDR } from '../../consts/addresses'
+import { Session } from '../../classes/session'
+import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { Calls, SignUserRequest } from '../../interfaces/userRequest'
 import { PaymasterService } from '../erc7677/types'
@@ -19,16 +20,19 @@ interface BuildUserRequestParams {
   selectedAccount: string
   recipientAddress: string
   paymasterService?: PaymasterService
+  windowId?: number
 }
 
 function buildMintVestingRequest({
   selectedAccount,
   selectedToken,
-  addrVestingData
+  addrVestingData,
+  windowId
 }: {
   selectedAccount: string
   selectedToken: TokenResult
   addrVestingData: AddrVestingData
+  windowId?: number
 }): SignUserRequest {
   const txn = {
     kind: 'calls' as Calls['kind'],
@@ -47,6 +51,7 @@ function buildMintVestingRequest({
   return {
     id: new Date().getTime(),
     action: txn,
+    session: new Session({ windowId }),
     meta: {
       isSignAction: true,
       chainId: selectedToken.chainId,
@@ -58,11 +63,13 @@ function buildMintVestingRequest({
 function buildClaimWalletRequest({
   selectedAccount,
   selectedToken,
-  claimableRewardsData
+  claimableRewardsData,
+  windowId
 }: {
   selectedAccount: string
   selectedToken: TokenResult
   claimableRewardsData: ClaimableRewardsData
+  windowId?: number
 }): SignUserRequest {
   const txn = {
     kind: 'calls' as Calls['kind'],
@@ -74,7 +81,7 @@ function buildClaimWalletRequest({
           claimableRewardsData?.totalClaimable,
           claimableRewardsData?.proof,
           0, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-          WALLET_STAKING_ADDR, // staking pool addr
+          STK_WALLET, // staking pool addr
           claimableRewardsData?.root,
           claimableRewardsData?.signedRoot
         ])
@@ -84,6 +91,7 @@ function buildClaimWalletRequest({
   return {
     id: new Date().getTime(),
     action: txn,
+    session: new Session({ windowId }),
     meta: {
       isSignAction: true,
       chainId: selectedToken.chainId,
@@ -97,7 +105,8 @@ function buildTransferUserRequest({
   selectedToken,
   selectedAccount,
   recipientAddress: _recipientAddress,
-  paymasterService
+  paymasterService,
+  windowId
 }: BuildUserRequestParams): SignUserRequest | null {
   if (!selectedToken || !selectedAccount || !_recipientAddress) return null
 
@@ -147,6 +156,7 @@ function buildTransferUserRequest({
     return {
       id: new Date().getTime(),
       action: calls,
+      session: new Session({ windowId }),
       meta: {
         isSignAction: true,
         chainId: selectedToken.chainId,
@@ -180,6 +190,7 @@ function buildTransferUserRequest({
   return {
     id: new Date().getTime(),
     action: txn,
+    session: new Session({ windowId }),
     meta: {
       isSignAction: true,
       chainId: selectedToken.chainId,

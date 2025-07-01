@@ -24,6 +24,26 @@ import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
+// Notice
+// The status of swapAndBridge.ts is a bit more difficult to test
+// as we now have this code:
+//
+// this.signAccountOpController.estimation.onUpdate(() => {
+//   if (
+//     this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+//     this.signAccountOpController.estimation.status === EstimationStatus.Error
+//   ) {
+//     // eslint-disable-next-line @typescript-eslint/no-floating-promises
+//     this.onEstimationFailure(this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
+//   }
+// })
+//
+// meaning we can't use fake data as the estimation is going to throw an error
+// and it's going to cut the routes
+// so the status of swapAndBridge.ts will always go to FetchingRoutes or NoRoutesFound
+//
+// In order to test the status better, we either need real data or a mock on signAccountOp
+
 let swapAndBridgeController: SwapAndBridgeController
 const windowManager = mockWindowManager().windowManager
 
@@ -69,7 +89,7 @@ const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
   windowManager,
   notificationManager,
-  onActionWindowClose: () => {}
+  onActionWindowClose: () => Promise.resolve()
 })
 
 const inviteCtrl = new InviteController({
@@ -80,6 +100,19 @@ const inviteCtrl = new InviteController({
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystore,
+  relayerUrl,
+  velcroUrl
+)
+
 const activityCtrl = new ActivityController(
   storageCtrl,
   fetch,
@@ -88,12 +121,11 @@ const activityCtrl = new ActivityController(
   selectedAccountCtrl,
   providersCtrl,
   networksCtrl,
+  portfolioCtrl,
   () => Promise.resolve()
 )
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
-
-const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
 
 const accounts = [
   {
@@ -146,17 +178,6 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
-const portfolioCtrl = new PortfolioController(
-  storageCtrl,
-  fetch,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  keystore,
-  relayerUrl,
-  velcroUrl
-)
-
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
@@ -189,8 +210,8 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-    expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+    expect(swapAndBridgeController.toTokenShortList).toHaveLength(3)
+    expect(swapAndBridgeController.toTokenShortList).not.toContainEqual(
       expect.objectContaining({
         address: swapAndBridgeController.fromSelectedToken?.address
       })
@@ -224,7 +245,9 @@ describe('SwapAndBridge Controller', () => {
         done()
       }
     })
-    swapAndBridgeController.updateForm({ toSelectedToken: swapAndBridgeController.toTokenList[0] })
+    swapAndBridgeController.updateForm({
+      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0].address
+    })
   })
   test('should update fromAmount', (done) => {
     let emitCounter = 0
@@ -273,7 +296,6 @@ describe('SwapAndBridge Controller', () => {
         return
       }
 
-      expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
       expect(swapAndBridgeController.quote).toBeDefined()
     }
 
@@ -293,7 +315,6 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })

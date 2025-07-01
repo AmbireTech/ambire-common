@@ -8,7 +8,7 @@ import { getAction, getToken } from '../../utils'
 export const gasTankModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const newCalls = irCalls.map((call) => {
     // @TODO fix those upper/lowercase
-    if (call.to.toLowerCase() === FEE_COLLECTOR.toLowerCase()) {
+    if (call.to && call.to.toLowerCase() === FEE_COLLECTOR.toLowerCase()) {
       if (call.value > 0n) {
         return {
           ...call,

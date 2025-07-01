@@ -3,7 +3,6 @@ import { HumanizerMeta } from 'libs/humanizer/interfaces'
 import { describe, expect } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
-import { ErrorRef } from '../../../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { fallbackHumanizer } from './fallBackHumanizer'
 
@@ -85,10 +84,15 @@ describe('fallbackHumanizer', () => {
   test('fallback', async () => {
     accountOp.calls = [...transactions.generic]
 
-    let irCalls = fallbackHumanizer(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta, {})
+    const irCalls = fallbackHumanizer(
+      accountOp,
+      accountOp.calls,
+      humanizerInfo as HumanizerMeta,
+      {}
+    )
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
-      content: 'Call approve(address _spender, uint256 _value)'
+      content: 'Call approve'
     })
   })
 })

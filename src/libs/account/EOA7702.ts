@@ -1,5 +1,5 @@
 /* eslint-disable class-methods-use-this */
-import { Interface, ZeroAddress } from 'ethers'
+import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import { Hex } from '../../interfaces/hex'
@@ -13,6 +13,7 @@ import {
 } from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { isNative } from '../portfolio/helpers'
 import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
 
@@ -35,7 +36,12 @@ export class EOA7702 extends BaseAccount {
    */
   is7702 = true
 
-  getEstimationCriticalError(estimation: FullEstimation): Error | null {
+  getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
+    // the critical error should be from the provider if we can broadcast in EOA only mode
+    if (!this.accountState.isSmarterEoa && op.calls.length === 1) {
+      return estimation.provider instanceof Error ? estimation.provider : null
+    }
+
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
   }
@@ -54,14 +60,13 @@ export class EOA7702 extends BaseAccount {
     feePaymentOptions: FeePaymentOption[],
     op: AccountOp
   ): FeePaymentOption[] {
-    const isNative = (token: TokenResult) => token.address === ZeroAddress && !token.flags.onGasTank
     const isDelegating = op.meta && op.meta.setDelegation !== undefined
     return feePaymentOptions.filter(
       (opt) =>
         opt.paidBy === this.account.addr &&
-        opt.availableAmount > 0n &&
         (isNative(opt.token) ||
           (!isDelegating &&
+            opt.availableAmount > 0n &&
             estimation.bundlerEstimation &&
             estimation.bundlerEstimation.paymaster.isUsable()))
     )
@@ -75,15 +80,17 @@ export class EOA7702 extends BaseAccount {
     }
   ): bigint {
     const isError = estimation instanceof Error
-    if (isError || !estimation.ambireEstimation) return 0n
+    if (isError) return 0n
 
-    const isNative = options.feeToken.address === ZeroAddress && !options.feeToken.flags.onGasTank
-    if (isNative) {
+    if (isNative(options.feeToken)) {
       // if we're delegating, we need to add the gas used for the authorization list
       const isDelegating = options.op.meta && options.op.meta.setDelegation !== undefined
       const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
 
       if (this.accountState.isSmarterEoa) {
+        // smarter EOAs with a failing ambire estimation cannot broadcast
+        if (!estimation.ambireEstimation) return 0n
+
         // paying in native + smartEOA makes the provider estimation more accurate
         if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed + revokeGas
 
@@ -95,9 +102,8 @@ export class EOA7702 extends BaseAccount {
       // if calls are only 1, use the provider if set
       const numberOfCalls = options.op.calls.length
       if (numberOfCalls === 1) {
-        return estimation.providerEstimation
-          ? estimation.providerEstimation.gasUsed + revokeGas
-          : estimation.ambireEstimation.gasUsed + revokeGas
+        if (estimation.providerEstimation) return estimation.providerEstimation.gasUsed + revokeGas
+        return estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed + revokeGas : 0n
       }
 
       // txn type 4 from here: not smarter with a batch, we need the bundler
@@ -125,8 +131,10 @@ export class EOA7702 extends BaseAccount {
     if (options.isSponsored) return BROADCAST_OPTIONS.byBundler
 
     const feeToken = feeOption.token
-    const isNative = feeToken.address === ZeroAddress && !feeToken.flags.onGasTank
-    if (isNative) {
+    if (isNative(feeToken)) {
+      // if there's no native in the account, use the bundler as a broadcast method
+      if (feeToken.amount === 0n) return BROADCAST_OPTIONS.byBundler
+
       // if the call is only 1, broadcast normally
       if (options.op.calls.length === 1) return BROADCAST_OPTIONS.bySelf
 
@@ -144,8 +152,9 @@ export class EOA7702 extends BaseAccount {
     return !this.accountState.isSmarterEoa && broadcastOption === BROADCAST_OPTIONS.byBundler
   }
 
-  canUseReceivingNativeForFee(): boolean {
-    return !this.accountState.isSmarterEoa
+  canUseReceivingNativeForFee(amount: bigint): boolean {
+    // when we use the bundler, we can use receiving eth for fee payment
+    return !this.accountState.isSmarterEoa || amount === 0n
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {

@@ -71,7 +71,8 @@ export const getBridgeBanners = (
   const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
   const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
-  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes]
+  const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
+  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
 
   let title = ''
   let text = ''
@@ -84,6 +85,20 @@ export const getBridgeBanners = (
     type = 'error'
     title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
     text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+      completedRoutes.length > 1
+        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }${
+      refundedRoutes.length > 1
+        ? ` and ${refundedRoutes.length} refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }`
+  } else if (refundedRoutes.length > 0) {
+    type = 'warning'
+    title = `Refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${refundedRoutes.length} refunded bridge${
+      refundedRoutes.length > 1 ? 's' : ''
+    }${
       completedRoutes.length > 1
         ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
         : ''
@@ -277,7 +292,8 @@ export const getAccountOpBanners = ({
                 actionName: 'reject-accountOp',
                 meta: {
                   err: 'User rejected the transaction request.',
-                  actionId: actions[0].id
+                  actionId: actions[0].id,
+                  shouldOpenNextAction: false
                 }
               }
             : undefined,

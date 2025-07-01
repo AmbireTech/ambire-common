@@ -92,7 +92,9 @@ describe('Error decoders work', () => {
         expect(e).toBeDefined()
         decodedError = decodeError(e)
         expect(decodedError.type).toEqual(ErrorType.RpcError)
-        expect(decodedError.reason).toContain("sender doesn't have enough funds to send tx")
+        expect(decodedError.reason?.toLowerCase()).toContain(
+          "sender doesn't have enough funds to send tx"
+        )
         expect(decodedError.data).toBe('')
       }
     })
@@ -327,11 +329,8 @@ describe('Error decoders work', () => {
   })
   it('Should handle PaymasterError correctly', async () => {
     const error = new RelayerPaymasterError({
-      errorState: [
-        {
-          message: 'user operation max fee per gas must be larger than 0 during gas estimation'
-        }
-      ]
+      message: 'user operation max fee per gas must be larger than 0 during gas estimation',
+      isHumanized: true
     })
 
     const decodedError = decodeError(error)

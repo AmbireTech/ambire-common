@@ -40,6 +40,11 @@ export const fallbackHumanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta
 ) => {
   const newCalls = currentIrCalls.map((call) => {
+    if (!call.to)
+      return {
+        ...call,
+        fullVisualization: [getAction('Deploy contract')]
+      }
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
     const knownSigHashes: HumanizerMeta['abis']['NO_ABI'] = Object.values(
@@ -64,6 +69,8 @@ export const fallbackHumanizer: HumanizerCallModule = (
               //  from function asd(address asd) returns ... => asd(address asd)
               knownSigHashes[call.data.slice(0, 10)].signature
                 .split('function ')
+                .filter((x) => x !== '')[0]
+                .split('(')
                 .filter((x) => x !== '')[0]
                 .split(' returns')
                 .filter((x) => x !== '')[0]

@@ -45,9 +45,10 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
   ].map((i) => iface.getFunction(i)!.selector)
   const newCalls: IrCall[] = []
 
-  irCalls.forEach((call) => {
+  irCalls.forEach((call: IrCall) => {
+    if (!call.to) return newCalls.push(call)
     if (
-      call.to?.toLowerCase() === accountOp.accountAddr.toLowerCase() &&
+      call.to.toLowerCase() === accountOp.accountAddr.toLowerCase() &&
       matcher[call.data.slice(0, 10)]
     ) {
       newCalls.push(...matcher[call.data.slice(0, 10)](call))
@@ -64,7 +65,7 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
       })
       return
     }
-    newCalls.push(call)
+    return newCalls.push(call)
   })
 
   // if an attacker hides some call deeper inside a method, callable from self

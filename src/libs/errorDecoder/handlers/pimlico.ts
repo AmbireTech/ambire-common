@@ -9,16 +9,12 @@ class PimlicoEstimationErrorHandler implements ErrorHandler {
     return bundlerName && bundlerName === PIMLICO
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public handle(data: string, error: any): DecodedError {
-    const { message } = error?.error || error || {}
-    const lowerCased = typeof message === 'string' ? message.toLowerCase() : ''
-
-    // TODO: expand with more error cases
-    let reason = ''
-    if (lowerCased.includes('internal error')) {
-      reason = 'pimlico: 500'
-    }
-
+    // the exact bundler errors are irrelevant as the ambire estimation returns
+    // the message. We just indicate here that the bundler switcher should
+    // switch to the next available bundler
+    const reason = 'pimlico: 500'
     return {
       type: ErrorType.BundlerError,
       reason,

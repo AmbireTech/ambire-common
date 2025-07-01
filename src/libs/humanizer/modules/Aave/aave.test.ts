@@ -2,12 +2,13 @@ import { ZeroAddress } from 'ethers'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { Call } from '../../../accountOp/types'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 import { aaveHumanizer } from '.'
 
-const transactions: { [key: string]: Array<IrCall> } = {
+const transactions: { [key: string]: Call[] } = {
   aaveLendingPoolV2: [
     // deposit
     {

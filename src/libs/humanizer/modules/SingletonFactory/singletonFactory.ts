@@ -1,4 +1,4 @@
-import { getAddress, Interface } from 'ethers'
+import { Interface } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
@@ -10,7 +10,8 @@ export const singletonFactory: HumanizerCallModule = (_: AccountOp, irCalls: IrC
   const newCalls = irCalls.map((call) => {
     // @TODO fix those upper/lowercase
     if (
-      getAddress(call.to) === CONTRACT_FACTORY_ADDRESS &&
+      call.to &&
+      call.to.toLowerCase() === CONTRACT_FACTORY_ADDRESS.toLowerCase() &&
       call.data.slice(0, 10) === iface.getFunction('deploy')!.selector
     ) {
       return {

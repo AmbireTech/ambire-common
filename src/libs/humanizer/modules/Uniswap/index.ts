@@ -43,7 +43,7 @@ export const uniswapHumanizer: HumanizerCallModule = (
   currentIrCalls.forEach((call: IrCall) => {
     const sigHash = call.data.substring(0, 10)
 
-    const knownUniswapVersion = matcher[call.to.toLowerCase()]
+    const knownUniswapVersion = call.to && matcher[call.to.toLowerCase()]
     if (knownUniswapVersion && knownUniswapVersion?.[sigHash]) {
       const fullVisualization = knownUniswapVersion[sigHash](accountOp, call)
       newCalls.push({ ...call, fullVisualization })

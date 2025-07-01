@@ -2,8 +2,9 @@ import EmittableError from '../../classes/EmittableError'
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { decodeError } from '../errorDecoder'
+import { truncateReason } from '../errorDecoder/helpers'
 import { DecodedError } from '../errorDecoder/types'
-import { ESTIMATION_ERRORS } from './errors'
+import { ESTIMATION_ERRORS, noPrefixReasons } from './errors'
 import { getGenericMessageFromType, getHumanReadableErrorMessage } from './helpers'
 import { humanizeEstimationOrBroadcastError } from './humanizeCommonCases'
 
@@ -14,7 +15,8 @@ const LAST_RESORT_ERROR_MESSAGE =
 
 function getPrefix(reason: string | null): string {
   if (!reason) return MESSAGE_PREFIX
-  return !reason.includes('pimlico: 500') ? MESSAGE_PREFIX : ''
+  const hasNoPrefix = noPrefixReasons.filter((noPrefix) => reason.includes(noPrefix)).length
+  return hasNoPrefix === 0 ? MESSAGE_PREFIX : ''
 }
 
 export function getHumanReadableEstimationError(e: Error | DecodedError) {
@@ -30,7 +32,7 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
   let isFallbackMessage = false
   const decodedError = e instanceof Error ? decodeError(e as Error) : (e as DecodedError)
   const commonError = humanizeEstimationOrBroadcastError(
-    decodedError.reason,
+    decodedError,
     getPrefix(decodedError.reason),
     e
   )
@@ -38,7 +40,7 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
     commonError,
     ESTIMATION_ERRORS,
     MESSAGE_PREFIX,
-    decodedError.reason,
+    decodedError,
     e
   )
 
@@ -49,12 +51,13 @@ export function getHumanReadableEstimationError(e: Error | DecodedError) {
       decodedError.reason,
       MESSAGE_PREFIX,
       LAST_RESORT_ERROR_MESSAGE,
+      e,
       false
     )
   }
 
   return new ErrorHumanizerError(errorMessage, {
-    cause: decodedError.reason,
+    cause: decodedError.reason || (e instanceof Error ? truncateReason(e?.message) : ''),
     isFallbackMessage
   })
 }

@@ -3,8 +3,11 @@ import { TransactionReceipt, ZeroAddress } from 'ethers'
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
-import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import {
+  getAvailableBunlders,
+  getBundlerByName,
+  getDefaultBundler
+} from '../../services/bundlers/getBundler'
 import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
@@ -147,46 +150,38 @@ export async function fetchTxnId(
       ? getBundlerByName(identifiedBy.bundler)
       : getDefaultBundler(network)
 
-    const [response, bundlerResult]: [any, any] = await Promise.all([
-      fetchUserOp(userOpHash, fetchFn),
-      bundler.getStatus(network, userOpHash)
-    ])
-
-    if (bundlerResult.status === 'rejected')
-      return {
-        status: 'rejected',
-        txnId: null
+    let bundlerResult = await bundler.getStatus(network, userOpHash)
+    if (bundlerResult.status === 'rejected') {
+      // sometimes the bundlers return rejected by mistake
+      // if that's the case, make the user wait a bit longer, but then query
+      // all bundlers for the user op receipt to make sure it's really not mined
+      await wait(15000)
+      const bundlers = getAvailableBunlders(network)
+      const bundlerResults = await Promise.all(
+        bundlers.map((b) => b.getReceipt(userOpHash, network))
+      )
+      bundlerResults.forEach((res) => {
+        if (res && res.receipt && res.receipt.transactionHash) {
+          bundlerResult = {
+            status: 'found',
+            transactionHash: res.receipt.transactionHash
+          }
+        }
+      })
+      // if it's rejected even after searching all the bundlers,
+      // we return rejected
+      if (bundlerResult.status === 'rejected') {
+        return {
+          status: 'rejected',
+          txnId: null
+        }
       }
+    }
 
     if (bundlerResult.transactionHash)
       return {
         status: 'success',
         txnId: bundlerResult.transactionHash
-      }
-
-    // on custom networks the response is null
-    if (!response)
-      return {
-        status: 'not_found',
-        txnId: null
-      }
-
-    // nothing we can do if we don't have information
-    if (response.status !== 200)
-      return {
-        status: 'not_found',
-        txnId: null
-      }
-
-    const data = await response.json()
-    const userOps = data.userOps
-
-    // if there are not user ops, it means the userOpHash is not
-    // indexed, yet, so we wait
-    if (userOps.length)
-      return {
-        status: 'success',
-        txnId: userOps[0].transactionHash
       }
 
     return {

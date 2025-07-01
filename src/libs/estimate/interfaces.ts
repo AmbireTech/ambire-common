@@ -7,8 +7,8 @@ export interface BundlerEstimateResult {
   preVerificationGas: Hex
   verificationGasLimit: Hex
   callGasLimit: Hex
-  paymasterVerificationGasLimit: Hex
-  paymasterPostOpGasLimit: Hex
+  paymasterVerificationGasLimit?: Hex
+  paymasterPostOpGasLimit?: Hex
 }
 
 export interface BundlerStateOverride {

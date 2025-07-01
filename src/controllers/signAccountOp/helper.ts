@@ -11,7 +11,8 @@ import { AccountState } from '../../libs/portfolio/interfaces'
 
 export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
 export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
-export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap'
+export const SIGN_ACCOUNT_OP_TRANSFER = 'signAccountOpTransfer'
+export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap' | 'signAccountOpTransfer'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -60,13 +61,14 @@ function getSignificantBalanceDecreaseWarning(
     !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotal = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
-    const latestOnNetwork = getTotal(latestNetworkData.result?.tokens || []).usd
-    const pendingOnNetwork = getTotal(pendingNetworkData.result?.tokens || []).usd
-    const willBalanceDecreaseByMoreThan10Percent =
-      latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
+    const latestTotalInUSD = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
+    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
+    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
+    const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
+    const hasSignificantBalanceDecrease =
+      absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
-    if (!willBalanceDecreaseByMoreThan10Percent) return null
+    if (!hasSignificantBalanceDecrease) return null
 
     // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
     // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
