@@ -123,11 +123,16 @@ export function getUserOperation(
   accountOp: AccountOp,
   bundler: BUNDLER,
   entryPointSig?: string,
-  eip7702Auth?: EIP7702Auth
+  eip7702Auth?: EIP7702Auth,
+  activityUserOp?: UserOperation
 ): UserOperation {
+  const accountStateNonce = toBeHex(accountState.erc4337Nonce)
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
-    nonce: toBeHex(accountState.erc4337Nonce),
+    nonce:
+      activityUserOp && accountStateNonce === activityUserOp.nonce
+        ? toBeHex(accountState.erc4337Nonce + 1n)
+        : accountStateNonce,
     callData: '0x',
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),

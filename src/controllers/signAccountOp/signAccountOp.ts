@@ -296,6 +296,7 @@ export class SignAccountOpController extends EventEmitter {
       networks,
       provider,
       portfolio,
+      activity,
       this.bundlerSwitcher
     )
     const emptyFunc = () => {}
@@ -1449,15 +1450,6 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    const userOperation = getUserOperation(
-      this.account,
-      accountState,
-      this.accountOp,
-      this.bundlerSwitcher.getBundler().getName(),
-      this.accountOp.meta?.entryPointAuthorization,
-      eip7702Auth
-    )
-
     // if broadcast but not confirmed for this network and an userOp,
     // check if the nonces match. If they do, increment the current nonce
     const notConfirmedUserOp = this.#activity.broadcastedButNotConfirmed.find(
@@ -1466,13 +1458,15 @@ export class SignAccountOpController extends EventEmitter {
         accOp.gasFeePayment &&
         accOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byBundler
     )
-    if (
-      notConfirmedUserOp &&
-      notConfirmedUserOp.asUserOperation &&
-      notConfirmedUserOp.asUserOperation.nonce === userOperation.nonce
-    ) {
-      userOperation.nonce = toBeHex(BigInt(userOperation.nonce) + 1n)
-    }
+    const userOperation = getUserOperation(
+      this.account,
+      accountState,
+      this.accountOp,
+      this.bundlerSwitcher.getBundler().getName(),
+      this.accountOp.meta?.entryPointAuthorization,
+      eip7702Auth,
+      notConfirmedUserOp?.asUserOperation
+    )
 
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
     userOperation.callGasLimit = toBeHex(

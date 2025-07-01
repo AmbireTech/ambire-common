@@ -1,4 +1,4 @@
-import { BaseAccount } from 'libs/account/BaseAccount'
+import { BaseAccount } from '../account/BaseAccount'
 
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -6,6 +6,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { AccountOp } from '../accountOp/accountOp'
 import { TokenResult } from '../portfolio'
+import { UserOperation } from '../userOperation/types'
 import { ambireEstimateGas } from './ambireEstimation'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateWithRetries } from './estimateWithRetries'
@@ -30,7 +31,8 @@ export async function getEstimation(
   feeTokens: TokenResult[],
   nativeToCheck: string[],
   switcher: BundlerSwitcher,
-  errorCallback: Function
+  errorCallback: Function,
+  activityUserOp?: UserOperation
 ): Promise<FullEstimation | Error> {
   const ambireEstimation = ambireEstimateGas(
     baseAcc,
@@ -49,7 +51,9 @@ export async function getEstimation(
     feeTokens,
     provider,
     switcher,
-    errorCallback
+    errorCallback,
+    undefined,
+    activityUserOp
   )
   const providerEstimation = providerEstimateGas(
     baseAcc.getAccount(),

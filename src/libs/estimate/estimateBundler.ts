@@ -106,7 +106,8 @@ export async function bundlerEstimate(
   provider: RPCProvider,
   switcher: BundlerSwitcher,
   errorCallback: Function,
-  eip7702Auth?: EIP7702Auth
+  eip7702Auth?: EIP7702Auth,
+  activityUserOp?: UserOperation
 ): Promise<Erc4337GasLimits | Error | null> {
   if (!baseAcc.supportsBundlerEstimation()) return null
 
@@ -119,7 +120,8 @@ export async function bundlerEstimate(
     localOp,
     initialBundler.getName(),
     op.meta?.entryPointAuthorization,
-    eip7702Auth
+    eip7702Auth,
+    activityUserOp
   )
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
