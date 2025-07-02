@@ -235,7 +235,7 @@ export class DefiPositionsController extends EventEmitter {
             positionsByProvider: [...filteredPrevious, ...customPositions],
             updatedAt: hasErrors ? state.updatedAt : Date.now(),
             error,
-            lastFetchForNonce: this.#getNonce(selectedAccountAddr, chain)
+            nonceId: this.#getNonceId(selectedAccountAddr, chain)
           }
         }
       } catch (e) {
@@ -245,7 +245,7 @@ export class DefiPositionsController extends EventEmitter {
           isLoading: false,
           positionsByProvider: previousPositions || [],
           error: DeFiPositionsError.CriticalError,
-          lastFetchForNonce: this.#getNonce(selectedAccountAddr, chain)
+          nonceId: this.#getNonceId(selectedAccountAddr, chain)
         }
       }
 
@@ -294,7 +294,7 @@ export class DefiPositionsController extends EventEmitter {
         isLoading: false,
         positionsByProvider: Array.from(positionMap.values()),
         updatedAt: Date.now(),
-        lastFetchForNonce: this.#getNonce(selectedAccountAddr, chain)
+        nonceId: this.#getNonceId(selectedAccountAddr, chain)
       }
     }
 
@@ -422,33 +422,36 @@ export class DefiPositionsController extends EventEmitter {
     if (!this.#accounts.accountStates[accountAddr]) return false
 
     if (!this.#state[accountAddr]) return false
+
+    // Don't skip if the account has any DeFi positions
     if (Object.values(this.#state[accountAddr]).some((p) => p.positionsByProvider.length))
       return false
 
-    const hasNewNonce = Object.keys(this.#accounts.accountStates[accountAddr]).some(
+    const someNonceIdChanged = Object.keys(this.#accounts.accountStates[accountAddr]).some(
       (chainId: string) => {
-        const lastFetchForNonce = this.#state[accountAddr][chainId].lastFetchForNonce
-        const nonce = this.#getNonce(accountAddr, chainId)
+        const posNonceId = this.#state[accountAddr][chainId].nonceId
+        const nonceId = this.#getNonceId(accountAddr, chainId)
 
-        if (nonce == null || lastFetchForNonce == null) return false
+        if (!nonceId || !posNonceId) return false
 
-        return nonce > lastFetchForNonce
+        return nonceId !== posNonceId
       }
     )
 
-    return !hasNewNonce
+    // Return false (don’t skip) if any nonceId has changed
+    return !someNonceIdChanged
   }
 
-  #getNonce(accountAddr: string, chainId: bigint | string) {
+  #getNonceId(accountAddr: string, chainId: bigint | string) {
     if (!this.#accounts.accountStates) return undefined
     if (!this.#accounts.accountStates[accountAddr]) return undefined
 
     const networkState = this.#accounts.accountStates[accountAddr][chainId.toString()]
     if (!networkState) return undefined
 
-    if (networkState.isErc4337Enabled) return networkState.erc4337Nonce
+    if (networkState.isEOA) return `${networkState.eoaNonce}-${networkState.erc4337Nonce}`
 
-    return networkState.nonce
+    return `${networkState.nonce}-${networkState.erc4337Nonce}`
   }
 
   removeNetworkData(chainId: bigint) {
