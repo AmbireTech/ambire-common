@@ -52,6 +52,8 @@ export class EstimationController extends EventEmitter {
 
   #activity: ActivityController
 
+  #notFatalBundlerError?: Error
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
@@ -197,6 +199,9 @@ export class EstimationController extends EventEmitter {
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
       this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
+      if (estimation.bundler instanceof Error) {
+        this.#notFatalBundlerError = estimation.bundler
+      }
     } else {
       this.estimation = null
       this.error = estimation
@@ -251,6 +256,14 @@ export class EstimationController extends EventEmitter {
         id: 'bundler-failure',
         title:
           'Smart account fee options are temporarily unavailable. You can pay fee with an EOA account or try again later'
+      })
+    }
+
+    if (this.#notFatalBundlerError?.cause === '4337_INVALID_NONCE') {
+      warnings.push({
+        id: 'bundler-nonce-discrepancy',
+        title:
+          'Pending transaction detected! Please wait for its confirmation to have more payment options available'
       })
     }
 

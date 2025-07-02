@@ -182,11 +182,18 @@ export async function bundlerEstimate(
     ) {
       const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
       let accountNonce = null
+
       // infinite loading is fine here as this is how 4337_INVALID_NONCE error
       // was handled in previous cases and worked pretty well: retry until fix
       while (!accountNonce) {
         accountNonce = await ep.getNonce(account.addr, 0, { blockTag: 'pending' }).catch(() => null)
         if (activityUserOp && BigInt(activityUserOp.nonce) === BigInt(accountNonce)) {
+          // ethereum is particularly slow in block time so it's better to
+          // return the nonce error back to the user
+          if (network.chainId === 1n) {
+            return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+          }
+
           // find the receipt for the activityUserOp
           // if there isn't any, increment accountNonce with 1 and continue
           // if there is, check if it's a success. If it is, increment with 1
@@ -204,8 +211,7 @@ export async function bundlerEstimate(
       userOp.nonce = toBeHex(accountNonce)
       flags.has4337NonceDiscrepancy = true
       // wait a bit to allow the bundler to configure it's state correctly
-      const waitTime = network.chainId === 1n ? 6000 : 1500
-      await wait(waitTime)
+      await wait(1000)
       continue
     }
 

@@ -89,9 +89,6 @@ export async function getEstimation(
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation, op)
   if (criticalError) return criticalError
 
-  // TODO: if the bundler is the preferred method of estimation, re-estimate
-  // we can switch it if there's no ambire gas error
-
   let flags = {}
   if (!(ambireGas instanceof Error) && ambireGas) flags = { ...ambireGas.flags }
   if (!(bundlerGas instanceof Error) && bundlerGas) flags = { ...bundlerGas.flags }
