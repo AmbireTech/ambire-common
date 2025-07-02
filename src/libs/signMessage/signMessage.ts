@@ -93,14 +93,6 @@ interface AmbireReadableOperation {
   calls: { to: Hex; value: bigint; data: Hex }[]
 }
 
-// this is for cases where the type is an array
-function getBaseType(type: string): string {
-  if (type.endsWith('[]')) {
-    return type.slice(0, -2)
-  }
-  return type
-}
-
 // remove all types found in types that don't exist in types[primaryType]
 // as otherwise, ethers6 throws an error
 //
@@ -119,7 +111,9 @@ export function filterNotUsedEIP712Types(types: EIP712Types, primaryType: string
     const fields = types[current] || []
     // eslint-disable-next-line no-restricted-syntax
     for (const field of fields) {
-      const baseType = getBaseType(field.type)
+      // since the type might be an array of something,
+      // we parse it as we are interested in the base type only
+      const baseType = field.type.split('[')[0]
       if (types[baseType] && !visited.has(baseType)) {
         toVisit.push(baseType)
       }
