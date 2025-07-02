@@ -47,7 +47,9 @@ describe('Rewards nft', () => {
   })
 
   it('tokenURI', async () => {
-    await expect(rewardsNftContract.tokenURI(1)).to.be.revertedWith('tokenURI: token not minted')
+    expect(await rewardsNftContract.tokenURI(1)).eq(
+      'https://staging-relayer.ambire.com/legends/nft-meta/0x0000000000000000000000000000000000000000/0'
+    )
     await rewardsNftContract.mint(1, 1)
     expect(await rewardsNftContract.tokenURI(1)).eq(
       `https://staging-relayer.ambire.com/legends/nft-meta/${signer.address.toLowerCase()}/1`
