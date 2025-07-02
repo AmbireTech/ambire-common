@@ -88,7 +88,8 @@ const prepareTest = async () => {
     selectedAccount: selectedAccountCtrl,
     keystore: keystoreCtrl,
     providers: providersCtrl,
-    networks: networksCtrl
+    networks: networksCtrl,
+    accounts: accountsCtrl
   })
 
   return {
