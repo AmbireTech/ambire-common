@@ -15,13 +15,19 @@ import { Bundler } from '../../services/bundlers/bundler'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
+import wait from '../../utils/wait'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
-import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
+import {
+  getSigForCalculations,
+  getUserOperation,
+  getUserOpHash,
+  getUserOpPendingOrSuccessStatuses
+} from '../userOperation/userOperation'
 import { estimateWithRetries } from './estimateWithRetries'
 import { Erc4337GasLimits, EstimationFlags } from './interfaces'
 
@@ -180,9 +186,26 @@ export async function bundlerEstimate(
       // was handled in previous cases and worked pretty well: retry until fix
       while (!accountNonce) {
         accountNonce = await ep.getNonce(account.addr, 0, { blockTag: 'pending' }).catch(() => null)
+        if (activityUserOp && BigInt(activityUserOp.nonce) === BigInt(accountNonce)) {
+          // find the receipt for the activityUserOp
+          // if there isn't any, increment accountNonce with 1 and continue
+          // if there is, check if it's a success. If it is, increment with 1
+          // if it's not, do not increment
+          const userOpHash = getUserOpHash(activityUserOp, network.chainId)
+          const bundlerStatus = await bundler.getStatus(network, userOpHash)
+          if (getUserOpPendingOrSuccessStatuses().indexOf(bundlerStatus.status) !== -1) {
+            accountNonce += 1n
+          } else {
+            const receipt = await bundler.getReceipt(userOpHash, network)
+            if (receipt && receipt.success) accountNonce += 1n
+          }
+        }
       }
       userOp.nonce = toBeHex(accountNonce)
       flags.has4337NonceDiscrepancy = true
+      // wait a bit to allow the bundler to configure it's state correctly
+      const waitTime = network.chainId === 1n ? 6000 : 1500
+      await wait(waitTime)
       continue
     }
 

@@ -13,6 +13,14 @@ export interface GasSpeeds {
 }
 
 export interface UserOpStatus {
-  status: 'rejected' | 'not_found' | 'found'
+  status:
+    | 'rejected'
+    | 'not_found'
+    | 'found'
+    | 'submitted'
+    | 'not_submitted'
+    | 'included'
+    | 'failed'
+    | 'queued'
   transactionHash?: Hex
 }

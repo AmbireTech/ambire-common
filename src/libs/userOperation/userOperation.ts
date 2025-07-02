@@ -276,3 +276,11 @@ export const parseLogs = (
     success: userOpLog[1]
   }
 }
+
+/**
+ * Get all the bundler statuses that indicate that an userOp
+ * is either pending to be mined or successfully included in the blockchain
+ */
+export function getUserOpPendingOrSuccessStatuses(): string[] {
+  return ['found', 'submitted', 'not_submitted', 'included', 'queued']
+}

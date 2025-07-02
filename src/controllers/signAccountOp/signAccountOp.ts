@@ -19,6 +19,7 @@ import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Hex } from '../../interfaces/hex'
 import { ActivityController } from '../activity/activity'
+
 /* eslint-disable no-restricted-syntax */
 import {
   ERRORS,
@@ -775,11 +776,32 @@ export class SignAccountOpController extends EventEmitter {
       }
 
       if (Array.isArray(calls)) {
-        const hasNewCalls = this.accountOp.calls.length < calls.length
-        this.accountOp.calls = calls
+        // we should update if the arrays are with diff length
+        let shouldUpdate = this.accountOp.calls.length !== calls.length
 
-        if (hasNewCalls) this.learnTokensFromCalls()
-        this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+        if (!shouldUpdate) {
+          // if they are with the same length, check if some of
+          // their properties differ. If they do, we should update
+          this.accountOp.calls.forEach((call, i) => {
+            const newCall = calls[i]
+            if (
+              call.to !== newCall.to ||
+              call.data !== newCall.data ||
+              call.value !== newCall.value
+            )
+              shouldUpdate = true
+          })
+        }
+
+        // update only if there are differences in the calls array
+        // we do this to prevent double estimation problems
+        if (shouldUpdate) {
+          const hasNewCalls = this.accountOp.calls.length < calls.length
+          this.accountOp.calls = calls
+
+          if (hasNewCalls) this.learnTokensFromCalls()
+          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+        }
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
