@@ -425,10 +425,14 @@ export class DefiPositionsController extends EventEmitter {
     if (Object.values(this.#state[accountAddr]).some((p) => p.positionsByProvider.length))
       return false
 
-    const hasNewNonce = Object.entries(this.#accounts.accountStates[accountAddr]).some(
-      ([chainId, networkState]) => {
-        if (!this.#state[accountAddr][chainId].lastFetchForNonce) return false
-        return networkState.nonce > this.#state[accountAddr][chainId].lastFetchForNonce
+    const hasNewNonce = Object.keys(this.#accounts.accountStates[accountAddr]).some(
+      (chainId: string) => {
+        const lastFetchForNonce = this.#state[accountAddr][chainId].lastFetchForNonce
+        const nonce = this.#getNonce(accountAddr, chainId)
+
+        if (nonce == null || lastFetchForNonce == null) return false
+
+        return nonce > lastFetchForNonce
       }
     )
 
