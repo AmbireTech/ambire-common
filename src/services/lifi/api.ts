@@ -281,7 +281,7 @@ export class LiFiAPI {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout out'
+                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout'
               )
             )
           }, this.#requestTimeoutMs)
@@ -304,8 +304,7 @@ export class LiFiAPI {
     try {
       responseBody = await response.json()
     } catch (e: any) {
-      const error =
-        'Our service provider is temporarily unavailable. Error details: Non-JSON response received.'
+      const error = 'Our service provider is temporarily unavailable.'
       throw new SwapAndBridgeProviderApiError(error)
     }
 
