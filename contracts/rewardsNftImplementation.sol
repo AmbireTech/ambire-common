@@ -91,7 +91,6 @@ contract AmbireRewardsNFTImplementation is Ownable, IERC721Metadata, ERC721Enume
     uint tokenId
   ) public view override(ERC721, IERC721Metadata) returns (string memory) {
     address nftOwner = _ownerOf(tokenId);
-    require(nftOwner != address(0), 'tokenURI: token not minted');
 
     // not gas efficient but that is ok since this is a view function
     // used i <= currentSeason + 1, because we want to return URIs for the next season as well
@@ -99,7 +98,8 @@ contract AmbireRewardsNFTImplementation is Ownable, IERC721Metadata, ERC721Enume
       if (nftIds[nftOwner][i] > 0)
         return string(abi.encodePacked(baseURI, nftOwner.toHexString(), '/', i.toString()));
     }
-    revert('tokenURI: no such NFT found');
+    return
+      string(abi.encodePacked(baseURI, address(0).toHexString(), '/', currentSeason.toString()));
   }
 
   function setBaseUri(string calldata _baseURI) public onlyOwner {
