@@ -18,6 +18,8 @@ import { BUNDLER } from '../../consts/bundlers'
 import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Hex } from '../../interfaces/hex'
+import { ActivityController } from '../activity/activity'
+
 /* eslint-disable no-restricted-syntax */
 import {
   ERRORS,
@@ -241,11 +243,14 @@ export class SignAccountOpController extends EventEmitter {
    */
   #shouldSimulate: boolean
 
+  #activity: ActivityController
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -261,6 +266,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -291,6 +297,7 @@ export class SignAccountOpController extends EventEmitter {
       networks,
       provider,
       portfolio,
+      activity,
       this.bundlerSwitcher
     )
     const emptyFunc = () => {}
@@ -769,11 +776,32 @@ export class SignAccountOpController extends EventEmitter {
       }
 
       if (Array.isArray(calls)) {
-        const hasNewCalls = this.accountOp.calls.length < calls.length
-        this.accountOp.calls = calls
+        // we should update if the arrays are with diff length
+        let shouldUpdate = this.accountOp.calls.length !== calls.length
 
-        if (hasNewCalls) this.learnTokensFromCalls()
-        this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+        if (!shouldUpdate) {
+          // if they are with the same length, check if some of
+          // their properties differ. If they do, we should update
+          this.accountOp.calls.forEach((call, i) => {
+            const newCall = calls[i]
+            if (
+              call.to !== newCall.to ||
+              call.data !== newCall.data ||
+              call.value !== newCall.value
+            )
+              shouldUpdate = true
+          })
+        }
+
+        // update only if there are differences in the calls array
+        // we do this to prevent double estimation problems
+        if (shouldUpdate) {
+          const hasNewCalls = this.accountOp.calls.length < calls.length
+          this.accountOp.calls = calls
+
+          if (hasNewCalls) this.learnTokensFromCalls()
+          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+        }
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
@@ -1444,14 +1472,24 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
+    // if broadcast but not confirmed for this network and an userOp,
+    // check if the nonces match. If they do, increment the current nonce
+    const notConfirmedUserOp = this.#activity.broadcastedButNotConfirmed.find(
+      (accOp) =>
+        accOp.chainId === this.#network.chainId &&
+        accOp.gasFeePayment &&
+        accOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byBundler
+    )
     const userOperation = getUserOperation(
       this.account,
       accountState,
       this.accountOp,
       this.bundlerSwitcher.getBundler().getName(),
       this.accountOp.meta?.entryPointAuthorization,
-      eip7702Auth
+      eip7702Auth,
+      notConfirmedUserOp?.asUserOperation
     )
+
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
     userOperation.callGasLimit = toBeHex(
       BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed

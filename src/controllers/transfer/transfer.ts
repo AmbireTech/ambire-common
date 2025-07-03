@@ -1,5 +1,6 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import { ActivityController } from 'controllers/activity/activity'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
@@ -123,6 +124,8 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #activity: ActivityController
+
   constructor(
     storage: StorageController,
     humanizerInfo: HumanizerMeta,
@@ -132,6 +135,7 @@ export class TransferController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: ProvidersController,
     relayerUrl: string
@@ -147,6 +151,7 @@ export class TransferController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#relayerUrl = relayerUrl
@@ -608,6 +613,7 @@ export class TransferController extends EventEmitter {
       this.#networks,
       this.#keystore,
       this.#portfolio,
+      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccountData.account,
       network,
