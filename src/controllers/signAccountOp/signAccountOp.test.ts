@@ -485,6 +485,7 @@ const init = async (
     networksCtrl,
     keystore,
     portfolio,
+    activity,
     {},
     account,
     network,
