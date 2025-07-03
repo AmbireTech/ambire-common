@@ -333,6 +333,15 @@ export class SignAccountOpController extends EventEmitter {
 
         // Stop after the first invalid call
         break
+      } else if (call.to && !isAddress(call.to)) {
+        callError = {
+          title: 'Invalid to address in call.',
+          text: 'Please remove all invalid calls if you want to proceed.'
+        }
+        call.validationError = 'Invalid to address in call.'
+
+        // Stop after the first invalid call
+        break
       }
     }
 
