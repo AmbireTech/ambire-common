@@ -5,6 +5,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { AccountsController } from '../accounts/accounts'
+import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
@@ -18,6 +19,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     networks: NetworksController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -35,6 +37,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
       networks,
       keystore,
       portfolio,
+      activity,
       externalSignerControllers,
       account,
       network,
