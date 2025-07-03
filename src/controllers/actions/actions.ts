@@ -320,7 +320,7 @@ export class ActionsController extends EventEmitter {
       }
 
       try {
-        this.#windowManager.remove('popup') // no need to await this to speed up the action-window opening
+        await this.#windowManager.remove('popup')
         this.actionWindow.openWindowPromise = this.#windowManager
           .open({ customSize, baseWindowId })
           .finally(() => {
@@ -347,7 +347,7 @@ export class ActionsController extends EventEmitter {
       return
 
     try {
-      this.#windowManager.remove('popup') // no need to await this to speed up the action-window opening
+      await this.#windowManager.remove('popup')
       this.actionWindow.focusWindowPromise = this.#windowManager
         .focus(this.actionWindow.windowProps)
         .finally(() => {
