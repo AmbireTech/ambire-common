@@ -2673,6 +2673,9 @@ export class MainController extends EventEmitter {
         actionId,
         isBasicAccountBroadcastingMultiple
       )
+
+      // TODO: the form should be reset in a success state in FE
+      this.transactionManager.formState.resetForm()
     }
     // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
     // visualize the success page on the FE instead of resetting the form
