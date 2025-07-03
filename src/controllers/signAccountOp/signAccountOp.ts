@@ -6,6 +6,7 @@ import {
   getAddress,
   Interface,
   isAddress,
+  isBytesLike,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -17,7 +18,6 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { Hex } from '../../interfaces/hex'
 /* eslint-disable no-restricted-syntax */
 import {
   ERRORS,
@@ -31,6 +31,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
+import { Hex } from '../../interfaces/hex'
 import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -305,6 +306,39 @@ export class SignAccountOpController extends EventEmitter {
     this.#load(shouldSimulate)
   }
 
+  #validateAccountOp(): SignAccountOpError | null {
+    const invalidAccountOpError =
+      'The transaction is missing essential data. Please contact support.'
+    if (!this.accountOp.accountAddr || !isAddress(this.accountOp.accountAddr)) {
+      return { title: invalidAccountOpError, code: 'INVALID_ACCOUNT_ADDRESS' }
+    }
+    if (!this.accountOp.chainId || typeof this.accountOp.chainId !== 'bigint') {
+      return { title: invalidAccountOpError, code: 'INVALID_CHAIN_ID' }
+    }
+    if (!this.accountOp.calls || !this.accountOp.calls.length) {
+      return { title: invalidAccountOpError, code: 'NO_CALLS' }
+    }
+
+    let callError: SignAccountOpError | null = null
+
+    for (let index = 0; index < this.accountOp.calls.length; index++) {
+      const call = this.accountOp.calls[index]
+
+      if (!!call.data && !isBytesLike(call.data)) {
+        callError = {
+          title: 'Invalid bytes-like string in call data.',
+          text: 'Please remove all invalid calls if you want to proceed.'
+        }
+        call.validationError = 'Invalid bytes-like string in call data'
+
+        // Stop after the first invalid call
+        break
+      }
+    }
+
+    return callError
+  }
+
   #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
@@ -377,6 +411,10 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get errors(): SignAccountOpError[] {
+    const accountOpValidationError = this.#validateAccountOp()
+
+    if (accountOpValidationError) return [accountOpValidationError]
+
     const errors: SignAccountOpError[] = []
 
     const estimationErrors = this.estimation.errors
