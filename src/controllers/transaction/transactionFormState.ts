@@ -283,7 +283,8 @@ export class TransactionFormState extends EventEmitter {
   }
 
   unloadScreen(sessionId: string, forceUnload?: boolean) {
-    const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
+    const isFormDirty =
+      !!this.fromAmount || !!this.toSelectedToken || !!this.addressState.fieldValue
     // const signAccountOpCtrlStatus = this.dependencies.signAccountOpController?.status?.type
     // const isSigningOrBroadcasting =
     //   signAccountOpCtrlStatus && noStateUpdateStatuses.includes(signAccountOpCtrlStatus)
