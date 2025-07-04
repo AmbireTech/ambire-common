@@ -12,6 +12,7 @@ import {
 import BiconomyEstimationErrorHandler from './handlers/biconomy'
 import CandideEstimationErrorHandler from './handlers/candide'
 import EtherspotEstimationErrorHandler from './handlers/etherspot'
+import GelatoEstimationErrorHandler from './handlers/gelato'
 import InternalHandler from './handlers/internal'
 import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
@@ -27,7 +28,8 @@ const PREPROCESSOR_BUNDLER_HANDLERS = [
   BiconomyEstimationErrorHandler,
   PimlicoEstimationErrorHandler,
   EtherspotEstimationErrorHandler,
-  CandideEstimationErrorHandler
+  CandideEstimationErrorHandler,
+  GelatoEstimationErrorHandler
 ]
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
