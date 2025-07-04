@@ -265,8 +265,8 @@ export class Portfolio {
       const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      if (start - timestamp <= localOpts.priceRecency! && eligible.length) return eligible
-      return null
+      const isStale = start - timestamp > localOpts.priceRecency!
+      return isStale ? null : eligible
     }
 
     const tokenFilter = ([error, result]: [TokenError, TokenResult]): boolean =>
@@ -303,7 +303,7 @@ export class Portfolio {
         let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
 
-        if (cachedPriceIn) {
+        if (cachedPriceIn && cachedPriceIn !== null) {
           priceIn = cachedPriceIn
 
           return {
@@ -332,7 +332,7 @@ export class Portfolio {
             baseCurrency: baseCurr,
             price: price as number
           }))
-          if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
+          priceCache.set(token.address, [Date.now(), priceIn])
         } catch (error: any) {
           const errorMessage = error?.message || 'Unknown error'
           priceIn = []

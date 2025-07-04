@@ -123,11 +123,16 @@ export function getUserOperation(
   accountOp: AccountOp,
   bundler: BUNDLER,
   entryPointSig?: string,
-  eip7702Auth?: EIP7702Auth
+  eip7702Auth?: EIP7702Auth,
+  activityUserOp?: UserOperation
 ): UserOperation {
+  const accountStateNonce = toBeHex(accountState.erc4337Nonce)
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
-    nonce: toBeHex(accountState.erc4337Nonce),
+    nonce:
+      activityUserOp && accountStateNonce === activityUserOp.nonce
+        ? toBeHex(accountState.erc4337Nonce + 1n)
+        : accountStateNonce,
     callData: '0x',
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),
@@ -270,4 +275,12 @@ export const parseLogs = (
     nonce: userOpLog[0],
     success: userOpLog[1]
   }
+}
+
+/**
+ * Get all the bundler statuses that indicate that an userOp
+ * is either pending to be mined or successfully included in the blockchain
+ */
+export function getUserOpPendingOrSuccessStatuses(): string[] {
+  return ['found', 'submitted', 'not_submitted', 'included', 'queued']
 }
