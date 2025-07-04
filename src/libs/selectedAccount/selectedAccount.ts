@@ -184,8 +184,7 @@ export const updatePortfolioStateWithDefiPositions = (
         })
 
         if (shouldAddPositionUSDAmountToTheTotalBalance) {
-          networkBalance +=
-            pos.additionalData.collateralInUSD || pos.additionalData.positionInUSD || 0
+          networkBalance += pos.additionalData.positionInUSD || 0
         }
       })
     })

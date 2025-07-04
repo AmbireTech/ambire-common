@@ -4,33 +4,35 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 
-import fetch from 'node-fetch'
 import { expect } from '@jest/globals'
 import { hexlify, randomBytes } from 'ethers'
+import fetch from 'node-fetch'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Hex } from '../../interfaces/hex'
+import { Key, TxnRequest } from '../../interfaces/keystore'
+import { EIP7702Signature } from '../../interfaces/signatures'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { ActivityController } from '../activity/activity'
 import { AddressBookController, Contacts } from '../addressBook/addressBook'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { TransferController } from './transfer'
-import { KeystoreController } from '../keystore/keystore'
-import { mockWindowManager } from '../../../test/helpers/window'
-import { Key, TxnRequest } from '../../interfaces/keystore'
-import { EIP7702Signature } from '../../interfaces/signatures'
-import { Hex } from '../../interfaces/hex'
-import { EIP7702Auth } from '../../consts/7702'
-import { PortfolioController } from '../portfolio/portfolio'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -275,6 +277,8 @@ const addressBookController = new AddressBookController(
   selectedAccountCtrl
 )
 
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
 const portfolioController = new PortfolioController(
   storageCtrl,
   fetch,
@@ -284,6 +288,17 @@ const portfolioController = new PortfolioController(
   keystoreController,
   relayerUrl,
   velcroUrl
+)
+const activity = new ActivityController(
+  storageCtrl,
+  fetch,
+  callRelayer,
+  accountsCtrl,
+  selectedAccountCtrl,
+  providersCtrl,
+  networksCtrl,
+  portfolioController,
+  () => Promise.resolve()
 )
 
 const getTokens = async () => {
@@ -304,6 +319,7 @@ describe('Transfer Controller', () => {
       accountsCtrl,
       keystoreController,
       portfolioController,
+      activity,
       {},
       providersCtrl,
       relayerUrl

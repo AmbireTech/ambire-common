@@ -11,6 +11,7 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
+import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -25,9 +26,11 @@ export class DefiPositionsController extends EventEmitter {
 
   #keystore: KeystoreController
 
-  #providers: ProvidersController
+  #accounts: AccountsController
 
   #networks: NetworksController
+
+  #providers: ProvidersController
 
   #fetch: Fetch
 
@@ -44,15 +47,17 @@ export class DefiPositionsController extends EventEmitter {
     storage,
     selectedAccount,
     keystore,
-    providers,
-    networks
+    accounts,
+    networks,
+    providers
   }: {
     fetch: Fetch
     storage: StorageController
     selectedAccount: SelectedAccountController
     keystore: KeystoreController
-    providers: ProvidersController
+    accounts: AccountsController
     networks: NetworksController
+    providers: ProvidersController
   }) {
     super()
 
@@ -60,8 +65,9 @@ export class DefiPositionsController extends EventEmitter {
     this.#storage = storage
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
-    this.#providers = providers
+    this.#accounts = accounts
     this.#networks = networks
+    this.#providers = providers
   }
 
   #setProviderError(
@@ -90,9 +96,10 @@ export class DefiPositionsController extends EventEmitter {
     const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
     if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
-    let latestUpdatedAt: number | undefined = undefined
+    let latestUpdatedAt: number | undefined
 
     const accountState = Object.values(this.#state[accountAddr])
+    // eslint-disable-next-line no-restricted-syntax
     for (const network of accountState) {
       if (typeof network.updatedAt === 'number') {
         if (latestUpdatedAt === undefined || network.updatedAt > latestUpdatedAt) {
@@ -227,7 +234,8 @@ export class DefiPositionsController extends EventEmitter {
             isLoading: false,
             positionsByProvider: [...filteredPrevious, ...customPositions],
             updatedAt: hasErrors ? state.updatedAt : Date.now(),
-            error
+            error,
+            nonceId: this.#getNonceId(selectedAccountAddr, chain)
           }
         }
       } catch (e) {
@@ -236,7 +244,8 @@ export class DefiPositionsController extends EventEmitter {
           providerErrors: this.#state[selectedAccountAddr][chain].providerErrors || [],
           isLoading: false,
           positionsByProvider: previousPositions || [],
-          error: DeFiPositionsError.CriticalError
+          error: DeFiPositionsError.CriticalError,
+          nonceId: this.#getNonceId(selectedAccountAddr, chain)
         }
       }
 
@@ -284,13 +293,16 @@ export class DefiPositionsController extends EventEmitter {
         providerErrors: this.#state[selectedAccountAddr][chain].providerErrors || [],
         isLoading: false,
         positionsByProvider: Array.from(positionMap.values()),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        nonceId: this.#getNonceId(selectedAccountAddr, chain)
       }
     }
 
     prepareNetworks()
 
     if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
+    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccountAddr, forceUpdate))
+      return
 
     let debankPositions: PositionsByProvider[] = []
 
@@ -403,6 +415,43 @@ export class DefiPositionsController extends EventEmitter {
     })
 
     return positionsByProviderWithPrices
+  }
+
+  #getShouldSkipUpdateOnAccountWithNoDefiPositions(accountAddr: string, forceUpdate?: boolean) {
+    if (forceUpdate) return false
+    if (!this.#accounts.accountStates[accountAddr]) return false
+
+    if (!this.#state[accountAddr]) return false
+
+    // Don't skip if the account has any DeFi positions
+    if (Object.values(this.#state[accountAddr]).some((p) => p.positionsByProvider.length))
+      return false
+
+    const someNonceIdChanged = Object.keys(this.#accounts.accountStates[accountAddr]).some(
+      (chainId: string) => {
+        const posNonceId = this.#state[accountAddr][chainId].nonceId
+        const nonceId = this.#getNonceId(accountAddr, chainId)
+
+        if (!nonceId || !posNonceId) return false
+
+        return nonceId !== posNonceId
+      }
+    )
+
+    // Return false (don’t skip) if any nonceId has changed
+    return !someNonceIdChanged
+  }
+
+  #getNonceId(accountAddr: string, chainId: bigint | string) {
+    if (!this.#accounts.accountStates) return undefined
+    if (!this.#accounts.accountStates[accountAddr]) return undefined
+
+    const networkState = this.#accounts.accountStates[accountAddr][chainId.toString()]
+    if (!networkState) return undefined
+
+    if (networkState.isEOA) return `${networkState.eoaNonce}-${networkState.erc4337Nonce}`
+
+    return `${networkState.nonce}-${networkState.erc4337Nonce}`
   }
 
   removeNetworkData(chainId: bigint) {

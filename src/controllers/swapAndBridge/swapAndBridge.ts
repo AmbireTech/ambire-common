@@ -938,6 +938,9 @@ export class SwapAndBridgeController extends EventEmitter {
       }
       return
     }
+
+    const toTokenListKeyAtStart = this.#toTokenListKey
+
     this.updateToTokenListStatus = 'LOADING'
     this.#updateToTokenListThrottle.time = now
     this.removeError('to-token-list-fetch-failed', false)
@@ -989,6 +992,10 @@ export class SwapAndBridgeController extends EventEmitter {
       }
     }
 
+    // The key has changed, meaning the user has modified the form,
+    // so we should not update the to token list as another update is in progress
+    if (toTokenListKeyAtStart !== this.#toTokenListKey) return
+
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
     // should never happen
     if (!toTokenNetwork) {
@@ -1001,6 +1008,10 @@ export class SwapAndBridgeController extends EventEmitter {
       .filter((t) => t.chainId === toTokenNetwork.chainId)
       .filter((token) => !toTokenList.some((t) => t.address === token.address))
       .map((t) => convertPortfolioTokenToSwapAndBridgeToToken(t, Number(toTokenNetwork.chainId)))
+
+    // The key has changed, meaning the user has modified the form,
+    // so we should not update the to token list as another update is in progress
+    if (toTokenListKeyAtStart !== this.#toTokenListKey) return
 
     this.#toTokenList = sortTokenListResponse(
       [...toTokenList, ...additionalTokensFromPortfolio],
@@ -2134,6 +2145,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.#networks,
       this.#keystore,
       this.#portfolio,
+      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccount.account,
       network,
