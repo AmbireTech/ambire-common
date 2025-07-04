@@ -1,8 +1,9 @@
-import { BICONOMY, BUNDLER, ETHERSPOT, PIMLICO } from '../../consts/bundlers'
+import { BICONOMY, BUNDLER, ETHERSPOT, GELATO, PIMLICO } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'
 import { Etherspot } from './etherspot'
+import { Gelato } from './gelato'
 import { Pimlico } from './pimlico'
 
 export function getBundlerByName(bundlerName: BUNDLER): Bundler {
@@ -15,6 +16,9 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
 
     case ETHERSPOT:
       return new Etherspot()
+
+    case GELATO:
+      return new Gelato()
 
     default:
       throw new Error('Bundler settings error')
