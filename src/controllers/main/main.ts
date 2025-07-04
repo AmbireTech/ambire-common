@@ -1691,6 +1691,7 @@ export class MainController extends EventEmitter {
       })
       return
     }
+
     if (userRequest.length === 1) {
       this.addUserRequest(userRequest[0], 'last', actionExecutionType)
       return
@@ -1991,6 +1992,7 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       const accountInfo = await this.#ensureAccountInfo(meta.accountAddr, meta.chainId)
+
       if (!accountInfo.hasAccountInfo) {
         // Reject request if we couldn't load the account and account state for the request
         req.dappPromise?.reject(
@@ -2023,6 +2025,7 @@ export class MainController extends EventEmitter {
         meta.accountAddr,
         meta.chainId
       )
+
       const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const accountOpAction = makeAccountOpAction({
@@ -2033,6 +2036,7 @@ export class MainController extends EventEmitter {
         actionsQueue: this.actions.actionsQueue
       })
       this.actions.addOrUpdateAction(accountOpAction, actionPosition, actionExecutionType)
+
       if (this.signAccountOp) {
         if (this.signAccountOp.fromActionId === accountOpAction.id) {
           this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
@@ -2217,14 +2221,14 @@ export class MainController extends EventEmitter {
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    if (!isBasicAccountBroadcastingMultiple) {
-      const benzinUserRequest: SignUserRequest = {
-        id: new Date().getTime(),
-        action: { kind: 'benzin' },
-        meta
-      }
-      await this.addUserRequest(benzinUserRequest, 'first')
+    // if (!isBasicAccountBroadcastingMultiple) {
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      meta
     }
+    await this.addUserRequest(benzinUserRequest, 'first')
+    // }
 
     this.actions.removeAction(actionId)
 
@@ -2462,7 +2466,7 @@ export class MainController extends EventEmitter {
               rawTxn: signedTxn
             }).catch((e: any) => {
               // eslint-disable-next-line no-console
-              console.log('failed to record EOA txn to relayer')
+              console.log('failed to record EOA txn to relayer', accountOp.chainId)
               // eslint-disable-next-line no-console
               console.log(e)
             })
@@ -2476,7 +2480,9 @@ export class MainController extends EventEmitter {
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
           },
           txnId:
-            txnLength === 1 ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-') : undefined
+            txnLength === 1
+              ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
+              : multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash // undefined
         }
       } catch (error: any) {
         if (this.#broadcastCallId !== callId) return
