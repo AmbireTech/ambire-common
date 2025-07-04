@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import { getAddress, isAddress } from 'ethers'
 
 import {
@@ -203,14 +204,6 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    await this.withStatus(
-      'updateAccountPreferences',
-      async () => this.#updateAccountPreferences(accounts),
-      true
-    )
-  }
-
-  async #updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
     this.accounts = this.accounts.map((acc) => {
       const account = accounts.find((a) => a.addr === acc.addr)
       if (!account) return acc
@@ -220,8 +213,8 @@ export class AccountsController extends EventEmitter {
       return { ...acc, preferences: account.preferences }
     })
 
-    await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
   }
 
   get areAccountStatesLoading() {
