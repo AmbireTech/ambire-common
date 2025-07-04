@@ -16,6 +16,7 @@ import { BundlerEstimateResult, BundlerStateOverride } from '../../libs/estimate
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
+import { getAvailableBundlerNames } from './getBundler'
 import { GasSpeeds, UserOpStatus } from './types'
 
 require('dotenv').config()
@@ -152,7 +153,7 @@ export abstract class Bundler {
     errorCallback: Function,
     counter: number = 0
   ): Promise<GasSpeeds> {
-    const hasFallback = network.erc4337.bundlers && network.erc4337.bundlers.length > 1
+    const hasFallback = getAvailableBundlerNames(network).length > 1
     if (counter >= (hasFallback ? 2 : 5)) throw new Error("Couldn't fetch gas prices")
 
     let response
