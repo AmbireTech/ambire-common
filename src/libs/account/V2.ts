@@ -168,4 +168,9 @@ export class V2 extends BaseAccount {
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
     return 'supported'
   }
+
+  getNonceId(): string {
+    // v2 accounts have two nonces: ambire smart account & entry point nonce
+    return `${this.accountState.nonce.toString()}-${this.accountState.erc4337Nonce.toString()}`
+  }
 }

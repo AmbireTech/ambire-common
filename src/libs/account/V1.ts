@@ -93,4 +93,9 @@ export class V1 extends BaseAccount {
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
     return 'supported'
   }
+
+  getNonceId(): string {
+    // v1 accounts can only have an ambire smart contract nonce
+    return this.accountState.nonce.toString()
+  }
 }
