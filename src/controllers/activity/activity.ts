@@ -492,28 +492,32 @@ export class ActivityController extends EventEmitter {
 
                 // if there are more than 1 txns with the same nonce and payer,
                 // we can conclude this one is replaced by fee
-                const sameNonceTxns = this.#accountsOps[selectedAccount][
-                  network.chainId.toString()
-                ].filter(
-                  (accOp) =>
-                    accOp.gasFeePayment &&
-                    accountOp.gasFeePayment &&
-                    accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
-                    accOp.nonce.toString() === accountOp.nonce.toString()
-                )
-                const confirmedSameNonceTxns = sameNonceTxns.find(
-                  (accOp) =>
-                    accOp.status === AccountOpStatus.Success ||
-                    accOp.status === AccountOpStatus.Failure
-                )
-                if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-                  const updatedOpIfAny = updateOpStatus(
-                    this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-                    AccountOpStatus.UnknownButPastNonce
-                  )
-                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-                  shouldUpdatePortfolio = true
-                }
+                //
+                // Comment out this code as it's doing more bad than good.
+                // In order to track rbf transactions, we need a per account unique nonce
+                // in submitted account op first
+                // const sameNonceTxns = this.#accountsOps[selectedAccount][
+                //   network.chainId.toString()
+                // ].filter(
+                //   (accOp) =>
+                //     accOp.gasFeePayment &&
+                //     accountOp.gasFeePayment &&
+                //     accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
+                //     accOp.nonce.toString() === accountOp.nonce.toString()
+                // )
+                // const confirmedSameNonceTxns = sameNonceTxns.find(
+                //   (accOp) =>
+                //     accOp.status === AccountOpStatus.Success ||
+                //     accOp.status === AccountOpStatus.Failure
+                // )
+                // if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
+                //   const updatedOpIfAny = updateOpStatus(
+                //     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                //     AccountOpStatus.UnknownButPastNonce
+                //   )
+                //   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                //   shouldUpdatePortfolio = true
+                // }
               }
             )
           )
