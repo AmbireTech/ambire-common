@@ -767,9 +767,10 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmountUpdateCounter += 1
     }
 
-    if (fromSelectedToken) {
+    if (typeof fromSelectedToken !== 'undefined') {
       const isFromNetworkChanged = this.fromSelectedToken?.chainId !== fromSelectedToken?.chainId
-      if (isFromNetworkChanged) {
+
+      if (fromSelectedToken && isFromNetworkChanged) {
         const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
@@ -785,7 +786,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
       const shouldResetFromTokenAmount =
         !shouldNotResetFromAmount &&
-        (isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address)
+        (isFromNetworkChanged ||
+          !fromSelectedToken ||
+          this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
@@ -868,6 +871,10 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmount?: string
     }
   ) {
+    // If the user has switched TOKEN -> NULL that would make the fromSelectedToken
+    // null, so we need to keep it null, even if the portfolio token list is updated
+    // until the user manually selects a new token
+    const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
     const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
@@ -901,10 +908,20 @@ export class SwapAndBridgeController extends EventEmitter {
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
     // update the selected token
-    if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
+    if (
+      !this.fromSelectedToken?.isSwitchedToToken &&
+      !isSelectedTokenFalsyBeforeListUpdate &&
+      shouldUpdateFromSelectedToken
+    ) {
+      const nextFromSelectedToken =
+        fromSelectedTokenInNextPortfolio ||
+        // Select the first token in the portfolio that is not the same as the "to" token
+        this.portfolioTokenList.find((t) => t.address !== this.toSelectedToken?.address) ||
+        null
+
       await this.updateForm(
         {
-          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null,
+          fromSelectedToken: nextFromSelectedToken,
           toSelectedTokenAddr: preselectedToToken?.address,
           toChainId: preselectedToToken?.chainId,
           fromAmount
