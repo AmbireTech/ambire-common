@@ -333,7 +333,10 @@ export function isBasicAccount(account: Account, state: AccountOnchainState): bo
 
 // can the account as a whole become smarter (disregarding chain and state)
 export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
-  return !isSmartAccount(acc) && !!accKeys.find((key) => key.type === 'internal')
+  return (
+    !isSmartAccount(acc) &&
+    !!accKeys.find((key) => key.type === 'internal' || key.type === 'ledger')
+  )
 }
 
 // can the account become smarter on a specific chain
@@ -346,7 +349,7 @@ export function canBecomeSmarterOnChain(
   return (
     has7702(network) &&
     isBasicAccount(acc, state) &&
-    !!accKeys.find((key) => key.type === 'internal')
+    !!accKeys.find((key) => key.type === 'internal' || key.type === 'ledger')
   )
 }
 
