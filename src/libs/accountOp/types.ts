@@ -26,4 +26,5 @@ export interface Call {
     inToken: string
     amount: bigint
   }
+  validationError?: string
 }

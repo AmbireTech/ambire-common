@@ -1,4 +1,4 @@
-import { BICONOMY, BUNDLER, ETHERSPOT, PIMLICO } from '../../consts/bundlers'
+import { allBundlers, BICONOMY, BUNDLER, ETHERSPOT, PIMLICO } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'
@@ -21,6 +21,21 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
   }
 }
 
+export function getDefaultBundlerName(
+  network: Network,
+  opts: { canDelegate: boolean } = { canDelegate: false }
+): BUNDLER {
+  // hardcode biconomy for Sonic as it's not supported by pimlico
+  if (network.chainId === 146n) BICONOMY
+
+  // use pimlico on all 7702 accounts that don't have a set delegation
+  if (opts.canDelegate) PIMLICO
+
+  return network.erc4337.defaultBundler && allBundlers.includes(network.erc4337.defaultBundler)
+    ? network.erc4337.defaultBundler
+    : PIMLICO
+}
+
 /**
  * Get the default bundler for the network without any extra logic.
  * If it's set, get it. If not, use pimlico
@@ -29,14 +44,14 @@ export function getDefaultBundler(
   network: Network,
   opts: { canDelegate: boolean } = { canDelegate: false }
 ): Bundler {
-  // hardcode biconomy for Sonic as it's not supported by pimlico
-  if (network.chainId === 146n) return getBundlerByName(BICONOMY)
+  return getBundlerByName(getDefaultBundlerName(network, opts))
+}
 
-  // use pimlico on all 7702 accounts that don't have a set delegation
-  if (opts.canDelegate) return getBundlerByName(PIMLICO)
+export function getAvailableBundlerNames(network: Network): BUNDLER[] {
+  if (!network.erc4337.bundlers) return [getDefaultBundlerName(network)]
 
-  const bundlerName = network.erc4337.defaultBundler ? network.erc4337.defaultBundler : PIMLICO
-  return getBundlerByName(bundlerName)
+  // the bundler may not be implemented in the codebase
+  return network.erc4337.bundlers.filter((name) => allBundlers.includes(name))
 }
 
 /**
@@ -44,9 +59,7 @@ export function getDefaultBundler(
  * available bundlers on a network as the same time to find and fix a problem
  */
 export function getAvailableBunlders(network: Network): Bundler[] {
-  if (!network.erc4337.bundlers) return [getDefaultBundler(network)]
-
-  return network.erc4337.bundlers?.map((bundler) => {
+  return getAvailableBundlerNames(network).map((bundler) => {
     return getBundlerByName(bundler)
   })
 }

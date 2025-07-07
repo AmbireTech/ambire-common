@@ -97,4 +97,9 @@ export class EOA extends BaseAccount {
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
     return 'unsupported'
   }
+
+  getNonceId(): string {
+    // EOAs have only an execution layer nonce
+    return this.accountState.eoaNonce!.toString()
+  }
 }

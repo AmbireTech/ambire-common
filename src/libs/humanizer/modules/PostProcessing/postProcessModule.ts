@@ -6,7 +6,6 @@ import { getToken } from '../../utils'
 
 export const postProcessing: HumanizerCallModule = (_: AccountOp, currentIrCalls: IrCall[]) => {
   const newCalls = currentIrCalls.map((_call) => {
-    console.log(_call)
     const fullVisualization = (_call?.fullVisualization || []).map((i) => {
       if (i.type === 'token' && i.address.toLowerCase() === '0x'.padEnd(42, 'e'))
         return { ...i, address: ZeroAddress }

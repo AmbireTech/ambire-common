@@ -320,6 +320,7 @@ export class MainController extends EventEmitter {
       storage: this.storage,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
+      accounts: this.accounts,
       networks: this.networks,
       providers: this.providers
     })
@@ -464,6 +465,7 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.keystore,
       this.portfolio,
+      this.activity,
       this.#externalSignerControllers,
       this.providers,
       relayerUrl
@@ -671,6 +673,7 @@ export class MainController extends EventEmitter {
         this.networks,
         this.keystore,
         this.portfolio,
+        this.activity,
         this.#externalSignerControllers,
         this.selectedAccount.account,
         network,

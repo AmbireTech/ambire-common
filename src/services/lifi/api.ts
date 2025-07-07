@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -221,6 +221,8 @@ export class LiFiAPI {
 
   #headers: RequestInitWithCustomHeaders['headers']
 
+  #requestTimeoutMs = 5000
+
   isHealthy: boolean | null = null
 
   constructor({ apiKey, fetch }: { apiKey?: string; fetch: Fetch }) {
@@ -273,7 +275,18 @@ export class LiFiAPI {
     let response: CustomResponse
 
     try {
-      response = await fetchPromise
+      response = await Promise.race([
+        fetchPromise,
+        new Promise<CustomResponse>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new SwapAndBridgeProviderApiError(
+                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout'
+              )
+            )
+          }, this.#requestTimeoutMs)
+        })
+      ])
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
@@ -291,8 +304,7 @@ export class LiFiAPI {
     try {
       responseBody = await response.json()
     } catch (e: any) {
-      const message = e?.message || 'no message'
-      const error = `${errorPrefix} Error details: <Unexpected non-JSON response from our service provider>, message: <${message}>`
+      const error = 'Our service provider is temporarily unavailable.'
       throw new SwapAndBridgeProviderApiError(error)
     }
 

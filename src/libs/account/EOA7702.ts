@@ -181,4 +181,9 @@ export class EOA7702 extends BaseAccount {
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
     return this.accountState.isSmarterEoa ? 'supported' : 'ready'
   }
+
+  getNonceId(): string {
+    // 7702 accounts have an execution layer nonce and an entry point nonce
+    return `${this.accountState.eoaNonce!.toString()}-${this.accountState.erc4337Nonce.toString()}`
+  }
 }
