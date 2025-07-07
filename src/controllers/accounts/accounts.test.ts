@@ -73,19 +73,8 @@ describe('AccountsController', () => {
     await waitForAccountsCtrlFirstLoad(accountsCtrl)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)
   })
-  test('update account preferences', (done) => {
-    const unsubscribe = accountsCtrl.onUpdate(() => {
-      if (accountsCtrl.statuses.updateAccountPreferences === 'SUCCESS') {
-        const acc = accountsCtrl.accounts.find(
-          (a) => a.addr === '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
-        )
-        expect(acc?.preferences.label).toEqual('new-label')
-        expect(acc?.preferences.pfp).toEqual('predefined-image')
-        unsubscribe()
-        done()
-      }
-    })
-    accountsCtrl.updateAccountPreferences([
+  test('update account preferences', async () => {
+    await accountsCtrl.updateAccountPreferences([
       {
         addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         preferences: {
@@ -94,6 +83,12 @@ describe('AccountsController', () => {
         }
       }
     ])
+
+    const acc = accountsCtrl.accounts.find(
+      (a) => a.addr === '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+    )
+    expect(acc?.preferences.label).toEqual('new-label')
+    expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
   test('removeAccountData', async () => {
     await accountsCtrl.updateAccountStates()
