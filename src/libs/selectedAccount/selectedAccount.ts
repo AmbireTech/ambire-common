@@ -107,8 +107,8 @@ export const updatePortfolioStateWithDefiPositions = (
                 tokens.push(positionAsset)
               } else if (protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow) {
                 if (
-                  !protocolTokenInPortfolio.priceIn.length &&
-                  protocolTokenInPortfolio.priceIn[0].price === 0
+                  !protocolTokenInPortfolio.priceIn.length ||
+                  protocolTokenInPortfolio.priceIn[0]?.price === 0
                 ) {
                   protocolTokenInPortfolio.priceIn =
                     a.type === AssetType.Collateral ? [a.priceIn] : []
