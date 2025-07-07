@@ -224,6 +224,18 @@ export class AccountsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async reorderAccounts(reordered: Account[]) {
+    const reorderedAddrSet = new Set(reordered.map((acc) => getAddress(acc.addr)))
+
+    const remainingAccounts = this.accounts.filter(
+      (acc) => !reorderedAddrSet.has(getAddress(acc.addr))
+    )
+
+    this.accounts = getUniqueAccountsArray([...reordered, ...remainingAccounts])
+    await this.#storage.set('accounts', this.accounts)
+    this.emitUpdate()
+  }
+
   get areAccountStatesLoading() {
     return Object.values(this.accountStatesLoadingState).some((isLoading) => isLoading)
   }
