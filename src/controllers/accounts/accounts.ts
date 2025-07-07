@@ -16,7 +16,6 @@ import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
-  updateAccountPreferences: 'INITIAL',
   addAccounts: 'INITIAL'
 } as const
 
