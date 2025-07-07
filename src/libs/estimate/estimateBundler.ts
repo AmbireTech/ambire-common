@@ -85,7 +85,7 @@ async function estimate(
 
   const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
   const initializeRequests = () => [
-    bundler.estimate(userOp, network, stateOverride).catch(estimateErrorCallback)
+    bundler.estimate(localUserOp, network, stateOverride).catch(estimateErrorCallback)
   ]
 
   const estimation = await estimateWithRetries(

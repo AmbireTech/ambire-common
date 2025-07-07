@@ -81,6 +81,11 @@ export abstract class BaseAccount {
   // each account should declare if it supports atomicity
   abstract getAtomicStatus(): 'unsupported' | 'supported' | 'ready'
 
+  /**
+   * Get a unique identifier of the current account nonce
+   */
+  abstract getNonceId(): string
+
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall(broadcastOption: string) {
     return false
