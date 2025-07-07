@@ -54,7 +54,7 @@ export const updatePortfolioStateWithDefiPositions = (
           if (
             tokenInPortfolio &&
             tokenInPortfolio.amount !== 0n &&
-            tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd')
+            tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd' && p.price !== 0)
           )
             return
         }
@@ -105,12 +105,14 @@ export const updatePortfolioStateWithDefiPositions = (
 
                 networkBalance += tokenBalanceUSD || 0
                 tokens.push(positionAsset)
-              } else if (
-                !protocolTokenInPortfolio.priceIn.length &&
-                protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow
-              ) {
-                protocolTokenInPortfolio.priceIn =
-                  a.type === AssetType.Collateral ? [a.priceIn] : []
+              } else if (protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow) {
+                if (
+                  !protocolTokenInPortfolio.priceIn.length &&
+                  protocolTokenInPortfolio.priceIn[0].price === 0
+                ) {
+                  protocolTokenInPortfolio.priceIn =
+                    a.type === AssetType.Collateral ? [a.priceIn] : []
+                }
                 protocolTokenInPortfolio.flags.defiTokenType = a.type
 
                 if (a.type !== AssetType.Borrow) {
@@ -169,7 +171,7 @@ export const updatePortfolioStateWithDefiPositions = (
               t.symbol.toLowerCase().includes(a.symbol.toLowerCase()) &&
               // but should be a different token symbol
               t.symbol.toLowerCase() !== a.symbol.toLowerCase() &&
-              // and prices should have no more than 5% diff
+              // and prices should have no more than 0.5% diff
               isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value)
             )
           })
