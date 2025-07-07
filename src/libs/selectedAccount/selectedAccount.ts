@@ -112,20 +112,21 @@ export const updatePortfolioStateWithDefiPositions = (
                 ) {
                   protocolTokenInPortfolio.priceIn =
                     a.type === AssetType.Collateral ? [a.priceIn] : []
-                }
-                protocolTokenInPortfolio.flags.defiTokenType = a.type
 
-                if (a.type !== AssetType.Borrow) {
-                  const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
-                    ? Number(
-                        safeTokenAmountAndNumberMultiplication(
-                          BigInt(protocolTokenInPortfolio.amount),
-                          protocolTokenInPortfolio.decimals,
-                          protocolTokenInPortfolio.priceIn[0].price
+                  protocolTokenInPortfolio.flags.defiTokenType = a.type
+
+                  if (a.type !== AssetType.Borrow) {
+                    const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
+                      ? Number(
+                          safeTokenAmountAndNumberMultiplication(
+                            BigInt(protocolTokenInPortfolio.amount),
+                            protocolTokenInPortfolio.decimals,
+                            protocolTokenInPortfolio.priceIn[0].price
+                          )
                         )
-                      )
-                    : undefined
-                  networkBalance += tokenBalanceUSD || 0
+                      : undefined
+                    networkBalance += tokenBalanceUSD || 0
+                  }
                 }
               }
             }
