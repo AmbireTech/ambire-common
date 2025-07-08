@@ -1,5 +1,6 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import { ActivityController } from 'controllers/activity/activity'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
@@ -75,10 +76,10 @@ export class TransferController extends EventEmitter {
   amountInFiat = ''
 
   /**
-   * A counter used to trigger UI updates when the amount is changed programmatically
-   * by the controller.
+   * A counter used to trigger UI updates when a form values is
+   * changed programmatically by the controller.
    */
-  amountUpdateCounter = 0
+  programmaticUpdateCounter = 0
 
   amountFieldMode: 'fiat' | 'token' = 'token'
 
@@ -123,6 +124,8 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  #activity: ActivityController
+
   constructor(
     storage: StorageController,
     humanizerInfo: HumanizerMeta,
@@ -132,6 +135,7 @@ export class TransferController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: ProvidersController,
     relayerUrl: string
@@ -147,6 +151,7 @@ export class TransferController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#relayerUrl = relayerUrl
@@ -238,15 +243,12 @@ export class TransferController extends EventEmitter {
 
   resetForm() {
     this.selectedToken = null
-    this.#setAmountAndNotifyUI('')
-    this.#setAmountInFiatAndNotifyUI('')
+    this.amount = ''
+    this.amountInFiat = ''
+    this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
-    this.isRecipientAddressUnknown = false
-    this.isRecipientAddressUnknownAgreed = false
-    this.isRecipientHumanizerKnownTokenOrSmartContract = false
-    this.isSWWarningVisible = false
-    this.isSWWarningAgreed = false
-    this.amountUpdateCounter = 0
+    this.#onRecipientAddressChange()
+    this.programmaticUpdateCounter = 0
 
     this.destroySignAccountOp()
     this.emitUpdate()
@@ -429,19 +431,19 @@ export class TransferController extends EventEmitter {
 
   #setAmountAndNotifyUI(amount: string) {
     this.amount = amount
-    this.amountUpdateCounter += 1
+    this.programmaticUpdateCounter += 1
   }
 
   #setAmountInFiatAndNotifyUI(amountInFiat: string) {
     this.amountInFiat = amountInFiat
-    this.amountUpdateCounter += 1
+    this.programmaticUpdateCounter += 1
   }
 
   #setAmount(fieldValue: string, isProgrammaticUpdate = false) {
     if (isProgrammaticUpdate) {
       // There is no problem in updating this first as there are no
       // emit updates in this method
-      this.amountUpdateCounter += 1
+      this.programmaticUpdateCounter += 1
     }
 
     if (!fieldValue) {
@@ -608,6 +610,7 @@ export class TransferController extends EventEmitter {
       this.#networks,
       this.#keystore,
       this.#portfolio,
+      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccountData.account,
       network,
