@@ -232,8 +232,8 @@ export class AccountsController extends EventEmitter {
     )
 
     this.accounts = getUniqueAccountsArray([...reordered, ...remainingAccounts])
-    await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
   }
 
   get areAccountStatesLoading() {
