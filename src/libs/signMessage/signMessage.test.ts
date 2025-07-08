@@ -15,6 +15,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
+import { TypedMessage } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
@@ -380,6 +381,239 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       typedData: typedDataNumber
     })
     expect(secondRes).toBe(true)
+  })
+  test('Signing [EOA]: eip-712 OrderComponents[2] array index case', async () => {
+    const accountStates = await getAccountsInfo([eoaAccount])
+    const accountState = accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedDataTest: TypedMessage = {
+      kind: 'typedMessage',
+      types: {
+        BulkOrder: [
+          {
+            name: 'tree',
+            type: 'OrderComponents[2]'
+          }
+        ],
+        OrderComponents: [
+          {
+            name: 'offerer',
+            type: 'address'
+          },
+          {
+            name: 'zone',
+            type: 'address'
+          },
+          {
+            name: 'offer',
+            type: 'OfferItem[]'
+          },
+          {
+            name: 'consideration',
+            type: 'ConsiderationItem[]'
+          },
+          {
+            name: 'orderType',
+            type: 'uint8'
+          },
+          {
+            name: 'startTime',
+            type: 'uint256'
+          },
+          {
+            name: 'endTime',
+            type: 'uint256'
+          },
+          {
+            name: 'zoneHash',
+            type: 'bytes32'
+          },
+          {
+            name: 'salt',
+            type: 'uint256'
+          },
+          {
+            name: 'conduitKey',
+            type: 'bytes32'
+          },
+          {
+            name: 'counter',
+            type: 'uint256'
+          }
+        ],
+        EIP712Domain: [],
+        OfferItem: [
+          {
+            name: 'itemType',
+            type: 'uint8'
+          },
+          {
+            name: 'token',
+            type: 'address'
+          },
+          {
+            name: 'identifierOrCriteria',
+            type: 'uint256'
+          },
+          {
+            name: 'startAmount',
+            type: 'uint256'
+          },
+          {
+            name: 'endAmount',
+            type: 'uint256'
+          }
+        ],
+        ConsiderationItem: [
+          {
+            name: 'itemType',
+            type: 'uint8'
+          },
+          {
+            name: 'token',
+            type: 'address'
+          },
+          {
+            name: 'identifierOrCriteria',
+            type: 'uint256'
+          },
+          {
+            name: 'startAmount',
+            type: 'uint256'
+          },
+          {
+            name: 'endAmount',
+            type: 'uint256'
+          },
+          {
+            name: 'recipient',
+            type: 'address'
+          }
+        ]
+      },
+      domain: {
+        name: 'Seaport',
+        version: '1.6',
+        chainId: 8453,
+        verifyingContract: '0x0000000000000068f116a894984e2db1123eb395'
+      },
+      message: {
+        tree: [
+          {
+            offerer: '0x090102422f003438ee2e2709acebf9f060702306',
+            zone: '0x0000000000000000000000000000000000000000',
+            offer: [
+              {
+                itemType: 2,
+                token: '0x62e094f8b4ab1291dd2d8821ad3cba64b8b8c7a6',
+                identifierOrCriteria: '790',
+                startAmount: '1',
+                endAmount: '1'
+              }
+            ],
+            consideration: [
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '970000000000000000',
+                endAmount: '970000000000000000',
+                recipient: '0x090102422f003438ee2e2709acebf9f060702306'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '5000000000000000',
+                endAmount: '5000000000000000',
+                recipient: '0x0000a26b00c1f0df003000390027140000faa719'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '25000000000000000',
+                endAmount: '25000000000000000',
+                recipient: '0x61de28c8bef7ad4786fb732a05fd59317eca2bfb'
+              }
+            ],
+            orderType: 0,
+            startTime: '1751376310',
+            endTime: '1753968310',
+            zoneHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            salt: '27855337018906766782546881864045825683096516384821792734234219145737770391551',
+            conduitKey: '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000',
+            counter: '0',
+            totalOriginalConsiderationItems: 3
+          },
+          {
+            offerer: '0x090102422f003438ee2e2709acebf9f060702306',
+            zone: '0x0000000000000000000000000000000000000000',
+            offer: [
+              {
+                itemType: 2,
+                token: '0x62e094f8b4ab1291dd2d8821ad3cba64b8b8c7a6',
+                identifierOrCriteria: '1013',
+                startAmount: '1',
+                endAmount: '1'
+              }
+            ],
+            consideration: [
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '18333000000000000',
+                endAmount: '18333000000000000',
+                recipient: '0x090102422f003438ee2e2709acebf9f060702306'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '94500000000000',
+                endAmount: '94500000000000',
+                recipient: '0x0000a26b00c1f0df003000390027140000faa719'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '472500000000000',
+                endAmount: '472500000000000',
+                recipient: '0x61de28c8bef7ad4786fb732a05fd59317eca2bfb'
+              }
+            ],
+            orderType: 0,
+            startTime: '1751376310',
+            endTime: '1753968310',
+            zoneHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            salt: '27855337018906766782546881864045825683096516384821792734247284322247575321829',
+            conduitKey: '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000',
+            counter: '0',
+            totalOriginalConsiderationItems: 3
+          }
+        ]
+      },
+      primaryType: 'BulkOrder'
+    }
+    const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
+    const eip712Sig = await getEIP712Signature(
+      typedDataTest,
+      eoaAccount,
+      accountState,
+      signer,
+      ethereumNetwork
+    )
+    const res = await verifyMessage({
+      network: ethereumNetwork,
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: eip712Sig,
+      typedData: typedDataTest
+    })
+    expect(res).toBe(true)
   })
   test('Signing [Dedicated to one SA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
