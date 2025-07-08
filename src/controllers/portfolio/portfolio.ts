@@ -557,16 +557,14 @@ export class PortfolioController extends EventEmitter {
     maxDataAgeMs?: number
   ): Promise<boolean> {
     const blockTag = portfolioProps.blockTag
-    const stateKeys = {
-      latest: this.#latest,
-      pending: this.#pending
-    }
+    const stateKeys = { latest: this.#latest, pending: this.#pending }
     const accountState = stateKeys[blockTag][accountId]
     if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
       // and portfolio will not be updated
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
+
     const canSkipUpdate = this.#getCanSkipUpdate(
       accountState[network.chainId.toString()],
       forceUpdate,

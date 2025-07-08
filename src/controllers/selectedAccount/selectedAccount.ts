@@ -243,6 +243,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
+    console.time('alabala')
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const latestStateSelectedAccount = structuredClone(
@@ -296,6 +297,7 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolio = newSelectedAccountPortfolio
     this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
+    console.timeEnd('alabala')
 
     if (!skipUpdate) {
       this.emitUpdate()
