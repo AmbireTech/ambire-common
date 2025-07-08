@@ -243,7 +243,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
-    console.time('alabala')
+
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const latestStateSelectedAccount = structuredClone(
@@ -253,25 +253,61 @@ export class SelectedAccountController extends EventEmitter {
       this.#portfolio.getPendingPortfolioState(this.account.addr)
     )
 
+    const latestStateSelectedAccountFiltered = Object.entries(latestStateSelectedAccount)
+      .filter(([key, value]) => {
+        if (value?.isLoading === true) return false
+
+        const oldVal = this.portfolio?.latest?.[key]
+        if (!oldVal) return true
+        const newBlock = value?.result?.blockNumber
+        const oldBlock = oldVal?.result?.blockNumber
+        return newBlock !== oldBlock
+      })
+      .reduce((obj, [key, value]) => {
+        obj[key] = value
+        return obj
+      }, {})
+
+    const pendingStateSelectedAccountFiltered = Object.entries(pendingStateSelectedAccount)
+      .filter(([key, value]) => {
+        if (value?.isLoading === true) return false
+        const oldVal = this.portfolio?.latest?.[key]
+        if (!oldVal) return true
+        const newBlock = value?.result?.blockNumber
+        const oldBlock = oldVal?.result?.blockNumber
+        return newBlock !== oldBlock
+      })
+      .reduce((obj, [key, value]) => {
+        obj[key] = value
+        return obj
+      }, {})
+
+    console.time('a')
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      latestStateSelectedAccount,
+      latestStateSelectedAccountFiltered,
       defiPositionsAccountState,
       this.areDefiPositionsLoading
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      pendingStateSelectedAccount,
+      pendingStateSelectedAccountFiltered,
       defiPositionsAccountState,
       this.areDefiPositionsLoading
     )
-
+    console.timeEnd('a')
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
       (action) => action.type === 'accountOp'
     )
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
-      latestStateSelectedAccountWithDefiPositions,
-      pendingStateSelectedAccountWithDefiPositions,
+      {
+        ...latestStateSelectedAccount,
+        ...latestStateSelectedAccountWithDefiPositions
+      },
+      {
+        ...pendingStateSelectedAccount,
+        ...pendingStateSelectedAccountWithDefiPositions
+      },
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
@@ -297,7 +333,6 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolio = newSelectedAccountPortfolio
     this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
-    console.timeEnd('alabala')
 
     if (!skipUpdate) {
       this.emitUpdate()
