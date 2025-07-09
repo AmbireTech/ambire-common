@@ -219,6 +219,20 @@ export async function getTokens(
   tokenAddrs: string[]
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
   const mapToken = (token: any, address: string) => {
+    let symbol = 'Unknown'
+    try {
+      symbol = overrideSymbol(address, network.chainId, token.symbol)
+    } catch (e: any) {
+      // this is just in case some token is returned with a symbol
+    }
+
+    let tokenName = symbol
+    try {
+      tokenName = token.name
+    } catch (e: any) {
+      // some tokens are returned without a name and this is how we catch them
+    }
+
     return {
       amount: token.amount,
       chainId: network.chainId,
@@ -226,11 +240,11 @@ export async function getTokens(
       name:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetName
-          : token.name,
+          : tokenName,
       symbol:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
-          : overrideSymbol(address, network.chainId, token.symbol),
+          : symbol,
       address,
       flags: getFlags({}, network.chainId.toString(), network.chainId, address)
     } as TokenResult
