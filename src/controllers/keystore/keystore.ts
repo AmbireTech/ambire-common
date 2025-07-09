@@ -156,6 +156,7 @@ export class KeystoreController extends EventEmitter {
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
       this.#keystoreKeys = keystoreKeys
+      console.log('Debug: Keystore keys loaded', this.#keystoreKeys)
     } catch (e) {
       this.emitError({
         message:
@@ -988,6 +989,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   getAccountKeys(acc: Account): Key[] {
+    console.log('Debug: Keystore getAccountKeys', this.keys, acc)
     return this.keys.filter((key) => acc.associatedKeys.includes(key.addr))
   }
 

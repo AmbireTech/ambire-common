@@ -3,7 +3,11 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
-import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
+import {
+  mockInternalKeys,
+  produceMemoryStore,
+  waitForAccountsCtrlFirstLoad
+} from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -42,6 +46,10 @@ describe('AccountsController', () => {
   const providers = Object.fromEntries(
     networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
+
+  const mockKeys = mockInternalKeys(accounts)
+
+  storage.set('keystoreKeys', mockKeys)
 
   let providersCtrl: ProvidersController
   const storageCtrl = new StorageController(storage)
