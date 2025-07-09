@@ -381,6 +381,7 @@ const init = async (
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystore,
     () => {},
     () => {},
     () => {}

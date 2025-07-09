@@ -68,6 +68,7 @@ const prepareTest = async () => {
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystoreCtrl,
     () => {},
     () => {},
     () => {}

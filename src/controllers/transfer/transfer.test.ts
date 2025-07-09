@@ -4,9 +4,11 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 
-import { expect } from '@jest/globals'
 import { hexlify, randomBytes } from 'ethers'
 import fetch from 'node-fetch'
+
+import { expect } from '@jest/globals'
+
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
@@ -177,15 +179,6 @@ const networksCtrl = new NetworksController(
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
-const accountsCtrl = new AccountsController(
-  storageCtrl,
-  providersCtrl,
-  networksCtrl,
-  () => {},
-  () => {},
-  () => {}
-)
-
 // TODO - this mocks are being duplicated across the tests. Should reuse it.
 class InternalSigner {
   key
@@ -257,11 +250,6 @@ class LedgerSigner {
   }
 }
 
-const selectedAccountCtrl = new SelectedAccountController({
-  storage: storageCtrl,
-  accounts: accountsCtrl
-})
-
 const windowManager = mockWindowManager().windowManager
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
 const keystoreController = new KeystoreController(
@@ -270,6 +258,21 @@ const keystoreController = new KeystoreController(
   keystoreSigners,
   windowManager
 )
+
+const accountsCtrl = new AccountsController(
+  storageCtrl,
+  providersCtrl,
+  networksCtrl,
+  keystoreController,
+  () => {},
+  () => {},
+  () => {}
+)
+
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
 
 const addressBookController = new AddressBookController(
   storageCtrl,

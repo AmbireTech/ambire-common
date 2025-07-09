@@ -72,10 +72,14 @@ const networksCtrl = new NetworksController(
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
+
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
 const accountsCtrl = new AccountsController(
   storageCtrl,
   providersCtrl,
   networksCtrl,
+  keystore,
   () => {},
   () => {},
   () => {}
@@ -99,8 +103,6 @@ const inviteCtrl = new InviteController({
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
-
-const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
 
 const portfolioCtrl = new PortfolioController(
   storageCtrl,

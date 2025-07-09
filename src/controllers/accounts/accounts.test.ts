@@ -4,10 +4,12 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
@@ -54,6 +56,7 @@ describe('AccountsController', () => {
       providersCtrl.removeProvider(id)
     }
   )
+  const windowManager = mockWindowManager().windowManager
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
@@ -64,6 +67,7 @@ describe('AccountsController', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
+      new KeystoreController('default', storageCtrl, {}, windowManager),
       () => {},
       () => {},
       () => {}
@@ -91,7 +95,7 @@ describe('AccountsController', () => {
     expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
   test('removeAccountData', async () => {
-    await accountsCtrl.updateAccountStates()
+    await accountsCtrl.updateAccountStates(accounts[0].addr)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)
