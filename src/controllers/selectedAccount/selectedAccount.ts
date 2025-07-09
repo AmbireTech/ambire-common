@@ -232,14 +232,28 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
-  resetSelectedAccountPortfolio(skipUpdate?: boolean) {
+  resetSelectedAccountPortfolio({ maxDataAgeMs }: { maxDataAgeMs?: number } = {}) {
+    if (!this.#portfolio || !this.account) return
+
+    if (maxDataAgeMs) {
+      const latestStateSelectedAccount = this.#portfolio.getLatestPortfolioState(this.account.addr)
+
+      const networksThatAreAboutToBeUpdated = Object.values(latestStateSelectedAccount)
+        .filter((state) => !state?.criticalError)
+        .filter((state) => {
+          const updateStarted = state?.result?.updateStarted || 0
+
+          return !!updateStarted && Date.now() - updateStarted >= maxDataAgeMs
+        })
+
+      if (!networksThatAreAboutToBeUpdated.length) return
+    }
+
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
     this.#isPortfolioLoadingFromScratch = true
 
-    if (!skipUpdate) {
-      this.emitUpdate()
-    }
+    this.emitUpdate()
   }
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {

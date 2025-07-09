@@ -220,6 +220,8 @@ export class MainController extends EventEmitter {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
 
+  onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
+
   #windowManager: WindowManager
 
   #notificationManager: NotificationManager
@@ -507,16 +509,29 @@ export class MainController extends EventEmitter {
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
-  onPopupOpen() {
-    const FIVE_MINUTES = 1000 * 60 * 5
+  async onPopupOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
+    if (!selectedAccountAddr) return
+
+    this.onPopupOpenStatus = 'LOADING'
+    await this.forceEmitUpdate()
+
+    const FIVE_MINUTES = 1000 * 60 * 5
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     if (!this.activity.broadcastedButNotConfirmed.length) {
+      this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
       this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
     }
 
-    if (selectedAccountAddr && !this.accounts.areAccountStatesLoading)
+    if (!this.accounts.areAccountStatesLoading) {
       this.accounts.updateAccountState(selectedAccountAddr)
+    }
+    this.onPopupOpenStatus = 'SUCCESS'
+    await this.forceEmitUpdate()
+
+    this.onPopupOpenStatus = 'INITIAL'
+    await this.forceEmitUpdate()
   }
 
   async #load(): Promise<void> {
