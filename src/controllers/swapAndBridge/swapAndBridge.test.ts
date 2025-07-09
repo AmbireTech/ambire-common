@@ -24,6 +24,24 @@ import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
+const accounts = [
+  {
+    addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    associatedKeys: [],
+    initialPrivileges: [],
+    creation: {
+      factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+      bytecode:
+        '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+      salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    }
+  }
+]
+
 // Notice
 // The status of swapAndBridge.ts is a bit more difficult to test
 // as we now have this code:
@@ -72,10 +90,16 @@ const networksCtrl = new NetworksController(
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
+
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+storage.set('selectedAccount', accounts[0].addr)
+
 const accountsCtrl = new AccountsController(
   storageCtrl,
   providersCtrl,
   networksCtrl,
+  keystore,
   () => {},
   () => {},
   () => {}
@@ -99,8 +123,6 @@ const inviteCtrl = new InviteController({
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
-
-const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
 
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
@@ -126,24 +148,6 @@ const activityCtrl = new ActivityController(
 )
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
-
-const accounts = [
-  {
-    addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-    associatedKeys: [],
-    initialPrivileges: [],
-    creation: {
-      factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-      bytecode:
-        '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-      salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-    },
-    preferences: {
-      label: DEFAULT_ACCOUNT_LABEL,
-      pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    }
-  }
-]
 
 const PORTFOLIO_TOKENS = [
   {

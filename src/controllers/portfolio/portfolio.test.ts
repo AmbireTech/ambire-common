@@ -189,6 +189,7 @@ const prepareTest = () => {
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystore,
     () => {},
     () => {},
     () => {}

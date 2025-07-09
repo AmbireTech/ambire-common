@@ -203,6 +203,7 @@ describe('Activity Controller ', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
+      keystore,
       () => {},
       () => {},
       () => {}
