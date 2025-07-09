@@ -219,15 +219,20 @@ export async function getTokens(
   tokenAddrs: string[]
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
   const mapToken = (token: any, address: string) => {
-    const symbol = overrideSymbol(address, network.chainId, token.symbol)
+    let symbol = 'Unknown'
+    try {
+      symbol = overrideSymbol(address, network.chainId, token.symbol)
+    } catch (e: any) {
+      console.log(`no symbol was found for token with address ${address} on ${network.name}`)
+    }
+
     let tokenName = symbol
     try {
       tokenName = token.name
     } catch (e: any) {
-      // token.name should be a valid getter but if it's not because
-      // the implemented token is not following strictly erc-20 standards,
-      // we allow the execution to proceed
-      if (!e.message.includes('accessing property "name"')) throw e
+      console.log(
+        `no name was found for a token with a symbol of: ${token.symbol}, address: ${address} on ${network.name}`
+      )
     }
 
     return {
