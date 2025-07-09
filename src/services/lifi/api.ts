@@ -253,7 +253,7 @@ export class LiFiAPI {
     const twoHoursPassed = Date.now() - this.#apiKeyActivatedTimestamp >= 120 * 60 * 1000
     if (!twoHoursPassed) return
 
-    this.#apiKey = undefined
+    delete this.#headers['x-lifi-api-key']
     this.#apiKeyActivatedTimestamp = undefined
   }
 
