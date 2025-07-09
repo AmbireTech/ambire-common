@@ -1,5 +1,7 @@
 import { formatUnits, parseUnits } from 'ethers'
 
+import { getSanitizedAmount } from '../../libs/transfer/amount'
+
 /**
  * Converts floating point token price to big int
  */
@@ -47,4 +49,33 @@ const safeTokenAmountAndNumberMultiplication = (
   )
 }
 
-export { convertTokenPriceToBigInt, safeTokenAmountAndNumberMultiplication }
+/**
+ * Sanitizes the amount by removing values outside of the token's decimal range.
+ * Also formats `.`, `.${number}` and `${number}.` to `0.0`, `0.${number}` and `${number}.0` respectively
+ */
+const getSafeAmountFromFieldValue = (_fieldValue: string, tokenDecimals?: number): string => {
+  const fieldValue = _fieldValue.trim()
+
+  let parsedFieldValue = fieldValue
+
+  if (fieldValue.startsWith('.')) {
+    // If the amount starts with a dot, prepend a zero
+    parsedFieldValue = `0${fieldValue}`
+  }
+
+  if (fieldValue.endsWith('.')) {
+    // If the amount ends with a dot, append a zero
+    parsedFieldValue = `${parsedFieldValue}0`
+  }
+
+  // Don't sanitize the amount if there is no selected token
+  if (!tokenDecimals) return parsedFieldValue
+
+  return getSanitizedAmount(parsedFieldValue, tokenDecimals)
+}
+
+export {
+  convertTokenPriceToBigInt,
+  safeTokenAmountAndNumberMultiplication,
+  getSafeAmountFromFieldValue
+}
