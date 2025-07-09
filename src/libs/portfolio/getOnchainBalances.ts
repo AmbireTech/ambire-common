@@ -231,7 +231,7 @@ export async function getTokens(
       tokenName = token.name
     } catch (e: any) {
       console.log(
-        `no name was found for a token with a symbol of: ${token.symbol}, address: ${address} on ${network.name}`
+        `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
       )
     }
 
