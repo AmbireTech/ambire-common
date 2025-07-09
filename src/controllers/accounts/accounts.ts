@@ -76,7 +76,6 @@ export class AccountsController extends EventEmitter {
       if (account.addr === selectedAccountAddr) return true
 
       const accountKeys = this.#keystore.getAccountKeys(account)
-      console.log(`Account ${account.addr} keys: `, accountKeys)
       const isViewOnly = accountKeys.length === 0
 
       // If the account is not selected, update the account state in the background
