@@ -1294,7 +1294,7 @@ export class SwapAndBridgeController extends EventEmitter {
       if (!this.fromAmount || !this.fromSelectedToken || !this.toSelectedToken) return
 
       const bigintFromAmount = parseUnits(
-        getSafeAmountFromFieldValue(this.fromAmount),
+        getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken.decimals),
         this.fromSelectedToken.decimals
       )
 
@@ -2004,7 +2004,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return (
       this.fromChainId &&
       this.toChainId &&
-      !!getSafeAmountFromFieldValue(this.fromAmount) &&
+      !!getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken?.decimals) &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
       (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)
