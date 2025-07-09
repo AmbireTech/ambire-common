@@ -24,6 +24,7 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
+  getNewStateOnly,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -253,48 +254,17 @@ export class SelectedAccountController extends EventEmitter {
       this.#portfolio.getPendingPortfolioState(this.account.addr)
     )
 
-    const latestStateSelectedAccountFiltered = Object.entries(latestStateSelectedAccount)
-      .filter(([key, value]) => {
-        if (value?.isLoading === true) return false
-
-        const oldVal = this.portfolio?.latest?.[key]
-        if (!oldVal) return true
-        const newBlock = value?.result?.blockNumber
-        const oldBlock = oldVal?.result?.blockNumber
-        return newBlock !== oldBlock
-      })
-      .reduce((obj, [key, value]) => {
-        obj[key] = value
-        return obj
-      }, {})
-
-    const pendingStateSelectedAccountFiltered = Object.entries(pendingStateSelectedAccount)
-      .filter(([key, value]) => {
-        if (value?.isLoading === true) return false
-        const oldVal = this.portfolio?.latest?.[key]
-        if (!oldVal) return true
-        const newBlock = value?.result?.blockNumber
-        const oldBlock = oldVal?.result?.blockNumber
-        return newBlock !== oldBlock
-      })
-      .reduce((obj, [key, value]) => {
-        obj[key] = value
-        return obj
-      }, {})
-
-    console.time('a')
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      latestStateSelectedAccountFiltered,
+      getNewStateOnly(latestStateSelectedAccount, this.portfolio?.latest),
       defiPositionsAccountState,
       this.areDefiPositionsLoading
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      pendingStateSelectedAccountFiltered,
+      getNewStateOnly(pendingStateSelectedAccount, this.portfolio?.pending),
       defiPositionsAccountState,
       this.areDefiPositionsLoading
     )
-    console.timeEnd('a')
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
       (action) => action.type === 'accountOp'
     )

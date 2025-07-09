@@ -19,6 +19,28 @@ import {
   TokenResult
 } from '../portfolio/interfaces'
 
+export const getNewStateOnly = (state: AccountState, prevState?: SelectedAccountPortfolioState) => {
+  return Object.entries(state)
+    .filter(([key, value]) => {
+      if (value?.isLoading === true) return false
+      const oldVal = prevState?.[key]
+      if (!oldVal) return true
+      const newBlock = value?.result?.blockNumber
+      const oldBlock = oldVal?.result?.blockNumber
+      return newBlock !== oldBlock
+    })
+    .reduce((obj, [key, value]) => {
+      obj[key] = value
+      return obj
+    }, {})
+}
+
+const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
+  const diff = Math.abs(price1 - price2)
+  const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2))
+  return diff <= threshold
+}
+
 export const updatePortfolioStateWithDefiPositions = (
   portfolioAccountState: AccountState,
   defiPositionsAccountState: DefiPositionsAccountState,
@@ -30,7 +52,12 @@ export const updatePortfolioStateWithDefiPositions = (
   Object.keys(portfolioAccountState).forEach((chainId) => {
     const networkState = portfolioAccountState[chainId]
 
-    if (!networkState?.result || defiPositionsAccountState[chainId]?.isLoading) return
+    if (
+      !networkState?.result ||
+      !defiPositionsAccountState[chainId] ||
+      defiPositionsAccountState[chainId]?.isLoading
+    )
+      return
 
     const tokens = networkState.result.tokens || []
     let networkBalance = networkState.result.total?.usd || 0
@@ -130,12 +157,6 @@ export const updatePortfolioStateWithDefiPositions = (
                 }
               }
             }
-          }
-
-          function isTokenPriceWithinHalfPercent(price1: any, price2: any) {
-            const diff = Math.abs(price1 - price2)
-            const threshold = 0.005 * Math.max(Math.abs(price1), Math.abs(price2)) // 0.5% of the larger value
-            return diff <= threshold
           }
 
           // search the asset in the portfolio tokens
