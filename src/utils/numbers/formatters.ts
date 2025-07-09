@@ -53,14 +53,12 @@ const safeTokenAmountAndNumberMultiplication = (
  * Sanitizes the amount by removing values outside of the token's decimal range.
  * Also formats `.`, `.${number}` and `${number}.` to `0.0`, `0.${number}` and `${number}.0` respectively
  */
-const getSafeAmountFromFieldValue = (_fieldValue: string, tokenDecimals?: number): string => {
-  const fieldValue = _fieldValue.trim()
-
-  let parsedFieldValue = fieldValue
+const getSafeAmountFromFieldValue = (fieldValue: string, tokenDecimals?: number): string => {
+  let parsedFieldValue = fieldValue.trim()
 
   if (fieldValue.startsWith('.')) {
     // If the amount starts with a dot, prepend a zero
-    parsedFieldValue = `0${fieldValue}`
+    parsedFieldValue = `0${parsedFieldValue}`
   }
 
   if (fieldValue.endsWith('.')) {
