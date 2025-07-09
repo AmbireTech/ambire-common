@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -225,6 +225,10 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
+  #apiKey?: string
+
+  #apiKeyActivatedTimestamp?: number
+
   constructor({ apiKey, fetch }: { apiKey?: string; fetch: Fetch }) {
     this.#fetch = fetch
 
@@ -233,11 +237,24 @@ export class LiFiAPI {
       'Content-Type': 'application/json'
     }
 
-    // add the apiKey if specified only. Li Fi can function without an apiKey,
-    // it will just put a custom user rate limit
-    if (apiKey) {
-      this.#headers['x-lifi-api-key'] = apiKey
+    this.#apiKey = apiKey
+  }
+
+  setApiKeyIfAny() {
+    if (this.#apiKey) {
+      this.#headers['x-lifi-api-key'] = this.#apiKey
+      this.#apiKeyActivatedTimestamp = Date.now()
     }
+  }
+
+  removeApiKey() {
+    if (!this.#apiKey || !this.#apiKeyActivatedTimestamp) return
+
+    const twoHoursPassed = Date.now() - this.#apiKeyActivatedTimestamp >= 120 * 60 * 1000
+    if (!twoHoursPassed) return
+
+    this.#apiKey = undefined
+    this.#apiKeyActivatedTimestamp = undefined
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -272,6 +289,10 @@ export class LiFiAPI {
     fetchPromise: Promise<CustomResponse>
     errorPrefix: string
   }): Promise<T> {
+    // start by removing the API key if a set time has passed
+    // we use the api key only when we hit the rate limit
+    this.removeApiKey()
+
     let response: CustomResponse
 
     try {
@@ -295,6 +316,7 @@ export class LiFiAPI {
     }
 
     if (response.status === 429) {
+      this.setApiKeyIfAny()
       const error =
         'Our service provider received too many requests, temporarily preventing your request from being processed.'
       throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
