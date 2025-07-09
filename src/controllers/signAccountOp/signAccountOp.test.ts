@@ -341,6 +341,7 @@ const init = async (
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
+  await storageCtrl.set('selectedAccount', account.addr)
   const keystore = new KeystoreController(
     'default',
     storageCtrl,
@@ -1172,7 +1173,6 @@ describe('Negative cases', () => {
       },
       true
     )
-
     // @ts-ignore
     controller.update({
       hasNewEstimation: true,
@@ -1181,7 +1181,6 @@ describe('Negative cases', () => {
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })
-
     await controller.sign()
 
     if (!controller.accountOp?.signature) {
