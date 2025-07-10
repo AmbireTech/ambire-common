@@ -4,12 +4,14 @@ import { expect, jest } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -82,6 +84,7 @@ describe('AddressBookController', () => {
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    new KeystoreController('default', storageCtrl, {}, mockWindowManager().windowManager),
     () => {},
     () => {},
     () => {}

@@ -33,12 +33,12 @@ describe('PhishingController', () => {
       phantomBlacklist: []
     })
     phishing = new PhishingController({ storage: storageCtrl, fetch, windowManager })
+    await phishing.initialLoadPromise
   })
   test('should initialize', async () => {
     expect(phishing).toBeDefined()
   })
   test('should fetch lists from github', async () => {
-    await phishing.initialLoadPromise
     const storedPhishingDetection = await storageCtrl.get('phishingDetection', {
       timestamp: null,
       metamaskBlacklist: [],

@@ -51,7 +51,10 @@ import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/a
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+import {
+  convertTokenPriceToBigInt,
+  getSafeAmountFromFieldValue
+} from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -394,12 +397,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
       if (!this.fromSelectedToken) return
 
-      const sanitizedFieldValue = getSanitizedAmount(
-        fromAmountFormatted,
+      // Convert the field value to big int
+      const formattedAmount = parseUnits(
+        getSafeAmountFromFieldValue(fromAmount, this.fromSelectedToken.decimals),
         this.fromSelectedToken.decimals
       )
-      // Convert the field value to big int
-      const formattedAmount = parseUnits(sanitizedFieldValue, this.fromSelectedToken.decimals)
 
       if (!formattedAmount) return
 
@@ -1291,12 +1293,10 @@ export class SwapAndBridgeController extends EventEmitter {
       if (!this.#getIsFormValidToFetchQuote()) return
       if (!this.fromAmount || !this.fromSelectedToken || !this.toSelectedToken) return
 
-      const sanitizedFromAmount = getSanitizedAmount(
-        this.fromAmount,
+      const bigintFromAmount = parseUnits(
+        getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken.decimals),
         this.fromSelectedToken.decimals
       )
-
-      const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken.decimals)
 
       if (this.quote) {
         const isFromAmountSame =
@@ -2004,7 +2004,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return (
       this.fromChainId &&
       this.toChainId &&
-      this.fromAmount &&
+      !!getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken?.decimals) &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
       (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)

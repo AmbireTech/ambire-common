@@ -294,6 +294,7 @@ export class MainController extends EventEmitter {
       this.storage,
       this.providers,
       this.networks,
+      this.keystore,
       async (accounts) => {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {
@@ -2917,11 +2918,19 @@ export class MainController extends EventEmitter {
         message = accountState?.isV2
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
-      } else if (originalMessage.includes('underpriced')) {
-        message =
-          'Transaction fee underpriced. Please select a higher transaction speed and try again'
+      } else if (
+        originalMessage.includes('underpriced') ||
+        originalMessage.includes('Fee confirmation failed')
+      ) {
+        if (originalMessage.includes('underpriced')) {
+          message =
+            'Transaction fee underpriced. Please select a higher transaction speed and try again'
+        }
+
         if (signAccountOp) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           signAccountOp.gasPrice.fetch()
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           signAccountOp.simulate(false)
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
