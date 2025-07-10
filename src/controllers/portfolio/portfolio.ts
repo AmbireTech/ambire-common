@@ -313,10 +313,7 @@ export class PortfolioController extends EventEmitter {
     isLoading: boolean,
     error?: any
   ) {
-    const states = {
-      latest: this.#latest,
-      pending: this.#pending
-    }
+    const states = { latest: this.#latest, pending: this.#pending }
     const accountState = states[stateKey][accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
@@ -577,6 +574,9 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     const state = accountState[network.chainId.toString()]!
+
+    if (forceUpdate) state.criticalError = undefined
+
     const hasNonZeroTokens = !!Object.values(
       this.#networksWithAssetsByAccounts?.[accountId] || {}
     ).some(Boolean)
