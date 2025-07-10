@@ -254,7 +254,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
-    swapApiKey?: string
+    swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -1684,6 +1684,7 @@ export class MainController extends EventEmitter {
     amount: string,
     recipientAddress: string,
     selectedToken: TokenResult,
+    // eslint-disable-next-line default-param-last
     actionExecutionType: ActionExecutionType = 'open-action-window',
     windowId?: number
   ) {

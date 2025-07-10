@@ -225,11 +225,19 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
-  #apiKey?: string
+  #apiKey: string
 
+  /**
+   * We don't use the apiKey as a default option for sending LiFi API
+   * requests, we let a custom rate limit be set per user.
+   * If the user hits that rate limit, we add the key for a set amount
+   * of time so he could continue using lifi. The key is exposed on
+   * the FE and anyone can use it and therefore break it (hit the rate
+   * limit), so we only use it as a backup
+   */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ apiKey, fetch }: { apiKey?: string; fetch: Fetch }) {
+  constructor({ apiKey, fetch }: { apiKey: string; fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
@@ -241,14 +249,12 @@ export class LiFiAPI {
   }
 
   setApiKeyIfAny() {
-    if (this.#apiKey) {
-      this.#headers['x-lifi-api-key'] = this.#apiKey
-      this.#apiKeyActivatedTimestamp = Date.now()
-    }
+    this.#headers['x-lifi-api-key'] = this.#apiKey
+    this.#apiKeyActivatedTimestamp = Date.now()
   }
 
   removeApiKey() {
-    if (!this.#apiKey || !this.#apiKeyActivatedTimestamp) return
+    if (!this.#apiKeyActivatedTimestamp) return
 
     const twoHoursPassed = Date.now() - this.#apiKeyActivatedTimestamp >= 120 * 60 * 1000
     if (!twoHoursPassed) return
