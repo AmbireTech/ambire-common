@@ -208,7 +208,7 @@ export class SelectedAccountController extends EventEmitter {
     this.account = account
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
-    this.resetSelectedAccountPortfolio(true)
+    this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
     this.portfolioStartedLoadingAtTimestamp = null
 
@@ -232,7 +232,10 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
-  resetSelectedAccountPortfolio({ maxDataAgeMs }: { maxDataAgeMs?: number } = {}) {
+  resetSelectedAccountPortfolio({
+    maxDataAgeMs,
+    skipUpdate
+  }: { maxDataAgeMs?: number; skipUpdate?: boolean } = {}) {
     if (!this.#portfolio || !this.account) return
 
     if (maxDataAgeMs) {
@@ -253,7 +256,9 @@ export class SelectedAccountController extends EventEmitter {
     this.#portfolioErrors = []
     this.#isPortfolioLoadingFromScratch = true
 
-    this.emitUpdate()
+    if (!skipUpdate) {
+      this.emitUpdate()
+    }
   }
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
