@@ -44,10 +44,20 @@ const networksCtrl = new NetworksController(
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
+const windowManager = mockWindowManager().windowManager
+
+const keystore = new KeystoreController(
+  'default',
+  storageCtrl,
+  { internal: KeystoreSigner },
+  windowManager
+)
+
 const accountsCtrl = new AccountsController(
   storageCtrl,
   providersCtrl,
   networksCtrl,
+  keystore,
   () => {},
   () => {},
   () => {}
@@ -57,15 +67,6 @@ const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl
 })
-
-const windowManager = mockWindowManager().windowManager
-
-const keystore = new KeystoreController(
-  'default',
-  storageCtrl,
-  { internal: KeystoreSigner },
-  windowManager
-)
 
 const portfolioCtrl = new PortfolioController(
   storageCtrl,

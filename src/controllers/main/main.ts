@@ -292,6 +292,7 @@ export class MainController extends EventEmitter {
       this.storage,
       this.providers,
       this.networks,
+      this.keystore,
       async (accounts) => {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {

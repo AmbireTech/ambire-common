@@ -1,6 +1,6 @@
+import { ActivityController } from 'controllers/activity/activity'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
-import { ActivityController } from 'controllers/activity/activity'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
@@ -18,7 +18,10 @@ import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import { getAddressFromAddressState } from '../../utils/domains'
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+import {
+  convertTokenPriceToBigInt,
+  getSafeAmountFromFieldValue
+} from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -71,6 +74,10 @@ export class TransferController extends EventEmitter {
 
   isSWWarningAgreed = false
 
+  /**
+   * The field value for the amount input. Not sanitized and can contain
+   * invalid values. Use #getSafeAmountFromFieldValue() to get a formatted value.
+   */
   amount = ''
 
   amountInFiat = ''
@@ -488,9 +495,10 @@ export class TransferController extends EventEmitter {
 
       if (!this.selectedToken) return
 
-      const sanitizedFieldValue = getSanitizedAmount(fieldValue, this.selectedToken.decimals)
-      // Convert the field value to big int
-      const formattedAmount = parseUnits(sanitizedFieldValue, this.selectedToken.decimals)
+      const formattedAmount = parseUnits(
+        getSafeAmountFromFieldValue(fieldValue, this.selectedToken.decimals),
+        this.selectedToken.decimals
+      )
 
       if (!formattedAmount) return
 
@@ -538,7 +546,7 @@ export class TransferController extends EventEmitter {
 
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccountData.account.addr,
-      amount: this.amount,
+      amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
       recipientAddress
     })

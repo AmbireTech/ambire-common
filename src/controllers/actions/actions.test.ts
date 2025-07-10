@@ -13,6 +13,7 @@ import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRe
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -167,6 +168,7 @@ describe('Actions Controller', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
+      new KeystoreController('default', storageCtrl, {}, windowManager),
       () => {},
       () => {},
       () => {}

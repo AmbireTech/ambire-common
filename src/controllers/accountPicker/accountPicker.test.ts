@@ -87,11 +87,13 @@ describe('AccountPicker', () => {
   )
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
+  const keystoreController = new KeystoreController('default', storageCtrl, {}, windowManager)
 
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystoreController,
     () => {},
     () => {},
     () => {}
