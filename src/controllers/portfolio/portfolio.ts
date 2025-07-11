@@ -313,10 +313,7 @@ export class PortfolioController extends EventEmitter {
     isLoading: boolean,
     error?: any
   ) {
-    const states = {
-      latest: this.#latest,
-      pending: this.#pending
-    }
+    const states = { latest: this.#latest, pending: this.#pending }
     const accountState = states[stateKey][accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
@@ -557,16 +554,14 @@ export class PortfolioController extends EventEmitter {
     maxDataAgeMs?: number
   ): Promise<boolean> {
     const blockTag = portfolioProps.blockTag
-    const stateKeys = {
-      latest: this.#latest,
-      pending: this.#pending
-    }
+    const stateKeys = { latest: this.#latest, pending: this.#pending }
     const accountState = stateKeys[blockTag][accountId]
     if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
       // and portfolio will not be updated
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
+
     const canSkipUpdate = this.#getCanSkipUpdate(
       accountState[network.chainId.toString()],
       forceUpdate,
@@ -576,9 +571,11 @@ export class PortfolioController extends EventEmitter {
     if (canSkipUpdate) return false
 
     this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
+    const state = accountState[network.chainId.toString()]!
+    if (forceUpdate) state.criticalError = undefined
+
     this.emitUpdate()
 
-    const state = accountState[network.chainId.toString()]!
     const hasNonZeroTokens = !!Object.values(
       this.#networksWithAssetsByAccounts?.[accountId] || {}
     ).some(Boolean)
