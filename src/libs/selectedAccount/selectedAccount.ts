@@ -383,9 +383,10 @@ export function calculateSelectedAccountPortfolio(
       // The network is not ready
       !isNetworkReady(networkData) ||
       // The networks is ready but the previous state isn't satisfactory and the network is still loading
-      (isLoadingFromScratch && networkData?.isLoading) ||
-      // The total balance and token list are affected by the defi positions
-      defiPositionsAccountState[network]?.isLoading
+      (isLoadingFromScratch &&
+        (networkData?.isLoading ||
+          // The total balance and token list are affected by the defi positions
+          defiPositionsAccountState[network]?.isLoading))
     ) {
       isAllReady = false
     }
