@@ -571,11 +571,10 @@ export class PortfolioController extends EventEmitter {
     if (canSkipUpdate) return false
 
     this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
-    this.emitUpdate()
-
     const state = accountState[network.chainId.toString()]!
-
     if (forceUpdate) state.criticalError = undefined
+
+    this.emitUpdate()
 
     const hasNonZeroTokens = !!Object.values(
       this.#networksWithAssetsByAccounts?.[accountId] || {}

@@ -190,7 +190,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
       return
     }
 
-    if (portfolioForNetwork?.isLoading && !portfolioForNetwork.criticalError) {
+    if (portfolioForNetwork?.isLoading) {
       // Add an error if the network is preventing the portfolio from going ready
       // Otherwise skip the network
       if (!isAllReady) errors = addPortfolioError(errors, networkName, 'loading-too-long')
@@ -201,12 +201,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
       return
 
-    if (
-      !portfolioForNetwork ||
-      !chainId ||
-      (portfolioForNetwork.isLoading && !portfolioForNetwork.criticalError)
-    )
-      return
+    if (!portfolioForNetwork || !chainId) return
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (

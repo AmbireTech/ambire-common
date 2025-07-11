@@ -399,7 +399,11 @@ export function calculateSelectedAccountPortfolio(
   }
 
   return {
-    totalBalance: newTotalBalance,
+    totalBalance:
+      Object.values(selectedAccountData).some((n) => n?.isLoading) ||
+      Object.values(defiPositionsAccountState).some((p) => p.isLoading)
+        ? accountPortfolio?.totalBalance || newTotalBalance
+        : newTotalBalance,
     tokens,
     collections,
     isReadyToVisualize,
