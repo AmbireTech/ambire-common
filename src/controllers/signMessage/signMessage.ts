@@ -195,10 +195,6 @@ export class SignMessageController extends EventEmitter {
             this.#invite.isOG
           )
         }
-
-        if (this.messageToSign.content.kind === 'authorization-7702') {
-          signature = this.#signer.sign7702(this.messageToSign.content.message)
-        }
       } catch (error: any) {
         throw new Error(
           error?.message ||
