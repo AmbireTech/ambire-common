@@ -63,7 +63,8 @@ const defaultOptions: GetOptions = {
   blockTag: 'latest',
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
-  fetchPinned: true
+  fetchPinned: true,
+  priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
 
 export class Portfolio {
@@ -258,14 +259,14 @@ export class Portfolio {
     const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
-    const getPriceFromCache = (address: string) => {
+    const getPriceFromCache = (address: string, priceRecency: number = localOpts.priceRecency) => {
       const cached = priceCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached
       const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      const isStale = start - timestamp > localOpts.priceRecency!
+      const isStale = start - timestamp > priceRecency
       return isStale ? null : eligible
     }
 
@@ -335,7 +336,8 @@ export class Portfolio {
           priceCache.set(token.address, [Date.now(), priceIn])
         } catch (error: any) {
           const errorMessage = error?.message || 'Unknown error'
-          priceIn = []
+
+          priceIn = getPriceFromCache(token.address, localOpts.priceRecencyOnFailure) || []
 
           // Avoid duplicate errors, because this.bachedGecko is called for each token and if
           // there is an error it will most likely be the same for all tokens
