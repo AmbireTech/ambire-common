@@ -70,8 +70,7 @@ export interface Hints {
   erc721s: ERC721s
 }
 
-export interface ExternalHintsAPIResponse extends Hints {
-  lastUpdate: number
+export type ExternalHintsAPIResponse = Hints & {
   networkId: string
   chainId: number
   accountAddr: string
@@ -79,14 +78,16 @@ export interface ExternalHintsAPIResponse extends Hints {
     [addr: string]: Price
   }
   hasHints: boolean
+  skipOverrideSavedHints?: boolean
   // Attached by the application error handling logic.
   // All other props, are provided by Velcro Discovery request.
+  lastUpdate: number
   error?: string
 }
 
 export type StrippedExternalHintsAPIResponse = Pick<
   ExternalHintsAPIResponse,
-  'erc20s' | 'erc721s' | 'lastUpdate'
+  'erc20s' | 'erc721s' | 'lastUpdate' | 'skipOverrideSavedHints'
 >
 
 export interface ExtendedError extends Error {
