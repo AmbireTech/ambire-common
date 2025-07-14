@@ -201,7 +201,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
       return
 
-    if (!portfolioForNetwork || !chainId || portfolioForNetwork.isLoading) return
+    if (!portfolioForNetwork || !chainId) return
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (
