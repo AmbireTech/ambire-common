@@ -14,9 +14,10 @@ import {
   toBeHex,
   toUtf8Bytes,
   TypedDataDomain,
-  TypedDataEncoder,
   TypedDataField
 } from 'ethers'
+
+import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { EIP7702Auth } from '../../consts/7702'
@@ -379,7 +380,7 @@ export async function verifyMessage({
   authorization,
   typedData
 }: Props): Promise<boolean> {
-  let finalDigest: string
+  let finalDigest: string | Buffer
 
   if (message) {
     try {
@@ -417,11 +418,9 @@ export async function verifyMessage({
           )
         )
       } else {
-        finalDigest = TypedDataEncoder.hash(
-          typedData.domain,
-          filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-          typedData.message
-        )
+        // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+        // @ts-ignore FIXME: typedData type mismatch between ethers and metamask, worth investigating!
+        finalDigest = TypedDataUtils.eip712Hash(typedData, SignTypedDataVersion.V4)
       }
 
       if (!finalDigest) throw Error('Hashing the typedData returned no (falsy) result.')
