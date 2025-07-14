@@ -29,10 +29,11 @@ export const getNewStateOnly = (state: AccountState, prevState?: SelectedAccount
       const oldBlock = oldVal?.result?.blockNumber
       return newBlock !== oldBlock
     })
-    .reduce((obj, [key, value]) => {
-      obj[key] = value
-      return obj
-    }, {})
+    .reduce((acc, [key, value]) => {
+      acc[key] = value
+
+      return acc
+    }, {} as Record<string, any>)
 }
 
 const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean => {
@@ -194,7 +195,7 @@ export const updatePortfolioStateWithDefiPositions = (
               // but should be a different token symbol
               t.symbol.toLowerCase() !== a.symbol.toLowerCase() &&
               // and prices should have no more than 0.5% diff
-              isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value)
+              (!a.value || isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value))
             )
           })
 
