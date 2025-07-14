@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -248,12 +248,12 @@ export class LiFiAPI {
     this.#apiKey = apiKey
   }
 
-  setApiKeyIfAny() {
+  activateApiKey() {
     this.#headers['x-lifi-api-key'] = this.#apiKey
     this.#apiKeyActivatedTimestamp = Date.now()
   }
 
-  removeApiKey() {
+  deactivateApiKeyIfStale() {
     if (!this.#apiKeyActivatedTimestamp) return
 
     const twoHoursPassed = Date.now() - this.#apiKeyActivatedTimestamp >= 120 * 60 * 1000
@@ -297,7 +297,7 @@ export class LiFiAPI {
   }): Promise<T> {
     // start by removing the API key if a set time has passed
     // we use the api key only when we hit the rate limit
-    this.removeApiKey()
+    this.deactivateApiKeyIfStale()
 
     let response: CustomResponse
 
@@ -322,7 +322,7 @@ export class LiFiAPI {
     }
 
     if (response.status === 429) {
-      this.setApiKeyIfAny()
+      this.activateApiKey()
       const error =
         'Our service provider received too many requests, temporarily preventing your request from being processed.'
       throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
