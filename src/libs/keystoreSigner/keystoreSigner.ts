@@ -7,6 +7,7 @@ import {
   isHexString,
   keccak256,
   toBeHex,
+  toNumber,
   TransactionRequest,
   Wallet
 } from 'ethers'
@@ -53,8 +54,23 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   async signTypedData(typedMessage: TypedMessage) {
     const sig = signTypedDataWithMetaMaskSigUtil({
       privateKey: Buffer.from(getBytes(this.#signer.privateKey)),
-      // @ts-ignore FIXME: typedData type mismatch between ethers and metamask, worth investigating!
-      data: typedMessage,
+      data: {
+        ...typedMessage,
+        // There is a slight difference between EthersJS v6 and @metamask/eth-sig-util
+        // in terms of the domain object props.
+        domain: {
+          ...typedMessage.domain,
+          name: typedMessage.domain.name ?? undefined,
+          version: typedMessage.domain.version ?? undefined,
+          chainId: typedMessage.domain.chainId ? toNumber(typedMessage.domain.chainId) : undefined,
+          verifyingContract: typedMessage.domain.verifyingContract ?? undefined,
+          salt: typedMessage.domain.salt
+            ? // ArrayBufferLike is a broader type that includes ArrayBuffer and
+              // SharedArrayBuffer. These types are compatible in practice.
+              (getBytes(typedMessage.domain.salt).buffer as ArrayBuffer)
+            : undefined
+        }
+      },
       // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
       version: SignTypedDataVersion.V4
     })
