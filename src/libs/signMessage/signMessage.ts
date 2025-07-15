@@ -14,8 +14,7 @@ import {
   toBeHex,
   toNumber,
   toUtf8Bytes,
-  TypedDataDomain,
-  TypedDataField
+  TypedDataDomain
 } from 'ethers'
 
 import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
@@ -25,7 +24,7 @@ import { EIP7702Auth } from '../../consts/7702'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { EIP712Types, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
@@ -106,7 +105,12 @@ export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) 
       version: typedMessage.domain.version ?? undefined,
       chainId: typedMessage.domain.chainId ? toNumber(typedMessage.domain.chainId) : undefined,
       verifyingContract: typedMessage.domain.verifyingContract ?? undefined,
-      salt: typedMessage.domain.salt ? hexlify(getBytes(typedMessage.domain.salt)) : undefined
+      salt: typedMessage.domain.salt
+        ? // TypeScript expects domain.salt as ArrayBuffer (MetaMask types)
+          // Runtime accepts any BytesLike (hex or Uint8Array)
+          // Cast to avoid TS error — works without conversion
+          (typedMessage.domain.salt as unknown as ArrayBuffer)
+        : undefined
     }
   }
 }
@@ -407,7 +411,7 @@ export async function verifyMessage({
       } else {
         // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
         finalDigest = TypedDataUtils.eip712Hash(
-          adaptTypedMessageForMetaMaskSigUtil(typedData),
+          adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
           SignTypedDataVersion.V4
         )
       }
