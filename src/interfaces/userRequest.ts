@@ -25,7 +25,7 @@ export interface PlainTextMessage {
 export interface TypedMessage {
   kind: 'typedMessage'
   domain: TypedDataDomain
-  types: { EIP712Domain: TypedDataField[] } & Record<string, Array<TypedDataField>>
+  types: Record<string, Array<TypedDataField>>
   message: Record<string, any>
   primaryType: keyof TypedMessage['types']
 }

@@ -14,10 +14,11 @@ import {
   toBeHex,
   toNumber,
   toUtf8Bytes,
-  TypedDataDomain
+  TypedDataDomain,
+  TypedDataField
 } from 'ethers'
 
-import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
+import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { EIP7702Auth } from '../../consts/7702'
@@ -97,6 +98,10 @@ interface AmbireReadableOperation {
 export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
   return {
     ...typedMessage,
+    types: {
+      ...typedMessage.types,
+      EIP712Domain: typedMessage.types.EIP712Domain ?? []
+    } as MessageTypes,
     // There is a slight difference between EthersJS v6 and @metamask/eth-sig-util
     // in terms of the domain object props.
     domain: {
