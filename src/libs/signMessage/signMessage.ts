@@ -12,6 +12,7 @@ import {
   JsonRpcProvider,
   keccak256,
   toBeHex,
+  toNumber,
   toUtf8Bytes,
   TypedDataDomain,
   TypedDataField
@@ -129,6 +130,26 @@ export function filterNotUsedEIP712Types(types: EIP712Types, primaryType: string
   }
 
   return filtered
+}
+
+export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
+  return {
+    ...typedMessage,
+    // There is a slight difference between EthersJS v6 and @metamask/eth-sig-util
+    // in terms of the domain object props.
+    domain: {
+      ...typedMessage.domain,
+      name: typedMessage.domain.name ?? undefined,
+      version: typedMessage.domain.version ?? undefined,
+      chainId: typedMessage.domain.chainId ? toNumber(typedMessage.domain.chainId) : undefined,
+      verifyingContract: typedMessage.domain.verifyingContract ?? undefined,
+      salt: typedMessage.domain.salt
+        ? // ArrayBufferLike is a broader type that includes ArrayBuffer and
+          // SharedArrayBuffer. These types are compatible in practice.
+          (getBytes(typedMessage.domain.salt).buffer as ArrayBuffer)
+        : undefined
+    }
+  }
 }
 
 export const getAmbireReadableTypedData = (
@@ -350,12 +371,7 @@ type Props = {
 } & (
   | { message: string | Uint8Array; typedData?: never; authorization?: never }
   | {
-      typedData: {
-        domain: TypedDataDomain
-        types: Record<string, Array<TypedDataField>>
-        message: Record<string, any>
-        primaryType: string
-      }
+      typedData: TypedMessage
       message?: never
       authorization?: never
     }
@@ -419,8 +435,10 @@ export async function verifyMessage({
         )
       } else {
         // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
-        // @ts-ignore FIXME: typedData type mismatch between ethers and metamask, worth investigating!
-        finalDigest = TypedDataUtils.eip712Hash(typedData, SignTypedDataVersion.V4)
+        finalDigest = TypedDataUtils.eip712Hash(
+          adaptTypedMessageForMetaMaskSigUtil(typedData),
+          SignTypedDataVersion.V4
+        )
       }
 
       if (!finalDigest) throw Error('Hashing the typedData returned no (falsy) result.')
