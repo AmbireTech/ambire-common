@@ -334,7 +334,12 @@ type Props = {
 } & (
   | { message: string | Uint8Array; typedData?: never; authorization?: never }
   | {
-      typedData: TypedMessage
+      typedData: {
+        domain: TypedMessage['domain']
+        types: TypedMessage['types']
+        message: TypedMessage['message']
+        primaryType: TypedMessage['primaryType']
+      }
       message?: never
       authorization?: never
     }
