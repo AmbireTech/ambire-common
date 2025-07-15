@@ -95,43 +95,6 @@ interface AmbireReadableOperation {
   calls: { to: Hex; value: bigint; data: Hex }[]
 }
 
-// remove all types found in types that don't exist in types[primaryType]
-// as otherwise, ethers6 throws an error
-//
-// This one also deletes EIP712Domain if found and not used
-export function filterNotUsedEIP712Types(types: EIP712Types, primaryType: string): EIP712Types {
-  const toVisit = [primaryType]
-  const visited = new Set<string>()
-
-  while (toVisit.length > 0) {
-    const current = toVisit.pop()!
-    // eslint-disable-next-line no-continue
-    if (visited.has(current)) continue
-
-    visited.add(current)
-
-    const fields = types[current] || []
-    // eslint-disable-next-line no-restricted-syntax
-    for (const field of fields) {
-      // since the type might be an array of something,
-      // we parse it as we are interested in the base type only
-      const baseType = field.type.split('[')[0]
-      if (types[baseType] && !visited.has(baseType)) {
-        toVisit.push(baseType)
-      }
-    }
-  }
-
-  // Build the filtered types
-  const filtered: EIP712Types = {}
-  // eslint-disable-next-line no-restricted-syntax
-  for (const typeName of visited) {
-    filtered[typeName] = types[typeName]
-  }
-
-  return filtered
-}
-
 export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
   return {
     ...typedMessage,

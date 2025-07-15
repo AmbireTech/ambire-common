@@ -933,7 +933,7 @@ describe('SignAccountOp Controller ', () => {
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = verifyTypedData(
       typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
+      typedData.types,
       typedData.message,
       unwrappedSig
     )
@@ -1195,7 +1195,7 @@ describe('Negative cases', () => {
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = verifyTypedData(
       typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
+      typedData.types,
       typedData.message,
       unwrappedSig
     )
@@ -1381,7 +1381,7 @@ describe('Negative cases', () => {
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = verifyTypedData(
       typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
+      typedData.types,
       typedData.message,
       unwrappedSig
     )

@@ -1,6 +1,7 @@
-import { Contract, hashMessage, hexlify, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { Contract, hashMessage, hexlify, toUtf8Bytes, Wallet } from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
+import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -21,7 +22,7 @@ import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
-  filterNotUsedEIP712Types,
+  adaptTypedMessageForMetaMaskSigUtil,
   getAmbireReadableTypedData,
   getAuthorizationHash,
   getEIP712Signature,
@@ -647,10 +648,9 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
-      TypedDataEncoder.hash(
-        typedData.domain,
-        filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-        typedData.message
+      TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil(typedData),
+        SignTypedDataVersion.V4
       ),
       eip712Sig
     )
