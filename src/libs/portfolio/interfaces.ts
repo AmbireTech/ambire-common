@@ -78,6 +78,11 @@ export type ExternalHintsAPIResponse = Hints & {
     [addr: string]: Price
   }
   hasHints: boolean
+  /**
+   * When true, prevents external API hints from overriding locally saved hints
+   * and suppresses related UI errors. This flag is used when the hints database
+   * is temporarily unavailable and the server falls back to static hints.
+   */
   skipOverrideSavedHints?: boolean
   // Attached by the application error handling logic.
   // All other props, are provided by Velcro Discovery request.
