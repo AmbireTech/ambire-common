@@ -106,11 +106,7 @@ export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) 
       version: typedMessage.domain.version ?? undefined,
       chainId: typedMessage.domain.chainId ? toNumber(typedMessage.domain.chainId) : undefined,
       verifyingContract: typedMessage.domain.verifyingContract ?? undefined,
-      salt: typedMessage.domain.salt
-        ? // ArrayBufferLike is a broader type that includes ArrayBuffer and
-          // SharedArrayBuffer. These types are compatible in practice.
-          (getBytes(typedMessage.domain.salt).buffer as ArrayBuffer)
-        : undefined
+      salt: typedMessage.domain.salt ? hexlify(getBytes(typedMessage.domain.salt)) : undefined
     }
   }
 }
@@ -269,6 +265,13 @@ export const get7702UserOpTypedData = (
       { name: 'callData', type: 'bytes' },
       { name: 'calls', type: 'Transaction[]' },
       { name: 'hash', type: 'bytes32' }
+    ],
+    EIP712Domain: [
+      { name: 'name', type: 'string' },
+      { name: 'version', type: 'string' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'verifyingContract', type: 'address' },
+      { name: 'salt', type: 'bytes32' }
     ]
   }
   const message = {
