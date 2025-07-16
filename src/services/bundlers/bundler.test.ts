@@ -19,11 +19,7 @@ import { Network } from '../../interfaces/network'
 import { getSmartAccount } from '../../libs/account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { getPaymasterDataForEstimate } from '../../libs/paymaster/paymaster'
-import {
-  filterNotUsedEIP712Types,
-  getTypedData,
-  wrapStandard
-} from '../../libs/signMessage/signMessage'
+import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
   getActivatorCall,
   getSigForCalculations,
@@ -228,11 +224,7 @@ export async function getDeploySignature(smartAcc: Account, network: Network) {
   const typedData = getTypedData(network.chainId, smartAcc.addr, executeHash)
   const wallet = new Wallet(process.env.METAMASK_PK!)
   const s = wrapStandard(
-    await wallet.signTypedData(
-      typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-      typedData.message
-    )
+    await wallet.signTypedData(typedData.domain, typedData.types, typedData.message)
   )
   return s
 }
