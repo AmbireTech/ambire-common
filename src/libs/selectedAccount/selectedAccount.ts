@@ -285,7 +285,7 @@ const calculateTokenArray = (
 export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
-  accountPortfolioWithDefiPositions: PortfolioWithPositions,
+  pastAccountPortfolioWithDefiPositions: PortfolioWithPositions,
   accountPortfolio: SelectedAccountPortfolio | null,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
@@ -368,34 +368,41 @@ export function calculateSelectedAccountPortfolio(
   Object.keys(selectedAccountData).forEach((network: string) => {
     const networkData = selectedAccountData[network]
 
-    // Don't do any calculations if the block number matches the previous state
-    // This function is called after every portfolio update and we don't want to recalculate
+    const defiPositionsNetworkState = defiPositionsAccountState[network]
+    const pastAccountPortfolioWithDefiPositionsNetworkState =
+      pastAccountPortfolioWithDefiPositions[network]
+
+    const hasPortfolioUpdated =
+      !networkData ||
+      !pastAccountPortfolioWithDefiPositionsNetworkState ||
+      pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
+        networkData.result?.blockNumber
+    const areDefiPositionsUpdated =
+      !pastAccountPortfolioWithDefiPositionsNetworkState ||
+      pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt ===
+        defiPositionsNetworkState?.updatedAt
+
+    // calculateSelectedAccountPortfolio is called after every portfolio update and we don't want to recalculate
     // the same network data if it hasn't changed.
-    if (
-      networkData &&
-      accountPortfolioWithDefiPositions[network] &&
-      accountPortfolioWithDefiPositions[network].blockNumber === networkData.result?.blockNumber &&
-      accountPortfolioWithDefiPositions[network].defiPositionsUpdatedAt ===
-        defiPositionsAccountState[network]?.updatedAt &&
-      !simulatedAccountOps[network]
-    ) {
+    if (!hasPortfolioUpdated && !areDefiPositionsUpdated) {
       const {
         tokens: pastTokens,
         collections: pastCollections,
         totalBalance: pastTotalBalance
-      } = accountPortfolioWithDefiPositions[network]
+      } = pastAccountPortfolioWithDefiPositions[network]
 
       newTotalBalance += pastTotalBalance || 0
       tokens.push(...pastTokens)
       collections.push(...pastCollections)
-      newAccountPortfolioWithDefiPositions[network] = accountPortfolioWithDefiPositions[network]
+      newAccountPortfolioWithDefiPositions[network] =
+        pastAccountPortfolioWithDefiPositionsNetworkState
       return
     }
 
     const networkDataWithDefiPositions = updatePortfolioNetworkWithDefiPositions(
       network,
       networkData,
-      defiPositionsAccountState[network]
+      defiPositionsNetworkState
     )
     const result = networkDataWithDefiPositions?.result
     let tokensArray: SelectedAccountPortfolioTokenResult[] = []
