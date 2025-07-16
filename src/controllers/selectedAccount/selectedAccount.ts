@@ -66,8 +66,19 @@ export class SelectedAccountController extends EventEmitter {
 
   account: Account | null = null
 
+  /**
+   * Holds the selected account portfolio that is used by the UI to display the portfolio.
+   * It includes the portfolio and defi positions for the selected account.
+   * It is updated when the portfolio or defi positions controllers are updated.
+   */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 
+  /**
+   * Holds the selected account portfolio divided by networks. It includes the portfolio
+   * and defi positions for each network. It's used when calculating the portfolio
+   * for the UI - unnecessary calculations are avoided by using data stored here
+   * in case it doesn't have to be recalculated.
+   */
   #portfolioByNetworks: SelectedAccountPortfolioByNetworks = {}
 
   portfolioStartedLoadingAtTimestamp: number | null = null

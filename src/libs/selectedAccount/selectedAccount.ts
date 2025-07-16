@@ -29,6 +29,11 @@ const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean 
   return diff <= threshold
 }
 
+/**
+ * Adds defi positions to the portfolio network state.
+ * It updates the total balance and adds tokens that aren't handled by the portfolio.
+ * It also modifies defi tokens that are handled by the portfolio
+ */
 export const updatePortfolioNetworkWithDefiPositions = (
   chainId: string,
   networkState?: NetworkState,
@@ -322,6 +327,14 @@ const getIsRecalculationNeeded = (
   return pastAccountOp !== networkDataAccountOp
 }
 
+/**
+ * Calculates the selected account portfolio (divided by networks).
+ * It combines the latest and pending states, checks the status of the networks-
+ * whether they are ready or not, loading etc.
+ * It also updates the portfolio with defi positions.
+ * It's optimized to avoid unnecessary recalculations by comparing the new portfolio/defi positions state
+ * with the previous one. (by nonce, block number, simulation status, defi positions updated at timestamp)
+ */
 export function calculateSelectedAccountPortfolioByNetworks(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
@@ -480,6 +493,11 @@ export function calculateSelectedAccountPortfolioByNetworks(
   }
 }
 
+/**
+ * Calculates the selected account portfolio that is used by the UI and a
+ * selected account portfolio divided by networks.
+ * For more info see calculateSelectedAccountPortfolioByNetworks.
+ */
 export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
