@@ -7,8 +7,8 @@ import { Banner } from '../../interfaces/banner'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
-  PortfolioWithPositions,
-  SelectedAccountPortfolio
+  SelectedAccountPortfolio,
+  SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
@@ -68,7 +68,7 @@ export class SelectedAccountController extends EventEmitter {
 
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 
-  #portfolioWithDefiPositions: PortfolioWithPositions = {}
+  #portfolioByNetworks: SelectedAccountPortfolioByNetworks = {}
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
@@ -210,7 +210,7 @@ export class SelectedAccountController extends EventEmitter {
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
     this.defiPositions = []
-    this.#portfolioWithDefiPositions = {}
+    this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
     this.portfolioStartedLoadingAtTimestamp = null
@@ -258,7 +258,7 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
     this.#isPortfolioLoadingFromScratch = true
-    this.#portfolioWithDefiPositions = {}
+    this.#portfolioByNetworks = {}
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -283,19 +283,16 @@ export class SelectedAccountController extends EventEmitter {
 
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
-      newAccountPortfolioWithDefiPositions
+      selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
     } = calculateSelectedAccountPortfolio(
       latestStateSelectedAccount,
       pendingStateSelectedAccount,
-      this.#portfolioWithDefiPositions,
-      this.portfolio,
+      this.#portfolioByNetworks,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
       hasSignAccountOp,
       this.#isPortfolioLoadingFromScratch
     )
-
-    this.#portfolioWithDefiPositions = newAccountPortfolioWithDefiPositions
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
@@ -313,6 +310,7 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     this.portfolio = newSelectedAccountPortfolio
+    this.#portfolioByNetworks = newSelectedAccountPortfolioByNetworks
     this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 

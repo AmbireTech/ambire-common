@@ -1,12 +1,14 @@
 import { getAddress } from 'ethers'
 
 import {
-  PortfolioWithPositions,
   SelectedAccountPortfolio,
+  SelectedAccountPortfolioByNetworks,
+  SelectedAccountPortfolioByNetworksNetworkState,
   SelectedAccountPortfolioState,
   SelectedAccountPortfolioTokenResult
 } from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
+import { isAccountOpsIntentEqual } from '../accountOp/accountOp'
 import {
   AccountState as DefiPositionsAccountState,
   AssetType,
@@ -36,13 +38,7 @@ export const updatePortfolioNetworkWithDefiPositions = (
     return networkState
   }
 
-  if (
-    !networkState ||
-    networkState?.isLoading ||
-    !defiPositionsNetworkState ||
-    defiPositionsNetworkState?.isLoading
-  )
-    return null
+  if (!networkState || !defiPositionsNetworkState) return null
 
   // If there is an error we can simply return the original network state
   if (!networkState.result) {
@@ -282,47 +278,80 @@ const calculateTokenArray = (
   })
 }
 
-export function calculateSelectedAccountPortfolio(
+/**
+ * calculateSelectedAccountPortfolio is called after every portfolio update and we don't want to recalculate
+ * the same network data if it hasn't changed.
+ */
+const getIsRecalculationNeeded = (
+  pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
+  networkData: NetworkState | undefined,
+  defiPositionsNetworkState: DefiPositionsNetworkState | undefined
+) => {
+  if (
+    !networkData ||
+    !pastAccountPortfolioWithDefiPositionsNetworkState ||
+    !defiPositionsNetworkState
+  ) {
+    return true
+  }
+
+  // Never recalculate if either the portfolio or defi positions are loading
+  // as that would reset isAllReady to false
+  if (networkData?.isLoading || defiPositionsNetworkState.isLoading) return false
+
+  const hasPortfolioUpdated =
+    pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
+    networkData.result?.blockNumber
+
+  if (hasPortfolioUpdated) return true
+
+  const areDefiPositionsUpdated =
+    pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
+    defiPositionsNetworkState?.updatedAt
+
+  if (areDefiPositionsUpdated) return true
+
+  // Whether the simulation has changed
+  const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
+  const networkDataAccountOp = networkData?.accountOps?.[0]
+
+  if (pastAccountOp && networkDataAccountOp) {
+    return isAccountOpsIntentEqual([pastAccountOp], [networkDataAccountOp])
+  }
+
+  return pastAccountOp !== networkDataAccountOp
+}
+
+export function calculateSelectedAccountPortfolioByNetworks(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
-  pastAccountPortfolioWithDefiPositions: PortfolioWithPositions,
-  accountPortfolio: SelectedAccountPortfolio | null,
+  pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
   hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
-  selectedAccountPortfolio: SelectedAccountPortfolio
-  newAccountPortfolioWithDefiPositions: PortfolioWithPositions
+  selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
+  isAllReady: boolean
+  isReadyToVisualize: boolean
 } {
   const now = Date.now()
   const shouldShowPartialResult =
     portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
-  const collections: CollectionResult[] = []
-  const tokens: SelectedAccountPortfolioTokenResult[] = []
-  const newAccountPortfolioWithDefiPositions: PortfolioWithPositions = {}
-
-  let newTotalBalance: number = 0
+  const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks = {}
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
   let isAllReady = !!hasLatest
   let isReadyToVisualize = false
+  const tokens: SelectedAccountPortfolioTokenResult[] = []
 
   const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
 
   if (!hasLatest && !hasPending) {
     return {
-      selectedAccountPortfolio: {
-        tokens: accountPortfolio?.tokens || [],
-        collections: accountPortfolio?.collections || [],
-        totalBalance: accountPortfolio?.totalBalance || 0,
-        isReadyToVisualize: false,
-        isAllReady: false,
-        networkSimulatedAccountOp: accountPortfolio?.networkSimulatedAccountOp || {},
-        latest: latestStateSelectedAccount,
-        pending: pendingStateSelectedAccount
-      },
-      newAccountPortfolioWithDefiPositions: {}
+      selectedAccountPortfolioByNetworks: {},
+      isAllReady: false,
+      isReadyToVisualize: false
     }
   }
 
@@ -372,30 +401,18 @@ export function calculateSelectedAccountPortfolio(
     const pastAccountPortfolioWithDefiPositionsNetworkState =
       pastAccountPortfolioWithDefiPositions[network]
 
-    const hasPortfolioUpdated =
-      !networkData ||
-      !pastAccountPortfolioWithDefiPositionsNetworkState ||
-      pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
-        networkData.result?.blockNumber
-    const areDefiPositionsUpdated =
-      !pastAccountPortfolioWithDefiPositionsNetworkState ||
-      pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt ===
-        defiPositionsNetworkState?.updatedAt
+    const shouldRecalculateState = getIsRecalculationNeeded(
+      pastAccountPortfolioWithDefiPositionsNetworkState,
+      networkData,
+      defiPositionsNetworkState
+    )
 
-    // calculateSelectedAccountPortfolio is called after every portfolio update and we don't want to recalculate
-    // the same network data if it hasn't changed.
-    if (!hasPortfolioUpdated && !areDefiPositionsUpdated) {
-      const {
-        tokens: pastTokens,
-        collections: pastCollections,
-        totalBalance: pastTotalBalance
-      } = pastAccountPortfolioWithDefiPositions[network]
+    if (!shouldRecalculateState) {
+      tokens.push(...(pastAccountPortfolioWithDefiPositionsNetworkState?.tokens || []))
 
-      newTotalBalance += pastTotalBalance || 0
-      tokens.push(...pastTokens)
-      collections.push(...pastCollections)
       newAccountPortfolioWithDefiPositions[network] =
         pastAccountPortfolioWithDefiPositionsNetworkState
+
       return
     }
 
@@ -411,7 +428,6 @@ export function calculateSelectedAccountPortfolio(
 
     if (networkDataWithDefiPositions && result && isNetworkReady(networkDataWithDefiPositions)) {
       networkTotal = Number(result?.total?.usd) || 0
-      newTotalBalance += networkTotal
 
       const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
       const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
@@ -423,9 +439,7 @@ export function calculateSelectedAccountPortfolio(
         pendingTokens,
         !!validSelectedAccountPendingState[network]
       )
-
       tokens.push(...tokensArray)
-      collections.push(...collectionsArray)
     }
 
     if (
@@ -446,7 +460,8 @@ export function calculateSelectedAccountPortfolio(
         tokens: tokensArray,
         collections: collectionsArray,
         blockNumber: result?.blockNumber,
-        defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt
+        defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
+        simulatedAccountOp: simulatedAccountOps[network]
       }
     }
   })
@@ -459,20 +474,60 @@ export function calculateSelectedAccountPortfolio(
   }
 
   return {
-    selectedAccountPortfolio: {
-      totalBalance:
-        Object.values(selectedAccountData).some((n) => n?.isLoading) ||
-        Object.values(defiPositionsAccountState).some((p) => p.isLoading)
-          ? accountPortfolio?.totalBalance || newTotalBalance
-          : newTotalBalance,
-      tokens,
-      collections,
-      isReadyToVisualize,
-      isAllReady,
-      networkSimulatedAccountOp: simulatedAccountOps,
-      latest: stripPortfolioState(latestStateSelectedAccount),
-      pending: stripPortfolioState(pendingStateSelectedAccount)
-    },
-    newAccountPortfolioWithDefiPositions
+    isReadyToVisualize,
+    isAllReady,
+    selectedAccountPortfolioByNetworks: newAccountPortfolioWithDefiPositions
+  }
+}
+
+export function calculateSelectedAccountPortfolio(
+  latestStateSelectedAccount: AccountState,
+  pendingStateSelectedAccount: AccountState,
+  pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
+  portfolioStartedLoadingAtTimestamp: number | null,
+  defiPositionsAccountState: DefiPositionsAccountState,
+  hasSignAccountOp: boolean,
+  isLoadingFromScratch: boolean
+): {
+  selectedAccountPortfolio: SelectedAccountPortfolio
+  selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
+} {
+  const { selectedAccountPortfolioByNetworks, isAllReady, isReadyToVisualize } =
+    calculateSelectedAccountPortfolioByNetworks(
+      latestStateSelectedAccount,
+      pendingStateSelectedAccount,
+      pastAccountPortfolioWithDefiPositions,
+      portfolioStartedLoadingAtTimestamp,
+      defiPositionsAccountState,
+      hasSignAccountOp,
+      isLoadingFromScratch
+    )
+
+  const selectedAccountPortfolio: SelectedAccountPortfolio = {
+    tokens: [],
+    collections: [],
+    totalBalance: 0,
+    isReadyToVisualize,
+    isAllReady,
+    networkSimulatedAccountOp: {},
+    latest: stripPortfolioState(latestStateSelectedAccount),
+    pending: stripPortfolioState(pendingStateSelectedAccount)
+  }
+
+  Object.keys(selectedAccountPortfolioByNetworks).forEach((chainId) => {
+    const networkData = selectedAccountPortfolioByNetworks[chainId]
+    if (!networkData) return
+
+    if (selectedAccountPortfolio.networkSimulatedAccountOp[chainId]) {
+      selectedAccountPortfolio.networkSimulatedAccountOp[chainId] = networkData.simulatedAccountOp
+    }
+    selectedAccountPortfolio.tokens.push(...networkData.tokens)
+    selectedAccountPortfolio.collections.push(...networkData.collections)
+    selectedAccountPortfolio.totalBalance += networkData.totalBalance || 0
+  })
+
+  return {
+    selectedAccountPortfolio,
+    selectedAccountPortfolioByNetworks
   }
 }

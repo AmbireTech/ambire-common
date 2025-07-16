@@ -18,7 +18,7 @@ export type SelectedAccountPortfolioState = {
     | undefined
 }
 
-export type PortfolioWithPositionsNetworkState = {
+export type SelectedAccountPortfolioByNetworksNetworkState = {
   totalBalance: number
   tokens: SelectedAccountPortfolio['tokens']
   collections: SelectedAccountPortfolio['collections']
@@ -34,10 +34,11 @@ export type PortfolioWithPositionsNetworkState = {
    * selected account portfolio must be recalculated.
    */
   defiPositionsUpdatedAt?: number
+  simulatedAccountOp: NetworkSimulatedAccountOp[string]
 }
 
-export type PortfolioWithPositions = {
-  [chainId: string]: PortfolioWithPositionsNetworkState
+export type SelectedAccountPortfolioByNetworks = {
+  [chainId: string]: SelectedAccountPortfolioByNetworksNetworkState
 }
 
 export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
