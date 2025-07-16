@@ -1,6 +1,6 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, hexlify, parseEther, verifyMessage } from 'ethers'
+import { AbiCoder, getAddress, hexlify, parseEther, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -935,11 +935,13 @@ describe('SignAccountOp Controller ', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = recoverTypedSignature({
-      data: adaptTypedMessageForMetaMaskSigUtil(typedData),
-      signature: unwrappedSig,
-      version: SignTypedDataVersion.V4
-    })
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaAccount.addr).toEqual(signerAddr)
@@ -1196,11 +1198,13 @@ describe('Negative cases', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = recoverTypedSignature({
-      data: adaptTypedMessageForMetaMaskSigUtil(typedData),
-      signature: unwrappedSig,
-      version: SignTypedDataVersion.V4
-    })
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaAccount.addr).toEqual(signerAddr)
@@ -1381,11 +1385,13 @@ describe('Negative cases', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = recoverTypedSignature({
-      data: adaptTypedMessageForMetaMaskSigUtil(typedData),
-      signature: unwrappedSig,
-      version: SignTypedDataVersion.V4
-    })
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)
