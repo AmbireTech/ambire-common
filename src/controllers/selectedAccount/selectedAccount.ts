@@ -209,6 +209,8 @@ export class SelectedAccountController extends EventEmitter {
     this.account = account
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
+    this.defiPositions = []
+    this.#portfolioWithDefiPositions = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
     this.portfolioStartedLoadingAtTimestamp = null
@@ -358,7 +360,10 @@ export class SelectedAccountController extends EventEmitter {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
-    return Object.values(defiPositionsAccountState).some((n) => n.isLoading)
+    return (
+      !Object.keys(defiPositionsAccountState).length ||
+      Object.values(defiPositionsAccountState).some((n) => n.isLoading)
+    )
   }
 
   #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
