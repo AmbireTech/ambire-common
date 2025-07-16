@@ -24,6 +24,7 @@ import {
 } from '../../libs/selectedAccount/errors'
 import {
   calculateSelectedAccountPortfolio,
+  getNewStateOnly,
   updatePortfolioStateWithDefiPositions
 } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -165,7 +166,9 @@ export class SelectedAccountController extends EventEmitter {
         this.#updateSelectedAccountDefiPositions()
 
         if (!this.areDefiPositionsLoading) {
-          this.#updateSelectedAccountPortfolio(true)
+          this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
+            this.#updateSelectedAccountPortfolio(true)
+          })
           this.#updateDefiPositionsErrors()
         }
       })
@@ -207,7 +210,7 @@ export class SelectedAccountController extends EventEmitter {
     this.account = account
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
-    this.resetSelectedAccountPortfolio(true)
+    this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
     this.portfolioStartedLoadingAtTimestamp = null
 
@@ -231,7 +234,26 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
-  resetSelectedAccountPortfolio(skipUpdate?: boolean) {
+  resetSelectedAccountPortfolio({
+    maxDataAgeMs,
+    skipUpdate
+  }: { maxDataAgeMs?: number; skipUpdate?: boolean } = {}) {
+    if (!this.#portfolio || !this.account) return
+
+    if (maxDataAgeMs) {
+      const latestStateSelectedAccount = this.#portfolio.getLatestPortfolioState(this.account.addr)
+
+      const networksThatAreAboutToBeUpdated = Object.values(latestStateSelectedAccount)
+        .filter((state) => !state?.criticalError)
+        .filter((state) => {
+          const updateStarted = state?.result?.updateStarted || 0
+
+          return !!updateStarted && Date.now() - updateStarted >= maxDataAgeMs
+        })
+
+      if (!networksThatAreAboutToBeUpdated.length) return
+    }
+
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
     this.#isPortfolioLoadingFromScratch = true
@@ -243,6 +265,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
+
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
     const latestStateSelectedAccount = structuredClone(
@@ -253,24 +276,29 @@ export class SelectedAccountController extends EventEmitter {
     )
 
     const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      latestStateSelectedAccount,
+      getNewStateOnly(latestStateSelectedAccount, this.portfolio?.latest),
       defiPositionsAccountState,
       this.areDefiPositionsLoading
     )
 
     const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      pendingStateSelectedAccount,
+      getNewStateOnly(pendingStateSelectedAccount, this.portfolio?.pending),
       defiPositionsAccountState,
       this.areDefiPositionsLoading
     )
-
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
       (action) => action.type === 'accountOp'
     )
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
-      latestStateSelectedAccountWithDefiPositions,
-      pendingStateSelectedAccountWithDefiPositions,
+      {
+        ...latestStateSelectedAccount,
+        ...latestStateSelectedAccountWithDefiPositions
+      },
+      {
+        ...pendingStateSelectedAccount,
+        ...pendingStateSelectedAccountWithDefiPositions
+      },
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,

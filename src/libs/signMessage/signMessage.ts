@@ -616,7 +616,7 @@ export async function getEIP712Signature(
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
-  // messsages in v2 as it could lead to reusing that key from
+  // messages in v2 as it could lead to reusing that key from
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
   if (!dedicatedToOneSA) {
     throw new Error(
@@ -668,7 +668,7 @@ export function adjustEntryPointAuthorization(entryPointSig: string): string {
 export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: bigint): Hex {
   return keccak256(
     concat([
-      '0x05', // magic authrorization string
+      '0x05', // magic authorization string
       encodeRlp([
         // zeros are empty bytes in rlp encoding
         chainId !== 0n ? toBeHex(chainId) : '0x',
