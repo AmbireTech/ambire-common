@@ -374,7 +374,10 @@ export function calculateSelectedAccountPortfolio(
     if (
       networkData &&
       accountPortfolioWithDefiPositions[network] &&
-      accountPortfolioWithDefiPositions[network].blockNumber === networkData.result?.blockNumber
+      accountPortfolioWithDefiPositions[network].blockNumber === networkData.result?.blockNumber &&
+      accountPortfolioWithDefiPositions[network].defiPositionsUpdatedAt ===
+        defiPositionsAccountState[network]?.updatedAt &&
+      !simulatedAccountOps[network]
     ) {
       const {
         tokens: pastTokens,
@@ -435,7 +438,8 @@ export function calculateSelectedAccountPortfolio(
         totalBalance: networkTotal,
         tokens: tokensArray,
         collections: collectionsArray,
-        blockNumber: result?.blockNumber
+        blockNumber: result?.blockNumber,
+        defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt
       }
     }
   })

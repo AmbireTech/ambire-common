@@ -22,7 +22,18 @@ export type PortfolioWithPositionsNetworkState = {
   totalBalance: number
   tokens: SelectedAccountPortfolio['tokens']
   collections: SelectedAccountPortfolio['collections']
+  /**
+   * The block number at which the portfolio was last updated.
+   * It's compared to the current block number to determine whether the
+   * selected account portfolio must be recalculated.
+   */
   blockNumber?: number
+  /**
+   * The timestamp at which the defi positions were last updated.
+   * It's compared to the current timestamp to determine whether the
+   * selected account portfolio must be recalculated.
+   */
+  defiPositionsUpdatedAt?: number
 }
 
 export type PortfolioWithPositions = {
