@@ -7,6 +7,7 @@ import { Banner } from '../../interfaces/banner'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
+  PortfolioWithPositions,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
@@ -22,11 +23,7 @@ import {
   getNetworksWithPortfolioErrorErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import {
-  calculateSelectedAccountPortfolio,
-  getNewStateOnly,
-  updatePortfolioStateWithDefiPositions
-} from '../../libs/selectedAccount/selectedAccount'
+import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
@@ -70,6 +67,8 @@ export class SelectedAccountController extends EventEmitter {
   account: Account | null = null
 
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  #portfolioWithDefiPositions: PortfolioWithPositions = {}
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
@@ -257,6 +256,7 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
     this.#isPortfolioLoadingFromScratch = true
+    this.#portfolioWithDefiPositions = {}
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -275,36 +275,25 @@ export class SelectedAccountController extends EventEmitter {
       this.#portfolio.getPendingPortfolioState(this.account.addr)
     )
 
-    const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      getNewStateOnly(latestStateSelectedAccount, this.portfolio?.latest),
-      defiPositionsAccountState,
-      this.areDefiPositionsLoading
-    )
-
-    const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      getNewStateOnly(pendingStateSelectedAccount, this.portfolio?.pending),
-      defiPositionsAccountState,
-      this.areDefiPositionsLoading
-    )
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
       (action) => action.type === 'accountOp'
     )
 
-    const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
-      {
-        ...latestStateSelectedAccount,
-        ...latestStateSelectedAccountWithDefiPositions
-      },
-      {
-        ...pendingStateSelectedAccount,
-        ...pendingStateSelectedAccountWithDefiPositions
-      },
+    const {
+      selectedAccountPortfolio: newSelectedAccountPortfolio,
+      newAccountPortfolioWithDefiPositions
+    } = calculateSelectedAccountPortfolio(
+      latestStateSelectedAccount,
+      pendingStateSelectedAccount,
+      this.#portfolioWithDefiPositions,
       this.portfolio,
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
       hasSignAccountOp,
       this.#isPortfolioLoadingFromScratch
     )
+
+    this.#portfolioWithDefiPositions = newAccountPortfolioWithDefiPositions
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {

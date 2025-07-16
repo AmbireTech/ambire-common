@@ -18,6 +18,17 @@ export type SelectedAccountPortfolioState = {
     | undefined
 }
 
+export type PortfolioWithPositionsNetworkState = {
+  totalBalance: number
+  tokens: SelectedAccountPortfolio['tokens']
+  collections: SelectedAccountPortfolio['collections']
+  blockNumber?: number
+}
+
+export type PortfolioWithPositions = {
+  [chainId: string]: PortfolioWithPositionsNetworkState
+}
+
 export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
   latestAmount?: bigint
   pendingAmount?: bigint
