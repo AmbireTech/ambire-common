@@ -388,7 +388,7 @@ export class DefiPositionsController extends EventEmitter {
             price: price as number
           }))
 
-          const value = getAssetValue(asset.amount, asset.decimals, priceIn)
+          const value = getAssetValue(asset.amount, asset.decimals, priceIn) || 0
 
           positionInUSD += value
 
@@ -420,12 +420,14 @@ export class DefiPositionsController extends EventEmitter {
   #getShouldSkipUpdateOnAccountWithNoDefiPositions(acc: Account, forceUpdate?: boolean) {
     if (forceUpdate) return false
     if (!this.#accounts.accountStates[acc.addr]) return false
-
     if (!this.#state[acc.addr]) return false
-
-    // Don't skip if the account has any DeFi positions
-    if (Object.values(this.#state[acc.addr]).some((p) => p.positionsByProvider.length)) return false
-
+    // Don't skip if the account has any DeFi positions or the account has never been updated
+    if (
+      Object.values(this.#state[acc.addr]).some(
+        (network) => network.positionsByProvider.length || !network.updatedAt
+      )
+    )
+      return false
     const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
       (chainId: string) => {
         const posNonceId = this.#state[acc.addr][chainId].nonceId
