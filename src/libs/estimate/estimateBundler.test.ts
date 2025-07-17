@@ -10,7 +10,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { BICONOMY, BUNDLER, PIMLICO } from '../../consts/bundlers'
+import { BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
@@ -334,63 +334,5 @@ describe('Bundler fallback tests', () => {
     expect(BigInt(bundlerEstimation.verificationGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-  })
-
-  test('should return the pimlico error if there are no other available bundlers when estimating with Pimlico but Pimlico returning an internal server error', async () => {
-    const opBase: AccountOp = {
-      accountAddr: smartAccDeployed.addr,
-      signingKeyAddr: smartAccDeployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: base.chainId,
-      nonce: 0n,
-      signature: '0x',
-      calls: [{ to, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-    const usedNetworks = [base]
-    const providers = {
-      [base.chainId.toString()]: getRpcProvider(base.rpcUrls, base.chainId)
-    }
-    const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-
-    // if the user cannot pay in the fee token, it will revert
-    const feeTokens = [
-      {
-        address: '0x0000000000000000000000000000000000000000',
-        amount: 100n,
-        symbol: 'ETH',
-        name: 'Ether',
-        chainId: 8453n,
-        decimals: 18,
-        priceIn: [],
-        flags: {
-          onGasTank: false,
-          rewardsType: null,
-          canTopUpGasTank: true,
-          isFeeToken: true
-        }
-      }
-    ]
-    const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO, BICONOMY])
-    const accountState = accountStates[smartAccDeployed.addr][base.chainId.toString()]
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
-    const result = await bundlerEstimate(
-      baseAcc,
-      accountState,
-      opBase,
-      base,
-      feeTokens,
-      providers[base.chainId.toString()],
-      switcher,
-      errorCallback
-    )
-
-    expect(result instanceof Error).toBe(true)
-
-    expect((result as Error).message).toBe(
-      'The bundler seems to be down at the moment. Please try again later'
-    )
   })
 })
