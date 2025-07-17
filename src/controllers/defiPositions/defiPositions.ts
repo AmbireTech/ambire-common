@@ -430,7 +430,7 @@ export class DefiPositionsController extends EventEmitter {
       return false
     const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
       (chainId: string) => {
-        const posNonceId = this.#state[acc.addr][chainId].nonceId
+        const posNonceId = this.#state[acc.addr][chainId]?.nonceId
         const nonceId = this.#getNonceId(acc, chainId)
 
         if (!nonceId || !posNonceId) return false
