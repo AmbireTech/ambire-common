@@ -2,6 +2,7 @@ import { getAddress, ZeroAddress } from 'ethers'
 
 import { STK_WALLET } from '../../consts/addresses'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { canBecomeSmarter, isBasicAccount, isSmartAccount } from '../../libs/account/account'
@@ -69,6 +70,8 @@ export class PortfolioController extends EventEmitter {
   validTokens: any = { erc20: {}, erc721: {} }
 
   temporaryTokens: TemporaryTokens = {}
+
+  banners: Banner[] = []
 
   #portfolioLibs: Map<string, Portfolio>
 
@@ -472,8 +475,12 @@ export class PortfolioController extends EventEmitter {
       this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
       this.#setNetworkLoading(accountId, 'latest', 'rewards', false, e)
       this.emitUpdate()
+      this.banners = [] // Clear banners on error
       return
     }
+
+    // Update banners
+    this.banners = res.data.banners || []
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 

@@ -22,6 +22,17 @@ export interface Banner {
   actions: Action[]
 }
 
+export type RelayerBannerType = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
+
+export interface RelayerBanner {
+  text: string
+  type?: RelayerBannerType // default is 'updates'
+  url?: string
+  startTime?: number
+  endTime?: number
+  category: 'relayerBanner'
+}
+
 export type Action =
   | {
       label: 'Open'

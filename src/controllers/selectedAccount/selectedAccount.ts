@@ -548,6 +548,7 @@ export class SelectedAccountController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
+      banners: this.portfolio.banners,
       firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
