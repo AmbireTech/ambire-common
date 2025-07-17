@@ -108,6 +108,9 @@ export class SelectedAccountController extends EventEmitter {
     this.#_defiPositions = val
   }
 
+  // @TODO: Get rid of this and get ambire's staked wallet position from cena, like all other positions
+  // Currently, if you hide the stkWallet token, its balance will be deducted from the total balance,
+  // unlike other positions (which isn't desired).
   get defiPositions() {
     const stkWalletToken = this.portfolio.tokens.find(
       (t) => t.chainId === 1n && t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
