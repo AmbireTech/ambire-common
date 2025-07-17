@@ -78,9 +78,11 @@ export const updatePortfolioNetworkWithDefiPositions = (
         if (
           tokenInPortfolio &&
           tokenInPortfolio.amount !== 0n &&
-          tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd' && p.price !== 0)
-        )
+          tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd' && p.price !== 0) &&
+          !tokenInPortfolio.flags.isHidden
+        ) {
           return
+        }
       }
 
       // Used to deduct the value of tokens that are already handled by the portfolio
