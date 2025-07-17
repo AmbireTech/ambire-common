@@ -2183,6 +2183,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitUpdate()
     })
     this.#signAccountOpController.onError((error) => {
+      // TODO: Might be obsolete, because the simulation for the one click swap starts when broadcast succeeds
       if (this.signAccountOpController)
         this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
 
