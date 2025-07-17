@@ -83,7 +83,8 @@ export const updatePortfolioNetworkWithDefiPositions = (
           return
       }
 
-      let shouldAddPositionUSDAmountToTheTotalBalance = true
+      // Used to deduct the value of tokens that are already handled by the portfolio
+      let tokenBalanceToDeduct = 0
 
       pos.assets.filter(Boolean).forEach((a) => {
         if (a.protocolAsset) {
@@ -197,16 +198,31 @@ export const updatePortfolioNetworkWithDefiPositions = (
 
         if (tokenInPortfolio?.flags.isHidden) return
 
+        const priceUSD = tokenInPortfolio
+          ? tokenInPortfolio.priceIn.find(
+              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+            )?.price
+          : null
+
+        const tokenBalanceUSD =
+          priceUSD && tokenInPortfolio
+            ? Number(
+                safeTokenAmountAndNumberMultiplication(
+                  BigInt(tokenInPortfolio.amountPostSimulation || tokenInPortfolio.amount),
+                  tokenInPortfolio.decimals,
+                  priceUSD
+                )
+              )
+            : undefined
+
         if (tokenInPortfolio) {
-          shouldAddPositionUSDAmountToTheTotalBalance = false
           // Get the price from defiPositions
           tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
+          tokenBalanceToDeduct += tokenBalanceUSD || 0
         }
       })
 
-      if (shouldAddPositionUSDAmountToTheTotalBalance) {
-        networkBalance += pos.additionalData.positionInUSD || 0
-      }
+      networkBalance += (pos.additionalData.positionInUSD || 0) - tokenBalanceToDeduct
     })
   })
 
