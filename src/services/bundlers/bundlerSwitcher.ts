@@ -56,16 +56,7 @@ export class BundlerSwitcher {
     // not working, we have nothing to fallback to
     if (baseAcc.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) return false
 
-<<<<<<< Updated upstream
-    return (
-      !bundlerError ||
-      bundlerError.cause === 'biconomy: 400' ||
-      bundlerError.cause === 'pimlico: 500' ||
-      bundlerError.cause === 'etherspot: 500'
-    )
-=======
     return true
->>>>>>> Stashed changes
   }
 
   switch(): Bundler {
