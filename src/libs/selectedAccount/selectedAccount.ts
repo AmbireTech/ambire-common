@@ -137,8 +137,9 @@ export const updatePortfolioNetworkWithDefiPositions = (
                 !protocolTokenInPortfolio.priceIn.length ||
                 protocolTokenInPortfolio.priceIn[0]?.price === 0
               ) {
-                protocolTokenInPortfolio.priceIn =
-                  a.type === AssetType.Collateral ? [a.priceIn] : []
+                const shouldKeepPrice = a.type === AssetType.Collateral
+
+                protocolTokenInPortfolio.priceIn = shouldKeepPrice ? [a.priceIn] : []
 
                 protocolTokenInPortfolio.flags.defiTokenType = a.type
 
@@ -152,7 +153,8 @@ export const updatePortfolioNetworkWithDefiPositions = (
                         )
                       )
                     : undefined
-                  networkBalance += tokenBalanceUSD || 0
+
+                  if (!shouldKeepPrice) networkBalance += tokenBalanceUSD || 0
                 }
               }
             }
@@ -198,7 +200,7 @@ export const updatePortfolioNetworkWithDefiPositions = (
           )
         })
 
-        if (tokenInPortfolio?.flags.isHidden) return
+        if (!tokenInPortfolio || tokenInPortfolio?.flags.isHidden) return
 
         const priceUSD = tokenInPortfolio
           ? tokenInPortfolio.priceIn.find(
@@ -217,11 +219,9 @@ export const updatePortfolioNetworkWithDefiPositions = (
               )
             : undefined
 
-        if (tokenInPortfolio) {
-          // Get the price from defiPositions
-          tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
-          tokenBalanceToDeduct += tokenBalanceUSD || 0
-        }
+        // Get the price from defiPositions
+        tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
+        tokenBalanceToDeduct += tokenBalanceUSD || 0
       })
 
       networkBalance += (pos.additionalData.positionInUSD || 0) - tokenBalanceToDeduct
