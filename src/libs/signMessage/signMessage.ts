@@ -12,18 +12,20 @@ import {
   JsonRpcProvider,
   keccak256,
   toBeHex,
+  toNumber,
   toUtf8Bytes,
   TypedDataDomain,
-  TypedDataEncoder,
   TypedDataField
 } from 'ethers'
+
+import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { EIP712Types, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
@@ -93,41 +95,29 @@ interface AmbireReadableOperation {
   calls: { to: Hex; value: bigint; data: Hex }[]
 }
 
-// remove all types found in types that don't exist in types[primaryType]
-// as otherwise, ethers6 throws an error
-//
-// This one also deletes EIP712Domain if found and not used
-export function filterNotUsedEIP712Types(types: EIP712Types, primaryType: string): EIP712Types {
-  const toVisit = [primaryType]
-  const visited = new Set<string>()
-
-  while (toVisit.length > 0) {
-    const current = toVisit.pop()!
-    // eslint-disable-next-line no-continue
-    if (visited.has(current)) continue
-
-    visited.add(current)
-
-    const fields = types[current] || []
-    // eslint-disable-next-line no-restricted-syntax
-    for (const field of fields) {
-      // since the type might be an array of something,
-      // we parse it as we are interested in the base type only
-      const baseType = field.type.split('[')[0]
-      if (types[baseType] && !visited.has(baseType)) {
-        toVisit.push(baseType)
-      }
+export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
+  return {
+    ...typedMessage,
+    types: {
+      ...typedMessage.types,
+      EIP712Domain: typedMessage.types.EIP712Domain ?? []
+    } as MessageTypes,
+    // There is a slight difference between EthersJS v6 and @metamask/eth-sig-util
+    // in terms of the domain object props.
+    domain: {
+      ...typedMessage.domain,
+      name: typedMessage.domain.name ?? undefined,
+      version: typedMessage.domain.version ?? undefined,
+      chainId: typedMessage.domain.chainId ? toNumber(typedMessage.domain.chainId) : undefined,
+      verifyingContract: typedMessage.domain.verifyingContract ?? undefined,
+      salt: typedMessage.domain.salt
+        ? // TypeScript expects domain.salt as ArrayBuffer (MetaMask types)
+          // Runtime accepts any BytesLike (hex or Uint8Array)
+          // Cast to avoid TS error — works without conversion
+          (typedMessage.domain.salt as unknown as ArrayBuffer)
+        : undefined
     }
   }
-
-  // Build the filtered types
-  const filtered: EIP712Types = {}
-  // eslint-disable-next-line no-restricted-syntax
-  for (const typeName of visited) {
-    filtered[typeName] = types[typeName]
-  }
-
-  return filtered
 }
 
 export const getAmbireReadableTypedData = (
@@ -284,6 +274,13 @@ export const get7702UserOpTypedData = (
       { name: 'callData', type: 'bytes' },
       { name: 'calls', type: 'Transaction[]' },
       { name: 'hash', type: 'bytes32' }
+    ],
+    EIP712Domain: [
+      { name: 'name', type: 'string' },
+      { name: 'version', type: 'string' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'verifyingContract', type: 'address' },
+      { name: 'salt', type: 'bytes32' }
     ]
   }
   const message = {
@@ -350,10 +347,10 @@ type Props = {
   | { message: string | Uint8Array; typedData?: never; authorization?: never }
   | {
       typedData: {
-        domain: TypedDataDomain
-        types: Record<string, Array<TypedDataField>>
-        message: Record<string, any>
-        primaryType: string
+        domain: TypedMessage['domain']
+        types: TypedMessage['types']
+        message: TypedMessage['message']
+        primaryType: TypedMessage['primaryType']
       }
       message?: never
       authorization?: never
@@ -379,7 +376,7 @@ export async function verifyMessage({
   authorization,
   typedData
 }: Props): Promise<boolean> {
-  let finalDigest: string
+  let finalDigest: string | Buffer
 
   if (message) {
     try {
@@ -417,10 +414,10 @@ export async function verifyMessage({
           )
         )
       } else {
-        finalDigest = TypedDataEncoder.hash(
-          typedData.domain,
-          filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-          typedData.message
+        // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+        finalDigest = TypedDataUtils.eip712Hash(
+          adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
+          SignTypedDataVersion.V4
         )
       }
 
@@ -616,7 +613,7 @@ export async function getEIP712Signature(
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
-  // messsages in v2 as it could lead to reusing that key from
+  // messages in v2 as it could lead to reusing that key from
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
   if (!dedicatedToOneSA) {
     throw new Error(
@@ -668,7 +665,7 @@ export function adjustEntryPointAuthorization(entryPointSig: string): string {
 export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: bigint): Hex {
   return keccak256(
     concat([
-      '0x05', // magic authrorization string
+      '0x05', // magic authorization string
       encodeRlp([
         // zeros are empty bytes in rlp encoding
         chainId !== 0n ? toBeHex(chainId) : '0x',

@@ -220,6 +220,8 @@ export class MainController extends EventEmitter {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
 
+  onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
+
   #windowManager: WindowManager
 
   #notificationManager: NotificationManager
@@ -254,7 +256,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
-    swapApiKey?: string
+    swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     windowManager: WindowManager
@@ -292,6 +294,7 @@ export class MainController extends EventEmitter {
       this.storage,
       this.providers,
       this.networks,
+      this.keystore,
       async (accounts) => {
         const defaultSelectedAccount = getDefaultSelectedAccount(accounts)
         if (defaultSelectedAccount) {
@@ -439,7 +442,7 @@ export class MainController extends EventEmitter {
       actions: this.actions,
       relayerUrl,
       portfolioUpdate: () => {
-        this.updateSelectedAccountPortfolio(true)
+        this.updateSelectedAccountPortfolio({ forceUpdate: true })
       },
       userRequests: this.userRequests,
       isMainSignAccountOpThrowingAnEstimationError: (
@@ -507,16 +510,29 @@ export class MainController extends EventEmitter {
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
-  onPopupOpen() {
-    const FIVE_MINUTES = 1000 * 60 * 5
+  async onPopupOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
+    if (!selectedAccountAddr) return
+
+    this.onPopupOpenStatus = 'LOADING'
+    await this.forceEmitUpdate()
+
+    const FIVE_MINUTES = 1000 * 60 * 5
     this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
     if (!this.activity.broadcastedButNotConfirmed.length) {
-      this.updateSelectedAccountPortfolio(undefined, undefined, FIVE_MINUTES)
+      this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+      this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
     }
 
-    if (selectedAccountAddr && !this.accounts.areAccountStatesLoading)
+    if (!this.accounts.areAccountStatesLoading) {
       this.accounts.updateAccountState(selectedAccountAddr)
+    }
+    this.onPopupOpenStatus = 'SUCCESS'
+    await this.forceEmitUpdate()
+
+    this.onPopupOpenStatus = 'INITIAL'
+    await this.forceEmitUpdate()
   }
 
   async #load(): Promise<void> {
@@ -1134,7 +1150,7 @@ export class MainController extends EventEmitter {
       this.emitUpdate()
 
       if (shouldUpdatePortfolio) {
-        this.updateSelectedAccountPortfolio(true)
+        this.updateSelectedAccountPortfolio({ forceUpdate: true })
       }
     }
 
@@ -1292,7 +1308,7 @@ export class MainController extends EventEmitter {
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio(forceUpdate, networkToUpdate),
+      this.updateSelectedAccountPortfolio({ network: networkToUpdate, forceUpdate }),
       this.defiPositions.updatePositions({ chainId, forceUpdate: true })
     ])
   }
@@ -1347,12 +1363,13 @@ export class MainController extends EventEmitter {
   }
 
   // TODO: Refactor this to accept an optional object with options
-  async updateSelectedAccountPortfolio(
-    // eslint-disable-next-line default-param-last
-    forceUpdate: boolean = false,
-    network?: Network,
+  async updateSelectedAccountPortfolio(opts?: {
+    forceUpdate?: boolean
+    network?: Network
     maxDataAgeMs?: number
-  ) {
+  }) {
+    const { network, maxDataAgeMs, forceUpdate } = opts || {}
+
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
     const canUpdateSignAccountOp = !this.signAccountOp || this.signAccountOp.canUpdate()
@@ -1683,6 +1700,7 @@ export class MainController extends EventEmitter {
     amount: string,
     recipientAddress: string,
     selectedToken: TokenResult,
+    // eslint-disable-next-line default-param-last
     actionExecutionType: ActionExecutionType = 'open-action-window',
     windowId?: number
   ) {
@@ -2074,7 +2092,7 @@ export class MainController extends EventEmitter {
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
           // It's necessary to continue operating with the token `amountPostSimulation` amount.
-          this.updateSelectedAccountPortfolio(true, network)
+          this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
         }
       } else {
         let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
@@ -2163,7 +2181,8 @@ export class MainController extends EventEmitter {
           | undefined
         // accountOp has just been rejected or broadcasted
         if (!accountOpAction) {
-          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+          if (shouldUpdateAccount)
+            this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
 
           if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
             this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -2186,7 +2205,8 @@ export class MainController extends EventEmitter {
             this.destroySignAccOp()
           }
           actionsToRemove.push(`${meta.accountAddr}-${meta.chainId}`)
-          if (shouldUpdateAccount) this.updateSelectedAccountPortfolio(true, network)
+          if (shouldUpdateAccount)
+            this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
         }
         if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
           this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -2395,7 +2415,7 @@ export class MainController extends EventEmitter {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio(true, network)
+    this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
     this.emitUpdate()
   }
 
@@ -2413,7 +2433,7 @@ export class MainController extends EventEmitter {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio(true, network)
+    this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
     this.emitUpdate()
   }
 
@@ -2899,11 +2919,19 @@ export class MainController extends EventEmitter {
         message = accountState?.isV2
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
-      } else if (originalMessage.includes('underpriced')) {
-        message =
-          'Transaction fee underpriced. Please select a higher transaction speed and try again'
+      } else if (
+        originalMessage.includes('underpriced') ||
+        originalMessage.includes('Fee confirmation failed')
+      ) {
+        if (originalMessage.includes('underpriced')) {
+          message =
+            'Transaction fee underpriced. Please select a higher transaction speed and try again'
+        }
+
         if (signAccountOp) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           signAccountOp.gasPrice.fetch()
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           signAccountOp.simulate(false)
         }
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {

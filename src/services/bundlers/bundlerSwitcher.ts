@@ -5,7 +5,7 @@ import { Network } from '../../interfaces/network'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { Bundler } from './bundler'
-import { getBundlerByName, getDefaultBundler } from './getBundler'
+import { getAvailableBunlders, getDefaultBundler } from './getBundler'
 
 export class BundlerSwitcher {
   protected network: Network
@@ -46,8 +46,8 @@ export class BundlerSwitcher {
 
     if (!this.hasBundlers()) return false
 
-    const availableBundlers = this.network.erc4337.bundlers!.filter((bundler) => {
-      return this.usedBundlers.indexOf(bundler) === -1
+    const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+      return this.usedBundlers.indexOf(bundler.getName()) === -1
     })
 
     if (availableBundlers.length === 0) return false
@@ -61,8 +61,7 @@ export class BundlerSwitcher {
       bundlerError.cause === 'biconomy: 400' ||
       bundlerError.cause === 'pimlico: 500' ||
       bundlerError.cause === 'etherspot: 500' ||
-      bundlerError.cause === 'gelato: 500' ||
-      bundlerError.cause === 'candide: 500'
+      bundlerError.cause === 'gelato: 500'
     )
   }
 
@@ -71,10 +70,10 @@ export class BundlerSwitcher {
       throw new Error('no available bundlers to switch')
     }
 
-    const availableBundlers = this.network.erc4337.bundlers!.filter((bundler) => {
-      return this.usedBundlers.indexOf(bundler) === -1
+    const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+      return this.usedBundlers.indexOf(bundler.getName()) === -1
     })
-    this.bundler = getBundlerByName(availableBundlers[0])
+    this.bundler = availableBundlers[0]
     this.usedBundlers.push(this.bundler.getName())
     return this.bundler
   }

@@ -1,5 +1,6 @@
-import { AccountId } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
 import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
@@ -235,7 +236,7 @@ export class DefiPositionsController extends EventEmitter {
             positionsByProvider: [...filteredPrevious, ...customPositions],
             updatedAt: hasErrors ? state.updatedAt : Date.now(),
             error,
-            nonceId: this.#getNonceId(selectedAccountAddr, chain)
+            nonceId: this.#getNonceId(selectedAccount, chain)
           }
         }
       } catch (e) {
@@ -245,7 +246,7 @@ export class DefiPositionsController extends EventEmitter {
           isLoading: false,
           positionsByProvider: previousPositions || [],
           error: DeFiPositionsError.CriticalError,
-          nonceId: this.#getNonceId(selectedAccountAddr, chain)
+          nonceId: this.#getNonceId(selectedAccount, chain)
         }
       }
 
@@ -294,15 +295,14 @@ export class DefiPositionsController extends EventEmitter {
         isLoading: false,
         positionsByProvider: Array.from(positionMap.values()),
         updatedAt: Date.now(),
-        nonceId: this.#getNonceId(selectedAccountAddr, chain)
+        nonceId: this.#getNonceId(selectedAccount, chain)
       }
     }
 
     prepareNetworks()
 
     if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
-    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccountAddr, forceUpdate))
-      return
+    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) return
 
     let debankPositions: PositionsByProvider[] = []
 
@@ -388,7 +388,7 @@ export class DefiPositionsController extends EventEmitter {
             price: price as number
           }))
 
-          const value = getAssetValue(asset.amount, asset.decimals, priceIn)
+          const value = getAssetValue(asset.amount, asset.decimals, priceIn) || 0
 
           positionInUSD += value
 
@@ -417,20 +417,21 @@ export class DefiPositionsController extends EventEmitter {
     return positionsByProviderWithPrices
   }
 
-  #getShouldSkipUpdateOnAccountWithNoDefiPositions(accountAddr: string, forceUpdate?: boolean) {
+  #getShouldSkipUpdateOnAccountWithNoDefiPositions(acc: Account, forceUpdate?: boolean) {
     if (forceUpdate) return false
-    if (!this.#accounts.accountStates[accountAddr]) return false
-
-    if (!this.#state[accountAddr]) return false
-
-    // Don't skip if the account has any DeFi positions
-    if (Object.values(this.#state[accountAddr]).some((p) => p.positionsByProvider.length))
+    if (!this.#accounts.accountStates[acc.addr]) return false
+    if (!this.#state[acc.addr]) return false
+    // Don't skip if the account has any DeFi positions or the account has never been updated
+    if (
+      Object.values(this.#state[acc.addr]).some(
+        (network) => network.positionsByProvider.length || !network.updatedAt
+      )
+    )
       return false
-
-    const someNonceIdChanged = Object.keys(this.#accounts.accountStates[accountAddr]).some(
+    const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
       (chainId: string) => {
-        const posNonceId = this.#state[accountAddr][chainId].nonceId
-        const nonceId = this.#getNonceId(accountAddr, chainId)
+        const posNonceId = this.#state[acc.addr][chainId]?.nonceId
+        const nonceId = this.#getNonceId(acc, chainId)
 
         if (!nonceId || !posNonceId) return false
 
@@ -442,16 +443,18 @@ export class DefiPositionsController extends EventEmitter {
     return !someNonceIdChanged
   }
 
-  #getNonceId(accountAddr: string, chainId: bigint | string) {
+  #getNonceId(acc: Account, chainId: bigint | string) {
     if (!this.#accounts.accountStates) return undefined
-    if (!this.#accounts.accountStates[accountAddr]) return undefined
+    if (!this.#accounts.accountStates[acc.addr]) return undefined
 
-    const networkState = this.#accounts.accountStates[accountAddr][chainId.toString()]
+    const networkState = this.#accounts.accountStates[acc.addr][chainId.toString()]
     if (!networkState) return undefined
 
-    if (networkState.isEOA) return `${networkState.eoaNonce}-${networkState.erc4337Nonce}`
+    const network = this.#networks.networks.find((net) => net.chainId === chainId)
+    if (!network) return undefined
 
-    return `${networkState.nonce}-${networkState.erc4337Nonce}`
+    const baseAcc = getBaseAccount(acc, networkState, this.#keystore.getAccountKeys(acc), network)
+    return baseAcc.getNonceId()
   }
 
   removeNetworkData(chainId: bigint) {

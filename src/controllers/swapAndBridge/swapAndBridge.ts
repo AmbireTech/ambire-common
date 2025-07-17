@@ -51,7 +51,10 @@ import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/a
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
+import {
+  convertTokenPriceToBigInt,
+  getSafeAmountFromFieldValue
+} from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
@@ -394,12 +397,11 @@ export class SwapAndBridgeController extends EventEmitter {
 
       if (!this.fromSelectedToken) return
 
-      const sanitizedFieldValue = getSanitizedAmount(
-        fromAmountFormatted,
+      // Convert the field value to big int
+      const formattedAmount = parseUnits(
+        getSafeAmountFromFieldValue(fromAmount, this.fromSelectedToken.decimals),
         this.fromSelectedToken.decimals
       )
-      // Convert the field value to big int
-      const formattedAmount = parseUnits(sanitizedFieldValue, this.fromSelectedToken.decimals)
 
       if (!formattedAmount) return
 
@@ -767,9 +769,10 @@ export class SwapAndBridgeController extends EventEmitter {
       this.fromAmountUpdateCounter += 1
     }
 
-    if (fromSelectedToken) {
+    if (typeof fromSelectedToken !== 'undefined') {
       const isFromNetworkChanged = this.fromSelectedToken?.chainId !== fromSelectedToken?.chainId
-      if (isFromNetworkChanged) {
+
+      if (fromSelectedToken && isFromNetworkChanged) {
         const network = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
         if (network) {
           this.fromChainId = Number(network.chainId)
@@ -785,7 +788,9 @@ export class SwapAndBridgeController extends EventEmitter {
 
       const shouldResetFromTokenAmount =
         !shouldNotResetFromAmount &&
-        (isFromNetworkChanged || this.fromSelectedToken?.address !== fromSelectedToken.address)
+        (isFromNetworkChanged ||
+          !fromSelectedToken ||
+          this.fromSelectedToken?.address !== fromSelectedToken.address)
       if (shouldResetFromTokenAmount) {
         this.#setFromAmountAndNotifyUI('')
         this.#setFromAmountInFiatAndNotifyUI('')
@@ -868,6 +873,10 @@ export class SwapAndBridgeController extends EventEmitter {
       fromAmount?: string
     }
   ) {
+    // If the user has switched TOKEN -> NULL that would make the fromSelectedToken
+    // null, so we need to keep it null, even if the portfolio token list is updated
+    // until the user manually selects a new token
+    const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
     const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
     this.portfolioTokenList = sortPortfolioTokenList(
@@ -901,10 +910,20 @@ export class SwapAndBridgeController extends EventEmitter {
     // If the token is not in the portfolio because it was a "to" token
     // and the user has switched the "from" and "to" tokens we should not
     // update the selected token
-    if (!this.fromSelectedToken?.isSwitchedToToken && shouldUpdateFromSelectedToken) {
+    if (
+      !this.fromSelectedToken?.isSwitchedToToken &&
+      !isSelectedTokenFalsyBeforeListUpdate &&
+      shouldUpdateFromSelectedToken
+    ) {
+      const nextFromSelectedToken =
+        fromSelectedTokenInNextPortfolio ||
+        // Select the first token in the portfolio that is not the same as the "to" token
+        this.portfolioTokenList.find((t) => t.address !== this.toSelectedToken?.address) ||
+        null
+
       await this.updateForm(
         {
-          fromSelectedToken: fromSelectedTokenInNextPortfolio || this.portfolioTokenList[0] || null,
+          fromSelectedToken: nextFromSelectedToken,
           toSelectedTokenAddr: preselectedToToken?.address,
           toChainId: preselectedToToken?.chainId,
           fromAmount
@@ -1274,12 +1293,10 @@ export class SwapAndBridgeController extends EventEmitter {
       if (!this.#getIsFormValidToFetchQuote()) return
       if (!this.fromAmount || !this.fromSelectedToken || !this.toSelectedToken) return
 
-      const sanitizedFromAmount = getSanitizedAmount(
-        this.fromAmount,
+      const bigintFromAmount = parseUnits(
+        getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken.decimals),
         this.fromSelectedToken.decimals
       )
-
-      const bigintFromAmount = parseUnits(sanitizedFromAmount, this.fromSelectedToken.decimals)
 
       if (this.quote) {
         const isFromAmountSame =
@@ -1987,7 +2004,7 @@ export class SwapAndBridgeController extends EventEmitter {
     return (
       this.fromChainId &&
       this.toChainId &&
-      this.fromAmount &&
+      !!getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken?.decimals) &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
       (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)
@@ -2166,7 +2183,10 @@ export class SwapAndBridgeController extends EventEmitter {
       this.emitUpdate()
     })
     this.#signAccountOpController.onError((error) => {
-      this.#portfolio.overridePendingResults(this.signAccountOpController!.accountOp)
+      // TODO: Might be obsolete, because the simulation for the one click swap starts when broadcast succeeds
+      if (this.signAccountOpController)
+        this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+
       this.emitError(error)
     })
     // if the estimation emits an error, handle it

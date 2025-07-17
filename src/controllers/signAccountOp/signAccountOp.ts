@@ -1333,7 +1333,7 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.accountAddr,
       this.rbfAccountOps[this.selectedOption.paidBy]
     )
-    if (!this.feeSpeeds[identifier].length) {
+    if (!this.feeSpeeds[identifier] || !this.feeSpeeds[identifier].length) {
       return null
     }
 

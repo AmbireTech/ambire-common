@@ -153,8 +153,8 @@ export abstract class Bundler {
     errorCallback: Function,
     counter: number = 0
   ): Promise<GasSpeeds> {
-    const hasFallback = network.erc4337.bundlers && network.erc4337.bundlers.length > 1
-    if (counter >= (hasFallback ? 2 : 5)) throw new Error("Couldn't fetch gas prices")
+    if (counter >= 3)
+      throw new Error('Estimating gas prices from the bundler timed out. Retrying...')
 
     let response
 
@@ -164,20 +164,11 @@ export abstract class Bundler {
         new Promise((_resolve, reject) => {
           setTimeout(
             () => reject(new Error('fetching bundler gas prices failed, request too slow')),
-            hasFallback ? 4500 : 6000
+            5000
           )
         })
       ])
     } catch (e: any) {
-      // report the error back only if there's no fallback
-      if (!hasFallback) {
-        errorCallback({
-          level: 'major',
-          message: 'Estimating gas prices from the bundler timed out. Retrying...',
-          error: new Error('Budler gas prices estimation timeout')
-        })
-      }
-
       const increment = counter + 1
       return this.fetchGasPrices(network, provider, errorCallback, increment)
     }

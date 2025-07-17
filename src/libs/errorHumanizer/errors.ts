@@ -9,7 +9,7 @@ const insufficientPaymasterFunds =
 const noPrefixReasons = [
   'pimlico: 500',
   'etherspot: 500',
-  'candide: 500',
+  'gelato: 500',
   '0xf8618030',
   'TRANSFER_FROM_FAILED'
 ]

@@ -225,7 +225,19 @@ export class LiFiAPI {
 
   isHealthy: boolean | null = null
 
-  constructor({ apiKey, fetch }: { apiKey?: string; fetch: Fetch }) {
+  #apiKey: string
+
+  /**
+   * We don't use the apiKey as a default option for sending LiFi API
+   * requests, we let a custom rate limit be set per user.
+   * If the user hits that rate limit, we add the key for a set amount
+   * of time so he could continue using lifi. The key is exposed on
+   * the FE and anyone can use it and therefore break it (hit the rate
+   * limit), so we only use it as a backup
+   */
+  #apiKeyActivatedTimestamp?: number
+
+  constructor({ apiKey, fetch }: { apiKey: string; fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
@@ -233,11 +245,22 @@ export class LiFiAPI {
       'Content-Type': 'application/json'
     }
 
-    // add the apiKey if specified only. Li Fi can function without an apiKey,
-    // it will just put a custom user rate limit
-    if (apiKey) {
-      this.#headers['x-lifi-api-key'] = apiKey
-    }
+    this.#apiKey = apiKey
+  }
+
+  activateApiKey() {
+    this.#headers['x-lifi-api-key'] = this.#apiKey
+    this.#apiKeyActivatedTimestamp = Date.now()
+  }
+
+  deactivateApiKeyIfStale() {
+    if (!this.#apiKeyActivatedTimestamp) return
+
+    const twoHoursPassed = Date.now() - this.#apiKeyActivatedTimestamp >= 120 * 60 * 1000
+    if (!twoHoursPassed) return
+
+    delete this.#headers['x-lifi-api-key']
+    this.#apiKeyActivatedTimestamp = undefined
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -272,6 +295,10 @@ export class LiFiAPI {
     fetchPromise: Promise<CustomResponse>
     errorPrefix: string
   }): Promise<T> {
+    // start by removing the API key if a set time has passed
+    // we use the api key only when we hit the rate limit
+    this.deactivateApiKeyIfStale()
+
     let response: CustomResponse
 
     try {
@@ -295,6 +322,7 @@ export class LiFiAPI {
     }
 
     if (response.status === 429) {
+      this.activateApiKey()
       const error =
         'Our service provider received too many requests, temporarily preventing your request from being processed.'
       throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
