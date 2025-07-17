@@ -40,7 +40,7 @@ export class BundlerSwitcher {
     return this.bundler
   }
 
-  canSwitch(baseAcc: BaseAccount, bundlerError: Error | null): boolean {
+  canSwitch(baseAcc: BaseAccount): boolean {
     // don't switch the bundler if the account op is in a state of signing
     if (this.hasControllerForbiddenUpdates()) return false
 
@@ -56,12 +56,16 @@ export class BundlerSwitcher {
     // not working, we have nothing to fallback to
     if (baseAcc.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) return false
 
+<<<<<<< Updated upstream
     return (
       !bundlerError ||
       bundlerError.cause === 'biconomy: 400' ||
       bundlerError.cause === 'pimlico: 500' ||
       bundlerError.cause === 'etherspot: 500'
     )
+=======
+    return true
+>>>>>>> Stashed changes
   }
 
   switch(): Bundler {

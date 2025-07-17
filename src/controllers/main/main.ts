@@ -2665,12 +2665,10 @@ export class MainController extends EventEmitter {
         // try to switch the bundler and ask the user to try again
         // TODO: explore more error case where we switch the bundler
         if (signAccountOp) {
-          const decodedError = bundler.decodeBundlerError(e)
-          const humanReadable = getHumanReadableBroadcastError(decodedError)
           const switcher = signAccountOp.bundlerSwitcher
           signAccountOp.updateStatus(SigningStatus.ReadyToSign)
 
-          if (switcher.canSwitch(baseAcc, humanReadable)) {
+          if (switcher.canSwitch(baseAcc)) {
             switcher.switch()
             signAccountOp.simulate()
             signAccountOp.gasPrice.fetch()
