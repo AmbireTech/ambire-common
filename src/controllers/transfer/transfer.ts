@@ -635,7 +635,10 @@ export class TransferController extends EventEmitter {
       this.emitUpdate()
     })
     this.signAccountOpController.onError((error) => {
-      this.#portfolio.overridePendingResults(this.signAccountOpController!.accountOp)
+      // TODO: Might be obsolete, because the simulation for the one click transfer starts when broadcast succeeds
+      if (this.signAccountOpController)
+        this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+
       this.emitError(error)
     })
 
