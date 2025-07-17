@@ -635,7 +635,7 @@ export class TransferController extends EventEmitter {
       this.emitUpdate()
     })
     this.signAccountOpController.onError((error) => {
-      if (this.signAccountOpController?.accountOp)
+      if (this.signAccountOpController)
         this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
 
       this.emitError(error)
