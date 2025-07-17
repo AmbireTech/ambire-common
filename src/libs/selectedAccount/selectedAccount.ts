@@ -202,26 +202,14 @@ export const updatePortfolioNetworkWithDefiPositions = (
 
         if (!tokenInPortfolio || tokenInPortfolio?.flags.isHidden) return
 
-        const priceUSD = tokenInPortfolio
-          ? tokenInPortfolio.priceIn.find(
-              ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-            )?.price
-          : null
-
-        const tokenBalanceUSD =
-          priceUSD && tokenInPortfolio
-            ? Number(
-                safeTokenAmountAndNumberMultiplication(
-                  BigInt(tokenInPortfolio.amountPostSimulation || tokenInPortfolio.amount),
-                  tokenInPortfolio.decimals,
-                  priceUSD
-                )
-              )
-            : undefined
+        const usdAssetValue = a.value || 0
 
         // Get the price from defiPositions
         tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
-        tokenBalanceToDeduct += tokenBalanceUSD || 0
+        // Deduct the value of the token that is already handled by the portfolio
+        // from the balance of the position that will be added to the total balance
+        // We don't want to double count the value of the token
+        tokenBalanceToDeduct += usdAssetValue || 0
       })
 
       networkBalance += (pos.additionalData.positionInUSD || 0) - tokenBalanceToDeduct
