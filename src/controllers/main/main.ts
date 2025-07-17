@@ -2663,7 +2663,6 @@ export class MainController extends EventEmitter {
 
         // if the signAccountOp is still active (it should be)
         // try to switch the bundler and ask the user to try again
-        // TODO: explore more error case where we switch the bundler
         if (signAccountOp) {
           const switcher = signAccountOp.bundlerSwitcher
           signAccountOp.updateStatus(SigningStatus.ReadyToSign)
