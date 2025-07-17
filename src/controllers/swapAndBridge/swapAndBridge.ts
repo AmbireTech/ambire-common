@@ -429,13 +429,11 @@ export class SwapAndBridgeController extends EventEmitter {
     // ready routes in the storage are just leftover routes.
     // Same is true for completed, failed and refunded routes - they are just
     // leftover routes in storage
+    const filterOutStatuses = ['ready', 'completed', 'failed', 'refunded']
     this.activeRoutes = this.activeRoutes.filter(
       (r) =>
         r.serviceProviderId === this.#serviceProviderAPI.id &&
-        r.routeStatus !== 'ready' &&
-        r.routeStatus !== 'completed' &&
-        r.routeStatus !== 'failed' &&
-        r.routeStatus !== 'refunded'
+        !filterOutStatuses.includes(r.routeStatus)
     )
 
     this.#selectedAccount.onUpdate(() => {
