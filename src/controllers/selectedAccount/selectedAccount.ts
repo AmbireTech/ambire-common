@@ -298,7 +298,7 @@ export class SelectedAccountController extends EventEmitter {
     } = calculateSelectedAccountPortfolio(
       latestStateSelectedAccount,
       pendingStateSelectedAccount,
-      this.#portfolioByNetworks,
+      structuredClone(this.#portfolioByNetworks),
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
       hasSignAccountOp,

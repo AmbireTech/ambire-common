@@ -8,7 +8,6 @@ import {
   SelectedAccountPortfolioTokenResult
 } from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
-import { isAccountOpsIntentEqual } from '../accountOp/accountOp'
 import {
   AccountState as DefiPositionsAccountState,
   AssetType,
@@ -291,7 +290,7 @@ const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
   networkData: NetworkState | undefined,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
-) => {
+): boolean => {
   if (
     !networkData ||
     !pastAccountPortfolioWithDefiPositionsNetworkState ||
@@ -302,29 +301,26 @@ const getIsRecalculationNeeded = (
 
   // Never recalculate if either the portfolio or defi positions are loading
   // as that would reset isAllReady to false
-  if (networkData?.isLoading || defiPositionsNetworkState.isLoading) return false
+  if (networkData?.isLoading || defiPositionsNetworkState.isLoading) {
+    return false
+  }
+
+  const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
+  const networkDataAccountOp = networkData?.accountOps?.[0]
+
+  // If there is or was an account op we must recalculate the portfolio
+  // on every update to ensure that the simulations are correct
+  if (pastAccountOp || networkDataAccountOp) return true
 
   const hasPortfolioUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
     networkData.result?.blockNumber
 
-  if (hasPortfolioUpdated) return true
-
   const areDefiPositionsUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
     defiPositionsNetworkState?.updatedAt
 
-  if (areDefiPositionsUpdated) return true
-
-  // Whether the simulation has changed
-  const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
-  const networkDataAccountOp = networkData?.accountOps?.[0]
-
-  if (pastAccountOp && networkDataAccountOp) {
-    return isAccountOpsIntentEqual([pastAccountOp], [networkDataAccountOp])
-  }
-
-  return pastAccountOp !== networkDataAccountOp
+  return hasPortfolioUpdated || areDefiPositionsUpdated
 }
 
 /**
@@ -351,7 +347,8 @@ export function calculateSelectedAccountPortfolioByNetworks(
   const now = Date.now()
   const shouldShowPartialResult =
     portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
-  const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks = {}
+  const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
+    pastAccountPortfolioWithDefiPositions
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
   let isAllReady = !!hasLatest
