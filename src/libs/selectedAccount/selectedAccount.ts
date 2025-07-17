@@ -36,11 +36,18 @@ const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean 
 export const updatePortfolioNetworkWithDefiPositions = (
   chainId: string,
   networkState?: NetworkState,
-  defiPositionsNetworkState?: DefiPositionsNetworkState
+  defiPositionsAccountState?: DefiPositionsAccountState
 ) => {
-  if (chainId === 'gasTank' || chainId === 'rewards') {
+  const areDefiPositionsNotInitialized =
+    !defiPositionsAccountState || Object.keys(defiPositionsAccountState).length === 0
+
+  const isInternalChain = chainId === 'gasTank' || chainId === 'rewards'
+
+  if (isInternalChain || areDefiPositionsNotInitialized) {
     return networkState
   }
+
+  const defiPositionsNetworkState = defiPositionsAccountState[chainId]
 
   if (!networkState || !defiPositionsNetworkState) return null
 
@@ -429,8 +436,9 @@ export function calculateSelectedAccountPortfolioByNetworks(
     const networkDataWithDefiPositions = updatePortfolioNetworkWithDefiPositions(
       network,
       networkData,
-      defiPositionsNetworkState
+      defiPositionsAccountState
     )
+
     const result = networkDataWithDefiPositions?.result
     let tokensArray: SelectedAccountPortfolioTokenResult[] = []
     let collectionsArray: CollectionResult[] = []
