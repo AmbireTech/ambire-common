@@ -533,7 +533,7 @@ export function calculateSelectedAccountPortfolio(
     const networkData = selectedAccountPortfolioByNetworks[chainId]
     if (!networkData) return
 
-    if (selectedAccountPortfolio.networkSimulatedAccountOp[chainId]) {
+    if (networkData.simulatedAccountOp) {
       selectedAccountPortfolio.networkSimulatedAccountOp[chainId] = networkData.simulatedAccountOp
     }
     selectedAccountPortfolio.tokens.push(...networkData.tokens)
