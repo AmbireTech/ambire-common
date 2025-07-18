@@ -63,7 +63,7 @@ describe('bundler switcher: switch cases', () => {
       return false
     })
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
-    expect(switcher.canSwitch(baseAcc, null)).toBe(true)
+    expect(switcher.canSwitch(baseAcc)).toBe(true)
   })
 })
 
@@ -76,7 +76,7 @@ describe('bundler switcher: no switch cases', () => {
       return true
     })
     expect(switcher.hasControllerForbiddenUpdates()).toBe(true)
-    expect(switcher.canSwitch(baseAcc, null)).toBe(false)
+    expect(switcher.canSwitch(baseAcc)).toBe(false)
   })
   it('should not switch when there is no extra bundler to switch to', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
@@ -86,7 +86,7 @@ describe('bundler switcher: no switch cases', () => {
       return false
     })
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
-    expect(switcher.canSwitch(baseAcc, null)).toBe(false)
+    expect(switcher.canSwitch(baseAcc)).toBe(false)
   })
   it('should not switch when there is no available bundler to switch to', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
@@ -100,7 +100,7 @@ describe('bundler switcher: no switch cases', () => {
       [BICONOMY]
     )
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
-    expect(switcher.canSwitch(baseAcc, null)).toBe(false)
+    expect(switcher.canSwitch(baseAcc)).toBe(false)
   })
   it('should not switch on an estimation error even if there is a bundler available', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
@@ -114,6 +114,6 @@ describe('bundler switcher: no switch cases', () => {
       [BICONOMY]
     )
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
-    expect(switcher.canSwitch(baseAcc, new Error('reverted onchain'))).toBe(false)
+    expect(switcher.canSwitch(baseAcc)).toBe(false)
   })
 })
