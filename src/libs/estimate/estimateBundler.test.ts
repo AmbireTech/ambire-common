@@ -271,8 +271,7 @@ describe('Bundler fallback tests', () => {
     constructor(network: Network, areUpdatesForbbiden: Function, usedBundlers: BUNDLER[] = []) {
       super(network, areUpdatesForbbiden)
       this.bundler = new BrokenPimlico()
-      // push pimlico as used so we could fallback to biconomy
-      usedBundlers.forEach((bun) => this.usedBundlers.push(bun))
+      this.usedBundlers = usedBundlers
     }
   }
 
