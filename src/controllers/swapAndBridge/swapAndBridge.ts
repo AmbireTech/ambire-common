@@ -243,6 +243,8 @@ export class SwapAndBridgeController extends EventEmitter {
    */
   #signAccountOpController: SignAccountOpController | null = null
 
+  #signAccountOpSubscriptions: Function[] = []
+
   #portfolioUpdate: Function
 
   #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
@@ -2044,6 +2046,10 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   destroySignAccountOp() {
+    // Unsubscribe from all previous subscriptions
+    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#signAccountOpSubscriptions = []
+
     if (!this.signAccountOpController) return
     this.signAccountOpController.reset()
     this.#signAccountOpController = null
@@ -2184,26 +2190,34 @@ export class SwapAndBridgeController extends EventEmitter {
     this.emitUpdate()
 
     // propagate updates from signAccountOp here
-    this.#signAccountOpController.onUpdate(() => {
-      this.emitUpdate()
-    })
-    this.#signAccountOpController.onError((error) => {
-      // TODO: Might be obsolete, because the simulation for the one click swap starts when broadcast succeeds
-      if (this.signAccountOpController)
-        this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+    this.#signAccountOpSubscriptions.push(
+      this.#signAccountOpController.onUpdate(() => {
+        this.emitUpdate()
+      })
+    )
+    this.#signAccountOpSubscriptions.push(
+      this.#signAccountOpController.onError((error) => {
+        // TODO: Might be obsolete, because the simulation for the one click swap starts when broadcast succeeds
+        if (this.signAccountOpController)
+          this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
 
-      this.emitError(error)
-    })
+        this.emitError(error)
+      })
+    )
     // if the estimation emits an error, handle it
-    this.#signAccountOpController.estimation.onUpdate(() => {
-      if (
-        this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
-        this.signAccountOpController.estimation.status === EstimationStatus.Error
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.onEstimationFailure(this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
-      }
-    })
+    this.#signAccountOpSubscriptions.push(
+      this.#signAccountOpController.estimation.onUpdate(() => {
+        if (
+          this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+          this.signAccountOpController.estimation.status === EstimationStatus.Error
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.onEstimationFailure(
+            this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId
+          )
+        }
+      })
+    )
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reestimate(userTxn)
