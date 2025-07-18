@@ -1,4 +1,3 @@
-import { BICONOMY } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -97,23 +96,19 @@ describe('bundler switcher: no switch cases', () => {
       () => {
         return false
       },
-      [BICONOMY]
+      true
     )
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
     expect(switcher.canSwitch(baseAcc)).toBe(false)
   })
-  it('should not switch on an estimation error even if there is a bundler available', async () => {
+  it('should switch on an estimation error if there is a bundler available', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][base.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
-    const switcher = new DevBundlerSwitcher(
-      base,
-      () => {
-        return false
-      },
-      [BICONOMY]
-    )
+    const switcher = new DevBundlerSwitcher(base, () => {
+      return false
+    })
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
-    expect(switcher.canSwitch(baseAcc)).toBe(false)
+    expect(switcher.canSwitch(baseAcc)).toBe(true)
   })
 })
