@@ -102,7 +102,7 @@ describe('bundler switcher: no switch cases', () => {
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
     expect(switcher.canSwitch(baseAcc)).toBe(false)
   })
-  it('should not switch on an estimation error even if there is a bundler available', async () => {
+  it('should switch on an estimation error if there is a bundler available', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][base.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
@@ -114,6 +114,6 @@ describe('bundler switcher: no switch cases', () => {
       [BICONOMY]
     )
     expect(switcher.hasControllerForbiddenUpdates()).toBe(false)
-    expect(switcher.canSwitch(baseAcc)).toBe(false)
+    expect(switcher.canSwitch(baseAcc)).toBe(true)
   })
 })
