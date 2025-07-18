@@ -22,15 +22,14 @@ export interface Banner {
   actions: Action[]
 }
 
-export type RelayerBannerType = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
+export type MarketingBannerType = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
-export interface RelayerBanner {
+export interface MarketingBanner {
   text: string
-  type?: RelayerBannerType // default is 'updates'
+  type?: MarketingBannerType // default is 'updates'
   url?: string
   startTime?: number
   endTime?: number
-  category: 'relayerBanner'
 }
 
 export type Action =

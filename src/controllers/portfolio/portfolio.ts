@@ -71,7 +71,7 @@ export class PortfolioController extends EventEmitter {
 
   temporaryTokens: TemporaryTokens = {}
 
-  banners: Banner[] = []
+  banner: Banner = {}
 
   #portfolioLibs: Map<string, Portfolio>
 
@@ -475,12 +475,13 @@ export class PortfolioController extends EventEmitter {
       this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
       this.#setNetworkLoading(accountId, 'latest', 'rewards', false, e)
       this.emitUpdate()
-      this.banners = [] // Clear banners on error
+      this.banner = {} // Clear banners on error
       return
     }
 
-    // Update banners
-    this.banners = res.data.banners || []
+    console.log('relayer response for portfolio additional', res.data.banner)
+    this.banner = res.data.banner || {}
+    this.emitUpdate()
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 
