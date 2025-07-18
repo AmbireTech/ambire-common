@@ -100,7 +100,7 @@ export class GasPriceController extends EventEmitter {
         ? bundler
             // no error emits here as most of the time estimation/signing
             // will work even if this fails
-            .fetchGasPrices(this.#network, this.#provider, () => {})
+            .fetchGasPrices(this.#network, () => {})
             .catch((e) => {
               this.emitError({
                 level: 'silent',
