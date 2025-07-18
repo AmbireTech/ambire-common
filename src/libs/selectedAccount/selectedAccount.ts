@@ -209,14 +209,10 @@ export const updatePortfolioNetworkWithDefiPositions = (
         // Deduct the value of the token that is already handled by the portfolio
         // from the balance of the position that will be added to the total balance
         // We don't want to double count the value of the token
-        if (a.type !== AssetType.Borrow) tokenBalanceToDeduct += usdAssetValue || 0
+        tokenBalanceToDeduct += usdAssetValue || 0
       })
 
-      if (pos.additionalData.collateralInUSD) {
-        networkBalance += pos.additionalData.collateralInUSD || 0
-      } else {
-        networkBalance += pos.additionalData.positionInUSD || 0
-      }
+      // networkBalance += pos.additionalData.positionInUSD || 0
 
       networkBalance -= tokenBalanceToDeduct
     })
