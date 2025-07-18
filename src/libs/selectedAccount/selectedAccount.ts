@@ -120,17 +120,19 @@ export const updatePortfolioNetworkWithDefiPositions = (
                   // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
                 }
               }
-              const tokenBalanceUSD = positionAsset.priceIn[0]?.price
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(positionAsset.amount),
-                      positionAsset.decimals,
-                      positionAsset.priceIn[0].price
-                    )
-                  )
-                : undefined
 
-              networkBalance += tokenBalanceUSD || 0
+              // TODO: Double-check if this causes the double calc for some assets
+              // const tokenBalanceUSD = positionAsset.priceIn[0]?.price
+              //   ? Number(
+              //       safeTokenAmountAndNumberMultiplication(
+              //         BigInt(positionAsset.amount),
+              //         positionAsset.decimals,
+              //         positionAsset.priceIn[0].price
+              //       )
+              //     )
+              //   : undefined
+
+              // networkBalance += tokenBalanceUSD || 0
               tokens.push(positionAsset)
             } else if (protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow) {
               if (
