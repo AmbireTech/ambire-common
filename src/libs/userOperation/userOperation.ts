@@ -137,8 +137,8 @@ export function getUserOperation(
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),
     preVerificationGas: toBeHex(0),
-    maxFeePerGas: toBeHex(1),
-    maxPriorityFeePerGas: toBeHex(1),
+    maxFeePerGas: toBeHex(0),
+    maxPriorityFeePerGas: toBeHex(0),
     signature: '0x',
     requestType: getRequestType(accountState),
     bundler
