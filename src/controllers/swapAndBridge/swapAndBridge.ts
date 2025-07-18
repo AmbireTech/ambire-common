@@ -2197,9 +2197,11 @@ export class SwapAndBridgeController extends EventEmitter {
     )
     this.#signAccountOpSubscriptions.push(
       this.#signAccountOpController.onError((error) => {
-        // TODO: Might be obsolete, because the simulation for the one click swap starts when broadcast succeeds
-        if (this.signAccountOpController)
-          this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+        // Need to clean the pending results for THIS signAccountOpController
+        // specifically. NOT the one from the getter (this.signAccountOpController)
+        // that is ALWAYS up-to-date with the current quote and the current form state.
+        if (this.#signAccountOpController)
+          this.#portfolio.overridePendingResults(this.#signAccountOpController.accountOp)
 
         this.emitError(error)
       })
