@@ -1574,10 +1574,8 @@ export class SignAccountOpController extends EventEmitter {
 
     // some bundlers (etherspot) don't return values for paymaster gas limits
     // so we need to set them manually
-    if (
-      localOp.paymasterVerificationGasLimit === undefined ||
-      BigInt(localOp.paymasterVerificationGasLimit) === 0n
-    ) {
+    // other (gelato) may return below the min
+    if (paymaster.isEstimateBelowMin(localOp)) {
       const estimationData = paymaster.getEstimationData()!
       localOp.paymasterVerificationGasLimit = estimationData.paymasterVerificationGasLimit
       localOp.paymasterPostOpGasLimit = estimationData.paymasterPostOpGasLimit
