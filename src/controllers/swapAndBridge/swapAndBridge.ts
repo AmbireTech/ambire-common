@@ -243,6 +243,10 @@ export class SwapAndBridgeController extends EventEmitter {
    */
   #signAccountOpController: SignAccountOpController | null = null
 
+  /**
+   * Holds all subscriptions (on update and on error) to the signAccountOpController.
+   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
+   */
   #signAccountOpSubscriptions: Function[] = []
 
   #portfolioUpdate: Function
