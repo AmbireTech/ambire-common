@@ -248,6 +248,32 @@ export class AccountsController extends EventEmitter {
     await this.#storage.set('accounts', this.accounts)
   }
 
+  async reorderAccounts({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }) {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= this.accounts.length ||
+      toIndex >= this.accounts.length
+    ) {
+      return this.emitError({
+        level: 'minor',
+        message: `Invalid fromIndex (${fromIndex}) or toIndex (${toIndex})`,
+        error: new Error('Invalid fromIndex or toIndex')
+      })
+    }
+
+    if (fromIndex === toIndex) return
+
+    const updatedAccounts = [...this.accounts]
+    const [movedAccount] = updatedAccounts.splice(fromIndex, 1)
+    updatedAccounts.splice(toIndex, 0, movedAccount)
+
+    this.accounts = getUniqueAccountsArray(updatedAccounts)
+
+    this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
+  }
+
   get areAccountStatesLoading() {
     return Object.values(this.accountStatesLoadingState).some((isLoading) => isLoading)
   }
