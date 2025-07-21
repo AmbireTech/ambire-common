@@ -2211,6 +2211,7 @@ export class SwapAndBridgeController extends EventEmitter {
         // Need to clean the pending results for THIS signAccountOpController
         // specifically. NOT the one from the getter (this.signAccountOpController)
         // that is ALWAYS up-to-date with the current quote and the current form state.
+        // Due to the async nature, it might not exist - an issue caught by our crash reporting.
         if (this.#signAccountOpController)
           this.#portfolio.overridePendingResults(this.#signAccountOpController.accountOp)
 
