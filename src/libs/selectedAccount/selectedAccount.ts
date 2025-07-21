@@ -80,84 +80,77 @@ export const updatePortfolioNetworkWithDefiPositions = (
           tokenInPortfolio.amount !== 0n &&
           tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd' && p.price !== 0) &&
           !tokenInPortfolio.flags.isHidden
-        ) {
+        )
           return
-        }
       }
 
-      // Used to deduct the value of tokens that are already handled by the portfolio
-      let tokenBalanceToDeduct = 0
+      let shouldAddPositionUSDAmountToTheTotalBalance = true
 
       pos.assets.filter(Boolean).forEach((a) => {
-        if (a.protocolAsset) {
-          if (a.protocolAsset?.name) {
-            const protocolTokenInPortfolio = tokens.find((t) => {
-              return (
-                t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
-                t.chainId.toString() === chainId &&
-                !t.flags.rewardsType &&
-                !t.flags.onGasTank
-              )
-            })
-            if (!protocolTokenInPortfolio) {
-              const positionAsset: TokenResult = {
-                amount: a.amount,
-                // Only list the borrowed asset with no price
-                priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
-                decimals: Number(a.protocolAsset!.decimals),
-                address: a.protocolAsset!.address,
-                symbol: a.protocolAsset!.symbol,
-                name: a.protocolAsset!.name,
-                chainId: BigInt(chainId),
-                flags: {
-                  canTopUpGasTank: false,
-                  isFeeToken: false,
-                  onGasTank: false,
-                  rewardsType: null,
-                  defiTokenType: a.type
-                  // @BUG: defi positions tokens can't be hidden and can be added as custom
-                  // because processTokens is called in the portfolio
-                  // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
-                }
-              }
-              const tokenBalanceUSD = positionAsset.priceIn[0]?.price
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(positionAsset.amount),
-                      positionAsset.decimals,
-                      positionAsset.priceIn[0].price
-                    )
-                  )
-                : undefined
+        if (a.type === AssetType.Liquidity || a.type === AssetType.Reward) return
 
-              networkBalance += tokenBalanceUSD || 0
-              tokens.push(positionAsset)
-            } else if (protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow) {
-              if (
-                !protocolTokenInPortfolio.priceIn.length ||
-                protocolTokenInPortfolio.priceIn[0]?.price === 0
-              ) {
-                const shouldKeepPrice = a.type === AssetType.Collateral
-
-                protocolTokenInPortfolio.priceIn = shouldKeepPrice ? [a.priceIn] : []
-
-                protocolTokenInPortfolio.flags.defiTokenType = a.type
-
-                if (a.type !== AssetType.Borrow) {
-                  const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
-                    ? Number(
-                        safeTokenAmountAndNumberMultiplication(
-                          BigInt(protocolTokenInPortfolio.amount),
-                          protocolTokenInPortfolio.decimals,
-                          protocolTokenInPortfolio.priceIn[0].price
-                        )
-                      )
-                    : undefined
-
-                  if (!shouldKeepPrice) networkBalance += tokenBalanceUSD || 0
-                }
+        if (a.protocolAsset && a.protocolAsset?.name) {
+          const protocolTokenInPortfolio = tokens.find((t) => {
+            return (
+              t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+              t.chainId.toString() === chainId &&
+              !t.flags.rewardsType &&
+              !t.flags.onGasTank
+            )
+          })
+          if (!protocolTokenInPortfolio) {
+            const positionAsset: TokenResult = {
+              amount: a.amount,
+              // Only list the borrowed asset with no price
+              priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
+              decimals: Number(a.protocolAsset!.decimals),
+              address: a.protocolAsset!.address,
+              symbol: a.protocolAsset!.symbol,
+              name: a.protocolAsset!.name,
+              chainId: BigInt(chainId),
+              flags: {
+                canTopUpGasTank: false,
+                isFeeToken: false,
+                onGasTank: false,
+                rewardsType: null,
+                defiTokenType: a.type
+                // @BUG: defi positions tokens can't be hidden and can be added as custom
+                // because processTokens is called in the portfolio
+                // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
               }
             }
+            const tokenBalanceUSD = positionAsset.priceIn[0]?.price
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(positionAsset.amount),
+                    positionAsset.decimals,
+                    positionAsset.priceIn[0].price
+                  )
+                )
+              : undefined
+
+            networkBalance += tokenBalanceUSD || 0
+            tokens.push(positionAsset)
+          } else if (
+            // If the asset isn't of type Borrow and has no price in USD
+            // we get the price from defi positions
+            protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow &&
+            (!protocolTokenInPortfolio.priceIn.length ||
+              protocolTokenInPortfolio.priceIn[0]?.price === 0)
+          ) {
+            const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(protocolTokenInPortfolio.amount),
+                    protocolTokenInPortfolio.decimals,
+                    protocolTokenInPortfolio.priceIn[0].price
+                  )
+                )
+              : undefined
+
+            protocolTokenInPortfolio.priceIn = [a.priceIn]
+            protocolTokenInPortfolio.flags.defiTokenType = a.type
+            networkBalance += tokenBalanceUSD || 0
           }
         }
 
@@ -186,6 +179,9 @@ export const updatePortfolioNetworkWithDefiPositions = (
             )
           }
 
+          // If there is no protocol asset we have to fallback to finding the token
+          // by symbol and chainId. In that case we must ensure that the value of the two
+          // assets is similar
           return (
             // chains should match
             t.chainId.toString() === chainId &&
@@ -196,29 +192,34 @@ export const updatePortfolioNetworkWithDefiPositions = (
             // but should be a different token symbol
             t.symbol.toLowerCase() !== a.symbol.toLowerCase() &&
             // and prices should have no more than 0.5% diff
-            (!a.value || isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value))
+            isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value || 0)
           )
         })
 
         if (!tokenInPortfolio || tokenInPortfolio?.flags.isHidden) return
 
-        const usdAssetValue = a.value || 0
+        // Note: There is an edge case where only one of the assets is handled
+        // by the portfolio, but we flip the flag, which means that we won't
+        // ad the value of the position to the total balance. This will make the
+        // displayed balance (REAL BALANCE - the value of the missing asset).
+        shouldAddPositionUSDAmountToTheTotalBalance = false
 
-        // Get the price from defiPositions
+        // Remove the price of borrow tokens
         tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
-        // Deduct the value of the token that is already handled by the portfolio
-        // from the balance of the position that will be added to the total balance
-        // We don't want to double count the value of the token
-        if (a.type !== AssetType.Borrow) tokenBalanceToDeduct += usdAssetValue || 0
       })
 
-      if (pos.additionalData.collateralInUSD) {
-        networkBalance += pos.additionalData.collateralInUSD || 0
-      } else {
+      // We differ from wallets like Rabby in the way we add the value of
+      // positions to the total balance - we don't deduct the value of borrowed
+      // assets. Instead we use the collateral of positions or the position value in USD if
+      // the collateral is not available.
+      // Knowing that, it's confusing why we add the value of the position here. That is because
+      // we add the collateral value by adding the tokens to the portfolio and flipping this flag
+      // to false. If the portfolio doesn't have the token and we don't know the protocol asset
+      // there is no way to add the value of the collateral tokens to the total balance.
+      // In that case we add the value of the position to the total balance in order to not confuse the user.
+      if (shouldAddPositionUSDAmountToTheTotalBalance) {
         networkBalance += pos.additionalData.positionInUSD || 0
       }
-
-      networkBalance -= tokenBalanceToDeduct
     })
   })
 
