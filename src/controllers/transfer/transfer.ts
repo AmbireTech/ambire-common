@@ -116,6 +116,12 @@ export class TransferController extends EventEmitter {
 
   signAccountOpController: SignAccountOpController | null = null
 
+  /**
+   * Holds all subscriptions (on update and on error) to the signAccountOpController.
+   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
+   */
+  #signAccountOpSubscriptions: Function[] = []
+
   latestBroadcastedAccountOp: AccountOp | null = null
 
   latestBroadcastedToken: TokenResult | null = null
@@ -631,16 +637,18 @@ export class TransferController extends EventEmitter {
     )
 
     // propagate updates from signAccountOp here
-    this.signAccountOpController.onUpdate(() => {
-      this.emitUpdate()
-    })
-    this.signAccountOpController.onError((error) => {
-      // TODO: Might be obsolete, because the simulation for the one click transfer starts when broadcast succeeds
-      if (this.signAccountOpController)
-        this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
-
-      this.emitError(error)
-    })
+    this.#signAccountOpSubscriptions.push(
+      this.signAccountOpController.onUpdate(() => {
+        this.emitUpdate()
+      })
+    )
+    this.#signAccountOpSubscriptions.push(
+      this.signAccountOpController.onError((error) => {
+        if (this.signAccountOpController)
+          this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+        this.emitError(error)
+      })
+    )
 
     this.reestimate()
   }
@@ -686,6 +694,10 @@ export class TransferController extends EventEmitter {
   }
 
   destroySignAccountOp() {
+    // Unsubscribe from all previous subscriptions
+    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#signAccountOpSubscriptions = []
+
     if (this.#reestimateAbortController) {
       this.#reestimateAbortController.abort()
       this.#reestimateAbortController = null
