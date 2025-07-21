@@ -213,6 +213,7 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
+  priceRecencyOnFailure?: number
   previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
   fetchPinned: boolean
   additionalErc20Hints?: Hints['erc20s']

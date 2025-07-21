@@ -1,9 +1,10 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
+import { AbiCoder, getAddress, hexlify, parseEther, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
+import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
@@ -22,7 +23,10 @@ import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { filterNotUsedEIP712Types, getTypedData } from '../../libs/signMessage/signMessage'
+import {
+  adaptTypedMessageForMetaMaskSigUtil,
+  getTypedData
+} from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -931,11 +935,12 @@ describe('SignAccountOp Controller ', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = verifyTypedData(
-      typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-      typedData.message,
-      unwrappedSig
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
     )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
@@ -1193,11 +1198,12 @@ describe('Negative cases', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = verifyTypedData(
-      typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-      typedData.message,
-      unwrappedSig
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
     )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
@@ -1379,11 +1385,12 @@ describe('Negative cases', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = verifyTypedData(
-      typedData.domain,
-      filterNotUsedEIP712Types(typedData.types, typedData.primaryType),
-      typedData.message,
-      unwrappedSig
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
     )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)

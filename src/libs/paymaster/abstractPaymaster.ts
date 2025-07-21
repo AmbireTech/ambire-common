@@ -49,4 +49,6 @@ export abstract class AbstractPaymaster {
     userOp: UserOperation,
     network: Network
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse>
+
+  abstract isEstimateBelowMin(userOperation: UserOperation): boolean
 }

@@ -97,7 +97,7 @@ describe('typed message tests', () => {
           verifyingContract: WETH_ADDRESS,
           salt: '1'
         },
-        types: { Permit: [] },
+        types: { EIP712Domain: [], Permit: [] },
         message: {},
         primaryType: 'Permit'
       }
@@ -143,6 +143,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     ;(messageTemplate.content as TypedMessage).types = {
+      EIP712Domain: [],
       PermitSingle: [{ name: 'details', type: 'PermitDetails' }]
     }
     ;(messageTemplate.content as TypedMessage).domain.verifyingContract =
@@ -166,6 +167,7 @@ describe('typed message tests', () => {
       getDeadline(968187600n)
     ]
     ;(messageTemplate.content as TypedMessage).types = {
+      EIP712Domain: [],
       PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }]
     }
     ;(messageTemplate.content as TypedMessage).domain.verifyingContract =

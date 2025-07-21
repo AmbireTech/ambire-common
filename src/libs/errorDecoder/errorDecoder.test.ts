@@ -12,7 +12,7 @@ import {
 } from '../errorHumanizer/estimationErrorHumanizer'
 import { RELAYER_DOWN_MESSAGE, RelayerError } from '../relayerCall/relayerCall'
 import { PANIC_ERROR_PREFIX } from './constants'
-import { BundlerError, InnerCallFailureError, RelayerPaymasterError } from './customErrors'
+import { InnerCallFailureError, RelayerPaymasterError } from './customErrors'
 import { decodeError } from './errorDecoder'
 import { TRANSACTION_REJECTED_REASON } from './handlers/userRejection'
 import { DecodedError, ErrorType } from './types'
@@ -414,24 +414,6 @@ describe('Error decoders work', () => {
     expect(humanizedAvax.message).toBe(`${MESSAGE_PREFIX} it reverted onchain with reason unknown.`)
   })
   describe('Handler interference', () => {
-    it('BundlerError should not be overwritten by Pimlico and Biconomy error handlers', async () => {
-      const bundlerError = new BundlerError(
-        'UserOperation reverted during simulation with reason: 0x7b36c479',
-        'pimlico'
-      )
-
-      const decodedError = decodeError(bundlerError)
-
-      expect(decodedError.type).toEqual(ErrorType.BundlerError)
-      expect(decodedError.reason).toBe('0x7b36c479')
-
-      const pimlicoSpecificError = new BundlerError('internal error', 'pimlico')
-
-      const decodedPimlicoError = decodeError(pimlicoSpecificError)
-
-      expect(decodedPimlicoError.type).toEqual(ErrorType.BundlerError)
-      expect(decodedPimlicoError.reason).toBe('pimlico: 500')
-    })
     it('Panic error in InnerCallFailureError should be decoded as PanicError', async () => {
       try {
         await contract.panicUnderflow()

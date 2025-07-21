@@ -1333,7 +1333,7 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.accountAddr,
       this.rbfAccountOps[this.selectedOption.paidBy]
     )
-    if (!this.feeSpeeds[identifier].length) {
+    if (!this.feeSpeeds[identifier] || !this.feeSpeeds[identifier].length) {
       return null
     }
 
@@ -1541,8 +1541,6 @@ export class SignAccountOpController extends EventEmitter {
       BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
     )
     userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
-    userOperation.paymasterVerificationGasLimit = erc4337Estimation.paymasterVerificationGasLimit
-    userOperation.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
     userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
     userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
@@ -1569,12 +1567,15 @@ export class SignAccountOpController extends EventEmitter {
 
     const localOp = { ...originalUserOp }
 
+    // set the paymaster properties
+    const erc4337Estimation = this.estimation.estimation!.bundlerEstimation as Erc4337GasLimits
+    localOp.paymasterVerificationGasLimit = erc4337Estimation.paymasterVerificationGasLimit
+    localOp.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
+
     // some bundlers (etherspot) don't return values for paymaster gas limits
     // so we need to set them manually
-    if (
-      localOp.paymasterVerificationGasLimit === undefined ||
-      BigInt(localOp.paymasterVerificationGasLimit) === 0n
-    ) {
+    // other (gelato) may return below the min
+    if (paymaster.isEstimateBelowMin(localOp)) {
       const estimationData = paymaster.getEstimationData()!
       localOp.paymasterVerificationGasLimit = estimationData.paymasterVerificationGasLimit
       localOp.paymasterPostOpGasLimit = estimationData.paymasterPostOpGasLimit
