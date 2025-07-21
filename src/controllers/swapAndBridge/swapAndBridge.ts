@@ -2050,7 +2050,9 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   destroySignAccountOp() {
-    // Unsubscribe from all previous subscriptions
+    // Always attempt to unsubscribe from all previous subscriptions,
+    // because the signAccountOpController getter might return null,
+    // but prev references to the signAccountOpController might still exist.
     this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#signAccountOpSubscriptions = []
 
@@ -2192,6 +2194,11 @@ export class SwapAndBridgeController extends EventEmitter {
     )
 
     this.emitUpdate()
+
+    // Unsubscribe from all previous subscriptions, if any exist, because the
+    // sign account op does NOT destroys before every initSignAccountOpIfNeeded() call
+    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#signAccountOpSubscriptions = []
 
     // propagate updates from signAccountOp here
     this.#signAccountOpSubscriptions.push(
