@@ -134,10 +134,15 @@ export const updatePortfolioNetworkWithDefiPositions = (
           } else if (
             // If the asset isn't of type Borrow and has no price in USD
             // we get the price from defi positions
-            protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow &&
+            a.type !== AssetType.Borrow &&
             (!protocolTokenInPortfolio.priceIn.length ||
               protocolTokenInPortfolio.priceIn[0]?.price === 0)
           ) {
+            // Add a price.
+            // IMPORTANT: This must be done before calculating the token balance USD
+            protocolTokenInPortfolio.priceIn = [a.priceIn]
+            protocolTokenInPortfolio.flags.defiTokenType = a.type
+
             const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
               ? Number(
                   safeTokenAmountAndNumberMultiplication(
@@ -148,8 +153,6 @@ export const updatePortfolioNetworkWithDefiPositions = (
                 )
               : undefined
 
-            protocolTokenInPortfolio.priceIn = [a.priceIn]
-            protocolTokenInPortfolio.flags.defiTokenType = a.type
             networkBalance += tokenBalanceUSD || 0
           }
         }
@@ -175,7 +178,7 @@ export const updatePortfolioNetworkWithDefiPositions = (
               t.chainId.toString() === chainId &&
               !t.flags.rewardsType &&
               !t.flags.onGasTank &&
-              t.address === getAddress(a.address)
+              t.address === getAddress(a.protocolAsset.address)
             )
           }
 
@@ -202,10 +205,12 @@ export const updatePortfolioNetworkWithDefiPositions = (
         // by the portfolio, but we flip the flag, which means that we won't
         // ad the value of the position to the total balance. This will make the
         // displayed balance (REAL BALANCE - the value of the missing asset).
-        shouldAddPositionUSDAmountToTheTotalBalance = false
-
-        // Remove the price of borrow tokens
-        tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
+        if (a.type === AssetType.Collateral) shouldAddPositionUSDAmountToTheTotalBalance = false
+        // Remove the price of borrow tokens and ensure that the token is marked as Borrow
+        else if (a.type === AssetType.Borrow) {
+          tokenInPortfolio.priceIn = []
+          tokenInPortfolio.flags.defiTokenType = AssetType.Borrow
+        }
       })
 
       // We differ from wallets like Rabby in the way we add the value of
