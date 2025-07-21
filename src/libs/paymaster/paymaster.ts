@@ -36,7 +36,7 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
   return {
     paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(100000) as Hex,
+    paymasterVerificationGasLimit: toBeHex(42000) as Hex,
     paymasterPostOpGasLimit: toBeHex(0) as Hex,
     paymasterData: abiCoder.encode(
       ['uint48', 'uint48', 'bytes'],
@@ -325,5 +325,15 @@ export class Paymaster extends AbstractPaymaster {
 
   canAutoRetryOnFailure(): boolean {
     return this.type === 'Ambire'
+  }
+
+  isEstimateBelowMin(localOp: UserOperation): boolean {
+    const min = this.getEstimationData()
+    if (!min || !min.paymasterVerificationGasLimit) return false
+
+    return (
+      localOp.paymasterVerificationGasLimit === undefined ||
+      BigInt(localOp.paymasterVerificationGasLimit) < BigInt(min.paymasterVerificationGasLimit)
+    )
   }
 }

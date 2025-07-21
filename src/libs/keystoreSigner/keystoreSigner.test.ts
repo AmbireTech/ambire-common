@@ -73,6 +73,12 @@ describe('KeystoreSigner', () => {
         verifyingContract: '0x1234567890abcdef1234567890abcdef12345678'
       },
       types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' }
+        ],
         Person: [
           { name: 'name', type: 'string' },
           { name: 'age', type: 'uint256' }

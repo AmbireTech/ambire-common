@@ -1,7 +1,8 @@
 export const PIMLICO = 'pimlico'
 export const BICONOMY = 'biconomy'
 export const ETHERSPOT = 'etherspot'
+export const GELATO = 'gelato'
 
-export type BUNDLER = typeof PIMLICO | typeof BICONOMY | typeof ETHERSPOT
+export type BUNDLER = typeof PIMLICO | typeof BICONOMY | typeof ETHERSPOT | typeof GELATO
 
-export const allBundlers = [PIMLICO, BICONOMY, ETHERSPOT]
+export const allBundlers = [PIMLICO, BICONOMY, ETHERSPOT, GELATO]

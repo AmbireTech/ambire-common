@@ -29,6 +29,10 @@ export interface PositionAsset {
   additionalData?: {
     [key: string]: any
   }
+  /**
+   * The protocol asset is the protocol's representation of the asset.
+   * For example, in Aave, the protocol asset is the aToken.
+   */
   protocolAsset?: {
     address: string
     symbol: string
