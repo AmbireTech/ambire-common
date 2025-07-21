@@ -256,9 +256,9 @@ export class AccountsController extends EventEmitter {
       toIndex >= this.accounts.length
     ) {
       return this.emitError({
-        level: 'minor',
-        message: `Invalid fromIndex (${fromIndex}) or toIndex (${toIndex})`,
-        error: new Error('Invalid fromIndex or toIndex')
+        level: 'major',
+        message: 'Failed to reorder accounts. Please reload the page and try again.',
+        error: new Error('Failed to reorder accounts. Please reload the page and try again.')
       })
     }
 
