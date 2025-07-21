@@ -149,8 +149,23 @@ export class Portfolio {
           baseCurrency
         })
 
+        if (
+          hintsFromExternalAPI &&
+          hintsFromExternalAPI.skipOverrideSavedHints &&
+          localOpts.previousHintsFromExternalAPI
+        ) {
+          hintsFromExternalAPI = {
+            ...hintsFromExternalAPI,
+            erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
+            erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
+            // Spread it just in case we have saved a false value before
+            skipOverrideSavedHints: true
+          }
+        }
+
         if (hintsFromExternalAPI) {
           hintsFromExternalAPI.lastUpdate = Date.now()
+
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
         }
       }
