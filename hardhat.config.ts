@@ -69,6 +69,10 @@ const config: HardhatUserConfig = {
     berachainBepolia: {
       url: 'https://bepolia.rpc.berachain.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    katana: {
+      url: 'https://rpc.katana.network',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
@@ -83,7 +87,8 @@ const config: HardhatUserConfig = {
       unichain: process.env.BASESCAN_API_KEY,
       berachain: process.env.BERACHAIN_API_KEY,
       arbitrum: process.env.ARBITRUM_API_KEY,
-      berachainBepolia: process.env.ETHERSCAN_API_KEY
+      berachainBepolia: process.env.ETHERSCAN_API_KEY,
+      katana: process.env.ETHERSCAN_API_KEY
     },
     customChains: [
       {
@@ -173,6 +178,14 @@ const config: HardhatUserConfig = {
           // these aren't correct, it's a testnet afterall
           apiURL: 'https://api.testnet.berascan.com/api',
           browserURL: 'https://api.testnet.berascan.com'
+        }
+      },
+      {
+        network: 'katana',
+        chainId: 747474,
+        urls: {
+          apiURL: 'https://explorer.katanarpc.com/api',
+          browserURL: 'https://explorer.katanarpc.com'
         }
       }
     ]
