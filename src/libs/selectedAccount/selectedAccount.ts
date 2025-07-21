@@ -87,6 +87,8 @@ export const updatePortfolioNetworkWithDefiPositions = (
       let shouldAddPositionUSDAmountToTheTotalBalance = true
 
       pos.assets.filter(Boolean).forEach((a) => {
+        // if this "if" is ever removed, ensure that the defiTokenType flag is set correctly
+        // for these asset types
         if (a.type === AssetType.Liquidity || a.type === AssetType.Reward) return
 
         if (a.protocolAsset && a.protocolAsset?.name) {
@@ -203,7 +205,7 @@ export const updatePortfolioNetworkWithDefiPositions = (
 
         // Note: There is an edge case where only one of the assets is handled
         // by the portfolio, but we flip the flag, which means that we won't
-        // ad the value of the position to the total balance. This will make the
+        // add the value of the position to the total balance. This will make the
         // displayed balance (REAL BALANCE - the value of the missing asset).
         if (a.type === AssetType.Collateral) shouldAddPositionUSDAmountToTheTotalBalance = false
         // Remove the price of borrow tokens and ensure that the token is marked as Borrow
