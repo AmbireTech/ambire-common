@@ -178,14 +178,14 @@ export class SelectedAccountController extends EventEmitter {
     this.#networks = networks
     this.#providers = providers
 
-    this.#updateSelectedAccountPortfolio(true)
+    this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
     this.#updateSelectedAccountDefiPositions(true)
     this.#updateDefiPositionsErrors(true)
 
     this.#portfolio.onUpdate(async () => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
-        this.#updateSelectedAccountPortfolio()
+        this.updateSelectedAccountPortfolio()
       })
     }, 'selectedAccount')
 
@@ -195,7 +195,7 @@ export class SelectedAccountController extends EventEmitter {
 
         if (!this.areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
-            this.#updateSelectedAccountPortfolio(true)
+            this.updateSelectedAccountPortfolio(true)
           })
           this.#updateDefiPositionsErrors()
         }
@@ -294,7 +294,7 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
+  updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)

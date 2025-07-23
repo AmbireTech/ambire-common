@@ -393,15 +393,17 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
     id: 'defi-positions-on-disabled-networks',
     type: 'info',
     title: 'DeFi positions detected on disabled networks',
-    text: `You have ${
-      defiPositionsOnDisabledNetworks.length
-    } active DeFi positions on the following disabled networks: ${disabledNetworksWithDefiPosArray.map(
-      (n, i, arr) => {
-        if (i !== arr.length - 1) return ` ${n.name}`
+    text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
+      defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
+    } on${
+      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
+    }: ${disabledNetworksWithDefiPosArray.map((n, i, arr) => {
+      if (i !== arr.length - 1) return ` ${n.name}`
 
-        return ` ${n.name}`
-      }
-    )}. Would you like to enable these networks?`,
+      return ` ${n.name}`
+    })}. Would you like to enable ${
+      disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
+    }?`,
     actions: [
       {
         label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',

@@ -284,13 +284,12 @@ export class MainController extends EventEmitter {
           }
         }
 
-        const enabledNetworks = networks.filter((n) => !n.disabled)
         // eslint-disable-next-line no-restricted-syntax
-        for (const n of enabledNetworks) {
+        for (const n of networks.filter((n) => !n.disabled)) {
           this.providers.setProvider(n)
         }
         await this.reloadSelectedAccount({
-          chainIds: enabledNetworks.map((n) => n.chainId),
+          chainIds: networks.map((n) => n.chainId),
           forceUpdate: false
         })
       },
@@ -2269,12 +2268,15 @@ export class MainController extends EventEmitter {
 
   async removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
-    this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity
     // this.activity.removeNetworkData(chainId)
+
+    // Don't remove the defi positions state data because we keep track of the defi positions
+    // on the disabled networks so we can suggest enabling them from a dashboard banner
+    // this.defiPositions.removeNetworkData(chainId)
   }
 
   async resolveAccountOpAction(
