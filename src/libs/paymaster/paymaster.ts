@@ -265,7 +265,8 @@ export class Paymaster extends AbstractPaymaster {
     op: AccountOp,
     userOp: UserOperation
   ): Promise<PaymasterSuccessReponse | PaymasterErrorReponse> {
-    if (!this.provider) throw new Error('provider not set, did you call init?')
+    const provider = this.provider
+    if (!provider) throw new Error('provider not set, did you call init?')
     if (!this.network) throw new Error('network not set, did you call init?')
 
     // request the paymaster with a timeout window
@@ -279,7 +280,7 @@ export class Paymaster extends AbstractPaymaster {
         salt: acc.creation?.salt,
         key: acc.associatedKeys[0],
         // eslint-disable-next-line no-underscore-dangle
-        rpcUrl: this.provider!._getConnection().url,
+        rpcUrl: provider._getConnection().url,
         bundler: userOp.bundler
       })
     })
