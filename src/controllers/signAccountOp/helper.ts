@@ -8,6 +8,7 @@ import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
 export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
 export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
@@ -30,20 +31,13 @@ function getFeeSpeedIdentifier(
   }${rbfAccountOp ? `rbf-${option.paidBy}` : ''}`
 }
 
-function getUsdAmount(usdPrice: number, tokenDecimals: number, gasAmount: bigint): string {
-  const usdPriceFormatted = BigInt(usdPrice * 1e18)
-
-  // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + tokenDecimals)
-}
-
 function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
   const usdPrice = token.priceIn.find(isUsd)?.price
 
   if (!usdPrice) return ''
 
-  return getUsdAmount(usdPrice, token.decimals, gasAmount)
+  return safeTokenAmountAndNumberMultiplication(gasAmount, token.decimals, usdPrice)
 }
 
 function getSignificantBalanceDecreaseWarning(
@@ -104,6 +98,5 @@ export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount,
-  getUsdAmount
+  getTokenUsdAmount
 }
