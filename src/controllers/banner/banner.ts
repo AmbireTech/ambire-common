@@ -21,14 +21,14 @@ export class BannerController extends EventEmitter {
   }
 
   async #load() {
-    const storedDapps = await this.#storage.get('dismissedBanners', [])
+    const dismissedBanners = await this.#storage.get('dismissedBanners', [])
 
-    this.#storage = storedDapps
+    this.#dismissedBanners = dismissedBanners || []
     this.emitUpdate()
   }
 
   get banners(): MarketingBanner[] {
-    return this.#banners
+    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id))
   }
 
   async #saveDismissedToStorage() {
@@ -40,23 +40,18 @@ export class BannerController extends EventEmitter {
     this.emitUpdate()
   }
 
-  dismissBanner(bannerId: string | number) {
+  async dismissBanner(bannerId: string | number) {
     if (!this.#dismissedBanners.includes(bannerId)) {
       this.#dismissedBanners.push(bannerId)
       this.emitUpdate()
-      this.#saveDismissedToStorage()
+      await this.#storage.set('dismissedBanners', this.#dismissedBanners)
     }
-  }
-
-  getVisibleBanners(): MarketingBanner[] {
-    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id))
   }
 
   toJSON() {
     return {
       ...this,
-      dismissBanner: this.dismissBanner.bind(this),
-      banners: this.getVisibleBanners()
+      banners: this.banners
     }
   }
 }

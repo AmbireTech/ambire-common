@@ -150,7 +150,6 @@ export class SelectedAccountController extends EventEmitter {
     this.#actions = actions
     this.#networks = networks
     this.#providers = providers
-    console.log('portfolio', this.#portfolio)
     this.#updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
     this.#updateSelectedAccountDefiPositions(true)
