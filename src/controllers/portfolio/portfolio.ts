@@ -817,7 +817,10 @@ export class PortfolioController extends EventEmitter {
             const isExternalHintsApiResponseValid =
               !!networkResult?.hintsFromExternalAPI || !network.hasRelayer
 
-            if (isExternalHintsApiResponseValid) {
+            if (
+              isExternalHintsApiResponseValid &&
+              !networkResult?.hintsFromExternalAPI?.skipOverrideSavedHints
+            ) {
               const updatedStoragePreviousHints = getUpdatedHints(
                 networkResult!.hintsFromExternalAPI || null,
                 networkResult!.tokens,

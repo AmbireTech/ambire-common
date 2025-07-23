@@ -4,6 +4,8 @@ export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
   | 'pending-to-be-confirmed-acc-op'
+  | 'successful-acc-op'
+  | 'failed-acc-op'
   | 'bridge-in-progress'
   | 'bridge-waiting-approval-to-resolve'
   | 'bridge-ready'
