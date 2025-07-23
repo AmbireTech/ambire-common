@@ -37,6 +37,7 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -71,9 +72,9 @@ export class PortfolioController extends EventEmitter {
 
   temporaryTokens: TemporaryTokens = {}
 
-  banner: Banner = {}
-
   #portfolioLibs: Map<string, Portfolio>
+
+  #bannerController: BannerController
 
   #storage: StorageController
 
@@ -122,7 +123,8 @@ export class PortfolioController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     relayerUrl: string,
-    velcroUrl: string
+    velcroUrl: string,
+    bannerController: BannerController
   ) {
     super()
     this.#latest = {}
@@ -139,6 +141,7 @@ export class PortfolioController extends EventEmitter {
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
+    this.#bannerController = bannerController
     this.#batchedVelcroDiscovery = batcher(
       fetch,
       (queue) => {
@@ -475,13 +478,18 @@ export class PortfolioController extends EventEmitter {
       this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
       this.#setNetworkLoading(accountId, 'latest', 'rewards', false, e)
       this.emitUpdate()
-      this.banner = {} // Clear banners on error
       return
     }
 
-    console.log('relayer response for portfolio additional', res.data.banner)
-    this.banner = res.data.banner || {}
-    this.emitUpdate()
+    // eslint-disable-next-line no-underscore-dangle
+    if (res.data.banner?._id) {
+      // Convert _id to id for compatibility with the banner controller
+      // eslint-disable-next-line no-underscore-dangle
+      res.data.banner.id = res.data.banner._id
+    }
+    if (res.data.banner?.id) {
+      this.#bannerController.addBanner(res.data.banner)
+    }
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 

@@ -25,6 +25,7 @@ export interface Banner {
 export type MarketingBannerType = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
 export interface MarketingBanner {
+  id: string
   text: string
   type?: MarketingBannerType // default is 'updates'
   url?: string
