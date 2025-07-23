@@ -200,9 +200,14 @@ export class PortfolioController extends EventEmitter {
     if (!selectedAccountAddr) return
 
     const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
-    await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
-      forceUpdate: true
-    })
+    await this.updateSelectedAccount(
+      selectedAccountAddr,
+      networkData ? [networkData] : undefined,
+      undefined,
+      {
+        forceUpdate: true
+      }
+    )
   }
 
   async addCustomToken(
@@ -1004,7 +1009,7 @@ export class PortfolioController extends EventEmitter {
           states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
         }
       : undefined
-    return this.updateSelectedAccount(op.accountAddr, network, simulation, { forceUpdate: true })
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation, { forceUpdate: true })
   }
 
   toJSON() {
