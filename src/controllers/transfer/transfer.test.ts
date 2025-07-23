@@ -103,8 +103,10 @@ const networksCtrl = new NetworksController(
   storageCtrl,
   fetch,
   relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
+  (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
   },
   (id) => {
     providersCtrl.removeProvider(id)

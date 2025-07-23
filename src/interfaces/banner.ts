@@ -104,3 +104,17 @@ export type Action =
       label: 'View'
       actionName: 'view-bridge'
     }
+  | {
+      label: 'Enable all'
+      actionName: 'enable-networks'
+      meta: { networkChainIds: bigint[] }
+    }
+  | {
+      label: 'Enable'
+      actionName: 'enable-networks'
+      meta: { networkChainIds: bigint[] }
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-defi-positions-banner'
+    }

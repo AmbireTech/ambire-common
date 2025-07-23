@@ -11,7 +11,10 @@ import {
   SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
-import { getFirstCashbackBanners } from '../../libs/banners/banners'
+import {
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
+  getFirstCashbackBanners
+} from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
@@ -102,6 +105,8 @@ export class SelectedAccountController extends EventEmitter {
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
+  accountsWithDismissedDefiPositionsBanner: string[] = []
+
   #_defiPositions: PositionsByProvider[] = []
 
   set defiPositions(val: PositionsByProvider[]) {
@@ -136,8 +141,18 @@ export class SelectedAccountController extends EventEmitter {
 
   async #load() {
     await this.#accounts.initialLoadPromise
-    const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+
+    const [
+      selectedAccountAddress,
+      cashbackStatusByAccount,
+      accountsWithDismissedDefiPositionsBanner
+    ] = await Promise.all([
+      this.#storage.get('selectedAccount', null),
+      this.#storage.get('cashbackStatusByAccount', {}),
+      this.#storage.get('accountsWithDismissedDefiPositionsBanner', [])
+    ])
+    this.#cashbackStatusByAccount = cashbackStatusByAccount
+    this.accountsWithDismissedDefiPositionsBanner = accountsWithDismissedDefiPositionsBanner
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
 
@@ -550,10 +565,48 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async dismissDefiPositionsBannerForTheSelectedAccount() {
+    if (!this.account) return
+    if (this.accountsWithDismissedDefiPositionsBanner.includes(this.account.addr)) return
+
+    this.accountsWithDismissedDefiPositionsBanner.push(this.account.addr)
+    await this.#storage.set(
+      'accountsWithDismissedDefiPositionsBanner',
+      this.accountsWithDismissedDefiPositionsBanner
+    )
+    this.emitUpdate()
+  }
+
+  // ! IMPORTANT !
+  // Banners that depend on async data from sub-controllers should be implemented
+  // in the sub-controllers themselves. This is because updates in the sub-controllers
+  // will not trigger emitUpdate in the MainController, therefore the banners will
+  // remain the same until a subsequent update in the MainController.
+  get banners(): Banner[] {
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#networks.isInitialized ||
+      !this.#defiPositions ||
+      !this.portfolio.isAllReady
+    )
+      return []
+
+    if (this.accountsWithDismissedDefiPositionsBanner.includes(this.account.addr)) return []
+
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
+
+    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+      defiPositionsAccountState,
+      networks: this.#networks.allNetworks
+    })
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
+      banners: this.banners,
       firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,

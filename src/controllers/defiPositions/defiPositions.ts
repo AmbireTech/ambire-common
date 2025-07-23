@@ -137,15 +137,19 @@ export class DefiPositionsController extends EventEmitter {
     )
   }
 
-  async updatePositions(opts?: { chainId?: bigint; maxDataAgeMs?: number; forceUpdate?: boolean }) {
-    const { chainId, maxDataAgeMs, forceUpdate } = opts || {}
+  async updatePositions(opts?: {
+    chainIds?: bigint[]
+    maxDataAgeMs?: number
+    forceUpdate?: boolean
+  }) {
+    const { chainIds, maxDataAgeMs, forceUpdate } = opts || {}
     const selectedAccount = this.#selectedAccount.account
     if (!selectedAccount) return
 
     const selectedAccountAddr = selectedAccount.addr
-    const networksToUpdate = chainId
-      ? this.#networks.networks.filter((n) => n.chainId === chainId)
-      : this.#networks.networks
+    const networksToUpdate = chainIds
+      ? this.#networks.allNetworks.filter((n) => chainIds.includes(n.chainId))
+      : this.#networks.allNetworks
 
     if (!this.#state[selectedAccountAddr]) {
       this.#state[selectedAccountAddr] = {}
@@ -342,7 +346,7 @@ export class DefiPositionsController extends EventEmitter {
     positionsByProvider: PositionsByProvider[],
     chainId: bigint
   ) {
-    const platformId = this.#networks.networks.find((n) => n.chainId === chainId)?.platformId
+    const platformId = this.#networks.allNetworks.find((n) => n.chainId === chainId)?.platformId
 
     // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
     // since it would return nothing.
@@ -450,7 +454,7 @@ export class DefiPositionsController extends EventEmitter {
     const networkState = this.#accounts.accountStates[acc.addr][chainId.toString()]
     if (!networkState) return undefined
 
-    const network = this.#networks.networks.find((net) => net.chainId === chainId)
+    const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
     if (!network) return undefined
 
     const baseAcc = getBaseAccount(acc, networkState, this.#keystore.getAccountKeys(acc), network)
