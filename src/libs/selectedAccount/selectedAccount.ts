@@ -306,7 +306,7 @@ const calculateTokensArray = (
         latestAmount = pendingToken.amount
       }
 
-      if (!hasTokenWithAmount && (!!latestAmount || pendingToken.amount)) hasTokenWithAmount = true
+      if (!hasTokenWithAmount && !!(latestAmount || pendingToken.amount)) hasTokenWithAmount = true
 
       return {
         ...pendingToken,
@@ -326,11 +326,11 @@ const calculateTokensArray = (
 
     return {
       ...token,
+      // Add only latestAmount to the tokens
       latestAmount: token.amount
     }
   })
 
-  // Add only latestAmount to the tokens
   return {
     tokens: tokenList,
     hasTokenWithAmount
