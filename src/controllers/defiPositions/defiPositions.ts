@@ -111,7 +111,7 @@ export class DefiPositionsController extends EventEmitter {
 
     if (!latestUpdatedAt) return false
 
-    if (accountState.some((n) => n.providerErrors?.length || n.error)) {
+    if (!forceUpdate && accountState.some((n) => n.providerErrors?.length || n.error)) {
       maxDataAgeMs = ONE_MINUTE
     }
 
@@ -304,14 +304,8 @@ export class DefiPositionsController extends EventEmitter {
 
     prepareNetworks()
 
-    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) {
-      this.emitUpdate()
-      return
-    }
-    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) {
-      this.emitUpdate()
-      return
-    }
+    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
+    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) return
 
     let debankPositions: PositionsByProvider[] = []
 
