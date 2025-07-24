@@ -102,8 +102,9 @@ export const calculateDefiPositions = (
             )
           })
           if (!protocolTokenInPortfolio) {
-            const positionAsset: TokenResult = {
+            const positionAsset: SelectedAccountPortfolioTokenResult = {
               amount: a.amount,
+              latestAmount: a.amount,
               // Only list the borrowed asset with no price
               priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
               decimals: Number(a.protocolAsset!.decimals),
@@ -297,20 +298,11 @@ export const calculateTokensArray = (
         return latest.address === pendingToken.address
       })
 
-      if (latestToken) {
-        latestAmount = latestToken.amount
-      } else if (pendingToken.flags.defiTokenType) {
-        // Defi positions tokens that aren't handled by the portfolio are added to only
-        // one of the portfolio states. In this case the token is only added to the pending state
-        // and has no latest amount, thus both amounts are the same
-        latestAmount = pendingToken.amount
-      }
-
       if (!hasTokenWithAmount && !!(latestAmount || pendingToken.amount)) hasTokenWithAmount = true
 
       return {
         ...pendingToken,
-        latestAmount,
+        latestAmount: latestToken?.amount,
         pendingAmount: pendingToken.amount
       }
     })
@@ -343,11 +335,16 @@ export const calculateTokensArray = (
  */
 export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
-  networkData: NetworkState | undefined,
+  latestNetworkData: NetworkState | undefined,
+  pendingNetworkData: NetworkState | undefined,
+  // Can be pending or selected
+  selectedNetworkData: NetworkState | undefined,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
 ): boolean => {
   if (
-    !networkData ||
+    !latestNetworkData ||
+    !pendingNetworkData ||
+    !selectedNetworkData ||
     !pastAccountPortfolioWithDefiPositionsNetworkState ||
     !defiPositionsNetworkState
   ) {
@@ -356,12 +353,16 @@ export const getIsRecalculationNeeded = (
 
   // Never recalculate if either the portfolio or defi positions are loading
   // as that would reset isAllReady to false
-  if (networkData?.isLoading || defiPositionsNetworkState.isLoading) {
+  if (
+    latestNetworkData?.isLoading ||
+    pendingNetworkData.isLoading ||
+    defiPositionsNetworkState.isLoading
+  ) {
     return false
   }
 
   const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
-  const networkDataAccountOp = networkData?.accountOps?.[0]
+  const networkDataAccountOp = selectedNetworkData?.accountOps?.[0]
 
   // If there is or was an account op we must recalculate the portfolio
   // on every update to ensure that the simulations are correct
@@ -369,7 +370,7 @@ export const getIsRecalculationNeeded = (
 
   const hasPortfolioUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
-    networkData.result?.blockNumber
+    selectedNetworkData.result?.blockNumber
 
   const areDefiPositionsUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
@@ -467,6 +468,8 @@ export function calculateSelectedAccountPortfolioByNetworks(
 
     const shouldRecalculateState = getIsRecalculationNeeded(
       pastAccountPortfolioWithDefiPositionsNetworkState,
+      latestStateSelectedAccount[network],
+      pendingStateSelectedAccount[network],
       networkData,
       defiPositionsNetworkState
     )

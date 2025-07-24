@@ -58,26 +58,13 @@ describe('Selected Account lib', () => {
       expect(tokens).toEqual(PORTFOLIO_STATE.gasTank!.result!.tokens)
       expect(hasTokenWithAmount).toBe(false)
     })
-
-    it('should handle defi tokens that are only in one of the states', () => {
-      const { tokens: tokens1 } = calculateTokensArray('1', [DEFI_TOKEN_CBTC], [], true)
-
-      expect(tokens1.length).toBe(1)
-      expect(tokens1[0].amount).toBe(200n)
-      expect(tokens1[0].pendingAmount).toBe(undefined)
-
-      const { tokens: tokens2 } = calculateTokensArray('1', [], [DEFI_TOKEN_CBTC], true)
-
-      expect(tokens2.length).toBe(1)
-      expect(tokens2[0].amount).toBe(200n)
-      expect(tokens2[0].latestAmount).toBe(200n)
-      expect(tokens2[0].pendingAmount).toBe(200n)
-    })
   })
   describe('getIsRecalculationNeeded', () => {
     it('should return true if there is no portfolio or defi positions state', () => {
       const result = getIsRecalculationNeeded(
         { totalBalance: 0, collections: [], tokens: [] },
+        PORTFOLIO_STATE['1'],
+        PORTFOLIO_STATE['1'],
         PORTFOLIO_STATE['1'],
         undefined
       )
@@ -86,6 +73,8 @@ describe('Selected Account lib', () => {
 
       const result2 = getIsRecalculationNeeded(
         { totalBalance: 0, collections: [], tokens: [] },
+        undefined,
+        undefined,
         undefined,
         DEFI_STATE['1']
       )
@@ -96,12 +85,17 @@ describe('Selected Account lib', () => {
       // THIS ONE IS VITAL. IF THE PORTFOLIO OR DEFI POSITIONS STATE IS LOADING WE NEVER
       // WANT A RECALCULATION AS THAT WOULD FLIP ISALLREADY TO FALSE
       const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
+      const clonedPortfolioEthereumStatePending = structuredClone(
+        PENDING_PORTFOLIO_STATE['1']
+      ) as NetworkState
       const clonedDefiEthereumState = structuredClone(DEFI_STATE['1']) as DefiNetworkState
       clonedPortfolioEthereumState.isLoading = true
 
       const result = getIsRecalculationNeeded(
         { totalBalance: 0, collections: [], tokens: [] },
         clonedPortfolioEthereumState,
+        clonedPortfolioEthereumStatePending,
+        clonedPortfolioEthereumStatePending,
         DEFI_STATE['1']
       )
 
@@ -111,7 +105,9 @@ describe('Selected Account lib', () => {
 
       const result2 = getIsRecalculationNeeded(
         { totalBalance: 0, collections: [], tokens: [] },
-        PORTFOLIO_STATE['1'],
+        clonedPortfolioEthereumState,
+        clonedPortfolioEthereumStatePending,
+        clonedPortfolioEthereumStatePending,
         clonedDefiEthereumState
       )
 
@@ -119,17 +115,25 @@ describe('Selected Account lib', () => {
     })
     it('should return true if the portfolio or defi positions state has been updated', () => {
       const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
+      const clonedPortfolioEthereumStatePending = structuredClone(
+        PENDING_PORTFOLIO_STATE['1']
+      ) as NetworkState
+
       const mockPastState = {
         totalBalance: 0,
         collections: [],
         tokens: [],
         defiPositionsUpdatedAt: DEFI_STATE['1'].updatedAt,
-        blockNumber: PORTFOLIO_STATE['1']?.result?.blockNumber
+        blockNumber: clonedPortfolioEthereumStatePending?.result?.blockNumber
       }
+
+      clonedPortfolioEthereumStatePending.accountOps = []
 
       const result = getIsRecalculationNeeded(
         mockPastState,
         clonedPortfolioEthereumState,
+        clonedPortfolioEthereumStatePending,
+        clonedPortfolioEthereumStatePending,
         DEFI_STATE['1']
       )
 
@@ -141,10 +145,31 @@ describe('Selected Account lib', () => {
       const result2 = getIsRecalculationNeeded(
         mockPastState,
         clonedPortfolioEthereumState,
+        clonedPortfolioEthereumStatePending,
+        clonedPortfolioEthereumStatePending,
         DEFI_STATE['1']
       )
 
       expect(result2).toBe(true)
+    })
+    it('should return false if the pending portfolio state is loaded but the latest is not', () => {
+      const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
+      const clonedPortfolioEthereumStatePending = structuredClone(
+        PENDING_PORTFOLIO_STATE['1']
+      ) as NetworkState
+
+      clonedPortfolioEthereumState.isLoading = true
+      clonedPortfolioEthereumStatePending.isLoading = false
+
+      const result = getIsRecalculationNeeded(
+        { totalBalance: 0, collections: [], tokens: [] },
+        clonedPortfolioEthereumState,
+        clonedPortfolioEthereumStatePending,
+        clonedPortfolioEthereumStatePending,
+        DEFI_STATE['1']
+      )
+
+      expect(result).toBe(false)
     })
   })
   describe('updatePortfolioNetworkWithDefiPositions', () => {
@@ -196,6 +221,8 @@ describe('Selected Account lib', () => {
       )
 
       expect(variableDebtBasGHO?.priceIn.length).toBe(0)
+      // Tokens added from the defi positions have latestAmount
+      expect(variableDebtBasGHO?.latestAmount).toBeDefined()
 
       // -- Defi tokens have the respective flag
       const aBasWETH = tokens!.find(
@@ -343,6 +370,8 @@ describe('Selected Account lib', () => {
         getIsRecalculationNeeded(
           selectedAccountPortfolioByNetworks['1'],
           clonedPortfolioLatestState['1'],
+          clonedPortfolioPendingState['1'],
+          clonedPortfolioPendingState['1'],
           clonedDefiAccountState['1']
         )
       ).toBe(false)
@@ -754,3 +783,6 @@ PENDING_PORTFOLIO_STATE['1']!.accountOps = [
     accountOpToExecuteBefore: null
   }
 ]
+
+PENDING_PORTFOLIO_STATE['1']!.result!.blockNumber =
+  PORTFOLIO_STATE['1']!.result!.blockNumber || 0 + 1
