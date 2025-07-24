@@ -42,6 +42,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   collections: [],
   tokenAmounts: [],
   totalBalance: 0,
+  balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
   networkSimulatedAccountOp: {},
