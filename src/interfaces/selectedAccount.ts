@@ -34,7 +34,7 @@ export type SelectedAccountPortfolioByNetworksNetworkState = {
    * selected account portfolio must be recalculated.
    */
   defiPositionsUpdatedAt?: number
-  simulatedAccountOp: NetworkSimulatedAccountOp[string]
+  simulatedAccountOp?: NetworkSimulatedAccountOp[string]
 }
 
 export type SelectedAccountPortfolioByNetworks = {

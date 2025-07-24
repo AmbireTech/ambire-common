@@ -240,7 +240,7 @@ export const calculateDefiPositions = (
   }
 }
 
-const stripPortfolioState = (portfolioState: AccountState) => {
+export const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
   Object.keys(portfolioState).forEach((chainId) => {
@@ -270,7 +270,7 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
  * Adds the latest and pending amount to the tokens array.
  * Also returns a flag indicating whether there is a token with an amount > 0
  */
-const calculateTokensArray = (
+export const calculateTokensArray = (
   chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
@@ -341,7 +341,7 @@ const calculateTokensArray = (
  * calculateSelectedAccountPortfolio is called after every portfolio update and we don't want to recalculate
  * the same network data if it hasn't changed.
  */
-const getIsRecalculationNeeded = (
+export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
   networkData: NetworkState | undefined,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
@@ -483,7 +483,14 @@ export function calculateSelectedAccountPortfolioByNetworks(
     let collectionsArray: CollectionResult[] = []
     let networkTotal = 0
 
-    if (networkData && result && isNetworkReady(networkData)) {
+    if (
+      networkData &&
+      result &&
+      // The network must be ready
+      isNetworkReady(networkData) &&
+      !networkData?.isLoading &&
+      !defiPositionsNetworkState?.isLoading
+    ) {
       networkTotal = networkData?.result?.total?.usd || 0
 
       const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
@@ -511,20 +518,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
 
       // Add the defi positions balance to the total balance
       networkTotal += defiPositions?.defiPositionsBalance || 0
-    }
 
-    if (
-      !networkData ||
-      // The network is not ready
-      !isNetworkReady(networkData) ||
-      // The networks is ready but the previous state isn't satisfactory and the network is still loading
-      (isLoadingFromScratch &&
-        (networkData?.isLoading ||
-          // The total balance and token list are affected by the defi positions
-          defiPositionsAccountState[network]?.isLoading))
-    ) {
-      isAllReady = false
-    } else {
       // Update the cached network state when the network is completely loaded
       newAccountPortfolioWithDefiPositions[network] = {
         totalBalance: networkTotal,
@@ -534,6 +528,8 @@ export function calculateSelectedAccountPortfolioByNetworks(
         defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
         simulatedAccountOp: simulatedAccountOps[network]
       }
+    } else if (isLoadingFromScratch) {
+      isAllReady = false
     }
   })
 
