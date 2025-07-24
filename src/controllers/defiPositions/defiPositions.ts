@@ -130,7 +130,6 @@ export class DefiPositionsController extends EventEmitter {
       this.#providers.providers
     )
 
-    this.emitUpdate()
     await this.#storage.set(
       'networksWithPositionsByAccounts',
       this.#networksWithPositionsByAccounts
@@ -305,8 +304,14 @@ export class DefiPositionsController extends EventEmitter {
 
     prepareNetworks()
 
-    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
-    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) return
+    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) {
+      this.emitUpdate()
+      return
+    }
+    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) {
+      this.emitUpdate()
+      return
+    }
 
     let debankPositions: PositionsByProvider[] = []
 
@@ -337,9 +342,9 @@ export class DefiPositionsController extends EventEmitter {
     }
 
     await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))
-    this.emitUpdate()
-
     await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
+
+    this.emitUpdate()
   }
 
   async #updatePositionsByProviderAssetPrices(
