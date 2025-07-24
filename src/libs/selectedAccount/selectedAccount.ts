@@ -150,9 +150,8 @@ export const calculateDefiPositions = (
               ? Number(
                   safeTokenAmountAndNumberMultiplication(
                     BigInt(
-                      // We must use the latest amount as the total balance is always calculated
-                      // using the latest state
-                      protocolTokenInPortfolio.latestAmount || protocolTokenInPortfolio.amount
+                      protocolTokenInPortfolio.amountPostSimulation ||
+                        protocolTokenInPortfolio.amount
                     ),
                     protocolTokenInPortfolio.decimals,
                     protocolTokenInPortfolio.priceIn[0].price
@@ -173,7 +172,7 @@ export const calculateDefiPositions = (
           const tokenBalanceUSD = priceUSD
             ? Number(
                 safeTokenAmountAndNumberMultiplication(
-                  BigInt(t.latestAmount || t.amount),
+                  BigInt(t.amountPostSimulation || t.amount),
                   t.decimals,
                   priceUSD
                 )
@@ -485,9 +484,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
     let networkTotal = 0
 
     if (networkData && result && isNetworkReady(networkData)) {
-      // Always get the total balance from the latest state
-      // as we never display the pending state total balance
-      networkTotal = latestStateSelectedAccount[network]?.result?.total?.usd || 0
+      networkTotal = networkData?.result?.total?.usd || 0
 
       const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
       const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
