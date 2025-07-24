@@ -238,7 +238,7 @@ export const updatePortfolioNetworkWithDefiPositions = (
   return networkState
 }
 
-const stripPortfolioState = (portfolioState: AccountState) => {
+export const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
   Object.keys(portfolioState).forEach((chainId) => {
@@ -264,7 +264,7 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
-const calculateTokenArray = (
+export const calculateTokenArray = (
   chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
@@ -313,7 +313,7 @@ const calculateTokenArray = (
  * calculateSelectedAccountPortfolio is called after every portfolio update and we don't want to recalculate
  * the same network data if it hasn't changed.
  */
-const getIsRecalculationNeeded = (
+export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
   networkData: NetworkState | undefined,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
