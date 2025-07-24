@@ -488,7 +488,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
 
     if (
       networkData &&
-      result &&
       // The network must be ready
       isNetworkReady(networkData) &&
       !networkData?.isLoading &&
