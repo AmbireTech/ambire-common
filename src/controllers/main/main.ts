@@ -96,6 +96,7 @@ import {
 } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
@@ -205,6 +206,8 @@ export class MainController extends EventEmitter {
 
   selectedAccount: SelectedAccountController
 
+  banner: BannerController
+
   userRequests: UserRequest[] = []
 
   userRequestsWaitingAccountSwitch: UserRequest[] = []
@@ -308,6 +311,7 @@ export class MainController extends EventEmitter {
       storage: this.storage,
       accounts: this.accounts
     })
+    this.banner = new BannerController(this.storage)
     this.portfolio = new PortfolioController(
       this.storage,
       this.fetch,
@@ -316,7 +320,8 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.keystore,
       relayerUrl,
-      velcroUrl
+      velcroUrl,
+      this.banner
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
