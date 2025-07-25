@@ -130,7 +130,7 @@ export class EstimationController extends EventEmitter {
     // the portfolio would not be fetched and the estimation would be fired without tokens,
     // resulting in a "nothing to pay the fee with" error which is absolutely wrong
     if (networkFeeTokens.length === 0) {
-      await this.#portfolio.updateSelectedAccount(op.accountAddr, network, undefined, {
+      await this.#portfolio.updateSelectedAccount(op.accountAddr, [network], undefined, {
         forceUpdate: true
       })
       networkFeeTokens =

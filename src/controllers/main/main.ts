@@ -276,13 +276,22 @@ export class MainController extends EventEmitter {
       this.storage,
       this.fetch,
       relayerUrl,
-      async (network: Network) => {
-        if (network.disabled) {
-          await this.removeNetworkData(network.chainId)
-          return
+      async (networks: Network[]) => {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const n of networks) {
+          if (n.disabled) {
+            await this.removeNetworkData(n.chainId)
+          }
         }
-        this.providers.setProvider(network)
-        await this.reloadSelectedAccount({ chainId: network.chainId })
+
+        // eslint-disable-next-line no-restricted-syntax
+        for (const n of networks.filter((n) => !n.disabled)) {
+          this.providers.setProvider(n)
+        }
+        await this.reloadSelectedAccount({
+          chainIds: networks.map((n) => n.chainId),
+          forceUpdate: false
+        })
       },
       (chainId: bigint) => {
         this.providers.removeProvider(chainId)
@@ -962,7 +971,7 @@ export class MainController extends EventEmitter {
       if (canUpdateSignAccountOp && (learnedNewTokens || learnedNewNfts)) {
         await this.portfolio.updateSelectedAccount(
           accountOp.accountAddr,
-          network,
+          [network],
           accountOpsForSimulation
             ? {
                 accountOps: accountOpsForSimulation,
@@ -1284,10 +1293,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainId?: bigint }) {
-    const { forceUpdate = true, chainId } = options || {}
-    const networkToUpdate = chainId
-      ? this.networks.networks.find((n) => n.chainId === chainId)
+  async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainIds?: bigint[] }) {
+    const { forceUpdate = true, chainIds } = options || {}
+    const networksToUpdate = chainIds
+      ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
@@ -1300,18 +1309,14 @@ export class MainController extends EventEmitter {
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
       !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(
-            this.selectedAccount.account.addr,
-            'pending',
-            chainId ? [chainId] : undefined
-          )
+        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio({ network: networkToUpdate, forceUpdate }),
-      this.defiPositions.updatePositions({ chainId, forceUpdate: true })
+      this.updateSelectedAccountPortfolio({ networks: networksToUpdate, forceUpdate }),
+      this.defiPositions.updatePositions({ chainIds, forceUpdate })
     ])
   }
 
@@ -1367,10 +1372,10 @@ export class MainController extends EventEmitter {
   // TODO: Refactor this to accept an optional object with options
   async updateSelectedAccountPortfolio(opts?: {
     forceUpdate?: boolean
-    network?: Network
+    networks?: Network[]
     maxDataAgeMs?: number
   }) {
-    const { network, maxDataAgeMs, forceUpdate } = opts || {}
+    const { networks, maxDataAgeMs, forceUpdate } = opts || {}
 
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1385,7 +1390,7 @@ export class MainController extends EventEmitter {
 
     await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
-      network,
+      networks,
       accountOpsToBeSimulatedByNetwork
         ? {
             accountOps: accountOpsToBeSimulatedByNetwork,
@@ -2094,7 +2099,10 @@ export class MainController extends EventEmitter {
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
           // It's necessary to continue operating with the token `amountPostSimulation` amount.
-          this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+          this.updateSelectedAccountPortfolio({
+            forceUpdate: true,
+            networks: network ? [network] : undefined
+          })
         }
       } else {
         let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
@@ -2184,7 +2192,10 @@ export class MainController extends EventEmitter {
         // accountOp has just been rejected or broadcasted
         if (!accountOpAction) {
           if (shouldUpdateAccount)
-            this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+            this.updateSelectedAccountPortfolio({
+              forceUpdate: true,
+              networks: network ? [network] : undefined
+            })
 
           if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
             this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -2208,7 +2219,10 @@ export class MainController extends EventEmitter {
           }
           actionsToRemove.push(`${meta.accountAddr}-${meta.chainId}`)
           if (shouldUpdateAccount)
-            this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+            this.updateSelectedAccountPortfolio({
+              forceUpdate: true,
+              networks: network ? [network] : undefined
+            })
         }
         if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
           this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -2256,12 +2270,15 @@ export class MainController extends EventEmitter {
 
   async removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
-    this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity
     // this.activity.removeNetworkData(chainId)
+
+    // Don't remove the defi positions state data because we keep track of the defi positions
+    // on the disabled networks so we can suggest enabling them from a dashboard banner
+    // this.defiPositions.removeNetworkData(chainId)
   }
 
   async resolveAccountOpAction(
@@ -2417,7 +2434,10 @@ export class MainController extends EventEmitter {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+    this.updateSelectedAccountPortfolio({
+      forceUpdate: true,
+      networks: network ? [network] : undefined
+    })
     this.emitUpdate()
   }
 
@@ -2435,7 +2455,10 @@ export class MainController extends EventEmitter {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+    this.updateSelectedAccountPortfolio({
+      forceUpdate: true,
+      networks: network ? [network] : undefined
+    })
     this.emitUpdate()
   }
 
