@@ -1,20 +1,48 @@
 # Common ground for the Ambire apps
 
-This package puts together the core business logic behind Ambire web and (the future) mobile apps.
+This package puts together the core business logic behind the Ambire browser extensions and (the future) mobile apps.
 
 ## Install
+
+This package is not intended to run standalone.
+
+It’s meant to be used as a dependency by Ambire apps.
+
+You may install it standalone only for development purposes — e.g. to run tests, make changes, or compile it locally:
 
 ```bash
 npm install
 ```
 
-## Rules
+## Environment Variables
 
-Always commit in ambire-common code that's compatible with web & mobile both 🤞
+Create ".env" file in the root directory and fill in all variables, see ".env-sample" for a reference.
 
 ## Compiling
 
-How to compile files to the dist folder: tsc src/libs/portfolio/getOnchainBalances.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true --resolveJsonModule true --outDir ./dist
+This package **does not** include compiled output in the repository.
+
+Each Ambire app compiles it individually as needed.
+
+The dist/ folder exists for internal use only. It may contain some compiled files, but it is not kept up to date and not updated on release.
+
+Do not rely on dist/ as a source of compiled code.
+
+Example on how to manually compile a file to the dist/ folder:
+
+```bash
+tsc src/libs/portfolio/getOnchainBalances.ts \
+  --target es2020 \
+  --module commonjs \
+  --esModuleInterop true \
+  --sourceMap true \
+  --resolveJsonModule true \
+  --outDir ./dist
+```
+
+## Rules
+
+Always commit in ambire-common code that's compatible with web & mobile both 🤞
 
 ## Editor Config
 
