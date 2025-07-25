@@ -27,8 +27,6 @@ import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/se
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
-import { ActionsController } from '../actions/actions'
-// eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -58,8 +56,6 @@ export class SelectedAccountController extends EventEmitter {
   #portfolio: PortfolioController | null = null
 
   #defiPositions: DefiPositionsController | null = null
-
-  #actions: ActionsController | null = null
 
   #networks: NetworksController | null = null
 
@@ -148,19 +144,16 @@ export class SelectedAccountController extends EventEmitter {
   initControllers({
     portfolio,
     defiPositions,
-    actions,
     networks,
     providers
   }: {
     portfolio: PortfolioController
     defiPositions: DefiPositionsController
-    actions: ActionsController
     networks: NetworksController
     providers: ProvidersController
   }) {
     this.#portfolio = portfolio
     this.#defiPositions = defiPositions
-    this.#actions = actions
     this.#networks = networks
     this.#providers = providers
 
@@ -292,10 +285,6 @@ export class SelectedAccountController extends EventEmitter {
       this.#portfolio.getPendingPortfolioState(this.account.addr)
     )
 
-    const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
-      (action) => action.type === 'accountOp'
-    )
-
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
       selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
@@ -305,7 +294,6 @@ export class SelectedAccountController extends EventEmitter {
       structuredClone(this.#portfolioByNetworks),
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp,
       this.#isPortfolioLoadingFromScratch
     )
 
