@@ -10,6 +10,7 @@ import { AccountId } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { BuildRequest } from '../../interfaces/requests'
 import {
   SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest
@@ -49,7 +50,7 @@ import {
   ActionsController
 } from '../actions/actions'
 import { DappsController } from '../dapps/dapps'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -58,6 +59,10 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
+
+const STATUS_WRAPPED_METHODS = {
+  buildSwapAndBridgeUserRequest: 'INITIAL'
+} as const
 
 export class RequestsController extends EventEmitter {
   #relayerUrl: string
@@ -88,11 +93,15 @@ export class RequestsController extends EventEmitter {
 
   #addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
 
+  #guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
+
   userRequests: UserRequest[] = []
 
   userRequestsWaitingAccountSwitch: UserRequest[] = []
 
   actions: ActionsController
+
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -113,7 +122,8 @@ export class RequestsController extends EventEmitter {
     updateSignAccountOp,
     destroySignAccountOp,
     updateSelectedAccountPortfolio,
-    addTokensToBeLearned
+    addTokensToBeLearned,
+    guardHWSigning
   }: {
     relayerUrl: string
     accounts: AccountsController
@@ -131,6 +141,7 @@ export class RequestsController extends EventEmitter {
     destroySignAccountOp: () => void
     updateSelectedAccountPortfolio: (network: Network) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
+    guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
   }) {
     super()
 
@@ -149,6 +160,7 @@ export class RequestsController extends EventEmitter {
     this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
+    this.#guardHWSigning = guardHWSigning
 
     this.actions = new ActionsController({
       selectedAccount: this.#selectedAccount,
@@ -214,7 +226,7 @@ export class RequestsController extends EventEmitter {
       skipFocus?: boolean
     } = {}
   ) {
-    const shouldSkipAddUserRequest = await this.#guardHWSigning()
+    const shouldSkipAddUserRequest = await this.#guardHWSigning(false)
 
     if (shouldSkipAddUserRequest) return
 
@@ -480,7 +492,29 @@ export class RequestsController extends EventEmitter {
     await this.removeUserRequests([...userRequestsToRemove, ...requestIds], options)
   }
 
-  async buildUserRequestFromDAppRequest(
+  async build({ type, params }: BuildRequest) {
+    if (type === 'dappRequest') {
+      await this.#buildUserRequestFromDAppRequest(params.request, params.dappPromise)
+    }
+
+    if (type === 'transferRequest') {
+      await this.#buildTransferUserRequest(params)
+    }
+
+    if (type === 'swapAndBridgeRequest') {
+      await this.#buildSwapAndBridgeUserRequest(params)
+    }
+
+    if (type === 'claimWalletRequest') {
+      await this.#buildClaimWalletUserRequest(params)
+    }
+
+    if (type === 'mintVestingRequest') {
+      await this.#buildMintVestingUserRequest(params)
+    }
+  }
+
+  async #buildUserRequestFromDAppRequest(
     request: DappProviderRequest,
     dappPromise: {
       session: DappProviderRequest['session']
@@ -702,14 +736,20 @@ export class RequestsController extends EventEmitter {
     await this.#addSwitchAccountUserRequest(userRequest)
   }
 
-  async buildTransferUserRequest(
-    amount: string,
-    recipientAddress: string,
-    selectedToken: TokenResult,
+  async #buildTransferUserRequest({
+    amount,
+    recipientAddress,
+    selectedToken,
+    actionExecutionType = 'open-action-window',
+    windowId
+  }: {
+    amount: string
+    recipientAddress: string
+    selectedToken: TokenResult
     // eslint-disable-next-line default-param-last
-    actionExecutionType: ActionExecutionType = 'open-action-window',
+    actionExecutionType: ActionExecutionType
     windowId?: number
-  ) {
+  }) {
     await this.#initialLoadPromise
     if (!this.#selectedAccount.account) return
 
@@ -751,11 +791,15 @@ export class RequestsController extends EventEmitter {
     this.#transfer.resetForm()
   }
 
-  async buildSwapAndBridgeUserRequest(
-    openActionWindow: boolean,
-    activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId'],
+  async #buildSwapAndBridgeUserRequest({
+    openActionWindow,
+    activeRouteId,
+    windowId
+  }: {
+    openActionWindow: boolean
+    activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
     windowId?: number
-  ) {
+  }) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
@@ -882,7 +926,13 @@ export class RequestsController extends EventEmitter {
     )
   }
 
-  async buildClaimWalletUserRequest(token: TokenResult, windowId?: number) {
+  async #buildClaimWalletUserRequest({
+    token,
+    windowId
+  }: {
+    token: TokenResult
+    windowId?: number
+  }) {
     if (!this.#selectedAccount.account) return
 
     const claimableRewardsData =
@@ -900,7 +950,13 @@ export class RequestsController extends EventEmitter {
     await this.addUserRequests([userRequest])
   }
 
-  async buildMintVestingUserRequest(token: TokenResult, windowId?: number) {
+  async #buildMintVestingUserRequest({
+    token,
+    windowId
+  }: {
+    token: TokenResult
+    windowId?: number
+  }) {
     if (!this.#selectedAccount.account) return
 
     const addrVestingData = this.#selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
@@ -928,70 +984,6 @@ export class RequestsController extends EventEmitter {
       },
       []
     )
-  }
-
-  /**
-   * Don't allow the user to open new action windows
-   * if there's a pending to sign action (swap and bridge or transfer)
-   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
-   * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
-   * @returns {boolean} - true if an error was thrown
-   * @throws {Error} - if throwRpcError is true
-   */
-  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
-    const pendingAction = this.actions.visibleActionsQueue.find(
-      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
-    )
-
-    if (!pendingAction) return false
-
-    const isSigningOrBroadcasting =
-      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
-      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
-
-    // The swap and bridge or transfer is done/forgotten so we can remove the action
-    if (!isSigningOrBroadcasting) {
-      await this.actions.removeActions([pendingAction.id])
-
-      if (pendingAction.type === 'swapAndBridge') {
-        this.#swapAndBridge.reset()
-      } else {
-        this.#transfer.resetForm()
-      }
-
-      return false
-    }
-
-    const errors = {
-      swapAndBridge: {
-        message: 'Please complete the pending swap action.',
-        error: 'Pending swap action',
-        rpcError: 'You have a pending swap action. Please complete it before signing.'
-      },
-      transfer: {
-        message: 'Please complete the pending transfer action.',
-        error: 'Pending transfer action',
-        rpcError: 'You have a pending transfer action. Please complete it before signing.'
-      }
-    }
-
-    const error = errors[pendingAction.type as keyof typeof errors]
-
-    await this.actions.focusActionWindow()
-    this.emitError({
-      level: 'major',
-      message: error.message,
-      error: new Error(error.error)
-    })
-
-    if (throwRpcError) {
-      throw ethErrors.rpc.transactionRejected({
-        message: error.rpcError
-      })
-    }
-
-    return true
   }
 
   #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {

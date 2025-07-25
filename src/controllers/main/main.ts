@@ -94,7 +94,6 @@ const STATUS_WRAPPED_METHODS = {
   handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
-  buildSwapAndBridgeUserRequest: 'INITIAL',
   selectAccount: 'INITIAL',
   signAndBroadcastAccountOp: 'INITIAL'
 } as const
@@ -416,7 +415,8 @@ export class MainController extends EventEmitter {
       updateSelectedAccountPortfolio: async (network) => {
         await this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
       },
-      addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio)
+      addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
+      guardHWSigning: this.#guardHWSigning.bind(this)
     })
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
@@ -2074,6 +2074,70 @@ export class MainController extends EventEmitter {
     return !!this.requests.actions.actionsQueue.find(
       (a) => a.id === this.signAccountOp!.fromActionId
     )
+  }
+
+  /**
+   * Don't allow the user to open new action windows
+   * if there's a pending to sign action (swap and bridge or transfer)
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
+   * This is done to prevent complications with the signing process- e.g. a new request
+   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
+   * @returns {boolean} - true if an error was thrown
+   * @throws {Error} - if throwRpcError is true
+   */
+  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
+    const pendingAction = this.requests.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
+    )
+
+    if (!pendingAction) return false
+
+    const isSigningOrBroadcasting =
+      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
+      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
+
+    // The swap and bridge or transfer is done/forgotten so we can remove the action
+    if (!isSigningOrBroadcasting) {
+      await this.requests.actions.removeActions([pendingAction.id])
+
+      if (pendingAction.type === 'swapAndBridge') {
+        this.swapAndBridge.reset()
+      } else {
+        this.transfer.resetForm()
+      }
+
+      return false
+    }
+
+    const errors = {
+      swapAndBridge: {
+        message: 'Please complete the pending swap action.',
+        error: 'Pending swap action',
+        rpcError: 'You have a pending swap action. Please complete it before signing.'
+      },
+      transfer: {
+        message: 'Please complete the pending transfer action.',
+        error: 'Pending transfer action',
+        rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      }
+    }
+
+    const error = errors[pendingAction.type as keyof typeof errors]
+
+    await this.requests.actions.focusActionWindow()
+    this.emitError({
+      level: 'major',
+      message: error.message,
+      error: new Error(error.error)
+    })
+
+    if (throwRpcError) {
+      throw ethErrors.rpc.transactionRejected({
+        message: error.rpcError
+      })
+    }
+
+    return true
   }
 
   // includes the getters in the stringified instance
