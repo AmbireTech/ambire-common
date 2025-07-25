@@ -149,8 +149,23 @@ export class Portfolio {
           baseCurrency
         })
 
+        if (
+          hintsFromExternalAPI &&
+          hintsFromExternalAPI.skipOverrideSavedHints &&
+          localOpts.previousHintsFromExternalAPI
+        ) {
+          hintsFromExternalAPI = {
+            ...hintsFromExternalAPI,
+            erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
+            erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
+            // Spread it just in case we have saved a false value before
+            skipOverrideSavedHints: true
+          }
+        }
+
         if (hintsFromExternalAPI) {
           hintsFromExternalAPI.lastUpdate = Date.now()
+
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
         }
       }
@@ -339,13 +354,15 @@ export class Portfolio {
 
           priceIn = getPriceFromCache(token.address, localOpts.priceRecencyOnFailure) || []
 
-          // Avoid duplicate errors, because this.bachedGecko is called for each token and if
-          // there is an error it will most likely be the same for all tokens
           if (
+            // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+            // there is an error it will most likely be the same for all tokens
             !errors.find(
               (x) =>
                 x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
-            )
+            ) &&
+            // Don't display an error if there is a cached price
+            !priceIn.length
           ) {
             errors.push({
               name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,

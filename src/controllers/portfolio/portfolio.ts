@@ -428,7 +428,7 @@ export class PortfolioController extends EventEmitter {
 
     try {
       const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000,
+        priceRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
@@ -614,7 +614,7 @@ export class PortfolioController extends EventEmitter {
 
     try {
       const result = await portfolioLib.get(accountId, {
-        priceRecency: 60000,
+        priceRecency: 60000 * 5,
         priceCache: state.result?.priceCache,
         fetchPinned: !hasNonZeroTokens,
         ...portfolioProps
@@ -849,7 +849,10 @@ export class PortfolioController extends EventEmitter {
             const isExternalHintsApiResponseValid =
               !!networkResult?.hintsFromExternalAPI || !network.hasRelayer
 
-            if (isExternalHintsApiResponseValid) {
+            if (
+              isExternalHintsApiResponseValid &&
+              !networkResult?.hintsFromExternalAPI?.skipOverrideSavedHints
+            ) {
               const updatedStoragePreviousHints = getUpdatedHints(
                 networkResult!.hintsFromExternalAPI || null,
                 networkResult!.tokens,

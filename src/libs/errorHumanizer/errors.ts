@@ -6,7 +6,7 @@ import { ErrorHumanizerError } from './types'
 const insufficientPaymasterFunds =
   "the Paymaster has insufficient funds. Please report this to the team. We've disabled it, so please try again with the updated fee payment options."
 
-const noPrefixReasons = ['pimlico: 500', 'etherspot: 500', '0xf8618030', 'TRANSFER_FROM_FAILED']
+const noPrefixReasons = ['0xf8618030', 'TRANSFER_FROM_FAILED']
 
 const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   // Rpc
@@ -146,15 +146,6 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['TRANSFER_FROM_FAILED'],
     message: 'Insufficient token amount'
-  },
-  // bundler
-  {
-    reasons: ['biconomy: 400'],
-    message: 'it will revert onchain with reason unknown.'
-  },
-  {
-    reasons: ['pimlico: 500'],
-    message: 'The bundler seems to be down at the moment. Please try again later'
   }
 ]
 

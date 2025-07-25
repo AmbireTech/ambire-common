@@ -7,7 +7,8 @@ import { Banner } from '../../interfaces/banner'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
-  SelectedAccountPortfolio
+  SelectedAccountPortfolio,
+  SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
 import { getFirstCashbackBanners } from '../../libs/banners/banners'
@@ -22,11 +23,7 @@ import {
   getNetworksWithPortfolioErrorErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import {
-  calculateSelectedAccountPortfolio,
-  getNewStateOnly,
-  updatePortfolioStateWithDefiPositions
-} from '../../libs/selectedAccount/selectedAccount'
+import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
@@ -45,6 +42,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   collections: [],
   tokenAmounts: [],
   totalBalance: 0,
+  balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
   networkSimulatedAccountOp: {},
@@ -70,7 +68,20 @@ export class SelectedAccountController extends EventEmitter {
 
   account: Account | null = null
 
+  /**
+   * Holds the selected account portfolio that is used by the UI to display the portfolio.
+   * It includes the portfolio and defi positions for the selected account.
+   * It is updated when the portfolio or defi positions controllers are updated.
+   */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  /**
+   * Holds the selected account portfolio divided by networks. It includes the portfolio
+   * and defi positions for each network. It's used when calculating the portfolio
+   * for the UI - unnecessary calculations are avoided by using data stored here
+   * in case it doesn't have to be recalculated.
+   */
+  #portfolioByNetworks: SelectedAccountPortfolioByNetworks = {}
 
   portfolioStartedLoadingAtTimestamp: number | null = null
 
@@ -99,6 +110,9 @@ export class SelectedAccountController extends EventEmitter {
     this.#_defiPositions = val
   }
 
+  // @TODO: Get rid of this and get ambire's staked wallet position from cena, like all other positions
+  // Currently, if you hide the stkWallet token, its balance will be deducted from the total balance,
+  // unlike other positions (which isn't desired).
   get defiPositions() {
     const stkWalletToken = this.portfolio.tokens.find(
       (t) => t.chainId === 1n && t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
@@ -210,6 +224,8 @@ export class SelectedAccountController extends EventEmitter {
     this.account = account
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
+    this.defiPositions = []
+    this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
     this.portfolioStartedLoadingAtTimestamp = null
@@ -257,6 +273,7 @@ export class SelectedAccountController extends EventEmitter {
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
     this.#isPortfolioLoadingFromScratch = true
+    this.#portfolioByNetworks = {}
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -275,31 +292,17 @@ export class SelectedAccountController extends EventEmitter {
       this.#portfolio.getPendingPortfolioState(this.account.addr)
     )
 
-    const latestStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      getNewStateOnly(latestStateSelectedAccount, this.portfolio?.latest),
-      defiPositionsAccountState,
-      this.areDefiPositionsLoading
-    )
-
-    const pendingStateSelectedAccountWithDefiPositions = updatePortfolioStateWithDefiPositions(
-      getNewStateOnly(pendingStateSelectedAccount, this.portfolio?.pending),
-      defiPositionsAccountState,
-      this.areDefiPositionsLoading
-    )
     const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
       (action) => action.type === 'accountOp'
     )
 
-    const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
-      {
-        ...latestStateSelectedAccount,
-        ...latestStateSelectedAccountWithDefiPositions
-      },
-      {
-        ...pendingStateSelectedAccount,
-        ...pendingStateSelectedAccountWithDefiPositions
-      },
-      this.portfolio,
+    const {
+      selectedAccountPortfolio: newSelectedAccountPortfolio,
+      selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
+    } = calculateSelectedAccountPortfolio(
+      latestStateSelectedAccount,
+      pendingStateSelectedAccount,
+      structuredClone(this.#portfolioByNetworks),
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
       hasSignAccountOp,
@@ -322,6 +325,7 @@ export class SelectedAccountController extends EventEmitter {
     }
 
     this.portfolio = newSelectedAccountPortfolio
+    this.#portfolioByNetworks = newSelectedAccountPortfolioByNetworks
     this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 
@@ -369,7 +373,10 @@ export class SelectedAccountController extends EventEmitter {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
-    return Object.values(defiPositionsAccountState).some((n) => n.isLoading)
+    return (
+      !Object.keys(defiPositionsAccountState).length ||
+      Object.values(defiPositionsAccountState).some((n) => n.isLoading)
+    )
   }
 
   #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {

@@ -10,22 +10,13 @@ const LAST_RESORT_ERROR_MESSAGE =
   'An unknown error occurred while broadcasting the transaction. Please try again or contact Ambire support for assistance.'
 const MESSAGE_PREFIX = 'The transaction cannot be broadcast because'
 
-function getPrefix(reason: string | null): string {
-  if (!reason) return MESSAGE_PREFIX
-  return !reason.includes('pimlico: 500') ? MESSAGE_PREFIX : ''
-}
-
 export function getHumanReadableBroadcastError(e: Error | DecodedError) {
   if (e instanceof EmittableError || e instanceof ExternalSignerError) {
     return e
   }
 
   const decodedError = e instanceof Error ? decodeError(e as Error) : (e as DecodedError)
-  const commonError = humanizeEstimationOrBroadcastError(
-    decodedError,
-    getPrefix(decodedError.reason),
-    e
-  )
+  const commonError = humanizeEstimationOrBroadcastError(decodedError, MESSAGE_PREFIX, e)
   let errorMessage = getHumanReadableErrorMessage(
     commonError,
     BROADCAST_ERRORS,

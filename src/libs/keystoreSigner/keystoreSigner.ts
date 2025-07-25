@@ -7,17 +7,23 @@ import {
   isHexString,
   keccak256,
   toBeHex,
+  toNumber,
   TransactionRequest,
   Wallet
 } from 'ethers'
 import { ecdsaSign } from 'secp256k1'
+
+import {
+  signTypedData as signTypedDataWithMetaMaskSigUtil,
+  SignTypedDataVersion
+} from '@metamask/eth-sig-util'
 
 import { EIP7702Auth } from '../../consts/7702'
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { filterNotUsedEIP712Types } from '../signMessage/signMessage'
+import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -47,11 +53,12 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   async signTypedData(typedMessage: TypedMessage) {
-    const sig = await this.#signer.signTypedData(
-      typedMessage.domain,
-      filterNotUsedEIP712Types(typedMessage.types, typedMessage.primaryType),
-      typedMessage.message
-    )
+    const sig = signTypedDataWithMetaMaskSigUtil({
+      privateKey: Buffer.from(getBytes(this.#signer.privateKey)),
+      data: adaptTypedMessageForMetaMaskSigUtil(typedMessage),
+      // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+      version: SignTypedDataVersion.V4
+    })
 
     return sig
   }

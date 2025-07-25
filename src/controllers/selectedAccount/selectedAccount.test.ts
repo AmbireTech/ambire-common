@@ -11,6 +11,7 @@ import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
@@ -283,7 +284,7 @@ describe('SelectedAccount Controller', () => {
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
       await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await wait(500)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
@@ -301,6 +302,7 @@ describe('SelectedAccount Controller', () => {
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
       await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
+
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
