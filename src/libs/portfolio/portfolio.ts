@@ -308,7 +308,16 @@ export class Portfolio {
         // fetch all tokens regardless of their balance or type
         if (!localOpts.specialErc20Hints) return true
 
-        return tokenFilter(_tokensWithErrResult[1], this.network, opts.fetchPinned, nativeToken)
+        const isToBeLearned =
+          localOpts.specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
+
+        return tokenFilter(
+          _tokensWithErrResult[1],
+          this.network,
+          isToBeLearned,
+          !!opts.fetchPinned,
+          nativeToken
+        )
       })
       .map(([, result]: [any, TokenResult]) => {
         // Add tokens proposed by the controller to toBeLearned

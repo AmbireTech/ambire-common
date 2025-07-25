@@ -359,7 +359,8 @@ export const getSpecialHints = (
 export const tokenFilter = (
   token: TokenResult,
   network: Network,
-  shouldIncludePinned?: boolean,
+  isToBeLearned: boolean,
+  shouldIncludePinned: boolean,
   nativeToken?: TokenResult
 ): boolean => {
   // Never add ERC20 tokens that represent the network's native token.
@@ -375,7 +376,7 @@ export const tokenFilter = (
   if (isERC20NativeRepresentation) return false
 
   // always include tokens added as a preference
-  if (token.flags.isHidden || token.flags.isCustom) return true
+  if (token.flags.isHidden || token.flags.isCustom || isToBeLearned) return true
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
