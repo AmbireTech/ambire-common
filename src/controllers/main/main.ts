@@ -2422,7 +2422,6 @@ export class MainController extends EventEmitter {
   }
 
   onOneClickTransferClose() {
-    console.log('Transfer -> onOneClickTransferClose')
     const signAccountOp = this.transfer.signAccountOpController
 
     // Always unload the screen when the action window is closed
