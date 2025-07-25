@@ -1,9 +1,9 @@
-import { MarketingBanner } from '../../interfaces/banner'
+import { Banner } from '../../interfaces/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 
 export class BannerController extends EventEmitter {
-  #banners: MarketingBanner[] = []
+  #banners: Banner[] = []
 
   #dismissedBanners: (string | number)[] = []
 
@@ -27,24 +27,25 @@ export class BannerController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get banners(): MarketingBanner[] {
-    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id))
+  get banners(): Banner[] {
+    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id)).slice()
   }
 
   async #saveDismissedToStorage() {
     await this.#storage.set('dismissedBanners', this.#dismissedBanners)
   }
 
-  addBanner(banner: MarketingBanner) {
+  addBanner(banner: Banner) {
     this.#banners = [banner]
     this.emitUpdate()
   }
 
   async dismissBanner(bannerId: string | number) {
-    if (!this.#dismissedBanners.includes(bannerId)) {
+    const bannerExists = this.#banners.some((banner) => banner.id === bannerId)
+    if (!this.#dismissedBanners.includes(bannerId) && bannerExists) {
       this.#dismissedBanners.push(bannerId)
       this.emitUpdate()
-      await this.#storage.set('dismissedBanners', this.#dismissedBanners)
+      await this.#saveDismissedToStorage()
     }
   }
 

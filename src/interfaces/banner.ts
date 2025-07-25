@@ -14,24 +14,19 @@ export type BannerCategory =
 
 export interface Banner {
   id: number | string
-  accountAddr?: string
-  type: BannerType
+  type: BannerType | MarketingBannerTypes
   category?: BannerCategory
   title: string
-  text: string
+  text?: string
   actions: Action[]
+  meta?: {
+    accountAddr?: string
+    startTime?: number
+    endTime?: number
+  }
 }
 
-export type MarketingBannerType = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
-
-export interface MarketingBanner {
-  id: string
-  text: string
-  type?: MarketingBannerType // default is 'updates'
-  url?: string
-  startTime?: number
-  endTime?: number
-}
+export type MarketingBannerTypes = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
 export type Action =
   | {
@@ -114,4 +109,9 @@ export type Action =
   | {
       label: 'View'
       actionName: 'view-bridge'
+    }
+  | {
+      label: 'Open'
+      actionName: 'open-link'
+      meta: { url: string }
     }

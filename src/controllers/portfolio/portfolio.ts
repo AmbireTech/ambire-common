@@ -481,14 +481,30 @@ export class PortfolioController extends EventEmitter {
       return
     }
 
-    // eslint-disable-next-line no-underscore-dangle
-    if (res.data.banner?._id) {
-      // Convert _id to id for compatibility with the banner controller
-      // eslint-disable-next-line no-underscore-dangle
-      res.data.banner.id = res.data.banner._id
-    }
-    if (res.data.banner?.id) {
-      this.#bannerController.addBanner(res.data.banner)
+    if (res.data.banner) {
+      const banner = res.data.banner
+
+      const formattedBanner: Banner = {
+        id: banner.id || banner._id,
+        type: banner.type,
+        params: {
+          startTime: banner.startTime,
+          endTime: banner.endTime
+        },
+        ...(banner.text && { text: banner.text }),
+        ...(banner.title && { title: banner.title }),
+        ...(banner.url && {
+          actions: [
+            {
+              label: 'Open',
+              actionName: 'open-link',
+              meta: { url: banner.url }
+            }
+          ]
+        })
+      }
+
+      this.#bannerController.addBanner(formattedBanner)
     }
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
