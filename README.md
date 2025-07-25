@@ -18,6 +18,20 @@ npm install
 
 Create ".env" file in the root directory and fill in all variables, see ".env-sample" for a reference.
 
+## Branching & Git Flow
+
+We follow a lightweight Git branching model:
+
+v1 (legacy)
+
+- `v1` branch (ex `master` branch), now archived as the final state of the v1 codebase. Ambire v1 apps are in maintenance mode, so occasionally small changes may be applied to this branch.
+- `develop` branch - deprecated and deleted; used in the past for v1 development
+
+v2 (current)
+
+- `v2` branch is our active development branch
+- `main` branch - reflects the current production version, all releases are merged here
+
 ## Compiling
 
 This package **does not** include compiled output in the repository.
