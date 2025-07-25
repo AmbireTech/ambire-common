@@ -364,7 +364,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
@@ -411,7 +410,10 @@ export function calculateSelectedAccountPortfolioByNetworks(
       const isPendingNewer =
         pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
 
-      if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
+      if (
+        !pendingNetworkData.criticalError &&
+        (isPendingNewer || !!pendingNetworkData.accountOps?.length)
+      ) {
         validSelectedAccountPendingState[network] = pendingNetworkData
       }
     }
@@ -529,7 +531,6 @@ export function calculateSelectedAccountPortfolio(
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolio: SelectedAccountPortfolio
@@ -542,7 +543,6 @@ export function calculateSelectedAccountPortfolio(
       pastAccountPortfolioWithDefiPositions,
       portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp,
       isLoadingFromScratch
     )
 

@@ -293,7 +293,6 @@ describe('Selected Account lib', () => {
         {},
         Date.now(),
         clonedDefiAccountState,
-        false,
         true
       )
 
@@ -319,7 +318,6 @@ describe('Selected Account lib', () => {
         {},
         portfolioStartedLoadingAtTimestamp,
         clonedDefiAccountState,
-        false,
         true
       )
 
@@ -340,7 +338,6 @@ describe('Selected Account lib', () => {
         {},
         Date.now(),
         clonedDefiAccountState,
-        false,
         true
       )
 
