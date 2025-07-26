@@ -126,6 +126,8 @@ export class TransferController extends EventEmitter {
 
   latestBroadcastedToken: TokenResult | null = null
 
+  #shouldTrackLatestBroadcastedAccountOp: boolean = true
+
   hasProceeded: boolean = false
 
   // Used to safely manage and cancel the periodic estimation loop.
@@ -193,6 +195,15 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get shouldTrackLatestBroadcastedAccountOp() {
+    return this.#shouldTrackLatestBroadcastedAccountOp
+  }
+
+  set shouldTrackLatestBroadcastedAccountOp(value: boolean) {
+    this.#shouldTrackLatestBroadcastedAccountOp = value
+    this.emitUpdate()
+  }
+
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
     if (!token || Number(getTokenAmount(token)) === 0) {
@@ -254,7 +265,8 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  resetForm() {
+  resetForm(shouldDestroyAccountOp = true) {
+    console.log('Transfer -> resetForm() called')
     this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
@@ -263,7 +275,10 @@ export class TransferController extends EventEmitter {
     this.#onRecipientAddressChange()
     this.programmaticUpdateCounter = 0
 
-    this.destroySignAccountOp()
+    if (shouldDestroyAccountOp) {
+      this.destroySignAccountOp()
+    }
+
     this.emitUpdate()
   }
 
@@ -345,6 +360,8 @@ export class TransferController extends EventEmitter {
     isTopUp,
     amountFieldMode
   }: TransferUpdate) {
+    this.shouldTrackLatestBroadcastedAccountOp = true
+
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -717,7 +734,7 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  unloadScreen(forceUnload: boolean) {
+  unloadScreen(forceUnload?: boolean) {
     if (this.hasPersistedState && !forceUnload) return
 
     this.destroyLatestBroadcastedAccountOp()
