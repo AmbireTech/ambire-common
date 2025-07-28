@@ -770,7 +770,8 @@ export class PortfolioController extends EventEmitter {
           const allHints = {
             previousHintsFromExternalAPI,
             additionalErc20Hints,
-            additionalErc721Hints
+            additionalErc721Hints,
+            specialErc20Hints
           }
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
@@ -781,8 +782,7 @@ export class PortfolioController extends EventEmitter {
               portfolioLib,
               {
                 blockTag: 'latest',
-                ...allHints,
-                specialErc20Hints
+                ...allHints
               },
               forceUpdate,
               opts?.maxDataAgeMs
@@ -801,8 +801,7 @@ export class PortfolioController extends EventEmitter {
                       state
                     }
                   }),
-                ...allHints,
-                specialErc20Hints
+                ...allHints
               },
               forceUpdate,
               opts?.maxDataAgeMs
