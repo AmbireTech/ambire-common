@@ -315,7 +315,9 @@ export const getAccountOpBanners = ({
 export const getKeySyncBanner = (addr: string, email: string, keys: string[]) => {
   const banner: Banner = {
     id: `keys-sync:${addr}:${email}`,
-    accountAddr: addr,
+    meta: {
+      accountAddr: addr
+    },
     type: 'info',
     title: 'Sync Key Store keys',
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',

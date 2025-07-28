@@ -17,6 +17,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -202,7 +203,8 @@ const prepareTest = () => {
     accountsCtrl,
     keystore,
     relayerUrl,
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
 
   return { storageCtrl, controller }
