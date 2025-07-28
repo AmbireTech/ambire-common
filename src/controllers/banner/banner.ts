@@ -9,6 +9,9 @@ export class BannerController extends EventEmitter {
 
   #storage: StorageController
 
+  // Used for testing
+  maxBannerCount = 1
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
@@ -20,8 +23,10 @@ export class BannerController extends EventEmitter {
     this.initialLoadPromise = this.#load()
   }
 
-  static #getValidBanners(banners: Banner[]) {
-    return banners.filter(({ meta }) => {
+  #getValidBanners(banners: Banner[]) {
+    return banners.filter(({ meta, id }) => {
+      if (this.#dismissedBanners.includes(id)) return false
+
       const endTime = meta && meta.endTime
 
       if (!endTime) return true
@@ -41,7 +46,7 @@ export class BannerController extends EventEmitter {
 
   get banners(): Banner[] {
     // Always return one banner at a time
-    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id)).slice(0, 1)
+    return this.#getValidBanners(this.#banners).slice(0, this.maxBannerCount)
   }
 
   async #saveDismissedToStorage() {
@@ -49,7 +54,9 @@ export class BannerController extends EventEmitter {
   }
 
   addBanner(banner: Banner) {
-    this.#banners = BannerController.#getValidBanners([
+    if (this.#dismissedBanners.includes(banner.id)) return
+
+    this.#banners = this.#getValidBanners([
       ...this.#banners.filter((b) => b.id !== banner.id),
       banner
     ])
