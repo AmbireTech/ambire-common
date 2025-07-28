@@ -201,7 +201,6 @@ export class TransferController extends EventEmitter {
 
   set shouldTrackLatestBroadcastedAccountOp(value: boolean) {
     this.#shouldTrackLatestBroadcastedAccountOp = value
-    this.emitUpdate()
   }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
@@ -266,7 +265,6 @@ export class TransferController extends EventEmitter {
   }
 
   resetForm(shouldDestroyAccountOp = true) {
-    console.log('Transfer -> resetForm() called')
     this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
