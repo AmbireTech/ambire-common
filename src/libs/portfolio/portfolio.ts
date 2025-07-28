@@ -320,12 +320,20 @@ export class Portfolio {
         )
       })
       .map(([, result]: [any, TokenResult]) => {
+        if (
+          !result.amount ||
+          result.flags.isCustom ||
+          result.flags.isHidden ||
+          toBeLearned.erc20s.includes(result.address)
+        ) {
+          return result
+        }
+
         // Add tokens proposed by the controller to toBeLearned
         if (
           opts.specialErc20Hints &&
           opts.specialErc20Hints[result.address] &&
-          opts.specialErc20Hints[result.address] === 'learn' &&
-          result.amount > 0
+          opts.specialErc20Hints[result.address] === 'learn'
         ) {
           toBeLearned.erc20s.push(result.address)
           // Add tokens proposed by the external API to toBeLearned
@@ -334,10 +342,7 @@ export class Portfolio {
         } else if (
           hintsFromExternalAPI &&
           !hintsFromExternalAPI.hasHints &&
-          !hintsFromExternalAPI.skipOverrideSavedHints &&
-          !result.flags.isCustom &&
-          !result.flags.isHidden &&
-          result.amount > 0
+          !hintsFromExternalAPI.skipOverrideSavedHints
         ) {
           toBeLearned.erc20s.push(result.address)
         }
