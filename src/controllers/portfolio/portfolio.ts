@@ -894,6 +894,14 @@ export class PortfolioController extends EventEmitter {
       if (alreadyLearned.includes(getAddress(address))) return acc
 
       acc[address] = acc[address] || null // Keep the timestamp of all learned tokens
+
+      if (this.#toBeLearnedTokens[chainId.toString()]) {
+        // Remove the token from toBeLearnedTokens if it will be learned
+        this.#toBeLearnedTokens[chainId.toString()] = this.#toBeLearnedTokens[
+          chainId.toString()
+        ].filter((addr) => addr !== address)
+      }
+
       return acc
     }, {})
 
