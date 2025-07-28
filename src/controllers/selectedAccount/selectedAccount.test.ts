@@ -14,6 +14,7 @@ import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
+import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitterClass from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -77,7 +78,8 @@ const portfolioCtrl = new PortfolioController(
   accountsCtrl,
   keystore,
   relayerUrl,
-  velcroUrl
+  velcroUrl,
+  new BannerController(storageCtrl)
 )
 
 const defiPositionsCtrl = new DefiPositionsController({

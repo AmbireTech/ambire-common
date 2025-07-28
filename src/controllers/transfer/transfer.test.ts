@@ -28,6 +28,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -224,7 +225,8 @@ const portfolioController = new PortfolioController(
   accountsCtrl,
   keystoreController,
   relayerUrl,
-  velcroUrl
+  velcroUrl,
+  new BannerController(storageCtrl)
 )
 const activity = new ActivityController(
   storageCtrl,

@@ -12,6 +12,7 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -196,7 +197,8 @@ describe('Activity Controller ', () => {
       accountsCtrl,
       keystore,
       relayerUrl,
-      velcroUrl
+      velcroUrl,
+      new BannerController(storageCtrl)
     )
     providersCtrl.providers = providers
     accountsCtrl = new AccountsController(
