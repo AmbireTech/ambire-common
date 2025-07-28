@@ -12,6 +12,7 @@ import {
 } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
 import {
+  defiPositionsOnDisabledNetworksBannerId,
   getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
   getFirstCashbackBanners
 } from '../../libs/banners/banners'
@@ -106,7 +107,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
-  accountsWithDismissedDefiPositionsBanner: string[] = []
+  dismissedBannerIds: { [key: string]: string[] } = {}
 
   #_defiPositions: PositionsByProvider[] = []
 
@@ -143,17 +144,14 @@ export class SelectedAccountController extends EventEmitter {
   async #load() {
     await this.#accounts.initialLoadPromise
 
-    const [
-      selectedAccountAddress,
-      cashbackStatusByAccount,
-      accountsWithDismissedDefiPositionsBanner
-    ] = await Promise.all([
-      this.#storage.get('selectedAccount', null),
-      this.#storage.get('cashbackStatusByAccount', {}),
-      this.#storage.get('accountsWithDismissedDefiPositionsBanner', [])
-    ])
+    const [selectedAccountAddress, cashbackStatusByAccount, selectedAccountDismissedBannerIds] =
+      await Promise.all([
+        this.#storage.get('selectedAccount', null),
+        this.#storage.get('cashbackStatusByAccount', {}),
+        this.#storage.get('selectedAccountDismissedBannerIds', [])
+      ])
     this.#cashbackStatusByAccount = cashbackStatusByAccount
-    this.accountsWithDismissedDefiPositionsBanner = accountsWithDismissedDefiPositionsBanner
+    this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
 
@@ -570,13 +568,29 @@ export class SelectedAccountController extends EventEmitter {
 
   async dismissDefiPositionsBannerForTheSelectedAccount() {
     if (!this.account) return
-    if (this.accountsWithDismissedDefiPositionsBanner.includes(this.account.addr)) return
 
-    this.accountsWithDismissedDefiPositionsBanner.push(this.account.addr)
-    await this.#storage.set(
-      'accountsWithDismissedDefiPositionsBanner',
-      this.accountsWithDismissedDefiPositionsBanner
-    )
+    const defiBanner = this.banners.find((b) => b.id === defiPositionsOnDisabledNetworksBannerId)
+    if (!defiBanner) return
+
+    const action = defiBanner.actions.find((a) => a.actionName === 'enable-networks')
+    if (!action) return
+
+    if (!this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId])
+      this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId] = []
+
+    action.meta.networkChainIds.forEach((chainId) => {
+      if (
+        this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
+          `${this.account!.addr}-${chainId}`
+        )
+      )
+        return
+      this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].push(
+        `${this.account!.addr}-${chainId}`
+      )
+    })
+
+    await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds)
     this.emitUpdate()
   }
 
@@ -595,13 +609,19 @@ export class SelectedAccountController extends EventEmitter {
     )
       return []
 
-    if (this.accountsWithDismissedDefiPositionsBanner.includes(this.account.addr)) return []
-
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
+    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+      ? this.#networks.allNetworks.filter(
+          (n) =>
+            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
+              `${this.account!.addr}-${n.chainId}`
+            )
+        )
+      : this.#networks.allNetworks
     return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
       defiPositionsAccountState,
-      networks: this.#networks.allNetworks
+      networks: notDismissedNetworks
     })
   }
 

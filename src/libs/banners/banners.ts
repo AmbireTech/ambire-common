@@ -362,6 +362,8 @@ export const getFirstCashbackBanners = ({
   return banners
 }
 
+export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
+
 export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   defiPositionsAccountState,
   networks
@@ -392,7 +394,7 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
 
   banners.push({
-    id: 'defi-positions-on-disabled-networks',
+    id: defiPositionsOnDisabledNetworksBannerId,
     type: 'info',
     title: 'DeFi positions detected on disabled networks',
     text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
