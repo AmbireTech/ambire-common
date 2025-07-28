@@ -26,6 +26,7 @@ import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
+import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
@@ -34,6 +35,7 @@ import { batchCallsFromUserRequests } from '../../libs/requests/requests'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  getActiveRoutesForAccount,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
@@ -56,7 +58,7 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction } from '../actions/actions'
+import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -65,7 +67,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { StorageController } from '../storage/storage'
@@ -252,6 +253,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #getUserRequests: () => UserRequest[]
 
+  #getVisibleActionsQueue: () => Action[]
+
   hasProceeded: boolean = false
 
   /**
@@ -280,7 +283,8 @@ export class SwapAndBridgeController extends EventEmitter {
     portfolioUpdate,
     relayerUrl,
     isMainSignAccountOpThrowingAnEstimationError,
-    getUserRequests
+    getUserRequests,
+    getVisibleActionsQueue
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -297,6 +301,7 @@ export class SwapAndBridgeController extends EventEmitter {
     portfolioUpdate?: Function
     isMainSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
+    getVisibleActionsQueue: () => Action[]
   }) {
     super()
     this.#accounts = accounts
@@ -315,6 +320,7 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#invite = invite
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
+    this.#getVisibleActionsQueue = getVisibleActionsQueue
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -2315,6 +2321,22 @@ export class SwapAndBridgeController extends EventEmitter {
     return errors
   }
 
+  get banners() {
+    if (!this.#selectedAccount.account) return []
+
+    const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.#selectedAccount.account.addr,
+      this.activeRoutes
+    )
+    const accountOpActions = this.#getVisibleActionsQueue().filter(
+      ({ type }) => type === 'accountOp'
+    ) as AccountOpAction[]
+
+    // Swap banners aren't generated because swaps are completed instantly,
+    // thus the activity banner on broadcast is sufficient
+    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+  }
+
   toJSON() {
     return {
       ...this,
@@ -2330,7 +2352,8 @@ export class SwapAndBridgeController extends EventEmitter {
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
       supportedChainIds: this.supportedChainIds,
       swapSignErrors: this.swapSignErrors,
-      signAccountOpController: this.signAccountOpController
+      signAccountOpController: this.signAccountOpController,
+      banners: this.banners
     }
   }
 }

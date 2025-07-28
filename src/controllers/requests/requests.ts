@@ -22,7 +22,6 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
 // eslint-disable-next-line import/no-cycle
 import { dappRequestMethodToActionKind } from '../../libs/actions/actions'
-import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { TokenResult } from '../../libs/portfolio'
 import {
@@ -31,10 +30,7 @@ import {
   makeAccountOpAction
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import {
-  buildSwapAndBridgeUserRequests,
-  getActiveRoutesForAccount
-} from '../../libs/swapAndBridge/swapAndBridge'
+import { buildSwapAndBridgeUserRequests } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   buildClaimWalletRequest,
   buildMintVestingRequest,
@@ -200,6 +196,7 @@ export class RequestsController extends EventEmitter {
       }
     })
 
+    this.actions.onUpdate(() => this.emitUpdate(), 'requests-on-update-listener')
     this.#initialLoadPromise = this.#load()
   }
 
@@ -1019,27 +1016,10 @@ export class RequestsController extends EventEmitter {
     )
   }
 
-  get banners() {
-    if (!this.#selectedAccount.account) return []
-
-    const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
-      this.#selectedAccount.account.addr,
-      this.#swapAndBridge.activeRoutes
-    )
-    const accountOpActions = this.actions.visibleActionsQueue.filter(
-      ({ type }) => type === 'accountOp'
-    ) as AccountOpAction[]
-
-    // Swap banners aren't generated because swaps are completed instantly,
-    // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
-  }
-
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      banners: this.banners
+      ...super.toJSON()
     }
   }
 }

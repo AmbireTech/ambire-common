@@ -377,7 +377,8 @@ export class MainController extends EventEmitter {
           fromChainId === toChainId
         )
       },
-      getUserRequests: () => this.requests.userRequests || []
+      getUserRequests: () => this.requests.userRequests || [],
+      getVisibleActionsQueue: () => this.requests.actions.visibleActionsQueue || []
     })
     this.transfer = new TransferController(
       this.storage,
