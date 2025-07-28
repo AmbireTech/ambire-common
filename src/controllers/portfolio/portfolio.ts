@@ -4,7 +4,7 @@ import { STK_WALLET } from '../../consts/addresses'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { canBecomeSmarter, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -675,14 +675,9 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    const updateAdditionalPortfolioIfNeeded =
-      isSmartAccount(selectedAccount) || canBecomeSmarter(selectedAccount, this.#keystore.keys)
-        ? this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
-        : Promise.resolve()
-
     const networks = network ? [network] : this.#networks.networks
     await Promise.all([
-      updateAdditionalPortfolioIfNeeded,
+      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate),
       ...networks.map(async (network) => {
         const key = `${network.chainId}:${accountId}`
 
