@@ -1,15 +1,18 @@
-import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
+import { hexlify, isBytesLike, isHexString, toUtf8Bytes, Uint8Array } from 'ethers'
+import { HexString } from 'ethers/lib.commonjs/utils/data'
+import { Hex } from 'interfaces/hex'
 
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Message } from '../../interfaces/userRequest'
+import { Message, PlainTextMessage } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
   getEIP712Signature,
   getPlainTextSignature,
   getVerifyMessageSignature,
+  isPlainTextMessage,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
@@ -90,10 +93,24 @@ export class SignMessageController extends EventEmitter {
     await this.#accounts.initialLoadPromise
 
     if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
-      if (dapp) {
-        this.dapp = dapp
-      }
+      if (dapp) this.dapp = dapp
+
       this.messageToSign = messageToSign
+
+      if (isPlainTextMessage(this.messageToSign.content)) {
+        const shouldConvertInComingPlainMessageToHex = !isHexString(
+          this.messageToSign.content.message
+        )
+
+        if (shouldConvertInComingPlainMessageToHex) {
+          this.messageToSign.content.message = (
+            this.messageToSign.content.message instanceof Uint8Array
+              ? hexlify(this.messageToSign.content.message)
+              : hexlify(toUtf8Bytes(this.messageToSign.content.message))
+          ) as Hex
+        }
+      }
+
       this.isInitialized = true
       this.emitUpdate()
     } else {
@@ -161,16 +178,11 @@ export class SignMessageController extends EventEmitter {
 
       const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()]
       let signature
-      // It is defined when messageToSign.content.kind === 'message'
-      let hexMessage: string | undefined
 
       try {
-        if (this.messageToSign.content.kind === 'message') {
-          const message = this.messageToSign.content.message
-          hexMessage = isHexString(message) ? message : hexlify(toUtf8Bytes(message))
-
+        if (isPlainTextMessage(this.messageToSign.content)) {
           signature = await getPlainTextSignature(
-            hexMessage,
+            this.messageToSign.content.message,
             network,
             account,
             accountState,
@@ -220,8 +232,8 @@ export class SignMessageController extends EventEmitter {
         signer: this.messageToSign?.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
-        ...(this.messageToSign.content.kind === 'message'
-          ? { message: hexStringToUint8Array(hexMessage!) }
+        ...(isPlainTextMessage(this.messageToSign.content)
+          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
               typedData: {
