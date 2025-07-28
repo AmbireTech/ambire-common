@@ -20,6 +20,18 @@ export class BannerController extends EventEmitter {
     this.initialLoadPromise = this.#load()
   }
 
+  static #getValidBanners(banners: Banner[]) {
+    return banners.filter(({ meta }) => {
+      const endTime = meta && meta.endTime
+
+      if (!endTime) return true
+
+      const isExpired = Date.now() > endTime
+
+      return !isExpired
+    })
+  }
+
   async #load() {
     const dismissedBanners = await this.#storage.get('dismissedBanners', [])
 
@@ -28,7 +40,8 @@ export class BannerController extends EventEmitter {
   }
 
   get banners(): Banner[] {
-    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id)).slice()
+    // Always return one banner at a time
+    return this.#banners.filter((b) => !this.#dismissedBanners.includes(b.id)).slice(0, 1)
   }
 
   async #saveDismissedToStorage() {
@@ -36,17 +49,22 @@ export class BannerController extends EventEmitter {
   }
 
   addBanner(banner: Banner) {
-    this.#banners = [banner]
+    this.#banners = BannerController.#getValidBanners([
+      ...this.#banners.filter((b) => b.id !== banner.id),
+      banner
+    ])
+
     this.emitUpdate()
   }
 
   async dismissBanner(bannerId: string | number) {
     const bannerExists = this.#banners.some((banner) => banner.id === bannerId)
-    if (!this.#dismissedBanners.includes(bannerId) && bannerExists) {
-      this.#dismissedBanners.push(bannerId)
-      this.emitUpdate()
-      await this.#saveDismissedToStorage()
-    }
+
+    if (this.#dismissedBanners.includes(bannerId) || !bannerExists) return
+
+    this.#dismissedBanners.push(bannerId)
+    this.emitUpdate()
+    await this.#saveDismissedToStorage()
   }
 
   toJSON() {
