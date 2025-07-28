@@ -399,11 +399,9 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
       defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
     } on${
       disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
-    }: ${disabledNetworksWithDefiPosArray.map((n, i, arr) => {
-      if (i !== arr.length - 1) return ` ${n.name}`
-
-      return ` ${n.name}`
-    })}. Would you like to enable ${
+    }: ${disabledNetworksWithDefiPosArray
+      .map((n) => n.name)
+      .join(', ')}. Would you like to enable ${
       disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
     }?`,
     actions: [

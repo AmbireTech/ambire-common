@@ -280,17 +280,8 @@ export class MainController extends EventEmitter {
       this.fetch,
       relayerUrl,
       async (networks: Network[]) => {
-        // eslint-disable-next-line no-restricted-syntax
-        for (const n of networks) {
-          if (n.disabled) {
-            await this.removeNetworkData(n.chainId)
-          }
-        }
-
-        // eslint-disable-next-line no-restricted-syntax
-        for (const n of networks.filter((n) => !n.disabled)) {
-          this.providers.setProvider(n)
-        }
+        networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
+        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
         await this.reloadSelectedAccount({
           chainIds: networks.map((n) => n.chainId),
           forceUpdate: false
@@ -2273,7 +2264,7 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetworkData(chainId: bigint) {
+  removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks

@@ -489,12 +489,7 @@ export class NetworksController extends EventEmitter {
   }
 
   async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
-    // eslint-disable-next-line no-restricted-syntax
-    for (const chainId of chainIds) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.#updateNetwork(network, chainId, true)
-    }
-
+    await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
     this.#onAddOrUpdateNetworks(this.networks.filter((n) => chainIds.includes(n.chainId)))
     this.emitUpdate()
   }
