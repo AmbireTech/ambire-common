@@ -12,7 +12,7 @@ export type SelectedAccountPortfolioState = {
     | (Omit<NetworkState, 'result'> & {
         result?: Omit<
           NonNullable<NetworkState['result']>,
-          'tokens' | 'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache'
+          'tokens' | 'collections' | 'tokenErrors' | 'hintsFromExternalAPI' | 'priceCache' | 'total'
         >
       })
     | undefined
@@ -34,7 +34,7 @@ export type SelectedAccountPortfolioByNetworksNetworkState = {
    * selected account portfolio must be recalculated.
    */
   defiPositionsUpdatedAt?: number
-  simulatedAccountOp: NetworkSimulatedAccountOp[string]
+  simulatedAccountOp?: NetworkSimulatedAccountOp[string]
 }
 
 export type SelectedAccountPortfolioByNetworks = {
@@ -57,6 +57,9 @@ export interface SelectedAccountPortfolio {
   isReadyToVisualize: boolean
   /** True after all networks have initially loaded. May be true even if a network is loading (e.g. during an interval update). */
   isAllReady: boolean
+  balancePerNetwork: {
+    [chainId: string]: number
+  }
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   latest: SelectedAccountPortfolioState
   pending: SelectedAccountPortfolioState

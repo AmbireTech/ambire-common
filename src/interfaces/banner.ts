@@ -16,13 +16,19 @@ export type BannerCategory =
 
 export interface Banner {
   id: number | string
-  accountAddr?: string
-  type: BannerType
+  type: BannerType | MarketingBannerTypes
   category?: BannerCategory
   title: string
-  text: string
+  text?: string
   actions: Action[]
+  meta?: {
+    accountAddr?: string
+    startTime?: number
+    endTime?: number
+  }
 }
+
+export type MarketingBannerTypes = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
 export type Action =
   | {
@@ -120,3 +126,4 @@ export type Action =
       label: 'Dismiss'
       actionName: 'dismiss-defi-positions-banner'
     }
+  | { label: 'Open'; actionName: 'open-link'; meta: { url: string } }

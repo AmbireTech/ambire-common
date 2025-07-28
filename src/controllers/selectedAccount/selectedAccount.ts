@@ -45,6 +45,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   collections: [],
   tokenAmounts: [],
   totalBalance: 0,
+  balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
   networkSimulatedAccountOp: {},
@@ -535,7 +536,9 @@ export class SelectedAccountController extends EventEmitter {
     return [
       {
         id: 'old-account',
-        accountAddr: this.account.addr,
+        meta: {
+          accountAddr: this.account.addr
+        },
         type: 'warning',
         category: 'old-account',
         title: 'Old Ambire Account',

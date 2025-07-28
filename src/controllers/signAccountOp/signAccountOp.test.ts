@@ -31,6 +31,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -406,7 +407,8 @@ const init = async (
     accountsCtrl,
     keystore,
     'https://staging-relayer.ambire.com',
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
