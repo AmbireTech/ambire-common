@@ -29,35 +29,36 @@ const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean 
 }
 
 /**
- * Adds defi positions to the portfolio network state.
- * It updates the total balance and adds tokens that aren't handled by the portfolio.
- * It also modifies defi tokens that are handled by the portfolio
+ * Adds the defi positions tokens that aren't handled by the portfolio.
+ * Also calculates the total balance of the defi positions so it can be added to the total balance.
  */
-export const updatePortfolioNetworkWithDefiPositions = (
+export const calculateDefiPositions = (
   chainId: string,
-  networkState?: NetworkState,
+  portfolioTokens: (TokenResult & {
+    latestAmount?: bigint
+    pendingAmount?: bigint
+  })[],
   defiPositionsAccountState?: DefiPositionsAccountState
-) => {
+): {
+  defiPositionsBalance: number
+  tokens: (TokenResult & {
+    latestAmount?: bigint
+    pendingAmount?: bigint
+  })[]
+} | null => {
   const areDefiPositionsNotInitialized =
     !defiPositionsAccountState || Object.keys(defiPositionsAccountState).length === 0
 
   const isInternalChain = chainId === 'gasTank' || chainId === 'rewards'
 
   if (isInternalChain || areDefiPositionsNotInitialized) {
-    return networkState
+    return null
   }
 
   const defiPositionsNetworkState = defiPositionsAccountState[chainId]
 
-  if (!networkState || !defiPositionsNetworkState) return null
-
-  // If there is an error we can simply return the original network state
-  if (!networkState.result) {
-    return networkState
-  }
-
-  const tokens = networkState.result.tokens || []
-  let networkBalance = networkState.result.total?.usd || 0
+  const tokens = portfolioTokens
+  let networkBalance = 0
   const positions = defiPositionsNetworkState || {}
 
   positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
@@ -101,8 +102,9 @@ export const updatePortfolioNetworkWithDefiPositions = (
             )
           })
           if (!protocolTokenInPortfolio) {
-            const positionAsset: TokenResult = {
+            const positionAsset: SelectedAccountPortfolioTokenResult = {
               amount: a.amount,
+              latestAmount: a.amount,
               // Only list the borrowed asset with no price
               priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
               decimals: Number(a.protocolAsset!.decimals),
@@ -148,7 +150,10 @@ export const updatePortfolioNetworkWithDefiPositions = (
             const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
               ? Number(
                   safeTokenAmountAndNumberMultiplication(
-                    BigInt(protocolTokenInPortfolio.amount),
+                    BigInt(
+                      protocolTokenInPortfolio.amountPostSimulation ||
+                        protocolTokenInPortfolio.amount
+                    ),
                     protocolTokenInPortfolio.decimals,
                     protocolTokenInPortfolio.priceIn[0].price
                   )
@@ -230,12 +235,10 @@ export const updatePortfolioNetworkWithDefiPositions = (
     })
   })
 
-  // eslint-disable-next-line no-param-reassign
-  networkState!.result!.total.usd = networkBalance
-  // eslint-disable-next-line no-param-reassign
-  networkState!.result!.tokens = tokens
-
-  return networkState
+  return {
+    tokens,
+    defiPositionsBalance: networkBalance
+  }
 }
 
 export const stripPortfolioState = (portfolioState: AccountState) => {
@@ -264,49 +267,66 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
-export const calculateTokenArray = (
+/**
+ * Adds the latest and pending amount to the tokens array.
+ * Also returns a flag indicating whether there is a token with an amount > 0
+ */
+export const calculateTokensArray = (
   chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
   isPendingValid: boolean
-) => {
+): {
+  tokens: SelectedAccountPortfolioTokenResult[]
+  hasTokenWithAmount: boolean
+} => {
+  let hasTokenWithAmount = false
+
   if (chainId === 'gasTank' || chainId === 'rewards') {
-    return latestTokens
+    return {
+      tokens: latestTokens,
+      hasTokenWithAmount: false
+    }
   }
   // If the pending state is older or there are no pending tokens
   // we shouldn't trust it to build the tokens array
   if (isPendingValid && pendingTokens.length) {
-    return pendingTokens.map((pendingToken) => {
+    const tokenList = pendingTokens.map((pendingToken) => {
       let latestAmount: bigint | undefined
 
       const latestToken = latestTokens.find((latest) => {
         return latest.address === pendingToken.address
       })
 
-      if (latestToken) {
-        latestAmount = latestToken.amount
-      } else if (pendingToken.flags.defiTokenType) {
-        // Defi positions tokens that aren't handled by the portfolio are added to only
-        // one of the portfolio states. In this case the token is only added to the pending state
-        // and has no latest amount, thus both amounts are the same
-        latestAmount = pendingToken.amount
-      }
+      if (!hasTokenWithAmount && !!(latestAmount || pendingToken.amount)) hasTokenWithAmount = true
 
       return {
         ...pendingToken,
-        latestAmount,
+        latestAmount: latestToken?.amount,
         pendingAmount: pendingToken.amount
       }
     })
+
+    return {
+      tokens: tokenList,
+      hasTokenWithAmount
+    }
   }
 
-  // Add only latestAmount to the tokens
-  return latestTokens.map((token) => {
+  const tokenList = latestTokens.map((token) => {
+    if (!hasTokenWithAmount && !!token.amount) hasTokenWithAmount = true
+
     return {
       ...token,
+      // Add only latestAmount to the tokens
       latestAmount: token.amount
     }
   })
+
+  return {
+    tokens: tokenList,
+    hasTokenWithAmount
+  }
 }
 
 /**
@@ -315,11 +335,16 @@ export const calculateTokenArray = (
  */
 export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
-  networkData: NetworkState | undefined,
+  latestNetworkData: NetworkState | undefined,
+  pendingNetworkData: NetworkState | undefined,
+  // Can be pending or selected
+  selectedNetworkData: NetworkState | undefined,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
 ): boolean => {
   if (
-    !networkData ||
+    !latestNetworkData ||
+    !pendingNetworkData ||
+    !selectedNetworkData ||
     !pastAccountPortfolioWithDefiPositionsNetworkState ||
     !defiPositionsNetworkState
   ) {
@@ -328,12 +353,16 @@ export const getIsRecalculationNeeded = (
 
   // Never recalculate if either the portfolio or defi positions are loading
   // as that would reset isAllReady to false
-  if (networkData?.isLoading || defiPositionsNetworkState.isLoading) {
+  if (
+    latestNetworkData?.isLoading ||
+    pendingNetworkData.isLoading ||
+    defiPositionsNetworkState.isLoading
+  ) {
     return false
   }
 
   const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
-  const networkDataAccountOp = networkData?.accountOps?.[0]
+  const networkDataAccountOp = selectedNetworkData?.accountOps?.[0]
 
   // If there is or was an account op we must recalculate the portfolio
   // on every update to ensure that the simulations are correct
@@ -341,7 +370,7 @@ export const getIsRecalculationNeeded = (
 
   const hasPortfolioUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
-    networkData.result?.blockNumber
+    selectedNetworkData.result?.blockNumber
 
   const areDefiPositionsUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
@@ -377,11 +406,10 @@ export function calculateSelectedAccountPortfolioByNetworks(
     pastAccountPortfolioWithDefiPositions
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
+  const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   let isAllReady = !!hasLatest
   let isReadyToVisualize = false
-  const tokens: SelectedAccountPortfolioTokenResult[] = []
-
-  const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
+  let hasTokensWithAmount = false
 
   if (!hasLatest && !hasPending) {
     return {
@@ -442,58 +470,59 @@ export function calculateSelectedAccountPortfolioByNetworks(
 
     const shouldRecalculateState = getIsRecalculationNeeded(
       pastAccountPortfolioWithDefiPositionsNetworkState,
+      latestStateSelectedAccount[network],
+      pendingStateSelectedAccount[network],
       networkData,
       defiPositionsNetworkState
     )
 
     if (!shouldRecalculateState) {
-      tokens.push(...(pastAccountPortfolioWithDefiPositionsNetworkState?.tokens || []))
-
       newAccountPortfolioWithDefiPositions[network] =
         pastAccountPortfolioWithDefiPositionsNetworkState
 
       return
     }
 
-    const networkDataWithDefiPositions = updatePortfolioNetworkWithDefiPositions(
-      network,
-      networkData,
-      defiPositionsAccountState
-    )
-
-    const result = networkDataWithDefiPositions?.result
+    const result = networkData?.result
     let tokensArray: SelectedAccountPortfolioTokenResult[] = []
     let collectionsArray: CollectionResult[] = []
     let networkTotal = 0
 
-    if (networkDataWithDefiPositions && result && isNetworkReady(networkDataWithDefiPositions)) {
-      networkTotal = Number(result?.total?.usd) || 0
+    if (
+      networkData &&
+      // The network must be ready
+      isNetworkReady(networkData) &&
+      !networkData?.isLoading &&
+      !defiPositionsNetworkState?.isLoading
+    ) {
+      networkTotal = networkData?.result?.total?.usd || 0
 
       const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
       const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
       collectionsArray = result?.collections || []
 
-      tokensArray = calculateTokenArray(
+      const { tokens, hasTokenWithAmount: hasTokensWithAmountOnNetwork } = calculateTokensArray(
         network,
         latestTokens,
         pendingTokens,
         !!validSelectedAccountPendingState[network]
       )
-      tokens.push(...tokensArray)
-    }
+      tokensArray = tokens
 
-    if (
-      !networkDataWithDefiPositions ||
-      // The network is not ready
-      !isNetworkReady(networkDataWithDefiPositions) ||
-      // The networks is ready but the previous state isn't satisfactory and the network is still loading
-      (isLoadingFromScratch &&
-        (networkDataWithDefiPositions?.isLoading ||
-          // The total balance and token list are affected by the defi positions
-          defiPositionsAccountState[network]?.isLoading))
-    ) {
-      isAllReady = false
-    } else {
+      if (!hasTokensWithAmount && hasTokensWithAmountOnNetwork) {
+        hasTokensWithAmount = true
+      }
+
+      const defiPositions = calculateDefiPositions(network, tokensArray, defiPositionsAccountState)
+
+      // Replace the token list with the token list that has the defi tokens
+      if (defiPositions?.tokens.length) {
+        tokensArray = defiPositions?.tokens
+      }
+
+      // Add the defi positions balance to the total balance
+      networkTotal += defiPositions?.defiPositionsBalance || 0
+
       // Update the cached network state when the network is completely loaded
       newAccountPortfolioWithDefiPositions[network] = {
         totalBalance: networkTotal,
@@ -503,12 +532,12 @@ export function calculateSelectedAccountPortfolioByNetworks(
         defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
         simulatedAccountOp: simulatedAccountOps[network]
       }
+    } else if (isLoadingFromScratch) {
+      isAllReady = false
     }
   })
 
-  const tokensWithAmount = tokens.filter((token) => token.amount)
-
-  if ((shouldShowPartialResult && tokensWithAmount.length && !isAllReady) || isAllReady) {
+  if ((shouldShowPartialResult && hasTokensWithAmount && !isAllReady) || isAllReady) {
     // Allow the user to operate with the tokens that have loaded
     isReadyToVisualize = true
   }
@@ -550,6 +579,7 @@ export function calculateSelectedAccountPortfolio(
     tokens: [],
     collections: [],
     totalBalance: 0,
+    balancePerNetwork: {},
     isReadyToVisualize,
     isAllReady,
     networkSimulatedAccountOp: {},
@@ -567,6 +597,7 @@ export function calculateSelectedAccountPortfolio(
     selectedAccountPortfolio.tokens.push(...networkData.tokens)
     selectedAccountPortfolio.collections.push(...networkData.collections)
     selectedAccountPortfolio.totalBalance += networkData.totalBalance || 0
+    selectedAccountPortfolio.balancePerNetwork[chainId] = networkData.totalBalance || 0
   })
 
   return {

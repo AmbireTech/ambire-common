@@ -61,6 +61,7 @@ import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
@@ -170,6 +171,8 @@ export class MainController extends EventEmitter {
 
   requests: RequestsController
 
+  banner: BannerController
+
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
   // TODO: Temporary solution to expose the fee payer key during Account Op broadcast.
@@ -267,6 +270,7 @@ export class MainController extends EventEmitter {
       storage: this.storage,
       accounts: this.accounts
     })
+    this.banner = new BannerController(this.storage)
     this.portfolio = new PortfolioController(
       this.storage,
       this.fetch,
@@ -275,7 +279,8 @@ export class MainController extends EventEmitter {
       this.accounts,
       this.keystore,
       relayerUrl,
-      velcroUrl
+      velcroUrl,
+      this.banner
     )
     this.defiPositions = new DefiPositionsController({
       fetch: this.fetch,
@@ -456,22 +461,24 @@ export class MainController extends EventEmitter {
    */
   async onPopupOpen() {
     const selectedAccountAddr = this.selectedAccount.account?.addr
-    if (!selectedAccountAddr) return
 
     this.onPopupOpenStatus = 'LOADING'
     await this.forceEmitUpdate()
 
-    const FIVE_MINUTES = 1000 * 60 * 5
-    this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-    if (!this.activity.broadcastedButNotConfirmed.length) {
-      this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
-      this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
-      this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+    if (selectedAccountAddr) {
+      const FIVE_MINUTES = 1000 * 60 * 5
+      this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
+      if (!this.activity.broadcastedButNotConfirmed.length) {
+        this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+        this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+        this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+      }
+
+      if (!this.accounts.areAccountStatesLoading) {
+        this.accounts.updateAccountState(selectedAccountAddr)
+      }
     }
 
-    if (!this.accounts.areAccountStatesLoading) {
-      this.accounts.updateAccountState(selectedAccountAddr)
-    }
     this.onPopupOpenStatus = 'SUCCESS'
     await this.forceEmitUpdate()
 
