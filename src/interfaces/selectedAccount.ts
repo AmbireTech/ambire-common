@@ -5,7 +5,6 @@ import {
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
 import { AccountId } from './account'
-import { Banner } from './banner'
 
 /** A stripped version of the portfolio state that will be used in the UI */
 export type SelectedAccountPortfolioState = {
@@ -64,7 +63,6 @@ export interface SelectedAccountPortfolio {
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   latest: SelectedAccountPortfolioState
   pending: SelectedAccountPortfolioState
-  banner: Banner
 }
 
 // As of version 4.53.0, cashback status information has been introduced.

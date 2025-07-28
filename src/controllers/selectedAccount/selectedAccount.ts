@@ -47,8 +47,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isAllReady: false,
   networkSimulatedAccountOp: {},
   latest: {},
-  pending: {},
-  banner: {}
+  pending: {}
 }
 
 export class SelectedAccountController extends EventEmitter {
@@ -555,7 +554,6 @@ export class SelectedAccountController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      marketingBanner: this.#portfolio.banner,
       firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
