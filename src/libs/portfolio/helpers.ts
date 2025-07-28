@@ -368,9 +368,10 @@ export const tokenFilter = (
   // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
   // From a user's perspective, the token is duplicated and counted twice in the balance.
   const isERC20NativeRepresentation =
-    (token.symbol === nativeToken?.symbol ||
+    !!nativeToken &&
+    (token.symbol === nativeToken.symbol ||
       network.oldNativeAssetSymbols?.includes(token.symbol)) &&
-    token.amount === nativeToken?.amount &&
+    token.amount === nativeToken.amount &&
     token.address !== ZeroAddress
 
   if (isERC20NativeRepresentation) return false

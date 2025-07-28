@@ -845,11 +845,12 @@ export class PortfolioController extends EventEmitter {
   }
 
   addTokensToBeLearned(tokenAddresses: string[], chainId: bigint) {
-    if (!tokenAddresses.length) return false
-    if (!this.#toBeLearnedTokens[chainId.toString()])
-      this.#toBeLearnedTokens[chainId.toString()] = []
+    const chainIdString = chainId.toString()
 
-    let networkToBeLearnedTokens = this.#toBeLearnedTokens[chainId.toString()]
+    if (!tokenAddresses.length) return false
+    if (!this.#toBeLearnedTokens[chainIdString]) this.#toBeLearnedTokens[chainIdString] = []
+
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[chainIdString]
 
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
 
@@ -868,7 +869,7 @@ export class PortfolioController extends EventEmitter {
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
-    this.#toBeLearnedTokens[chainId.toString()] = networkToBeLearnedTokens
+    this.#toBeLearnedTokens[chainIdString] = networkToBeLearnedTokens
     return true
   }
 
