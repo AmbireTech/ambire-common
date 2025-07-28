@@ -520,7 +520,9 @@ export class SelectedAccountController extends EventEmitter {
     return [
       {
         id: 'old-account',
-        accountAddr: this.account.addr,
+        meta: {
+          accountAddr: this.account.addr
+        },
         type: 'warning',
         category: 'old-account',
         title: 'Old Ambire Account',
