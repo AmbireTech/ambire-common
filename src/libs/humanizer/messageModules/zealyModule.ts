@@ -1,5 +1,6 @@
 import { isHexString, toUtf8String } from 'ethers'
 
+import { Hex } from '../../../interfaces/hex'
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule } from '../interfaces'
 import { getAction, getLabel } from '../utils'
@@ -7,7 +8,7 @@ import { getAction, getLabel } from '../utils'
 export const zealyMessageModule: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind !== 'message' || typeof message.content.message !== 'string')
     return { fullVisualization: [] }
-  let messageAsText = message.content.message
+  let messageAsText: Hex | string = message.content.message
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
     messageAsText = toUtf8String(message.content.message)
   }
