@@ -374,8 +374,10 @@ const init = async (
     storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
     (id) => {
       providersCtrl.removeProvider(id)
@@ -410,7 +412,7 @@ const init = async (
   )
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
-  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
+  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {

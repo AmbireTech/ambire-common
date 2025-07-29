@@ -5,6 +5,7 @@ import { Action, Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { AccountState } from '../defiPositions/types'
 import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeActionText = (
@@ -357,6 +358,66 @@ export const getFirstCashbackBanners = ({
       ]
     })
   }
+
+  return banners
+}
+
+export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
+
+export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
+  defiPositionsAccountState,
+  networks
+}: {
+  defiPositionsAccountState: AccountState
+  networks: Network[]
+}) => {
+  const banners: Banner[] = []
+
+  const disabledNetworks = networks.filter((n) => n.disabled)
+
+  if (!disabledNetworks.length) return []
+
+  const defiPositionsOnDisabledNetworks = []
+  const disabledNetworksWithDefiPos = new Set<Network>()
+
+  disabledNetworks.forEach((n) => {
+    if (defiPositionsAccountState[n.chainId.toString()]) {
+      defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
+        defiPositionsOnDisabledNetworks.push(p)
+        disabledNetworksWithDefiPos.add(n)
+      })
+    }
+  })
+
+  if (!defiPositionsOnDisabledNetworks.length) return []
+
+  const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
+
+  banners.push({
+    id: defiPositionsOnDisabledNetworksBannerId,
+    type: 'info',
+    title: 'DeFi positions detected on disabled networks',
+    text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
+      defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
+    } on${
+      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
+    }: ${disabledNetworksWithDefiPosArray
+      .map((n) => n.name)
+      .join(', ')}. Would you like to enable ${
+      disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
+    }?`,
+    actions: [
+      {
+        label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',
+        actionName: 'enable-networks',
+        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
+      },
+      {
+        label: 'Dismiss',
+        actionName: 'dismiss-defi-positions-banner'
+      }
+    ]
+  })
 
   return banners
 }

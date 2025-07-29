@@ -206,9 +206,14 @@ export class PortfolioController extends EventEmitter {
     if (!selectedAccountAddr) return
 
     const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
-    await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
-      forceUpdate: true
-    })
+    await this.updateSelectedAccount(
+      selectedAccountAddr,
+      networkData ? [networkData] : undefined,
+      undefined,
+      {
+        forceUpdate: true
+      }
+    )
   }
 
   async addCustomToken(
@@ -702,7 +707,7 @@ export class PortfolioController extends EventEmitter {
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
   async updateSelectedAccount(
     accountId: AccountId,
-    network?: Network,
+    networks?: Network[],
     simulation?: {
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
@@ -718,10 +723,10 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    const networks = network ? [network] : this.#networks.networks
+    const networksToUpdate = networks || this.#networks.networks
     await Promise.all([
       this.#getAdditionalPortfolio(accountId, opts?.forceUpdate),
-      ...networks.map(async (network) => {
+      ...networksToUpdate.map(async (network) => {
         const key = `${network.chainId}:${accountId}`
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(
@@ -1031,7 +1036,7 @@ export class PortfolioController extends EventEmitter {
           states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
         }
       : undefined
-    return this.updateSelectedAccount(op.accountAddr, network, simulation, { forceUpdate: true })
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation, { forceUpdate: true })
   }
 
   toJSON() {
