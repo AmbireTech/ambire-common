@@ -522,6 +522,7 @@ export class PortfolioController extends EventEmitter {
       .map((t: any) => ({
         ...t,
         chainId: BigInt(t.chainId || 1),
+        amount: BigInt(t.amount || 0),
         symbol: t.address === STK_WALLET ? 'stkWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
