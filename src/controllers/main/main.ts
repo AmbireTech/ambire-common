@@ -2834,8 +2834,11 @@ export class MainController extends EventEmitter {
     }
 
     if (type === SIGN_ACCOUNT_OP_TRANSFER) {
-      this.transfer.latestBroadcastedToken = this.transfer.selectedToken
-      this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      if (this.transfer.shouldTrackLatestBroadcastedAccountOp) {
+        this.transfer.latestBroadcastedToken = this.transfer.selectedToken
+        this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      }
+
       this.transfer.resetForm()
     }
 
