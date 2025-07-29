@@ -609,7 +609,9 @@ export class SelectedAccountController extends EventEmitter {
     )
       return []
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsStateForAllNetworks(
+      this.account.addr
+    )
 
     const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
       ? this.#networks.allNetworks.filter(

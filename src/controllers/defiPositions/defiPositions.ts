@@ -467,8 +467,19 @@ export class DefiPositionsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  getDefiPositionsState(accountAddr: string) {
+  getDefiPositionsStateForAllNetworks(accountAddr: string) {
+    // return defi positions for enabled and disabled networks
     return this.#state[accountAddr] || {}
+  }
+
+  getDefiPositionsState(accountAddr: string) {
+    // return defi positions only for enabled networks
+    return Object.entries(this.#state[accountAddr] || {}).reduce((acc, [chainId, networkState]) => {
+      if (this.#networks.networks.find((n) => n.chainId.toString() === chainId)) {
+        acc[chainId] = networkState
+      }
+      return acc
+    }, {} as AccountState)
   }
 
   getNetworksWithPositions(accountAddr: string) {
