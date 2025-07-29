@@ -720,8 +720,7 @@ export function getAppFormatted(
 }
 
 /**
- * Similarly to other wallets, try to convert the input to a hex string
- * if it's not already a hex string. Some dapps send the message in plain text.
+ * Tries to convert an input (from a dapp) to a hex string
  */
 export const toPersonalSignHex = (input: string | Uint8Array | Hex): Hex => {
   if (typeof input === 'string') {
