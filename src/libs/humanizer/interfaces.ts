@@ -14,7 +14,6 @@ export type HumanizerVisualization = (
         | 'danger'
         | 'deadline'
         | 'chain'
-        | 'message'
         | 'image'
         | 'link'
         | 'text'
@@ -24,7 +23,6 @@ export type HumanizerVisualization = (
       value?: bigint
       warning?: boolean
       chainId?: bigint
-      messageContent?: Uint8Array | string
     }
   | {
       type: 'token'

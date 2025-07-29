@@ -1,5 +1,3 @@
-import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
-
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
@@ -12,6 +10,7 @@ import {
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
+import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
@@ -90,9 +89,7 @@ export class SignMessageController extends EventEmitter {
     await this.#accounts.initialLoadPromise
 
     if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
-      if (dapp) {
-        this.dapp = dapp
-      }
+      if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.isInitialized = true
       this.emitUpdate()
@@ -161,16 +158,11 @@ export class SignMessageController extends EventEmitter {
 
       const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()]
       let signature
-      // It is defined when messageToSign.content.kind === 'message'
-      let hexMessage: string | undefined
 
       try {
-        if (this.messageToSign.content.kind === 'message') {
-          const message = this.messageToSign.content.message
-          hexMessage = isHexString(message) ? message : hexlify(toUtf8Bytes(message))
-
+        if (isPlainTextMessage(this.messageToSign.content)) {
           signature = await getPlainTextSignature(
-            hexMessage,
+            this.messageToSign.content.message,
             network,
             account,
             accountState,
@@ -220,8 +212,8 @@ export class SignMessageController extends EventEmitter {
         signer: this.messageToSign?.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
-        ...(this.messageToSign.content.kind === 'message'
-          ? { message: hexStringToUint8Array(hexMessage!) }
+        ...(isPlainTextMessage(this.messageToSign.content)
+          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
               typedData: {
