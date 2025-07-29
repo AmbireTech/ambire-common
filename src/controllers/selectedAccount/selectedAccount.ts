@@ -114,7 +114,10 @@ export class SelectedAccountController extends EventEmitter {
   // unlike other positions (which isn't desired).
   get defiPositions() {
     const stkWalletToken = this.portfolio.tokens.find(
-      (t) => t.chainId === 1n && t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
+      (t) =>
+        t.chainId === 1n &&
+        t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
+        !t.flags.rewardsType
     )
     const ambireStakedWalletDefiPosition = getStakedWalletPositions(stkWalletToken)
 
@@ -178,7 +181,7 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading) {
+        if (!this.#areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
             this.#updateSelectedAccountPortfolio(true)
           })
@@ -368,7 +371,7 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  get areDefiPositionsLoading() {
+  get #areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -437,7 +440,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.areDefiPositionsLoading
+      this.#areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {
@@ -559,7 +562,6 @@ export class SelectedAccountController extends EventEmitter {
       firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
-      areDefiPositionsLoading: this.areDefiPositionsLoading,
       balanceAffectingErrors: this.balanceAffectingErrors,
       defiPositions: this.defiPositions
     }

@@ -11,8 +11,6 @@ export function getStakedWalletPositions(stkWallet?: TokenResult): PositionsByPr
     stkWallet.priceIn
   )
 
-  if (!positionInUSD) return null
-
   const positions: Position[] = [
     {
       id: 'stk-wallet',
