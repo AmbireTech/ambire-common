@@ -1,20 +1,16 @@
-import { hexlify, isBytesLike, isHexString, toUtf8Bytes, Uint8Array } from 'ethers'
-import { HexString } from 'ethers/lib.commonjs/utils/data'
-import { Hex } from 'interfaces/hex'
-
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Message, PlainTextMessage } from '../../interfaces/userRequest'
+import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
   getEIP712Signature,
   getPlainTextSignature,
   getVerifyMessageSignature,
-  isPlainTextMessage,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
+import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
@@ -94,23 +90,7 @@ export class SignMessageController extends EventEmitter {
 
     if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
       if (dapp) this.dapp = dapp
-
       this.messageToSign = messageToSign
-
-      if (isPlainTextMessage(this.messageToSign.content)) {
-        const shouldConvertInComingPlainMessageToHex = !isHexString(
-          this.messageToSign.content.message
-        )
-
-        if (shouldConvertInComingPlainMessageToHex) {
-          this.messageToSign.content.message = (
-            this.messageToSign.content.message instanceof Uint8Array
-              ? hexlify(this.messageToSign.content.message)
-              : hexlify(toUtf8Bytes(this.messageToSign.content.message))
-          ) as Hex
-        }
-      }
-
       this.isInitialized = true
       this.emitUpdate()
     } else {
