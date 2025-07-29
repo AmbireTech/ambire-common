@@ -14,6 +14,7 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -80,8 +81,10 @@ const networksCtrl = new NetworksController(
   storageCtrl,
   fetch,
   relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
+  (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
   },
   (id) => {
     providersCtrl.removeProvider(id)
@@ -132,7 +135,8 @@ const portfolioCtrl = new PortfolioController(
   accountsCtrl,
   keystore,
   relayerUrl,
-  velcroUrl
+  velcroUrl,
+  new BannerController(storageCtrl)
 )
 
 const activityCtrl = new ActivityController(

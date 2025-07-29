@@ -45,7 +45,7 @@ export class NetworksController extends EventEmitter {
   #onRemoveNetwork: (chainId: bigint) => void
 
   /** Callback that gets called when adding or updating network */
-  #onAddOrUpdateNetwork: (network: Network) => void
+  #onAddOrUpdateNetworks: (networks: Network[]) => void
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
@@ -54,14 +54,14 @@ export class NetworksController extends EventEmitter {
     storage: StorageController,
     fetch: Fetch,
     relayerUrl: string,
-    onAddOrUpdateNetwork: (network: Network) => void,
+    onAddOrUpdateNetworks: (networks: Network[]) => void,
     onRemoveNetwork: (chainId: bigint) => void
   ) {
     super()
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#onAddOrUpdateNetwork = onAddOrUpdateNetwork
+    this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -383,7 +383,7 @@ export class NetworksController extends EventEmitter {
       has7702: false
     }
 
-    this.#onAddOrUpdateNetwork(this.#networks[network.chainId.toString()])
+    this.#onAddOrUpdateNetworks([this.#networks[network.chainId.toString()]])
 
     await this.#storage.set('networks', this.#networks)
     this.networkToAddOrUpdate = null
@@ -394,7 +394,7 @@ export class NetworksController extends EventEmitter {
     await this.withStatus('addNetwork', () => this.#addNetwork(network))
   }
 
-  async #updateNetwork(network: Partial<Network>, chainId: ChainId) {
+  async #updateNetwork(network: Partial<Network>, chainId: ChainId, skipUpdate?: boolean) {
     await this.initialLoadPromise
 
     if (!Object.keys(network).length) return
@@ -415,7 +415,7 @@ export class NetworksController extends EventEmitter {
       ...changedNetwork
     }
 
-    this.#onAddOrUpdateNetwork(this.#networks[chainId.toString()])
+    if (!skipUpdate) this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]])
     await this.#storage.set('networks', this.#networks)
 
     const checkRPC = async (
@@ -481,11 +481,21 @@ export class NetworksController extends EventEmitter {
     checkRPC(this.networkToAddOrUpdate)
     this.networkToAddOrUpdate = null
 
-    this.emitUpdate()
+    if (!skipUpdate) this.emitUpdate()
   }
 
   async updateNetwork(network: Partial<Network>, chainId: ChainId) {
     await this.withStatus('updateNetwork', () => this.#updateNetwork(network, chainId))
+  }
+
+  async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
+    await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
+    this.#onAddOrUpdateNetworks(this.networks.filter((n) => chainIds.includes(n.chainId)))
+    this.emitUpdate()
+  }
+
+  async updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
+    await this.withStatus('updateNetwork', () => this.#updateNetworks(network, chainIds))
   }
 
   /**

@@ -2,9 +2,10 @@ import { getAddress, ZeroAddress } from 'ethers'
 
 import { STK_WALLET } from '../../consts/addresses'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { canBecomeSmarter, isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -36,6 +37,7 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -71,6 +73,8 @@ export class PortfolioController extends EventEmitter {
   temporaryTokens: TemporaryTokens = {}
 
   #portfolioLibs: Map<string, Portfolio>
+
+  #bannerController: BannerController
 
   #storage: StorageController
 
@@ -119,7 +123,8 @@ export class PortfolioController extends EventEmitter {
     accounts: AccountsController,
     keystore: KeystoreController,
     relayerUrl: string,
-    velcroUrl: string
+    velcroUrl: string,
+    bannerController: BannerController
   ) {
     super()
     this.#latest = {}
@@ -136,6 +141,7 @@ export class PortfolioController extends EventEmitter {
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
+    this.#bannerController = bannerController
     this.#batchedVelcroDiscovery = batcher(
       fetch,
       (queue) => {
@@ -200,9 +206,14 @@ export class PortfolioController extends EventEmitter {
     if (!selectedAccountAddr) return
 
     const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
-    await this.updateSelectedAccount(selectedAccountAddr, networkData, undefined, {
-      forceUpdate: true
-    })
+    await this.updateSelectedAccount(
+      selectedAccountAddr,
+      networkData ? [networkData] : undefined,
+      undefined,
+      {
+        forceUpdate: true
+      }
+    )
   }
 
   async addCustomToken(
@@ -475,6 +486,32 @@ export class PortfolioController extends EventEmitter {
       return
     }
 
+    if (res.data.banner) {
+      const banner = res.data.banner
+
+      const formattedBanner: Banner = {
+        id: banner.id || banner._id,
+        type: banner.type,
+        params: {
+          startTime: banner.startTime,
+          endTime: banner.endTime
+        },
+        ...(banner.text && { text: banner.text }),
+        ...(banner.title && { title: banner.title }),
+        ...(banner.url && {
+          actions: [
+            {
+              label: 'Open',
+              actionName: 'open-link',
+              meta: { url: banner.url }
+            }
+          ]
+        })
+      }
+
+      this.#bannerController.addBanner(formattedBanner)
+    }
+
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 
     const rewardsTokens = [
@@ -485,6 +522,7 @@ export class PortfolioController extends EventEmitter {
       .map((t: any) => ({
         ...t,
         chainId: BigInt(t.chainId || 1),
+        amount: BigInt(t.amount || 0),
         symbol: t.address === STK_WALLET ? 'stkWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
@@ -670,7 +708,7 @@ export class PortfolioController extends EventEmitter {
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
   async updateSelectedAccount(
     accountId: AccountId,
-    network?: Network,
+    networks?: Network[],
     simulation?: {
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
@@ -686,15 +724,10 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.#latest[accountId]
     const pendingState = this.#pending[accountId]
 
-    const updateAdditionalPortfolioIfNeeded =
-      isSmartAccount(selectedAccount) || canBecomeSmarter(selectedAccount, this.#keystore.keys)
-        ? this.#getAdditionalPortfolio(accountId, opts?.forceUpdate)
-        : Promise.resolve()
-
-    const networks = network ? [network] : this.#networks.networks
+    const networksToUpdate = networks || this.#networks.networks
     await Promise.all([
-      updateAdditionalPortfolioIfNeeded,
-      ...networks.map(async (network) => {
+      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate),
+      ...networksToUpdate.map(async (network) => {
         const key = `${network.chainId}:${accountId}`
 
         const portfolioLib = this.initializePortfolioLibIfNeeded(
@@ -1004,7 +1037,7 @@ export class PortfolioController extends EventEmitter {
           states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
         }
       : undefined
-    return this.updateSelectedAccount(op.accountAddr, network, simulation, { forceUpdate: true })
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation, { forceUpdate: true })
   }
 
   toJSON() {

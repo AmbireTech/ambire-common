@@ -189,6 +189,10 @@ export const calculateDefiPositions = (
             )
           }
 
+          // If the token or asset don't have a value we MUST! not compare them
+          // by value as that would lead to false positives
+          if (!tokenBalanceUSD || !a.value) return false
+
           // If there is no protocol asset we have to fallback to finding the token
           // by symbol and chainId. In that case we must ensure that the value of the two
           // assets is similar

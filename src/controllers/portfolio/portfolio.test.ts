@@ -17,6 +17,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -176,8 +177,10 @@ const prepareTest = () => {
     storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
     (id) => {
       providersCtrl.removeProvider(id)
@@ -202,7 +205,8 @@ const prepareTest = () => {
     accountsCtrl,
     keystore,
     relayerUrl,
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
 
   return { storageCtrl, controller }
@@ -322,19 +326,24 @@ describe('Portfolio Controller ', () => {
           })
       )
 
-    controller.updateSelectedAccount(account.addr, ethereum, undefined, {
+    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined, {
       forceUpdate: true
     })
 
-    controller.updateSelectedAccount(account.addr, ethereum, undefined, {
+    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined, {
       forceUpdate: true
     })
 
     // We need to wait for the latest update, or the bellow expect will run too soon,
     // and we won't be able to check the queue properly.
-    await controller.updateSelectedAccount(account.addr, ethereum, undefined, {
-      forceUpdate: true
-    })
+    await controller.updateSelectedAccount(
+      account.addr,
+      ethereum ? [ethereum] : undefined,
+      undefined,
+      {
+        forceUpdate: true
+      }
+    )
 
     expect(queueOrder).toEqual([
       'updatePortfolioState - #1 call (latest state)',
@@ -585,7 +594,7 @@ describe('Portfolio Controller ', () => {
         emptyAccount.addr,
         // we pass a network here, just because the portfolio is trying to perform a call to an undefined network,
         // and it throws a silent error
-        networks.find((network) => network.chainId === 1n),
+        [networks.find((network) => network.chainId === 1n)!],
         undefined,
         { forceUpdate: true }
       )
@@ -782,9 +791,14 @@ describe('Portfolio Controller ', () => {
 
       await controller.addTokensToBeLearned(['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'], 1n)
 
-      await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(
+        account.addr,
+        clonedEthereum ? [clonedEthereum] : undefined,
+        undefined,
+        {
+          forceUpdate: true
+        }
+      )
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account.addr)
@@ -822,9 +836,14 @@ describe('Portfolio Controller ', () => {
 
       await controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
 
-      await controller.updateSelectedAccount(account2.addr, clonedEthereum, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(
+        account2.addr,
+        clonedEthereum ? [clonedEthereum] : undefined,
+        undefined,
+        {
+          forceUpdate: true
+        }
+      )
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account2.addr)
