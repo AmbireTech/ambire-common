@@ -7,6 +7,7 @@ import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AccountId } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
@@ -21,7 +22,11 @@ import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
 // eslint-disable-next-line import/no-cycle
-import { dappRequestMethodToActionKind } from '../../libs/actions/actions'
+import {
+  dappRequestMethodToActionKind,
+  getAccountOpActionsByNetwork
+} from '../../libs/actions/actions'
+import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { TokenResult } from '../../libs/portfolio'
 import {
@@ -30,7 +35,10 @@ import {
   makeAccountOpAction
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import { buildSwapAndBridgeUserRequests } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  buildSwapAndBridgeUserRequests,
+  getActiveRoutesForAccount
+} from '../../libs/swapAndBridge/swapAndBridge'
 import {
   buildClaimWalletRequest,
   buildMintVestingRequest,
@@ -1016,10 +1024,39 @@ export class RequestsController extends EventEmitter {
     )
   }
 
+  // ! IMPORTANT !
+  // Banners that depend on async data from sub-controllers should be implemented
+  // in the sub-controllers themselves. This is because updates in the sub-controllers
+  // will not trigger emitUpdate in the MainController, therefore the banners will
+  // remain the same until a subsequent update in the MainController.
+  get banners(): Banner[] {
+    if (!this.#selectedAccount.account || !this.#networks.isInitialized) return []
+
+    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.#selectedAccount.account.addr,
+      this.#swapAndBridge.activeRoutes
+    )
+    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
+      (r) => r.routeStatus === 'ready'
+    )
+
+    return getAccountOpBanners({
+      accountOpActionsByNetwork: getAccountOpActionsByNetwork(
+        this.#selectedAccount.account.addr,
+        this.actions.actionsQueue
+      ),
+      selectedAccount: this.#selectedAccount.account.addr,
+      accounts: this.#accounts.accounts,
+      networks: this.#networks.networks,
+      swapAndBridgeRoutesPendingSignature
+    })
+  }
+
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      banners: this.banners
     }
   }
 }

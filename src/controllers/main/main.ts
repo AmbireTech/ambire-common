@@ -12,7 +12,6 @@ import {
 } from '../../consts/derivation'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
@@ -34,8 +33,7 @@ import {
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-import { getAccountOpActionsByNetwork, getAccountOpFromAction } from '../../libs/actions/actions'
-import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getAccountOpFromAction } from '../../libs/actions/actions'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -46,7 +44,6 @@ import { relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { makeAccountOpAction } from '../../libs/requests/requests'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
-import { getActiveRoutesForAccount } from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 /* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
@@ -1953,34 +1950,6 @@ export class MainController extends EventEmitter {
     return Promise.resolve()
   }
 
-  // ! IMPORTANT !
-  // Banners that depend on async data from sub-controllers should be implemented
-  // in the sub-controllers themselves. This is because updates in the sub-controllers
-  // will not trigger emitUpdate in the MainController, therefore the banners will
-  // remain the same until a subsequent update in the MainController.
-  get banners(): Banner[] {
-    if (!this.selectedAccount.account || !this.networks.isInitialized) return []
-
-    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
-      this.selectedAccount.account.addr,
-      this.swapAndBridge.activeRoutes
-    )
-    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
-      (r) => r.routeStatus === 'ready'
-    )
-
-    return getAccountOpBanners({
-      accountOpActionsByNetwork: getAccountOpActionsByNetwork(
-        this.selectedAccount.account.addr,
-        this.requests.actions.actionsQueue
-      ),
-      selectedAccount: this.selectedAccount.account.addr,
-      accounts: this.accounts.accounts,
-      networks: this.networks.networks,
-      swapAndBridgeRoutesPendingSignature
-    })
-  }
-
   // Technically this is an anti-pattern, but it's the only way to
   // test the error handling in the method.
   protected throwBroadcastAccountOp({
@@ -2156,7 +2125,6 @@ export class MainController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners,
       isSignRequestStillActive: this.isSignRequestStillActive
     }
   }
