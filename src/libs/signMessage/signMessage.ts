@@ -1,7 +1,6 @@
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
-  BytesLike,
   concat,
   encodeRlp,
   getAddress,
@@ -15,8 +14,7 @@ import {
   toBeHex,
   toNumber,
   toUtf8Bytes,
-  TypedDataDomain,
-  TypedDataField
+  TypedDataDomain
 } from 'ethers'
 
 import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
@@ -29,7 +27,7 @@ import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
-import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
+import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -721,8 +719,14 @@ export function getAppFormatted(
   return signature as EIP7702Signature
 }
 
-export const isPlainTextMessage = (
-  messageContent: Message['content']
-): messageContent is PlainTextMessage => {
-  return messageContent.kind === 'message'
+/**
+ * Similarly to other wallets, try to convert the input to a hex string
+ * if it's not already a hex string. Some dapps send the message in plain text.
+ */
+export const toPersonalSignHex = (input: string | Uint8Array | Hex): Hex => {
+  if (typeof input === 'string') {
+    return isHexString(input) ? input : (hexlify(toUtf8Bytes(input)) as Hex)
+  }
+
+  return hexlify(input) as Hex
 }
