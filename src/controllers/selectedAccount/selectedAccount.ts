@@ -11,7 +11,11 @@ import {
   SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
-import { getFirstCashbackBanners } from '../../libs/banners/banners'
+import {
+  defiPositionsOnDisabledNetworksBannerId,
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
+  getFirstCashbackBanners
+} from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
@@ -99,6 +103,8 @@ export class SelectedAccountController extends EventEmitter {
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
+  dismissedBannerIds: { [key: string]: string[] } = {}
+
   #_defiPositions: PositionsByProvider[] = []
 
   set defiPositions(val: PositionsByProvider[]) {
@@ -110,7 +116,10 @@ export class SelectedAccountController extends EventEmitter {
   // unlike other positions (which isn't desired).
   get defiPositions() {
     const stkWalletToken = this.portfolio.tokens.find(
-      (t) => t.chainId === 1n && t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
+      (t) =>
+        t.chainId === 1n &&
+        t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
+        !t.flags.rewardsType
     )
     const ambireStakedWalletDefiPosition = getStakedWalletPositions(stkWalletToken)
 
@@ -133,8 +142,15 @@ export class SelectedAccountController extends EventEmitter {
 
   async #load() {
     await this.#accounts.initialLoadPromise
-    const selectedAccountAddress = await this.#storage.get('selectedAccount', null)
-    this.#cashbackStatusByAccount = await this.#storage.get('cashbackStatusByAccount', {})
+
+    const [selectedAccountAddress, cashbackStatusByAccount, selectedAccountDismissedBannerIds] =
+      await Promise.all([
+        this.#storage.get('selectedAccount', null),
+        this.#storage.get('cashbackStatusByAccount', {}),
+        this.#storage.get('selectedAccountDismissedBannerIds', [])
+      ])
+    this.#cashbackStatusByAccount = cashbackStatusByAccount
+    this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
 
@@ -156,14 +172,15 @@ export class SelectedAccountController extends EventEmitter {
     this.#defiPositions = defiPositions
     this.#networks = networks
     this.#providers = providers
-    this.#updateSelectedAccountPortfolio(true)
+
+    this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
     this.#updateSelectedAccountDefiPositions(true)
     this.#updateDefiPositionsErrors(true)
 
     this.#portfolio.onUpdate(async () => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
-        this.#updateSelectedAccountPortfolio()
+        this.updateSelectedAccountPortfolio()
       })
     }, 'selectedAccount')
 
@@ -171,9 +188,9 @@ export class SelectedAccountController extends EventEmitter {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.areDefiPositionsLoading) {
+        if (!this.#areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
-            this.#updateSelectedAccountPortfolio(true)
+            this.updateSelectedAccountPortfolio(true)
           })
           this.#updateDefiPositionsErrors()
         }
@@ -272,7 +289,7 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  #updateSelectedAccountPortfolio(skipUpdate?: boolean) {
+  updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.#defiPositions || !this.account) return
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -356,7 +373,7 @@ export class SelectedAccountController extends EventEmitter {
     }
   }
 
-  get areDefiPositionsLoading() {
+  get #areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -425,7 +442,7 @@ export class SelectedAccountController extends EventEmitter {
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.areDefiPositionsLoading
+      this.#areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {
@@ -540,14 +557,75 @@ export class SelectedAccountController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async dismissDefiPositionsBannerForTheSelectedAccount() {
+    if (!this.account) return
+
+    const defiBanner = this.banners.find((b) => b.id === defiPositionsOnDisabledNetworksBannerId)
+    if (!defiBanner) return
+
+    const action = defiBanner.actions.find((a) => a.actionName === 'enable-networks')
+    if (!action) return
+
+    if (!this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId])
+      this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId] = []
+
+    action.meta.networkChainIds.forEach((chainId) => {
+      if (
+        this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
+          `${this.account!.addr}-${chainId}`
+        )
+      )
+        return
+      this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].push(
+        `${this.account!.addr}-${chainId}`
+      )
+    })
+
+    await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds)
+    this.emitUpdate()
+  }
+
+  // ! IMPORTANT !
+  // Banners that depend on async data from sub-controllers should be implemented
+  // in the sub-controllers themselves. This is because updates in the sub-controllers
+  // will not trigger emitUpdate in the MainController, therefore the banners will
+  // remain the same until a subsequent update in the MainController.
+  get banners(): Banner[] {
+    if (
+      !this.account ||
+      !this.#networks ||
+      !this.#networks.isInitialized ||
+      !this.#defiPositions ||
+      !this.portfolio.isAllReady
+    )
+      return []
+
+    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsStateForAllNetworks(
+      this.account.addr
+    )
+
+    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+      ? this.#networks.allNetworks.filter(
+          (n) =>
+            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
+              `${this.account!.addr}-${n.chainId}`
+            )
+        )
+      : this.#networks.allNetworks
+    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+      defiPositionsAccountState,
+      networks: notDismissedNetworks
+    })
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
+      banners: this.banners,
       firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
-      areDefiPositionsLoading: this.areDefiPositionsLoading,
       balanceAffectingErrors: this.balanceAffectingErrors,
       defiPositions: this.defiPositions
     }

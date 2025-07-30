@@ -18,6 +18,7 @@ import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { TypedMessage } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
+import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
@@ -180,7 +181,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       eoaAccount,
       accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
@@ -197,7 +198,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     expect(firstRes).toBe(true)
 
     const signatureForUint8Array = await getPlainTextSignature(
-      toUtf8Bytes('test'),
+      hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       eoaAccount,
       accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
@@ -213,7 +214,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     expect(secondRes).toBe(true)
 
     const signatureForNumberAsString = await getPlainTextSignature(
-      '1',
+      hexlify(toUtf8Bytes('1')) as Hex,
       ethereumNetwork,
       eoaAccount,
       accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
@@ -233,7 +234,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
       accountStates[smartAccount.addr][polygonNetwork.chainId.toString()],
@@ -260,7 +261,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
-    const msg = `test for ${v1Account.addr}`
+    const msg = hexlify(toUtf8Bytes(`test for ${v1Account.addr}`)) as Hex
     const signatureForPlainText = await getPlainTextSignature(
       msg,
       polygonNetwork,
@@ -277,7 +278,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       provider,
       signer: v1Account.addr,
       signature: signatureForPlainText,
-      message: msg
+      message: hexStringToUint8Array(msg)
     })
     expect(res).toBe(true)
   })
@@ -287,7 +288,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     try {
       await getPlainTextSignature(
-        'test',
+        hexlify(toUtf8Bytes('test')) as Hex,
         ethereumNetwork,
         v1Account,
         accountStates[v1Account.addr][ethereumNetwork.chainId.toString()],
@@ -309,7 +310,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountState = accountStates[v1Account.addr][ethereumNetwork.chainId.toString()]
 
     const plaintextSigNoAddrInMessage = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       v1Account,
       accountState,
@@ -824,7 +825,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
       v2AccountState,
@@ -940,7 +941,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
       accountStates[smartAccount.addr][polygonNetwork.chainId.toString()],

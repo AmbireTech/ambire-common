@@ -6,7 +6,7 @@ import WETH from '../../../contracts/compiled/WETH.json'
 import { Session } from '../../classes/session'
 import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
-import { Calls, SignUserRequest } from '../../interfaces/userRequest'
+import { Calls, PlainTextMessage, SignUserRequest } from '../../interfaces/userRequest'
 import { PaymasterService } from '../erc7677/types'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
@@ -200,4 +200,15 @@ function buildTransferUserRequest({
   }
 }
 
-export { buildClaimWalletRequest, buildMintVestingRequest, buildTransferUserRequest }
+const isPlainTextMessage = (
+  messageContent: SignUserRequest['action']
+): messageContent is PlainTextMessage => {
+  return messageContent.kind === 'message'
+}
+
+export {
+  buildClaimWalletRequest,
+  buildMintVestingRequest,
+  buildTransferUserRequest,
+  isPlainTextMessage
+}

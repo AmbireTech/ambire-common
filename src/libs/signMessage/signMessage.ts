@@ -14,8 +14,7 @@ import {
   toBeHex,
   toNumber,
   toUtf8Bytes,
-  TypedDataDomain,
-  TypedDataField
+  TypedDataDomain
 } from 'ethers'
 
 import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
@@ -28,7 +27,7 @@ import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
-import { TypedMessage } from '../../interfaces/userRequest'
+import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -497,7 +496,7 @@ export async function getExecuteSignature(
 }
 
 export async function getPlainTextSignature(
-  message: string | Uint8Array,
+  messageHex: PlainTextMessage['message'],
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
@@ -505,15 +504,6 @@ export async function getPlainTextSignature(
   isOG = false
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
-
-  let messageHex
-  if (message instanceof Uint8Array) {
-    messageHex = hexlify(message)
-  } else if (!isHexString(message)) {
-    messageHex = hexlify(toUtf8Bytes(message))
-  } else {
-    messageHex = message
-  }
 
   if (!account.creation) {
     const signature = await signer.signMessage(messageHex)
@@ -524,13 +514,10 @@ export async function getPlainTextSignature(
     const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
     const checksummedHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.slice(2)))
     const asciiAddrLowerCase = account.addr.toLowerCase()
-    const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
 
-    const isAsciiAddressInMessage = humanReadableMsg.toLowerCase().includes(asciiAddrLowerCase)
-    const isLowercaseHexAddressInMessage = humanReadableMsg.includes(
-      lowercaseHexAddrWithout0x.slice(2)
-    )
-    const isChecksummedHexAddressInMessage = humanReadableMsg.includes(
+    const isAsciiAddressInMessage = messageHex.toLowerCase().includes(asciiAddrLowerCase)
+    const isLowercaseHexAddressInMessage = messageHex.includes(lowercaseHexAddrWithout0x.slice(2))
+    const isChecksummedHexAddressInMessage = messageHex.includes(
       checksummedHexAddrWithout0x.slice(2)
     )
 
@@ -730,4 +717,15 @@ export function getAppFormatted(
   if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
 
   return signature as EIP7702Signature
+}
+
+/**
+ * Tries to convert an input (from a dapp) to a hex string
+ */
+export const toPersonalSignHex = (input: string | Uint8Array | Hex): Hex => {
+  if (typeof input === 'string') {
+    return isHexString(input) ? input : (hexlify(toUtf8Bytes(input)) as Hex)
+  }
+
+  return hexlify(input) as Hex
 }
