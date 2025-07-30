@@ -93,7 +93,7 @@ export class RequestsController extends EventEmitter {
 
   #destroySignAccountOp: () => void
 
-  #updateSelectedAccountPortfolio: (network: Network) => Promise<void>
+  #updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
 
   #addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
 
@@ -108,7 +108,7 @@ export class RequestsController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  initialLoadPromise: Promise<void>
 
   constructor({
     relayerUrl,
@@ -143,7 +143,7 @@ export class RequestsController extends EventEmitter {
     getSignAccountOp: () => SignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
-    updateSelectedAccountPortfolio: (network: Network) => Promise<void>
+    updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
   }) {
@@ -205,13 +205,13 @@ export class RequestsController extends EventEmitter {
     })
 
     this.actions.onUpdate(() => this.emitUpdate(), 'requests-on-update-listener')
-    this.#initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load()
   }
 
   async #load() {
     await this.#networks.initialLoadPromise
-    await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
+    await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
     await this.#dapps.initialLoadPromise
@@ -231,6 +231,7 @@ export class RequestsController extends EventEmitter {
       skipFocus?: boolean
     } = {}
   ) {
+    await this.initialLoadPromise
     const shouldSkipAddUserRequest = await this.#guardHWSigning(false)
 
     if (shouldSkipAddUserRequest) return
@@ -287,7 +288,7 @@ export class RequestsController extends EventEmitter {
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
           // It's necessary to continue operating with the token `amountPostSimulation` amount.
-          this.#updateSelectedAccountPortfolio(network)
+          this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
       } else {
         let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
@@ -376,7 +377,8 @@ export class RequestsController extends EventEmitter {
           | undefined
         // accountOp has just been rejected or broadcasted
         if (!accountOpAction) {
-          if (shouldUpdateAccount) this.#updateSelectedAccountPortfolio(network)
+          if (shouldUpdateAccount)
+            this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
 
           if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
             this.#swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -401,7 +403,8 @@ export class RequestsController extends EventEmitter {
             this.#destroySignAccountOp()
           }
           actionsToRemove.push(`${meta.accountAddr}-${meta.chainId}`)
-          if (shouldUpdateAccount) this.#updateSelectedAccountPortfolio(network)
+          if (shouldUpdateAccount)
+            this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
         if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
           this.#swapAndBridge.removeActiveRoute(meta.activeRouteId)
@@ -527,7 +530,7 @@ export class RequestsController extends EventEmitter {
       reject: (data: any) => void
     }
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     await this.#guardHWSigning(true)
 
     let userRequest = null
@@ -755,7 +758,7 @@ export class RequestsController extends EventEmitter {
     actionExecutionType: ActionExecutionType
     windowId?: number
   }) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
 
     const baseAcc = getBaseAccount(

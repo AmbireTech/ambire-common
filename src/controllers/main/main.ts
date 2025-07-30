@@ -415,8 +415,8 @@ export class MainController extends EventEmitter {
         this.signAccountOp.update(props)
       },
       destroySignAccountOp: this.destroySignAccOp.bind(this),
-      updateSelectedAccountPortfolio: async (network) => {
-        await this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+      updateSelectedAccountPortfolio: async (networks) => {
+        await this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
       guardHWSigning: this.#guardHWSigning.bind(this)
