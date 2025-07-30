@@ -296,6 +296,10 @@ export class AccountsController extends EventEmitter {
   // This ensures production doesn't blow up and it 99.9% of cases it
   // should not call the promise
   async getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
+    if (!this.accountStates[addr]) {
+      this.accountStates[addr] = {}
+    }
+
     if (!this.accountStates[addr][chainId.toString()])
       await this.updateAccountState(addr, 'latest', [chainId])
 
