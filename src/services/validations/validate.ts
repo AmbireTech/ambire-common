@@ -45,7 +45,7 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
   if (address && selectedAcc && address === selectedAcc) {
     return {
       success: false,
-      message: 'The entered address should be different than your own account address.'
+      message: "You can't send to the same address you’re sending from."
     }
   }
 
@@ -76,7 +76,7 @@ const validateSendTransferAddress = (
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
-      message: 'The entered address should be different than the your own account address.'
+      message: "You can't send to the same address you're sending from."
     }
   }
 
