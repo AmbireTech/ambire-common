@@ -36,6 +36,8 @@ const notificationManager = {
   create: () => Promise.resolve()
 }
 
+const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
+
 const accounts = [
   {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -243,8 +245,6 @@ describe('RequestsController ', () => {
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
 
-    const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
-
     await controller.build({
       type: 'dappRequest',
       params: {
@@ -290,5 +290,79 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0].action.kind).toBe('calls')
+  })
+  test('resolve user request', async () => {
+    const { controller } = await prepareTest()
+
+    const resolveMock = jest.fn()
+    const rejectMock = jest.fn()
+
+    const req: UserRequest = {
+      id: 1,
+      action: {
+        kind: 'calls',
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
+      },
+      session: new Session(),
+      meta: {
+        isSignAction: true,
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        chainId: 1n
+      },
+      dappPromise: { resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION }
+    }
+
+    await controller.addUserRequests([req])
+    expect(controller.actions.actionsQueue.length).toBe(1)
+    expect(controller.actions.visibleActionsQueue.length).toBe(1)
+
+    await controller.resolveUserRequest(null, req.id)
+    expect(controller.userRequests.length).toBe(0)
+    expect(controller.actions.visibleActionsQueue.length).toBe(0)
+    expect(resolveMock).toHaveBeenCalled()
+    expect(rejectMock).not.toHaveBeenCalled()
+  })
+  test('reject user request', async () => {
+    const { controller } = await prepareTest()
+
+    const resolveMock = jest.fn()
+    const rejectMock = jest.fn()
+
+    const req: UserRequest = {
+      id: 1,
+      action: {
+        kind: 'calls',
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(0),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
+      },
+      session: new Session(),
+      meta: {
+        isSignAction: true,
+        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        chainId: 1n
+      },
+      dappPromise: { resolve: resolveMock, reject: rejectMock, session: MOCK_SESSION }
+    }
+
+    await controller.addUserRequests([req])
+    expect(controller.actions.actionsQueue.length).toBe(1)
+    expect(controller.actions.visibleActionsQueue.length).toBe(1)
+
+    await controller.rejectUserRequests('User rejected', [req.id])
+    expect(controller.userRequests.length).toBe(0)
+    expect(controller.actions.visibleActionsQueue.length).toBe(0)
+    expect(rejectMock).toHaveBeenCalled()
+    expect(resolveMock).not.toHaveBeenCalled()
   })
 })
