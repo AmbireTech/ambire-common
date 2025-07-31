@@ -4,22 +4,15 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockWindowManager } from '../../../test/helpers/window'
 import { Session } from '../../classes/session'
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
 import { UserRequest } from '../../interfaces/userRequest'
-import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
-import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -37,24 +30,10 @@ import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
 import { RequestsController } from './requests'
 
-// Public API key, shared by Socket, for testing purposes only
-const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
-
 const windowManager = mockWindowManager().windowManager
 
 const notificationManager = {
   create: () => Promise.resolve()
-}
-
-const signAccountOp = {
-  gasPrice: {
-    fetch: jest.fn()
-  },
-  updateStatus: jest.fn(),
-  accountOp: {
-    meta: {}
-  },
-  simulate: jest.fn()
 }
 
 const accounts = [
@@ -231,7 +210,7 @@ describe('RequestsController ', () => {
     await expect(controller.initialLoadPromise).resolves.toBeUndefined()
   })
 
-  test('Add a user request', async () => {
+  test('Add and then remove a user request', async () => {
     const { controller } = await prepareTest()
     const req: UserRequest = {
       id: 1,
@@ -255,329 +234,61 @@ describe('RequestsController ', () => {
 
     await controller.addUserRequests([req])
     expect(controller.actions.actionsQueue.length).toBe(1)
+    expect(controller.actions.visibleActionsQueue.length).toBe(1)
+
+    await controller.removeUserRequests([req.id])
+    expect(controller.actions.actionsQueue.length).toBe(0)
+    expect(controller.actions.visibleActionsQueue.length).toBe(0)
   })
-  // test('Remove a user request', async () => {
-  //   const req: UserRequest = {
-  //     id: 1,
-  //     action: {
-  //       kind: 'calls',
-  //       calls: [
-  //         {
-  //           to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-  //           value: BigInt(0),
-  //           data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-  //         }
-  //       ]
-  //     },
-  //     session: new Session(),
-  //     meta: {
-  //       isSignAction: true,
-  //       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-  //       chainId: 1n
-  //     }
-  //   }
-  //   await controller.removeUserRequests([req.id])
-  //   expect(controller.actions.actionsQueue.length).toBe(0)
-  //   // console.dir(controller.accountOpsToBeSigned, { depth: null })
-  //   // @TODO test if nonce is correctly set
-  // })
+  test('build dapp request', async () => {
+    const { controller } = await prepareTest()
 
-  // // @TODO: We should pass `autoConfirmMagicLink` to emailVault controller initialization
-  // // test('login with emailVault', async () => {
-  // //   // eslint-disable-next-line no-promise-executor-return
-  // //   const promise = new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-  // //   await controller.emailVault.getEmailVaultInfo(email)
-  // //   await promise
-  // //
-  // //   expect(controller.emailVault.emailVaultStates).toMatchObject({
-  // //     email: {
-  // //       [email]: {
-  // //         email,
-  // //         recoveryKey: expect.anything(),
-  // //         availableSecrets: expect.anything(),
-  // //         availableAccounts: {},
-  // //         operations: []
-  // //       }
-  // //     }
-  // //   })
-  // // })
+    const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
 
-  // test('backup keyStore secret emailVault', async () => {
-  //   // console.log(
-  //   //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-  //   // )
-  //   controller.emailVault.uploadKeyStoreSecret(email)
-  //   // eslint-disable-next-line no-promise-executor-return
-  //   await new Promise((resolve) => {
-  //     const unsubscribe = controller.emailVault.onUpdate(() => {
-  //       unsubscribe()
-  //       resolve(null)
-  //     })
-  //   })
-  //   // console.log(JSON.stringify(controller.emailVault, null, 2))
-  // })
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'dapp_connect',
+          params: {},
+          session: MOCK_SESSION,
+          origin: 'https://test-dApp.com'
+        },
+        dappPromise: { resolve: () => {}, reject: () => {}, session: MOCK_SESSION }
+      }
+    })
 
-  // // @TODO - have to rewrite this test and it should be part of email vault tests.
-  // // test('unlock keyStore with recovery secret emailVault', async () => {
-  // //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // //   async function wait(ms: number) {
-  // //     // eslint-disable-next-line no-promise-executor-return
-  // //     return new Promise((resolve) => setTimeout(() => resolve(null), ms))
-  // //   }
-  // //   // controller.lock()
-  // //   await controller.emailVault.recoverKeyStore(email)
-  // //   // console.log('isUnlock ==>', controller.isUnlock())
-  // //   // eslint-disable-next-line no-promise-executor-return
-  // //   // await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-  // //   // await wait(10000)
-  // //   // console.log('isUnlock ==>', controller.isUnlock())
-  // // })
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0].action.kind).toBe('dappConnect')
+  })
+  test('build transfer request', async () => {
+    const { controller } = await prepareTest()
 
-  // test('should add an account from the account picker and persist it in accounts', async () => {
-  //   controller = new MainController({
-  //     platform: 'default',
-  //     storageAPI: storage,
-  //     fetch,
-  //     relayerUrl,
-  //     swapApiKey,
-  //     windowManager,
-  //     notificationManager,
-  //     keystoreSigners: { internal: KeystoreSigner },
-  //     externalSignerControllers: {},
-  //     velcroUrl
-  //   })
+    await controller.build({
+      type: 'transferRequest',
+      params: {
+        selectedToken: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        },
+        amount: '1',
+        actionExecutionType: 'open-action-window',
+        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+      }
+    })
 
-  //   while (!controller.isReady) {
-  //     // eslint-disable-next-line no-await-in-loop
-  //     await wait(100)
-  //   }
-
-  //   await controller.keystore.addSecret('password', '12345678', '', true)
-  //   const keyIterator = new KeyIterator(
-  //     '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-  //   )
-  //   controller.accountPicker.setInitParams({
-  //     keyIterator,
-  //     hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-  //     shouldAddNextAccountAutomatically: false
-  //   })
-
-  //   await controller.accountPicker.init()
-  //   await controller.accountPicker.setPage({ page: 1 })
-  //   while (controller.accountPicker.accountsLoading) {
-  //     // eslint-disable-next-line no-await-in-loop
-  //     await wait(100)
-  //   }
-  //   const accToSelect = controller.accountPicker.accountsOnPage[0].account
-  //   controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0].account)
-  //   await controller.accountPicker.addAccounts().catch(console.error)
-  //   expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
-  // })
-
-  // // FIXME: This test works when fired standalone, but it throws an error when
-  // // run with the rest of the tests. Figure out wtf.
-  // test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
-  //   const mainCtrl = new MainController({
-  //     platform: 'default',
-  //     storageAPI: storage,
-  //     fetch,
-  //     relayerUrl,
-  //     swapApiKey,
-  //     windowManager,
-  //     notificationManager,
-  //     keystoreSigners: { internal: KeystoreSigner },
-  //     externalSignerControllers: {},
-  //     velcroUrl
-  //   })
-
-  //   mainCtrl.accounts.accounts = [
-  //     {
-  //       addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
-  //       associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
-  //       initialPrivileges: [
-  //         [
-  //           '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
-  //           '0x0000000000000000000000000000000000000000000000000000000000000001'
-  //         ]
-  //       ],
-  //       creation: accounts[0].creation,
-  //       preferences: {
-  //         label: DEFAULT_ACCOUNT_LABEL,
-  //         pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
-  //       }
-  //     }
-  //   ]
-
-  //   let emitCounter = 0
-  //   const unsubscribe = mainCtrl.onUpdate(() => {
-  //     emitCounter++
-  //     if (emitCounter === 3) {
-  //       expect(mainCtrl.accounts.accounts[0].associatedKeys.length).toEqual(2)
-  //       expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
-  //         '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
-  //       )
-  //       expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
-  //         '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
-  //       )
-  //       unsubscribe()
-  //       done()
-  //     }
-  //   })
-
-  //   // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  //   mainCtrl.accounts.addAccounts([
-  //     {
-  //       addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
-  //       associatedKeys: ['0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'],
-  //       initialPrivileges: [
-  //         [
-  //           '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
-  //           '0x0000000000000000000000000000000000000000000000000000000000000001'
-  //         ]
-  //       ],
-  //       creation: accounts[0].creation,
-  //       preferences: {
-  //         label: DEFAULT_ACCOUNT_LABEL,
-  //         pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
-  //       }
-  //     }
-  //   ])
-  // })
-
-  // test('should check if network features get displayed correctly for ethereum', async () => {
-  //   const eth = controller.networks.networks.find((n) => n.chainId === 1n)!
-  //   expect(eth?.features.length).toBe(3)
-
-  //   const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
-  //   expect(saSupport).not.toBe(null)
-  //   expect(saSupport).not.toBe(undefined)
-  //   expect(saSupport!.level).toBe('success')
-  //   expect(saSupport!.title).toBe('Ambire Smart Accounts')
-
-  //   const simulation = eth?.features.find((feat) => feat.id === 'simulation')
-  //   expect(simulation).not.toBe(null)
-  //   expect(simulation).not.toBe(undefined)
-  //   expect(simulation!.level).toBe('success')
-
-  //   const prices = eth?.features.find((feat) => feat.id === 'prices')
-  //   expect(prices).not.toBe(null)
-  //   expect(prices).not.toBe(undefined)
-  //   expect(prices!.level).toBe('success')
-
-  //   // set first to false so we could test setContractsDeployedToTrueIfDeployed
-  //   await controller.networks.updateNetwork({ areContractsDeployed: false }, 1n)
-
-  //   const eth2 = controller.networks.networks.find((n) => n.chainId === 1n)!
-  //   expect(eth2.areContractsDeployed).toEqual(false)
-  //   await controller.setContractsDeployedToTrueIfDeployed(eth2)
-
-  //   const eth3 = controller.networks.networks.find((n) => n.chainId === 1n)!
-  //   expect(eth3.areContractsDeployed).toEqual(true)
-  // })
-  // describe('throwBroadcastAccountOp', () => {
-  //   suppressConsoleBeforeEach()
-
-  //   const prepareTest = () => {
-  //     const controllerAnyType = controller as any
-  //     return {
-  //       controllerAnyType
-  //     }
-  //   }
-
-  //   it('Should prefer message to error', async () => {
-  //     const { controllerAnyType } = prepareTest()
-  //     try {
-  //       await controllerAnyType.throwBroadcastAccountOp({
-  //         signAccountOp,
-  //         message: 'message',
-  //         error: new Error('error')
-  //       })
-  //     } catch (e: any) {
-  //       expect(e.message).toBe('message')
-  //     }
-  //   })
-  //   it('pimlico_getUserOperationGasPrice', async () => {
-  //     const { controllerAnyType } = prepareTest()
-  //     try {
-  //       await controllerAnyType.throwBroadcastAccountOp({
-  //         signAccountOp,
-  //         error: new Error(
-  //           "pimlico_getUserOperationGasPrice some information we don't care about 0x2314214"
-  //         )
-  //       })
-  //     } catch (e: any) {
-  //       expect(e.message).toBe(
-  //         'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
-  //       )
-  //     }
-  //   })
-  //   it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
-  //     const { controllerAnyType } = prepareTest()
-  //     const error = new InnerCallFailureError(
-  //       '   transfer amount exceeds balance   ',
-  //       [],
-  //       networks.find((n) => n.chainId === 8453n)!
-  //     )
-
-  //     try {
-  //       await controllerAnyType.throwBroadcastAccountOp({
-  //         signAccountOp,
-  //         error
-  //       })
-  //     } catch (e: any) {
-  //       expect(e.message).toBe(
-  //         'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
-  //       )
-  //     }
-  //   })
-  //   it('Unknown error that should be humanized by getHumanReadableBroadcastError', async () => {
-  //     const { controllerAnyType } = prepareTest()
-  //     const error = new Error("I'm a teapot")
-
-  //     try {
-  //       await controllerAnyType.throwBroadcastAccountOp({
-  //         signAccountOp,
-  //         error
-  //       })
-  //     } catch (e: any) {
-  //       expect(e.message).toBe(
-  //         "We encountered an unexpected issue: I'm a teapot\nPlease try again or contact Ambire support for assistance."
-  //       )
-  //     }
-  //   })
-  //   it('replacement fee too low', async () => {
-  //     const { controllerAnyType } = prepareTest()
-  //     const error = new Error('replacement fee too low')
-
-  //     try {
-  //       await controllerAnyType.throwBroadcastAccountOp({
-  //         signAccountOp,
-  //         error
-  //       })
-  //     } catch (e: any) {
-  //       expect(e.message).toBe(
-  //         'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
-  //       )
-  //     }
-  //   })
-  //   it('Relayer broadcast swap expired', async () => {
-  //     const { controllerAnyType } = prepareTest()
-
-  //     const error = new RelayerError(
-  //       '"Transaction too old" (action="estimateGas", data="0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000135472616e73616374696f6e20746f6f206f6c6400000000000000000000000000", reason="Transaction too old", transaction={ "data": "0x6171d1c9000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000004e000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000032000000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc450000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000002445ae401dc00000000000000000000000000000000000000000000000000000000673b3e25000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000c35000000000000000000000000000000000000000000000000001af5cbb4b149c38000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004449404b7c00000000000000000000000000000000000000000000000001af5cbb4b149c380000000000000000000000007544127fce3dd39a15b719abb93ca765d91ead6d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000942f9ce5d9a33a82f88d233aeb3292e6802303480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000074f0dfef4cd1f200000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000767617354616e6b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006574d4154494300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000042b1f9d3975aecfa6e646bef006f2ab88a131775543cb0321360633cef30dcce5b1c78936706c50fdb17469b8d8e546f22d68ab5c7a7d1e73649cd3ca8d9d3a1f81c01000000000000000000000000000000000000000000000000000000000000", "to": "0x7544127fCe3dd39A15b719abB93Ca765D91EAD6d" }, invocation=null, revert={ "args": [ "Transaction too old" ], "name": "Error", "signature": "Error(string)" }, code=CALL_EXCEPTION, version=6.7.1)',
-  //       {},
-  //       {}
-  //     )
-  //     try {
-  //       await controllerAnyType.throwBroadcastAccountOp({
-  //         signAccountOp,
-  //         error
-  //       })
-  //     } catch (e: any) {
-  //       expect(e.message).toBe(
-  //         'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
-  //       )
-  //     }
-  //   })
-  // })
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0].action.kind).toBe('calls')
+  })
 })

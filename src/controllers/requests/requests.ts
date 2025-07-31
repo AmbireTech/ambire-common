@@ -501,6 +501,8 @@ export class RequestsController extends EventEmitter {
   }
 
   async build({ type, params }: BuildRequest) {
+    await this.initialLoadPromise
+
     if (type === 'dappRequest') {
       await this.#buildUserRequestFromDAppRequest(params.request, params.dappPromise)
     }
@@ -829,7 +831,7 @@ export class RequestsController extends EventEmitter {
         if (this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn) {
           transaction = this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
         }
-
+        console.log('1')
         if (activeRoute) {
           await this.removeUserRequests([activeRoute.activeRouteId], {
             shouldRemoveSwapAndBridgeRoute: false,
@@ -869,6 +871,7 @@ export class RequestsController extends EventEmitter {
           }
         }
 
+        console.log('2', transaction, this.#selectedAccount.account)
         if (!this.#selectedAccount.account || !transaction) {
           const errorDetails = `missing ${
             this.#selectedAccount.account ? 'selected account' : 'transaction'
@@ -904,7 +907,7 @@ export class RequestsController extends EventEmitter {
           getAmbirePaymasterService(baseAcc, this.#relayerUrl),
           windowId
         )
-
+        console.log('3', swapAndBridgeUserRequests)
         await this.addUserRequests(swapAndBridgeUserRequests, {
           actionPosition: 'last',
           actionExecutionType: openActionWindow ? 'open-action-window' : 'queue'
