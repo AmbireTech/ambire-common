@@ -2109,7 +2109,9 @@ export class MainController extends EventEmitter {
 
     const error = errors[pendingAction.type as keyof typeof errors]
 
-    await this.requests.actions.focusActionWindow()
+    // Don't reopen the action window if focusing it fails
+    // because closing it will abort the signing process
+    await this.requests.actions.focusActionWindow({ reopenIfNeeded: false })
     this.emitError({
       level: 'major',
       message: error.message,
