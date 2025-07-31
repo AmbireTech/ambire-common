@@ -593,6 +593,10 @@ export class PortfolioController extends EventEmitter {
     const blockTag = portfolioProps.blockTag
     const stateKeys = { latest: this.#latest, pending: this.#pending }
     const accountState = stateKeys[blockTag][accountId]
+
+    // Can occur if the account is removed while updateSelectedAccount is in progress
+    if (!accountState) return false
+
     if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
       // and portfolio will not be updated
