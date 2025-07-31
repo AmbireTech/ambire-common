@@ -567,6 +567,11 @@ export class RequestsController extends EventEmitter {
       const isWalletSendCalls = !!request.params[0].calls
       const accountAddr = getAddress(request.params[0].from)
 
+      if (isWalletSendCalls && !request.params[0].calls.length)
+        throw ethErrors.provider.unsupportedMethod({
+          message: 'Request rejected - empty calls array not allowed!'
+        })
+
       const calls: Calls['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
