@@ -265,7 +265,8 @@ export class MainController extends EventEmitter {
     )
     this.selectedAccount = new SelectedAccountController({
       storage: this.storage,
-      accounts: this.accounts
+      accounts: this.accounts,
+      keystore: this.keystore
     })
     this.banner = new BannerController(this.storage)
     this.portfolio = new PortfolioController(
