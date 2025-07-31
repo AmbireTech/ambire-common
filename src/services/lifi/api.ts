@@ -221,7 +221,7 @@ export class LiFiAPI {
 
   #headers: RequestInitWithCustomHeaders['headers']
 
-  #requestTimeoutMs = 5000
+  #requestTimeoutMs = 10000
 
   isHealthy: boolean | null = null
 
