@@ -68,6 +68,11 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
+/**
+ * The RequestsController is responsible for building different user request types and managing their associated actions (within an action window).
+ * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
+ * and testability, this logic was encapsulated in this dedicated controller.
+ */
 export class RequestsController extends EventEmitter {
   #relayerUrl: string
 
