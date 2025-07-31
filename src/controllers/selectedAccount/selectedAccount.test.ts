@@ -29,19 +29,19 @@ const providers = Object.fromEntries(
 const storage: Storage = produceMemoryStore()
 let providersCtrl: ProvidersController
 const storageCtrl = new StorageController(storage)
-const networksCtrl = new NetworksController(
-  storageCtrl,
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
   fetch,
   relayerUrl,
-  (nets) => {
+  onAddOrUpdateNetworks: (nets) => {
     nets.forEach((n) => {
       providersCtrl.setProvider(n)
     })
   },
-  (id) => {
+  onRemoveNetwork: (id) => {
     providersCtrl.removeProvider(id)
   }
-)
+})
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers

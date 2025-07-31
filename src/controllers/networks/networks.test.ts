@@ -16,13 +16,13 @@ describe('Networks Controller', () => {
   beforeEach(async () => {
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    networksController = new NetworksController(
-      storageCtrl,
+    networksController = new NetworksController({
+      storage: storageCtrl,
       fetch,
       relayerUrl,
-      () => {},
-      () => {}
-    )
+      onAddOrUpdateNetworks: () => {},
+      onRemoveNetwork: () => {}
+    })
   })
 
   test('should initialize with predefined networks if storage is empty', async () => {
