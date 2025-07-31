@@ -363,11 +363,15 @@ describe('SelectedAccount Controller', () => {
     ;(
       selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
     ).gasTankTokens[0].cashback = 0n
+    // Mocks 'no-cashback'
     await selectedAccountCtrl.updateCashbackStatus()
     ;(
       selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
     ).gasTankTokens[0].cashback = 10n
+    // Mocks 'unseen-cashback'
+    await selectedAccountCtrl.updateCashbackStatus()
 
+    // Cashback is undefined because the account is view-only
     expect(selectedAccountCtrl.cashbackStatus).toBeUndefined()
   })
 })
