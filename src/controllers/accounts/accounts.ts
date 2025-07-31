@@ -34,7 +34,7 @@ export class AccountsController extends EventEmitter {
   accountStates: AccountStates = {}
 
   accountStatesLoadingState: {
-    [chainId: string]: boolean
+    [chainId: string]: Promise<AccountOnchainState[]> | undefined
   } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -77,7 +77,6 @@ export class AccountsController extends EventEmitter {
 
       const accountKeys = this.#keystore.getAccountKeys(account)
       const isViewOnly = accountKeys.length === 0
-
       // If the account is not selected, update the account state in the background
       // only if it's not view-only. We update the account state
       // in the background so EOAs can be used as a broadcast option.
@@ -108,6 +107,8 @@ export class AccountsController extends EventEmitter {
     blockTag: string | number = 'latest',
     networks: bigint[] = []
   ) {
+    await this.initialLoadPromise
+
     await this.#updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr),
       blockTag,
@@ -120,10 +121,10 @@ export class AccountsController extends EventEmitter {
     blockTag: 'pending' | 'latest' = 'latest',
     networks: bigint[] = []
   ) {
+    await this.initialLoadPromise
+
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
-
     if (!accountData) return
-
     await this.#updateAccountStates([accountData], blockTag, networks)
   }
 
@@ -132,46 +133,49 @@ export class AccountsController extends EventEmitter {
     blockTag: string | number = 'latest',
     updateOnlyNetworksWithIds: bigint[] = []
   ) {
+    if (!accounts.length) return
+
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
     const networksToUpdate = this.#networks.networks.filter((network) => {
-      if (this.accountStatesLoadingState[network.chainId.toString()]) return false
       if (!updateOnlyPassedNetworks) return true
 
       return updateOnlyNetworksWithIds.includes(network.chainId)
     })
 
-    networksToUpdate.forEach((network) => {
-      this.accountStatesLoadingState[network.chainId.toString()] = true
-    })
     this.emitUpdate()
 
     await Promise.all(
       networksToUpdate.map(async (network) => {
         try {
-          const networkAccountStates = await getAccountState(
+          if (this.accountStatesLoadingState[network.chainId.toString()]) {
+            await this.accountStatesLoadingState[network.chainId.toString()]
+
+            return
+          }
+
+          this.accountStatesLoadingState[network.chainId.toString()] = getAccountState(
             this.#providers.providers[network.chainId.toString()],
             network,
             accounts,
             blockTag
           )
+          const networkAccountStates = await this.accountStatesLoadingState[
+            network.chainId.toString()
+          ]!
 
           this.#updateProviderIsWorking(network.chainId, true)
 
           networkAccountStates.forEach((accountState) => {
             const addr = accountState.accountAddr
-
-            if (!this.accountStates[addr]) {
-              this.accountStates[addr] = {}
-            }
-
+            if (!this.accountStates[addr]) this.accountStates[addr] = {}
             this.accountStates[addr][network.chainId.toString()] = accountState
           })
         } catch (err) {
           console.error(`account state update error for ${network.name}: `, err)
           this.#updateProviderIsWorking(network.chainId, false)
         } finally {
-          this.accountStatesLoadingState[network.chainId.toString()] = false
+          this.accountStatesLoadingState[network.chainId.toString()] = undefined
         }
         this.emitUpdate()
       })
@@ -296,8 +300,9 @@ export class AccountsController extends EventEmitter {
   // This ensures production doesn't blow up and it 99.9% of cases it
   // should not call the promise
   async getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
-    if (!this.accountStates[addr][chainId.toString()])
+    if (!this.accountStates[addr]?.[chainId.toString()]) {
       await this.updateAccountState(addr, 'latest', [chainId])
+    }
 
     return this.accountStates[addr][chainId.toString()]
   }

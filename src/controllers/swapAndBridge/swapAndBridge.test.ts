@@ -199,14 +199,14 @@ describe('SwapAndBridge Controller', () => {
       activity: activityCtrl,
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
-      actions: actionsCtrl,
       invite: inviteCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,
       externalSignerControllers: {},
       relayerUrl,
-      userRequests: []
+      getUserRequests: () => [],
+      getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
     })
     expect(swapAndBridgeController).toBeDefined()
   })

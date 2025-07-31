@@ -149,6 +149,21 @@ export const noStateUpdateStatuses = [
   SigningStatus.WaitingForPaymaster
 ]
 
+export type SignAccountOpUpdateProps = {
+  gasPrices?: GasRecommendation[] | null
+  feeToken?: TokenResult
+  paidBy?: string
+  speed?: FeeSpeed
+  signingKeyAddr?: Key['addr']
+  signingKeyType?: InternalKey['type'] | ExternalKey['type']
+  calls?: AccountOp['calls']
+  rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
+  bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
+  blockGasLimit?: bigint
+  signedTransactionsCount?: number | null
+  hasNewEstimation?: boolean
+}
+
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
 
@@ -776,20 +791,7 @@ export class SignAccountOpController extends EventEmitter {
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation
-  }: {
-    gasPrices?: GasRecommendation[] | null
-    feeToken?: TokenResult
-    paidBy?: string
-    speed?: FeeSpeed
-    signingKeyAddr?: Key['addr']
-    signingKeyType?: InternalKey['type'] | ExternalKey['type']
-    calls?: AccountOp['calls']
-    rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-    bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
-    blockGasLimit?: bigint
-    signedTransactionsCount?: number | null
-    hasNewEstimation?: boolean
-  }) {
+  }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
       // most updates are frozen during the signing process

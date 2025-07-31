@@ -29,9 +29,9 @@ import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
-import { batchCallsFromUserRequests } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { batchCallsFromUserRequests } from '../../libs/requests/requests'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -58,7 +58,7 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction, ActionsController } from '../actions/actions'
+import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -128,8 +128,6 @@ export class SwapAndBridgeController extends EventEmitter {
   #selectedAccount: SelectedAccountController
 
   #networks: NetworksController
-
-  #actions: ActionsController
 
   #activity: ActivityController
 
@@ -253,6 +251,10 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
 
+  #getUserRequests: () => UserRequest[]
+
+  #getVisibleActionsQueue: () => Action[]
+
   hasProceeded: boolean = false
 
   /**
@@ -263,8 +265,6 @@ export class SwapAndBridgeController extends EventEmitter {
   isAutoSelectRouteDisabled: boolean = false
 
   #isReestimating: boolean = false
-
-  #userRequests: UserRequest[]
 
   #relayerUrl: string
 
@@ -279,12 +279,12 @@ export class SwapAndBridgeController extends EventEmitter {
     activity,
     serviceProviderAPI,
     storage,
-    actions,
     invite,
     portfolioUpdate,
-    userRequests = [],
     relayerUrl,
-    isMainSignAccountOpThrowingAnEstimationError
+    isMainSignAccountOpThrowingAnEstimationError,
+    getUserRequests,
+    getVisibleActionsQueue
   }: {
     accounts: AccountsController
     keystore: KeystoreController
@@ -296,12 +296,12 @@ export class SwapAndBridgeController extends EventEmitter {
     activity: ActivityController
     serviceProviderAPI: SocketAPI | LiFiAPI
     storage: StorageController
-    actions: ActionsController
     invite: InviteController
-    userRequests: UserRequest[]
     relayerUrl: string
     portfolioUpdate?: Function
     isMainSignAccountOpThrowingAnEstimationError?: Function
+    getUserRequests: () => UserRequest[]
+    getVisibleActionsQueue: () => Action[]
   }) {
     super()
     this.#accounts = accounts
@@ -317,10 +317,10 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#activity = activity
     this.#serviceProviderAPI = serviceProviderAPI
     this.#storage = storage
-    this.#actions = actions
     this.#invite = invite
-    this.#userRequests = userRequests
     this.#relayerUrl = relayerUrl
+    this.#getUserRequests = getUserRequests
+    this.#getVisibleActionsQueue = getVisibleActionsQueue
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
@@ -2022,22 +2022,6 @@ export class SwapAndBridgeController extends EventEmitter {
     )
   }
 
-  get banners() {
-    if (!this.#selectedAccount.account) return []
-
-    const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
-      this.#selectedAccount.account.addr,
-      this.activeRoutes
-    )
-    const accountOpActions = this.#actions.visibleActionsQueue.filter(
-      ({ type }) => type === 'accountOp'
-    ) as AccountOpAction[]
-
-    // Swap banners aren't generated because swaps are completed instantly,
-    // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
-  }
-
   #debounceFunctionCallsOnSameTick(funcName: string, func: Function) {
     if (this.#shouldDebounceFlags[funcName]) return
     this.#shouldDebounceFlags[funcName] = true
@@ -2113,7 +2097,7 @@ export class SwapAndBridgeController extends EventEmitter {
     const userRequestCalls = batchCallsFromUserRequests({
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
-      userRequests: this.#userRequests
+      userRequests: this.#getUserRequests()
     })
     const swapOrBridgeCalls = await getSwapAndBridgeCalls(
       userTxn,
@@ -2337,6 +2321,22 @@ export class SwapAndBridgeController extends EventEmitter {
     return errors
   }
 
+  get banners() {
+    if (!this.#selectedAccount.account) return []
+
+    const activeRoutesForSelectedAccount = getActiveRoutesForAccount(
+      this.#selectedAccount.account.addr,
+      this.activeRoutes
+    )
+    const accountOpActions = this.#getVisibleActionsQueue().filter(
+      ({ type }) => type === 'accountOp'
+    ) as AccountOpAction[]
+
+    // Swap banners aren't generated because swaps are completed instantly,
+    // thus the activity banner on broadcast is sufficient
+    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+  }
+
   toJSON() {
     return {
       ...this,
@@ -2348,12 +2348,12 @@ export class SwapAndBridgeController extends EventEmitter {
       formStatus: this.formStatus,
       activeRoutesInProgress: this.activeRoutesInProgress,
       activeRoutes: this.activeRoutes,
-      banners: this.banners,
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
       supportedChainIds: this.supportedChainIds,
       swapSignErrors: this.swapSignErrors,
-      signAccountOpController: this.signAccountOpController
+      signAccountOpController: this.signAccountOpController,
+      banners: this.banners
     }
   }
 }

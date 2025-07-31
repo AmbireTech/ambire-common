@@ -11,9 +11,7 @@ import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getRpcProvider } from '../../services/provider'
-import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
-import { ActionsController } from '../actions/actions'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitterClass from '../eventEmitter/eventEmitter'
@@ -94,17 +92,6 @@ const defiPositionsCtrl = new DefiPositionsController({
   accounts: accountsCtrl
 })
 
-const notificationManager = {
-  create: () => Promise.resolve()
-}
-
-const actionsCtrl = new ActionsController({
-  selectedAccount: selectedAccountCtrl,
-  windowManager,
-  notificationManager,
-  onActionWindowClose: () => Promise.resolve()
-})
-
 const accounts = [
   {
     addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -176,7 +163,6 @@ describe('SelectedAccount Controller', () => {
     selectedAccountCtrl.initControllers({
       portfolio: portfolioCtrl,
       defiPositions: defiPositionsCtrl,
-      actions: actionsCtrl,
       networks: networksCtrl,
       providers: providersCtrl
     })
