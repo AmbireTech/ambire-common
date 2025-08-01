@@ -32,6 +32,9 @@ const STATUS_WRAPPED_METHODS = {
  * for adding, updating, and removing networks.
  */
 export class NetworksController extends EventEmitter {
+  // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
+  // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
+  // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
   defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
   #storage: StorageController
@@ -188,6 +191,8 @@ export class NetworksController extends EventEmitter {
    * Used for periodically network synchronization.
    */
   async synchronizeNetworks() {
+    if (this.defaultNetworksMode === 'testnet') return
+
     const networksInStorage = await this.getNetworksInStorage()
     const finalNetworks = { ...this.#networks }
 
