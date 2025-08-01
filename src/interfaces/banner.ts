@@ -113,7 +113,17 @@ export type Action =
       actionName: 'view-bridge'
     }
   | {
-      label: 'Open'
-      actionName: 'open-link'
-      meta: { url: string }
+      label: 'Enable all'
+      actionName: 'enable-networks'
+      meta: { networkChainIds: bigint[] }
     }
+  | {
+      label: 'Enable'
+      actionName: 'enable-networks'
+      meta: { networkChainIds: bigint[] }
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-defi-positions-banner'
+    }
+  | { label: 'Open'; actionName: 'open-link'; meta: { url: string } }

@@ -1,21 +1,17 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt } from 'ethers'
+import { getAddress } from 'ethers'
 
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
-import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
-import { DappProviderRequest } from '../../interfaces/dapp'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
@@ -25,17 +21,10 @@ import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
-import {
-  SwapAndBridgeActiveRoute,
-  SwapAndBridgeSendTxRequest
-} from '../../interfaces/swapAndBridge'
-import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
-import {
-  getDefaultSelectedAccount,
-  isBasicAccount,
-  isSmartAccount
-} from '../../libs/account/account'
+import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
@@ -44,39 +33,18 @@ import {
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-import {
-  dappRequestMethodToActionKind,
-  getAccountOpActionsByNetwork,
-  getAccountOpFromAction
-} from '../../libs/actions/actions'
-import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getAccountOpFromAction } from '../../libs/actions/actions'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
-import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 /* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import {
-  ACCOUNT_SWITCH_USER_REQUEST,
-  buildSwitchAccountUserRequest,
-  getAccountOpsForSimulation,
-  makeAccountOpAction
-} from '../../libs/main/main'
+import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerAdditionalNetworks } from '../../libs/networks/networks'
-import { TokenResult } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { parse } from '../../libs/richJson/richJson'
+import { makeAccountOpAction } from '../../libs/requests/requests'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
-import {
-  buildSwapAndBridgeUserRequests,
-  getActiveRoutesForAccount
-} from '../../libs/swapAndBridge/swapAndBridge'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
-import {
-  buildClaimWalletRequest,
-  buildMintVestingRequest,
-  buildTransferUserRequest
-} from '../../libs/transfer/userRequest'
 /* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
@@ -87,13 +55,7 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
-import {
-  AccountOpAction,
-  Action,
-  ActionExecutionType,
-  ActionPosition,
-  ActionsController
-} from '../actions/actions'
+import { AccountOpAction } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { BannerController } from '../banner/banner'
@@ -110,6 +72,7 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import {
   SIGN_ACCOUNT_OP_MAIN,
@@ -120,7 +83,7 @@ import {
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
 
 const STATUS_WRAPPED_METHODS = {
@@ -129,7 +92,6 @@ const STATUS_WRAPPED_METHODS = {
   handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
-  buildSwapAndBridgeUserRequest: 'INITIAL',
   selectAccount: 'INITIAL',
   signAndBroadcastAccountOp: 'INITIAL'
 } as const
@@ -180,8 +142,6 @@ export class MainController extends EventEmitter {
 
   phishing: PhishingController
 
-  actions: ActionsController
-
   // Public sub-structures
   // @TODO emailVaults
   emailVault: EmailVaultController
@@ -206,11 +166,9 @@ export class MainController extends EventEmitter {
 
   selectedAccount: SelectedAccountController
 
+  requests: RequestsController
+
   banner: BannerController
-
-  userRequests: UserRequest[] = []
-
-  userRequestsWaitingAccountSwitch: UserRequest[] = []
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -239,8 +197,6 @@ export class MainController extends EventEmitter {
    * when a user closes an action window and starts a new one.
    */
   #signAndBroadcastCallId: string | null = null
-
-  #relayerUrl: string
 
   constructor({
     platform,
@@ -279,13 +235,13 @@ export class MainController extends EventEmitter {
       this.storage,
       this.fetch,
       relayerUrl,
-      async (network: Network) => {
-        if (network.disabled) {
-          await this.removeNetworkData(network.chainId)
-          return
-        }
-        this.providers.setProvider(network)
-        await this.reloadSelectedAccount({ chainId: network.chainId })
+      async (networks: Network[]) => {
+        networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
+        networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
+        await this.reloadSelectedAccount({
+          chainIds: networks.map((n) => n.chainId),
+          forceUpdate: false
+        })
       },
       (chainId: bigint) => {
         this.providers.removeProvider(chainId)
@@ -333,7 +289,6 @@ export class MainController extends EventEmitter {
       providers: this.providers
     })
     this.emailVault = new EmailVaultController(this.storage, this.fetch, relayerUrl, this.keystore)
-    this.#relayerUrl = relayerUrl
     this.accountPicker = new AccountPickerController({
       accounts: this.accounts,
       keystore: this.keystore,
@@ -371,47 +326,10 @@ export class MainController extends EventEmitter {
     // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
     const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.storage)
-    this.actions = new ActionsController({
-      selectedAccount: this.selectedAccount,
-      windowManager,
-      notificationManager,
-      onActionWindowClose: async () => {
-        // eslint-disable-next-line no-restricted-syntax
-        for (const r of this.userRequests) {
-          if (r.action.kind === 'walletAddEthereumChain') {
-            const chainId = r.action.params?.[0]?.chainId
-            // eslint-disable-next-line no-continue
-            if (!chainId) continue
 
-            const network = this.networks.networks.find((n) => n.chainId === BigInt(chainId))
-            if (network && !network.disabled) {
-              await this.resolveUserRequest(null, r.id)
-            }
-          }
-        }
-
-        const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-          (r) => r.action.kind !== 'calls'
-        )
-        await this.rejectUserRequests(
-          ethErrors.provider.userRejectedRequest().message,
-          userRequestsToRejectOnWindowClose.map((r) => r.id),
-          // If the user closes a window and non-calls user requests exist,
-          // the window will reopen with the next request.
-          // For example: if the user has both a sign message and sign account op request,
-          // closing the window will reject the sign message request but immediately
-          // reopen the window for the sign account op request.
-          { shouldOpenNextRequest: false }
-        )
-
-        this.userRequestsWaitingAccountSwitch = []
-        this.emitUpdate()
-      }
-    })
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
       defiPositions: this.defiPositions,
-      actions: this.actions,
       networks: this.networks,
       providers: this.providers
     })
@@ -444,12 +362,10 @@ export class MainController extends EventEmitter {
       // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
       serviceProviderAPI: lifiAPI,
       storage: this.storage,
-      actions: this.actions,
       relayerUrl,
       portfolioUpdate: () => {
         this.updateSelectedAccountPortfolio({ forceUpdate: true })
       },
-      userRequests: this.userRequests,
       isMainSignAccountOpThrowingAnEstimationError: (
         fromChainId: number | null,
         toChainId: number | null
@@ -462,7 +378,9 @@ export class MainController extends EventEmitter {
           this.signAccountOp.accountOp.chainId === BigInt(fromChainId) &&
           fromChainId === toChainId
         )
-      }
+      },
+      getUserRequests: () => this.requests.userRequests || [],
+      getVisibleActionsQueue: () => this.requests.actions.visibleActionsQueue || []
     })
     this.transfer = new TransferController(
       this.storage,
@@ -479,7 +397,30 @@ export class MainController extends EventEmitter {
       relayerUrl
     )
     this.domains = new DomainsController(this.providers.providers)
-
+    this.requests = new RequestsController({
+      relayerUrl,
+      accounts: this.accounts,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      keystore: this.keystore,
+      dapps: this.dapps,
+      transfer: this.transfer,
+      swapAndBridge: this.swapAndBridge,
+      windowManager: this.#windowManager,
+      notificationManager: this.#notificationManager,
+      getSignAccountOp: () => this.signAccountOp,
+      updateSignAccountOp: (props) => {
+        if (!this.signAccountOp) return
+        this.signAccountOp.update(props)
+      },
+      destroySignAccountOp: this.destroySignAccOp.bind(this),
+      updateSelectedAccountPortfolio: async (networks) => {
+        await this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
+      },
+      addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
+      guardHWSigning: this.#guardHWSigning.bind(this)
+    })
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
@@ -590,14 +531,14 @@ export class MainController extends EventEmitter {
     this.isOffline = false
     // call closeActionWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like actionsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.actions?.currentAction?.type !== 'switchAccount') {
-      await this.actions.closeActionWindow()
+    if (this.requests.actions?.currentAction?.type !== 'switchAccount') {
+      await this.requests.actions.closeActionWindow()
     }
-    const swapAndBridgeSigningAction = this.actions.visibleActionsQueue.find(
+    const swapAndBridgeSigningAction = this.requests.actions.visibleActionsQueue.find(
       ({ type }) => type === 'swapAndBridge'
     )
     if (swapAndBridgeSigningAction) {
-      await this.actions.removeActions([swapAndBridgeSigningAction.id])
+      await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
     this.swapAndBridge.reset()
@@ -605,7 +546,7 @@ export class MainController extends EventEmitter {
     await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
     // forceEmitUpdate to update the getters in the FE state of the ctrl
     await this.forceEmitUpdate()
-    await this.actions.forceEmitUpdate()
+    await this.requests.actions.forceEmitUpdate()
     await this.addressBook.forceEmitUpdate()
     await this.activity.forceEmitUpdate()
     // Don't await these as they are not critical for the account selection
@@ -653,7 +594,7 @@ export class MainController extends EventEmitter {
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
-    const accountOp = getAccountOpFromAction(actionId, this.actions.actionsQueue)
+    const accountOp = getAccountOpFromAction(actionId, this.requests.actions.actionsQueue)
     if (!accountOp) {
       this.signAccOpInitError =
         'We cannot initiate the signing process because no transaction has been found for the specified account and network.'
@@ -958,7 +899,7 @@ export class MainController extends EventEmitter {
       const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
-        this.actions.visibleActionsQueue,
+        this.requests.actions.visibleActionsQueue,
         this.networks.networks
       )
 
@@ -967,7 +908,7 @@ export class MainController extends EventEmitter {
       if (canUpdateSignAccountOp && (learnedNewTokens || learnedNewNfts)) {
         await this.portfolio.updateSelectedAccount(
           accountOp.accountAddr,
-          network,
+          [network],
           accountOpsForSimulation
             ? {
                 accountOps: accountOpsForSimulation,
@@ -1023,7 +964,10 @@ export class MainController extends EventEmitter {
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
-    await this.resolveUserRequest({ hash: signedMessage.signature }, signedMessage.fromActionId)
+    await this.requests.resolveUserRequest(
+      { hash: signedMessage.signature },
+      signedMessage.fromActionId
+    )
 
     await this.#notificationManager.create({
       title: 'Done!',
@@ -1217,7 +1161,7 @@ export class MainController extends EventEmitter {
       this.accounts.removeAccountData(address)
       this.portfolio.removeAccountData(address)
       await this.activity.removeAccountData(address)
-      this.actions.removeAccountData(address)
+      this.requests.actions.removeAccountData(address)
       this.signMessage.removeAccountData(address)
       this.defiPositions.removeAccountData(address)
 
@@ -1243,56 +1187,10 @@ export class MainController extends EventEmitter {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
   }
 
-  async #ensureAccountInfo(
-    accountAddr: AccountId,
-    chainId: bigint
-  ): Promise<{ hasAccountInfo: true } | { hasAccountInfo: false; errorMessage: string }> {
-    await this.#initialLoadPromise
-    // Initial sanity check: does this account even exist?
-    if (!this.accounts.accounts.find((x) => x.addr === accountAddr)) {
-      return {
-        hasAccountInfo: false,
-        errorMessage: `Account ${accountAddr} does not exist`
-      }
-    }
-    // If this still didn't work, re-load
-    if (!this.accounts.accountStates[accountAddr]?.[chainId.toString()])
-      await this.accounts.updateAccountState(accountAddr, 'pending', [chainId])
-    // If this still didn't work, throw error: this prob means that we're calling for a non-existent acc/network
-    if (!this.accounts.accountStates[accountAddr]?.[chainId.toString()]) {
-      const network = this.networks.networks.find((n) => n.chainId === chainId)
-
-      return {
-        hasAccountInfo: false,
-        errorMessage: `We couldn't complete your last action because we couldn't retrieve your account information for ${
-          network?.name || chainId
-        }. Please try reloading your account from the Dashboard. If the issue persists, contact support for assistance.`
-      }
-    }
-
-    return {
-      hasAccountInfo: true
-    }
-  }
-
-  #batchCallsFromUserRequests(accountAddr: AccountId, chainId: bigint): Call[] {
-    // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: Call[], req) => {
-        if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
-          const { calls } = req.action as Calls
-          calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
-        }
-        return uCalls
-      },
-      []
-    )
-  }
-
-  async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainId?: bigint }) {
-    const { forceUpdate = true, chainId } = options || {}
-    const networkToUpdate = chainId
-      ? this.networks.networks.find((n) => n.chainId === chainId)
+  async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainIds?: bigint[] }) {
+    const { forceUpdate = true, chainIds } = options || {}
+    const networksToUpdate = chainIds
+      ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
@@ -1305,18 +1203,14 @@ export class MainController extends EventEmitter {
       // However, even if we don't trigger an update here, it's not a big problem,
       // as the account state will be updated anyway, and its update will be very recent.
       !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(
-            this.selectedAccount.account.addr,
-            'pending',
-            chainId ? [chainId] : undefined
-          )
+        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
         : Promise.resolve(),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio({ network: networkToUpdate, forceUpdate }),
-      this.defiPositions.updatePositions({ chainId, forceUpdate: true })
+      this.updateSelectedAccountPortfolio({ networks: networksToUpdate, forceUpdate }),
+      this.defiPositions.updatePositions({ chainIds, forceUpdate })
     ])
   }
 
@@ -1372,10 +1266,10 @@ export class MainController extends EventEmitter {
   // TODO: Refactor this to accept an optional object with options
   async updateSelectedAccountPortfolio(opts?: {
     forceUpdate?: boolean
-    network?: Network
+    networks?: Network[]
     maxDataAgeMs?: number
   }) {
-    const { network, maxDataAgeMs, forceUpdate } = opts || {}
+    const { networks, maxDataAgeMs, forceUpdate } = opts || {}
 
     await this.#initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1384,13 +1278,13 @@ export class MainController extends EventEmitter {
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
-      this.actions.visibleActionsQueue,
+      this.requests.actions.visibleActionsQueue,
       this.networks.networks
     )
 
     await this.portfolio.updateSelectedAccount(
       this.selectedAccount.account.addr,
-      network,
+      networks,
       accountOpsToBeSimulatedByNetwork
         ? {
             accountOps: accountOpsToBeSimulatedByNetwork,
@@ -1402,577 +1296,6 @@ export class MainController extends EventEmitter {
     this.#updateIsOffline()
   }
 
-  #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
-    if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
-      const isAddressInAccounts = this.accounts.accounts.some((a) => a.addr === fromAccountAddr)
-
-      if (isAddressInAccounts) return null
-
-      return 'The dApp is trying to sign using an address that is not imported in the extension.'
-    }
-    const isAddressSelected = this.selectedAccount.account?.addr === fromAccountAddr
-
-    if (isAddressSelected) return null
-
-    return 'The dApp is trying to sign using an address that is not selected in the extension.'
-  }
-
-  /**
-   * Don't allow the user to open new action windows
-   * if there's a pending to sign action (swap and bridge or transfer)
-   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
-   * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
-   * @returns {boolean} - true if an error was thrown
-   * @throws {Error} - if throwRpcError is true
-   */
-  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
-    const pendingAction = this.actions.visibleActionsQueue.find(
-      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
-    )
-
-    if (!pendingAction) return false
-
-    const isSigningOrBroadcasting =
-      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
-      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
-
-    // The swap and bridge or transfer is done/forgotten so we can remove the action
-    if (!isSigningOrBroadcasting) {
-      await this.actions.removeActions([pendingAction.id])
-
-      if (pendingAction.type === 'swapAndBridge') {
-        this.swapAndBridge.reset()
-      } else {
-        this.transfer.resetForm()
-      }
-
-      return false
-    }
-
-    const errors = {
-      swapAndBridge: {
-        message: 'Please complete the pending swap action.',
-        error: 'Pending swap action',
-        rpcError: 'You have a pending swap action. Please complete it before signing.'
-      },
-      transfer: {
-        message: 'Please complete the pending transfer action.',
-        error: 'Pending transfer action',
-        rpcError: 'You have a pending transfer action. Please complete it before signing.'
-      }
-    }
-
-    const error = errors[pendingAction.type as keyof typeof errors]
-
-    await this.actions.focusActionWindow()
-    this.emitError({
-      level: 'major',
-      message: error.message,
-      error: new Error(error.error)
-    })
-
-    if (throwRpcError) {
-      throw ethErrors.rpc.transactionRejected({
-        message: error.rpcError
-      })
-    }
-
-    return true
-  }
-
-  async buildUserRequestFromDAppRequest(
-    request: DappProviderRequest,
-    dappPromise: {
-      session: DappProviderRequest['session']
-      resolve: (data: any) => void
-      reject: (data: any) => void
-    }
-  ) {
-    await this.#initialLoadPromise
-    await this.#guardHWSigning(true)
-
-    let userRequest = null
-    let actionPosition: ActionPosition = 'last'
-    const kind = dappRequestMethodToActionKind(request.method)
-    const dapp = this.dapps.getDapp(request.session.id)
-
-    if (kind === 'calls') {
-      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
-      const network = this.networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
-      )
-      if (!network) {
-        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-      }
-
-      const baseAcc = getBaseAccount(
-        this.selectedAccount.account,
-        await this.accounts.getOrFetchAccountOnChainState(
-          this.selectedAccount.account.addr,
-          network.chainId
-        ),
-        this.keystore.getAccountKeys(this.selectedAccount.account),
-        network
-      )
-
-      const isWalletSendCalls = !!request.params[0].calls
-      const accountAddr = getAddress(request.params[0].from)
-
-      const calls: Calls['calls'] = isWalletSendCalls
-        ? request.params[0].calls
-        : [request.params[0]]
-      const paymasterService =
-        isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
-          ? getPaymasterService(network.chainId, request.params[0].capabilities)
-          : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
-
-      const atomicRequired = isWalletSendCalls && !!request.params[0].atomicRequired
-      if (isWalletSendCalls && atomicRequired && baseAcc.getAtomicStatus() === 'unsupported') {
-        throw ethErrors.provider.custom({
-          code: 5700,
-          message: 'Transaction failed - atomicity is not supported for this account'
-        })
-      }
-
-      const walletSendCallsVersion = isWalletSendCalls
-        ? request.params[0].version ?? '1.0.0'
-        : undefined
-
-      userRequest = {
-        id: new Date().getTime(),
-        action: {
-          kind,
-          calls: calls.map((call) => ({
-            to: call.to,
-            data: call.data || '0x',
-            value: call.value ? getBigInt(call.value) : 0n
-          }))
-        },
-        session: new Session({ windowId: request.session.windowId }),
-        meta: {
-          isSignAction: true,
-          isWalletSendCalls,
-          walletSendCallsVersion,
-          accountAddr,
-          chainId: network.chainId,
-          paymasterService
-        },
-        dappPromise
-      } as SignUserRequest
-    } else if (kind === 'message') {
-      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
-
-      const msg = request.params
-      if (!msg) {
-        throw ethErrors.rpc.invalidRequest('No msg request to sign')
-      }
-      const msgAddress = getAddress(msg?.[1])
-
-      const network = this.networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
-      )
-
-      if (!network) {
-        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-      }
-
-      userRequest = {
-        id: new Date().getTime(),
-        action: {
-          kind: 'message',
-          message: msg[0]
-        },
-        session: request.session,
-        meta: {
-          isSignAction: true,
-          accountAddr: msgAddress,
-          chainId: network.chainId
-        },
-        dappPromise
-      } as SignUserRequest
-    } else if (kind === 'typedMessage') {
-      if (!this.selectedAccount.account) throw ethErrors.rpc.internal()
-
-      const msg = request.params
-      if (!msg) {
-        throw ethErrors.rpc.invalidRequest('No msg request to sign')
-      }
-      const msgAddress = getAddress(msg?.[0])
-
-      const network = this.networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
-      )
-
-      if (!network) {
-        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-      }
-
-      let typedData = msg?.[1]
-
-      try {
-        typedData = parse(typedData)
-      } catch (error) {
-        throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
-      }
-
-      if (
-        !typedData?.types ||
-        !typedData?.domain ||
-        !typedData?.message ||
-        !typedData?.primaryType
-      ) {
-        throw ethErrors.rpc.methodNotSupported(
-          'Invalid typedData format - only typedData v4 is supported'
-        )
-      }
-
-      if (
-        msgAddress === this.selectedAccount.account.addr &&
-        (typedData.primaryType === 'AmbireOperation' || !!typedData.types.AmbireOperation)
-      ) {
-        throw ethErrors.rpc.methodNotSupported('Signing an AmbireOperation is not allowed')
-      }
-
-      userRequest = {
-        id: new Date().getTime(),
-        action: {
-          kind: 'typedMessage',
-          types: typedData.types,
-          domain: typedData.domain,
-          message: typedData.message,
-          primaryType: typedData.primaryType
-        },
-        session: request.session,
-        meta: {
-          isSignAction: true,
-          accountAddr: msgAddress,
-          chainId: network.chainId
-        },
-        dappPromise
-      } as SignUserRequest
-    } else {
-      userRequest = {
-        id: new Date().getTime(),
-        session: request.session,
-        action: { kind, params: request.params },
-        meta: { isSignAction: false },
-        dappPromise
-      } as DappUserRequest
-    }
-
-    if (userRequest.action.kind !== 'calls') {
-      const otherUserRequestFromSameDapp = this.userRequests.find(
-        (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
-      )
-
-      if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
-        actionPosition = 'first'
-      }
-    }
-
-    if (!userRequest) return
-
-    const isASignOperationRequestedForAnotherAccount =
-      userRequest.meta.isSignAction &&
-      userRequest.meta.accountAddr !== this.selectedAccount.account?.addr
-
-    // We can simply add the user request if it's not a sign operation
-    // for another account
-    if (!isASignOperationRequestedForAnotherAccount) {
-      await this.addUserRequests([userRequest], {
-        actionPosition,
-        actionExecutionType:
-          actionPosition === 'first' || isSmartAccount(this.selectedAccount.account)
-            ? 'open-action-window'
-            : 'queue-but-open-action-window'
-      })
-      return
-    }
-
-    const accountError = this.#getUserRequestAccountError(
-      dappPromise.session.origin,
-      userRequest.meta.accountAddr
-    )
-
-    if (accountError) {
-      dappPromise.reject(ethErrors.provider.userRejectedRequest(accountError))
-      return
-    }
-
-    await this.#addSwitchAccountUserRequest(userRequest)
-  }
-
-  async buildTransferUserRequest(
-    amount: string,
-    recipientAddress: string,
-    selectedToken: TokenResult,
-    // eslint-disable-next-line default-param-last
-    actionExecutionType: ActionExecutionType = 'open-action-window',
-    windowId?: number
-  ) {
-    await this.#initialLoadPromise
-    if (!this.selectedAccount.account) return
-
-    const baseAcc = getBaseAccount(
-      this.selectedAccount.account,
-      await this.accounts.getOrFetchAccountOnChainState(
-        this.selectedAccount.account.addr,
-        selectedToken.chainId
-      ),
-      this.keystore.getAccountKeys(this.selectedAccount.account),
-      this.networks.networks.find((net) => net.chainId === selectedToken.chainId)!
-    )
-    const userRequest = buildTransferUserRequest({
-      selectedAccount: this.selectedAccount.account.addr,
-      amount,
-      selectedToken,
-      recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-      windowId
-    })
-
-    if (!userRequest) {
-      this.emitError({
-        level: 'major',
-        message: 'Unexpected error while building transfer request',
-        error: new Error(
-          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
-        )
-      })
-      return
-    }
-
-    await this.addUserRequests([userRequest], {
-      actionPosition: 'last',
-      actionExecutionType
-    })
-
-    // reset the transfer form after adding a req
-    this.transfer.resetForm()
-  }
-
-  async buildSwapAndBridgeUserRequest(
-    openActionWindow: boolean,
-    activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId'],
-    windowId?: number
-  ) {
-    await this.withStatus(
-      'buildSwapAndBridgeUserRequest',
-      async () => {
-        if (!this.selectedAccount.account) return
-        let transaction: SwapAndBridgeSendTxRequest | null | undefined = null
-
-        const activeRoute = this.swapAndBridge.activeRoutes.find(
-          (r) => r.activeRouteId === activeRouteId
-        )
-
-        // learn the receiving token
-        if (this.swapAndBridge.toSelectedToken && this.swapAndBridge.toChainId) {
-          this.portfolio.addTokensToBeLearned(
-            [this.swapAndBridge.toSelectedToken.address],
-            BigInt(this.swapAndBridge.toChainId)
-          )
-        }
-
-        if (this.swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn) {
-          transaction = this.swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
-        }
-
-        if (activeRoute) {
-          await this.removeUserRequests([activeRoute.activeRouteId], {
-            shouldRemoveSwapAndBridgeRoute: false,
-            shouldOpenNextRequest: false
-          })
-          this.swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
-
-          transaction = await this.swapAndBridge.getNextRouteUserTx({
-            activeRouteId: activeRoute.activeRouteId,
-            activeRoute
-          })
-
-          if (transaction) {
-            const network = this.networks.networks.find(
-              (n) => Number(n.chainId) === transaction!.chainId
-            )!
-            if (
-              isBasicAccount(
-                this.selectedAccount.account,
-                await this.accounts.getOrFetchAccountOnChainState(
-                  this.selectedAccount.account.addr,
-                  network.chainId
-                )
-              )
-            ) {
-              await this.removeUserRequests(
-                [
-                  `${activeRoute.activeRouteId}-approval`,
-                  `${activeRoute.activeRouteId}-revoke-approval`
-                ],
-                {
-                  shouldRemoveSwapAndBridgeRoute: false,
-                  shouldOpenNextRequest: false
-                }
-              )
-            }
-          }
-        }
-
-        if (!this.selectedAccount.account || !transaction) {
-          const errorDetails = `missing ${
-            this.selectedAccount.account ? 'selected account' : 'transaction'
-          } info`
-          const error = new SwapAndBridgeError(
-            `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
-          )
-          throw new EmittableError({ message: error.message, level: 'major', error })
-        }
-
-        const network = this.networks.networks.find(
-          (n) => Number(n.chainId) === transaction!.chainId
-        )!
-
-        // TODO: Consider refining the error handling in here, because this
-        // swallows errors and doesn't provide any feedback to the user.
-        const accountState = await this.accounts.getOrFetchAccountOnChainState(
-          this.selectedAccount.account.addr,
-          network.chainId
-        )
-        const baseAcc = getBaseAccount(
-          this.selectedAccount.account,
-          accountState,
-          this.keystore.getAccountKeys(this.selectedAccount.account),
-          network
-        )
-        const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
-          transaction,
-          network.chainId,
-          this.selectedAccount.account,
-          this.providers.providers[network.chainId.toString()],
-          accountState,
-          getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-          windowId
-        )
-
-        await this.addUserRequests(swapAndBridgeUserRequests, {
-          actionPosition: 'last',
-          actionExecutionType: openActionWindow ? 'open-action-window' : 'queue'
-        })
-
-        if (this.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
-          await this.swapAndBridge.addActiveRoute({
-            activeRouteId: transaction.activeRouteId,
-            userTxIndex: transaction.userTxIndex
-          })
-        }
-
-        if (activeRouteId) {
-          this.swapAndBridge.updateActiveRoute(
-            activeRouteId,
-            {
-              userTxIndex: transaction.userTxIndex,
-              userTxHash: null
-            },
-            true
-          )
-        }
-
-        this.swapAndBridge.resetForm()
-      },
-      true
-    )
-  }
-
-  async buildClaimWalletUserRequest(token: TokenResult, windowId?: number) {
-    if (!this.selectedAccount.account) return
-
-    const claimableRewardsData =
-      this.selectedAccount.portfolio.latest.rewards?.result?.claimableRewardsData
-
-    if (!claimableRewardsData) return
-
-    const userRequest: UserRequest = buildClaimWalletRequest({
-      selectedAccount: this.selectedAccount.account.addr,
-      selectedToken: token,
-      claimableRewardsData,
-      windowId
-    })
-
-    await this.addUserRequests([userRequest])
-  }
-
-  async buildMintVestingUserRequest(token: TokenResult, windowId?: number) {
-    if (!this.selectedAccount.account) return
-
-    const addrVestingData = this.selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
-
-    if (!addrVestingData) return
-    const userRequest: UserRequest = buildMintVestingRequest({
-      selectedAccount: this.selectedAccount.account.addr,
-      selectedToken: token,
-      addrVestingData,
-      windowId
-    })
-
-    await this.addUserRequests([userRequest])
-  }
-
-  async resolveUserRequest(data: any, requestId: UserRequest['id']) {
-    const userRequest = this.userRequests.find((r) => r.id === requestId)
-    if (!userRequest) return // TODO: emit error
-
-    userRequest.dappPromise?.resolve(data)
-    // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
-    // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
-    if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
-      setTimeout(async () => {
-        await this.removeUserRequests([requestId])
-        this.emitUpdate()
-      }, 300)
-    } else {
-      await this.removeUserRequests([requestId])
-      this.emitUpdate()
-    }
-  }
-
-  async rejectUserRequests(
-    err: string,
-    requestIds: UserRequest['id'][],
-    options?: {
-      shouldRemoveSwapAndBridgeRoute?: boolean
-      shouldOpenNextRequest?: boolean
-    }
-  ) {
-    const userRequestsToRemove: string[] = []
-
-    requestIds.forEach((requestId) => {
-      const userRequest = this.userRequests.find((r) => r.id === requestId)
-      if (!userRequest) return
-
-      // if the userRequest that is about to be removed is an approval request
-      // find and remove the associated pending transaction request if there is any
-      // this is valid scenario for a swap & bridge txs with a BA
-      if (userRequest.action.kind === 'calls') {
-        const acc = this.accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
-
-        if (
-          isBasicAccount(acc, this.accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
-          userRequest.meta.isSwapAndBridgeCall
-        ) {
-          userRequestsToRemove.push(
-            userRequest.meta.activeRouteId,
-            `${userRequest.meta.activeRouteId}-approval`,
-            `${userRequest.meta.activeRouteId}-revoke-approval`
-          )
-        }
-      }
-
-      userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
-    })
-
-    await this.removeUserRequests([...userRequestsToRemove, ...requestIds], options)
-  }
-
   async rejectSignAccountOpCall(callId: string) {
     if (!this.signAccountOp) return
 
@@ -1980,8 +1303,8 @@ export class MainController extends EventEmitter {
 
     const requestId = calls.find((c) => c.id === callId)?.fromUserRequestId
     if (requestId) {
-      const userRequestIndex = this.userRequests.findIndex((r) => r.id === requestId)
-      const userRequest = this.userRequests[userRequestIndex] as SignUserRequest
+      const userRequestIndex = this.requests.userRequests.findIndex((r) => r.id === requestId)
+      const userRequest = this.requests.userRequests[userRequestIndex] as SignUserRequest
       if (userRequest.action.kind === 'calls') {
         ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
           (c) => c.id !== callId
@@ -1989,17 +1312,19 @@ export class MainController extends EventEmitter {
 
         if (userRequest.action.calls.length === 0) {
           // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
-          await this.rejectUserRequests('User rejected the transaction request.', [userRequest.id])
+          await this.requests.rejectUserRequests('User rejected the transaction request.', [
+            userRequest.id
+          ])
         } else {
           const accountOpAction = makeAccountOpAction({
             account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
             chainId,
             nonce: this.accounts.accountStates[accountAddr][chainId.toString()].nonce,
-            userRequests: this.userRequests,
-            actionsQueue: this.actions.actionsQueue
+            userRequests: this.requests.userRequests,
+            actionsQueue: this.requests.actions.actionsQueue
           })
 
-          await this.actions.addOrUpdateActions([accountOpAction], {
+          await this.requests.actions.addOrUpdateActions([accountOpAction], {
             skipFocus: true
           })
           this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
@@ -2017,240 +1342,19 @@ export class MainController extends EventEmitter {
   }
 
   async removeActiveRoute(activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']) {
-    const userRequest = this.userRequests.find((r) =>
+    const userRequest = this.requests.userRequests.find((r) =>
       [activeRouteId, `${activeRouteId}-approval`, `${activeRouteId}-revoke-approval`].includes(
         r.id as string
       )
     )
 
     if (userRequest) {
-      await this.rejectUserRequests('User rejected the transaction request.', [userRequest.id])
+      await this.requests.rejectUserRequests('User rejected the transaction request.', [
+        userRequest.id
+      ])
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
-  }
-
-  async addUserRequests(
-    reqs: UserRequest[],
-    {
-      actionPosition = 'last',
-      actionExecutionType = 'open-action-window',
-      allowAccountSwitch = false,
-      skipFocus = false
-    }: {
-      actionPosition?: ActionPosition
-      actionExecutionType?: ActionExecutionType
-      allowAccountSwitch?: boolean
-      skipFocus?: boolean
-    } = {}
-  ) {
-    const shouldSkipAddUserRequest = await this.#guardHWSigning()
-
-    if (shouldSkipAddUserRequest) return
-
-    const actionsToAdd: Action[] = []
-    const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
-
-    // eslint-disable-next-line no-restricted-syntax
-    for (const req of reqs) {
-      if (
-        allowAccountSwitch &&
-        req.meta.isSignAction &&
-        req.meta.accountAddr !== this.selectedAccount.account?.addr
-      ) {
-        await this.#addSwitchAccountUserRequest(req)
-        return
-      }
-
-      if (req.action.kind === 'calls') {
-        ;(req.action as Calls).calls.forEach((_, i) => {
-          ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
-        })
-      }
-      if (actionPosition === 'first') {
-        this.userRequests.unshift(req)
-      } else {
-        this.userRequests.push(req)
-      }
-
-      const { id, action, meta } = req
-      if (action.kind === 'calls') {
-        const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-        const accountState = await this.accounts.getOrFetchAccountOnChainState(
-          meta.accountAddr,
-          meta.chainId
-        )
-        const network = this.networks.networks.find((n) => n.chainId === meta.chainId)!
-
-        const accountOpAction = makeAccountOpAction({
-          account,
-          chainId: meta.chainId,
-          nonce: accountState.nonce,
-          userRequests: this.userRequests,
-          actionsQueue: this.actions.actionsQueue
-        })
-
-        actionsToAdd.push(accountOpAction)
-
-        if (this.signAccountOp) {
-          if (this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-          }
-        } else {
-          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
-          // It's necessary to continue operating with the token `amountPostSimulation` amount.
-          this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
-        }
-      } else {
-        let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
-
-        if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
-          actionType = 'signMessage'
-
-          if (this.actions.visibleActionsQueue.find((a) => a.type === 'signMessage')) {
-            const msgReq = this.userRequests.find((uReq) => uReq.id === id)
-            if (!msgReq) return
-            msgReq.dappPromise?.reject(
-              ethErrors.provider.custom({
-                code: 1001,
-                message:
-                  'Rejected: Please complete your pending message request before initiating a new one.'
-              })
-            )
-            this.userRequests.splice(this.userRequests.indexOf(msgReq), 1)
-            return
-          }
-        }
-        if (req.action.kind === 'benzin') actionType = 'benzin'
-        if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
-        if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
-
-        actionsToAdd.push({
-          id,
-          type: actionType,
-          userRequest: req as UserRequest as never
-        })
-      }
-    }
-
-    if (actionsToAdd.length)
-      await this.actions.addOrUpdateActions(actionsToAdd, {
-        position: actionPosition,
-        executionType: actionExecutionType,
-        skipFocus,
-        baseWindowId
-      })
-
-    this.emitUpdate()
-  }
-
-  async removeUserRequests(
-    ids: UserRequest['id'][],
-    options?: {
-      shouldRemoveSwapAndBridgeRoute?: boolean
-      shouldUpdateAccount?: boolean
-      shouldOpenNextRequest?: boolean
-    }
-  ) {
-    const {
-      shouldRemoveSwapAndBridgeRoute = true,
-      shouldUpdateAccount = true,
-      shouldOpenNextRequest = true
-    } = options || {}
-
-    const actionsToAddOrUpdate: Action[] = []
-    const userRequestsToAdd: UserRequest[] = []
-    const actionsToRemove: string[] = []
-
-    ids.forEach((id) => {
-      const req = this.userRequests.find((uReq) => uReq.id === id)
-
-      if (!req) return
-
-      // remove from the request queue
-      this.userRequests.splice(this.userRequests.indexOf(req), 1)
-
-      // update the pending stuff to be signed
-      const { action, meta } = req
-      if (action.kind === 'calls') {
-        const network = this.networks.networks.find((net) => net.chainId === meta.chainId)!
-        const account = this.accounts.accounts.find((x) => x.addr === meta.accountAddr)
-        if (!account)
-          throw new Error(
-            `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
-          )
-
-        const accountOpIndex = this.actions.actionsQueue.findIndex(
-          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.chainId}`
-        )
-        const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
-          | AccountOpAction
-          | undefined
-        // accountOp has just been rejected or broadcasted
-        if (!accountOpAction) {
-          if (shouldUpdateAccount)
-            this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
-
-          if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
-            this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
-          }
-          return
-        }
-
-        accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
-          meta.accountAddr,
-          meta.chainId
-        )
-        if (accountOpAction.accountOp.calls.length) {
-          actionsToAddOrUpdate.push(accountOpAction)
-
-          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.signAccountOp.update({ calls: accountOpAction.accountOp.calls })
-          }
-        } else {
-          if (this.signAccountOp && this.signAccountOp.fromActionId === accountOpAction.id) {
-            this.destroySignAccOp()
-          }
-          actionsToRemove.push(`${meta.accountAddr}-${meta.chainId}`)
-          if (shouldUpdateAccount)
-            this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
-        }
-        if (this.swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
-          this.swapAndBridge.removeActiveRoute(meta.activeRouteId)
-        }
-      } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
-        const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
-          (r) => r.meta.accountAddr === this.selectedAccount.account!.addr
-        )
-        const isSelectedAccountSwitched =
-          this.selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
-
-        if (!isSelectedAccountSwitched) {
-          actionsToRemove.push(id)
-        } else {
-          requestsToAddOrRemove.forEach((r) => {
-            this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-            userRequestsToAdd.push(r)
-          })
-        }
-      } else {
-        actionsToRemove.push(id as string)
-      }
-    })
-
-    if (actionsToRemove.length) {
-      await this.actions.removeActions(actionsToRemove, shouldOpenNextRequest)
-    }
-    if (userRequestsToAdd.length) {
-      await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
-    }
-    if (actionsToAddOrUpdate.length) {
-      await this.actions.addOrUpdateActions(actionsToAddOrUpdate, {
-        skipFocus: true
-      })
-    }
-
-    this.emitUpdate()
   }
 
   async addNetwork(network: AddNetworkRequestParams) {
@@ -2259,14 +1363,17 @@ export class MainController extends EventEmitter {
     await this.updateSelectedAccountPortfolio()
   }
 
-  async removeNetworkData(chainId: bigint) {
+  removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
-    this.defiPositions.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity
     // this.activity.removeNetworkData(chainId)
+
+    // Don't remove the defi positions state data because we keep track of the defi positions
+    // on the disabled networks so we can suggest enabling them from a dashboard banner
+    // this.defiPositions.removeNetworkData(chainId)
   }
 
   async resolveAccountOpAction(
@@ -2274,7 +1381,7 @@ export class MainController extends EventEmitter {
     actionId: AccountOpAction['id'],
     isBasicAccountBroadcastingMultiple: boolean
   ) {
-    const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
+    const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
     const { accountOp } = accountOpAction as AccountOpAction
@@ -2305,13 +1412,13 @@ export class MainController extends EventEmitter {
         session: new Session(),
         meta
       }
-      await this.addUserRequests([benzinUserRequest], {
+      await this.requests.addUserRequests([benzinUserRequest], {
         actionPosition: 'first',
         skipFocus: true
       })
     }
 
-    await this.actions.removeActions([actionId])
+    await this.requests.actions.removeActions([actionId])
 
     const userRequestsToRemove: UserRequest['id'][] = []
     const dappHandlers: any[] = []
@@ -2319,10 +1426,10 @@ export class MainController extends EventEmitter {
     // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
     calls.forEach((call) => {
-      const walletSendCallsUserReq = this.userRequests.find(
+      const walletSendCallsUserReq = this.requests.userRequests.find(
         (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
       )
-      const uReq = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+      const uReq = this.requests.userRequests.find((r) => r.id === call.fromUserRequestId)
 
       if (walletSendCallsUserReq) {
         walletSendCallsUserReq.dappPromise?.resolve({
@@ -2344,7 +1451,7 @@ export class MainController extends EventEmitter {
       }
     })
 
-    await this.removeUserRequests(userRequestsToRemove, {
+    await this.requests.removeUserRequests(userRequestsToRemove, {
       shouldRemoveSwapAndBridgeRoute: false,
       // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
       // we don't want to update the account portfolio immediately, as we would lose the simulation.
@@ -2364,7 +1471,7 @@ export class MainController extends EventEmitter {
     actionId: AccountOpAction['id'],
     shouldOpenNextAction: boolean
   ) {
-    const accountOpAction = this.actions.actionsQueue.find((a) => a.id === actionId)
+    const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
 
     const { accountOp, id } = accountOpAction as AccountOpAction
@@ -2372,35 +1479,17 @@ export class MainController extends EventEmitter {
     if (this.signAccountOp && this.signAccountOp.fromActionId === id) {
       this.destroySignAccOp()
     }
-    await this.actions.removeActions([actionId], shouldOpenNextAction)
+    await this.requests.actions.removeActions([actionId], shouldOpenNextAction)
 
     const requestIdsToRemove = accountOp.calls
       .filter((call) => !!call.fromUserRequestId)
       .map((call) => call.fromUserRequestId)
 
-    await this.rejectUserRequests(err, requestIdsToRemove as string[], {
+    await this.requests.rejectUserRequests(err, requestIdsToRemove as string[], {
       shouldOpenNextRequest: shouldOpenNextAction
     })
 
     this.emitUpdate()
-  }
-
-  async #addSwitchAccountUserRequest(req: UserRequest) {
-    this.userRequestsWaitingAccountSwitch.push(req)
-    await this.addUserRequests(
-      [
-        buildSwitchAccountUserRequest({
-          nextUserRequest: req,
-          selectedAccountAddr: req.meta.accountAddr,
-          session: req.session || new Session(),
-          dappPromise: req.dappPromise
-        })
-      ],
-      {
-        actionPosition: 'last',
-        actionExecutionType: 'open-action-window'
-      }
-    )
   }
 
   onOneClickSwapClose() {
@@ -2422,7 +1511,10 @@ export class MainController extends EventEmitter {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+    this.updateSelectedAccountPortfolio({
+      forceUpdate: true,
+      networks: network ? [network] : undefined
+    })
     this.emitUpdate()
   }
 
@@ -2440,7 +1532,10 @@ export class MainController extends EventEmitter {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
-    this.updateSelectedAccountPortfolio({ forceUpdate: true, network })
+    this.updateSelectedAccountPortfolio({
+      forceUpdate: true,
+      networks: network ? [network] : undefined
+    })
     this.emitUpdate()
   }
 
@@ -2796,7 +1891,7 @@ export class MainController extends EventEmitter {
         submittedAccountOp.calls.every((c) => c.id !== call.id)
       )
       const rejectedSwapActiveRouteIds = rejectedCalls.map((call) => {
-        const userRequest = this.userRequests.find((r) => r.id === call.fromUserRequestId)
+        const userRequest = this.requests.userRequests.find((r) => r.id === call.fromUserRequestId)
 
         return userRequest?.meta.activeRouteId
       })
@@ -2807,7 +1902,7 @@ export class MainController extends EventEmitter {
 
       if (rejectedCalls.length) {
         // remove the user requests that were rejected
-        await this.rejectUserRequests(
+        await this.requests.rejectUserRequests(
           'Transaction rejected by the bundler',
           rejectedCalls
             .filter((call) => !!call.fromUserRequestId)
@@ -2834,8 +1929,11 @@ export class MainController extends EventEmitter {
     }
 
     if (type === SIGN_ACCOUNT_OP_TRANSFER) {
-      this.transfer.latestBroadcastedToken = this.transfer.selectedToken
-      this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      if (this.transfer.shouldTrackLatestBroadcastedAccountOp) {
+        this.transfer.latestBroadcastedToken = this.transfer.selectedToken
+        this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      }
+
       this.transfer.resetForm()
     }
 
@@ -2855,34 +1953,6 @@ export class MainController extends EventEmitter {
     // reset the fee payer key
     this.feePayerKey = null
     return Promise.resolve()
-  }
-
-  // ! IMPORTANT !
-  // Banners that depend on async data from sub-controllers should be implemented
-  // in the sub-controllers themselves. This is because updates in the sub-controllers
-  // will not trigger emitUpdate in the MainController, therefore the banners will
-  // remain the same until a subsequent update in the MainController.
-  get banners(): Banner[] {
-    if (!this.selectedAccount.account || !this.networks.isInitialized) return []
-
-    const activeSwapAndBridgeRoutesForSelectedAccount = getActiveRoutesForAccount(
-      this.selectedAccount.account.addr,
-      this.swapAndBridge.activeRoutes
-    )
-    const swapAndBridgeRoutesPendingSignature = activeSwapAndBridgeRoutesForSelectedAccount.filter(
-      (r) => r.routeStatus === 'ready'
-    )
-
-    return getAccountOpBanners({
-      accountOpActionsByNetwork: getAccountOpActionsByNetwork(
-        this.selectedAccount.account.addr,
-        this.actions.actionsQueue
-      ),
-      selectedAccount: this.selectedAccount.account.addr,
-      accounts: this.accounts.accounts,
-      networks: this.networks.networks,
-      swapAndBridgeRoutesPendingSignature
-    })
   }
 
   // Technically this is an anti-pattern, but it's the only way to
@@ -2986,7 +2056,73 @@ export class MainController extends EventEmitter {
   get isSignRequestStillActive(): boolean {
     if (!this.signAccountOp) return false
 
-    return !!this.actions.actionsQueue.find((a) => a.id === this.signAccountOp!.fromActionId)
+    return !!this.requests.actions.actionsQueue.find(
+      (a) => a.id === this.signAccountOp!.fromActionId
+    )
+  }
+
+  /**
+   * Don't allow the user to open new action windows
+   * if there's a pending to sign action (swap and bridge or transfer)
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
+   * This is done to prevent complications with the signing process- e.g. a new request
+   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
+   * @returns {boolean} - true if an error was thrown
+   * @throws {Error} - if throwRpcError is true
+   */
+  async #guardHWSigning(throwRpcError = false): Promise<boolean> {
+    const pendingAction = this.requests.actions.visibleActionsQueue.find(
+      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
+    )
+
+    if (!pendingAction) return false
+
+    const isSigningOrBroadcasting =
+      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
+      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
+
+    // The swap and bridge or transfer is done/forgotten so we can remove the action
+    if (!isSigningOrBroadcasting) {
+      await this.requests.actions.removeActions([pendingAction.id])
+
+      if (pendingAction.type === 'swapAndBridge') {
+        this.swapAndBridge.reset()
+      } else {
+        this.transfer.resetForm()
+      }
+
+      return false
+    }
+
+    const errors = {
+      swapAndBridge: {
+        message: 'Please complete the pending swap action.',
+        error: 'Pending swap action',
+        rpcError: 'You have a pending swap action. Please complete it before signing.'
+      },
+      transfer: {
+        message: 'Please complete the pending transfer action.',
+        error: 'Pending transfer action',
+        rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      }
+    }
+
+    const error = errors[pendingAction.type as keyof typeof errors]
+
+    await this.requests.actions.focusActionWindow()
+    this.emitError({
+      level: 'major',
+      message: error.message,
+      error: new Error(error.error)
+    })
+
+    if (throwRpcError) {
+      throw ethErrors.rpc.transactionRejected({
+        message: error.rpcError
+      })
+    }
+
+    return true
   }
 
   // includes the getters in the stringified instance
@@ -2994,7 +2130,6 @@ export class MainController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners,
       isSignRequestStillActive: this.isSignRequestStillActive
     }
   }

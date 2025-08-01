@@ -11,9 +11,7 @@ import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getRpcProvider } from '../../services/provider'
-import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
-import { ActionsController } from '../actions/actions'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitterClass from '../eventEmitter/eventEmitter'
@@ -35,8 +33,10 @@ const networksCtrl = new NetworksController(
   storageCtrl,
   fetch,
   relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
+  (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
   },
   (id) => {
     providersCtrl.removeProvider(id)
@@ -90,17 +90,6 @@ const defiPositionsCtrl = new DefiPositionsController({
   networks: networksCtrl,
   providers: providersCtrl,
   accounts: accountsCtrl
-})
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
-
-const actionsCtrl = new ActionsController({
-  selectedAccount: selectedAccountCtrl,
-  windowManager,
-  notificationManager,
-  onActionWindowClose: () => Promise.resolve()
 })
 
 const accounts = [
@@ -174,7 +163,6 @@ describe('SelectedAccount Controller', () => {
     selectedAccountCtrl.initControllers({
       portfolio: portfolioCtrl,
       defiPositions: defiPositionsCtrl,
-      actions: actionsCtrl,
       networks: networksCtrl,
       providers: providersCtrl
     })
@@ -285,8 +273,11 @@ describe('SelectedAccount Controller', () => {
     it('Defi error banner is displayed when there is a critical network error and the user has positions on that network/provider', async () => {
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
+      jest.spyOn(defiPositionsCtrl, 'getDefiPositionsState').mockImplementation(() => ({
+        '1': { positionsByProvider: [], isLoading: false, updatedAt: 0 }
+      }))
       await defiPositionsCtrl.updatePositions({ maxDataAgeMs: 0, forceUpdate: true })
-      await wait(500)
+      await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error

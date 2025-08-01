@@ -19,7 +19,7 @@ export interface Calls {
 }
 export interface PlainTextMessage {
   kind: 'message'
-  message: string
+  message: Hex
 }
 
 export interface TypedMessage {

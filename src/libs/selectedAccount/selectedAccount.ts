@@ -189,6 +189,10 @@ export const calculateDefiPositions = (
             )
           }
 
+          // If the token or asset don't have a value we MUST! not compare them
+          // by value as that would lead to false positives
+          if (!tokenBalanceUSD || !a.value) return false
+
           // If there is no protocol asset we have to fallback to finding the token
           // by symbol and chainId. In that case we must ensure that the value of the two
           // assets is similar
@@ -393,7 +397,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
@@ -439,7 +442,10 @@ export function calculateSelectedAccountPortfolioByNetworks(
       const isPendingNewer =
         pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
 
-      if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
+      if (
+        !pendingNetworkData.criticalError &&
+        (isPendingNewer || !!pendingNetworkData.accountOps?.length)
+      ) {
         validSelectedAccountPendingState[network] = pendingNetworkData
       }
     }
@@ -558,7 +564,6 @@ export function calculateSelectedAccountPortfolio(
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolio: SelectedAccountPortfolio
@@ -571,7 +576,6 @@ export function calculateSelectedAccountPortfolio(
       pastAccountPortfolioWithDefiPositions,
       portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp,
       isLoadingFromScratch
     )
 
