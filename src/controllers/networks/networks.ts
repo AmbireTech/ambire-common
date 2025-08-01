@@ -1,5 +1,6 @@
 import EmittableError from '../../classes/EmittableError'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -31,6 +32,11 @@ const STATUS_WRAPPED_METHODS = {
  * for adding, updating, and removing networks.
  */
 export class NetworksController extends EventEmitter {
+  // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
+  // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
+  // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
+  defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
+
   #storage: StorageController
 
   #fetch: Fetch
@@ -55,14 +61,23 @@ export class NetworksController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(
-    storage: StorageController,
-    fetch: Fetch,
-    relayerUrl: string,
-    onAddOrUpdateNetworks: (networks: Network[]) => void,
+  constructor({
+    defaultNetworksMode,
+    storage,
+    fetch,
+    relayerUrl,
+    onAddOrUpdateNetworks,
+    onRemoveNetwork
+  }: {
+    defaultNetworksMode?: 'mainnet' | 'testnet'
+    storage: StorageController
+    fetch: Fetch
+    relayerUrl: string
+    onAddOrUpdateNetworks: (networks: Network[]) => void
     onRemoveNetwork: (chainId: bigint) => void
-  ) {
+  }) {
     super()
+    if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -77,7 +92,9 @@ export class NetworksController extends EventEmitter {
   }
 
   get allNetworks(): Network[] {
-    if (!Object.keys(this.#networks).length) return predefinedNetworks
+    if (!Object.keys(this.#networks).length) {
+      return this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
+    }
 
     const uniqueNetworksByChainId = Object.values(this.#networks)
       .sort((a, b) => +b.predefined - +a.predefined) // first predefined
@@ -141,7 +158,9 @@ export class NetworksController extends EventEmitter {
 
     // If networksInStorage is empty, set predefinedNetworks and emit update
     if (!Object.keys(networksInStorage).length) {
-      finalNetworks = predefinedNetworks.reduce((acc, network) => {
+      const defaultNetworks =
+        this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
+      finalNetworks = defaultNetworks.reduce((acc, network) => {
         acc[network.chainId.toString()] = network
         return acc
       }, {} as { [key: string]: Network })
@@ -153,8 +172,10 @@ export class NetworksController extends EventEmitter {
       Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
     )
 
-    // Step 4: Merge the networks from the Relayer
-    finalNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
+    if (this.defaultNetworksMode === 'mainnet') {
+      // Step 4: Merge the networks from the Relayer
+      finalNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
+    }
 
     this.#networks = finalNetworks
     this.emitUpdate()
@@ -170,6 +191,8 @@ export class NetworksController extends EventEmitter {
    * Used for periodically network synchronization.
    */
   async synchronizeNetworks() {
+    if (this.defaultNetworksMode === 'testnet') return
+
     const networksInStorage = await this.getNetworksInStorage()
     const finalNetworks = { ...this.#networks }
 

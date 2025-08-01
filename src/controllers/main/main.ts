@@ -231,11 +231,11 @@ export class MainController extends EventEmitter {
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
     this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
-    this.networks = new NetworksController(
-      this.storage,
-      this.fetch,
+    this.networks = new NetworksController({
+      storage: this.storage,
+      fetch,
       relayerUrl,
-      async (networks: Network[]) => {
+      onAddOrUpdateNetworks: async (networks: Network[]) => {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
         networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
         await this.reloadSelectedAccount({
@@ -243,10 +243,10 @@ export class MainController extends EventEmitter {
           forceUpdate: false
         })
       },
-      (chainId: bigint) => {
+      onRemoveNetwork: (chainId: bigint) => {
         this.providers.removeProvider(chainId)
       }
-    )
+    })
     this.featureFlags = new FeatureFlagsController(this.networks)
     this.providers = new ProvidersController(this.networks)
     this.accounts = new AccountsController(
@@ -396,7 +396,10 @@ export class MainController extends EventEmitter {
       this.providers,
       relayerUrl
     )
-    this.domains = new DomainsController(this.providers.providers)
+    this.domains = new DomainsController(
+      this.providers.providers,
+      this.networks.defaultNetworksMode
+    )
     this.requests = new RequestsController({
       relayerUrl,
       accounts: this.accounts,
