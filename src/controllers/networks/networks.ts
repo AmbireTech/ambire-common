@@ -10,7 +10,11 @@ import {
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
-import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
+import {
+  getFeaturesByNetworkProperties,
+  getNetworkInfo,
+  getValidNetworks
+} from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
@@ -122,6 +126,12 @@ export class NetworksController extends EventEmitter {
     return this.allNetworks.filter((network) => network.disabled)
   }
 
+  async getNetworksInStorage(): Promise<{ [key: string]: Network }> {
+    const rawNetworksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+
+    return getValidNetworks(rawNetworksInStorage)
+  }
+
   /**
    * Loads and synchronizes network configurations from storage and the relayer.
    *
@@ -138,8 +148,8 @@ export class NetworksController extends EventEmitter {
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
    */
   async #load() {
-    // Step 1. Get latest storage (networksInStorage)
-    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+    // Step 1. Get latest storage (networksInStorage) and validate/normalize
+    const networksInStorage = await this.getNetworksInStorage()
 
     let finalNetworks: { [key: string]: Network } = {}
 
@@ -178,7 +188,7 @@ export class NetworksController extends EventEmitter {
    * Used for periodically network synchronization.
    */
   async synchronizeNetworks() {
-    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+    const networksInStorage = await this.getNetworksInStorage()
     const finalNetworks = { ...this.#networks }
 
     // Process updates (merge Relayer data and apply rules)
@@ -224,7 +234,9 @@ export class NetworksController extends EventEmitter {
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
-        const storedNetwork = Object.values(networksInStorage).find((n) => n.chainId === chainId)
+        const storedNetwork = Object.values(networksInStorage).find(
+          (n) => n && n.chainId === chainId
+        )
         const disabledByDefault = relayerNetwork.disabledByDefault
         // Remove values that should not be stored
         delete relayerNetwork.disabledByDefault
