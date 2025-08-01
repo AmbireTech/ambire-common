@@ -50,6 +50,10 @@ export interface NetworkFeature {
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
+/**
+ * If you add a new mandatory property, make sure to adjust accordingly
+ * `sanityCheckImportantNetworkProperties` function, if needed
+ */
 export interface Network {
   chainId: bigint
   name: string

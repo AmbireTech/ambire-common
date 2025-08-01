@@ -364,6 +364,25 @@ export function hasRelayerSupport(network: Network) {
 }
 
 /**
+ * Validates a single network object against some of the Network interface requirements.
+ */
+function sanityCheckImportantNetworkProperties(network: Network) {
+  if (!network || typeof network !== 'object') return false
+
+  if (typeof network.chainId !== 'bigint') return false
+  if (typeof network.name !== 'string') return false
+  if (typeof network.nativeAssetSymbol !== 'string') return false
+  if (typeof network.nativeAssetName !== 'string') return false
+  if (typeof network.explorerUrl !== 'string') return false
+  if (typeof network.selectedRpcUrl !== 'string') return false
+
+  if (!Array.isArray(network.rpcUrls)) return false
+  if (network.rpcUrls.some((url) => typeof url !== 'string')) return false
+
+  return true
+}
+
+/**
  * Validates networks coming from the storage, filtering out the invalid ones.
  * This prevents crashes when networks have missing or invalid mandatory properties.
  */
@@ -373,16 +392,12 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
   const validNetworks: { [key: string]: Network } = {}
 
   Object.values(networksInStorage).forEach((network) => {
-    // Based on the crash reports received, it turned out there are users with
-    // messed-up networks in storage. Filter in only the networks with valid properties.
     const hadValidChainId = typeof network?.chainId === 'bigint'
-    const hasValidProperties =
-      hadValidChainId &&
-      Array.isArray(network?.rpcUrls) &&
-      network?.selectedRpcUrl &&
-      network?.explorerUrl
 
-    if (hasValidProperties) {
+    // Based on the crash reports received, it turned out there are users with
+    // messed-up networks in storage. So perform comprehensive validation against
+    // some of the Network interface requirements
+    if (sanityCheckImportantNetworkProperties(network)) {
       validNetworks[network.chainId.toString()] = network
     } else if (hadValidChainId) {
       // Attempt to replace broken network with predefined version, if available
