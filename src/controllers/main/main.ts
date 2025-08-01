@@ -396,7 +396,10 @@ export class MainController extends EventEmitter {
       this.providers,
       relayerUrl
     )
-    this.domains = new DomainsController(this.providers.providers)
+    this.domains = new DomainsController(
+      this.providers.providers,
+      this.networks.defaultNetworksMode
+    )
     this.requests = new RequestsController({
       relayerUrl,
       accounts: this.accounts,
