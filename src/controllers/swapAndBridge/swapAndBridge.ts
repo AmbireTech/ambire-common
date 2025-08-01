@@ -1691,8 +1691,8 @@ export class SwapAndBridgeController extends EventEmitter {
         this.updateActiveRoute(
           activeRoute.activeRouteId,
           {
-            routeStatus: 'failed',
-            error: 'debugging'
+            routeStatus: 'completed',
+            error: undefined
           },
           true
         )
@@ -2006,10 +2006,7 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!shouldUpdateActiveRouteStatus) return
 
     if (opStatus === AccountOpStatus.Success) {
-      this.updateActiveRoute(activeRoute.activeRouteId, {
-        routeStatus: 'failed',
-        error: 'debugging'
-      })
+      this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'completed' })
     }
 
     // If the transaction fails, update the status to "ready" to allow the user to sign it again
