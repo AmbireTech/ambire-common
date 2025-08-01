@@ -588,7 +588,8 @@ export class SwapAndBridgeController extends EventEmitter {
       activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId']
     }
   ) {
-    const { preselectedFromToken, preselectedToToken, fromAmount, activeRouteIdToDelete } = params || {}
+    const { preselectedFromToken, preselectedToToken, fromAmount, activeRouteIdToDelete } =
+      params || {}
     await this.#initialLoadPromise
 
     if (this.sessionIds.includes(sessionId)) return
@@ -946,7 +947,8 @@ export class SwapAndBridgeController extends EventEmitter {
           fromAmount
         },
         {
-          emitUpdate: false
+          emitUpdate: false,
+          shouldIncrementFromAmountUpdateCounter: true
         }
       )
       return
@@ -1689,8 +1691,8 @@ export class SwapAndBridgeController extends EventEmitter {
         this.updateActiveRoute(
           activeRoute.activeRouteId,
           {
-            routeStatus: 'completed',
-            error: undefined
+            routeStatus: 'failed',
+            error: 'debugging'
           },
           true
         )
@@ -2004,7 +2006,10 @@ export class SwapAndBridgeController extends EventEmitter {
     if (!shouldUpdateActiveRouteStatus) return
 
     if (opStatus === AccountOpStatus.Success) {
-      this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'completed' })
+      this.updateActiveRoute(activeRoute.activeRouteId, {
+        routeStatus: 'failed',
+        error: 'debugging'
+      })
     }
 
     // If the transaction fails, update the status to "ready" to allow the user to sign it again
