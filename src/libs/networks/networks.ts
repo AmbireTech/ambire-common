@@ -361,3 +361,28 @@ export function hasRelayerSupport(network: Network) {
     network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
   )
 }
+
+/**
+ * Validates networks coming from the storage, filtering out the invalid ones.
+ * This prevents crashes when networks have missing or invalid mandatory properties.
+ */
+export function getValidNetworks(networksInStorage: { [key: string]: Network }): {
+  [key: string]: Network
+} {
+  const validNetworks: { [key: string]: Network } = {}
+
+  Object.values(networksInStorage).forEach((network) => {
+    // Based on the crash reports received, it turned out there are users with
+    // messed-up networks in storage. Filter in only the networks with valid properties.
+    const hasValidNetworkProperties =
+      network &&
+      typeof network?.chainId === 'bigint' &&
+      Array.isArray(network?.rpcUrls) &&
+      network?.selectedRpcUrl &&
+      network?.explorerUrl
+
+    if (hasValidNetworkProperties) validNetworks[network.chainId.toString()] = network
+  })
+
+  return validNetworks
+}
