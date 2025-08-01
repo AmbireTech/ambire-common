@@ -1,6 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   Erc4337settings,
@@ -374,14 +375,20 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
   Object.values(networksInStorage).forEach((network) => {
     // Based on the crash reports received, it turned out there are users with
     // messed-up networks in storage. Filter in only the networks with valid properties.
-    const hasValidNetworkProperties =
-      network &&
-      typeof network?.chainId === 'bigint' &&
+    const hadValidChainId = typeof network?.chainId === 'bigint'
+    const hasValidProperties =
+      hadValidChainId &&
       Array.isArray(network?.rpcUrls) &&
       network?.selectedRpcUrl &&
       network?.explorerUrl
 
-    if (hasValidNetworkProperties) validNetworks[network.chainId.toString()] = network
+    if (hasValidProperties) {
+      validNetworks[network.chainId.toString()] = network
+    } else if (hadValidChainId) {
+      // Attempt to replace broken network with predefined version, if available
+      const predefinedNetwork = predefinedNetworks.find((n) => n.chainId === network.chainId)
+      if (predefinedNetwork) validNetworks[network.chainId.toString()] = predefinedNetwork
+    }
   })
 
   return validNetworks
