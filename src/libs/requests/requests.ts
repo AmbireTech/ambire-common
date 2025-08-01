@@ -18,7 +18,9 @@ export const batchCallsFromUserRequests = ({
     (uCalls: Call[], req) => {
       if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
         const { calls } = req.action as Calls
-        calls.forEach((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
+        calls.forEach((call) =>
+          uCalls.push({ ...call, fromUserRequestId: req.id, dapp: req.meta.dapp })
+        )
       }
       return uCalls
     },

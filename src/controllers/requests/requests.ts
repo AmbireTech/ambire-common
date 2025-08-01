@@ -604,6 +604,7 @@ export class RequestsController extends EventEmitter {
         },
         session: new Session({ windowId: request.session.windowId }),
         meta: {
+          dapp,
           isSignAction: true,
           isWalletSendCalls,
           walletSendCallsVersion,
