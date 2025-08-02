@@ -807,7 +807,10 @@ export class MainController extends EventEmitter {
     const isAwaitingHWSignature =
       (signAccountOp.accountOp.signingKeyType !== 'internal' &&
         this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
-      (this.feePayerKey?.type !== 'internal' &&
+      // this.feePayerKey should be set before checking if it's type is internal
+      // if it's not, we are not waiting for a hw sig
+      (this.feePayerKey &&
+        this.feePayerKey.type !== 'internal' &&
         this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
 
     // Reset these flags only if we were awaiting a HW signature
