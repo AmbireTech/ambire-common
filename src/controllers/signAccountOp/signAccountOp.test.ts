@@ -456,7 +456,8 @@ const init = async (
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore
   })
   const activity = new ActivityController(
     storageCtrl,
