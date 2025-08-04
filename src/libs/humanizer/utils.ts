@@ -1,10 +1,10 @@
 import { ZeroAddress } from 'ethers'
 
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
+import { HumanizerMeta, HumanizerVisualization, HumanizerWarning, IrCall } from './interfaces'
 
 export function getWarning(
   content: string,
-  level: HumanizerWarning['level'] = 'warning'
+  level: HumanizerWarning['level'] = 'caution'
 ): HumanizerWarning {
   return { content, level }
 }
@@ -13,11 +13,8 @@ export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE
 export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
   return { type: 'label', content, id: randomId(), isBold }
 }
-export function getAction(
-  content: string,
-  options?: { warning?: boolean }
-): HumanizerVisualization {
-  return { type: 'action', content, id: randomId(), warning: options?.warning }
+export function getAction(content: string): HumanizerVisualization {
+  return { type: 'action', content, id: randomId() }
 }
 export function getImage(content: string): HumanizerVisualization {
   return { type: 'image', content, id: randomId() }
