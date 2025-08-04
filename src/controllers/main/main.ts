@@ -1735,7 +1735,10 @@ export class MainController extends EventEmitter {
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
         // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
         // to #1 and #2 and create a submittedAccountOp
-        if (multipleTxnsBroadcastRes.length) {
+        //
+        // unless it's the build-in swap - we want to throw an error and
+        // allow the user to retry in this case
+        if (multipleTxnsBroadcastRes.length && type !== SIGN_ACCOUNT_OP_SWAP) {
           transactionRes = {
             nonce,
             identifiedBy: {
