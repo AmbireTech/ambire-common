@@ -1,6 +1,7 @@
 /* eslint-disable no-restricted-syntax */
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { StoredKey } from '../../interfaces/keystore'
 import { CashbackStatus } from '../../interfaces/selectedAccount'
 // eslint-disable-next-line import/no-cycle
@@ -14,8 +15,6 @@ import {
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
-// eslint-disable-next-line import/no-cycle
-import { AccountPickerController } from '../accountPicker/accountPicker'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
@@ -481,7 +480,7 @@ export class StorageController extends EventEmitter {
 
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
   async #associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: AccountPickerController,
+    accountPicker: IAccountPickerController,
     keystore: KeystoreController,
     onSuccess: () => Promise<void>
   ) {
@@ -568,7 +567,7 @@ export class StorageController extends EventEmitter {
   }
 
   async associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: AccountPickerController,
+    accountPicker: IAccountPickerController,
     keystore: KeystoreController,
     onSuccess: () => Promise<void>
   ) {

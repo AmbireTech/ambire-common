@@ -21,7 +21,6 @@ import { WindowManager } from '../../interfaces/window'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
-// eslint-disable-next-line import/no-cycle
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork
@@ -45,7 +44,6 @@ import {
   buildTransferUserRequest
 } from '../../libs/transfer/userRequest'
 import { AccountsController } from '../accounts/accounts'
-// eslint-disable-next-line import/no-cycle
 import {
   AccountOpAction,
   Action,
@@ -58,7 +56,6 @@ import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
-// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'

@@ -18,7 +18,6 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {

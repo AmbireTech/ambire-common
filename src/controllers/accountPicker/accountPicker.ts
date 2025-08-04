@@ -20,6 +20,7 @@ import {
   ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -66,7 +67,7 @@ const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
  * It uses a KeyIterator interface allow iterating all the keys in a specific
  * underlying store such as a hardware device or an object holding a seed.
  */
-export class AccountPickerController extends EventEmitter {
+export class AccountPickerController extends EventEmitter implements IAccountPickerController {
   #callRelayer: Function
 
   #accounts: AccountsController

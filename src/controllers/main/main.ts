@@ -12,6 +12,7 @@ import {
 } from '../../consts/derivation'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
@@ -132,7 +133,7 @@ export class MainController extends EventEmitter {
 
   providers: ProvidersController
 
-  accountPicker: AccountPickerController
+  accountPicker: IAccountPickerController
 
   portfolio: PortfolioController
 
