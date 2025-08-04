@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -27,6 +28,9 @@ class SimulationError extends Error {
     this.simulationErrorMsg = message
     this.beforeNonce = beforeNonce
     this.afterNonce = afterNonce
+    console.error('simulation error: ', message)
+    console.log('before nonce: ', beforeNonce)
+    console.log('after nonce: ', afterNonce)
   }
 }
 
