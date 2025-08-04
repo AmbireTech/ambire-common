@@ -2040,8 +2040,8 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#signAccountOpSubscriptions = []
 
-    if (!this.signAccountOpController) return
-    this.signAccountOpController.reset()
+    if (!this.#signAccountOpController) return
+    this.#signAccountOpController.reset()
     this.#signAccountOpController = null
     this.hasProceeded = false
   }
@@ -2111,22 +2111,22 @@ export class SwapAndBridgeController extends EventEmitter {
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
-    if (this.signAccountOpController) {
+    if (this.#signAccountOpController) {
       // if the chain id has changed, we need to destroy the sign account op
       if (
-        this.signAccountOpController.accountOp.meta &&
-        this.signAccountOpController.accountOp.meta.swapTxn &&
-        this.signAccountOpController.accountOp.meta.swapTxn.chainId !== userTxn.chainId
+        this.#signAccountOpController.accountOp.meta &&
+        this.#signAccountOpController.accountOp.meta.swapTxn &&
+        this.#signAccountOpController.accountOp.meta.swapTxn.chainId !== userTxn.chainId
       ) {
         this.destroySignAccountOp()
       } else {
-        this.signAccountOpController.update({ calls })
+        this.#signAccountOpController.update({ calls })
 
         // add the real swapTxn
-        if (!this.signAccountOpController.accountOp.meta)
-          this.signAccountOpController.accountOp.meta = {}
-        this.signAccountOpController.accountOp.meta.swapTxn = userTxn
-        this.signAccountOpController.accountOp.meta.fromQuoteId = updateQuoteId
+        if (!this.#signAccountOpController.accountOp.meta)
+          this.#signAccountOpController.accountOp.meta = {}
+        this.#signAccountOpController.accountOp.meta.swapTxn = userTxn
+        this.#signAccountOpController.accountOp.meta.fromQuoteId = updateQuoteId
         return
       }
     }
@@ -2171,7 +2171,14 @@ export class SwapAndBridgeController extends EventEmitter {
       randomId(), // the account op and the action are fabricated
       accountOp,
       () => {
-        return true
+        // this is more for a "just-in-case"
+        // stop the gas price refetch if there's no signAccountOpController
+        // this could only happen if there's a major bug and more than one
+        // instance gets created in this controller.
+        // It's arguable if it's not better to leave this to "true" instead
+        // as leaving it to true will make the problem bigger, but more easy
+        // identifiable
+        return !!this.#signAccountOpController
       },
       false,
       undefined
@@ -2206,12 +2213,12 @@ export class SwapAndBridgeController extends EventEmitter {
     this.#signAccountOpSubscriptions.push(
       this.#signAccountOpController.estimation.onUpdate(() => {
         if (
-          this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
-          this.signAccountOpController.estimation.status === EstimationStatus.Error
+          this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+          this.#signAccountOpController.estimation.status === EstimationStatus.Error
         ) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.onEstimationFailure(
-            this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId
+            this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
           )
         }
       })
@@ -2233,11 +2240,11 @@ export class SwapAndBridgeController extends EventEmitter {
     await wait(30000)
     this.#isReestimating = false
 
-    if (!this.signAccountOpController) return
-    if (!this.signAccountOpController.accountOp.meta?.swapTxn) return
+    if (!this.#signAccountOpController) return
+    if (!this.#signAccountOpController.accountOp.meta?.swapTxn) return
 
     const newestUserTxn = JSON.parse(
-      JSON.stringify(this.signAccountOpController.accountOp.meta.swapTxn)
+      JSON.stringify(this.#signAccountOpController.accountOp.meta.swapTxn)
     )
 
     // if we're refetching a quote atm, we don't execute the estimation
@@ -2250,14 +2257,14 @@ export class SwapAndBridgeController extends EventEmitter {
     // we only want a re-estimate in a stale state
     if (
       this.updateQuoteStatus === 'LOADING' ||
-      userTxn.txData !== this.signAccountOpController.accountOp.meta.swapTxn.txData
+      userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
     ) {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.reestimate(newestUserTxn)
       return
     }
 
-    this.signAccountOpController.estimate().catch((e) => {
+    this.#signAccountOpController.estimate().catch((e) => {
       // eslint-disable-next-line no-console
       console.log('error on swap&bridge re-estimate')
       // eslint-disable-next-line no-console
