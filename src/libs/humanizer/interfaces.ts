@@ -42,7 +42,7 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
-  level?: 'info' | 'warning' | 'danger'
+  level?: 'caution' | 'alert' | 'alarm'
 }
 export interface Ir {
   calls: IrCall[]
