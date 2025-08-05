@@ -45,7 +45,7 @@ async function fetchBundlerGasPrice(
   const prices = await Promise.race([
     fetchGas,
     new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new Error('bundler gas request too slow')), 3000)
+      setTimeout(() => reject(new Error('bundler gas request too slow')), 4000)
     })
   ]).catch(() => {
     // eslint-disable-next-line no-console
