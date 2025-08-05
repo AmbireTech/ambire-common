@@ -99,6 +99,7 @@ export class NetworksController extends EventEmitter {
     const uniqueNetworksByChainId = Object.values(this.#networks)
       .sort((a, b) => +b.predefined - +a.predefined) // first predefined
       .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
+
     return uniqueNetworksByChainId.map((network) => {
       // eslint-disable-next-line no-param-reassign
       network.features = getFeaturesByNetworkProperties(
@@ -526,7 +527,7 @@ export class NetworksController extends EventEmitter {
 
   async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
     await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
-    this.#onAddOrUpdateNetworks(this.networks.filter((n) => chainIds.includes(n.chainId)))
+    this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)))
     this.emitUpdate()
   }
 

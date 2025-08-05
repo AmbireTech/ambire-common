@@ -403,6 +403,9 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
       // Attempt to replace broken network with predefined version, if available
       const predefinedNetwork = predefinedNetworks.find((n) => n.chainId === network.chainId)
       if (predefinedNetwork) validNetworks[network.chainId.toString()] = predefinedNetwork
+      else {
+        console.error(`Invalid network found in storage for chainId ${network.chainId}`, network)
+      }
     }
   })
 
