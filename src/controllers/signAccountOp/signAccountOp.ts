@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable class-methods-use-this */
 import {
   AbiCoder,
   formatEther,
@@ -1091,15 +1092,12 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   /**
-   * Increase the fee we send to the feeCollector according to the specified
-   * options in the network tab
+   * Increase the paymaster fee by 10%, the relayer by 5%.
+   * This is required because even now, we are broadcasting at a loss
    */
-  #increaseFee(amount: bigint): bigint {
-    if (!this.#network.feeOptions.feeIncrease) {
-      return amount
-    }
-
-    return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
+  #increaseFee(amount: bigint, broadcaster: string = 'relayer'): bigint {
+    if (broadcaster === 'paymaster') return amount + amount / 10n
+    return amount + amount / 20n
   }
 
   get #feeSpeedsLoading() {
@@ -1187,7 +1185,7 @@ export class SignAccountOpController extends EventEmitter {
             option.token.decimals,
             0n
           )
-          if (usesPaymaster) amount = this.#increaseFee(amount)
+          if (usesPaymaster) amount = this.#increaseFee(amount, 'paymaster')
 
           speeds.push({
             type: speed as FeeSpeed,
