@@ -1,7 +1,6 @@
 import { getAddress } from 'ethers'
 
-import { Account } from '../../interfaces/account'
-import { AccountsController } from '../accounts/accounts'
+import { Account, IAccountsController } from '../../interfaces/account'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -31,13 +30,13 @@ export class AddressBookController extends EventEmitter {
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #selectedAccount: SelectedAccountController
 
   constructor(
     storage: StorageController,
-    accounts: AccountsController,
+    accounts: IAccountsController,
     selectedAccount: SelectedAccountController
   ) {
     super()

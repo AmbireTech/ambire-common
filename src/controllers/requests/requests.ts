@@ -6,10 +6,10 @@ import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId } from '../../interfaces/account'
+import { AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { BuildRequest } from '../../interfaces/requests'
 import {
@@ -21,7 +21,6 @@ import { WindowManager } from '../../interfaces/window'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
-// eslint-disable-next-line import/no-cycle
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork
@@ -44,8 +43,6 @@ import {
   buildMintVestingRequest,
   buildTransferUserRequest
 } from '../../libs/transfer/userRequest'
-import { AccountsController } from '../accounts/accounts'
-// eslint-disable-next-line import/no-cycle
 import {
   AccountOpAction,
   Action,
@@ -56,9 +53,7 @@ import {
 import { DappsController } from '../dapps/dapps'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
-// eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -76,9 +71,9 @@ const STATUS_WRAPPED_METHODS = {
 export class RequestsController extends EventEmitter {
   #relayerUrl: string
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #providers: ProvidersController
 
@@ -135,8 +130,8 @@ export class RequestsController extends EventEmitter {
     guardHWSigning
   }: {
     relayerUrl: string
-    accounts: AccountsController
-    networks: NetworksController
+    accounts: IAccountsController
+    networks: INetworksController
     providers: ProvidersController
     selectedAccount: SelectedAccountController
     keystore: KeystoreController

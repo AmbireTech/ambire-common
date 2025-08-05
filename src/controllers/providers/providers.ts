@@ -1,23 +1,22 @@
 /* eslint-disable no-underscore-dangle */
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { NetworksController } from '../networks/networks'
 
 /**
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
  * Each network requires an initialized JsonRpcProvider, and the provider must be reinitialized whenever network.selectedRpcUrl changes.
  */
 export class ProvidersController extends EventEmitter {
-  #networks: NetworksController
+  #networks: INetworksController
 
   providers: RPCProviders = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(networks: NetworksController) {
+  constructor(networks: INetworksController) {
     super()
 
     this.#networks = networks

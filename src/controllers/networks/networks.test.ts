@@ -7,12 +7,12 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
+import { AddNetworkRequestParams, INetworksController, NetworkInfo } from '../../interfaces/network'
 import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {
-  let networksController: NetworksController
+  let networksController: INetworksController
   let skipBeforeEach = false
 
   beforeEach(async () => {

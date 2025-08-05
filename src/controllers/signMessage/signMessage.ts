@@ -1,7 +1,7 @@
 import EmittableError from '../../classes/EmittableError'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
@@ -12,12 +12,10 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
@@ -29,11 +27,11 @@ export class SignMessageController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #invite: InviteController
 
@@ -59,8 +57,8 @@ export class SignMessageController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     providers: ProvidersController,
-    networks: NetworksController,
-    accounts: AccountsController,
+    networks: INetworksController,
+    accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
     invite: InviteController
   ) {

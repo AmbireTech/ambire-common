@@ -2,8 +2,10 @@ import { ActivityController } from 'controllers/activity/activity'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { IAccountsController } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -23,12 +25,10 @@ import {
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -60,7 +60,7 @@ const HARD_CODED_CURRENCY = 'usd'
 export class TransferController extends EventEmitter {
   #storage: StorageController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #addressBook: AddressBookController
 
@@ -102,7 +102,7 @@ export class TransferController extends EventEmitter {
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -145,9 +145,9 @@ export class TransferController extends EventEmitter {
     storage: StorageController,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: SelectedAccountController,
-    networks: NetworksController,
+    networks: INetworksController,
     addressBook: AddressBookController,
-    accounts: AccountsController,
+    accounts: IAccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     activity: ActivityController,

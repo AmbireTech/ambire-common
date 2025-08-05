@@ -1,10 +1,15 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { STK_WALLET } from '../../consts/addresses'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  IAccountsController
+} from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -35,11 +40,9 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 
@@ -105,9 +108,9 @@ export class PortfolioController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -118,8 +121,8 @@ export class PortfolioController extends EventEmitter {
     storage: StorageController,
     fetch: Fetch,
     providers: ProvidersController,
-    networks: NetworksController,
-    accounts: AccountsController,
+    networks: INetworksController,
+    accounts: IAccountsController,
     keystore: KeystoreController,
     relayerUrl: string,
     velcroUrl: string,

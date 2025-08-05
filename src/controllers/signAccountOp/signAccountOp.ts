@@ -29,11 +29,11 @@ import {
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { Hex } from '../../interfaces/hex'
 import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   SignAccountOpError,
@@ -87,7 +87,6 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
@@ -95,7 +94,6 @@ import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import {
   getFeeSpeedIdentifier,
@@ -165,7 +163,7 @@ export type SignAccountOpUpdateProps = {
 }
 
 export class SignAccountOpController extends EventEmitter {
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -261,8 +259,8 @@ export class SignAccountOpController extends EventEmitter {
   #activity: ActivityController
 
   constructor(
-    accounts: AccountsController,
-    networks: NetworksController,
+    accounts: IAccountsController,
+    networks: INetworksController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     activity: ActivityController,

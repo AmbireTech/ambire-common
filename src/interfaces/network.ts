@@ -1,4 +1,38 @@
+import { STATUS_WRAPPED_METHODS } from 'consts/networks'
+
 import { BUNDLER } from '../consts/bundlers'
+import EventEmitter, { Statuses } from '../controllers/eventEmitter/eventEmitter'
+
+export interface INetworksController extends EventEmitter {
+  defaultNetworksMode: 'mainnet' | 'testnet'
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>
+  networkToAddOrUpdate: {
+    chainId: Network['chainId']
+    rpcUrl: string
+    info?: NetworkInfoLoading<NetworkInfo>
+  } | null
+  initialLoadPromise: Promise<void>
+  isInitialized: boolean
+  allNetworks: Network[]
+  networks: Network[]
+  disabledNetworks: Network[]
+  getNetworksInStorage(): Promise<{ [key: string]: Network }>
+  synchronizeNetworks(): Promise<void>
+  mergeRelayerNetworks(
+    finalNetworks: { [key: string]: Network },
+    networksInStorage: { [key: string]: Network }
+  ): Promise<{ [key: string]: Network }>
+  setNetworkToAddOrUpdate(
+    networkToAddOrUpdate?: {
+      chainId: Network['chainId']
+      rpcUrl: string
+    } | null
+  ): Promise<void>
+  addNetwork(network: AddNetworkRequestParams): Promise<void>
+  updateNetwork(network: Partial<Network>, chainId: ChainId): Promise<void>
+  updateNetworks(network: Partial<Network>, chainIds: ChainId[]): Promise<void>
+  removeNetwork(chainId: ChainId): Promise<void>
+}
 
 export type ChainId = bigint
 

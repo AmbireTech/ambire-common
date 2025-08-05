@@ -1,29 +1,26 @@
 /* eslint-disable import/no-cycle */
 import { getAddress, isAddress } from 'ethers'
 
+import { STATUS_WRAPPED_METHODS } from '../../consts/account'
 import {
   Account,
   AccountOnchainState,
   AccountPreferences,
-  AccountStates
+  AccountStates,
+  IAccountsController
 } from '../../interfaces/account'
+import { INetworksController } from '../../interfaces/network'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 
-const STATUS_WRAPPED_METHODS = {
-  selectAccount: 'INITIAL',
-  addAccounts: 'INITIAL'
-} as const
-
-export class AccountsController extends EventEmitter {
+export class AccountsController extends EventEmitter implements IAccountsController {
   #storage: StorageController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #providers: ProvidersController
 
@@ -51,7 +48,7 @@ export class AccountsController extends EventEmitter {
   constructor(
     storage: StorageController,
     providers: ProvidersController,
-    networks: NetworksController,
+    networks: INetworksController,
     keystore: KeystoreController,
     onAddAccounts: (accounts: Account[]) => void,
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,

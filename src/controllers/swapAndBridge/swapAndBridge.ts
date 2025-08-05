@@ -1,9 +1,10 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { IAccountsController } from 'interfaces/account'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
@@ -57,14 +58,12 @@ import {
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -127,7 +126,7 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
 export class SwapAndBridgeController extends EventEmitter {
   #selectedAccount: SelectedAccountController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #activity: ActivityController
 
@@ -219,7 +218,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -286,13 +285,13 @@ export class SwapAndBridgeController extends EventEmitter {
     getUserRequests,
     getVisibleActionsQueue
   }: {
-    accounts: AccountsController
+    accounts: IAccountsController
     keystore: KeystoreController
     portfolio: PortfolioController
     externalSignerControllers: ExternalSignerControllers
     providers: ProvidersController
     selectedAccount: SelectedAccountController
-    networks: NetworksController
+    networks: INetworksController
     activity: ActivityController
     serviceProviderAPI: SocketAPI | LiFiAPI
     storage: StorageController
