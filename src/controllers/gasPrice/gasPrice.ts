@@ -96,18 +96,24 @@ export class GasPriceController extends EventEmitter {
         })
         return null
       }),
+      // try to fetch the gas price from the bundler but if it's too slow,
+      // stop it and use the values from getGasPriceRecommendations
       this.#network.erc4337.hasBundlerSupport !== false
-        ? bundler
-            // no error emits here as most of the time estimation/signing
-            // will work even if this fails
-            .fetchGasPrices(this.#network, () => {})
-            .catch((e) => {
-              this.emitError({
-                level: 'silent',
-                message: "Failed to fetch the bundler's gas price",
-                error: e
-              })
+        ? Promise.race([
+            bundler.fetchGasPrices(this.#network, () => {}),
+            new Promise((_resolve, reject) => {
+              setTimeout(
+                () => reject(new Error('bundler gas price fetch fail, request too slow')),
+                4000
+              )
             })
+          ]).catch(() => {
+            // eslint-disable-next-line no-console
+            console.error(
+              `fetchGasPrices for ${bundler.getName()} failed, fallbacking to getGasPriceRecommendations`
+            )
+            return null
+          })
         : null
     ])
 
@@ -118,7 +124,7 @@ export class GasPriceController extends EventEmitter {
     }
     if (bundlerGas)
       this.bundlerGasPrices[this.#network.chainId.toString()] = {
-        speeds: bundlerGas,
+        speeds: bundlerGas as GasSpeeds,
         bundler: bundler.getName()
       }
 
