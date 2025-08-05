@@ -30,6 +30,15 @@ const expiredSig = '0xcd21db4f'
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
 const abiCoder = new AbiCoder()
 
+const isJsonRpcProvider = (provider: Provider | JsonRpcProvider): provider is JsonRpcProvider => {
+  return (
+    provider instanceof JsonRpcProvider &&
+    typeof provider.send === 'function' &&
+    // eslint-disable-next-line no-underscore-dangle
+    typeof provider._send === 'function'
+  )
+}
+
 export enum DeploylessMode {
   Detect,
   ProxyContract,
@@ -89,8 +98,9 @@ export class Deployless {
     )
     this.contractBytecode = code
     this.provider = provider
-    // eslint-disable-next-line no-underscore-dangle
-    this.isProviderInvictus = (provider as any)._getConnection().url.includes('invictus')
+    this.isProviderInvictus =
+      // eslint-disable-next-line no-underscore-dangle
+      isJsonRpcProvider(provider) && provider._getConnection().url.includes('invictus')
     this.iface = new Interface(abi)
     if (codeAtRuntime !== undefined) {
       assert.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x')
@@ -101,17 +111,11 @@ export class Deployless {
 
   // this will detect whether the provider supports state override and also retrieve the actual code of the contract we are using
   private async detectStateOverride(): Promise<void> {
-    const isJsonRpcProvider =
-      this.provider &&
-      typeof (this.provider as JsonRpcProvider).send === 'function' &&
-      // eslint-disable-next-line no-underscore-dangle
-      typeof (this.provider as JsonRpcProvider)._send === 'function'
-
-    if (!isJsonRpcProvider) {
+    if (!isJsonRpcProvider(this.provider))
       throw new Error(
         'state override mode (or auto-detect) not available unless you use JsonRpcProvider'
       )
-    }
+
     const codeOfIface = new Interface(codeOfContractAbi)
     const code = await mapError(
       (this.provider as JsonRpcProvider).send('eth_call', [
