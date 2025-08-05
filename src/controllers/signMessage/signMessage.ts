@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
@@ -12,7 +12,6 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
@@ -33,7 +32,7 @@ export class SignMessageController extends EventEmitter {
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #invite: InviteController
 
@@ -60,7 +59,7 @@ export class SignMessageController extends EventEmitter {
     keystore: KeystoreController,
     providers: ProvidersController,
     networks: NetworksController,
-    accounts: AccountsController,
+    accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
     invite: InviteController
   ) {

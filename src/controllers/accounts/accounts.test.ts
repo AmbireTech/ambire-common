@@ -1,3 +1,4 @@
+import { IAccountsController } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -70,7 +71,7 @@ describe('AccountsController', () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
-  let accountsCtrl: AccountsController
+  let accountsCtrl: IAccountsController
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
     accountsCtrl = new AccountsController(

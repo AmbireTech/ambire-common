@@ -17,6 +17,7 @@ import {
   AccountWithNetworkMeta,
   DerivedAccount,
   DerivedAccountWithoutNetworkMeta,
+  IAccountsController,
   ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
@@ -44,8 +45,6 @@ import {
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-// eslint-disable-next-line import/no-cycle
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
@@ -70,7 +69,7 @@ const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 export class AccountPickerController extends EventEmitter implements IAccountPickerController {
   #callRelayer: Function
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -168,7 +167,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     onAddAccountsSuccessCallback
   }: {
-    accounts: AccountsController
+    accounts: IAccountsController
     keystore: KeystoreController
     networks: NetworksController
     providers: ProvidersController

@@ -2,6 +2,7 @@ import { ActivityController } from 'controllers/activity/activity'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { IAccountsController } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { TransferUpdate } from '../../interfaces/transfer'
@@ -23,7 +24,6 @@ import {
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -102,7 +102,7 @@ export class TransferController extends EventEmitter {
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -147,7 +147,7 @@ export class TransferController extends EventEmitter {
     selectedAccountData: SelectedAccountController,
     networks: NetworksController,
     addressBook: AddressBookController,
-    accounts: AccountsController,
+    accounts: IAccountsController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
     activity: ActivityController,

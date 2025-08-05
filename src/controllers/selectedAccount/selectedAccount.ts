@@ -2,7 +2,7 @@
 import { getAddress } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
   CashbackStatus,
@@ -29,8 +29,6 @@ import {
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
 // eslint-disable-next-line import/no-cycle
-import { AccountsController } from '../accounts/accounts'
-// eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
@@ -55,7 +53,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 export class SelectedAccountController extends EventEmitter {
   #storage: StorageController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #portfolio: PortfolioController | null = null
 
@@ -130,7 +128,13 @@ export class SelectedAccountController extends EventEmitter {
     return this.#_defiPositions
   }
 
-  constructor({ storage, accounts }: { storage: StorageController; accounts: AccountsController }) {
+  constructor({
+    storage,
+    accounts
+  }: {
+    storage: StorageController
+    accounts: IAccountsController
+  }) {
     super()
 
     this.#storage = storage

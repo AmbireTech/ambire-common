@@ -11,7 +11,7 @@ import { mockWindowManager } from '../../../test/helpers/window'
 import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
@@ -95,7 +95,7 @@ const messageToSign: Message = {
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystoreCtrl: KeystoreController
-  let accountsCtrl: AccountsController
+  let accountsCtrl: IAccountsController
   let networksCtrl: NetworksController
   let providersCtrl: ProvidersController
   let inviteCtrl: InviteController

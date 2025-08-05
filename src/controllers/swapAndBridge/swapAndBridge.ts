@@ -1,4 +1,5 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { IAccountsController } from 'interfaces/account'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -57,7 +58,6 @@ import {
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
@@ -219,7 +219,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -286,7 +286,7 @@ export class SwapAndBridgeController extends EventEmitter {
     getUserRequests,
     getVisibleActionsQueue
   }: {
-    accounts: AccountsController
+    accounts: IAccountsController
     keystore: KeystoreController
     portfolio: PortfolioController
     externalSignerControllers: ExternalSignerControllers

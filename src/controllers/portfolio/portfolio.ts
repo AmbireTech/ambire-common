@@ -1,7 +1,12 @@
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { STK_WALLET } from '../../consts/addresses'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  IAccountsController
+} from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -35,7 +40,6 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -107,7 +111,7 @@ export class PortfolioController extends EventEmitter {
 
   #networks: NetworksController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #keystore: KeystoreController
 
@@ -119,7 +123,7 @@ export class PortfolioController extends EventEmitter {
     fetch: Fetch,
     providers: ProvidersController,
     networks: NetworksController,
-    accounts: AccountsController,
+    accounts: IAccountsController,
     keystore: KeystoreController,
     relayerUrl: string,
     velcroUrl: string,

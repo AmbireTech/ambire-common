@@ -6,7 +6,7 @@ import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId } from '../../interfaces/account'
+import { AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Network } from '../../interfaces/network'
@@ -43,7 +43,6 @@ import {
   buildMintVestingRequest,
   buildTransferUserRequest
 } from '../../libs/transfer/userRequest'
-import { AccountsController } from '../accounts/accounts'
 import {
   AccountOpAction,
   Action,
@@ -73,7 +72,7 @@ const STATUS_WRAPPED_METHODS = {
 export class RequestsController extends EventEmitter {
   #relayerUrl: string
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
   #networks: NetworksController
 
@@ -132,7 +131,7 @@ export class RequestsController extends EventEmitter {
     guardHWSigning
   }: {
     relayerUrl: string
-    accounts: AccountsController
+    accounts: IAccountsController
     networks: NetworksController
     providers: ProvidersController
     selectedAccount: SelectedAccountController
