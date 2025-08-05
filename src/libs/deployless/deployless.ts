@@ -236,7 +236,7 @@ export function fromDescriptor(
 
 async function mapError(
   callPromise: Promise<string>,
-  allowRetry: boolean,
+  allowRetry: boolean = false,
   retryCounter = 0
 ): Promise<string> {
   try {
