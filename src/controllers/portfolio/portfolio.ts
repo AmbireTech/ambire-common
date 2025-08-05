@@ -381,7 +381,11 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  initializePortfolioLibIfNeeded(accountId: AccountId, chainId: bigint, network: Network) {
+  initializePortfolioLibIfNeeded(
+    accountId: AccountId,
+    chainId: bigint,
+    network: Network
+  ): Portfolio | null {
     const providers = this.#providers.providers
     const key = `${chainId}:${accountId}`
     // Initialize a new Portfolio lib if:
@@ -393,16 +397,20 @@ export class PortfolioController extends EventEmitter {
         // eslint-disable-next-line no-underscore-dangle
         providers[network.chainId.toString()]?._getConnection().url
     ) {
-      this.#portfolioLibs.set(
-        key,
-        new Portfolio(
-          this.#fetch,
-          providers[network.chainId.toString()],
-          network,
-          this.#velcroUrl,
-          this.#batchedVelcroDiscovery
+      try {
+        this.#portfolioLibs.set(
+          key,
+          new Portfolio(
+            this.#fetch,
+            providers[network.chainId.toString()],
+            network,
+            this.#velcroUrl,
+            this.#batchedVelcroDiscovery
+          )
         )
-      )
+      } catch (e: any) {
+        return null
+      }
     }
     return this.#portfolioLibs.get(key)!
   }
@@ -431,6 +439,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     try {
+      if (!portfolioLib) {
+        throw new Error(
+          `a portfolio library is not initialized for ${network.name} (${network.chainId})`
+        )
+      }
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
@@ -489,6 +503,7 @@ export class PortfolioController extends EventEmitter {
       const banner = res.data.banner
 
       const formattedBanner: Banner = {
+        // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
         type: banner.type,
         params: {
@@ -585,7 +600,7 @@ export class PortfolioController extends EventEmitter {
   protected async updatePortfolioState(
     accountId: string,
     network: Network,
-    portfolioLib: Portfolio,
+    portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean,
     maxDataAgeMs?: number
@@ -622,6 +637,11 @@ export class PortfolioController extends EventEmitter {
     ).some(Boolean)
 
     try {
+      if (!portfolioLib)
+        throw new Error(
+          `a portfolio library is not initialized for ${network.name} (${network.chainId})`
+        )
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
         priceCache: state.result?.priceCache,
