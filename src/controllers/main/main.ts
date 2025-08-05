@@ -265,7 +265,8 @@ export class MainController extends EventEmitter {
     )
     this.selectedAccount = new SelectedAccountController({
       storage: this.storage,
-      accounts: this.accounts
+      accounts: this.accounts,
+      keystore: this.keystore
     })
     this.banner = new BannerController(this.storage)
     this.portfolio = new PortfolioController(
@@ -2118,7 +2119,9 @@ export class MainController extends EventEmitter {
 
     const error = errors[pendingAction.type as keyof typeof errors]
 
-    await this.requests.actions.focusActionWindow()
+    // Don't reopen the action window if focusing it fails
+    // because closing it will abort the signing process
+    await this.requests.actions.focusActionWindow({ reopenIfNeeded: false })
     this.emitError({
       level: 'major',
       message: error.message,
