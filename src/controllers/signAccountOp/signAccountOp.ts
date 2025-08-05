@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable class-methods-use-this */
 import {
   AbiCoder,
   formatEther,
@@ -148,6 +149,21 @@ export const noStateUpdateStatuses = [
   SigningStatus.UpdatesPaused,
   SigningStatus.WaitingForPaymaster
 ]
+
+export type SignAccountOpUpdateProps = {
+  gasPrices?: GasRecommendation[] | null
+  feeToken?: TokenResult
+  paidBy?: string
+  speed?: FeeSpeed
+  signingKeyAddr?: Key['addr']
+  signingKeyType?: InternalKey['type'] | ExternalKey['type']
+  calls?: AccountOp['calls']
+  rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
+  bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
+  blockGasLimit?: bigint
+  signedTransactionsCount?: number | null
+  hasNewEstimation?: boolean
+}
 
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
@@ -776,20 +792,7 @@ export class SignAccountOpController extends EventEmitter {
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation
-  }: {
-    gasPrices?: GasRecommendation[] | null
-    feeToken?: TokenResult
-    paidBy?: string
-    speed?: FeeSpeed
-    signingKeyAddr?: Key['addr']
-    signingKeyType?: InternalKey['type'] | ExternalKey['type']
-    calls?: AccountOp['calls']
-    rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-    bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
-    blockGasLimit?: bigint
-    signedTransactionsCount?: number | null
-    hasNewEstimation?: boolean
-  }) {
+  }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
       // most updates are frozen during the signing process
@@ -1089,15 +1092,12 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   /**
-   * Increase the fee we send to the feeCollector according to the specified
-   * options in the network tab
+   * Increase the paymaster fee by 10%, the relayer by 5%.
+   * This is required because even now, we are broadcasting at a loss
    */
-  #increaseFee(amount: bigint): bigint {
-    if (!this.#network.feeOptions.feeIncrease) {
-      return amount
-    }
-
-    return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
+  #increaseFee(amount: bigint, broadcaster: string = 'relayer'): bigint {
+    if (broadcaster === 'paymaster') return amount + amount / 10n
+    return amount + amount / 20n
   }
 
   get #feeSpeedsLoading() {
@@ -1185,7 +1185,7 @@ export class SignAccountOpController extends EventEmitter {
             option.token.decimals,
             0n
           )
-          if (usesPaymaster) amount = this.#increaseFee(amount)
+          if (usesPaymaster) amount = this.#increaseFee(amount, 'paymaster')
 
           speeds.push({
             type: speed as FeeSpeed,
@@ -1518,22 +1518,13 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    // if broadcast but not confirmed for this network and an userOp,
-    // check if the nonces match. If they do, increment the current nonce
-    const notConfirmedUserOp = this.#activity.broadcastedButNotConfirmed.find(
-      (accOp) =>
-        accOp.chainId === this.#network.chainId &&
-        accOp.gasFeePayment &&
-        accOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byBundler
-    )
     const userOperation = getUserOperation(
       this.account,
       accountState,
       this.accountOp,
       this.bundlerSwitcher.getBundler().getName(),
       this.accountOp.meta?.entryPointAuthorization,
-      eip7702Auth,
-      notConfirmedUserOp?.asUserOperation
+      eip7702Auth
     )
 
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas

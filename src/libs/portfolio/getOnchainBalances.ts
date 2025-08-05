@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -27,6 +28,9 @@ class SimulationError extends Error {
     this.simulationErrorMsg = message
     this.beforeNonce = beforeNonce
     this.afterNonce = afterNonce
+    console.error('simulation error: ', message)
+    console.log('before nonce: ', beforeNonce)
+    console.log('after nonce: ', afterNonce)
   }
 }
 
@@ -235,6 +239,26 @@ export async function getTokens(
       )
     }
 
+    const tokenFlags: TokenResult['flags'] = getFlags(
+      {},
+      network.chainId.toString(),
+      network.chainId,
+      address
+    )
+
+    if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
+      const value = opts.specialErc20Hints[address]
+
+      if (value === 'custom') {
+        tokenFlags.isCustom = true
+      } else if (value === 'hidden') {
+        tokenFlags.isHidden = true
+      } else if (value === 'hidden-custom') {
+        tokenFlags.isHidden = true
+        tokenFlags.isCustom = true
+      }
+    }
+
     return {
       amount: token.amount,
       chainId: network.chainId,
@@ -248,7 +272,7 @@ export async function getTokens(
           ? network.nativeAssetSymbol
           : symbol,
       address,
-      flags: getFlags({}, network.chainId.toString(), network.chainId, address)
+      flags: tokenFlags
     } as TokenResult
   }
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)

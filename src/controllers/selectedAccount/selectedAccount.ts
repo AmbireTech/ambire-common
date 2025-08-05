@@ -28,13 +28,13 @@ import {
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import { getIsViewOnly } from '../../utils/accounts'
 // eslint-disable-next-line import/no-cycle
 import { AccountsController } from '../accounts/accounts'
 // eslint-disable-next-line import/no-cycle
-import { ActionsController } from '../actions/actions'
-// eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
@@ -63,9 +63,9 @@ export class SelectedAccountController extends EventEmitter {
 
   #defiPositions: DefiPositionsController | null = null
 
-  #actions: ActionsController | null = null
-
   #networks: NetworksController | null = null
+
+  #keystore: KeystoreController | null = null
 
   #providers: ProvidersController | null = null
 
@@ -134,11 +134,20 @@ export class SelectedAccountController extends EventEmitter {
     return this.#_defiPositions
   }
 
-  constructor({ storage, accounts }: { storage: StorageController; accounts: AccountsController }) {
+  constructor({
+    storage,
+    accounts,
+    keystore
+  }: {
+    storage: StorageController
+    accounts: AccountsController
+    keystore: KeystoreController
+  }) {
     super()
 
     this.#storage = storage
     this.#accounts = accounts
+    this.#keystore = keystore
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -164,19 +173,16 @@ export class SelectedAccountController extends EventEmitter {
   initControllers({
     portfolio,
     defiPositions,
-    actions,
     networks,
     providers
   }: {
     portfolio: PortfolioController
     defiPositions: DefiPositionsController
-    actions: ActionsController
     networks: NetworksController
     providers: ProvidersController
   }) {
     this.#portfolio = portfolio
     this.#defiPositions = defiPositions
-    this.#actions = actions
     this.#networks = networks
     this.#providers = providers
 
@@ -308,10 +314,6 @@ export class SelectedAccountController extends EventEmitter {
       this.#portfolio.getPendingPortfolioState(this.account.addr)
     )
 
-    const hasSignAccountOp = !!this.#actions?.visibleActionsQueue.filter(
-      (action) => action.type === 'accountOp'
-    )
-
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
       selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
@@ -321,7 +323,6 @@ export class SelectedAccountController extends EventEmitter {
       structuredClone(this.#portfolioByNetworks),
       this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp,
       this.#isPortfolioLoadingFromScratch
     )
 
@@ -352,6 +353,10 @@ export class SelectedAccountController extends EventEmitter {
 
   async updateCashbackStatus(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
+    const importedAccountKeys = this.#keystore?.getAccountKeys(this.account) || []
+
+    // Don't update cashback status for view-only accounts
+    if (getIsViewOnly(importedAccountKeys, this.account.associatedKeys)) return
 
     const accountId = this.account.addr
     const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult

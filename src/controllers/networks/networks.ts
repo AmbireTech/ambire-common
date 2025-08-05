@@ -1,5 +1,6 @@
 import EmittableError from '../../classes/EmittableError'
 import { networks as predefinedNetworks } from '../../consts/networks'
+import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -9,10 +10,15 @@ import {
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
-import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/networks/networks'
+import {
+  getFeaturesByNetworkProperties,
+  getNetworkInfo,
+  getValidNetworks
+} from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+// eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
@@ -26,6 +32,11 @@ const STATUS_WRAPPED_METHODS = {
  * for adding, updating, and removing networks.
  */
 export class NetworksController extends EventEmitter {
+  // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
+  // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
+  // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
+  defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
+
   #storage: StorageController
 
   #fetch: Fetch
@@ -50,14 +61,23 @@ export class NetworksController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(
-    storage: StorageController,
-    fetch: Fetch,
-    relayerUrl: string,
-    onAddOrUpdateNetworks: (networks: Network[]) => void,
+  constructor({
+    defaultNetworksMode,
+    storage,
+    fetch,
+    relayerUrl,
+    onAddOrUpdateNetworks,
+    onRemoveNetwork
+  }: {
+    defaultNetworksMode?: 'mainnet' | 'testnet'
+    storage: StorageController
+    fetch: Fetch
+    relayerUrl: string
+    onAddOrUpdateNetworks: (networks: Network[]) => void
     onRemoveNetwork: (chainId: bigint) => void
-  ) {
+  }) {
     super()
+    if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -72,11 +92,14 @@ export class NetworksController extends EventEmitter {
   }
 
   get allNetworks(): Network[] {
-    if (!Object.keys(this.#networks).length) return predefinedNetworks
+    if (!Object.keys(this.#networks).length) {
+      return this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
+    }
 
     const uniqueNetworksByChainId = Object.values(this.#networks)
       .sort((a, b) => +b.predefined - +a.predefined) // first predefined
       .filter((item, index, self) => self.findIndex((i) => i.chainId === item.chainId) === index) // unique by chainId (predefined with priority)
+
     return uniqueNetworksByChainId.map((network) => {
       // eslint-disable-next-line no-param-reassign
       network.features = getFeaturesByNetworkProperties(
@@ -107,6 +130,12 @@ export class NetworksController extends EventEmitter {
     return this.allNetworks.filter((network) => network.disabled)
   }
 
+  async getNetworksInStorage(): Promise<{ [key: string]: Network }> {
+    const rawNetworksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+
+    return getValidNetworks(rawNetworksInStorage)
+  }
+
   /**
    * Loads and synchronizes network configurations from storage and the relayer.
    *
@@ -123,14 +152,16 @@ export class NetworksController extends EventEmitter {
    * handles migration of legacy data, and maintains consistency between stored and relayer-provided networks.
    */
   async #load() {
-    // Step 1. Get latest storage (networksInStorage)
-    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+    // Step 1. Get latest storage (networksInStorage) and validate/normalize
+    const networksInStorage = await this.getNetworksInStorage()
 
     let finalNetworks: { [key: string]: Network } = {}
 
     // If networksInStorage is empty, set predefinedNetworks and emit update
     if (!Object.keys(networksInStorage).length) {
-      finalNetworks = predefinedNetworks.reduce((acc, network) => {
+      const defaultNetworks =
+        this.defaultNetworksMode === 'mainnet' ? predefinedNetworks : predefinedTestnetNetworks
+      finalNetworks = defaultNetworks.reduce((acc, network) => {
         acc[network.chainId.toString()] = network
         return acc
       }, {} as { [key: string]: Network })
@@ -142,8 +173,10 @@ export class NetworksController extends EventEmitter {
       Object.values(networksInStorage).map((network) => [network.chainId.toString(), network])
     )
 
-    // Step 4: Merge the networks from the Relayer
-    finalNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
+    if (this.defaultNetworksMode === 'mainnet') {
+      // Step 4: Merge the networks from the Relayer
+      finalNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
+    }
 
     this.#networks = finalNetworks
     this.emitUpdate()
@@ -159,7 +192,9 @@ export class NetworksController extends EventEmitter {
    * Used for periodically network synchronization.
    */
   async synchronizeNetworks() {
-    const networksInStorage: { [key: string]: Network } = await this.#storage.get('networks', {})
+    if (this.defaultNetworksMode === 'testnet') return
+
+    const networksInStorage = await this.getNetworksInStorage()
     const finalNetworks = { ...this.#networks }
 
     // Process updates (merge Relayer data and apply rules)
@@ -205,7 +240,9 @@ export class NetworksController extends EventEmitter {
       Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
         const chainId = BigInt(_chainId)
         const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
-        const storedNetwork = Object.values(networksInStorage).find((n) => n.chainId === chainId)
+        const storedNetwork = Object.values(networksInStorage).find(
+          (n) => n && n.chainId === chainId
+        )
         const disabledByDefault = relayerNetwork.disabledByDefault
         // Remove values that should not be stored
         delete relayerNetwork.disabledByDefault
@@ -490,7 +527,7 @@ export class NetworksController extends EventEmitter {
 
   async #updateNetworks(network: Partial<Network>, chainIds: ChainId[]) {
     await Promise.all(chainIds.map((chainId) => this.#updateNetwork(network, chainId, true)))
-    this.#onAddOrUpdateNetworks(this.networks.filter((n) => chainIds.includes(n.chainId)))
+    this.#onAddOrUpdateNetworks(this.allNetworks.filter((n) => chainIds.includes(n.chainId)))
     this.emitUpdate()
   }
 

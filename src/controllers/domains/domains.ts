@@ -21,13 +21,16 @@ const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export class DomainsController extends EventEmitter {
   #providers: RPCProviders = {}
 
+  #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
+
   domains: Domains = {}
 
   loadingAddresses: string[] = []
 
-  constructor(providers: RPCProviders) {
+  constructor(providers: RPCProviders, defaultNetworksMode?: 'mainnet' | 'testnet') {
     super()
     this.#providers = providers
+    if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -63,7 +66,10 @@ export class DomainsController extends EventEmitter {
    * Resolves the ENS names for an address if such exist.
    */
   async reverseLookup(address: string, emitUpdate = true) {
-    if (!('1' in this.#providers)) {
+    const ethereumProvider =
+      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+
+    if (!ethereumProvider) {
       this.emitError({
         error: new Error('domains.reverseLookup: Ethereum provider is not available'),
         message: 'The RPC provider for Ethereum is not available.',
@@ -86,7 +92,7 @@ export class DomainsController extends EventEmitter {
     let ensName = null
 
     try {
-      ensName = (await reverseLookupEns(checksummedAddress, this.#providers['1'])) || null
+      ensName = (await reverseLookupEns(checksummedAddress, ethereumProvider)) || null
     } catch (e) {
       console.error('ENS reverse lookup unexpected error', e)
     }
@@ -101,5 +107,12 @@ export class DomainsController extends EventEmitter {
     )
 
     if (emitUpdate) this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON()
+    }
   }
 }

@@ -173,19 +173,19 @@ const prepareTest = () => {
   ])
   const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
   let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (nets) => {
+    onAddOrUpdateNetworks: (nets) => {
       nets.forEach((n) => {
         providersCtrl.setProvider(n)
       })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
@@ -676,7 +676,7 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
-    test('Zero balance token is fetched after being learned', async () => {
+    test('Zero balance token from learned tokens is filtered out', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
 
@@ -690,7 +690,7 @@ describe('Portfolio Controller ', () => {
         .getLatestPortfolioState(account.addr)
         ['1']?.result?.tokens.find((tk) => tk.address === BANANA_TOKEN_ADDR)
 
-      expect(token).toBeTruthy()
+      expect(token).toBeFalsy()
     })
 
     test('Learned tokens to avoid persisting non-ERC20 tokens', async () => {

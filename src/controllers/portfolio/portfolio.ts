@@ -16,10 +16,9 @@ import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   getFlags,
-  getTokensReadyToLearn,
+  getSpecialHints,
   getTotal,
   getUpdatedHints,
-  processTokens,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 /* eslint-disable no-restricted-syntax */
@@ -382,7 +381,11 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  initializePortfolioLibIfNeeded(accountId: AccountId, chainId: bigint, network: Network) {
+  initializePortfolioLibIfNeeded(
+    accountId: AccountId,
+    chainId: bigint,
+    network: Network
+  ): Portfolio | null {
     const providers = this.#providers.providers
     const key = `${chainId}:${accountId}`
     // Initialize a new Portfolio lib if:
@@ -394,16 +397,20 @@ export class PortfolioController extends EventEmitter {
         // eslint-disable-next-line no-underscore-dangle
         providers[network.chainId.toString()]?._getConnection().url
     ) {
-      this.#portfolioLibs.set(
-        key,
-        new Portfolio(
-          this.#fetch,
-          providers[network.chainId.toString()],
-          network,
-          this.#velcroUrl,
-          this.#batchedVelcroDiscovery
+      try {
+        this.#portfolioLibs.set(
+          key,
+          new Portfolio(
+            this.#fetch,
+            providers[network.chainId.toString()],
+            network,
+            this.#velcroUrl,
+            this.#batchedVelcroDiscovery
+          )
         )
-      )
+      } catch (e: any) {
+        return null
+      }
     }
     return this.#portfolioLibs.get(key)!
   }
@@ -432,6 +439,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     try {
+      if (!portfolioLib) {
+        throw new Error(
+          `a portfolio library is not initialized for ${network.name} (${network.chainId})`
+        )
+      }
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
         additionalErc20Hints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
@@ -490,6 +503,7 @@ export class PortfolioController extends EventEmitter {
       const banner = res.data.banner
 
       const formattedBanner: Banner = {
+        // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
         type: banner.type,
         params: {
@@ -586,7 +600,7 @@ export class PortfolioController extends EventEmitter {
   protected async updatePortfolioState(
     accountId: string,
     network: Network,
-    portfolioLib: Portfolio,
+    portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
     forceUpdate: boolean,
     maxDataAgeMs?: number
@@ -594,6 +608,10 @@ export class PortfolioController extends EventEmitter {
     const blockTag = portfolioProps.blockTag
     const stateKeys = { latest: this.#latest, pending: this.#pending }
     const accountState = stateKeys[blockTag][accountId]
+
+    // Can occur if the account is removed while updateSelectedAccount is in progress
+    if (!accountState) return false
+
     if (!accountState[network.chainId.toString()]) {
       // isLoading must be false here, otherwise canSkipUpdate will return true
       // and portfolio will not be updated
@@ -619,6 +637,11 @@ export class PortfolioController extends EventEmitter {
     ).some(Boolean)
 
     try {
+      if (!portfolioLib)
+        throw new Error(
+          `a portfolio library is not initialized for ${network.name} (${network.chainId})`
+        )
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
         priceCache: state.result?.priceCache,
@@ -627,7 +650,6 @@ export class PortfolioController extends EventEmitter {
       })
 
       const hasError = result.errors.some((e) => e.level !== 'silent')
-      const additionalHintsErc20Hints = portfolioProps.additionalErc20Hints || []
       let lastSuccessfulUpdate =
         accountState[network.chainId.toString()]?.result?.lastSuccessfulUpdate || 0
 
@@ -640,15 +662,6 @@ export class PortfolioController extends EventEmitter {
         lastSuccessfulUpdate = Date.now()
       }
 
-      const processedTokens = processTokens(
-        result.tokens,
-        network,
-        hasNonZeroTokens,
-        additionalHintsErc20Hints,
-        this.tokenPreferences,
-        this.customTokens
-      )
-
       accountState[network.chainId.toString()] = {
         // We cache the previously simulated AccountOps
         // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
@@ -660,8 +673,8 @@ export class PortfolioController extends EventEmitter {
         result: {
           ...result,
           lastSuccessfulUpdate,
-          tokens: processedTokens,
-          total: getTotal(processedTokens)
+          tokens: result.tokens,
+          total: getTotal(result.tokens)
         }
       }
 
@@ -762,25 +775,19 @@ export class PortfolioController extends EventEmitter {
 
           const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
 
-          const additionalErc20Hints = [
-            ...Object.keys(
-              (this.#previousHints?.learnedTokens &&
-                this.#previousHints?.learnedTokens[network.chainId.toString()]) ??
-                {}
-            ),
-            ...((this.#toBeLearnedTokens && this.#toBeLearnedTokens[network.chainId.toString()]) ??
-              []),
-            ...this.customTokens
-              .filter(
-                ({ chainId, standard }) => chainId === network.chainId && standard === 'ERC20'
-              )
-              .map(({ address }) => address),
-            // We have to add the token preferences to ensure that the user can always see all hidden tokens
-            // in settings, regardless of the selected account
-            ...this.tokenPreferences
-              .filter(({ chainId }) => chainId === network.chainId)
-              .map(({ address }) => address)
-          ]
+          const additionalErc20Hints = Object.keys(
+            (this.#previousHints?.learnedTokens &&
+              this.#previousHints?.learnedTokens[network.chainId.toString()]) ??
+              {}
+          )
+
+          const specialErc20Hints = getSpecialHints(
+            network.chainId,
+            this.customTokens,
+            this.tokenPreferences,
+            this.#toBeLearnedTokens
+          )
+
           // TODO: Add custom ERC721 tokens to the hints
           const additionalErc721Hints = Object.fromEntries(
             Object.entries(
@@ -793,7 +800,8 @@ export class PortfolioController extends EventEmitter {
           const allHints = {
             previousHintsFromExternalAPI,
             additionalErc20Hints,
-            additionalErc721Hints
+            additionalErc721Hints,
+            specialErc20Hints
           }
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
@@ -837,10 +845,7 @@ export class PortfolioController extends EventEmitter {
             accountState[network.chainId.toString()]?.result
           ) {
             const networkResult = accountState[network.chainId.toString()]!.result
-            const readyToLearnTokens = getTokensReadyToLearn(
-              this.#toBeLearnedTokens[network.chainId.toString()],
-              networkResult!.tokens
-            )
+            const readyToLearnTokens = networkResult?.toBeLearned?.erc20s || []
 
             if (readyToLearnTokens.length) {
               await this.learnTokens(readyToLearnTokens, network.chainId)
@@ -901,11 +906,12 @@ export class PortfolioController extends EventEmitter {
   }
 
   addTokensToBeLearned(tokenAddresses: string[], chainId: bigint) {
-    if (!tokenAddresses.length) return false
-    if (!this.#toBeLearnedTokens[chainId.toString()])
-      this.#toBeLearnedTokens[chainId.toString()] = []
+    const chainIdString = chainId.toString()
 
-    let networkToBeLearnedTokens = this.#toBeLearnedTokens[chainId.toString()]
+    if (!tokenAddresses.length) return false
+    if (!this.#toBeLearnedTokens[chainIdString]) this.#toBeLearnedTokens[chainIdString] = []
+
+    let networkToBeLearnedTokens = this.#toBeLearnedTokens[chainIdString]
 
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
 
@@ -924,7 +930,7 @@ export class PortfolioController extends EventEmitter {
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
-    this.#toBeLearnedTokens[chainId.toString()] = networkToBeLearnedTokens
+    this.#toBeLearnedTokens[chainIdString] = networkToBeLearnedTokens
     return true
   }
 
@@ -945,6 +951,14 @@ export class PortfolioController extends EventEmitter {
       if (alreadyLearned.includes(getAddress(address))) return acc
 
       acc[address] = acc[address] || null // Keep the timestamp of all learned tokens
+
+      if (this.#toBeLearnedTokens[chainId.toString()]) {
+        // Remove the token from toBeLearnedTokens if it will be learned
+        this.#toBeLearnedTokens[chainId.toString()] = this.#toBeLearnedTokens[
+          chainId.toString()
+        ].filter((addr) => addr !== address)
+      }
+
       return acc
     }, {})
 
