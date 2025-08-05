@@ -341,7 +341,11 @@ export class SignAccountOpController extends EventEmitter {
       return { title: invalidAccountOpError, code: 'NO_CALLS' }
     }
 
-    if (this.accountOp.calls.some((c) => c.to === this.accountOp.accountAddr))
+    if (
+      this.accountOp.calls.some(
+        (c) => isAddress(c.to) && getAddress(c.to) === getAddress(this.accountOp.accountAddr)
+      )
+    )
       return {
         title:
           'A transaction in this batch is targeting your current account and might include malicious data.',
