@@ -184,7 +184,6 @@ export async function bundlerEstimate(
   while (true) {
     // estimate
     const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback)
-    const bundler = switcher.getBundler()
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
