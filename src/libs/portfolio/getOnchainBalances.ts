@@ -130,7 +130,7 @@ export async function getNFTs(
           ),
           limits.erc721Tokens
         ],
-        deploylessOpts
+        { ...deploylessOpts, allowRetry: true }
       )
     )[0]
 
@@ -277,11 +277,10 @@ export async function getTokens(
   }
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   if (!opts.simulation) {
-    const [results, blockNumber] = await deployless.call(
-      'getBalances',
-      [accountAddr, tokenAddrs],
-      deploylessOpts
-    )
+    const [results, blockNumber] = await deployless.call('getBalances', [accountAddr, tokenAddrs], {
+      ...deploylessOpts,
+      allowRetry: true
+    })
 
     return [
       results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),

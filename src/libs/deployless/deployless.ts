@@ -2,6 +2,7 @@ import assert from 'assert'
 import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
+import wait from '../../utils/wait'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -44,13 +45,15 @@ export type CallOptions = {
   gasPrice?: string
   gasLimit?: string
   stateToOverride: object | null
+  allowRetry?: boolean
 }
 const defaultOptions: CallOptions = {
   mode: DeploylessMode.Detect,
   blockTag: 'latest',
   from: undefined,
   to: arbitraryAddr,
-  stateToOverride: null
+  stateToOverride: null,
+  allowRetry: false
 }
 
 export class Deployless {
@@ -129,7 +132,12 @@ export class Deployless {
     this.contractRuntimeCode = mapResponse(code)
   }
 
-  async call(methodName: string, args: any[], opts: Partial<CallOptions> = {}): Promise<any> {
+  async call(
+    methodName: string,
+    args: any[],
+    opts: Partial<CallOptions> = {},
+    retryCounter = 0
+  ): Promise<any> {
     opts = { ...defaultOptions, ...opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
@@ -194,7 +202,21 @@ export class Deployless {
       })
     ])
 
-    const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
+    // retry mechanism
+    // initial portfolio getBalance should not be returning an error. If it is,
+    // most probably than not it's because of a temp issue like a 503 error.
+    // So, we enable retrying to have the portfolio loading smoothly more often
+    const response = await mapError(
+      callPromisedWithResolveTimeout,
+      opts.allowRetry ?? false,
+      retryCounter
+    )
+    if (typeof response === 'string' && response === 'SHOULD_RETRY') {
+      await wait(250)
+      return this.call(methodName, args, opts, retryCounter + 1)
+    }
+
+    const returnDataRaw = mapResponse(response)
     return this.iface.decodeFunctionResult(methodName, returnDataRaw)
   }
 }
@@ -212,10 +234,17 @@ export function fromDescriptor(
   )
 }
 
-async function mapError(callPromise: Promise<string>): Promise<string> {
+async function mapError(
+  callPromise: Promise<string>,
+  allowRetry: boolean,
+  retryCounter = 0
+): Promise<string> {
   try {
     return await callPromise
   } catch (e: any) {
+    // allow max 5 retries
+    if (allowRetry && retryCounter < 5) return 'SHOULD_RETRY'
+
     // ethers v5 provider: e.error.data is usually our eth_call output in case of execution reverted
     if (e.error && e.error.data) return e.error.data
     // ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
