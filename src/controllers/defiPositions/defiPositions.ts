@@ -1,5 +1,6 @@
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
+import { INetworksController } from '../../interfaces/network'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
@@ -28,7 +29,7 @@ export class DefiPositionsController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #providers: ProvidersController
 
@@ -56,7 +57,7 @@ export class DefiPositionsController extends EventEmitter {
     selectedAccount: SelectedAccountController
     keystore: KeystoreController
     accounts: IAccountsController
-    networks: NetworksController
+    networks: INetworksController
     providers: ProvidersController
   }) {
     super()

@@ -14,6 +14,7 @@ import { networks } from '../../consts/networks'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key, TxnRequest } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
@@ -96,7 +97,7 @@ describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystoreCtrl: KeystoreController
   let accountsCtrl: IAccountsController
-  let networksCtrl: NetworksController
+  let networksCtrl: INetworksController
   let providersCtrl: ProvidersController
   let inviteCtrl: InviteController
 

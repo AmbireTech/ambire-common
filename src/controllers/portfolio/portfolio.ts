@@ -9,7 +9,7 @@ import {
 } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -43,7 +43,6 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 
@@ -109,7 +108,7 @@ export class PortfolioController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #accounts: IAccountsController
 
@@ -122,7 +121,7 @@ export class PortfolioController extends EventEmitter {
     storage: StorageController,
     fetch: Fetch,
     providers: ProvidersController,
-    networks: NetworksController,
+    networks: INetworksController,
     accounts: IAccountsController,
     keystore: KeystoreController,
     relayerUrl: string,

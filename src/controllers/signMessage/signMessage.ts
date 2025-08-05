@@ -1,7 +1,7 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
@@ -16,7 +16,6 @@ import { SignedMessage } from '../activity/types'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
@@ -28,7 +27,7 @@ export class SignMessageController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -58,7 +57,7 @@ export class SignMessageController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     providers: ProvidersController,
-    networks: NetworksController,
+    networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
     invite: InviteController

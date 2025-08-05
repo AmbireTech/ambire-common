@@ -3,6 +3,7 @@ import { ZeroAddress } from 'ethers'
 /* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
+import { INetworksController } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -17,7 +18,6 @@ import { getIsViewOnly } from '../../utils/accounts'
 import { ActivityController } from '../activity/activity'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { EstimationStatus } from './types'
 
@@ -26,7 +26,7 @@ export class EstimationController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #provider: RPCProvider
 
@@ -57,7 +57,7 @@ export class EstimationController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     accounts: IAccountsController,
-    networks: NetworksController,
+    networks: INetworksController,
     provider: RPCProvider,
     portfolio: PortfolioController,
     activity: ActivityController,

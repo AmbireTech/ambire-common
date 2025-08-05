@@ -4,6 +4,7 @@ import { getAddress } from 'ethers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { INetworksController } from '../../interfaces/network'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
@@ -31,7 +32,6 @@ import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/se
 // eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
@@ -59,7 +59,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #defiPositions: DefiPositionsController | null = null
 
-  #networks: NetworksController | null = null
+  #networks: INetworksController | null = null
 
   #providers: ProvidersController | null = null
 
@@ -169,7 +169,7 @@ export class SelectedAccountController extends EventEmitter {
   }: {
     portfolio: PortfolioController
     defiPositions: DefiPositionsController
-    networks: NetworksController
+    networks: INetworksController
     providers: ProvidersController
   }) {
     this.#portfolio = portfolio

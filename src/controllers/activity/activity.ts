@@ -1,7 +1,7 @@
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
@@ -19,7 +19,6 @@ import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -156,7 +155,7 @@ export class ActivityController extends EventEmitter {
 
   #providers: ProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #portfolio: PortfolioController
 
@@ -173,7 +172,7 @@ export class ActivityController extends EventEmitter {
     accounts: IAccountsController,
     selectedAccount: SelectedAccountController,
     providers: ProvidersController,
-    networks: NetworksController,
+    networks: INetworksController,
     portfolio: PortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {

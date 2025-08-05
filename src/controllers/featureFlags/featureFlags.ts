@@ -1,6 +1,6 @@
 import { FeatureFlags, featureFlags } from '../../consts/featureFlags'
+import { INetworksController } from '../../interfaces/network'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { NetworksController } from '../networks/networks'
 
 /**
  * Responsible for managing (enable/disable) feature flags within the app. The
@@ -11,9 +11,9 @@ import { NetworksController } from '../networks/networks'
 export class FeatureFlagsController extends EventEmitter {
   #flags: FeatureFlags = { ...featureFlags }
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  constructor(networks: NetworksController) {
+  constructor(networks: INetworksController) {
     super()
     this.#networks = networks
   }

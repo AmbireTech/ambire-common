@@ -80,4 +80,5 @@ export interface IAccountPickerController extends EventEmitter {
   }) => Promise<void>
   addAccounts: (accounts?: SelectedAccountForImport[]) => Promise<void>
   selectNextAccount: () => Promise<void>
+  removeNetworkData(chainId: bigint): void
 }

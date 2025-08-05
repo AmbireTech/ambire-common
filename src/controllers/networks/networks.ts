@@ -1,10 +1,11 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks } from '../../consts/networks'
+import { networks as predefinedNetworks, STATUS_WRAPPED_METHODS } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
   ChainId,
+  INetworksController,
   Network,
   NetworkInfo,
   NetworkInfoLoading,
@@ -20,17 +21,12 @@ import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 
-const STATUS_WRAPPED_METHODS = {
-  addNetwork: 'INITIAL',
-  updateNetwork: 'INITIAL'
-} as const
-
 /**
  * The NetworksController is responsible for managing networks. It handles both predefined networks and those
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
  * for adding, updating, and removing networks.
  */
-export class NetworksController extends EventEmitter {
+export class NetworksController extends EventEmitter implements INetworksController {
   // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
   // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
   // Adding custom networks remains possible in testnet mode, as no network filtering is applied.

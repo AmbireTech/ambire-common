@@ -31,7 +31,7 @@ import {
   Key,
   ReadyToAddKeys
 } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -48,8 +48,6 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
-// eslint-disable-next-line import/no-cycle
-import { NetworksController } from '../networks/networks'
 // eslint-disable-next-line import/no-cycle
 import { ProvidersController } from '../providers/providers'
 
@@ -73,7 +71,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #keystore: KeystoreController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #providers: ProvidersController
 
@@ -169,7 +167,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }: {
     accounts: IAccountsController
     keystore: KeystoreController
-    networks: NetworksController
+    networks: INetworksController
     providers: ProvidersController
     externalSignerControllers: ExternalSignerControllers
     relayerUrl: string

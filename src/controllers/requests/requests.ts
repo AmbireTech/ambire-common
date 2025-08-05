@@ -9,7 +9,7 @@ import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunicat
 import { AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { BuildRequest } from '../../interfaces/requests'
 import {
@@ -53,7 +53,6 @@ import {
 import { DappsController } from '../dapps/dapps'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
@@ -74,7 +73,7 @@ export class RequestsController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #providers: ProvidersController
 
@@ -132,7 +131,7 @@ export class RequestsController extends EventEmitter {
   }: {
     relayerUrl: string
     accounts: IAccountsController
-    networks: NetworksController
+    networks: INetworksController
     providers: ProvidersController
     selectedAccount: SelectedAccountController
     keystore: KeystoreController

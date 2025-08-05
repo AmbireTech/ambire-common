@@ -11,12 +11,12 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
-import { AddNetworkRequestParams, Network } from '../../interfaces/network'
+import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
@@ -129,7 +129,7 @@ export class MainController extends EventEmitter {
   #externalSignerControllers: ExternalSignerControllers = {}
 
   // Subcontrollers
-  networks: NetworksController
+  networks: INetworksController
 
   providers: ProvidersController
 
@@ -163,7 +163,7 @@ export class MainController extends EventEmitter {
 
   domains: DomainsController
 
-  accounts: AccountsController
+  accounts: IAccountsController
 
   selectedAccount: SelectedAccountController
 
