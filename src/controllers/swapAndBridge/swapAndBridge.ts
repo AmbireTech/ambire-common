@@ -1,5 +1,4 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
-import cloneDeep from 'lodash/cloneDeep'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -1198,7 +1197,9 @@ export class SwapAndBridgeController extends EventEmitter {
     this.switchTokensStatus = 'LOADING'
     this.#emitUpdateIfNeeded()
 
-    const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
+    const prevFromSelectedToken = this.fromSelectedToken
+      ? structuredClone(this.fromSelectedToken)
+      : null
     // Update the from token
     if (!this.toSelectedToken) {
       await this.updateForm(
@@ -2067,8 +2068,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
     // Cache token values to prevent mutations affecting these values, causing
     // race conditions during async operations.
-    const currentFromSelectedToken = cloneDeep(this.fromSelectedToken)
-    const currentToToken = cloneDeep(this.toSelectedToken)
+    const currentFromSelectedToken = structuredClone(this.fromSelectedToken)
+    const currentToToken = { ...this.toSelectedToken }
     const currentToChainId = this.toChainId
 
     const network = this.#networks.networks.find(
