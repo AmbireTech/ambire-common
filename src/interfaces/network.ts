@@ -50,6 +50,10 @@ export interface NetworkFeature {
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
+/**
+ * If you add a new mandatory property, make sure to adjust accordingly
+ * `sanityCheckImportantNetworkProperties` function, if needed
+ */
 export interface Network {
   chainId: bigint
   name: string
@@ -81,6 +85,7 @@ export interface Network {
   lastUpdatedNetworkInfo?: number
   has7702: boolean
   allowForce4337?: boolean
+  disabled?: boolean
 }
 
 export interface AddNetworkRequestParams {
@@ -175,6 +180,7 @@ export type RelayerNetwork = {
       increasePreVerGas?: number
     }
   }
+  disabledByDefault?: boolean
 }
 
 export type RelayerNetworkConfigResponse = { [chainId: string]: RelayerNetwork }

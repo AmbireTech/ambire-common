@@ -214,7 +214,7 @@ const networks: Network[] = [
     wrappedAddr: '0x5300000000000000000000000000000000000004'
   },
   {
-    name: 'Binance Smart Chain',
+    name: 'BNB Smart Chain',
     nativeAssetSymbol: 'BNB',
     has7702: true,
     nativeAssetName: 'Binance Coin',
@@ -277,5 +277,4 @@ const networks: Network[] = [
 ]
 export { networks }
 
-export const ODYSSEY_CHAIN_ID = 911867n
 export const ARBITRUM_CHAIN_ID = 42161n

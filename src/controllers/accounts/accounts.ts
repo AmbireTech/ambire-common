@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import { getAddress, isAddress } from 'ethers'
 
 import {
@@ -9,13 +10,13 @@ import {
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 
 const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
-  updateAccountPreferences: 'INITIAL',
   addAccounts: 'INITIAL'
 } as const
 
@@ -26,12 +27,14 @@ export class AccountsController extends EventEmitter {
 
   #providers: ProvidersController
 
+  #keystore: KeystoreController
+
   accounts: Account[] = []
 
   accountStates: AccountStates = {}
 
   accountStatesLoadingState: {
-    [chainId: string]: boolean
+    [chainId: string]: Promise<AccountOnchainState[]> | undefined
   } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -49,6 +52,7 @@ export class AccountsController extends EventEmitter {
     storage: StorageController,
     providers: ProvidersController,
     networks: NetworksController,
+    keystore: KeystoreController,
     onAddAccounts: (accounts: Account[]) => void,
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
     onAccountStateUpdate: () => void
@@ -57,6 +61,7 @@ export class AccountsController extends EventEmitter {
     this.#storage = storage
     this.#providers = providers
     this.#networks = networks
+    this.#keystore = keystore
     this.#onAddAccounts = onAddAccounts
     this.#updateProviderIsWorking = updateProviderIsWorking
     this.#onAccountStateUpdate = onAccountStateUpdate
@@ -65,10 +70,25 @@ export class AccountsController extends EventEmitter {
     this.initialLoadPromise = this.#load()
   }
 
+  #getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr?: string | null): Account[] {
+    return this.accounts.filter((account) => {
+      // Always update the selected account state in the background
+      if (account.addr === selectedAccountAddr) return true
+
+      const accountKeys = this.#keystore.getAccountKeys(account)
+      const isViewOnly = accountKeys.length === 0
+      // If the account is not selected, update the account state in the background
+      // only if it's not view-only. We update the account state
+      // in the background so EOAs can be used as a broadcast option.
+      return !isViewOnly
+    })
+  }
+
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
     const accounts = await this.#storage.get('accounts', [])
+    const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null)
     this.accounts = getUniqueAccountsArray(accounts)
 
     // Emit an update before updating account states as the first state update may take some time
@@ -76,11 +96,24 @@ export class AccountsController extends EventEmitter {
     // Don't await this. Networks should update one by one
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
-    this.#updateAccountStates(this.accounts)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#updateAccountStates(
+      this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
+    )
   }
 
-  async updateAccountStates(blockTag: string | number = 'latest', networks: bigint[] = []) {
-    await this.#updateAccountStates(this.accounts, blockTag, networks)
+  async updateAccountStates(
+    selectedAccountAddr: string | undefined,
+    blockTag: string | number = 'latest',
+    networks: bigint[] = []
+  ) {
+    await this.initialLoadPromise
+
+    await this.#updateAccountStates(
+      this.#getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr),
+      blockTag,
+      networks
+    )
   }
 
   async updateAccountState(
@@ -88,10 +121,10 @@ export class AccountsController extends EventEmitter {
     blockTag: 'pending' | 'latest' = 'latest',
     networks: bigint[] = []
   ) {
+    await this.initialLoadPromise
+
     const accountData = this.accounts.find((account) => account.addr === accountAddr)
-
     if (!accountData) return
-
     await this.#updateAccountStates([accountData], blockTag, networks)
   }
 
@@ -100,46 +133,49 @@ export class AccountsController extends EventEmitter {
     blockTag: string | number = 'latest',
     updateOnlyNetworksWithIds: bigint[] = []
   ) {
+    if (!accounts.length) return
+
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
     const networksToUpdate = this.#networks.networks.filter((network) => {
-      if (this.accountStatesLoadingState[network.chainId.toString()]) return false
       if (!updateOnlyPassedNetworks) return true
 
       return updateOnlyNetworksWithIds.includes(network.chainId)
     })
 
-    networksToUpdate.forEach((network) => {
-      this.accountStatesLoadingState[network.chainId.toString()] = true
-    })
     this.emitUpdate()
 
     await Promise.all(
       networksToUpdate.map(async (network) => {
         try {
-          const networkAccountStates = await getAccountState(
+          if (this.accountStatesLoadingState[network.chainId.toString()]) {
+            await this.accountStatesLoadingState[network.chainId.toString()]
+
+            return
+          }
+
+          this.accountStatesLoadingState[network.chainId.toString()] = getAccountState(
             this.#providers.providers[network.chainId.toString()],
             network,
             accounts,
             blockTag
           )
+          const networkAccountStates = await this.accountStatesLoadingState[
+            network.chainId.toString()
+          ]!
 
           this.#updateProviderIsWorking(network.chainId, true)
 
           networkAccountStates.forEach((accountState) => {
             const addr = accountState.accountAddr
-
-            if (!this.accountStates[addr]) {
-              this.accountStates[addr] = {}
-            }
-
+            if (!this.accountStates[addr]) this.accountStates[addr] = {}
             this.accountStates[addr][network.chainId.toString()] = accountState
           })
         } catch (err) {
           console.error(`account state update error for ${network.name}: `, err)
           this.#updateProviderIsWorking(network.chainId, false)
         } finally {
-          this.accountStatesLoadingState[network.chainId.toString()] = false
+          this.accountStatesLoadingState[network.chainId.toString()] = undefined
         }
         this.emitUpdate()
       })
@@ -203,14 +239,6 @@ export class AccountsController extends EventEmitter {
   }
 
   async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    await this.withStatus(
-      'updateAccountPreferences',
-      async () => this.#updateAccountPreferences(accounts),
-      true
-    )
-  }
-
-  async #updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
     this.accounts = this.accounts.map((acc) => {
       const account = accounts.find((a) => a.addr === acc.addr)
       if (!account) return acc
@@ -220,8 +248,34 @@ export class AccountsController extends EventEmitter {
       return { ...acc, preferences: account.preferences }
     })
 
-    await this.#storage.set('accounts', this.accounts)
     this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
+  }
+
+  async reorderAccounts({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }) {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= this.accounts.length ||
+      toIndex >= this.accounts.length
+    ) {
+      return this.emitError({
+        level: 'major',
+        message: 'Failed to reorder accounts. Please reload the page and try again.',
+        error: new Error('Failed to reorder accounts. Please reload the page and try again.')
+      })
+    }
+
+    if (fromIndex === toIndex) return
+
+    const updatedAccounts = [...this.accounts]
+    const [movedAccount] = updatedAccounts.splice(fromIndex, 1)
+    updatedAccounts.splice(toIndex, 0, movedAccount)
+
+    this.accounts = getUniqueAccountsArray(updatedAccounts)
+
+    this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
   }
 
   get areAccountStatesLoading() {
@@ -246,8 +300,9 @@ export class AccountsController extends EventEmitter {
   // This ensures production doesn't blow up and it 99.9% of cases it
   // should not call the promise
   async getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
-    if (!this.accountStates[addr][chainId.toString()])
+    if (!this.accountStates[addr]?.[chainId.toString()]) {
       await this.updateAccountState(addr, 'latest', [chainId])
+    }
 
     return this.accountStates[addr][chainId.toString()]
   }

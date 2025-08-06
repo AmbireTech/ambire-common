@@ -1,5 +1,5 @@
 import EventEmitter from '../../eventEmitter/eventEmitter'
-import { ControllersTransactionDependecies } from '../dependencies'
+import { ControllersTransactionDependencies } from '../dependencies'
 import { TransactionFormState } from '../transactionFormState'
 
 export class IntentController extends EventEmitter {
@@ -14,7 +14,7 @@ export class IntentController extends EventEmitter {
   public transactions = []
 
   constructor(
-    private readonly dependencies: ControllersTransactionDependecies,
+    private readonly dependencies: ControllersTransactionDependencies,
     private readonly formState: TransactionFormState
   ) {
     super()

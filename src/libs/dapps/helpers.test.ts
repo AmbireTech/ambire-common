@@ -1,10 +1,11 @@
 import predefinedDapps from '../../consts/dappCatalog.json'
-import { patchStorageApps } from './helpers'
+import { getDappIdFromUrl, patchStorageApps } from './helpers'
 
 describe('Test dapp helpers', () => {
   describe('patchStorageApps', () => {
     const predefinedDappsFormatted = predefinedDapps.map((dapp) => ({
       ...dapp,
+      id: getDappIdFromUrl(dapp.url),
       isConnected: false,
       favorite: false,
       chainId: 1
@@ -18,6 +19,7 @@ describe('Test dapp helpers', () => {
       const afterPatch = patchStorageApps([
         ...predefinedDappsFormatted,
         {
+          id: 'legends.ambire.com',
           name: 'Ambire Legends',
           url: 'https://legends.ambire.com',
           icon: '',

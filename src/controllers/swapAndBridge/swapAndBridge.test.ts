@@ -14,6 +14,7 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -23,77 +24,6 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
-
-let swapAndBridgeController: SwapAndBridgeController
-const windowManager = mockWindowManager().windowManager
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
-
-const providers = Object.fromEntries(
-  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
-const storage: Storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-let providersCtrl: ProvidersController
-const networksCtrl = new NetworksController(
-  storageCtrl,
-  fetch,
-  relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
-  },
-  (id) => {
-    providersCtrl.removeProvider(id)
-  }
-)
-
-providersCtrl = new ProvidersController(networksCtrl)
-providersCtrl.providers = providers
-const accountsCtrl = new AccountsController(
-  storageCtrl,
-  providersCtrl,
-  networksCtrl,
-  () => {},
-  () => {},
-  () => {}
-)
-const selectedAccountCtrl = new SelectedAccountController({
-  storage: storageCtrl,
-  accounts: accountsCtrl
-})
-
-const actionsCtrl = new ActionsController({
-  selectedAccount: selectedAccountCtrl,
-  windowManager,
-  notificationManager,
-  onActionWindowClose: () => {}
-})
-
-const inviteCtrl = new InviteController({
-  relayerUrl: '',
-  fetch,
-  storage: storageCtrl
-})
-
-const callRelayer = relayerCall.bind({ url: '', fetch })
-
-const activityCtrl = new ActivityController(
-  storageCtrl,
-  fetch,
-  callRelayer,
-  accountsCtrl,
-  selectedAccountCtrl,
-  providersCtrl,
-  networksCtrl,
-  () => Promise.resolve()
-)
-
-const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
-
-const keystore = new KeystoreController(storageCtrl, {}, windowManager)
 
 const accounts = [
   {
@@ -112,6 +42,117 @@ const accounts = [
     }
   }
 ]
+
+// Notice
+// The status of swapAndBridge.ts is a bit more difficult to test
+// as we now have this code:
+//
+// this.signAccountOpController.estimation.onUpdate(() => {
+//   if (
+//     this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+//     this.signAccountOpController.estimation.status === EstimationStatus.Error
+//   ) {
+//     // eslint-disable-next-line @typescript-eslint/no-floating-promises
+//     this.onEstimationFailure(this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
+//   }
+// })
+//
+// meaning we can't use fake data as the estimation is going to throw an error
+// and it's going to cut the routes
+// so the status of swapAndBridge.ts will always go to FetchingRoutes or NoRoutesFound
+//
+// In order to test the status better, we either need real data or a mock on signAccountOp
+
+let swapAndBridgeController: SwapAndBridgeController
+const windowManager = mockWindowManager().windowManager
+
+const notificationManager = {
+  create: () => Promise.resolve()
+}
+
+const providers = Object.fromEntries(
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
+)
+
+const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
+let providersCtrl: ProvidersController
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
+  fetch,
+  relayerUrl,
+  onAddOrUpdateNetworks: (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
+  },
+  onRemoveNetwork: (id) => {
+    providersCtrl.removeProvider(id)
+  }
+})
+
+providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl.providers = providers
+
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+storage.set('selectedAccount', accounts[0].addr)
+
+const accountsCtrl = new AccountsController(
+  storageCtrl,
+  providersCtrl,
+  networksCtrl,
+  keystore,
+  () => {},
+  () => {},
+  () => {}
+)
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl,
+  keystore
+})
+
+const actionsCtrl = new ActionsController({
+  selectedAccount: selectedAccountCtrl,
+  windowManager,
+  notificationManager,
+  onActionWindowClose: () => Promise.resolve()
+})
+
+const inviteCtrl = new InviteController({
+  relayerUrl: '',
+  fetch,
+  storage: storageCtrl
+})
+
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystore,
+  relayerUrl,
+  velcroUrl,
+  new BannerController(storageCtrl)
+)
+
+const activityCtrl = new ActivityController(
+  storageCtrl,
+  fetch,
+  callRelayer,
+  accountsCtrl,
+  selectedAccountCtrl,
+  providersCtrl,
+  networksCtrl,
+  portfolioCtrl,
+  () => Promise.resolve()
+)
+
+const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
 const PORTFOLIO_TOKENS = [
   {
@@ -146,17 +187,6 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
-const portfolioCtrl = new PortfolioController(
-  storageCtrl,
-  fetch,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  keystore,
-  relayerUrl,
-  velcroUrl
-)
-
 describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
@@ -170,14 +200,14 @@ describe('SwapAndBridge Controller', () => {
       activity: activityCtrl,
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
-      actions: actionsCtrl,
       invite: inviteCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,
       externalSignerControllers: {},
       relayerUrl,
-      userRequests: []
+      getUserRequests: () => [],
+      getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
     })
     expect(swapAndBridgeController).toBeDefined()
   })
@@ -189,8 +219,8 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
-    expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-    expect(swapAndBridgeController.toTokenList).not.toContainEqual(
+    expect(swapAndBridgeController.toTokenShortList).toHaveLength(3)
+    expect(swapAndBridgeController.toTokenShortList).not.toContainEqual(
       expect.objectContaining({
         address: swapAndBridgeController.fromSelectedToken?.address
       })
@@ -224,7 +254,9 @@ describe('SwapAndBridge Controller', () => {
         done()
       }
     })
-    swapAndBridgeController.updateForm({ toSelectedToken: swapAndBridgeController.toTokenList[0] })
+    swapAndBridgeController.updateForm({
+      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0].address
+    })
   })
   test('should update fromAmount', (done) => {
     let emitCounter = 0
@@ -273,7 +305,6 @@ describe('SwapAndBridge Controller', () => {
         return
       }
 
-      expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
       expect(swapAndBridgeController.quote).toBeDefined()
     }
 
@@ -293,7 +324,6 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })

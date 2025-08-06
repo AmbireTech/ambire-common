@@ -1,8 +1,8 @@
 import { JsonRpcProvider, Provider } from 'ethers'
-import { v4 as uuidv4 } from 'uuid'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
+import { generateUuid } from '../../../utils/uuid'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
@@ -79,13 +79,14 @@ export async function getAAVEPositions(
   }
 
   const position = {
-    id: uuidv4(),
+    id: generateUuid(),
     additionalData: {
       healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
       positionInUSD: 0,
       deptInUSD: 0,
       collateralInUSD: 0,
-      availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8
+      availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8,
+      name: 'Lending'
     },
     assets: []
   } as Position
@@ -105,17 +106,18 @@ export async function getAAVEPositions(
 
       const assetsResult = []
 
-      const priceIn = [{ baseCurrency: 'usd', price }]
+      const priceIn = { baseCurrency: 'usd', price }
 
       if (asset.balance > 0) {
         assetsResult.push({
           address: asset.address,
           symbol: asset.symbol,
           name: asset.name,
+          iconUrl: '',
           decimals: Number(asset.decimals),
           amount: asset.balance,
           priceIn,
-          value: getAssetValue(asset.balance, Number(asset.decimals), priceIn),
+          value: getAssetValue(asset.balance, Number(asset.decimals), [priceIn]),
           type: AssetType.Collateral,
           additionalData: {
             APY: Number(asset.currentLiquidityRate) / 10 ** 25
@@ -134,10 +136,11 @@ export async function getAAVEPositions(
           address: asset.address,
           symbol: asset.symbol,
           name: asset.name,
+          iconUrl: '',
           decimals: Number(asset.decimals),
           amount: asset.stableBorrowAssetBalanc,
           priceIn,
-          value: getAssetValue(asset.stableBorrowAssetBalanc, Number(asset.decimals), priceIn),
+          value: getAssetValue(asset.stableBorrowAssetBalanc, Number(asset.decimals), [priceIn]),
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentStableBorrowRate) / 10 ** 25
@@ -156,10 +159,11 @@ export async function getAAVEPositions(
           address: asset.address,
           symbol: asset.symbol,
           name: asset.name,
+          iconUrl: '',
           decimals: Number(asset.decimals),
           amount: asset.borrowAssetBalance,
           priceIn,
-          value: getAssetValue(asset.borrowAssetBalance, Number(asset.decimals), priceIn),
+          value: getAssetValue(asset.borrowAssetBalance, Number(asset.decimals), [priceIn]),
           type: AssetType.Borrow,
           additionalData: {
             APY: Number(asset.currentVariableBorrowRate) / 10 ** 25
@@ -184,6 +188,8 @@ export async function getAAVEPositions(
     chainId,
     type: 'lending',
     positions: [position],
+    iconUrl: '',
+    siteUrl: 'https://app.aave.com/',
     positionInUSD: position.additionalData.positionInUSD
   }
 }

@@ -45,7 +45,7 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
   if (address && selectedAcc && address === selectedAcc) {
     return {
       success: false,
-      message: 'The entered address should be different than your own account address.'
+      message: "You can't send to the same address you’re sending from."
     }
   }
 
@@ -76,7 +76,7 @@ const validateSendTransferAddress = (
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
-      message: 'The entered address should be different than the your own account address.'
+      message: "You can't send to the same address you're sending from."
     }
   }
 
@@ -123,8 +123,6 @@ const validateSendTransferAddress = (
 
 const validateSendTransferAmount = (
   amount: string,
-  maxAmount: number,
-  maxAmountInFiat: number,
   selectedAsset: TokenResult
 ): ValidateReturnType => {
   const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
@@ -137,6 +135,14 @@ const validateSendTransferAmount = (
   }
 
   if (!(sanitizedAmount && Number(sanitizedAmount) > 0)) {
+    // The user has entered an amount that is outside of the valid range.
+    if (Number(amount) > 0 && selectedAsset.decimals && selectedAsset.decimals > 0) {
+      return {
+        success: false,
+        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`
+      }
+    }
+
     return {
       success: false,
       message: 'The amount must be greater than 0.'
@@ -156,9 +162,7 @@ const validateSendTransferAmount = (
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${Number(maxAmount) || 0} ${
-            selectedAsset?.symbol
-          }${maxAmountInFiat ? `/ ${Number(maxAmountInFiat)} USD.` : ''}`
+          message: 'Insufficient amount.'
         }
       }
     }

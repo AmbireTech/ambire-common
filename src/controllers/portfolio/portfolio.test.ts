@@ -17,6 +17,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -136,31 +137,62 @@ const emptyAccount = {
   }
 }
 
+const ambireV2Account = {
+  addr: '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',
+  initialPrivileges: [
+    [
+      '0xF5102a9bd0Ca021D3cF262BeF81c25F704AF1615',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  associatedKeys: ['0xF5102a9bd0Ca021D3cF262BeF81c25F704AF1615'],
+  creation: {
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027f04f3c84c7bf7b333aca32e4d61247cc315ac4a0e396a5fc174276184ae537f84553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    factoryAddr: '0x26cE6745A633030A6faC5e64e41D21fb6246dc2d',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  preferences: {
+    label: 'Smart Account v2',
+    pfp: '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA'
+  }
+}
+
 const windowManager = mockWindowManager().windowManager
 
 const prepareTest = () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
-  storageCtrl.set('accounts', [account, account2, account3, account4, emptyAccount])
-  const keystore = new KeystoreController(storageCtrl, {}, windowManager)
+  storageCtrl.set('accounts', [
+    account,
+    account2,
+    account3,
+    account4,
+    emptyAccount,
+    ambireV2Account
+  ])
+  const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
   let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystore,
     () => {},
     () => {},
     () => {}
@@ -173,7 +205,8 @@ const prepareTest = () => {
     accountsCtrl,
     keystore,
     relayerUrl,
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
 
   return { storageCtrl, controller }
@@ -293,19 +326,24 @@ describe('Portfolio Controller ', () => {
           })
       )
 
-    controller.updateSelectedAccount(account.addr, ethereum, undefined, {
+    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined, {
       forceUpdate: true
     })
 
-    controller.updateSelectedAccount(account.addr, ethereum, undefined, {
+    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined, {
       forceUpdate: true
     })
 
     // We need to wait for the latest update, or the bellow expect will run too soon,
     // and we won't be able to check the queue properly.
-    await controller.updateSelectedAccount(account.addr, ethereum, undefined, {
-      forceUpdate: true
-    })
+    await controller.updateSelectedAccount(
+      account.addr,
+      ethereum ? [ethereum] : undefined,
+      undefined,
+      {
+        forceUpdate: true
+      }
+    )
 
     expect(queueOrder).toEqual([
       'updatePortfolioState - #1 call (latest state)',
@@ -321,14 +359,10 @@ describe('Portfolio Controller ', () => {
     test('Latest tokens are fetched and kept in the controller', async () => {
       const { controller } = prepareTest()
 
-      await controller.updateSelectedAccount(account.addr)
+      await controller.updateSelectedAccount(ambireV2Account.addr)
 
-      const latestState = controller.getLatestPortfolioState(
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      )?.['1']!
-      const pendingState = controller.getPendingPortfolioState(
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-      )?.['1']!
+      const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']!
+      const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']!
       expect(latestState.isReady).toEqual(true)
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
       expect(latestState.result?.collections?.length).toBeGreaterThan(0)
@@ -365,12 +399,9 @@ describe('Portfolio Controller ', () => {
       const { controller } = prepareTest()
 
       controller.onUpdate(() => {
-        const latestState = controller.getLatestPortfolioState(
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        )?.['1']
-        const pendingState = controller.getPendingPortfolioState(
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-        )?.['1']
+        const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
+        const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
+
         if (latestState?.isReady && pendingState?.isReady) {
           expect(latestState.isReady).toEqual(true)
           expect(latestState.result?.tokens.length).toBeGreaterThan(0)
@@ -385,7 +416,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount(account.addr, undefined, undefined, {
+      controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
         forceUpdate: true
       })
     })
@@ -563,7 +594,7 @@ describe('Portfolio Controller ', () => {
         emptyAccount.addr,
         // we pass a network here, just because the portfolio is trying to perform a call to an undefined network,
         // and it throws a silent error
-        networks.find((network) => network.chainId === 1n),
+        [networks.find((network) => network.chainId === 1n)!],
         undefined,
         { forceUpdate: true }
       )
@@ -645,7 +676,7 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
-    test('Zero balance token is fetched after being learned', async () => {
+    test('Zero balance token from learned tokens is filtered out', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
 
@@ -659,7 +690,7 @@ describe('Portfolio Controller ', () => {
         .getLatestPortfolioState(account.addr)
         ['1']?.result?.tokens.find((tk) => tk.address === BANANA_TOKEN_ADDR)
 
-      expect(token).toBeTruthy()
+      expect(token).toBeFalsy()
     })
 
     test('Learned tokens to avoid persisting non-ERC20 tokens', async () => {
@@ -760,9 +791,14 @@ describe('Portfolio Controller ', () => {
 
       await controller.addTokensToBeLearned(['0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b'], 1n)
 
-      await controller.updateSelectedAccount(account.addr, clonedEthereum, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(
+        account.addr,
+        clonedEthereum ? [clonedEthereum] : undefined,
+        undefined,
+        {
+          forceUpdate: true
+        }
+      )
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account.addr)
@@ -780,7 +816,10 @@ describe('Portfolio Controller ', () => {
       expect(tokenInLearnedTokens).toBeFalsy()
     })
 
-    test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
+    // TODO: this test is skipped as it's no longer valid
+    // we're making velcro requests for all networks now and making hasRelayer false
+    // does not work anymore
+    test.skip('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
       const { storageCtrl, controller } = prepareTest()
       const polygon = networks.find((network) => network.chainId === 137n)!
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
@@ -797,9 +836,14 @@ describe('Portfolio Controller ', () => {
 
       await controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
 
-      await controller.updateSelectedAccount(account2.addr, clonedEthereum, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(
+        account2.addr,
+        clonedEthereum ? [clonedEthereum] : undefined,
+        undefined,
+        {
+          forceUpdate: true
+        }
+      )
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account2.addr)

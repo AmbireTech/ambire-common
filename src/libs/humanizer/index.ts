@@ -17,7 +17,9 @@ import {
   erc721Module,
   legendsMessageModule,
   openseaMessageModule,
-  permit2Module
+  permit2Module,
+  snapshotModule,
+  zealyMessageModule
 } from './messageModules'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
@@ -34,6 +36,7 @@ import GuildModule from './modules/Guild'
 import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
+import { LifiModule } from './modules/Lifi'
 import { openSeaModule } from './modules/OpenSea'
 import PancakeModule from './modules/Pancake'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
@@ -64,6 +67,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   traderJoeModule,
   KyberSwap,
   SocketModule,
+  LifiModule,
   AcrossModule,
   OneInchModule,
   PancakeModule,
@@ -92,7 +96,9 @@ const humanizerTMModules = [
   legendsMessageModule,
   ensMessageModule,
   openseaMessageModule,
-  eip7702AuthorizationModule
+  zealyMessageModule,
+  eip7702AuthorizationModule,
+  snapshotModule
 ]
 
 const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {

@@ -132,8 +132,8 @@ export function getUserOperation(
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),
     preVerificationGas: toBeHex(0),
-    maxFeePerGas: toBeHex(1),
-    maxPriorityFeePerGas: toBeHex(1),
+    maxFeePerGas: toBeHex(0),
+    maxPriorityFeePerGas: toBeHex(0),
     signature: '0x',
     requestType: getRequestType(accountState),
     bundler
@@ -270,4 +270,12 @@ export const parseLogs = (
     nonce: userOpLog[0],
     success: userOpLog[1]
   }
+}
+
+/**
+ * Get all the bundler statuses that indicate that an userOp
+ * is either pending to be mined or successfully included in the blockchain
+ */
+export function getUserOpPendingOrSuccessStatuses(): string[] {
+  return ['found', 'submitted', 'not_submitted', 'included', 'queued']
 }

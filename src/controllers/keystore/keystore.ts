@@ -2,7 +2,6 @@
 /* eslint-disable new-cap */
 /* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
-// import { entropyToMnemonic } from 'bip39'
 import {
   decryptWithPrivateKey,
   Encrypted,
@@ -10,9 +9,8 @@ import {
   publicKeyByPrivateKey
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
-import scrypt from 'scrypt-js'
-import { v4 } from 'uuid'
 
+// import { entropyToMnemonic } from 'bip39'
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
@@ -30,11 +28,15 @@ import {
   ReadyToAddKeys,
   StoredKey
 } from '../../interfaces/keystore'
+import { Platform } from '../../interfaces/platform'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
+import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
+import { generateUuid } from '../../utils/uuid'
+import wait from '../../utils/wait'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
@@ -57,7 +59,7 @@ const STATUS_WRAPPED_METHODS = {
   updateKeyPreferences: 'INITIAL'
 } as const
 
-function getBytesForSecret(secret: string): ArrayLike<number> {
+function getBytesForSecret(secret: string) {
   // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
   return toUtf8Bytes(secret, 'NFKC')
 }
@@ -116,11 +118,14 @@ export class KeystoreController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  initialLoadPromise: Promise<void>
 
   #windowManager: WindowManager
 
+  #scryptAdapter: ScryptAdapter
+
   constructor(
+    platform: Platform,
     _storage: StorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
     windowManager: WindowManager
@@ -131,8 +136,8 @@ export class KeystoreController extends EventEmitter {
     this.#mainKey = null
     this.keyStoreUid = null
     this.#windowManager = windowManager
-
-    this.#initialLoadPromise = this.#load()
+    this.#scryptAdapter = new ScryptAdapter(platform)
+    this.initialLoadPromise = this.#load()
   }
 
   async #load() {
@@ -213,7 +218,7 @@ export class KeystoreController extends EventEmitter {
 
   // @TODO time before unlocking
   async #unlockWithSecret(secretId: string, secret: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
     if (!this.#keystoreSecrets.length) {
@@ -244,17 +249,18 @@ export class KeystoreController extends EventEmitter {
         error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
       })
     }
-    // @TODO: progressCallback?
-
-    const key = await scrypt.scrypt(
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(
       getBytesForSecret(secret),
       getBytes(scryptParams.salt),
-      scryptParams.N,
-      scryptParams.r,
-      scryptParams.p,
-      scryptParams.dkLen,
-      () => {}
+      {
+        N: scryptParams.N,
+        r: scryptParams.r,
+        p: scryptParams.p,
+        dkLen: scryptParams.dkLen
+      }
     )
+    await wait(0)
     const iv = getBytes(aesEncrypted.iv)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)
@@ -284,7 +290,7 @@ export class KeystoreController extends EventEmitter {
     extraEntropy: string = '',
     leaveUnlocked: boolean = false
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     // @TODO test
     if (this.#keystoreSecrets.find((x) => x.id === secretId))
@@ -317,15 +323,14 @@ export class KeystoreController extends EventEmitter {
     }
 
     const salt = entropyGenerator.generateRandomBytes(32, extraEntropy)
-    const key = await scrypt.scrypt(
-      getBytesForSecret(secret),
-      salt,
-      scryptDefaults.N,
-      scryptDefaults.r,
-      scryptDefaults.p,
-      scryptDefaults.dkLen,
-      () => {}
-    )
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    await wait(0)
     const iv = entropyGenerator.generateRandomBytes(16, extraEntropy)
     const derivedKey = key.slice(0, 16)
     const macPrefix = key.slice(16, 32)
@@ -366,7 +371,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #removeSecret(secretId: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!this.#keystoreSecrets.find((x) => x.id === secretId))
       throw new EmittableError({
@@ -426,7 +431,7 @@ export class KeystoreController extends EventEmitter {
     seed: string
     passphrase: string | null
   }> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (this.#mainKey === null)
       throw new EmittableError({
@@ -496,7 +501,7 @@ export class KeystoreController extends EventEmitter {
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
     const newEntry = {
-      id: v4(),
+      id: generateUuid(),
       label,
       seed: seedPhrase,
       seedPassphrase: passphrase,
@@ -559,7 +564,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #deleteSeed(id: KeystoreSeed['id']) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     this.#keystoreSeeds = this.#keystoreSeeds.filter((s) => s.id !== id)
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
@@ -570,7 +575,7 @@ export class KeystoreController extends EventEmitter {
   async changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
     if (!nextHdPathTemplate) return // should never happen
 
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     if (!this.#tempSeed) throw new Error('keystore: no temp seed at the moment')
@@ -584,7 +589,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #addKeysExternallyStored(keysToAdd: ExternalKey[]) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!keysToAdd.length) return
 
@@ -641,7 +646,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #addKeys(keysToAdd: ReadyToAddKeys['internal']) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!keysToAdd.length) return
     if (!this.isReadyToStoreKeys) {
       this.#internalKeysToAddOnKeystoreReady = [
@@ -706,7 +711,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!this.isUnlocked)
       throw new EmittableError({
         message:
@@ -733,7 +738,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async exportKeyWithPasscode(keyAddress: Key['addr'], keyType: Key['type'], passphrase: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
     const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === keyType)
@@ -771,7 +776,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #getPrivateKey(keyAddress: string): Promise<string> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
 
@@ -835,7 +840,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<KeystoreSignerInterface> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     const keys = this.#keystoreKeys
     const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === keyType)
 
@@ -874,7 +879,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getSavedSeed(id: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     if (!this.#keystoreSeeds.length) throw new Error('keystore: no seed phrase added yet')
@@ -911,7 +916,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     // In the case the user wants to change their device password,
     // they should also provide the previous password (oldSecret).

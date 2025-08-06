@@ -1,5 +1,6 @@
-import { hexlify, randomBytes } from 'ethers'
 /* eslint-disable class-methods-use-this */
+
+import { hexlify, randomBytes } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -7,11 +8,12 @@ import { describe, expect, jest, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key } from '../../interfaces/keystore'
+import { Key, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
@@ -45,12 +47,18 @@ class InternalSigner {
     return Promise.resolve('')
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   sign7702(hex: string): EIP7702Signature {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
       s: hexlify(randomBytes(32)) as Hex
     }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    return '0x'
   }
 }
 
@@ -98,16 +106,25 @@ describe('SignMessageController', () => {
     await storageCtrl.set('accounts', [account])
     await storageCtrl.set('selectedAccount', account.addr)
 
-    keystoreCtrl = new KeystoreController(storageCtrl, { internal: InternalSigner }, windowManager)
-    networksCtrl = new NetworksController(
+    keystoreCtrl = new KeystoreController(
+      'default',
       storageCtrl,
+      { internal: InternalSigner },
+      windowManager
+    )
+    networksCtrl = new NetworksController({
+      storage: storageCtrl,
       fetch,
       relayerUrl,
-      (net) => {
-        providersCtrl.setProvider(net)
+      onAddOrUpdateNetworks: (nets) => {
+        nets.forEach((n) => {
+          providersCtrl.setProvider(n)
+        })
       },
-      (id) => providersCtrl.removeProvider(id)
-    )
+      onRemoveNetwork: (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    })
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 
@@ -115,6 +132,7 @@ describe('SignMessageController', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
+      keystoreCtrl,
       () => {},
       () => {},
       () => {}

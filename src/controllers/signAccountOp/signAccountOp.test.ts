@@ -1,9 +1,10 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, hexlify, parseEther, verifyMessage, verifyTypedData } from 'ethers'
+import { AbiCoder, getAddress, hexlify, parseEther, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
+import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
@@ -21,10 +22,16 @@ import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { getTypedData } from '../../libs/signMessage/signMessage'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import {
+  adaptTypedMessageForMetaMaskSigUtil,
+  getTypedData
+} from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -32,6 +39,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
@@ -338,7 +346,13 @@ const init = async (
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
   await storageCtrl.set('accounts', [account])
-  const keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+  await storageCtrl.set('selectedAccount', account.addr)
+  const keystore = new KeystoreController(
+    'default',
+    storageCtrl,
+    { internal: KeystoreSigner },
+    windowManager
+  )
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
@@ -356,23 +370,26 @@ const init = async (
   ])
 
   let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystore,
     () => {},
     () => {},
     () => {}
@@ -390,11 +407,12 @@ const init = async (
     accountsCtrl,
     keystore,
     'https://staging-relayer.ambire.com',
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
-  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
+  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
@@ -435,12 +453,30 @@ const init = async (
   const bundlerSwitcher = new BundlerSwitcher(network, () => {
     return false
   })
+  const callRelayer = relayerCall.bind({ url: '', fetch })
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl,
+    keystore
+  })
+  const activity = new ActivityController(
+    storageCtrl,
+    fetch,
+    callRelayer,
+    accountsCtrl,
+    selectedAccountCtrl,
+    providersCtrl,
+    networksCtrl,
+    portfolio,
+    () => Promise.resolve()
+  )
   const estimationController = new EstimationController(
     keystore,
     accountsCtrl,
     networksCtrl,
     providers,
     portfolio,
+    activity,
     bundlerSwitcher
   )
   estimationController.estimation = estimationOrMock
@@ -460,6 +496,7 @@ const init = async (
     networksCtrl,
     keystore,
     portfolio,
+    activity,
     {},
     account,
     network,
@@ -590,7 +627,7 @@ describe('SignAccountOp Controller ', () => {
         addedNative: 5000n,
         token: {
           address: '0x0000000000000000000000000000000000000000',
-          amount: 0n,
+          amount: 100000n,
           symbol: 'ETH',
           name: 'Ether',
           chainId: 1n,
@@ -902,13 +939,13 @@ describe('SignAccountOp Controller ', () => {
       controller.accountOp.accountAddr,
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
-    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = verifyTypedData(
-      typedData.domain,
-      typedData.types,
-      typedData.message,
-      unwrappedSig
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
     )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
@@ -1146,7 +1183,6 @@ describe('Negative cases', () => {
       },
       true
     )
-
     // @ts-ignore
     controller.update({
       hasNewEstimation: true,
@@ -1155,7 +1191,6 @@ describe('Negative cases', () => {
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
     })
-
     await controller.sign()
 
     if (!controller.accountOp?.signature) {
@@ -1167,13 +1202,13 @@ describe('Negative cases', () => {
       controller.accountOp.accountAddr,
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
-    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = verifyTypedData(
-      typedData.domain,
-      typedData.types,
-      typedData.message,
-      unwrappedSig
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
     )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
@@ -1355,12 +1390,12 @@ describe('Negative cases', () => {
       hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    delete typedData.types.EIP712Domain
-    const signerAddr = verifyTypedData(
-      typedData.domain,
-      typedData.types,
-      typedData.message,
-      unwrappedSig
+    const signerAddr = getAddress(
+      recoverTypedSignature({
+        data: adaptTypedMessageForMetaMaskSigUtil(typedData),
+        signature: unwrappedSig,
+        version: SignTypedDataVersion.V4
+      })
     )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)

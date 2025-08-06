@@ -15,9 +15,16 @@ import {
 
 export function getPaymasterService(
   chainId: bigint,
-  capabilities?: { paymasterService?: PaymasterCapabilities }
+  capabilities?: { paymasterService?: PaymasterCapabilities | PaymasterService }
 ): PaymasterService | undefined {
   if (!capabilities || !capabilities.paymasterService) return undefined
+
+  // this means it's v2
+  if ('url' in capabilities.paymasterService) {
+    const paymasterService = capabilities.paymasterService
+    paymasterService.id = new Date().getTime()
+    return paymasterService
+  }
 
   // hex may come with a leading zero or not. Prepare for both
   const chainIds = Object.keys(capabilities.paymasterService)
@@ -65,8 +72,15 @@ export async function getPaymasterData(
   network: Network
 ): Promise<PaymasterData> {
   const provider = getRpcProvider([service.url], network.chainId)
+  // TODO<Bobby>: better way to send the bundler
+  // send the whole userOp if the sponsorship is from ambire.com
+  // so we could fetch the bundler used
+  const reqUserOp: any = getCleanUserOp(userOp)[0]
+  if (service.url.indexOf('ambire.com') !== -1) {
+    reqUserOp.bundler = userOp.bundler
+  }
   return provider.send('pm_getPaymasterData', [
-    getCleanUserOp(userOp)[0],
+    reqUserOp,
     ERC_4337_ENTRYPOINT,
     toBeHex(network.chainId.toString()),
     service.context

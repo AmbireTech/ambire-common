@@ -1,5 +1,5 @@
 import { Network } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/provider'
+import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
 import {
   AccountState as DefiPositionsAccountState,
@@ -201,7 +201,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
       return
 
-    if (!portfolioForNetwork || !chainId || portfolioForNetwork.isLoading) return
+    if (!portfolioForNetwork || !chainId) return
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
     if (
@@ -265,7 +265,7 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
 
     const networkState = currentAccountState[chainId]
     const network = networks.find((n) => n.chainId.toString() === chainId)
-    const rpcProvider = providers[chainId]
+    const rpcProvider: RPCProvider | undefined = providers[chainId]
     const lastSuccessfulUpdate = networkState.updatedAt
 
     if (
@@ -274,7 +274,7 @@ export const getNetworksWithDeFiPositionsErrorErrors = ({
       (typeof lastSuccessfulUpdate === 'number' &&
         Date.now() - lastSuccessfulUpdate < TEN_MINUTES) ||
       // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
-      (typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
+      (rpcProvider && typeof rpcProvider.isWorking === 'boolean' && !rpcProvider.isWorking)
     )
       return
 

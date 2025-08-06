@@ -1,6 +1,7 @@
-import { Contract, hashMessage, hexlify, toUtf8Bytes, TypedDataEncoder, Wallet } from 'ethers'
+import { Contract, hashMessage, hexlify, toUtf8Bytes, Wallet } from 'ethers'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
+import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -15,11 +16,14 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
+import { TypedMessage } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
+import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
+  adaptTypedMessageForMetaMaskSigUtil,
   getAmbireReadableTypedData,
   getAuthorizationHash,
   getEIP712Signature,
@@ -33,28 +37,28 @@ import {
 const ethereumNetwork = networks.find((n) => n.chainId === 1n)!
 const polygonNetwork = networks.find((n) => n.chainId === 137n)!
 const contractSuccess = '0x1626ba7e'
-const unsupportedNetwork = {
-  id: 'zircuit mainnet',
-  name: 'Zircuit Mainnet',
-  nativeAssetSymbol: 'ETH',
-  nativeAssetName: 'Ether',
-  rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
-  selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
-  rpcNoStateOverride: false,
-  chainId: 48900n,
-  explorerUrl: 'https://explorer.zircuit.com',
-  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-  isSAEnabled: false,
-  areContractsDeployed: false,
-  hasRelayer: false,
-  platformId: 'zircuit',
-  nativeAssetId: 'weth',
-  hasSingleton: false,
-  features: [],
-  feeOptions: { is1559: true },
-  predefined: false,
-  has7702: false
-}
+// const unsupportedNetwork = {
+//   id: 'zircuit mainnet',
+//   name: 'Zircuit Mainnet',
+//   nativeAssetSymbol: 'ETH',
+//   nativeAssetName: 'Ether',
+//   rpcUrls: ['https://zircuit1-mainnet.p2pify.com'],
+//   selectedRpcUrl: 'https://zircuit1-mainnet.p2pify.com',
+//   rpcNoStateOverride: false,
+//   chainId: 48900n,
+//   explorerUrl: 'https://explorer.zircuit.com',
+//   erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+//   isSAEnabled: false,
+//   areContractsDeployed: false,
+//   hasRelayer: false,
+//   platformId: 'zircuit',
+//   nativeAssetId: 'weth',
+//   hasSingleton: false,
+//   features: [],
+//   feeOptions: { is1559: true },
+//   predefined: false,
+//   has7702: false
+// }
 
 const eoaSigner = {
   privKey: '0x8ad1e4982a3a2e5ef35db11d498d48ab33cbe91bb258802bc8703c943c5a256a',
@@ -141,7 +145,12 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+    keystore = new KeystoreController(
+      'default',
+      storageCtrl,
+      { internal: KeystoreSigner },
+      windowManager
+    )
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
@@ -172,7 +181,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       eoaAccount,
       accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
@@ -189,7 +198,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     expect(firstRes).toBe(true)
 
     const signatureForUint8Array = await getPlainTextSignature(
-      toUtf8Bytes('test'),
+      hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       eoaAccount,
       accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
@@ -205,7 +214,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     expect(secondRes).toBe(true)
 
     const signatureForNumberAsString = await getPlainTextSignature(
-      '1',
+      hexlify(toUtf8Bytes('1')) as Hex,
       ethereumNetwork,
       eoaAccount,
       accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()],
@@ -225,7 +234,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
       accountStates[smartAccount.addr][polygonNetwork.chainId.toString()],
@@ -252,7 +261,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
-    const msg = `test for ${v1Account.addr}`
+    const msg = hexlify(toUtf8Bytes(`test for ${v1Account.addr}`)) as Hex
     const signatureForPlainText = await getPlainTextSignature(
       msg,
       polygonNetwork,
@@ -269,7 +278,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       provider,
       signer: v1Account.addr,
       signature: signatureForPlainText,
-      message: msg
+      message: hexStringToUint8Array(msg)
     })
     expect(res).toBe(true)
   })
@@ -279,7 +288,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     try {
       await getPlainTextSignature(
-        'test',
+        hexlify(toUtf8Bytes('test')) as Hex,
         ethereumNetwork,
         v1Account,
         accountStates[v1Account.addr][ethereumNetwork.chainId.toString()],
@@ -301,7 +310,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountState = accountStates[v1Account.addr][ethereumNetwork.chainId.toString()]
 
     const plaintextSigNoAddrInMessage = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       ethereumNetwork,
       v1Account,
       accountState,
@@ -375,6 +384,239 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     })
     expect(secondRes).toBe(true)
   })
+  test('Signing [EOA]: eip-712 OrderComponents[2] array index case', async () => {
+    const accountStates = await getAccountsInfo([eoaAccount])
+    const accountState = accountStates[eoaAccount.addr][ethereumNetwork.chainId.toString()]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedDataTest: TypedMessage = {
+      kind: 'typedMessage',
+      types: {
+        BulkOrder: [
+          {
+            name: 'tree',
+            type: 'OrderComponents[2]'
+          }
+        ],
+        OrderComponents: [
+          {
+            name: 'offerer',
+            type: 'address'
+          },
+          {
+            name: 'zone',
+            type: 'address'
+          },
+          {
+            name: 'offer',
+            type: 'OfferItem[]'
+          },
+          {
+            name: 'consideration',
+            type: 'ConsiderationItem[]'
+          },
+          {
+            name: 'orderType',
+            type: 'uint8'
+          },
+          {
+            name: 'startTime',
+            type: 'uint256'
+          },
+          {
+            name: 'endTime',
+            type: 'uint256'
+          },
+          {
+            name: 'zoneHash',
+            type: 'bytes32'
+          },
+          {
+            name: 'salt',
+            type: 'uint256'
+          },
+          {
+            name: 'conduitKey',
+            type: 'bytes32'
+          },
+          {
+            name: 'counter',
+            type: 'uint256'
+          }
+        ],
+        EIP712Domain: [],
+        OfferItem: [
+          {
+            name: 'itemType',
+            type: 'uint8'
+          },
+          {
+            name: 'token',
+            type: 'address'
+          },
+          {
+            name: 'identifierOrCriteria',
+            type: 'uint256'
+          },
+          {
+            name: 'startAmount',
+            type: 'uint256'
+          },
+          {
+            name: 'endAmount',
+            type: 'uint256'
+          }
+        ],
+        ConsiderationItem: [
+          {
+            name: 'itemType',
+            type: 'uint8'
+          },
+          {
+            name: 'token',
+            type: 'address'
+          },
+          {
+            name: 'identifierOrCriteria',
+            type: 'uint256'
+          },
+          {
+            name: 'startAmount',
+            type: 'uint256'
+          },
+          {
+            name: 'endAmount',
+            type: 'uint256'
+          },
+          {
+            name: 'recipient',
+            type: 'address'
+          }
+        ]
+      },
+      domain: {
+        name: 'Seaport',
+        version: '1.6',
+        chainId: 8453,
+        verifyingContract: '0x0000000000000068f116a894984e2db1123eb395'
+      },
+      message: {
+        tree: [
+          {
+            offerer: '0x090102422f003438ee2e2709acebf9f060702306',
+            zone: '0x0000000000000000000000000000000000000000',
+            offer: [
+              {
+                itemType: 2,
+                token: '0x62e094f8b4ab1291dd2d8821ad3cba64b8b8c7a6',
+                identifierOrCriteria: '790',
+                startAmount: '1',
+                endAmount: '1'
+              }
+            ],
+            consideration: [
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '970000000000000000',
+                endAmount: '970000000000000000',
+                recipient: '0x090102422f003438ee2e2709acebf9f060702306'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '5000000000000000',
+                endAmount: '5000000000000000',
+                recipient: '0x0000a26b00c1f0df003000390027140000faa719'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '25000000000000000',
+                endAmount: '25000000000000000',
+                recipient: '0x61de28c8bef7ad4786fb732a05fd59317eca2bfb'
+              }
+            ],
+            orderType: 0,
+            startTime: '1751376310',
+            endTime: '1753968310',
+            zoneHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            salt: '27855337018906766782546881864045825683096516384821792734234219145737770391551',
+            conduitKey: '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000',
+            counter: '0',
+            totalOriginalConsiderationItems: 3
+          },
+          {
+            offerer: '0x090102422f003438ee2e2709acebf9f060702306',
+            zone: '0x0000000000000000000000000000000000000000',
+            offer: [
+              {
+                itemType: 2,
+                token: '0x62e094f8b4ab1291dd2d8821ad3cba64b8b8c7a6',
+                identifierOrCriteria: '1013',
+                startAmount: '1',
+                endAmount: '1'
+              }
+            ],
+            consideration: [
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '18333000000000000',
+                endAmount: '18333000000000000',
+                recipient: '0x090102422f003438ee2e2709acebf9f060702306'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '94500000000000',
+                endAmount: '94500000000000',
+                recipient: '0x0000a26b00c1f0df003000390027140000faa719'
+              },
+              {
+                itemType: 0,
+                token: '0x0000000000000000000000000000000000000000',
+                identifierOrCriteria: '0',
+                startAmount: '472500000000000',
+                endAmount: '472500000000000',
+                recipient: '0x61de28c8bef7ad4786fb732a05fd59317eca2bfb'
+              }
+            ],
+            orderType: 0,
+            startTime: '1751376310',
+            endTime: '1753968310',
+            zoneHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            salt: '27855337018906766782546881864045825683096516384821792734247284322247575321829',
+            conduitKey: '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000',
+            counter: '0',
+            totalOriginalConsiderationItems: 3
+          }
+        ]
+      },
+      primaryType: 'BulkOrder'
+    }
+    const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
+    const eip712Sig = await getEIP712Signature(
+      typedDataTest,
+      eoaAccount,
+      accountState,
+      signer,
+      ethereumNetwork
+    )
+    const res = await verifyMessage({
+      network: ethereumNetwork,
+      provider,
+      signer: eoaSigner.keyPublicAddress,
+      signature: eip712Sig,
+      typedData: typedDataTest
+    })
+    expect(res).toBe(true)
+  })
   test('Signing [Dedicated to one SA]: eip-712', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
     const accountState = accountStates[smartAccount.addr][polygonNetwork.chainId.toString()]
@@ -407,7 +649,10 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
-      TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message),
+      TypedDataUtils.eip712Hash(
+        adaptTypedMessageForMetaMaskSigUtil(typedData),
+        SignTypedDataVersion.V4
+      ),
       eip712Sig
     )
     expect(isValidSig).toBe(contractSuccess)
@@ -580,7 +825,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
       v2AccountState,
@@ -670,7 +915,12 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(storageCtrl, { internal: KeystoreSigner }, windowManager)
+    keystore = new KeystoreController(
+      'default',
+      storageCtrl,
+      { internal: KeystoreSigner },
+      windowManager
+    )
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
@@ -691,7 +941,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const signatureForPlainText = await getPlainTextSignature(
-      'test',
+      hexlify(toUtf8Bytes('test')) as Hex,
       polygonNetwork,
       smartAccount,
       accountStates[smartAccount.addr][polygonNetwork.chainId.toString()],

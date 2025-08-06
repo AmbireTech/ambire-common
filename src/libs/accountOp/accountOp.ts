@@ -1,8 +1,9 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
+// eslint-disable-next-line import/no-cycle
+import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
-// eslint-disable-next-line import/no-cycle
 import { Key } from '../../interfaces/keystore'
 import { SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
@@ -73,6 +74,10 @@ export interface AccountOp {
     paymasterService?: PaymasterService
     swapTxn?: SwapAndBridgeSendTxRequest
     walletSendCallsVersion?: string
+    delegation?: EIP7702Auth
+    setDelegation?: boolean
+    /** Used to determine if the account op is up-to-date with the latest quote */
+    fromQuoteId?: string
   }
   flags?: {
     hideActivityBanner?: boolean
@@ -157,16 +162,6 @@ export function isAccountOpsIntentEqual(
 export function getSignableCalls(op: AccountOp): [string, string, string][] {
   const callsToSign = op.calls.map(toSingletonCall).map(callToTuple)
   if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
-  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
-  return callsToSign
-}
-
-export function getSignableCallsForBundlerEstimate(op: AccountOp): [string, string, string][] {
-  const callsToSign = getSignableCalls(op)
-  // add the fee call one more time when doing a bundler estimate
-  // this is because the feeCall during estimation is fake (approve instead
-  // of transfer, incorrect amount) and more ofteh than not, this causes
-  // a lower estimation than the real one, causing bad UX in the process
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
 }

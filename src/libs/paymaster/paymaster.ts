@@ -23,7 +23,6 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
-import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../errorHumanizer/broadcastErrorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
@@ -37,7 +36,7 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
   return {
     paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(100000) as Hex,
+    paymasterVerificationGasLimit: toBeHex(42000) as Hex,
     paymasterPostOpGasLimit: toBeHex(0) as Hex,
     paymasterData: abiCoder.encode(
       ['uint48', 'uint48', 'bytes'],
@@ -250,7 +249,9 @@ export class Paymaster extends AbstractPaymaster {
 
       const convertedError =
         this.type === 'ERC7677' ? new SponsorshipPaymasterError() : new RelayerPaymasterError(e)
-      const { message } = getHumanReadableBroadcastError(convertedError)
+      const message = convertedError.isHumanized
+        ? convertedError.message
+        : getHumanReadableBroadcastError(convertedError).message
       return {
         success: false,
         message,
@@ -302,12 +303,7 @@ export class Paymaster extends AbstractPaymaster {
       return getPaymasterData(this.paymasterService as PaymasterService, localUserOp, network)
     })
 
-    if (
-      !response.success &&
-      (response as PaymasterErrorReponse).message !== PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE &&
-      op.meta &&
-      op.meta.paymasterService
-    ) {
+    if (!response.success && op.meta && op.meta.paymasterService) {
       failedPaymasters.addFailedSponsorship(op.meta.paymasterService.id)
     }
 
@@ -329,5 +325,15 @@ export class Paymaster extends AbstractPaymaster {
 
   canAutoRetryOnFailure(): boolean {
     return this.type === 'Ambire'
+  }
+
+  isEstimateBelowMin(localOp: UserOperation): boolean {
+    const min = this.getEstimationData()
+    if (!min || !min.paymasterVerificationGasLimit) return false
+
+    return (
+      localOp.paymasterVerificationGasLimit === undefined ||
+      BigInt(localOp.paymasterVerificationGasLimit) < BigInt(min.paymasterVerificationGasLimit)
+    )
   }
 }

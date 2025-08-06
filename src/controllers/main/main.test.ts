@@ -9,7 +9,6 @@ import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
-import { UserRequest } from '../../interfaces/userRequest'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -77,6 +76,7 @@ describe('Main Controller ', () => {
   let controller: MainController
   test('Init controller', async () => {
     controller = new MainController({
+      platform: 'default',
       storageAPI: storage,
       fetch,
       relayerUrl,
@@ -97,62 +97,6 @@ describe('Main Controller ', () => {
     // console.dir(controller.accountStates, { depth: null })
     // @TODO
     // expect(states).to
-  })
-
-  test('Add a user request', async () => {
-    const req: UserRequest = {
-      id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      meta: {
-        isSignAction: true,
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        chainId: 1n
-      }
-    }
-    // @TODO test if nonce is correctly set
-    controller.accounts.onUpdate(async () => {
-      // The main controller doesn't wait for account state. This is not a problem in the
-      // real world because users can't interact with a network without state.
-      // Even if someone manages to open a user request without having state for that network
-      // (for example through a dApp) it will be handled in the UI
-      if ('ethereum' in Object.keys(controller.accounts.accountStates)) {
-        await controller.addUserRequest(req)
-        expect(controller.actions.actionsQueue.length).toBe(1)
-      }
-    })
-  })
-  test('Remove a user request', async () => {
-    const req: UserRequest = {
-      id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      meta: {
-        isSignAction: true,
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        chainId: 1n
-      }
-    }
-    await controller.removeUserRequest(req.id)
-    expect(controller.actions.actionsQueue.length).toBe(0)
-    // console.dir(controller.accountOpsToBeSigned, { depth: null })
-    // @TODO test if nonce is correctly set
   })
 
   // @TODO: We should pass `autoConfirmMagicLink` to emailVault controller initialization
@@ -208,6 +152,7 @@ describe('Main Controller ', () => {
 
   test('should add an account from the account picker and persist it in accounts', async () => {
     controller = new MainController({
+      platform: 'default',
       storageAPI: storage,
       fetch,
       relayerUrl,
@@ -250,6 +195,7 @@ describe('Main Controller ', () => {
   // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
     const mainCtrl = new MainController({
+      platform: 'default',
       storageAPI: storage,
       fetch,
       relayerUrl,
@@ -412,7 +358,7 @@ describe('Main Controller ', () => {
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
+          "We encountered an unexpected issue: I'm a teapot\nPlease try again or contact Ambire support for assistance."
         )
       }
     })

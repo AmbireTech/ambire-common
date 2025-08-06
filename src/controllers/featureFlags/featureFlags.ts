@@ -28,15 +28,10 @@ export class FeatureFlagsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get flags(): FeatureFlags {
-    return this.#flags
-  }
-
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      flags: this.flags
+      ...super.toJSON()
     }
   }
 }

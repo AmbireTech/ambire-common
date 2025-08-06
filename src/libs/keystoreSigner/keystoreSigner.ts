@@ -1,11 +1,29 @@
 /* eslint-disable new-cap */
-import { getBytes, hexlify, isHexString, toBeHex, TransactionRequest, Wallet } from 'ethers'
+import {
+  concat,
+  encodeRlp,
+  getBytes,
+  hexlify,
+  isHexString,
+  keccak256,
+  toBeHex,
+  toNumber,
+  TransactionRequest,
+  Wallet
+} from 'ethers'
 import { ecdsaSign } from 'secp256k1'
 
+import {
+  signTypedData as signTypedDataWithMetaMaskSigUtil,
+  SignTypedDataVersion
+} from '@metamask/eth-sig-util'
+
+import { EIP7702Auth } from '../../consts/7702'
 import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
+import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -35,17 +53,12 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   async signTypedData(typedMessage: TypedMessage) {
-    // remove EIP712Domain because otherwise signTypedData throws: ambiguous primary types or unused types
-    if (typedMessage.types.EIP712Domain) {
-      // eslint-disable-next-line no-param-reassign
-      delete typedMessage.types.EIP712Domain
-    }
-    // @ts-ignore
-    const sig = await this.#signer.signTypedData(
-      typedMessage.domain,
-      typedMessage.types,
-      typedMessage.message
-    )
+    const sig = signTypedDataWithMetaMaskSigUtil({
+      privateKey: Buffer.from(getBytes(this.#signer.privateKey)),
+      data: adaptTypedMessageForMetaMaskSigUtil(typedMessage),
+      // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+      version: SignTypedDataVersion.V4
+    })
 
     return sig
   }
@@ -85,5 +98,77 @@ export class KeystoreSigner implements KeystoreSignerInterface {
       r: signature.substring(0, 66) as Hex,
       s: `0x${signature.substring(66)}`
     }
+  }
+
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
+
+    const maxPriorityFeePerGas = txnRequest.maxPriorityFeePerGas ?? txnRequest.gasPrice
+    const maxFeePerGas = txnRequest.maxFeePerGas ?? txnRequest.gasPrice
+
+    const txnTypeFourHash = keccak256(
+      concat([
+        '0x04',
+        encodeRlp([
+          toBeHex(txnRequest.chainId),
+          txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+          maxPriorityFeePerGas ? toBeHex(maxPriorityFeePerGas) : '0x',
+          maxFeePerGas ? toBeHex(maxFeePerGas) : '0x',
+          txnRequest.gasLimit ? toBeHex(txnRequest.gasLimit) : '0x',
+          txnRequest.to,
+          txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+          txnRequest.data,
+          [],
+          [
+            [
+              eip7702Auth.chainId,
+              eip7702Auth.address,
+              eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+              eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+              // strip leading zeros
+              toBeHex(BigInt(eip7702Auth.r)),
+              toBeHex(BigInt(eip7702Auth.s))
+            ]
+          ]
+        ])
+      ])
+    ) as Hex
+    const data = ecdsaSign(getBytes(txnTypeFourHash), getBytes(this.#authorizationPrivkey))
+    const signature = hexlify(data.signature)
+    const txnTypeFourSignature = {
+      yParity: toBeHex(data.recid, 1) as Hex,
+      r: signature.substring(0, 66) as Hex,
+      s: `0x${signature.substring(66)}`
+    }
+
+    return concat([
+      '0x04',
+      encodeRlp([
+        toBeHex(txnRequest.chainId),
+        txnRequest.nonce !== 0 ? toBeHex(txnRequest.nonce) : '0x',
+        maxPriorityFeePerGas ? toBeHex(maxPriorityFeePerGas) : '0x',
+        maxFeePerGas ? toBeHex(maxFeePerGas) : '0x',
+        txnRequest.gasLimit ? toBeHex(txnRequest.gasLimit) : '0x',
+        txnRequest.to,
+        txnRequest.value ? toBeHex(txnRequest.value) : '0x',
+        txnRequest.data,
+        [],
+        [
+          [
+            eip7702Auth.chainId,
+            eip7702Auth.address,
+            eip7702Auth.nonce === '0x00' ? '0x' : eip7702Auth.nonce,
+            eip7702Auth.yParity === '0x00' ? '0x' : eip7702Auth.yParity,
+            // strip leading zeros
+            toBeHex(BigInt(eip7702Auth.r)),
+            toBeHex(BigInt(eip7702Auth.s))
+          ]
+        ],
+        txnTypeFourSignature.yParity === '0x00' ? '0x' : txnTypeFourSignature.yParity,
+        // strip leading zeros
+        toBeHex(BigInt(txnTypeFourSignature.r)),
+        toBeHex(BigInt(txnTypeFourSignature.s))
+      ])
+    ]) as Hex
   }
 }

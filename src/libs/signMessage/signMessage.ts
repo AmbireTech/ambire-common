@@ -12,11 +12,12 @@ import {
   JsonRpcProvider,
   keccak256,
   toBeHex,
+  toNumber,
   toUtf8Bytes,
-  TypedDataDomain,
-  TypedDataEncoder,
-  TypedDataField
+  TypedDataDomain
 } from 'ethers'
+
+import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { EIP7702Auth } from '../../consts/7702'
@@ -26,7 +27,7 @@ import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { EIP7702Signature } from '../../interfaces/signatures'
-import { TypedMessage } from '../../interfaces/userRequest'
+import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -91,6 +92,31 @@ interface AmbireReadableOperation {
   chainId: bigint
   nonce: bigint
   calls: { to: Hex; value: bigint; data: Hex }[]
+}
+
+export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
+  return {
+    ...typedMessage,
+    types: {
+      ...typedMessage.types,
+      EIP712Domain: typedMessage.types.EIP712Domain ?? []
+    } as MessageTypes,
+    // There is a slight difference between EthersJS v6 and @metamask/eth-sig-util
+    // in terms of the domain object props.
+    domain: {
+      ...typedMessage.domain,
+      name: typedMessage.domain.name ?? undefined,
+      version: typedMessage.domain.version ?? undefined,
+      chainId: typedMessage.domain.chainId ? toNumber(typedMessage.domain.chainId) : undefined,
+      verifyingContract: typedMessage.domain.verifyingContract ?? undefined,
+      salt: typedMessage.domain.salt
+        ? // TypeScript expects domain.salt as ArrayBuffer (MetaMask types)
+          // Runtime accepts any BytesLike (hex or Uint8Array)
+          // Cast to avoid TS error — works without conversion
+          (typedMessage.domain.salt as unknown as ArrayBuffer)
+        : undefined
+    }
+  }
 }
 
 export const getAmbireReadableTypedData = (
@@ -247,6 +273,13 @@ export const get7702UserOpTypedData = (
       { name: 'callData', type: 'bytes' },
       { name: 'calls', type: 'Transaction[]' },
       { name: 'hash', type: 'bytes32' }
+    ],
+    EIP712Domain: [
+      { name: 'name', type: 'string' },
+      { name: 'version', type: 'string' },
+      { name: 'chainId', type: 'uint256' },
+      { name: 'verifyingContract', type: 'address' },
+      { name: 'salt', type: 'bytes32' }
     ]
   }
   const message = {
@@ -313,9 +346,10 @@ type Props = {
   | { message: string | Uint8Array; typedData?: never; authorization?: never }
   | {
       typedData: {
-        domain: TypedDataDomain
-        types: Record<string, Array<TypedDataField>>
-        message: Record<string, any>
+        domain: TypedMessage['domain']
+        types: TypedMessage['types']
+        message: TypedMessage['message']
+        primaryType: TypedMessage['primaryType']
       }
       message?: never
       authorization?: never
@@ -341,7 +375,7 @@ export async function verifyMessage({
   authorization,
   typedData
 }: Props): Promise<boolean> {
-  let finalDigest: string
+  let finalDigest: string | Buffer
 
   if (message) {
     try {
@@ -364,17 +398,6 @@ export async function verifyMessage({
       throw new Error("Either 'message' or 'typedData' must be provided.")
     }
 
-    // To resolve the "ambiguous primary types or unused types" error, remove
-    // the `EIP712Domain` from `types` object. The domain type is inbuilt in
-    // the EIP712 standard and hence TypedDataEncoder so you do not need to
-    // specify it in the types, see:
-    // {@link https://ethereum.stackexchange.com/a/151930}
-    const typesWithoutEIP712Domain = { ...typedData.types }
-    if (typesWithoutEIP712Domain.EIP712Domain) {
-      // eslint-disable-next-line no-param-reassign
-      delete typesWithoutEIP712Domain.EIP712Domain
-    }
-
     try {
       // the final digest for AmbireReadableOperation is the execute hash
       // as it's wrapped in mode.standard and onchain gets transformed to
@@ -390,10 +413,10 @@ export async function verifyMessage({
           )
         )
       } else {
-        finalDigest = TypedDataEncoder.hash(
-          typedData.domain,
-          typesWithoutEIP712Domain,
-          typedData.message
+        // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+        finalDigest = TypedDataUtils.eip712Hash(
+          adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
+          SignTypedDataVersion.V4
         )
       }
 
@@ -473,7 +496,7 @@ export async function getExecuteSignature(
 }
 
 export async function getPlainTextSignature(
-  message: string | Uint8Array,
+  messageHex: PlainTextMessage['message'],
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
@@ -481,15 +504,6 @@ export async function getPlainTextSignature(
   isOG = false
 ): Promise<string> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
-
-  let messageHex
-  if (message instanceof Uint8Array) {
-    messageHex = hexlify(message)
-  } else if (!isHexString(message)) {
-    messageHex = hexlify(toUtf8Bytes(message))
-  } else {
-    messageHex = message
-  }
 
   if (!account.creation) {
     const signature = await signer.signMessage(messageHex)
@@ -500,13 +514,10 @@ export async function getPlainTextSignature(
     const lowercaseHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.toLowerCase().slice(2)))
     const checksummedHexAddrWithout0x = hexlify(toUtf8Bytes(account.addr.slice(2)))
     const asciiAddrLowerCase = account.addr.toLowerCase()
-    const humanReadableMsg = message instanceof Uint8Array ? hexlify(message) : message
 
-    const isAsciiAddressInMessage = humanReadableMsg.toLowerCase().includes(asciiAddrLowerCase)
-    const isLowercaseHexAddressInMessage = humanReadableMsg.includes(
-      lowercaseHexAddrWithout0x.slice(2)
-    )
-    const isChecksummedHexAddressInMessage = humanReadableMsg.includes(
+    const isAsciiAddressInMessage = messageHex.toLowerCase().includes(asciiAddrLowerCase)
+    const isLowercaseHexAddressInMessage = messageHex.includes(lowercaseHexAddrWithout0x.slice(2))
+    const isChecksummedHexAddressInMessage = messageHex.includes(
       checksummedHexAddrWithout0x.slice(2)
     )
 
@@ -589,7 +600,7 @@ export async function getEIP712Signature(
   }
 
   // we do not allow signers who are not dedicated to one account to sign eip-712
-  // messsages in v2 as it could lead to reusing that key from
+  // messages in v2 as it could lead to reusing that key from
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
   if (!dedicatedToOneSA) {
     throw new Error(
@@ -641,7 +652,7 @@ export function adjustEntryPointAuthorization(entryPointSig: string): string {
 export function getAuthorizationHash(chainId: bigint, contractAddr: Hex, nonce: bigint): Hex {
   return keccak256(
     concat([
-      '0x05', // magic authrorization string
+      '0x05', // magic authorization string
       encodeRlp([
         // zeros are empty bytes in rlp encoding
         chainId !== 0n ? toBeHex(chainId) : '0x',
@@ -706,4 +717,15 @@ export function getAppFormatted(
   if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
 
   return signature as EIP7702Signature
+}
+
+/**
+ * Tries to convert an input (from a dapp) to a hex string
+ */
+export const toPersonalSignHex = (input: string | Uint8Array | Hex): Hex => {
+  if (typeof input === 'string') {
+    return isHexString(input) ? input : (hexlify(toUtf8Bytes(input)) as Hex)
+  }
+
+  return hexlify(input) as Hex
 }

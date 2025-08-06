@@ -13,6 +13,7 @@ import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import { AccountsController } from '../accounts/accounts'
+import { ActivityController } from '../activity/activity'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -48,12 +49,17 @@ export class EstimationController extends EventEmitter {
 
   #bundlerSwitcher: BundlerSwitcher
 
+  #activity: ActivityController
+
+  #notFatalBundlerError?: Error
+
   constructor(
     keystore: KeystoreController,
     accounts: AccountsController,
     networks: NetworksController,
     provider: RPCProvider,
     portfolio: PortfolioController,
+    activity: ActivityController,
     bundlerSwitcher: BundlerSwitcher
   ) {
     super()
@@ -62,12 +68,11 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#provider = provider
     this.#portfolio = portfolio
+    this.#activity = activity
     this.#bundlerSwitcher = bundlerSwitcher
   }
 
-  #getAvailableFeeOptions(baseAcc: BaseAccount): FeePaymentOption[] {
-    if (this.status !== EstimationStatus.Success) return []
-
+  #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
     const estimation = this.estimation as FullEstimationSummary
     const isSponsored = !!estimation.bundlerEstimation?.paymaster.isSponsored()
 
@@ -89,7 +94,8 @@ export class EstimationController extends EventEmitter {
         ? estimation.ambireEstimation.feePaymentOptions
         : estimation.providerEstimation
         ? estimation.providerEstimation.feePaymentOptions
-        : []
+        : [],
+      op
     )
   }
 
@@ -114,9 +120,23 @@ export class EstimationController extends EventEmitter {
     // The gasTank tokens participate on each network as they belong everywhere
     // NOTE: at some point we should check all the "?" signs below and if
     // an error pops out, we should notify the user about it
-    const networkFeeTokens =
+    let networkFeeTokens =
       this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
         ?.feeTokens ?? []
+
+    // This could happen only in a race when a NOT currently selected account is
+    // requested, switched to and immediately fired a txn request for. In that situation,
+    // the portfolio would not be fetched and the estimation would be fired without tokens,
+    // resulting in a "nothing to pay the fee with" error which is absolutely wrong
+    if (networkFeeTokens.length === 0) {
+      await this.#portfolio.updateSelectedAccount(op.accountAddr, [network], undefined, {
+        forceUpdate: true
+      })
+      networkFeeTokens =
+        this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
+          ?.feeTokens ?? []
+    }
+
     const gasTankResult = this.#portfolio.getLatestPortfolioState(op.accountAddr)?.gasTank?.result
     const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
       ? gasTankResult.gasTankTokens
@@ -168,7 +188,10 @@ export class EstimationController extends EventEmitter {
       this.error = null
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
-      this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc)
+      this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
+      if (estimation.bundler instanceof Error) {
+        this.#notFatalBundlerError = estimation.bundler
+      }
     } else {
       this.estimation = null
       this.error = estimation
@@ -210,8 +233,7 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'estimation-retry',
         title: this.estimationRetryError.message,
-        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...',
-        promptBeforeSign: false
+        text: 'You can try to broadcast this transaction with the last successful estimation or wait for a new one. Retrying...'
       })
     }
 
@@ -223,8 +245,15 @@ export class EstimationController extends EventEmitter {
       warnings.push({
         id: 'bundler-failure',
         title:
-          'Smart account fee options are temporarily unavailable. You can pay fee with a Basic account or try again later',
-        promptBeforeSign: false
+          'Smart account fee options are temporarily unavailable. You can pay fee with an EOA account or try again later'
+      })
+    }
+
+    if (this.#notFatalBundlerError?.cause === '4337_INVALID_NONCE') {
+      warnings.push({
+        id: 'bundler-nonce-discrepancy',
+        title:
+          'Pending transaction detected! Please wait for its confirmation to have more payment options available'
       })
     }
 

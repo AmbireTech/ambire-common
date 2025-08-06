@@ -11,9 +11,10 @@ export const postProcessing: HumanizerCallModule = (_: AccountOp, currentIrCalls
         return { ...i, address: ZeroAddress }
       return i
     })
+    if (_call.to) fullVisualization.push(getToken(_call.to, 0n, true))
     return {
       ..._call,
-      fullVisualization: [...fullVisualization, getToken(_call.to, 0n, true)]
+      fullVisualization
     }
   })
   return newCalls

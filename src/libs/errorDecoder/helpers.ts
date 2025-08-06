@@ -77,10 +77,16 @@ const formatReason = (reason: string): string => {
   }
 }
 
-const getErrorCodeStringFromReason = (reason?: string, withSpace = true): string => {
+const truncateReason = (reason?: string): string => {
   if (!reason || !isReasonValid(reason)) return ''
 
-  const truncatedReason = reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
+  return reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
+}
+
+const getErrorCodeStringFromReason = (reason?: string, withSpace = true): string => {
+  const truncatedReason = truncateReason(reason)
+
+  if (!truncatedReason) return ''
 
   return `${withSpace ? ' ' : ''}Error code: ${truncatedReason}`
 }
@@ -112,5 +118,6 @@ export {
   isReasonValid,
   getDataFromError,
   formatReason,
-  countUnicodeLettersAndNumbers
+  countUnicodeLettersAndNumbers,
+  truncateReason
 }

@@ -1,10 +1,11 @@
 import { formatUnits, isAddress } from 'ethers'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
-import { testnetNetworks } from '../../consts/testnetNetworks'
+
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { validateSendTransferAddress } from '../../services/validations'
+import { testnetNetworks } from '../../consts/testnetNetworks'
 import { Account } from '../../interfaces/account'
 import { ExtendedAddressState } from '../../interfaces/interop'
+import { Network } from '../../interfaces/network'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
@@ -14,9 +15,8 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { Network } from '../../interfaces/network'
-import wait from '../../utils/wait'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -26,12 +26,12 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { handleAmountConversion } from '../../libs/transaction/conversion'
-import { TokenResult } from '../../libs/portfolio'
-import { isValidAddress } from '../../services/address'
+import { validateSendTransferAddress } from '../../services/validations'
+import wait from '../../utils/wait'
+import { Contacts } from '../addressBook/addressBook'
 // import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { Contacts } from '../addressBook/addressBook'
-import { ControllersTransactionDependecies } from './dependencies'
+import { ControllersTransactionDependencies } from './dependencies'
 
 const DEFAULT_VALIDATION_FORM_MSGS = {
   amount: {
@@ -152,7 +152,7 @@ export class TransactionFormState extends EventEmitter {
     throttled: false
   }
 
-  constructor(private readonly dependencies: ControllersTransactionDependecies) {
+  constructor(private readonly dependencies: ControllersTransactionDependencies) {
     super()
 
     this.#initialLoadPromise = this.#load()

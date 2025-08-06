@@ -74,24 +74,28 @@ describe('AccountPicker', () => {
   const storage: Storage = produceMemoryStore()
   let providersCtrl: ProvidersController
   const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
+  const keystoreController = new KeystoreController('default', storageCtrl, {}, windowManager)
 
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystoreController,
     () => {},
     () => {},
     () => {}
@@ -99,7 +103,7 @@ describe('AccountPicker', () => {
   beforeEach(() => {
     accountPicker = new AccountPickerController({
       accounts: accountsCtrl,
-      keystore: new KeystoreController(storageCtrl, {}, windowManager),
+      keystore: new KeystoreController('default', storageCtrl, {}, windowManager),
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,
@@ -264,7 +268,7 @@ describe('AccountPicker', () => {
     expect(selectedAccountAddr).toContain(basicAccount.addr)
   })
 
-  test('should be able to select all the keys of a selected basic account (always one key)', async () => {
+  test('should be able to select all the keys of a selected EOA (always one key)', async () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     accountPicker.setInitParams({
       keyIterator,
@@ -324,7 +328,7 @@ describe('AccountPicker', () => {
       })
       await accountPicker.init()
 
-      // Checks page 1 Basic Accounts
+      // Checks page 1 EOAs
       await accountPicker.setPage({ page: 1 })
       const basicAccountsOnFirstPage = accountPicker.accountsOnPage.filter(
         (x) => !isSmartAccount(x.account)
@@ -338,7 +342,7 @@ describe('AccountPicker', () => {
         expect(address).toBe(key1to5BasicAccPublicAddresses[x.index])
       })
 
-      // Checks page 2 Basic Accounts
+      // Checks page 2 EOAs
       await accountPicker.setPage({ page: 2 })
       const basicAccountsOnSecondPage = accountPicker.accountsOnPage.filter(
         (x) => !isSmartAccount(x.account)

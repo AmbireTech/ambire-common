@@ -5,6 +5,7 @@ import { Action, Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { AccountState } from '../defiPositions/types'
 import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeActionText = (
@@ -71,7 +72,8 @@ export const getBridgeBanners = (
   const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
   const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
-  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes]
+  const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
+  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
 
   let title = ''
   let text = ''
@@ -84,6 +86,20 @@ export const getBridgeBanners = (
     type = 'error'
     title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
     text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+      completedRoutes.length > 1
+        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }${
+      refundedRoutes.length > 1
+        ? ` and ${refundedRoutes.length} refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }`
+  } else if (refundedRoutes.length > 0) {
+    type = 'warning'
+    title = `Refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${refundedRoutes.length} refunded bridge${
+      refundedRoutes.length > 1 ? 's' : ''
+    }${
       completedRoutes.length > 1
         ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
         : ''
@@ -277,7 +293,8 @@ export const getAccountOpBanners = ({
                 actionName: 'reject-accountOp',
                 meta: {
                   err: 'User rejected the transaction request.',
-                  actionId: actions[0].id
+                  actionId: actions[0].id,
+                  shouldOpenNextAction: false
                 }
               }
             : undefined,
@@ -299,7 +316,9 @@ export const getAccountOpBanners = ({
 export const getKeySyncBanner = (addr: string, email: string, keys: string[]) => {
   const banner: Banner = {
     id: `keys-sync:${addr}:${email}`,
-    accountAddr: addr,
+    meta: {
+      accountAddr: addr
+    },
     type: 'info',
     title: 'Sync Key Store keys',
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
@@ -339,6 +358,66 @@ export const getFirstCashbackBanners = ({
       ]
     })
   }
+
+  return banners
+}
+
+export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
+
+export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
+  defiPositionsAccountState,
+  networks
+}: {
+  defiPositionsAccountState: AccountState
+  networks: Network[]
+}) => {
+  const banners: Banner[] = []
+
+  const disabledNetworks = networks.filter((n) => n.disabled)
+
+  if (!disabledNetworks.length) return []
+
+  const defiPositionsOnDisabledNetworks = []
+  const disabledNetworksWithDefiPos = new Set<Network>()
+
+  disabledNetworks.forEach((n) => {
+    if (defiPositionsAccountState[n.chainId.toString()]) {
+      defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
+        defiPositionsOnDisabledNetworks.push(p)
+        disabledNetworksWithDefiPos.add(n)
+      })
+    }
+  })
+
+  if (!defiPositionsOnDisabledNetworks.length) return []
+
+  const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
+
+  banners.push({
+    id: defiPositionsOnDisabledNetworksBannerId,
+    type: 'info',
+    title: 'DeFi positions detected on disabled networks',
+    text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
+      defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
+    } on${
+      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
+    }: ${disabledNetworksWithDefiPosArray
+      .map((n) => n.name)
+      .join(', ')}. Would you like to enable ${
+      disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
+    }?`,
+    actions: [
+      {
+        label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',
+        actionName: 'enable-networks',
+        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
+      },
+      {
+        label: 'Dismiss',
+        actionName: 'dismiss-defi-positions-banner'
+      }
+    ]
+  })
 
   return banners
 }

@@ -1,5 +1,5 @@
 {
-  "version": "2.52.1",
+  "version": "2.67.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@lifi/types": "^17.7.1",
+    "@metamask/eth-sig-util": "^8.2.0",
     "aes-js": "^3.1.2",
     "dotenv": "^16.3.1",
     "eth-crypto": "^2.6.0",
@@ -29,6 +30,7 @@
     "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@ethersproject/abstract-signer": "^5.7.0",
+    "@noble/hashes": "^1.8.0",
     "@types/uuid": "9.0.0",
     "@types/validator": "^13.7.0",
     "@walletconnect/client": "^1.7.1",
@@ -38,6 +40,11 @@
     "secp256k1": "^5.0.1",
     "url": "^0.11.0",
     "validator": "^13.7.0"
+  },
+  "peerDependenciesMeta": {
+    "@noble/hashes": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@borislav.itskov/schnorrkel.js": "2.0.85",

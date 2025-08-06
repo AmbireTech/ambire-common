@@ -211,7 +211,7 @@ async function buildUserOp(
         validUntil,
         validAfter,
         userOp.sender,
-        options.signedNonce ?? userOp.nonce,
+        userOp.nonce,
         userOp.initCode,
         userOp.callData,
         userOp.accountGasLimits,
@@ -382,6 +382,22 @@ const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) =>
   })
 }
 
+/**
+ * Creates internal keys for the given accounts.
+ * Most often used to force the accounts controller to fetch
+ * the account states for the given accounts.
+ */
+const mockInternalKeys = (accounts: Account[]) =>
+  accounts.map((acc) => ({
+    addr: acc.associatedKeys[0],
+    label: 'test key',
+    type: 'internal',
+    dedicatedToOneSA: false,
+    meta: {
+      createdAt: new Date().getTime()
+    }
+  }))
+
 export {
   buildUserOp,
   getAccountGasLimits,
@@ -395,6 +411,7 @@ export {
   getSignerKey,
   getTargetNonce,
   getTimelockData,
+  mockInternalKeys,
   produceMemoryStore,
   sendFunds,
   waitForAccountsCtrlFirstLoad

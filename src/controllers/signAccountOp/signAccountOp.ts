@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable class-methods-use-this */
 import {
   AbiCoder,
   formatEther,
@@ -6,6 +7,7 @@ import {
   getAddress,
   Interface,
   isAddress,
+  isBytesLike,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -15,10 +17,14 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { SINGLETON } from '../../consts/deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 /* eslint-disable no-restricted-syntax */
-import { ERRORS, RETRY_TO_INIT_ACCOUNT_OP_MSG } from '../../consts/signAccountOp/errorHandling'
+import {
+  ERRORS,
+  RETRY_TO_INIT_ACCOUNT_OP_MSG,
+  WARNINGS
+} from '../../consts/signAccountOp/errorHandling'
 import {
   GAS_TANK_TRANSFER_GAS_USED,
   SA_ERC20_TRANSFER_GAS_USED,
@@ -26,6 +32,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
+import { Hex } from '../../interfaces/hex'
 import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -83,6 +90,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountsController } from '../accounts/accounts'
 import { AccountOpAction } from '../actions/actions'
+import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
@@ -141,6 +149,21 @@ export const noStateUpdateStatuses = [
   SigningStatus.UpdatesPaused,
   SigningStatus.WaitingForPaymaster
 ]
+
+export type SignAccountOpUpdateProps = {
+  gasPrices?: GasRecommendation[] | null
+  feeToken?: TokenResult
+  paidBy?: string
+  speed?: FeeSpeed
+  signingKeyAddr?: Key['addr']
+  signingKeyType?: InternalKey['type'] | ExternalKey['type']
+  calls?: AccountOp['calls']
+  rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
+  bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
+  blockGasLimit?: bigint
+  signedTransactionsCount?: number | null
+  hasNewEstimation?: boolean
+}
 
 export class SignAccountOpController extends EventEmitter {
   #accounts: AccountsController
@@ -236,11 +259,14 @@ export class SignAccountOpController extends EventEmitter {
    */
   #shouldSimulate: boolean
 
+  #activity: ActivityController
+
   constructor(
     accounts: AccountsController,
     networks: NetworksController,
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -256,6 +282,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -272,9 +299,13 @@ export class SignAccountOpController extends EventEmitter {
     this.rbfAccountOps = {}
     this.signedAccountOp = null
     this.replacementFeeLow = false
-    this.bundlerSwitcher = new BundlerSwitcher(network, () => {
-      return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
-    })
+    this.bundlerSwitcher = new BundlerSwitcher(
+      network,
+      () => {
+        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+      },
+      { canDelegate: this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) }
+    )
     this.provider = provider
     this.estimation = new EstimationController(
       keystore,
@@ -282,6 +313,7 @@ export class SignAccountOpController extends EventEmitter {
       networks,
       provider,
       portfolio,
+      activity,
       this.bundlerSwitcher
     )
     const emptyFunc = () => {}
@@ -294,6 +326,48 @@ export class SignAccountOpController extends EventEmitter {
     this.#shouldSimulate = shouldSimulate
 
     this.#load(shouldSimulate)
+  }
+
+  #validateAccountOp(): SignAccountOpError | null {
+    const invalidAccountOpError =
+      'The transaction is missing essential data. Please contact support.'
+    if (!this.accountOp.accountAddr || !isAddress(this.accountOp.accountAddr)) {
+      return { title: invalidAccountOpError, code: 'INVALID_ACCOUNT_ADDRESS' }
+    }
+    if (!this.accountOp.chainId || typeof this.accountOp.chainId !== 'bigint') {
+      return { title: invalidAccountOpError, code: 'INVALID_CHAIN_ID' }
+    }
+    if (!this.accountOp.calls || !this.accountOp.calls.length) {
+      return { title: invalidAccountOpError, code: 'NO_CALLS' }
+    }
+
+    let callError: SignAccountOpError | null = null
+
+    for (let index = 0; index < this.accountOp.calls.length; index++) {
+      const call = this.accountOp.calls[index]
+
+      if (!!call.data && !isBytesLike(call.data)) {
+        callError = {
+          title: 'Invalid bytes-like string in call data.',
+          text: 'Please remove all invalid calls if you want to proceed.'
+        }
+        call.validationError = 'Invalid bytes-like string in call data'
+
+        // Stop after the first invalid call
+        break
+      } else if (call.to && !isAddress(call.to)) {
+        callError = {
+          title: 'Invalid to address in call.',
+          text: 'Please remove all invalid calls if you want to proceed.'
+        }
+        call.validationError = 'Invalid to address in call.'
+
+        // Stop after the first invalid call
+        break
+      }
+    }
+
+    return callError
   }
 
   #load(shouldSimulate: boolean) {
@@ -368,6 +442,10 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get errors(): SignAccountOpError[] {
+    const accountOpValidationError = this.#validateAccountOp()
+
+    if (accountOpValidationError) return [accountOpValidationError]
+
     const errors: SignAccountOpError[] = []
 
     const estimationErrors = this.estimation.errors
@@ -380,7 +458,7 @@ export class SignAccountOpController extends EventEmitter {
     if (isAmbireV1AndNetworkNotSupported) {
       errors.push({
         title:
-          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire v2 Smart Account or a Basic Account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
+          'Ambire v1 accounts are not supported on this network. To interact with this network, please use an Ambire Smart Account or an EOA account. You can still use v1 accounts on any network that is natively integrated with the Ambire web and mobile wallets.'
       })
 
       // Don't show any other errors
@@ -616,6 +694,26 @@ export class SignAccountOpController extends EventEmitter {
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
 
+    // if 7702 EOA that is not ambire
+    // and another delegation is there, show the warning
+    const broadcastOption = this.selectedOption
+      ? this.baseAccount.getBroadcastOption(this.selectedOption, {
+          op: this.accountOp,
+          isSponsored: this.isSponsored
+        })
+      : null
+    if (
+      'is7702' in this.baseAccount &&
+      this.baseAccount.is7702 &&
+      this.delegatedContract &&
+      this.delegatedContract !== ZeroAddress &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
+      broadcastOption === BROADCAST_OPTIONS.byBundler
+    ) {
+      warnings.push(WARNINGS.delegationDetected)
+    }
+
     const estimationWarnings = this.estimation.calculateWarnings()
 
     this.warnings = warnings.concat(estimationWarnings)
@@ -633,6 +731,9 @@ export class SignAccountOpController extends EventEmitter {
       this.#portfolio.simulateAccountOp(this.accountOp),
       this.estimation.estimate(this.accountOp).catch((e) => e)
     ])
+
+    // calculate the warnings after the portfolio is fetched
+    this.calculateWarnings()
 
     const estimation = this.estimation.estimation
 
@@ -674,7 +775,7 @@ export class SignAccountOpController extends EventEmitter {
     await this.estimation.estimate(this.accountOp)
   }
 
-  async simulateSwapOrBridge() {
+  async portfolioSimulate() {
     await this.#portfolio.simulateAccountOp(this.accountOp)
   }
 
@@ -691,20 +792,7 @@ export class SignAccountOpController extends EventEmitter {
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation
-  }: {
-    gasPrices?: GasRecommendation[] | null
-    feeToken?: TokenResult
-    paidBy?: string
-    speed?: FeeSpeed
-    signingKeyAddr?: Key['addr']
-    signingKeyType?: InternalKey['type'] | ExternalKey['type']
-    calls?: AccountOp['calls']
-    rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-    bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
-    blockGasLimit?: bigint
-    signedTransactionsCount?: number | null
-    hasNewEstimation?: boolean
-  }) {
+  }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
       // most updates are frozen during the signing process
@@ -737,11 +825,32 @@ export class SignAccountOpController extends EventEmitter {
       }
 
       if (Array.isArray(calls)) {
-        const hasNewCalls = this.accountOp.calls.length < calls.length
-        this.accountOp.calls = calls
+        // we should update if the arrays are with diff length
+        let shouldUpdate = this.accountOp.calls.length !== calls.length
 
-        if (hasNewCalls) this.learnTokensFromCalls()
-        this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+        if (!shouldUpdate) {
+          // if they are with the same length, check if some of
+          // their properties differ. If they do, we should update
+          this.accountOp.calls.forEach((call, i) => {
+            const newCall = calls[i]
+            if (
+              call.to !== newCall.to ||
+              call.data !== newCall.data ||
+              call.value !== newCall.value
+            )
+              shouldUpdate = true
+          })
+        }
+
+        // update only if there are differences in the calls array
+        // we do this to prevent double estimation problems
+        if (shouldUpdate) {
+          const hasNewCalls = this.accountOp.calls.length < calls.length
+          this.accountOp.calls = calls
+
+          if (hasNewCalls) this.learnTokensFromCalls()
+          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+        }
       }
 
       if (blockGasLimit) this.#blockGasLimit = blockGasLimit
@@ -983,15 +1092,12 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   /**
-   * Increase the fee we send to the feeCollector according to the specified
-   * options in the network tab
+   * Increase the paymaster fee by 10%, the relayer by 5%.
+   * This is required because even now, we are broadcasting at a loss
    */
-  #increaseFee(amount: bigint): bigint {
-    if (!this.#network.feeOptions.feeIncrease) {
-      return amount
-    }
-
-    return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
+  #increaseFee(amount: bigint, broadcaster: string = 'relayer'): bigint {
+    if (broadcaster === 'paymaster') return amount + amount / 10n
+    return amount + amount / 20n
   }
 
   get #feeSpeedsLoading() {
@@ -1079,7 +1185,7 @@ export class SignAccountOpController extends EventEmitter {
             option.token.decimals,
             0n
           )
-          if (usesPaymaster) amount = this.#increaseFee(amount)
+          if (usesPaymaster) amount = this.#increaseFee(amount, 'paymaster')
 
           speeds.push({
             type: speed as FeeSpeed,
@@ -1227,7 +1333,7 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.accountAddr,
       this.rbfAccountOps[this.selectedOption.paidBy]
     )
-    if (!this.feeSpeeds[identifier].length) {
+    if (!this.feeSpeeds[identifier] || !this.feeSpeeds[identifier].length) {
       return null
     }
 
@@ -1420,13 +1526,12 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.meta?.entryPointAuthorization,
       eip7702Auth
     )
+
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
     userOperation.callGasLimit = toBeHex(
       BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
     )
     userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
-    userOperation.paymasterVerificationGasLimit = erc4337Estimation.paymasterVerificationGasLimit
-    userOperation.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
     userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
     userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
@@ -1452,11 +1557,30 @@ export class SignAccountOpController extends EventEmitter {
     if (!paymaster.isUsable()) return { required: false }
 
     const localOp = { ...originalUserOp }
-    // persist the paymaster properties from the pm_stubData request
+
+    // set the paymaster properties
+    const erc4337Estimation = this.estimation.estimation!.bundlerEstimation as Erc4337GasLimits
+    localOp.paymasterVerificationGasLimit = erc4337Estimation.paymasterVerificationGasLimit
+    localOp.paymasterPostOpGasLimit = erc4337Estimation.paymasterPostOpGasLimit
+
+    // some bundlers (etherspot) don't return values for paymaster gas limits
+    // so we need to set them manually
+    // other (gelato) may return below the min
+    if (paymaster.isEstimateBelowMin(localOp)) {
+      const estimationData = paymaster.getEstimationData()!
+      localOp.paymasterVerificationGasLimit = estimationData.paymasterVerificationGasLimit
+      localOp.paymasterPostOpGasLimit = estimationData.paymasterPostOpGasLimit
+    }
+
+    // persist the paymaster properties from the pm_stubData request if any
     if (paymaster.isSponsored() && paymaster.sponsorDataEstimation) {
-      localOp.paymasterVerificationGasLimit =
-        paymaster.sponsorDataEstimation.paymasterVerificationGasLimit
-      localOp.paymasterPostOpGasLimit = paymaster.sponsorDataEstimation.paymasterPostOpGasLimit
+      if (paymaster.sponsorDataEstimation.paymasterVerificationGasLimit) {
+        localOp.paymasterVerificationGasLimit =
+          paymaster.sponsorDataEstimation.paymasterVerificationGasLimit
+      }
+      if (paymaster.sponsorDataEstimation.paymasterPostOpGasLimit) {
+        localOp.paymasterPostOpGasLimit = paymaster.sponsorDataEstimation.paymasterPostOpGasLimit
+      }
     }
     const response = await paymaster.call(this.account, this.accountOp, localOp, this.#network)
 
@@ -1594,6 +1718,24 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp,
           accountState,
           signer
+        )
+      } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
+        // a delegation request has been made
+        if (!this.accountOp.meta) this.accountOp.meta = {}
+
+        const contract = this.accountOp.meta.setDelegation
+          ? getContractImplementation(this.#network.chainId)
+          : (ZeroAddress as Hex)
+        this.accountOp.meta.delegation = get7702Sig(
+          this.#network.chainId,
+          // because we're broadcasting by ourselves, we need to add 1 to the nonce
+          // as the sender nonce (the curr acc) gets incremented before the
+          // authrorization validation
+          accountState.eoaNonce! + 1n,
+          contract,
+          signer.sign7702(
+            getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
+          )
         )
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
@@ -1735,6 +1877,14 @@ export class SignAccountOpController extends EventEmitter {
     this.traceCallDiscoveryStatus = status
   }
 
+  get delegatedContract(): Hex | null {
+    if (!this.#accounts.accountStates[this.account.addr]) return null
+    if (!this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()])
+      return null
+    return this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()]
+      .delegatedContract
+  }
+
   toJSON() {
     return {
       ...this,
@@ -1747,7 +1897,8 @@ export class SignAccountOpController extends EventEmitter {
       selectedOption: this.selectedOption,
       account: this.account,
       errors: this.errors,
-      gasSavedUSD: this.gasSavedUSD
+      gasSavedUSD: this.gasSavedUSD,
+      delegatedContract: this.delegatedContract
     }
   }
 }

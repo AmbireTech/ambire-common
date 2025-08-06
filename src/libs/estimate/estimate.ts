@@ -1,4 +1,4 @@
-import { BaseAccount } from 'libs/account/BaseAccount'
+import { BaseAccount } from '../account/BaseAccount'
 
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -49,7 +49,8 @@ export async function getEstimation(
     feeTokens,
     provider,
     switcher,
-    errorCallback
+    errorCallback,
+    undefined
   )
   const providerEstimation = providerEstimateGas(
     baseAcc.getAccount(),
@@ -84,9 +85,6 @@ export async function getEstimation(
 
   const criticalError = baseAcc.getEstimationCriticalError(fullEstimation, op)
   if (criticalError) return criticalError
-
-  // TODO: if the bundler is the preferred method of estimation, re-estimate
-  // we can switch it if there's no ambire gas error
 
   let flags = {}
   if (!(ambireGas instanceof Error) && ambireGas) flags = { ...ambireGas.flags }

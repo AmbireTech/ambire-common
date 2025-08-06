@@ -222,14 +222,9 @@ export async function getDeploySignature(smartAcc: Account, network: Network) {
     )
   )
   const typedData = getTypedData(network.chainId, smartAcc.addr, executeHash)
-  const typesWithoutEIP712Domain = { ...typedData.types }
-  if (typesWithoutEIP712Domain.EIP712Domain) {
-    // eslint-disable-next-line no-param-reassign
-    delete typesWithoutEIP712Domain.EIP712Domain
-  }
   const wallet = new Wallet(process.env.METAMASK_PK!)
   const s = wrapStandard(
-    await wallet.signTypedData(typedData.domain, typesWithoutEIP712Domain, typedData.message)
+    await wallet.signTypedData(typedData.domain, typedData.types, typedData.message)
   )
   return s
 }

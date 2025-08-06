@@ -1,10 +1,10 @@
 import { createPublicClient, http } from 'viem'
-import { sepolia, arbitrumSepolia, baseSepolia } from 'viem/chains'
-import { IntentController } from './controllers/intent'
-import { ControllersTransactionDependecies, TransactionDependencies } from './dependencies'
-import { TransactionFormState } from './transactionFormState'
+import { arbitrumSepolia, baseSepolia, sepolia } from 'viem/chains'
 
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { IntentController } from './controllers/intent'
+import { ControllersTransactionDependencies, TransactionDependencies } from './dependencies'
+import { TransactionFormState } from './transactionFormState'
 
 export class TransactionManagerController extends EventEmitter {
   public intent: IntentController
@@ -15,7 +15,7 @@ export class TransactionManagerController extends EventEmitter {
 
   public transactionType: 'transfer' | 'intent' | 'swap' | 'swapAndBridge' | 'error' = 'transfer'
 
-  private dependencies: ControllersTransactionDependecies
+  private dependencies: ControllersTransactionDependencies
 
   private chainMap = [sepolia, arbitrumSepolia, baseSepolia]
 

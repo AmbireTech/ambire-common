@@ -32,7 +32,7 @@ const basicAccount: Account = {
 }
 
 describe('Account', () => {
-  test('should return basic account', () => {
+  test('should return EOA', () => {
     expect.assertions(1)
     const newBasicAccount = getBasicAccount(keyPublicAddress, [])
     expect(newBasicAccount as Account).toStrictEqual(basicAccount)
@@ -63,7 +63,7 @@ describe('Account', () => {
     expect(newSmartAccount.creation as AccountCreation).not.toBe(null)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
-  test('should return zero address and 0x deploy data if basic account is passed', async () => {
+  test('should return zero address and 0x deploy data if EOA is passed', async () => {
     expect.assertions(1)
     const accountData = getAccountDeployParams(basicAccount)
     expect(accountData as any).toEqual([ZeroAddress, '0x'])
@@ -133,7 +133,7 @@ describe('Account', () => {
     expect(newSmartAccount.associatedKeys.length).toBe(1)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
-  test('Should resolve Basic account import status to ImportStatus.ImportedWithTheSameKeys or ImportStatus.ImportedWithDifferentKeys', () => {
+  test('Should resolve EOA import status to ImportStatus.ImportedWithTheSameKeys or ImportStatus.ImportedWithDifferentKeys', () => {
     const key: Key = {
       addr: basicAccount.addr,
       type: 'internal',

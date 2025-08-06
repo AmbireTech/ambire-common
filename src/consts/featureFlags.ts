@@ -1,7 +1,7 @@
 export interface FeatureFlags {
-  [key: string]: boolean
+  withTransactionManagerController: boolean
 }
 
 export const featureFlags: FeatureFlags = {
-  // None yet!
+  withTransactionManagerController: false
 }

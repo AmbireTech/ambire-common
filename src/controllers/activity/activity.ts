@@ -1,5 +1,5 @@
 import { Account, AccountId } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
+import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { isSmartAccount } from '../../libs/account/account'
@@ -14,12 +14,14 @@ import {
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 /* eslint-disable import/no-extraneous-dependencies */
+import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -69,6 +71,32 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
     maxPages: Math.ceil(items.length / itemsPerPage)
   }
 }
+
+const BANNER_CONTENT: {
+  category: BannerCategory
+  title: string
+  type: BannerType
+  statuses: AccountOpStatus[]
+}[] = [
+  {
+    category: 'pending-to-be-confirmed-acc-op',
+    type: 'success',
+    title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+    statuses: [AccountOpStatus.Pending, AccountOpStatus.BroadcastedButNotConfirmed]
+  },
+  {
+    category: 'successful-acc-op',
+    type: 'success',
+    title: 'Transaction confirmed!\nCheck it out on the block explorer!',
+    statuses: [AccountOpStatus.Success, AccountOpStatus.UnknownButPastNonce]
+  },
+  {
+    category: 'failed-acc-op',
+    type: 'error',
+    title: 'Transaction failed!\nCheck it out on the block explorer!',
+    statuses: [AccountOpStatus.Failure, AccountOpStatus.Rejected]
+  }
+]
 
 /**
  * Activity Controller
@@ -131,6 +159,8 @@ export class ActivityController extends EventEmitter {
 
   #networks: NetworksController
 
+  #portfolio: PortfolioController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
@@ -145,6 +175,7 @@ export class ActivityController extends EventEmitter {
     selectedAccount: SelectedAccountController,
     providers: ProvidersController,
     networks: NetworksController,
+    portfolio: PortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
@@ -155,6 +186,7 @@ export class ActivityController extends EventEmitter {
     this.#selectedAccount = selectedAccount
     this.#providers = providers
     this.#networks = networks
+    this.#portfolio = portfolio
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load()
   }
@@ -454,6 +486,18 @@ export class ActivityController extends EventEmitter {
                     if (accountOp.isSingletonDeploy && receipt.status) {
                       await this.#onContractsDeployed(network)
                     }
+
+                    // learn tokens from the transfer logs
+                    if (isSuccess) {
+                      const foundTokens = await getTransferLogTokens(
+                        receipt.logs,
+                        accountOp.accountAddr
+                      )
+                      if (foundTokens.length) {
+                        this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                      }
+                    }
+
                     return
                   }
 
@@ -474,28 +518,32 @@ export class ActivityController extends EventEmitter {
 
                 // if there are more than 1 txns with the same nonce and payer,
                 // we can conclude this one is replaced by fee
-                const sameNonceTxns = this.#accountsOps[selectedAccount][
-                  network.chainId.toString()
-                ].filter(
-                  (accOp) =>
-                    accOp.gasFeePayment &&
-                    accountOp.gasFeePayment &&
-                    accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
-                    accOp.nonce.toString() === accountOp.nonce.toString()
-                )
-                const confirmedSameNonceTxns = sameNonceTxns.find(
-                  (accOp) =>
-                    accOp.status === AccountOpStatus.Success ||
-                    accOp.status === AccountOpStatus.Failure
-                )
-                if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-                  const updatedOpIfAny = updateOpStatus(
-                    this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-                    AccountOpStatus.UnknownButPastNonce
-                  )
-                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-                  shouldUpdatePortfolio = true
-                }
+                //
+                // Comment out this code as it's doing more bad than good.
+                // In order to track rbf transactions, we need a per account unique nonce
+                // in submitted account op first
+                // const sameNonceTxns = this.#accountsOps[selectedAccount][
+                //   network.chainId.toString()
+                // ].filter(
+                //   (accOp) =>
+                //     accOp.gasFeePayment &&
+                //     accountOp.gasFeePayment &&
+                //     accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
+                //     accOp.nonce.toString() === accountOp.nonce.toString()
+                // )
+                // const confirmedSameNonceTxns = sameNonceTxns.find(
+                //   (accOp) =>
+                //     accOp.status === AccountOpStatus.Success ||
+                //     accOp.status === AccountOpStatus.Failure
+                // )
+                // if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
+                //   const updatedOpIfAny = updateOpStatus(
+                //     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                //     AccountOpStatus.UnknownButPastNonce
+                //   )
+                //   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                //   shouldUpdatePortfolio = true
+                // }
               }
             )
           )
@@ -566,61 +614,83 @@ export class ActivityController extends EventEmitter {
     if (!op.flags) op.flags = {}
     op.flags.hideActivityBanner = true
 
-    await this.#storage.set('accountsOps', this.#accountsOps)
-
     this.emitUpdate()
+
+    await this.#storage.set('accountsOps', this.#accountsOps)
   }
 
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return []
 
-    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
+    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
   get banners(): Banner[] {
-    if (!this.#networks.isInitialized) return []
-    return (
-      this.broadcastedButNotConfirmed
-        // do not show a banner for forcefully hidden banners
-        .filter((op) => !(op.flags && op.flags.hideActivityBanner))
-        .map((accountOp) => {
-          const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)!
-
-          const url = `https://benzin.ambire.com/${getBenzinUrlParams({
-            chainId: network.chainId,
-            txnId: accountOp.txnId,
-            identifiedBy: accountOp.identifiedBy
-          })}`
-
-          return {
-            id: accountOp.txnId,
-            type: 'success',
-            category: 'pending-to-be-confirmed-acc-op',
-            title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
-            text: '',
-            actions: [
-              {
-                label: 'Close',
-                actionName: 'hide-activity-banner',
-                meta: {
-                  addr: accountOp.accountAddr,
-                  chainId: accountOp.chainId,
-                  timestamp: accountOp.timestamp,
-                  isHideStyle: true
-                }
-              },
-              {
-                label: 'Check',
-                actionName: 'open-external-url',
-                meta: { url }
-              }
-            ]
-          } as Banner
-        })
+    if (
+      !this.#networks.isInitialized ||
+      !this.#selectedAccount.account ||
+      !this.#accountsOps[this.#selectedAccount.account.addr]
     )
+      return []
+
+    const recentlyBroadcastedAccountOps = Object.values(
+      this.#accountsOps[this.#selectedAccount.account.addr]
+    )
+      .flat()
+      .filter((accountOp) => {
+        const TEN_MINUTES = 1000 * 60 * 10
+        const isClosed = accountOp.flags && accountOp.flags.hideActivityBanner
+        const isRecent = accountOp.timestamp >= Date.now() - TEN_MINUTES
+        const isBroadcasted =
+          accountOp.status !== AccountOpStatus.Pending &&
+          accountOp.status !== AccountOpStatus.Rejected
+
+        return isRecent && !isClosed && isBroadcasted
+      })
+
+    if (!recentlyBroadcastedAccountOps.length) return []
+
+    return recentlyBroadcastedAccountOps.map((accountOp) => {
+      const url = `https://explorer.ambire.com/${getBenzinUrlParams({
+        chainId: accountOp.chainId,
+        txnId: accountOp.txnId,
+        identifiedBy: accountOp.identifiedBy
+      })}`
+
+      const content = BANNER_CONTENT.find((c) =>
+        c.statuses.includes(accountOp.status as AccountOpStatus)
+      )
+
+      return {
+        id: accountOp.txnId,
+        type: 'success',
+        category: content?.category || 'pending-to-be-confirmed-acc-op',
+        title:
+          content?.title ||
+          'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+        text: '',
+        actions: [
+          {
+            label: 'Close',
+            actionName: 'hide-activity-banner',
+            meta: {
+              addr: accountOp.accountAddr,
+              chainId: accountOp.chainId,
+              timestamp: accountOp.timestamp,
+              isHideStyle: true
+            }
+          },
+          {
+            label: 'Check',
+            actionName: 'open-external-url',
+            meta: { url }
+          }
+        ]
+      } as Banner
+    })
   }
 
   /**

@@ -1,22 +1,39 @@
+import { ActivityController } from 'controllers/activity/activity'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
-import { Network } from '../../interfaces/network'
-import { SelectedAccountPortfolio } from '../../interfaces/selectedAccount'
-import { Storage } from '../../interfaces/storage'
+import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { Call } from '../../libs/accountOp/types'
+import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
+import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
-import { stringify } from '../../libs/richJson/richJson'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { buildTransferUserRequest } from '../../libs/transfer/userRequest'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
-import { convertTokenPriceToBigInt } from '../../utils/numbers/formatters'
-import { Contacts } from '../addressBook/addressBook'
+import { getAddressFromAddressState } from '../../utils/domains'
+import {
+  convertTokenPriceToBigInt,
+  getSafeAmountFromFieldValue
+} from '../../utils/numbers/formatters'
+import wait from '../../utils/wait'
+import { AccountsController } from '../accounts/accounts'
+import { AddressBookController } from '../addressBook/addressBook'
+import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
+import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
+import { ProvidersController } from '../providers/providers'
+import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { StorageController } from '../storage/storage'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -40,61 +57,16 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
-// Here's how state persistence works:
-// 1. When we detect a state diff (e.g., transfer.update({...})), we save specific controller fields to storage.
-// 2. All state is stored under PERSIST_STORAGE_KEY and follows the PersistedState structure.
-// 3. When the controller loads for the first time, we hydrate it by loading the latest persisted state.
-// 4. If it's a Top-up, we skip persistence. Both Top-up and Send use the same controller,
-//    which can lead to state mix-up bugs.
-// 5. We store APP_VERSION in PersistedState.version. If a new version is deployed and it differs,
-//    we clear the persisted state and skip hydration.
-//    This avoids runtime errors caused by outdated state structures.
-const PERSIST_STORAGE_KEY = 'transferState'
-type PersistedState = {
-  version: string
-  state: Pick<
-    TransferController,
-    | 'amount'
-    | 'amountInFiat'
-    | 'amountFieldMode'
-    | 'addressState'
-    | 'isSWWarningVisible'
-    | 'isSWWarningAgreed'
-    | 'isRecipientAddressUnknown'
-    | 'isRecipientAddressUnknownAgreed'
-    | 'isRecipientHumanizerKnownTokenOrSmartContract'
-  > & {
-    selectedToken?: {
-      address: string
-      chainId: bigint
-    }
-  }
-}
-
-export const hasPersistedState = async (storage: Storage, appVersion: string) => {
-  const persistedState: PersistedState = await storage.get(PERSIST_STORAGE_KEY)
-
-  if (!persistedState) return false
-
-  if (persistedState.version !== appVersion) {
-    return false
-  }
-
-  return !!Object.keys(persistedState.state)
-}
-
 export class TransferController extends EventEmitter {
-  #storage: Storage
+  #storage: StorageController
 
-  #networks: Network[] = []
+  #networks: NetworksController
 
-  #portfolio: SelectedAccountPortfolio
-
-  #addressBookContacts: Contacts = []
+  #addressBook: AddressBookController
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccountData: Account | null = null
+  #selectedAccountData: SelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -102,9 +74,19 @@ export class TransferController extends EventEmitter {
 
   isSWWarningAgreed = false
 
+  /**
+   * The field value for the amount input. Not sanitized and can contain
+   * invalid values. Use #getSafeAmountFromFieldValue() to get a formatted value.
+   */
   amount = ''
 
   amountInFiat = ''
+
+  /**
+   * A counter used to trigger UI updates when a form values is
+   * changed programmatically by the controller.
+   */
+  programmaticUpdateCounter = 0
 
   amountFieldMode: 'fiat' | 'token' = 'token'
 
@@ -120,19 +102,58 @@ export class TransferController extends EventEmitter {
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
+  #accounts: AccountsController
+
+  #keystore: KeystoreController
+
+  #portfolio: PortfolioController
+
+  #externalSignerControllers: ExternalSignerControllers
+
+  #providers: ProvidersController
+
+  #relayerUrl: string
+
+  signAccountOpController: SignAccountOpController | null = null
+
+  /**
+   * Holds all subscriptions (on update and on error) to the signAccountOpController.
+   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
+   */
+  #signAccountOpSubscriptions: Function[] = []
+
+  latestBroadcastedAccountOp: AccountOp | null = null
+
+  latestBroadcastedToken: TokenResult | null = null
+
+  #shouldTrackLatestBroadcastedAccountOp: boolean = true
+
+  hasProceeded: boolean = false
+
+  // Used to safely manage and cancel the periodic estimation loop.
+  // When destroySignAccountOp() is called, the AbortController is aborted,
+  // which prevents further re-estimation calls even if a wait() is in progress.
+  // This ensures only one active estimation loop exists at any time.
+  #reestimateAbortController: AbortController | null = null
+
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #APP_VERSION: string
+  #activity: ActivityController
 
   constructor(
-    storage: Storage,
+    storage: StorageController,
     humanizerInfo: HumanizerMeta,
-    selectedAccountData: Account,
-    networks: Network[],
-    portfolio: SelectedAccountPortfolio,
-    shouldHydrate: boolean,
-    APP_VERSION: string
+    selectedAccountData: SelectedAccountController,
+    networks: NetworksController,
+    addressBook: AddressBookController,
+    accounts: AccountsController,
+    keystore: KeystoreController,
+    portfolio: PortfolioController,
+    activity: ActivityController,
+    externalSignerControllers: ExternalSignerControllers,
+    providers: ProvidersController,
+    relayerUrl: string
   ) {
     super()
 
@@ -140,88 +161,27 @@ export class TransferController extends EventEmitter {
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccountData = selectedAccountData
     this.#networks = networks
-    this.#portfolio = portfolio
-    this.#APP_VERSION = APP_VERSION
+    this.#addressBook = addressBook
 
-    this.#initialLoadPromise = this.#load(shouldHydrate)
+    this.#accounts = accounts
+    this.#keystore = keystore
+    this.#portfolio = portfolio
+    this.#activity = activity
+    this.#externalSignerControllers = externalSignerControllers
+    this.#providers = providers
+    this.#relayerUrl = relayerUrl
+
+    this.#initialLoadPromise = this.#load()
     this.emitUpdate()
   }
 
-  async #load(shouldHydrate: boolean) {
+  async #load() {
     this.#shouldSkipTransactionQueuedModal = await this.#storage.get(
       'shouldSkipTransactionQueuedModal',
       false
     )
 
-    // Currently, we should not hydrate when it's a Top-up, but in the future, we may have other cases as well.
-    if (shouldHydrate) await this.#hydrate()
-  }
-
-  async #hydrate() {
-    const persistedState: PersistedState = await this.#storage.get(PERSIST_STORAGE_KEY)
-
-    // Don't hydrate if no state was previously persisted.
-    if (!persistedState) return
-
-    // In case of a newer app version, we don't hydrate using the older persisted storage,
-    // as the storage interface may differ from the newly deployed code.
-    // This could result in a runtime error, so we prefer to play it safe.
-    if (persistedState.version !== this.#APP_VERSION) {
-      await this.#clearPersistedState()
-      return
-    }
-
-    const { selectedToken, ...rest } = persistedState.state
-
-    // Normalize selected token to TokenResult
-    if (selectedToken) {
-      const portfolioToken = this.#portfolio.tokens.find(
-        (token) =>
-          token.address === selectedToken.address && token.chainId === selectedToken.chainId
-      )
-
-      if (portfolioToken) this.#selectedToken = portfolioToken
-    }
-
-    Object.assign(this, rest)
-  }
-
-  get persistableState() {
-    const PERSISTED_FIELDS: PersistedState['state'] = {
-      amount: this.amount,
-      amountInFiat: this.amountInFiat,
-      amountFieldMode: this.amountFieldMode,
-      addressState: this.addressState,
-      isSWWarningVisible: this.isSWWarningVisible,
-      isSWWarningAgreed: this.isSWWarningAgreed,
-      isRecipientAddressUnknown: this.isRecipientAddressUnknown,
-      isRecipientAddressUnknownAgreed: this.isRecipientAddressUnknownAgreed,
-      isRecipientHumanizerKnownTokenOrSmartContract:
-        this.isRecipientHumanizerKnownTokenOrSmartContract
-    }
-
-    // We prefer to keep TokenResult simplified in storage and normalize it back to the full object during hydration,
-    // to avoid some TokenResult fields (amount, flags) becoming obsolete while cached.
-    if (this.#selectedToken) {
-      PERSISTED_FIELDS.selectedToken = {
-        address: this.#selectedToken.address,
-        chainId: this.#selectedToken.chainId
-      }
-    }
-
-    return PERSISTED_FIELDS
-  }
-
-  #persist() {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#storage.set(PERSIST_STORAGE_KEY, {
-      state: this.persistableState,
-      version: this.#APP_VERSION
-    })
-  }
-
-  async #clearPersistedState() {
-    await this.#storage.remove(PERSIST_STORAGE_KEY)
+    await this.#selectedAccountData.initialLoadPromise
   }
 
   get shouldSkipTransactionQueuedModal() {
@@ -235,12 +195,20 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get shouldTrackLatestBroadcastedAccountOp() {
+    return this.#shouldTrackLatestBroadcastedAccountOp
+  }
+
+  set shouldTrackLatestBroadcastedAccountOp(value: boolean) {
+    this.#shouldTrackLatestBroadcastedAccountOp = value
+  }
+
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
-      this.amount = ''
-      this.amountInFiat = ''
+      this.#setAmountAndNotifyUI('')
+      this.#setAmountInFiatAndNotifyUI('')
       this.amountFieldMode = 'token'
       return
     }
@@ -256,8 +224,8 @@ export class TransferController extends EventEmitter {
       if (!token.priceIn.length) {
         this.amountFieldMode = 'token'
       }
-      this.amount = ''
-      this.amountInFiat = ''
+      this.#setAmountAndNotifyUI('')
+      this.#setAmountInFiatAndNotifyUI('')
       this.#setSWWarningVisibleIfNeeded()
     }
   }
@@ -296,18 +264,19 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  resetForm() {
+  resetForm(shouldDestroyAccountOp = true) {
+    this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
+    this.amountFieldMode = 'token'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
-    this.isRecipientAddressUnknown = false
-    this.isRecipientAddressUnknownAgreed = false
-    this.isRecipientHumanizerKnownTokenOrSmartContract = false
-    this.isSWWarningVisible = false
-    this.isSWWarningAgreed = false
+    this.#onRecipientAddressChange()
+    this.programmaticUpdateCounter = 0
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#clearPersistedState()
+    if (shouldDestroyAccountOp) {
+      this.destroySignAccountOp()
+    }
+
     this.emitUpdate()
   }
 
@@ -316,12 +285,12 @@ export class TransferController extends EventEmitter {
 
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
-    if (this.#humanizerInfo && this.#selectedAccountData) {
+    if (this.#humanizerInfo && this.#selectedAccountData.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccountData.addr,
+        this.#selectedAccountData.account?.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
@@ -334,12 +303,7 @@ export class TransferController extends EventEmitter {
 
     // Validate the amount
     if (this.selectedToken) {
-      validationFormMsgsNew.amount = validateSendTransferAmount(
-        this.amount,
-        Number(this.maxAmount),
-        Number(this.maxAmountInFiat),
-        this.selectedToken
-      )
+      validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
     return validationFormMsgsNew
@@ -351,13 +315,7 @@ export class TransferController extends EventEmitter {
     // if the amount is set, it's enough in topUp mode
     if (this.isTopUp) {
       return (
-        this.selectedToken &&
-        validateSendTransferAmount(
-          this.amount,
-          Number(this.maxAmount),
-          Number(this.maxAmountInFiat),
-          this.selectedToken
-        ).success
+        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
       )
     }
 
@@ -378,61 +336,32 @@ export class TransferController extends EventEmitter {
   }
 
   get isInitialized() {
-    return !!this.#humanizerInfo && !!this.#selectedAccountData && !!this.#networks.length
+    return (
+      !!this.#humanizerInfo &&
+      !!this.#selectedAccountData.account?.addr &&
+      !!this.#networks.networks.length
+    )
   }
 
   get recipientAddress() {
     return this.addressState.ensAddress || this.addressState.fieldValue
   }
 
-  async update(
-    {
-      selectedAccountData,
-      humanizerInfo,
-      selectedToken,
-      amount,
-      addressState,
-      isSWWarningAgreed,
-      isRecipientAddressUnknownAgreed,
-      isTopUp,
-      networks,
-      contacts,
-      amountFieldMode
-    }: TransferUpdate,
-    options: { shouldPersist?: boolean } = {}
-  ) {
-    // When should we persist?
-    // Simply, when a field change is triggered by the user.
-    // If the change originates from useEffect - for instance, auto-selecting a token -
-    // we should not persist, as this would load the Send form every time the user opens the Dashboard.
-    const { shouldPersist = true } = options
-
-    await this.#initialLoadPromise
-
-    const prevState = stringify(this.persistableState)
-    const hasAccountChanged =
-      selectedAccountData && this.#selectedAccountData?.addr !== selectedAccountData.addr
+  async update({
+    humanizerInfo,
+    selectedToken,
+    amount,
+    shouldSetMaxAmount,
+    addressState,
+    isSWWarningAgreed,
+    isRecipientAddressUnknownAgreed,
+    isTopUp,
+    amountFieldMode
+  }: TransferUpdate) {
+    this.shouldTrackLatestBroadcastedAccountOp = true
 
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
-    }
-    if (networks) {
-      this.#networks = networks
-    }
-    if (contacts) {
-      this.#addressBookContacts = contacts
-
-      if (this.isInitialized) {
-        this.checkIsRecipientAddressUnknown()
-      }
-    }
-    if (selectedAccountData) {
-      if (hasAccountChanged) {
-        this.#setAmount('')
-        this.selectedToken = null
-        this.addressState = { ...DEFAULT_ADDRESS_STATE }
-      }
-      this.#selectedAccountData = selectedAccountData
     }
 
     if (amountFieldMode) {
@@ -440,11 +369,23 @@ export class TransferController extends EventEmitter {
     }
 
     if (selectedToken) {
+      if (selectedToken.chainId !== this.selectedToken?.chainId) {
+        // The SignAccountOp controller is already initialized with the previous chainId and account operation.
+        // When the chainId changes, we need to recreate the controller to correctly estimate for the new chain.
+        // Here, we destroy it, and at the end of this update method, we initialize it again.
+        this.destroySignAccountOp()
+      }
+
       this.selectedToken = selectedToken
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#setAmount(amount)
+    }
+
+    if (shouldSetMaxAmount) {
+      this.amountFieldMode = 'token'
+      this.#setAmount(this.maxAmount, true)
     }
 
     if (addressState) {
@@ -472,19 +413,8 @@ export class TransferController extends EventEmitter {
       this.#setSWWarningVisibleIfNeeded()
     }
 
+    await this.syncSignAccountOp()
     this.emitUpdate()
-
-    if (shouldPersist) {
-      if (this.isTopUp || hasAccountChanged) {
-        return this.#clearPersistedState()
-      }
-
-      const hasStateChange = prevState !== stringify(this.persistableState)
-
-      // We persist only if the Transfer form fields have changed.
-      // Otherwise, we can't easily determine if the form is dirty or not.
-      if (hasStateChange) this.#persist()
-    }
   }
 
   checkIsRecipientAddressUnknown() {
@@ -495,7 +425,7 @@ export class TransferController extends EventEmitter {
       this.emitUpdate()
       return
     }
-    const isAddressInAddressBook = this.#addressBookContacts.some(
+    const isAddressInAddressBook = this.#addressBook.contacts.some(
       ({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase()
     )
 
@@ -527,7 +457,23 @@ export class TransferController extends EventEmitter {
     this.checkIsRecipientAddressUnknown()
   }
 
-  #setAmount(fieldValue: string) {
+  #setAmountAndNotifyUI(amount: string) {
+    this.amount = amount
+    this.programmaticUpdateCounter += 1
+  }
+
+  #setAmountInFiatAndNotifyUI(amountInFiat: string) {
+    this.amountInFiat = amountInFiat
+    this.programmaticUpdateCounter += 1
+  }
+
+  #setAmount(fieldValue: string, isProgrammaticUpdate = false) {
+    if (isProgrammaticUpdate) {
+      // There is no problem in updating this first as there are no
+      // emit updates in this method
+      this.programmaticUpdateCounter += 1
+    }
+
     if (!fieldValue) {
       this.amount = ''
       this.amountInFiat = ''
@@ -548,11 +494,14 @@ export class TransferController extends EventEmitter {
       this.amountInFiat = fieldValue
 
       // Get the number of decimals
-      const amountInFiatDecimals = fieldValue.split('.')[1]?.length || 0
+      const amountInFiatDecimals = 10
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       // Convert the numbers to big int
-      const amountInFiatBigInt = parseUnits(fieldValue, amountInFiatDecimals)
+      const amountInFiatBigInt = parseUnits(
+        getSanitizedAmount(fieldValue, amountInFiatDecimals),
+        amountInFiatDecimals
+      )
 
       this.amount = formatUnits(
         (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
@@ -567,9 +516,10 @@ export class TransferController extends EventEmitter {
 
       if (!this.selectedToken) return
 
-      const sanitizedFieldValue = getSanitizedAmount(fieldValue, this.selectedToken.decimals)
-      // Convert the field value to big int
-      const formattedAmount = parseUnits(sanitizedFieldValue, this.selectedToken.decimals)
+      const formattedAmount = parseUnits(
+        getSafeAmountFromFieldValue(fieldValue, this.selectedToken.decimals),
+        this.selectedToken.decimals
+      )
 
       if (!formattedAmount) return
 
@@ -584,20 +534,209 @@ export class TransferController extends EventEmitter {
   }
 
   #setSWWarningVisibleIfNeeded() {
-    if (!this.#selectedAccountData) return
+    if (!this.#selectedAccountData.account?.addr) return
 
     this.isSWWarningVisible =
       this.isRecipientAddressUnknown &&
-      isSmartAccount(this.#selectedAccountData) &&
+      isSmartAccount(this.#selectedAccountData.account) &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
-      this.#networks
+      this.#networks.networks
         .filter((n) => n.chainId !== 1n)
         .map(({ chainId }) => chainId)
         .includes(this.selectedToken.chainId || 1n)
 
     this.emitUpdate()
+  }
+
+  get hasPersistedState() {
+    return !!(this.amount || this.amountInFiat || this.addressState.fieldValue)
+  }
+
+  async syncSignAccountOp() {
+    // shouldn't happen ever
+    if (!this.#selectedAccountData.account) return
+
+    const recipientAddress = this.isTopUp
+      ? FEE_COLLECTOR
+      : getAddressFromAddressState(this.addressState)
+
+    // form field validation
+    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress)) return
+
+    const userRequest = buildTransferUserRequest({
+      selectedAccount: this.#selectedAccountData.account.addr,
+      amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
+      selectedToken: this.#selectedToken,
+      recipientAddress
+    })
+
+    if (!userRequest || userRequest.action.kind !== 'calls') {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building transfer request',
+        error: new Error(
+          'buildUserRequestFromTransferRequest: bad parameters passed to buildTransferUserRequest'
+        )
+      })
+
+      return
+    }
+
+    const calls = userRequest.action.calls
+
+    // If SignAccountOpController is already initialized, we just update it.
+    if (this.signAccountOpController) {
+      this.signAccountOpController.update({ calls })
+      return
+    }
+
+    await this.#initSignAccOp(calls)
+  }
+
+  async #initSignAccOp(calls: Call[]) {
+    if (!this.#selectedAccountData.account || this.signAccountOpController) return
+
+    const network = this.#networks.networks.find(
+      (net) => net.chainId === this.#selectedToken!.chainId
+    )
+
+    // shouldn't happen ever
+    if (!network) return
+
+    const provider = this.#providers.providers[network.chainId.toString()]
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccountData.account.addr,
+      network.chainId
+    )
+
+    const baseAcc = getBaseAccount(
+      this.#selectedAccountData.account,
+      accountState,
+      this.#keystore.getAccountKeys(this.#selectedAccountData.account),
+      network
+    )
+
+    const accountOp = {
+      accountAddr: this.#selectedAccountData.account.addr,
+      chainId: network.chainId,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      nonce: accountState.nonce,
+      signature: null,
+      accountOpToExecuteBefore: null,
+      calls,
+      meta: {
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      }
+    }
+
+    this.signAccountOpController = new SignAccountOpController(
+      this.#accounts,
+      this.#networks,
+      this.#keystore,
+      this.#portfolio,
+      this.#activity,
+      this.#externalSignerControllers,
+      this.#selectedAccountData.account,
+      network,
+      provider,
+      randomId(), // the account op and the action are fabricated
+      accountOp,
+      () => true,
+      false,
+      undefined
+    )
+
+    // propagate updates from signAccountOp here
+    this.#signAccountOpSubscriptions.push(
+      this.signAccountOpController.onUpdate(() => {
+        this.emitUpdate()
+      })
+    )
+    this.#signAccountOpSubscriptions.push(
+      this.signAccountOpController.onError((error) => {
+        if (this.signAccountOpController)
+          this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+        this.emitError(error)
+      })
+    )
+
+    this.reestimate()
+  }
+
+  /**
+   * Reestimate the signAccountOp request periodically.
+   * Encapsulate it here instead of creating an interval in the background
+   * as intervals are tricky and harder to control
+   */
+  async reestimate() {
+    // Don't run the estimation loop if there is no SignAccountOpController or if the loop is already running.
+    if (!this.signAccountOpController || this.#reestimateAbortController) return
+
+    this.#reestimateAbortController = new AbortController()
+    const signal = this.#reestimateAbortController!.signal
+
+    const loop = async () => {
+      while (!signal.aborted) {
+        // eslint-disable-next-line no-await-in-loop
+        await wait(30000)
+        if (signal.aborted) break
+
+        if (this.signAccountOpController?.estimation.status !== EstimationStatus.Loading) {
+          // eslint-disable-next-line no-await-in-loop
+          await this.signAccountOpController?.estimate()
+        }
+
+        if (this.signAccountOpController?.estimation.errors.length) {
+          console.log(
+            'Errors on Transfer re-estimate',
+            this.signAccountOpController.estimation.errors
+          )
+        }
+      }
+    }
+
+    loop()
+  }
+
+  setUserProceeded(hasProceeded: boolean) {
+    this.hasProceeded = hasProceeded
+    this.emitUpdate()
+  }
+
+  destroySignAccountOp() {
+    // Unsubscribe from all previous subscriptions
+    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#signAccountOpSubscriptions = []
+
+    if (this.#reestimateAbortController) {
+      this.#reestimateAbortController.abort()
+      this.#reestimateAbortController = null
+    }
+
+    if (this.signAccountOpController) {
+      this.signAccountOpController.reset()
+      this.signAccountOpController = null
+    }
+
+    this.hasProceeded = false
+  }
+
+  destroyLatestBroadcastedAccountOp() {
+    this.latestBroadcastedAccountOp = null
+    this.latestBroadcastedToken = null
+    this.emitUpdate()
+  }
+
+  unloadScreen(forceUnload?: boolean) {
+    if (this.hasPersistedState && !forceUnload) return
+
+    this.destroyLatestBroadcastedAccountOp()
+    this.resetForm()
   }
 
   // includes the getters in the stringified instance
@@ -611,7 +750,8 @@ export class TransferController extends EventEmitter {
       selectedToken: this.selectedToken,
       maxAmount: this.maxAmount,
       maxAmountInFiat: this.maxAmountInFiat,
-      shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal
+      shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
+      hasPersistedState: this.hasPersistedState
     }
   }
 }

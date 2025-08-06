@@ -33,12 +33,12 @@ describe('PhishingController', () => {
       phantomBlacklist: []
     })
     phishing = new PhishingController({ storage: storageCtrl, fetch, windowManager })
+    await phishing.initialLoadPromise
   })
   test('should initialize', async () => {
     expect(phishing).toBeDefined()
   })
   test('should fetch lists from github', async () => {
-    await phishing.initialLoadPromise
     const storedPhishingDetection = await storageCtrl.get('phishingDetection', {
       timestamp: null,
       metamaskBlacklist: [],
@@ -55,16 +55,16 @@ describe('PhishingController', () => {
     }
   })
   test('should load and update blacklists and correctly check for blacklisted urls', async () => {
-    expect(await phishing.getIsBlacklisted('https://swlifi.org')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://pndlifi.com')).toBe(true)
+    expect(await phishing.getIsBlacklisted('https://elisium.it')).toBe(true)
+    expect(await phishing.getIsBlacklisted('https://lihea.build')).toBe(true)
     expect(await phishing.getIsBlacklisted('https://safe.com')).toBe(false)
   })
   test('should send correct url status to the UI', async () => {
     const sendWindowUiMessageSpy = jest.spyOn(windowManager, 'sendWindowUiMessage')
-    await phishing.sendIsBlacklistedToUi('https://swlifi.org')
+    await phishing.sendIsBlacklistedToUi('https://elisium.it')
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://pndlifi.com')
+    await phishing.sendIsBlacklistedToUi('https://lihea.build')
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
     await phishing.sendIsBlacklistedToUi('https://safe.com')

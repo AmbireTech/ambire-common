@@ -1,6 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   Erc4337settings,
@@ -281,7 +282,7 @@ export function getFeaturesByNetworkProperties(
         title: 'Smart contract wallets are not supported',
         msg: hasSingleton
           ? 'We were unable to detect Smart Account support on the network with the provided RPC. Try choosing a different RPC.'
-          : 'Unfortunately, this network doesn’t support Smart Accounts. It can be used only with Basic Accounts (EOAs).'
+          : "Unfortunately, this network doesn't support Smart Accounts. It can be used only with EOA accounts."
       })
     }
 
@@ -306,7 +307,7 @@ export function getFeaturesByNetworkProperties(
       updateFeature('saSupport', {
         title,
         level: 'warning',
-        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using a Basic Account and the Deploy contracts option to unlock the Smart Accounts feature. Otherwise, only Basic Accounts (EOAs) can be used on this network."
+        msg: "This network supports Smart Accounts, but Ambire Wallet's contracts have not yet been deployed. You can deploy them by using an EOA account and the deploy contracts option to unlock the Smart Accounts feature. Otherwise, only EOA accounts can be used on this network."
       })
     }
   }
@@ -360,4 +361,53 @@ export function hasRelayerSupport(network: Network) {
   return (
     network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
   )
+}
+
+/**
+ * Validates a single network object against some of the Network interface requirements.
+ */
+function sanityCheckImportantNetworkProperties(network: Network) {
+  if (!network || typeof network !== 'object') return false
+
+  if (typeof network.chainId !== 'bigint') return false
+  if (typeof network.name !== 'string') return false
+  if (typeof network.nativeAssetSymbol !== 'string') return false
+  if (typeof network.nativeAssetName !== 'string') return false
+  if (typeof network.explorerUrl !== 'string') return false
+  if (typeof network.selectedRpcUrl !== 'string') return false
+
+  if (!Array.isArray(network.rpcUrls)) return false
+  if (network.rpcUrls.some((url) => typeof url !== 'string')) return false
+
+  return true
+}
+
+/**
+ * Validates networks coming from the storage, filtering out the invalid ones.
+ * This prevents crashes when networks have missing or invalid mandatory properties.
+ */
+export function getValidNetworks(networksInStorage: { [key: string]: Network }): {
+  [key: string]: Network
+} {
+  const validNetworks: { [key: string]: Network } = {}
+
+  Object.values(networksInStorage).forEach((network) => {
+    const hadValidChainId = typeof network?.chainId === 'bigint'
+
+    // Based on the crash reports received, it turned out there are users with
+    // messed-up networks in storage. So perform comprehensive validation against
+    // some of the Network interface requirements
+    if (sanityCheckImportantNetworkProperties(network)) {
+      validNetworks[network.chainId.toString()] = network
+    } else if (hadValidChainId) {
+      // Attempt to replace broken network with predefined version, if available
+      const predefinedNetwork = predefinedNetworks.find((n) => n.chainId === network.chainId)
+      if (predefinedNetwork) validNetworks[network.chainId.toString()] = predefinedNetwork
+      else {
+        console.error(`Invalid network found in storage for chainId ${network.chainId}`, network)
+      }
+    }
+  })
+
+  return validNetworks
 }

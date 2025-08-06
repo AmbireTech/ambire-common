@@ -1,6 +1,7 @@
 import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { Session } from '../../classes/session'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -12,6 +13,7 @@ import {
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { UserRequest } from '../../interfaces/userRequest'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM
@@ -265,8 +267,9 @@ const buildSwapAndBridgeUserRequests = async (
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState,
-  paymasterService?: PaymasterService
-) => {
+  paymasterService?: PaymasterService,
+  windowId?: number
+): Promise<UserRequest[]> => {
   return [
     {
       id: userTx.activeRouteId,
@@ -274,6 +277,7 @@ const buildSwapAndBridgeUserRequests = async (
         kind: 'calls' as const,
         calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
       },
+      session: new Session({ windowId }),
       meta: {
         isSignAction: true as true,
         chainId,
@@ -346,11 +350,47 @@ const addCustomTokensIfNeeded = ({
   return newTokens
 }
 
+// the celo native token is at an address 0x471EcE3750Da237f93B8E339c536989b8978a438
+// and LiFi doesn't work if we pass address 0 for this. We map it only for
+// lifi to make the swap work in this case
+const lifiMapNativeToAddr = (chainId: number, tokenAddr: string) => {
+  if (tokenAddr !== ZeroAddress) return tokenAddr
+  // celo chain
+  if (chainId !== 42220) return tokenAddr
+
+  return '0x471EcE3750Da237f93B8E339c536989b8978a438'
+}
+
+const lifiTokenListFilter = (t: SwapAndBridgeToToken) => {
+  // disabled tokens, this one is CELO as an addr on CELO chain (exists as native)
+  return !(t.chainId === 42220 && t.address === '0x471EcE3750Da237f93B8E339c536989b8978a438')
+}
+
+/**
+ * Map the token address back to native when needed
+ */
+const mapNativeToAddr = (
+  serviceProviderId: 'lifi' | 'socket',
+  chainId: number,
+  tokenAddr: string
+) => {
+  if (serviceProviderId === 'socket') return tokenAddr
+
+  if (chainId !== 42220) return tokenAddr
+
+  if (tokenAddr !== '0x471EcE3750Da237f93B8E339c536989b8978a438') return tokenAddr
+
+  return ZeroAddress
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
-  getSwapAndBridgeCalls
+  getSwapAndBridgeCalls,
+  lifiMapNativeToAddr,
+  lifiTokenListFilter,
+  mapNativeToAddr
 }

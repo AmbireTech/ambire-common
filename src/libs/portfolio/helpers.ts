@@ -3,13 +3,13 @@ import { Contract, formatUnits, ZeroAddress } from 'ethers'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
   AdditionalPortfolioNetworkResult,
+  GetOptions,
   NetworkState,
   PortfolioGasTankResult,
   PreviousHintsStorage,
@@ -37,12 +37,17 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
-export function getFlags(networkData: any, chainId: string, tokenChainId: bigint, address: string) {
+export function getFlags(
+  networkData: any,
+  chainId: string,
+  tokenChainId: bigint,
+  address: string
+): TokenResult['flags'] {
   const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId)
   const onGasTank = chainId === 'gasTank'
 
-  let rewardsType = null
-  if (networkData?.xWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
+  let rewardsType: TokenResult['flags']['rewardsType'] = null
+  if (networkData?.stkWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-rewards'
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-vesting'
@@ -53,7 +58,7 @@ export function getFlags(networkData: any, chainId: string, tokenChainId: bigint
       (isRewardsOrGasTank ? t.chainId === tokenChainId : t.chainId.toString() === chainId)
   )
 
-  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
+  const canTopUpGasTank = !!foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
   const isFeeToken =
     address === ZeroAddress ||
     // disable if not in gas tank
@@ -64,7 +69,8 @@ export function getFlags(networkData: any, chainId: string, tokenChainId: bigint
     onGasTank,
     rewardsType,
     canTopUpGasTank,
-    isFeeToken
+    isFeeToken,
+    isHidden: false
   }
 }
 
@@ -170,71 +176,18 @@ export const getAccountPortfolioTotal = (
   }, 0)
 }
 
-export const getPinnedGasTankTokens = (
-  availableGasTankAssets: TokenResult[],
-  hasNonZeroTokens: boolean,
-  accountId: AccountId,
-  gasTankTokens: TokenResult[]
-) => {
-  if (!availableGasTankAssets) return []
-  // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
-  if (hasNonZeroTokens) return []
-
-  return availableGasTankAssets.reduce((acc: TokenResult[], token: any) => {
-    const isGasTankToken = !!gasTankTokens.find(
-      (gasTankToken: TokenResult) =>
-        gasTankToken.symbol.toLowerCase() === token.symbol.toLowerCase()
-    )
-    const isAlreadyPinned = !!acc.find(
-      (accToken) => accToken.symbol.toLowerCase() === token.symbol.toLowerCase()
-    )
-
-    if (isGasTankToken || isAlreadyPinned) return acc
-
-    const correspondingPinnedToken = PINNED_TOKENS.find(
-      (pinnedToken) =>
-        (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
-        pinnedToken.address === token.address &&
-        pinnedToken.chainId.toString() === token.chainId.toString()
-    )
-
-    if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
-      acc.push({
-        address: token.address,
-        symbol: token.symbol.toUpperCase(),
-        name: token.name,
-        amount: 0n,
-        chainId: correspondingPinnedToken.chainId,
-        decimals: token.decimals,
-        priceIn: [
-          {
-            baseCurrency: 'usd',
-            price: token.price
-          }
-        ],
-        flags: {
-          rewardsType: null,
-          canTopUpGasTank: true,
-          isFeeToken: true,
-          onGasTank: true
-        }
-      })
-    }
-    return acc
-  }, [])
-}
-
 export const stripExternalHintsAPIResponse = (
   response: StrippedExternalHintsAPIResponse | null
 ): StrippedExternalHintsAPIResponse | null => {
   if (!response) return null
 
-  const { erc20s, erc721s, lastUpdate } = response
+  const { erc20s, erc721s, lastUpdate, skipOverrideSavedHints } = response
 
   return {
     erc20s,
     erc721s,
-    lastUpdate
+    lastUpdate,
+    skipOverrideSavedHints: !!skipOverrideSavedHints
   }
 }
 
@@ -364,29 +317,59 @@ export function getUpdatedHints(
   }
 }
 
-export const getTokensReadyToLearn = (toBeLearnedTokens: string[], resultTokens: TokenResult[]) => {
-  if (!toBeLearnedTokens || !resultTokens || !toBeLearnedTokens.length || !resultTokens.length)
-    return []
+export const getSpecialHints = (
+  chainId: Network['chainId'],
+  customTokens: CustomToken[],
+  tokenPreferences: TokenPreference[],
+  toBeLearnedTokens: {
+    [chainId: string]: string[]
+  }
+) => {
+  // The order is important here.
+  // Learned tokens are first because they can be overridden by custom or hidden tokens.
+  // Custom tokens are second because they can become hidden-custom
+  // Hidden tokens are last because they can become hidden-custom if a custom token with the same address exists.
+  const specialErc20Hints: GetOptions['specialErc20Hints'] = {}
 
-  return toBeLearnedTokens.filter((address) =>
-    resultTokens.find((resultToken) => resultToken.address === address && resultToken.amount > 0n)
-  )
+  if (toBeLearnedTokens && toBeLearnedTokens[chainId.toString()]) {
+    toBeLearnedTokens[chainId.toString()].forEach((token) => {
+      specialErc20Hints[token] = 'learn'
+    })
+  }
+
+  customTokens.forEach((token) => {
+    if (token.chainId === chainId && token.standard === 'ERC20') {
+      specialErc20Hints[token.address] = 'custom'
+    }
+  })
+
+  tokenPreferences.forEach((token) => {
+    if (token.chainId === chainId && token.isHidden) {
+      if (specialErc20Hints[token.address]) {
+        specialErc20Hints[token.address] = 'hidden-custom'
+      } else {
+        specialErc20Hints[token.address] = 'hidden'
+      }
+    }
+  })
+
+  return specialErc20Hints
 }
 
 export const tokenFilter = (
   token: TokenResult,
-  nativeToken: TokenResult,
   network: Network,
-  hasNonZeroTokens: boolean,
-  additionalHints: string[] | undefined,
-  isTokenPreference: boolean
+  isToBeLearned: boolean,
+  shouldIncludePinned: boolean,
+  nativeToken?: TokenResult
 ): boolean => {
   // Never add ERC20 tokens that represent the network's native token.
   // For instance, on Polygon, we have this token: `0x0000000000000000000000000000000000001010`.
   // It mimics the native POL token (same symbol, same amount) and is shown twice in the Dashboard.
   // From a user's perspective, the token is duplicated and counted twice in the balance.
   const isERC20NativeRepresentation =
-    (token.symbol === nativeToken?.symbol ||
+    !!nativeToken &&
+    (token.symbol === nativeToken.symbol ||
       network.oldNativeAssetSymbols?.includes(token.symbol)) &&
     token.amount === nativeToken.amount &&
     token.address !== ZeroAddress
@@ -394,7 +377,7 @@ export const tokenFilter = (
   if (isERC20NativeRepresentation) return false
 
   // always include tokens added as a preference
-  if (isTokenPreference) return true
+  if (token.flags.isHidden || token.flags.isCustom || isToBeLearned) return true
 
   // always include > 0 amount and native token
   if (token.amount > 0 || token.address === ZeroAddress) return true
@@ -403,61 +386,11 @@ export const tokenFilter = (
     return pinnedToken.chainId === network.chainId && pinnedToken.address === token.address
   })
 
-  // make the comparison to lowercase as otherwise, it doesn't work
-  const hintsLowerCase = additionalHints
-    ? additionalHints.map((hint) => hint.toLowerCase())
-    : undefined
-  const isInAdditionalHints = hintsLowerCase?.includes(token.address.toLowerCase())
-
   // if the amount is 0
   // return the token if it's pinned and requested
-  const pinnedRequested = isPinned && !hasNonZeroTokens
+  const pinnedRequested = isPinned && !!shouldIncludePinned
 
-  return isInAdditionalHints || pinnedRequested
-}
-
-/**
- * Filter the TokenResult[] by certain criteria (please refer to `tokenFilter` for more details)
- * and set the token.flags.isHidden flag.
- */
-export const processTokens = (
-  tokenResults: TokenResult[],
-  network: Network,
-  hasNonZeroTokens: boolean,
-  additionalHints: string[] | undefined,
-  tokenPreferences: TokenPreference[],
-  customTokens: CustomToken[]
-): TokenResult[] => {
-  // We need to know the native token in order to execute our filtration logic in tokenFilter.
-  // For performance reasons, we define it here once, instead of during every single iteration in the reduce method.
-  const nativeToken = tokenResults.find((token) => token.address === ZeroAddress)
-
-  return tokenResults.reduce((tokens, tokenResult) => {
-    const token = { ...tokenResult }
-    const isGasTankOrRewards = token.flags.onGasTank || token.flags.rewardsType
-
-    const preference = tokenPreferences?.find((tokenPreference) => {
-      return (
-        tokenPreference.address === token.address && tokenPreference.chainId === network.chainId
-      )
-    })
-
-    if (preference) {
-      token.flags.isHidden = preference.isHidden
-    }
-
-    token.flags.isCustom =
-      !isGasTankOrRewards &&
-      !!customTokens.find(
-        (customToken) =>
-          customToken.address === token.address && customToken.chainId === network.chainId
-      )
-
-    if (tokenFilter(token, nativeToken!, network, hasNonZeroTokens, additionalHints, !!preference))
-      tokens.push(token)
-
-    return tokens
-  }, [] as TokenResult[])
+  return pinnedRequested
 }
 
 export const isPortfolioGasTankResult = (
@@ -465,3 +398,6 @@ export const isPortfolioGasTankResult = (
 ): result is PortfolioGasTankResult => {
   return !!result && 'gasTankTokens' in result && Array.isArray(result.gasTankTokens)
 }
+
+export const isNative = (token: TokenResult) =>
+  token.address === ZeroAddress && !token.flags.onGasTank
