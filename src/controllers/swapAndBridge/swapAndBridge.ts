@@ -1734,7 +1734,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.isAutoSelectRouteDisabled = isAutoSelectDisabled
     }
 
-    await this.initSignAccountOpIfNeeded()
+    await this.initSignAccountOpIfNeeded(this.#updateQuoteId)
     this.emitUpdate()
   }
 
