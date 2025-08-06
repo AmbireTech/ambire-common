@@ -2049,7 +2049,7 @@ export class SwapAndBridgeController extends EventEmitter {
   /**
    * Guard to ensure we only proceed with data that matches the latest active quote in `this.#updateQuoteId`.
    */
-  #validateUpdateQuoteIdAfterAsyncOperation(quoteIdGuard: string) {
+  #isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard: string) {
     return quoteIdGuard && quoteIdGuard !== this.#updateQuoteId
   }
 
@@ -2091,11 +2091,11 @@ export class SwapAndBridgeController extends EventEmitter {
       network.chainId
     )
 
-    if (this.#validateUpdateQuoteIdAfterAsyncOperation(quoteIdGuard)) return
+    if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     const userTxn = await this.getRouteStartUserTx()
 
-    if (this.#validateUpdateQuoteIdAfterAsyncOperation(quoteIdGuard)) return
+    if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
@@ -2121,7 +2121,7 @@ export class SwapAndBridgeController extends EventEmitter {
       accountState
     )
 
-    if (this.#validateUpdateQuoteIdAfterAsyncOperation(quoteIdGuard)) return
+    if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
