@@ -8,11 +8,13 @@ import {
   Network,
   NetworkFeature,
   NetworkInfo,
-  NetworkInfoLoading
+  NetworkInfoLoading,
+  RelayerNetwork
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
+import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, gnosis, fantom, metis
@@ -410,4 +412,80 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
   })
 
   return validNetworks
+}
+
+export const getNetworksUpdatedWithRelayerNetworks = (
+  currentNetworks: { [key: string]: Network },
+  relayerNetworks: { [key: string]: RelayerNetwork }
+): { [key: string]: Network } => {
+  const updatedNetworks = { ...currentNetworks }
+
+  Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
+    const chainId = BigInt(_chainId)
+    const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
+    const currentNetwork = currentNetworks[chainId.toString()]
+
+    if (!currentNetwork) {
+      updatedNetworks[chainId.toString()] = {
+        ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
+        ...relayerNetwork,
+        disabled: !!relayerNetwork.disabledByDefault
+      }
+      return
+    }
+
+    // If the network is custom we assume predefinedConfigVersion = 0
+    if (currentNetwork.predefinedConfigVersion === undefined) {
+      currentNetwork.predefinedConfigVersion = 0
+    }
+
+    // Mechanism to force an update network preferences if needed
+    const shouldOverrideStoredNetwork =
+      relayerNetwork.predefinedConfigVersion > 0 &&
+      relayerNetwork.predefinedConfigVersion > currentNetwork.predefinedConfigVersion
+
+    if (shouldOverrideStoredNetwork) {
+      updatedNetworks[chainId.toString()] = {
+        ...currentNetwork,
+        ...relayerNetwork,
+        rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])]
+      }
+      // update the selectedRpcUrl on disabledByDefault networks as we can
+      // determine better which RPC is the best for our custom networks
+      if (relayerNetwork.disabledByDefault)
+        updatedNetworks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
+    } else {
+      updatedNetworks[chainId.toString()] = {
+        ...currentNetwork,
+        rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
+        iconUrls: relayerNetwork.iconUrls,
+        predefined: relayerNetwork.predefined
+      }
+    }
+  })
+
+  // Step 3: Ensure predefined networks are marked correctly and handle special cases
+  let predefinedChainIds = Object.keys(relayerNetworks)
+
+  if (!predefinedChainIds.length) {
+    predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
+  }
+
+  Object.keys(updatedNetworks).forEach((chainId: string) => {
+    // Remove unnecessary properties:
+    if ('disabledByDefault' in updatedNetworks[chainId]) {
+      delete updatedNetworks[chainId].disabledByDefault
+    }
+
+    const network = updatedNetworks[chainId]
+
+    // If a predefined network is removed by the relayer, mark it as custom
+    // and remove the predefined flag
+    // Update the hasRelayer flag to false just in case
+    if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
+      updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
+    }
+  })
+
+  return updatedNetworks
 }
