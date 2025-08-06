@@ -318,11 +318,17 @@ export class SignAccountOpController extends EventEmitter {
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc
-    this.gasPrice = new GasPriceController(network, provider, this.bundlerSwitcher, () => ({
-      estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      isSignRequestStillActive
-    }))
+    this.gasPrice = new GasPriceController(
+      network,
+      provider,
+      this.baseAccount,
+      this.bundlerSwitcher,
+      () => ({
+        estimation: this.estimation,
+        readyToSign: this.readyToSign,
+        isSignRequestStillActive
+      })
+    )
     this.#shouldSimulate = shouldSimulate
 
     this.#load(shouldSimulate)
