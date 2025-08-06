@@ -2060,6 +2060,10 @@ export class SwapAndBridgeController extends EventEmitter {
    *
    * If the component re-renders or receives stale async events (e.g., an old estimation result),
    * this check prevents applying outdated data to the current form state.
+   *
+   * ⚠️ IMPORTANT: If you make changes here and they involve async operations,
+   * make sure to check `isQuoteIdObsoleteAfterAsyncOperation` afterwards
+   * to ensure you’re not acting on obsolete data.
    */
   async initSignAccountOpIfNeeded(quoteIdGuard: string) {
     // no updates if the user has committed
