@@ -85,10 +85,6 @@ export class NetworksController extends EventEmitter {
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
-    this.#networks = predefinedNetworks.reduce((acc, network) => {
-      acc[network.chainId.toString()] = network
-      return acc
-    }, {} as { [key: string]: Network })
   }
 
   get isInitialized(): boolean {
