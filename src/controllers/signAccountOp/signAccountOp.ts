@@ -1116,6 +1116,64 @@ export class SignAccountOpController extends EventEmitter {
     return amount + amount / 20n
   }
 
+  #addExtra(gasInWei: bigint, percentageIncrease: bigint): Hex {
+    const percent = 100n / percentageIncrease
+    return toBeHex(gasInWei + gasInWei / percent) as Hex
+  }
+
+  /**
+   * What is a good UX?
+   * In the 4337 broadcast model, fee speeds don't make sense. That is
+   * because it doesn't matter if you choose slow or fast, if the bundler
+   * accepts the userOp, he is obliged to broadcast it as soon as possible.
+   * Also, some bundlers return a single value for gas prices, meaning all
+   * speed options should have the same cost
+   *
+   * But Ethereum UX doesn't work liket this.
+   * Users expect to see a broadcast speed in the wallet itself and if
+   * it's not present, they will find it strange.
+   *
+   * The soluiton here is to create the illusion of speeds in the 4337
+   * broadcast model by increasing them only for the user payment but
+   * using the original, bundler provided ones for broadcast.
+   * That way we get a better bundler userOp acceptance rate and a
+   * normal, intuitive UX
+   */
+  #getIncreasedBundlerGasPrices(): GasSpeeds | null {
+    if (!this.bundlerGasPrices) return null
+
+    return {
+      slow: {
+        maxFeePerGas: this.#addExtra(BigInt(this.bundlerGasPrices.slow.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: this.#addExtra(
+          BigInt(this.bundlerGasPrices.slow.maxPriorityFeePerGas),
+          5n
+        )
+      },
+      medium: {
+        maxFeePerGas: this.#addExtra(BigInt(this.bundlerGasPrices.medium.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: this.#addExtra(
+          BigInt(this.bundlerGasPrices.medium.maxPriorityFeePerGas),
+          7n
+        )
+      },
+      fast: {
+        maxFeePerGas: this.#addExtra(BigInt(this.bundlerGasPrices.fast.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: this.#addExtra(
+          BigInt(this.bundlerGasPrices.fast.maxPriorityFeePerGas),
+          10n
+        )
+      },
+      ape: {
+        maxFeePerGas: this.#addExtra(BigInt(this.bundlerGasPrices.ape.maxFeePerGas), 20n),
+        maxPriorityFeePerGas: this.#addExtra(
+          BigInt(this.bundlerGasPrices.ape.maxPriorityFeePerGas),
+          20n
+        )
+      }
+    }
+  }
+
   get #feeSpeedsLoading() {
     return !this.isInitialized || !this.gasPrices
   }
@@ -1183,12 +1241,13 @@ export class SignAccountOpController extends EventEmitter {
         isSponsored: this.isSponsored
       })
       if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        if (!estimation.bundlerEstimation || !this.bundlerGasPrices) return
+        const increasedGasPrices = this.#getIncreasedBundlerGasPrices()
+        if (!estimation.bundlerEstimation || !increasedGasPrices) return
 
         const speeds: SpeedCalc[] = []
         const usesPaymaster = estimation.bundlerEstimation?.paymaster.isUsable()
 
-        for (const [speed, speedValue] of Object.entries(this.bundlerGasPrices as GasSpeeds)) {
+        for (const [speed, speedValue] of Object.entries(increasedGasPrices)) {
           const simulatedGasLimit =
             BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
@@ -1548,8 +1607,24 @@ export class SignAccountOpController extends EventEmitter {
       BigInt(erc4337Estimation.callGasLimit) + this.selectedOption!.gasUsed
     )
     userOperation.verificationGasLimit = erc4337Estimation.verificationGasLimit
-    userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
-    userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+
+    try {
+      // for broadcast, use the original ones provided by the bundler as is
+      // wrapping in a try-catch just-in-case as we don't want this to brick
+      // the extension if something unexpected occurs
+      //
+      // why use the original?
+      // the 4337 broadcast model depends on taking the original bundler values
+      // and not tampering with them
+      userOperation.maxFeePerGas = this.bundlerGasPrices![this.selectedFeeSpeed!].maxFeePerGas
+      userOperation.maxPriorityFeePerGas =
+        this.bundlerGasPrices![this.selectedFeeSpeed!].maxPriorityFeePerGas
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Unable to set the original bundler gas prices, using the increased ones', e)
+      userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
+      userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+    }
 
     const ambireAccount = new Interface(AmbireAccount.abi)
     userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [

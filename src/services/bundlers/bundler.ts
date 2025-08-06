@@ -20,11 +20,6 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 require('dotenv').config()
 
-function addExtra(gasInWei: bigint, percentageIncrease: bigint): Hex {
-  const percent = 100n / percentageIncrease
-  return toBeHex(gasInWei + gasInWei / percent) as Hex
-}
-
 export abstract class Bundler {
   /**
    * The default pollWaitTime. This is used to determine
@@ -172,25 +167,7 @@ export abstract class Bundler {
       return this.fetchGasPrices(network, errorCallback, increment)
     }
 
-    const results = response as GasSpeeds
-    return {
-      slow: {
-        maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.slow.maxPriorityFeePerGas), 5n)
-      },
-      medium: {
-        maxFeePerGas: addExtra(BigInt(results.medium.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.medium.maxPriorityFeePerGas), 7n)
-      },
-      fast: {
-        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 10n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 10n)
-      },
-      ape: {
-        maxFeePerGas: addExtra(BigInt(results.ape.maxFeePerGas), 20n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.ape.maxPriorityFeePerGas), 20n)
-      }
-    }
+    return response as GasSpeeds
   }
 
   // used when catching errors from bundler requests
