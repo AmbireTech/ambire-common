@@ -414,6 +414,12 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
   return validNetworks
 }
 
+/**
+ * Updates the currently stored networks with the networks coming from the relayer.
+ * To determine which networks to update, it compares the predefinedConfigVersion of the stored network
+ * with the relayer network. If no network is found in the storage, it adds the relayer network as a new one.
+ * Even if the predefinedConfigVersion is the same or lower, some properties of the stored network should be updated.
+ */
 export const getNetworksUpdatedWithRelayerNetworks = (
   currentNetworks: { [key: string]: Network },
   relayerNetworks: { [key: string]: RelayerNetwork }
