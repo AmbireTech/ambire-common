@@ -229,10 +229,14 @@ export class MainController extends EventEmitter {
     this.#notificationManager = notificationManager
 
     this.storage = new StorageController(this.#storageAPI)
+    this.featureFlags = new FeatureFlagsController()
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
     this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController({
+      defaultNetworksMode: this.featureFlags.isFeatureEnabled('testnetMode')
+        ? 'testnet'
+        : 'mainnet',
       storage: this.storage,
       fetch,
       relayerUrl,
@@ -248,7 +252,7 @@ export class MainController extends EventEmitter {
         this.providers.removeProvider(chainId)
       }
     })
-    this.featureFlags = new FeatureFlagsController(this.networks)
+
     this.providers = new ProvidersController(this.networks)
     this.accounts = new AccountsController(
       this.storage,

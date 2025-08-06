@@ -1,6 +1,5 @@
 import { Network } from '../interfaces/network'
 import { BICONOMY, PIMLICO } from './bundlers'
-import { testnetNetworks } from './testnetNetworks'
 
 const networks: Network[] = [
   {
@@ -272,8 +271,7 @@ const networks: Network[] = [
     predefined: true,
     disableEstimateGas: true,
     wrappedAddr: '0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8'
-  },
-  ...testnetNetworks
+  }
 ]
 export { networks }
 
