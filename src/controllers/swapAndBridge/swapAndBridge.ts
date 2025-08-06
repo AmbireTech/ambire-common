@@ -1,4 +1,5 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
+import cloneDeep from 'lodash/cloneDeep'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -2064,8 +2065,15 @@ export class SwapAndBridgeController extends EventEmitter {
     )
       return
 
-    const fromToken = this.fromSelectedToken as TokenResult
-    const network = this.#networks.networks.find((net) => net.chainId === fromToken.chainId)
+    // Cache token values to prevent mutations affecting these values, causing
+    // race conditions during async operations.
+    const currentFromSelectedToken = cloneDeep(this.fromSelectedToken)
+    const currentToToken = cloneDeep(this.toSelectedToken)
+    const currentToChainId = this.toChainId
+
+    const network = this.#networks.networks.find(
+      (net) => net.chainId === currentFromSelectedToken.chainId
+    )
 
     // shouldn't happen ever
     if (!network) return
@@ -2091,7 +2099,7 @@ export class SwapAndBridgeController extends EventEmitter {
     }
 
     // learn the token in the portfolio
-    this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
+    this.#portfolio.addTokensToBeLearned([currentToToken.address], BigInt(currentToChainId))
 
     // check if we have an accountOp in main
     const userRequestCalls = batchCallsFromUserRequests({
@@ -2108,7 +2116,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
     if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
 
-    const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
+    const isBridge = this.fromChainId && currentToChainId && this.fromChainId !== currentToChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
 
     if (this.#signAccountOpController) {
@@ -2149,7 +2157,7 @@ export class SwapAndBridgeController extends EventEmitter {
       accountOpToExecuteBefore: null,
       calls,
       flags: {
-        hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
+        hideActivityBanner: currentFromSelectedToken.chainId !== BigInt(currentToToken.chainId)
       },
       meta: {
         swapTxn: userTxn,
