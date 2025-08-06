@@ -639,32 +639,32 @@ export class EmailVaultController extends EventEmitter {
   get banners(): Banner[] {
     const banners: Banner[] = []
 
-    // const now = Date.now()
-    // const ONE_WEEK = 1000 * 60 * 60 * 24 * 7
-    //
-    // const isDismissed =
-    //   this.#setupBannerDismissedAt > 0 && now - this.#setupBannerDismissedAt < ONE_WEEK
+    const now = Date.now()
+    const ONE_WEEK = 1000 * 60 * 60 * 24 * 7
+
+    const isDismissed =
+      this.#setupBannerDismissedAt > 0 && now - this.#setupBannerDismissedAt < ONE_WEEK
 
     // Show the banner if the keystore is already configured and the `password` secret is already set (for HW and ViewOnly accounts the app can run without keystore)
     // and if the keystore secret backup is not enabled already
-    // if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery && !isDismissed) {
-    //   banners.push({
-    //     id: 'keystore-secret-backup',
-    //     type: 'info',
-    //     title: 'Enable extension password reset via email',
-    //     text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
-    //     actions: [
-    //       {
-    //         label: 'Dismiss',
-    //         actionName: 'dismiss-email-vault'
-    //       },
-    //       {
-    //         label: 'Enable',
-    //         actionName: 'backup-keystore-secret'
-    //       }
-    //     ]
-    //   })
-    // }
+    if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery && !isDismissed) {
+      banners.push({
+        id: 'keystore-secret-backup',
+        type: 'info',
+        title: 'Enable extension password reset via email',
+        text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
+        actions: [
+          {
+            label: 'Dismiss',
+            actionName: 'dismiss-email-vault'
+          },
+          {
+            label: 'Enable',
+            actionName: 'backup-keystore-secret'
+          }
+        ]
+      })
+    }
 
     Object.keys(this.emailVaultStates.email).forEach((email) => {
       const emailVaultData = this.emailVaultStates?.email?.[email]

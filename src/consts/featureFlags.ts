@@ -1,7 +1,9 @@
 export interface FeatureFlags {
   withTransactionManagerController: boolean
+  withEmailVaultController: boolean
 }
 
 export const featureFlags: FeatureFlags = {
-  withTransactionManagerController: false
+  withTransactionManagerController: false,
+  withEmailVaultController: true
 }

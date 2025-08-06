@@ -143,15 +143,13 @@ export class MainController extends EventEmitter {
 
   phishing: PhishingController
 
-  // Public sub-structures
-  // @TODO emailVaults
-  emailVault: EmailVaultController
+  emailVault?: EmailVaultController
 
   signMessage: SignMessageController
 
   swapAndBridge: SwapAndBridgeController
 
-  transactionManager: TransactionManagerController
+  transactionManager?: TransactionManagerController
 
   transfer: TransferController
 
@@ -292,7 +290,14 @@ export class MainController extends EventEmitter {
       networks: this.networks,
       providers: this.providers
     })
-    this.emailVault = new EmailVaultController(this.storage, this.fetch, relayerUrl, this.keystore)
+    if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
+      this.emailVault = new EmailVaultController(
+        this.storage,
+        this.fetch,
+        relayerUrl,
+        this.keystore
+      )
+    }
     this.accountPicker = new AccountPickerController({
       accounts: this.accounts,
       keystore: this.keystore,
@@ -405,23 +410,25 @@ export class MainController extends EventEmitter {
       this.networks.defaultNetworksMode
     )
 
-    // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
-    this.transactionManager = new TransactionManagerController({
-      accounts: this.accounts,
-      keystore: this.keystore,
-      portfolio: this.portfolio,
-      externalSignerControllers: this.#externalSignerControllers,
-      providers: this.providers,
-      selectedAccount: this.selectedAccount,
-      networks: this.networks,
-      activity: this.activity,
-      invite: this.invite,
-      serviceProviderAPI: lifiAPI,
-      storage: this.storage,
-      portfolioUpdate: () => {
-        this.updateSelectedAccountPortfolio({ forceUpdate: true })
-      }
-    })
+    if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
+      // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
+      this.transactionManager = new TransactionManagerController({
+        accounts: this.accounts,
+        keystore: this.keystore,
+        portfolio: this.portfolio,
+        externalSignerControllers: this.#externalSignerControllers,
+        providers: this.providers,
+        selectedAccount: this.selectedAccount,
+        networks: this.networks,
+        activity: this.activity,
+        invite: this.invite,
+        serviceProviderAPI: lifiAPI,
+        storage: this.storage,
+        portfolioUpdate: () => {
+          this.updateSelectedAccountPortfolio({ forceUpdate: true })
+        }
+      })
+    }
 
     this.requests = new RequestsController({
       relayerUrl,
@@ -435,9 +442,7 @@ export class MainController extends EventEmitter {
       swapAndBridge: this.swapAndBridge,
       windowManager: this.#windowManager,
       notificationManager: this.#notificationManager,
-      transactionManager: this.featureFlags.isFeatureEnabled('withTransactionManagerController')
-        ? this.transactionManager
-        : undefined,
+      transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
       updateSignAccountOp: (props) => {
         if (!this.signAccountOp) return
@@ -535,7 +540,7 @@ export class MainController extends EventEmitter {
 
   lock() {
     this.keystore.lock()
-    this.emailVault.cleanMagicAndSessionKeys()
+    this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
   }
 
@@ -1961,7 +1966,7 @@ export class MainController extends EventEmitter {
       )
 
       // TODO: the form should be reset in a success state in FE
-      this.transactionManager.formState.resetForm()
+      this.transactionManager?.formState.resetForm()
     }
     // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
     // visualize the success page on the FE instead of resetting the form
