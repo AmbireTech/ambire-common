@@ -424,15 +424,15 @@ export const getNetworksUpdatedWithRelayerNetworks = (
   currentNetworks: { [key: string]: Network },
   relayerNetworks: { [key: string]: RelayerNetwork }
 ): { [key: string]: Network } => {
-  const updatedNetworks = { ...currentNetworks }
+  const networks = structuredClone(currentNetworks)
 
   Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
     const chainId = BigInt(_chainId)
     const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
-    const currentNetwork = currentNetworks[chainId.toString()]
+    const currentNetwork = networks[chainId.toString()]
 
     if (!currentNetwork) {
-      updatedNetworks[chainId.toString()] = {
+      networks[chainId.toString()] = {
         ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
         ...relayerNetwork,
         disabled: !!relayerNetwork.disabledByDefault
@@ -451,7 +451,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       relayerNetwork.predefinedConfigVersion > currentNetwork.predefinedConfigVersion
 
     if (shouldOverrideStoredNetwork) {
-      updatedNetworks[chainId.toString()] = {
+      networks[chainId.toString()] = {
         ...currentNetwork,
         ...relayerNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])]
@@ -459,9 +459,9 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       // update the selectedRpcUrl on disabledByDefault networks as we can
       // determine better which RPC is the best for our custom networks
       if (relayerNetwork.disabledByDefault)
-        updatedNetworks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
+        networks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
     } else {
-      updatedNetworks[chainId.toString()] = {
+      networks[chainId.toString()] = {
         ...currentNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
         iconUrls: relayerNetwork.iconUrls,
@@ -477,21 +477,21 @@ export const getNetworksUpdatedWithRelayerNetworks = (
     predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
   }
 
-  Object.keys(updatedNetworks).forEach((chainId: string) => {
+  Object.keys(networks).forEach((chainId: string) => {
     // Remove unnecessary properties:
-    if ('disabledByDefault' in updatedNetworks[chainId]) {
-      delete updatedNetworks[chainId].disabledByDefault
+    if ('disabledByDefault' in networks[chainId]) {
+      delete networks[chainId].disabledByDefault
     }
 
-    const network = updatedNetworks[chainId]
+    const network = networks[chainId]
 
     // If a predefined network is removed by the relayer, mark it as custom
     // and remove the predefined flag
     // Update the hasRelayer flag to false just in case
     if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
-      updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
+      networks[chainId] = { ...network, predefined: false, hasRelayer: false }
     }
   })
 
-  return updatedNetworks
+  return networks
 }

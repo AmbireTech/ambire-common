@@ -188,6 +188,9 @@ describe('Networks lib', () => {
       expect(result1['999'].name).toBe('Custom Network')
       expect(result1['999'].rpcUrls).toEqual(['https://custom-rpc.com'])
     })
+    it('networksObj reference should not be modified', () => {
+      expect(NEVER_MUTATE_NETWORKS_OBJ).toEqual(networksObj)
+    })
   })
 })
 
@@ -227,6 +230,7 @@ const networksObj = predefinedNetworks.reduce(
 )
 
 const mockRelayerNetworks = () => {
+  const clonedNetworksObj = structuredClone(networksObj)
   const relayerNets: {
     [key: string]: RelayerNetwork
   } = {}
@@ -249,7 +253,7 @@ const mockRelayerNetworks = () => {
   } as RelayerNetwork['native']
 
   relayerNets['1'] = {
-    ...networksObj['1'],
+    ...clonedNetworksObj['1'],
     predefinedConfigVersion: 3,
     ambireId: 'mock-chain-id-1',
     native: MOCK_NATIVE,
@@ -262,7 +266,7 @@ const mockRelayerNetworks = () => {
   } as RelayerNetwork
 
   relayerNets['2'] = {
-    ...networksObj['1'],
+    ...clonedNetworksObj['1'],
     predefinedConfigVersion: 1,
     disabledByDefault: true,
     ambireId: 'mock-chain-id-2',
@@ -276,7 +280,7 @@ const mockRelayerNetworks = () => {
   } as RelayerNetwork
 
   relayerNets['3'] = {
-    ...networksObj['1'],
+    ...clonedNetworksObj['1'],
     predefinedConfigVersion: 2,
     ambireId: 'mock-chain-id-3',
     native: MOCK_NATIVE,
@@ -289,3 +293,4 @@ const mockRelayerNetworks = () => {
 }
 
 const MOCK_RELAYER_NETWORKS = mockRelayerNetworks()
+const NEVER_MUTATE_NETWORKS_OBJ = structuredClone(networksObj)
