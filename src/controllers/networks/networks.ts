@@ -228,9 +228,16 @@ export class NetworksController extends EventEmitter {
     [key: string]: Network
   }): Promise<{ [key: string]: Network }> {
     let relayerNetworks: RelayerNetworkConfigResponse = {}
-    const updatedNetworks = { ...currentNetworks }
     try {
-      const res = await this.#callRelayer('/v2/config/networks')
+      const res = await Promise.race([
+        this.#callRelayer('/v2/config/networks'),
+        new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new Error('Relayer call to /v2/config/networks timed out after 5000ms')),
+            5000
+          )
+        })
+      ])
       relayerNetworks = res.data.extensionConfigNetworks
 
       return getNetworksUpdatedWithRelayerNetworks(currentNetworks, relayerNetworks)
@@ -238,7 +245,7 @@ export class NetworksController extends EventEmitter {
       console.error('Failed to fetch networks from the Relayer', e)
     }
 
-    return updatedNetworks
+    return currentNetworks
   }
 
   /**
