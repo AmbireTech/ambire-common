@@ -347,8 +347,7 @@ export class SignAccountOpController extends EventEmitter {
       )
     )
       return {
-        title:
-          'A transaction in this batch is targeting your current account and might include malicious data.',
+        title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
       }
 
