@@ -87,7 +87,6 @@ describe('Networks lib', () => {
       expect(result2['1'].disabled).toBeFalsy()
     })
     it('Even if predefinedConfigVersion is the same or lower, some properties of the stored network should be updated', () => {
-      // Check if rpcUrls, iconUrls and predefined are updated
       const result1 = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
 
       expect(result1).toHaveProperty('1')
