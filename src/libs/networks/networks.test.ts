@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { describe, expect, test } from '@jest/globals'
@@ -5,105 +6,6 @@ import { describe, expect, test } from '@jest/globals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Network, NetworkInfo, RelayerNetwork } from '../../interfaces/network'
 import { getFeaturesByNetworkProperties, getNetworksUpdatedWithRelayerNetworks } from './networks'
-
-const network = {
-  id: 'ethereum',
-  name: 'Ethereum',
-  nativeAssetSymbol: 'ETH',
-  has7702: false,
-  nativeAssetName: 'Ether',
-  rpcUrls: ['https://invictus.ambire.com/ethereum'],
-  selectedRpcUrl: 'https://invictus.ambire.com/ethereum',
-  rpcNoStateOverride: false,
-  chainId: 1n,
-  explorerUrl: 'https://etherscan.io',
-  erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
-  isSAEnabled: true,
-  areContractsDeployed: true,
-  hasRelayer: true,
-  platformId: 'ethereum',
-  nativeAssetId: 'ethereum',
-  hasSingleton: true,
-  features: [],
-  feeOptions: { is1559: true },
-  predefined: true,
-  wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-  disableEstimateGas: true
-}
-
-const networksObj = predefinedNetworks.reduce(
-  (acc, n) => {
-    acc[n.chainId.toString()] = network
-    return acc
-  },
-  {} as {
-    [key: string]: Network
-  }
-)
-
-const mockRelayerNetworks = () => {
-  const relayerNets: {
-    [key: string]: RelayerNetwork
-  } = {}
-
-  const MOCK_NATIVE = {
-    symbol: 'ETH',
-    name: 'Ether',
-    decimals: 18,
-    wrapped: {
-      address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-      chainId: 1n,
-      coingeckoId: 'ethereum',
-      name: 'Wrapped Ether',
-      symbol: 'WETH',
-      decimals: 18,
-      icon: ''
-    },
-    coingeckoId: 'ethereum',
-    icon: ''
-  } as RelayerNetwork['native']
-
-  relayerNets['1'] = {
-    ...networksObj['1'],
-    predefinedConfigVersion: 3,
-    ambireId: 'mock-chain-id-1',
-    native: MOCK_NATIVE,
-    iconUrls: ['1', '2'],
-    chainId: 1,
-    smartAccounts: {
-      hasRelayer: networksObj['1'].hasRelayer,
-      erc4337: networksObj['1'].erc4337
-    }
-  } as RelayerNetwork
-
-  relayerNets['2'] = {
-    ...networksObj['1'],
-    predefinedConfigVersion: 1,
-    disabledByDefault: true,
-    ambireId: 'mock-chain-id-2',
-    native: MOCK_NATIVE,
-    iconUrls: ['1', '2'],
-    chainId: 2,
-    smartAccounts: {
-      hasRelayer: networksObj['1'].hasRelayer,
-      erc4337: networksObj['1'].erc4337
-    }
-  } as RelayerNetwork
-
-  relayerNets['3'] = {
-    ...networksObj['1'],
-    predefinedConfigVersion: 2,
-    ambireId: 'mock-chain-id-3',
-    native: MOCK_NATIVE,
-    iconUrls: ['1', '2'],
-    chainId: 3,
-    isOptimistic: false
-  } as RelayerNetwork
-
-  return relayerNets
-}
-
-const MOCK_RELAYER_NETWORKS = mockRelayerNetworks()
 
 describe('Networks lib', () => {
   describe('Network features', () => {
@@ -289,3 +191,102 @@ describe('Networks lib', () => {
     })
   })
 })
+
+const network = {
+  id: 'ethereum',
+  name: 'Ethereum',
+  nativeAssetSymbol: 'ETH',
+  has7702: false,
+  nativeAssetName: 'Ether',
+  rpcUrls: ['https://invictus.ambire.com/ethereum'],
+  selectedRpcUrl: 'https://invictus.ambire.com/ethereum',
+  rpcNoStateOverride: false,
+  chainId: 1n,
+  explorerUrl: 'https://etherscan.io',
+  erc4337: { enabled: false, hasPaymaster: true, hasBundlerSupport: true },
+  isSAEnabled: true,
+  areContractsDeployed: true,
+  hasRelayer: true,
+  platformId: 'ethereum',
+  nativeAssetId: 'ethereum',
+  hasSingleton: true,
+  features: [],
+  feeOptions: { is1559: true },
+  predefined: true,
+  wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  disableEstimateGas: true
+}
+
+const networksObj = predefinedNetworks.reduce(
+  (acc, n) => {
+    acc[n.chainId.toString()] = network
+    return acc
+  },
+  {} as {
+    [key: string]: Network
+  }
+)
+
+const mockRelayerNetworks = () => {
+  const relayerNets: {
+    [key: string]: RelayerNetwork
+  } = {}
+
+  const MOCK_NATIVE = {
+    symbol: 'ETH',
+    name: 'Ether',
+    decimals: 18,
+    wrapped: {
+      address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      chainId: 1n,
+      coingeckoId: 'ethereum',
+      name: 'Wrapped Ether',
+      symbol: 'WETH',
+      decimals: 18,
+      icon: ''
+    },
+    coingeckoId: 'ethereum',
+    icon: ''
+  } as RelayerNetwork['native']
+
+  relayerNets['1'] = {
+    ...networksObj['1'],
+    predefinedConfigVersion: 3,
+    ambireId: 'mock-chain-id-1',
+    native: MOCK_NATIVE,
+    iconUrls: ['1', '2'],
+    chainId: 1,
+    smartAccounts: {
+      hasRelayer: networksObj['1'].hasRelayer,
+      erc4337: networksObj['1'].erc4337
+    }
+  } as RelayerNetwork
+
+  relayerNets['2'] = {
+    ...networksObj['1'],
+    predefinedConfigVersion: 1,
+    disabledByDefault: true,
+    ambireId: 'mock-chain-id-2',
+    native: MOCK_NATIVE,
+    iconUrls: ['1', '2'],
+    chainId: 2,
+    smartAccounts: {
+      hasRelayer: networksObj['1'].hasRelayer,
+      erc4337: networksObj['1'].erc4337
+    }
+  } as RelayerNetwork
+
+  relayerNets['3'] = {
+    ...networksObj['1'],
+    predefinedConfigVersion: 2,
+    ambireId: 'mock-chain-id-3',
+    native: MOCK_NATIVE,
+    iconUrls: ['1', '2'],
+    chainId: 3,
+    isOptimistic: false
+  } as RelayerNetwork
+
+  return relayerNets
+}
+
+const MOCK_RELAYER_NETWORKS = mockRelayerNetworks()
