@@ -1584,11 +1584,11 @@ export class SignAccountOpController extends EventEmitter {
 
       if (!(newEstimate instanceof Error)) {
         erc4337Estimation = newEstimate as Erc4337GasLimits
-        gasFeePayment.gasPrice = BigInt(
-          erc4337Estimation.gasPrice[this.selectedFeeSpeed!].maxFeePerGas
-        )
+        this.bundlerGasPrices = erc4337Estimation.gasPrice
+
+        gasFeePayment.gasPrice = BigInt(this.bundlerGasPrices[this.selectedFeeSpeed!].maxFeePerGas)
         gasFeePayment.maxPriorityFeePerGas = BigInt(
-          erc4337Estimation.gasPrice[this.selectedFeeSpeed!].maxPriorityFeePerGas
+          this.bundlerGasPrices[this.selectedFeeSpeed!].maxPriorityFeePerGas
         )
       }
     }
@@ -1834,14 +1834,17 @@ export class SignAccountOpController extends EventEmitter {
         const paymaster = erc4337Estimation.paymaster
         if (paymaster.shouldIncludePayment()) this.#addFeePayment()
 
-        // fix two problems:
+        // fix three problems:
         // 1) when we do eip7702Auth, initial estimation is not enough
         // 2) we estimate with the gas tank but if the user chooses
         // native, it could result in low gas limit => txn price too low.
         // In both cases, we re-estimate before broadcast
+        // 3) some bundlers require a re-estimate before broadcast
         let shouldReestimate =
-          !!erc4337Estimation.feeCallType &&
-          paymaster.getFeeCallType([this.selectedOption.token]) !== erc4337Estimation.feeCallType
+          (!!erc4337Estimation.feeCallType &&
+            paymaster.getFeeCallType([this.selectedOption.token]) !==
+              erc4337Estimation.feeCallType) ||
+          this.bundlerSwitcher.getBundler().shouldReestimateBeforeBroadcast(this.#network)
 
         // sign the 7702 authorization if needed
         let eip7702Auth

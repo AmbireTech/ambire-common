@@ -49,6 +49,12 @@ export abstract class Bundler {
   public abstract getName(): BUNDLER
 
   /**
+   * Each bundler should declare the conditions upon a reestimate before
+   * broadcast is needed
+   */
+  public abstract shouldReestimateBeforeBroadcast(network: Network): boolean
+
+  /**
    * Get the bundler RPC
    *
    * @param network
