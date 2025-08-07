@@ -6,6 +6,8 @@ import { ErrorHumanizerError } from './types'
 const insufficientPaymasterFunds =
   "the Paymaster has insufficient funds. Please report this to the team. We've disabled it, so please try again with the updated fee payment options."
 
+const noPrefixReasons = ['0xf8618030', 'TRANSFER_FROM_FAILED']
+
 const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   // Rpc
   {
@@ -56,6 +58,24 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     reasons: ['Transaction underpriced'],
     message: 'it is underpriced. Please select a higher transaction speed and try again.'
   },
+  // TODO: Figure out a more elegant way to handle errors with dynamic messages
+  {
+    reasons: ['Insufficient ETH for transaction calls'],
+    message: "you don't have enough ETH to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient AVAX for transaction calls'],
+    message: "you don't have enough AVAX to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient BNB for transaction calls'],
+    message: "you don't have enough BNB to cover the gas costs for this transaction."
+  },
+  {
+    reasons: ['Insufficient POL for transaction calls'],
+    message: "you don't have enough POL to cover the gas costs for this transaction."
+  },
+  // End of TODO
   // Smart Accounts
   {
     reasons: ['Sponsorship failed.'],
@@ -74,8 +94,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['user nonce too low'],
-    message:
-      'the user nonce is too low. Is there a pending transaction? Please try broadcasting again.'
+    message: 'of a pending transaction. Please try broadcasting again.'
   },
   // dApp interactions
   {
@@ -87,14 +106,22 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'the slippage tolerance was exceeded.'
   },
   {
+    // another slippage error but this time with a prompt for the user to
+    // try and change the from amount. @Li.Fi. errors
+    reasons: ['0x275c273c'],
+    message: 'the slippage tolerance was exceeded. Please try changing the from amount.'
+  },
+  {
     reasons: ['80'],
     message:
-      "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation."
+      "the smart contract you're interacting with doesn't support this operation. This could be due to contract restrictions, insufficient permissions, or specific conditions that haven't been met. Please review the requirements of this operation or consult the contract documentation.",
+    isExactMatch: true
   },
   {
     reasons: ['STF'],
     message:
-      'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.'
+      'of one of the following reasons: missing approval, insufficient approved amount, the amount exceeds the account balance.',
+    isExactMatch: true
   },
   {
     reasons: [EXPIRED_PREFIX, 'Router: EXPIRED', 'Transaction too old', 'BAL#508', 'SWAP_DEADLINE'],
@@ -102,17 +129,23 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
   },
   {
-    reasons: ['0x7b36c479', '0x81ceff30'],
+    reasons: ['0x7b36c479'],
+    message:
+      // @TODO:
+      // Add: "Try increasing slippage tolerance or ensuring sufficient liquidity." to the message when slippage adjustment is implemented
+      'of low liquidity, slippage limits, or insufficient token approval.'
+  },
+  {
+    reasons: ['0x81ceff30', '0x2c5211c6'],
     message: 'of a Swap failure. Please try performing the same swap again.'
   },
-  // bundler
   {
-    reasons: ['biconomy: 400'],
-    message: 'it will revert onchain with reason unknown.'
+    reasons: ['0xf8618030'],
+    message: 'Quote expired'
   },
   {
-    reasons: ['pimlico: 500'],
-    message: 'The bundler seems to be down at the moment. Please try again later'
+    reasons: ['TRANSFER_FROM_FAILED'],
+    message: 'Insufficient token amount'
   }
 ]
 
@@ -157,7 +190,7 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'contracts allowed',
       'ontract is not allowed'
     ],
-    message: 'this app does not support Smart Account wallets. Use a Basic Account (EOA) instead.'
+    message: 'this app does not support Smart Account wallets. Use an EOA account instead.'
   },
   {
     reasons: ['ERC721: token already minted'],
@@ -197,8 +230,9 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
 ]
 
 export {
-  BROADCAST_OR_ESTIMATION_ERRORS,
   BROADCAST_ERRORS,
+  BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
-  insufficientPaymasterFunds
+  insufficientPaymasterFunds,
+  noPrefixReasons
 }

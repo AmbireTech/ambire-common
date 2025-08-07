@@ -13,7 +13,7 @@ describe('AccountOp', () => {
     const txns: Call[] = [{ to: signerAddr, value: ethers.parseEther('0.01'), data: '0x00' }]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
-      networkId: 'ethereum',
+      chainId: 1n,
       signingKeyAddr: null,
       signingKeyType: null,
       nonce,
@@ -34,7 +34,7 @@ describe('AccountOp', () => {
     const txns: Call[] = [{ to: signerAddr, value: ethers.parseEther('0.01'), data: '0x00' }]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
-      networkId: 'ethereum',
+      chainId: 1n,
       signingKeyAddr: null,
       signingKeyType: null,
       nonce: null,

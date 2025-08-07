@@ -22,10 +22,10 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(messageWithCode).toBe(
-      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call). Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: RPC call). Error code: Unsupported method\nPlease try again or contact Ambire support for assistance.`
     )
     expect(messageWithoutCode).toBe(
-      `${MESSAGE_PREFIX} of an unknown error (Origin: Rpc call).\nPlease try again or contact Ambire support for assistance.`
+      `${MESSAGE_PREFIX} of an unknown error (Origin: RPC call).\nPlease try again or contact Ambire support for assistance.`
     )
   })
   it('Relayer error', () => {
@@ -37,7 +37,7 @@ describe('Generic error fallbacks work', () => {
   })
   it('Null error type', () => {
     const LAST_RESORT_ERROR_MESSAGE =
-      'An unknown error occurred while estimating the transaction. Please try again or contact Ambire support for assistance.'
+      'Transaction cannot be sent because of an unknown error. Please try again or contact Ambire support for assistance.'
     // @ts-ignore
     const message = getGenericMessageFromType(null, null, MESSAGE_PREFIX, LAST_RESORT_ERROR_MESSAGE)
 
@@ -71,7 +71,7 @@ describe('Generic error fallbacks work', () => {
     )
 
     expect(message).toBe(
-      `${MESSAGE_PREFIX} it will revert onchain. Error code: The contract reverted\n`
+      `${MESSAGE_PREFIX} it will revert onchain. Error code: The contract reverted`
     )
   })
   it('Innercall failure error with no reason', () => {
@@ -85,5 +85,30 @@ describe('Generic error fallbacks work', () => {
     expect(message).toBe(
       `${MESSAGE_PREFIX} it will revert onchain with reason unknown.\nPlease try again or contact Ambire support for assistance.`
     )
+  })
+  it('Error message is returned if the error is unknown', () => {
+    const message = getGenericMessageFromType(
+      ErrorType.UnknownError,
+      '',
+      MESSAGE_PREFIX,
+      '',
+      new Error('Servers stop working between 2AM and 8AM')
+    )
+
+    expect(message).toBe(
+      'We encountered an unexpected issue: Servers stop working between 2AM and 8AM\nPlease try again or contact Ambire support for assistance.'
+    )
+  })
+  it('Error reason is not included in the message if withReason is false', () => {
+    const message = getGenericMessageFromType(
+      ErrorType.InnerCallFailureError,
+      'The contract reverted',
+      MESSAGE_PREFIX,
+      '',
+      new Error('The contract reverted'),
+      false
+    )
+
+    expect(message).toBe(`${MESSAGE_PREFIX} it will revert onchain.`)
   })
 })

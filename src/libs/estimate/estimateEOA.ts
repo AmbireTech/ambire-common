@@ -31,7 +31,7 @@ export async function estimateEOA(
   if (op.calls.length !== 1)
     return estimationErrorFormatted(
       new Error(
-        "Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."
+        "Trying to make multiple calls with an EOA account which shouldn't happen. Please try again or contact support."
       )
     )
 
@@ -40,7 +40,7 @@ export async function estimateEOA(
   const call = op.calls[0]
   // TODO: try to remove this call
   const nonce = await provider.getTransactionCount(account.addr)
-  const accountState = accountStates[op.accountAddr][op.networkId]
+  const accountState = accountStates[op.accountAddr][op.chainId.toString()]
   const encodedCallData = abiCoder.encode(
     [
       'bytes', // data
@@ -104,6 +104,9 @@ export async function estimateEOA(
     }
   ]
   if (result instanceof Error) return estimationErrorFormatted(result, { feePaymentOptions })
+  const foundError = Array.isArray(result) ? result.find((res) => res instanceof Error) : null
+  if (foundError instanceof Error)
+    return estimationErrorFormatted(foundError, { feePaymentOptions })
 
   let gasUsed = 0n
   if (!network.rpcNoStateOverride) {

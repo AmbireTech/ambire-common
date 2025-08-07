@@ -1,11 +1,7 @@
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { NetworkId } from '../../interfaces/network'
+import { Price } from '../../interfaces/assets'
 import { AccountOp } from '../accountOp/accountOp'
-
-export interface Price {
-  baseCurrency: string
-  price: number
-}
+import { AssetType } from '../defiPositions/types'
 
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
@@ -14,14 +10,14 @@ export interface GetOptionsSimulation {
 }
 export type TokenError = string | '0x'
 
-export type AccountAssetsState = { [networkId: NetworkId]: boolean }
+export type AccountAssetsState = { [chainId: string]: boolean }
 
 export type TokenResult = {
   symbol: string
   name: string
   decimals: number
   address: string
-  networkId: NetworkId
+  chainId: bigint
   amount: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
@@ -29,9 +25,9 @@ export type TokenResult = {
   flags: {
     onGasTank: boolean
     rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
+    defiTokenType?: AssetType
     canTopUpGasTank: boolean
     isFeeToken: boolean
-    isDefiToken?: boolean
     isHidden?: boolean
     isCustom?: boolean
   }
@@ -74,22 +70,41 @@ export interface Hints {
   erc721s: ERC721s
 }
 
-export interface ExternalHintsAPIResponse extends Hints {
-  lastUpdate: number
+export type ExternalHintsAPIResponse = Hints & {
   networkId: string
+  chainId: number
   accountAddr: string
+  /**
+   * When hasHints is false and the list is generated from a top X list,
+   * the prices are coming together with the hints as the response contains
+   * prices for all tokens in the hints. In this case the extension should
+   * not make separate requests for prices.
+   */
   prices: {
     [addr: string]: Price
   }
+  /**
+   * When true, either the account is empty and static hints are returned,
+   * or the hints are coming from a top X list of tokens, sorted by market cap.
+   * In both cases, the hints are not user-specific so they must be learned
+   * and saved in the extension.
+   */
   hasHints: boolean
+  /**
+   * When true, prevents external API hints from overriding locally saved hints
+   * and suppresses related UI errors. This flag is used when the hints database
+   * is temporarily unavailable and the server falls back to static hints.
+   */
+  skipOverrideSavedHints?: boolean
   // Attached by the application error handling logic.
   // All other props, are provided by Velcro Discovery request.
+  lastUpdate: number
   error?: string
 }
 
 export type StrippedExternalHintsAPIResponse = Pick<
   ExternalHintsAPIResponse,
-  'erc20s' | 'erc721s' | 'lastUpdate'
+  'erc20s' | 'erc721s' | 'lastUpdate' | 'skipOverrideSavedHints'
 >
 
 export interface ExtendedError extends Error {
@@ -108,6 +123,10 @@ export interface PortfolioLibGetResult {
   priceCache: PriceCache
   tokens: TokenResult[]
   feeTokens: TokenResult[]
+  toBeLearned: {
+    erc20s: Hints['erc20s']
+    erc721s: Hints['erc721s']
+  }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   hintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
@@ -169,11 +188,11 @@ export type NetworkState = {
 }
 
 export type AccountState = {
-  [networkId: string]: NetworkState | undefined
+  [chainId: string]: NetworkState | undefined
 }
 
 export type PortfolioControllerState = {
-  // accountId:networkId:NetworkState
+  // accountId:chainId:NetworkState
   [accountId: string]: AccountState
 }
 
@@ -190,14 +209,14 @@ export interface Limits {
 }
 
 export type PinnedTokens = {
-  networkId: NetworkId
+  chainId: bigint
   address: string
   onGasTank: boolean
   accountId?: AccountId
 }[]
 
 export type TemporaryTokens = {
-  [networkId: NetworkId]: {
+  [chainId: string]: {
     isLoading: boolean
     errors: { error: string; address: string }[]
     result: { tokens: PortfolioLibGetResult['tokens'] }
@@ -210,23 +229,36 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
+  priceRecencyOnFailure?: number
   previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
   fetchPinned: boolean
+  /**
+   * Hints for ERC20 tokens with a type
+   * custom, hidden and pinned are fetched and returned
+   * by the library regardless of their balance.
+   * `learn` type hints are returned only if the token has a non-zero balance
+   * and added to `toBeLearned`.
+   * !!! If passed the portfolio lib will filter out tokens based on specific
+   * conditions, such as balance and flags.
+   */
+  specialErc20Hints?: {
+    [address: string]: 'custom' | 'hidden' | 'hidden-custom' | 'learn'
+  }
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean
 }
 
 export interface PreviousHintsStorage {
-  learnedTokens: { [network in NetworkId]: { [tokenAddress: string]: string | null } }
-  learnedNfts: { [network in NetworkId]: { [nftAddress: string]: bigint[] } }
+  learnedTokens: { [chainId: string]: { [tokenAddress: string]: string | null } }
+  learnedNfts: { [chainId: string]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: {
     [networkAndAccountKey: string]: GetOptions['previousHintsFromExternalAPI']
   }
 }
 
 export interface NetworkSimulatedAccountOp {
-  [networkId: NetworkId]: AccountOp
+  [chainId: string]: AccountOp
 }
 
 export type PendingAmounts = {

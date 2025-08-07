@@ -3,7 +3,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getToken } from '../../utils'
-import curveModule from './'
+import curveModule from '.'
 
 const transactions = [
   {
@@ -19,7 +19,7 @@ const transactions = [
 ]
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: 'ethereum',
+  chainId: 1n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,

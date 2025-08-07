@@ -11,7 +11,7 @@ import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import { relayerCall } from './relayerCall'
 
-const polygon = networks.find((net) => net.id === 'polygon')!
+const polygon = networks.find((n) => n.chainId === 137n)!
 const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const testAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -40,9 +40,7 @@ describe('Relayer', () => {
       // it should never come here
       expect(true).toBe(false)
     } catch (e: any) {
-      expect(e.message).toBe(
-        'Fee payment is 0, perhaps an invalid fee option has been chosen. Please choose another fee option to try again or contact Ambire support'
-      )
+      expect(e.message).toBe('Invalid payment option. Please contact support')
     }
   })
   test('Test sending a relayer call with an invalid fee payment - it should say that the fee payment is 0', async () => {
@@ -77,9 +75,7 @@ describe('Relayer', () => {
       // it should never come here
       expect(true).toBe(false)
     } catch (e: any) {
-      expect(e.message).toBe(
-        'Fee payment is 0, perhaps an invalid fee option has been chosen. Please choose another fee option to try again or contact Ambire support'
-      )
+      expect(e.message).toBe('Invalid payment option. Please contact support')
     }
   })
 })

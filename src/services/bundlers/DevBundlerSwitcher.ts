@@ -1,4 +1,3 @@
-import { BUNDLER } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { BrokenBiconomyBroadcast } from './brokenBiconomyBroadcast'
 import { BundlerSwitcher } from './bundlerSwitcher'
@@ -11,12 +10,23 @@ import { BundlerSwitcher } from './bundlerSwitcher'
 export class DevBundlerSwitcher extends BundlerSwitcher {
   constructor(
     network: Network,
-    getSignAccountOpStatus: Function,
-    noStateUpdateStatuses: any[],
-    usedBundlers?: BUNDLER[]
+    areUpdatesForbidden: Function,
+    removeAvailableBundlers: boolean = false
   ) {
-    super(network, getSignAccountOpStatus, noStateUpdateStatuses)
+    super(network, areUpdatesForbidden)
+
+    // push all available bundler as used so they are none available
+    if (
+      removeAvailableBundlers &&
+      network.erc4337.bundlers &&
+      network.erc4337.bundlers.length > 1
+    ) {
+      const availableBundlers = network.erc4337.bundlers.filter(
+        (bundler) => bundler !== this.bundler.getName()
+      )
+      this.usedBundlers.push(...availableBundlers)
+    }
+
     this.bundler = new BrokenBiconomyBroadcast()
-    if (usedBundlers) this.usedBundlers.push(...usedBundlers)
   }
 }

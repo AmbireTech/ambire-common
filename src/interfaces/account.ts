@@ -1,3 +1,4 @@
+import { Hex } from './hex'
 import { Network } from './network'
 
 export type AccountId = string
@@ -46,11 +47,13 @@ export interface AccountOnchainState {
   isV2: boolean
   currentBlock: bigint
   isSmarterEoa: boolean
+  delegatedContract: Hex | null
+  delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
 }
 
 export type AccountStates = {
   [accountId: string]: {
-    [networkId: string]: AccountOnchainState
+    [chainId: string]: AccountOnchainState
   }
 }
 

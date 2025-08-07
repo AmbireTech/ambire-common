@@ -4,13 +4,7 @@ import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from '../../../../const
 import { AccountOp } from '../../../accountOp/accountOp'
 import { StkWallet } from '../../const/abis/stkWallet'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import {
-  checkIfUnknownAction,
-  getAction,
-  getLabel,
-  getToken,
-  getUnknownVisualization
-} from '../../utils'
+import { checkIfUnknownAction, getAction, getLabel, getToken } from '../../utils'
 import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
@@ -56,7 +50,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           getToken(WALLET_STAKING_ADDR, shareAmount)
         ]
       },
-      [stkWalletIface.getFunction('stakeAndWrap')!.selector]: ({ data }: IrCall) => {
+      [stkWalletIface.getFunction('enter')!.selector]: ({ data }: IrCall) => {
         const [amount] = stkWalletIface.parseTransaction({ data })!.args
 
         return [
@@ -70,6 +64,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
   }
   const newCalls = irCalls.map((call: IrCall) => {
     if (
+      call.to &&
       stakingAddresses.includes(call.to.toLowerCase()) &&
       (!call.fullVisualization || checkIfUnknownAction(call.fullVisualization))
     ) {
@@ -79,10 +74,6 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
           fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](call)
         }
       }
-      return {
-        ...call,
-        fullVisualization: getUnknownVisualization('staking', call)
-      }
     }
     if (matcher.supplyController[call.data.slice(0, 10)]) {
       return {
@@ -90,8 +81,11 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
         fullVisualization: matcher.supplyController[call.data.slice(0, 10)](call)
       }
     }
-
-    if (call.to === STK_WALLET && matcher.stkWallet[call.data.slice(0, 10)]) {
+    if (
+      call.to &&
+      call.to.toLowerCase() === STK_WALLET.toLowerCase() &&
+      matcher.stkWallet[call.data.slice(0, 10)]
+    ) {
       return {
         ...call,
         fullVisualization: matcher.stkWallet[call.data.slice(0, 10)](call)

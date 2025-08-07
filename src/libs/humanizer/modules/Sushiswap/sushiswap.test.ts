@@ -2,12 +2,13 @@ import { describe, expect } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { Call } from '../../../accountOp/types'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getLabel, getRecipientText, getToken } from '../../utils'
 import { sushiSwapModule } from './sushiSwapModule'
 
-const transactions: { [key: string]: Array<IrCall> } = {
+const transactions: { [key: string]: Call[] } = {
   sushiSwapCalls: [
     {
       to: '0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2',
@@ -19,8 +20,8 @@ const transactions: { [key: string]: Array<IrCall> } = {
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: 'ethereum',
-  // networkId: 'polygon',
+  chainId: 1n,
+  // chainId: 137n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,

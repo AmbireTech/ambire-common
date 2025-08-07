@@ -47,7 +47,7 @@ export async function estimateWithRetries<T>(
       case 'estimation-eoa':
         errorCallback({
           level: 'major',
-          message: 'Estimating gas limits for Basic Account from the RPC timed out.',
+          message: 'Estimating gas limits for EOA account from the RPC timed out.',
           error: new Error('Budler gas limit estimation timeout')
         })
         break
@@ -87,8 +87,6 @@ export async function estimateWithRetries<T>(
         counter + 1
       )
     }
-
-    return error
   }
 
   return result as T

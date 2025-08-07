@@ -8,7 +8,7 @@ import { networks } from '../../../consts/networks'
 import { getGasPriceRecommendations } from '../gasPrice'
 import MockProvider from './MockProvider'
 
-const network = networks.find((net) => net.id === 'ethereum')!
+const network = networks.find((net) => net.chainId === 1n)!
 
 describe('1559 Network gas price tests', () => {
   // Mock providers throw errors we can ignore

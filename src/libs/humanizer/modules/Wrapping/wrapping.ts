@@ -3,7 +3,7 @@ import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getUnknownVisualization, getUnwrapping, getWrapping } from '../../utils'
+import { getUnwrapping, getWrapping } from '../../utils'
 
 export const wrappingModule: HumanizerCallModule = (
   _: AccountOp,
@@ -12,6 +12,7 @@ export const wrappingModule: HumanizerCallModule = (
 ) => {
   const iface = new Interface(WETH)
   const newCalls = irCalls.map((call: IrCall) => {
+    if (!call.to) return call
     const knownAddressData = humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (
       knownAddressData?.name === 'Wrapped ETH' ||
@@ -36,11 +37,6 @@ export const wrappingModule: HumanizerCallModule = (
           fullVisualization: getUnwrapping(ZeroAddress, amount)
         }
       }
-      if (!call?.fullVisualization)
-        return {
-          ...call,
-          fullVisualization: getUnknownVisualization('wrapped', call)
-        }
     }
     return call
   })

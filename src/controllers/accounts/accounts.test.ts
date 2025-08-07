@@ -2,11 +2,18 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
+import { relayerUrl } from '../../../test/config'
+import {
+  mockInternalKeys,
+  produceMemoryStore,
+  waitForAccountsCtrlFirstLoad
+} from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
@@ -37,21 +44,29 @@ describe('AccountsController', () => {
     }
   ]
   const providers = Object.fromEntries(
-    networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+    networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
+
+  const mockKeys = mockInternalKeys(accounts)
+
+  storage.set('keystoreKeys', mockKeys)
 
   let providersCtrl: ProvidersController
   const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
-    (net) => {
-      providersCtrl.setProvider(net)
+    relayerUrl,
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
+  const windowManager = mockWindowManager().windowManager
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
@@ -62,6 +77,7 @@ describe('AccountsController', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
+      new KeystoreController('default', storageCtrl, {}, windowManager),
       () => {},
       () => {},
       () => {}
@@ -71,19 +87,8 @@ describe('AccountsController', () => {
     await waitForAccountsCtrlFirstLoad(accountsCtrl)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)
   })
-  test('update account preferences', (done) => {
-    const unsubscribe = accountsCtrl.onUpdate(() => {
-      if (accountsCtrl.statuses.updateAccountPreferences === 'SUCCESS') {
-        const acc = accountsCtrl.accounts.find(
-          (a) => a.addr === '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
-        )
-        expect(acc?.preferences.label).toEqual('new-label')
-        expect(acc?.preferences.pfp).toEqual('predefined-image')
-        unsubscribe()
-        done()
-      }
-    })
-    accountsCtrl.updateAccountPreferences([
+  test('update account preferences', async () => {
+    await accountsCtrl.updateAccountPreferences([
       {
         addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
         preferences: {
@@ -92,9 +97,15 @@ describe('AccountsController', () => {
         }
       }
     ])
+
+    const acc = accountsCtrl.accounts.find(
+      (a) => a.addr === '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'
+    )
+    expect(acc?.preferences.label).toEqual('new-label')
+    expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
   test('removeAccountData', async () => {
-    await accountsCtrl.updateAccountStates()
+    await accountsCtrl.updateAccountStates(accounts[0].addr)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
     expect(Object.keys(accountsCtrl.accountStates).length).toBeGreaterThan(0)
     expect(accountsCtrl.areAccountStatesLoading).toBe(false)

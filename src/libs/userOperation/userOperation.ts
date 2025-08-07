@@ -114,12 +114,7 @@ export function getOneTimeNonce(userOperation: UserOperation) {
 }
 
 export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
-  if (accountState.isEOA) return '7702'
-  return accountState.isDeployed && !accountState.isErc4337Enabled ? 'activator' : 'standard'
-}
-
-export function shouldUseOneTimeNonce(accountState: AccountOnchainState): boolean {
-  return getRequestType(accountState) === 'activator'
+  return accountState.isEOA ? '7702' : 'standard'
 }
 
 export function getUserOperation(
@@ -137,17 +132,16 @@ export function getUserOperation(
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),
     preVerificationGas: toBeHex(0),
-    maxFeePerGas: toBeHex(1),
-    maxPriorityFeePerGas: toBeHex(1),
+    maxFeePerGas: toBeHex(0),
+    maxPriorityFeePerGas: toBeHex(0),
     signature: '0x',
     requestType: getRequestType(accountState),
     bundler
   }
 
   // if the account is not deployed, prepare the deploy in the initCode
-  if (!accountState.isEOA && !accountState.isDeployed) {
+  if (entryPointSig) {
     if (!account.creation) throw new Error('Account creation properties are missing')
-    if (!entryPointSig) throw new Error('No entry point authorization signature provided')
 
     const factoryInterface = new Interface(AmbireFactory.abi)
     userOp.factory = account.creation.factoryAddr
@@ -183,29 +177,6 @@ export function shouldIncludeActivatorCall(
     network.erc4337.enabled &&
     !accountState.isErc4337Enabled &&
     (accountState.isDeployed || !is4337Broadcast)
-  )
-}
-
-// if the account is v2 and the network is 4337 and the account hasn't
-// authorized the entry point, he should be asked to do so
-//
-// addition: if the account is the 0.7.0 one
-export function shouldAskForEntryPointAuthorization(
-  network: Network,
-  account: Account,
-  accountState: AccountOnchainState,
-  alreadySigned: boolean
-) {
-  if (alreadySigned) return false
-
-  return (
-    account.creation &&
-    account.creation.factoryAddr === AMBIRE_ACCOUNT_FACTORY &&
-    accountState.isV2 &&
-    !accountState.isSmarterEoa &&
-    !accountState.isDeployed &&
-    network.erc4337.enabled &&
-    !accountState.isErc4337Enabled
   )
 }
 
@@ -299,4 +270,12 @@ export const parseLogs = (
     nonce: userOpLog[0],
     success: userOpLog[1]
   }
+}
+
+/**
+ * Get all the bundler statuses that indicate that an userOp
+ * is either pending to be mined or successfully included in the blockchain
+ */
+export function getUserOpPendingOrSuccessStatuses(): string[] {
+  return ['found', 'submitted', 'not_submitted', 'included', 'queued']
 }

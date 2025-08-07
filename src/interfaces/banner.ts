@@ -4,6 +4,8 @@ export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
   | 'pending-to-be-confirmed-acc-op'
+  | 'successful-acc-op'
+  | 'failed-acc-op'
   | 'bridge-in-progress'
   | 'bridge-waiting-approval-to-resolve'
   | 'bridge-ready'
@@ -14,13 +16,19 @@ export type BannerCategory =
 
 export interface Banner {
   id: number | string
-  accountAddr?: string
-  type: BannerType
+  type: BannerType | MarketingBannerTypes
   category?: BannerCategory
   title: string
-  text: string
+  text?: string
   actions: Action[]
+  meta?: {
+    accountAddr?: string
+    startTime?: number
+    endTime?: number
+  }
 }
+
+export type MarketingBannerTypes = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
 export type Action =
   | {
@@ -58,17 +66,17 @@ export type Action =
   | {
       label: 'Reject'
       actionName: 'reject-bridge'
-      meta: { activeRouteIds: number[] }
+      meta: { activeRouteIds: string[] }
     }
   | {
       label: 'Proceed to Next Step' | 'Open'
       actionName: 'proceed-bridge'
-      meta: { activeRouteId: number }
+      meta: { activeRouteId: string }
     }
   | {
       label: 'Close'
       actionName: 'close-bridge'
-      meta: { activeRouteIds: number[] }
+      meta: { activeRouteIds: string[]; isHideStyle: boolean }
     }
   | {
       label: 'Details'
@@ -77,11 +85,7 @@ export type Action =
   | {
       label: 'Hide'
       actionName: 'hide-activity-banner'
-      meta: { timestamp: number; addr: string; network: string; isHideStyle: boolean }
-    }
-  | {
-      label: 'Check'
-      actionName: 'confirm-temp-seed'
+      meta: { timestamp: number; addr: string; chainId: bigint; isHideStyle: boolean }
     }
   | {
       label: 'Open'
@@ -104,3 +108,22 @@ export type Action =
       actionName: 'dismiss-7702-banner'
       meta: { accountAddr: string }
     }
+  | {
+      label: 'View'
+      actionName: 'view-bridge'
+    }
+  | {
+      label: 'Enable all'
+      actionName: 'enable-networks'
+      meta: { networkChainIds: bigint[] }
+    }
+  | {
+      label: 'Enable'
+      actionName: 'enable-networks'
+      meta: { networkChainIds: bigint[] }
+    }
+  | {
+      label: 'Dismiss'
+      actionName: 'dismiss-defi-positions-banner'
+    }
+  | { label: 'Open'; actionName: 'open-link'; meta: { url: string } }

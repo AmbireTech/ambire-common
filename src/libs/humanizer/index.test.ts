@@ -18,7 +18,7 @@ const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: 'ethereum',
+  chainId: 1n,
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   signingKeyType: null,
@@ -224,7 +224,7 @@ describe('Humanizer main function', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
-        getAction('Sending'),
+        getAction('Send'),
         getToken('0x0000000000000000000000000000000000000000', 1000000000000000000n),
         getLabel('to'),
         getAddressVisualization('0xc4ce03b36f057591b2a360d773edb9896255051e'),
@@ -287,27 +287,18 @@ describe('TypedMessages', () => {
       accountAddr: accountOp.accountAddr,
       content: tmTemplate,
       signature: null,
-      networkId: 'ethereum'
+      chainId: 1n
     }
 
     const expectedVisualizations = [
-      getLabel('Permit #1'),
-      getAction('Permit'),
-      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getAction('Approve'),
+      getAddressVisualization(address2),
       getLabel('to use'),
       getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 1000000000000000000n),
-      getLabel('for time period'),
-      getDeadline(968187600n),
-      getLabel('this whole signatuere'),
-      getDeadline(968187600n),
-      getLabel('Permit #2'),
-      getAction('Permit'),
-      getAddressVisualization('0x000000000022d473030f116ddee9f6b43ac78ba3'),
+      getLabel('and'),
+      getAddressVisualization(address2),
       getLabel('to use'),
       getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 500000000000000000n),
-      getLabel('for time period'),
-      getDeadline(969187600n),
-      getLabel('this whole signatuere'),
       getDeadline(968187600n)
     ]
 

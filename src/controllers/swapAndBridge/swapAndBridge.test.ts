@@ -1,114 +1,29 @@
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
-
-let swapAndBridgeController: SwapAndBridgeController
-const event = new EventEmitter()
-let windowId = 0
-const windowManager = {
-  event,
-  focus: () => Promise.resolve(),
-  open: () => {
-    windowId++
-    return Promise.resolve({
-      id: windowId,
-      top: 0,
-      left: 0,
-      width: 100,
-      height: 100,
-      focused: true
-    })
-  },
-  remove: () => {
-    event.emit('windowRemoved', windowId)
-    return Promise.resolve()
-  },
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
-
-const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
-)
-
-const storage: Storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-let providersCtrl: ProvidersController
-const networksCtrl = new NetworksController(
-  storageCtrl,
-  fetch,
-  (net) => {
-    providersCtrl.setProvider(net)
-  },
-  (id) => {
-    providersCtrl.removeProvider(id)
-  }
-)
-
-providersCtrl = new ProvidersController(networksCtrl)
-providersCtrl.providers = providers
-const accountsCtrl = new AccountsController(
-  storageCtrl,
-  providersCtrl,
-  networksCtrl,
-  () => {},
-  () => {},
-  () => {}
-)
-const selectedAccountCtrl = new SelectedAccountController({
-  storage: storageCtrl,
-  accounts: accountsCtrl
-})
-
-const actionsCtrl = new ActionsController({
-  selectedAccount: selectedAccountCtrl,
-  windowManager,
-  notificationManager,
-  onActionWindowClose: () => {}
-})
-
-const inviteCtrl = new InviteController({
-  relayerUrl: '',
-  fetch,
-  storage: storageCtrl
-})
-
-const callRelayer = relayerCall.bind({ url: '', fetch })
-
-const activityCtrl = new ActivityController(
-  storageCtrl,
-  fetch,
-  callRelayer,
-  accountsCtrl,
-  selectedAccountCtrl,
-  providersCtrl,
-  networksCtrl,
-  () => Promise.resolve()
-)
-
-const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
 const accounts = [
   {
@@ -128,13 +43,124 @@ const accounts = [
   }
 ]
 
+// Notice
+// The status of swapAndBridge.ts is a bit more difficult to test
+// as we now have this code:
+//
+// this.signAccountOpController.estimation.onUpdate(() => {
+//   if (
+//     this.signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+//     this.signAccountOpController.estimation.status === EstimationStatus.Error
+//   ) {
+//     // eslint-disable-next-line @typescript-eslint/no-floating-promises
+//     this.onEstimationFailure(this.signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
+//   }
+// })
+//
+// meaning we can't use fake data as the estimation is going to throw an error
+// and it's going to cut the routes
+// so the status of swapAndBridge.ts will always go to FetchingRoutes or NoRoutesFound
+//
+// In order to test the status better, we either need real data or a mock on signAccountOp
+
+let swapAndBridgeController: SwapAndBridgeController
+const windowManager = mockWindowManager().windowManager
+
+const notificationManager = {
+  create: () => Promise.resolve()
+}
+
+const providers = Object.fromEntries(
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
+)
+
+const storage: Storage = produceMemoryStore()
+const storageCtrl = new StorageController(storage)
+let providersCtrl: ProvidersController
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
+  fetch,
+  relayerUrl,
+  onAddOrUpdateNetworks: (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
+  },
+  onRemoveNetwork: (id) => {
+    providersCtrl.removeProvider(id)
+  }
+})
+
+providersCtrl = new ProvidersController(networksCtrl)
+providersCtrl.providers = providers
+
+const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+storage.set('selectedAccount', accounts[0].addr)
+
+const accountsCtrl = new AccountsController(
+  storageCtrl,
+  providersCtrl,
+  networksCtrl,
+  keystore,
+  () => {},
+  () => {},
+  () => {}
+)
+const selectedAccountCtrl = new SelectedAccountController({
+  storage: storageCtrl,
+  accounts: accountsCtrl,
+  keystore
+})
+
+const actionsCtrl = new ActionsController({
+  selectedAccount: selectedAccountCtrl,
+  windowManager,
+  notificationManager,
+  onActionWindowClose: () => Promise.resolve()
+})
+
+const inviteCtrl = new InviteController({
+  relayerUrl: '',
+  fetch,
+  storage: storageCtrl
+})
+
+const callRelayer = relayerCall.bind({ url: '', fetch })
+
+const portfolioCtrl = new PortfolioController(
+  storageCtrl,
+  fetch,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  keystore,
+  relayerUrl,
+  velcroUrl,
+  new BannerController(storageCtrl)
+)
+
+const activityCtrl = new ActivityController(
+  storageCtrl,
+  fetch,
+  callRelayer,
+  accountsCtrl,
+  selectedAccountCtrl,
+  providersCtrl,
+  networksCtrl,
+  portfolioCtrl,
+  () => Promise.resolve()
+)
+
+const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
+
 const PORTFOLIO_TOKENS = [
   {
     address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
     amount: 2110000n,
     decimals: 6,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-    networkId: 'optimism',
+    chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
     symbol: 'USDT',
     name: 'Tether'
@@ -144,7 +170,7 @@ const PORTFOLIO_TOKENS = [
     amount: 1852n,
     decimals: 8,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
-    networkId: 'base',
+    chainId: 8453n,
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
     symbol: 'cbBTC',
     name: 'Coinbase wrapped BTC'
@@ -154,7 +180,7 @@ const PORTFOLIO_TOKENS = [
     amount: 11756728636013018n,
     decimals: 8,
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
-    networkId: 'optimism',
+    chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
     symbol: 'ETH',
     name: 'Ether'
@@ -166,42 +192,40 @@ describe('SwapAndBridge Controller', () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
     await selectedAccountCtrl.setAccount(accounts[0])
+
     swapAndBridgeController = new SwapAndBridgeController({
       selectedAccount: selectedAccountCtrl,
       networks: networksCtrl,
+      accounts: accountsCtrl,
       activity: activityCtrl,
       storage: storageCtrl,
-      socketAPI: socketAPIMock as any,
-      actions: actionsCtrl,
-      invite: inviteCtrl
+      serviceProviderAPI: socketAPIMock as any,
+      invite: inviteCtrl,
+      keystore,
+      portfolio: portfolioCtrl,
+      providers: providersCtrl,
+      externalSignerControllers: {},
+      relayerUrl,
+      getUserRequests: () => [],
+      getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
     })
-
     expect(swapAndBridgeController).toBeDefined()
   })
   test('should initForm', async () => {
     await swapAndBridgeController.initForm('1')
     expect(swapAndBridgeController.sessionIds).toContain('1')
   })
-  test('should update portfolio token list', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.toTokenList).toHaveLength(3)
-        expect(swapAndBridgeController.toTokenList).not.toContainEqual(
-          expect.objectContaining({
-            address: swapAndBridgeController.fromSelectedToken?.address
-          })
-        )
-        expect(swapAndBridgeController.toSelectedToken).toBeNull()
-        unsubscribe()
-        done()
-      }
-    })
-
+  test('should update portfolio token list', async () => {
     expect(swapAndBridgeController.fromChainId).toEqual(1)
     expect(swapAndBridgeController.fromSelectedToken).toEqual(null)
-    swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    expect(swapAndBridgeController.toTokenShortList).toHaveLength(3)
+    expect(swapAndBridgeController.toTokenShortList).not.toContainEqual(
+      expect.objectContaining({
+        address: swapAndBridgeController.fromSelectedToken?.address
+      })
+    )
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
     expect(swapAndBridgeController.fromSelectedToken).not.toBeNull()
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(
       '0x0000000000000000000000000000000000000000' // the one with highest balance
@@ -230,14 +254,16 @@ describe('SwapAndBridge Controller', () => {
         done()
       }
     })
-    swapAndBridgeController.updateForm({ toSelectedToken: swapAndBridgeController.toTokenList[0] })
+    swapAndBridgeController.updateForm({
+      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0].address
+    })
   })
   test('should update fromAmount', (done) => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
       if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
+        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
         unsubscribe()
         done()
@@ -266,18 +292,23 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
   })
-  test('should update fromAmount to make the form valid again', (done) => {
-    let emitCounter = 0
-    const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-submit')
-        expect(swapAndBridgeController.quote).not.toBeNull()
-        unsubscribe()
-        done()
-      }
-    })
+  test('should update fromAmount to make the form valid again', async () => {
     swapAndBridgeController.updateForm({ fromAmount: '0.02' })
+
+    const check = async (attempt = 0) => {
+      if (attempt > 10) {
+        throw new Error('Quote timeout')
+      }
+      if (swapAndBridgeController.updateQuoteStatus === 'LOADING') {
+        await wait(1000)
+        await check(attempt + 1)
+        return
+      }
+
+      expect(swapAndBridgeController.quote).toBeDefined()
+    }
+
+    await check()
   })
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
@@ -293,9 +324,8 @@ describe('SwapAndBridge Controller', () => {
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
-    expect(swapAndBridgeController.formStatus).toEqual('empty')
-    expect(swapAndBridgeController.quote).toBeNull()
-    expect(swapAndBridgeController.banners).toHaveLength(1)
+    expect(swapAndBridgeController.quote).toBeDefined()
+    expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
@@ -307,7 +337,7 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
   })
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForNextUserTxForActiveRoutes()

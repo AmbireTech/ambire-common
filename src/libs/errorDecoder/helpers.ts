@@ -43,6 +43,21 @@ const isReasonValid = (reason: string | null): boolean => {
 }
 
 /**
+ * Counts the number of valid Unicode numbers and letters in a string.
+ */
+const countUnicodeLettersAndNumbers = (str: string): number => {
+  let validCount = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charAt(i)
+    // Check if it's an alphabetic character (from any language) or a number
+    if (/[\p{L}\p{N}]/u.test(char)) {
+      validCount++
+    }
+  }
+  return validCount
+}
+
+/**
  * Some reasons are encoded in hex, this function will decode them to a human-readable string
  * which can then be matched to a specific error message.
  */
@@ -53,16 +68,25 @@ const formatReason = (reason: string): string => {
     return trimmedReason
 
   try {
-    return toUtf8String(trimmedReason)
+    const decodedString = toUtf8String(trimmedReason)
+
+    // Return the decoded string if it contains valid Unicode letters
+    return countUnicodeLettersAndNumbers(decodedString) > 0 ? decodedString : trimmedReason
   } catch {
     return trimmedReason
   }
 }
 
-const getErrorCodeStringFromReason = (reason: string, withSpace = true): string => {
+const truncateReason = (reason?: string): string => {
   if (!reason || !isReasonValid(reason)) return ''
 
-  const truncatedReason = reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
+  return reason.length > 100 ? `${reason.slice(0, 100)}...` : reason
+}
+
+const getErrorCodeStringFromReason = (reason?: string, withSpace = true): string => {
+  const truncatedReason = truncateReason(reason)
+
+  if (!truncatedReason) return ''
 
   return `${withSpace ? ' ' : ''}Error code: ${truncatedReason}`
 }
@@ -93,5 +117,7 @@ export {
   getErrorCodeStringFromReason,
   isReasonValid,
   getDataFromError,
-  formatReason
+  formatReason,
+  countUnicodeLettersAndNumbers,
+  truncateReason
 }

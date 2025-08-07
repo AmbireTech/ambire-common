@@ -40,6 +40,11 @@ export const fallbackHumanizer: HumanizerCallModule = (
   humanizerMeta: HumanizerMeta
 ) => {
   const newCalls = currentIrCalls.map((call) => {
+    if (!call.to)
+      return {
+        ...call,
+        fullVisualization: [getAction('Deploy contract')]
+      }
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
     const knownSigHashes: HumanizerMeta['abis']['NO_ABI'] = Object.values(
@@ -65,6 +70,8 @@ export const fallbackHumanizer: HumanizerCallModule = (
               knownSigHashes[call.data.slice(0, 10)].signature
                 .split('function ')
                 .filter((x) => x !== '')[0]
+                .split('(')
+                .filter((x) => x !== '')[0]
                 .split(' returns')
                 .filter((x) => x !== '')[0]
             }`
@@ -85,7 +92,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
     }
     if (call.value) {
       if (call.data !== '0x') visualization.push(getLabel('and'))
-      visualization.push(getAction('Sending'), getToken(ZeroAddress, call.value))
+      visualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
       if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
     }
 

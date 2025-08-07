@@ -9,8 +9,7 @@ import {
   buildUserOp,
   getAccountGasLimits,
   getGasFees,
-  getPriviledgeTxnWithCustomHash,
-  getTargetNonce
+  getPriviledgeTxnWithCustomHash
 } from '../helpers'
 
 const salt = '0x0'
@@ -23,10 +22,21 @@ function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
   )
 }
 
-function getDeployCalldata(bytecodeWithArgs: string) {
-  const abi = ['function deploy(bytes calldata code, uint256 salt) external returns(address)']
+function getDeployCalldata(
+  bytecodeWithArgs: string,
+  epPrivTxn: [string, string, string],
+  executeSig: string
+) {
+  const abi = [
+    'function deployAndExecute(bytes calldata code, uint256 salt, tuple(address, uint256, bytes)[] calldata txns, bytes calldata signature) external returns(address)'
+  ]
   const iface = new ethers.Interface(abi)
-  return iface.encodeFunctionData('deploy', [bytecodeWithArgs, salt])
+  return iface.encodeFunctionData('deployAndExecute', [
+    bytecodeWithArgs,
+    salt,
+    [epPrivTxn],
+    executeSig
+  ])
 }
 
 export async function get4437Bytecode(priLevels: PrivLevels[]): Promise<string> {
@@ -85,22 +95,36 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     const initCode = ethers.hexlify(
-      ethers.concat([await factory.getAddress(), getDeployCalldata(bytecodeWithArgs)])
+      ethers.concat([await factory.getAddress(), getDeployCalldata(bytecodeWithArgs, txn, s)])
     )
 
-    const callData = proxy.interface.encodeFunctionData('executeMultiple', [[[[txn], s]]])
+    // const epTxn: [string, string, string] = [senderAddress, '0', '0x68656c6c6f']
+    // const callData = proxy.interface.encodeFunctionData('executeBySender', [[epTxn]])
+    const nextTxn: [string, string, string] = [senderAddress, '0', '0x68656c6c6f']
     const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
+      userOpNonce: await entryPoint.getNonce(senderAddress, 0),
       sender: senderAddress,
-      signedNonce: ethers.toBeHex(0, 1),
       initCode,
-      callData
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]])
     })
-    userOperation.nonce = BigInt(getTargetNonce(userOperation))
+    const typedDataFirstUserOp = getUserOp712Data(
+      chainId,
+      [nextTxn],
+      userOperation,
+      await entryPoint.getUserOpHash(userOperation)
+    )
+    const firstSignature = wrapEIP712(
+      await signer.signTypedData(
+        typedDataFirstUserOp.domain,
+        typedDataFirstUserOp.types,
+        typedDataFirstUserOp.value
+      )
+    ) as Hex
+    userOperation.signature = firstSignature
     await entryPoint.handleOps([userOperation], relayer)
 
     // confirm everything is set by sending an userOp through the entry point
     // with a normal paymaster signature
-    const nextTxn: [string, string, string] = [senderAddress, '0', '0x68656c6c6f']
     const userOperation2 = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
       userOpNonce: await entryPoint.getNonce(senderAddress, 0),

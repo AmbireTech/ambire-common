@@ -1,5 +1,3 @@
-import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
-
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
@@ -12,6 +10,7 @@ import {
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
+import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
@@ -90,9 +89,7 @@ export class SignMessageController extends EventEmitter {
     await this.#accounts.initialLoadPromise
 
     if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
-      if (dapp) {
-        this.dapp = dapp
-      }
+      if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.isInitialized = true
       this.emitUpdate()
@@ -111,6 +108,7 @@ export class SignMessageController extends EventEmitter {
   reset() {
     if (!this.isInitialized) return
 
+    this.#onAbortOperation()
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null
@@ -152,26 +150,19 @@ export class SignMessageController extends EventEmitter {
         )
       }
       const network = this.#networks.networks.find(
-        // @ts-ignore this.messageToSign is not null and it has a check
-        // but typescript malfunctions here
-        (n: Network) => n.id === this.messageToSign.networkId
+        (n: Network) => n.chainId === this.messageToSign!.chainId
       )
       if (!network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      const accountState = this.#accounts.accountStates[account.addr][network.id]
+      const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()]
       let signature
-      // It is defined when messageToSign.content.kind === 'message'
-      let hexMessage: string | undefined
 
       try {
-        if (this.messageToSign.content.kind === 'message') {
-          const message = this.messageToSign.content.message
-          hexMessage = isHexString(message) ? message : hexlify(toUtf8Bytes(message))
-
+        if (isPlainTextMessage(this.messageToSign.content)) {
           signature = await getPlainTextSignature(
-            hexMessage,
+            this.messageToSign.content.message,
             network,
             account,
             accountState,
@@ -215,20 +206,21 @@ export class SignMessageController extends EventEmitter {
 
       const verifyMessageParams = {
         network,
-        provider: this.#providers.providers[network?.id || 'ethereum'],
+        provider: this.#providers.providers[network?.chainId.toString() || '1'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
-        ...(this.messageToSign.content.kind === 'message'
-          ? { message: hexStringToUint8Array(hexMessage!) }
+        ...(isPlainTextMessage(this.messageToSign.content)
+          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
               typedData: {
                 domain: this.messageToSign.content.domain,
                 types: this.messageToSign.content.types,
-                message: this.messageToSign.content.message
+                message: this.messageToSign.content.message,
+                primaryType: this.messageToSign.content.primaryType
               }
             }
           : { authorization: this.messageToSign.content.message })
@@ -244,7 +236,7 @@ export class SignMessageController extends EventEmitter {
       this.signedMessage = {
         fromActionId: this.messageToSign.fromActionId,
         accountAddr: this.messageToSign.accountAddr,
-        networkId: this.messageToSign.networkId,
+        chainId: this.messageToSign.chainId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
         signature: getAppFormatted(signature, account, accountState),
@@ -268,6 +260,12 @@ export class SignMessageController extends EventEmitter {
   removeAccountData(address: Account['addr']) {
     if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
       this.reset()
+    }
+  }
+
+  #onAbortOperation() {
+    if (this.#signer?.signingCleanup) {
+      this.#signer.signingCleanup()
     }
   }
 

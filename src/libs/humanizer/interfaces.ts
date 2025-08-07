@@ -1,5 +1,5 @@
 import { Account } from '../../interfaces/account'
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -14,7 +14,6 @@ export type HumanizerVisualization = (
         | 'danger'
         | 'deadline'
         | 'chain'
-        | 'message'
         | 'image'
         | 'link'
         | 'text'
@@ -24,7 +23,6 @@ export type HumanizerVisualization = (
       value?: bigint
       warning?: boolean
       chainId?: bigint
-      messageContent?: Uint8Array | string
     }
   | {
       type: 'token'
@@ -33,9 +31,10 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
 ) & { isHidden?: boolean; id: number; content?: string; isBold?: boolean }
-export interface IrCall extends Call {
+export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  to?: string
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
@@ -43,7 +42,7 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
-  level?: 'caution' | 'alert' | 'alarm'
+  level?: 'info' | 'warning' | 'danger'
 }
 export interface Ir {
   calls: IrCall[]
@@ -95,7 +94,7 @@ export interface HumanizerMeta {
 
 export interface HumanizerOptions {
   network?: Network
-  networkId?: NetworkId
+  chainId?: bigint
 }
 
 export type DataToHumanize = AccountOp | Message

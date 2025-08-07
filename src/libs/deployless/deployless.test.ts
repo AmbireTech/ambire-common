@@ -1,8 +1,9 @@
-import { AbiCoder, concat, JsonRpcProvider, toBeHex } from 'ethers'
+import { AbiCoder, concat, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { addressOne } from '../../../test/config'
+import { getRpcProvider } from '../../services/provider'
 import { compile } from './compile'
 import { Deployless, DeploylessMode } from './deployless'
 
@@ -10,7 +11,7 @@ const helloWorld = compile('HelloWorld', {
   contractsFolder: 'test/contracts'
 })
 const deployErrBin = '0x6080604052348015600f57600080fd5b600080fdfe'
-const mainnetProvider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
+const mainnetProvider = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
 let deployless: Deployless
 
 describe('Deployless', () => {

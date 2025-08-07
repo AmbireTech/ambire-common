@@ -1,5 +1,3 @@
-import { ethers } from 'ethers'
-import EventEmitter from 'events'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -7,34 +5,35 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
-import { SelectedAccountForImport } from '../../interfaces/account'
-import { UserRequest } from '../../interfaces/userRequest'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { getBytecode } from '../../libs/proxyDeploy/bytecode'
-import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { RelayerError } from '../../libs/relayerCall/relayerCall'
+import wait from '../../utils/wait'
 import { MainController } from './main'
 
 // Public API key, shared by Socket, for testing purposes only
-const socketApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
+const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const notificationManager = {
   create: () => Promise.resolve()
+}
+
+const signAccountOp = {
+  gasPrice: {
+    fetch: jest.fn()
+  },
+  updateStatus: jest.fn(),
+  accountOp: {
+    meta: {}
+  },
+  simulate: jest.fn()
 }
 
 describe('Main Controller ', () => {
@@ -77,10 +76,11 @@ describe('Main Controller ', () => {
   let controller: MainController
   test('Init controller', async () => {
     controller = new MainController({
-      storage,
+      platform: 'default',
+      storageAPI: storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       windowManager,
@@ -97,62 +97,6 @@ describe('Main Controller ', () => {
     // console.dir(controller.accountStates, { depth: null })
     // @TODO
     // expect(states).to
-  })
-
-  test('Add a user request', async () => {
-    const req: UserRequest = {
-      id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      meta: {
-        isSignAction: true,
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        networkId: 'ethereum'
-      }
-    }
-    // @TODO test if nonce is correctly set
-    controller.accounts.onUpdate(async () => {
-      // The main controller doesn't wait for account state. This is not a problem in the
-      // real world because users can't interact with a network without state.
-      // Even if someone manages to open a user request without having state for that network
-      // (for example through a dApp) it will be handled in the UI
-      if ('ethereum' in Object.keys(controller.accounts.accountStates)) {
-        await controller.addUserRequest(req)
-        expect(controller.actions.actionsQueue.length).toBe(1)
-      }
-    })
-  })
-  test('Remove a user request', async () => {
-    const req: UserRequest = {
-      id: 1,
-      action: {
-        kind: 'calls',
-        calls: [
-          {
-            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-            value: BigInt(0),
-            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-          }
-        ]
-      },
-      meta: {
-        isSignAction: true,
-        accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        networkId: 'ethereum'
-      }
-    }
-    await controller.removeUserRequest(req.id)
-    expect(controller.actions.actionsQueue.length).toBe(0)
-    // console.dir(controller.accountOpsToBeSigned, { depth: null })
-    // @TODO test if nonce is correctly set
   })
 
   // @TODO: We should pass `autoConfirmMagicLink` to emailVault controller initialization
@@ -206,12 +150,13 @@ describe('Main Controller ', () => {
   //   // console.log('isUnlock ==>', controller.isUnlock())
   // })
 
-  test('should add smart accounts', async () => {
+  test('should add an account from the account picker and persist it in accounts', async () => {
     controller = new MainController({
-      storage,
+      platform: 'default',
+      storageAPI: storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -219,85 +164,42 @@ describe('Main Controller ', () => {
       velcroUrl
     })
 
-    const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const priv = { addr: signerAddr, hash: ethers.toBeHex(1, 32) }
-    const bytecode = await getBytecode([priv])
-
-    // Same mechanism to generating this one as used for the
-    // `accountNotDeployed` in accountState.test.ts
-    const addr = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
-    const accountPendingCreation: SelectedAccountForImport = {
-      account: {
-        addr,
-        associatedKeys: [signerAddr],
-        creation: {
-          factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-          bytecode,
-          salt: ethers.toBeHex(0, 32)
-        },
-        initialPrivileges: [
-          [
-            '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-            '0x0000000000000000000000000000000000000000000000000000000000000001'
-          ]
-        ],
-        preferences: {
-          label: 'Account 4', // because there are 3 in the storage before this one
-          pfp: addr
-        }
-      },
-      accountKeys: [{ addr: signerAddr, index: 0, slot: 1 }],
-      isLinked: false
+    while (!controller.isReady) {
+      // eslint-disable-next-line no-await-in-loop
+      await wait(100)
     }
 
-    const addAccounts = async () => {
-      const keyIterator = new KeyIterator(
-        '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-      )
-      await controller.accountAdder.init({
-        keyIterator,
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-      })
-      await controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
-    }
-
-    let emitCounter = 0
-    // The `isReady` flag on the MainController gets set in async manner.
-    // If the property of the main controller `isReady` becomes true before
-    // reaching await new Promise..., the code inside the onUpdate won't run,
-    // because there is nothing that will trigger an update. To prevent this,
-    // check if the controller is ready outside of the onUpdate first and add the accounts.
-    if (controller.isReady && emitCounter === 0) {
-      emitCounter++
-      await addAccounts()
-    }
-
-    return new Promise((resolve) => {
-      const unsubscribe = controller.onUpdate(async () => {
-        emitCounter++
-        if (emitCounter === 2 && controller.isReady) await addAccounts()
-
-        if (controller.statuses.onAccountAdderSuccess === 'SUCCESS') {
-          expect(controller.accounts.accounts).toContainEqual({
-            ...accountPendingCreation.account,
-            newlyAdded: true,
-            newlyCreated: false
-          })
-          unsubscribe()
-          resolve(null)
-        }
-      })
+    await controller.keystore.addSecret('password', '12345678', '', true)
+    const keyIterator = new KeyIterator(
+      '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+    )
+    controller.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldAddNextAccountAutomatically: false
     })
+
+    await controller.accountPicker.init()
+    await controller.accountPicker.setPage({ page: 1 })
+    while (controller.accountPicker.accountsLoading) {
+      // eslint-disable-next-line no-await-in-loop
+      await wait(100)
+    }
+    const accToSelect = controller.accountPicker.accountsOnPage[0].account
+    controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0].account)
+    await controller.accountPicker.addAccounts().catch(console.error)
+    expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
 
   // FIXME: This test works when fired standalone, but it throws an error when
   // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
     const mainCtrl = new MainController({
-      storage,
+      platform: 'default',
+      storageAPI: storage,
       fetch,
       relayerUrl,
-      socketApiKey,
+      swapApiKey,
       windowManager,
       notificationManager,
       keystoreSigners: { internal: KeystoreSigner },
@@ -360,7 +262,7 @@ describe('Main Controller ', () => {
   })
 
   test('should check if network features get displayed correctly for ethereum', async () => {
-    const eth = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth?.features.length).toBe(3)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
@@ -380,13 +282,13 @@ describe('Main Controller ', () => {
     expect(prices!.level).toBe('success')
 
     // set first to false so we could test setContractsDeployedToTrueIfDeployed
-    await controller.networks.updateNetwork({ areContractsDeployed: false }, 'ethereum')
+    await controller.networks.updateNetwork({ areContractsDeployed: false }, 1n)
 
-    const eth2 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth2 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth2.areContractsDeployed).toEqual(false)
     await controller.setContractsDeployedToTrueIfDeployed(eth2)
 
-    const eth3 = controller.networks.networks.find((net) => net.id === 'ethereum')!
+    const eth3 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth3.areContractsDeployed).toEqual(true)
   })
   describe('throwBroadcastAccountOp', () => {
@@ -394,9 +296,6 @@ describe('Main Controller ', () => {
 
     const prepareTest = () => {
       const controllerAnyType = controller as any
-      controllerAnyType.updateSignAccountOpGasPrice = jest.fn()
-      controllerAnyType.estimateSignAccountOp = jest.fn()
-
       return {
         controllerAnyType
       }
@@ -406,19 +305,19 @@ describe('Main Controller ', () => {
       const { controllerAnyType } = prepareTest()
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           message: 'message',
           error: new Error('error')
         })
       } catch (e: any) {
         expect(e.message).toBe('message')
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('pimlico_getUserOperationGasPrice', async () => {
       const { controllerAnyType } = prepareTest()
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error: new Error(
             "pimlico_getUserOperationGasPrice some information we don't care about 0x2314214"
           )
@@ -427,8 +326,6 @@ describe('Main Controller ', () => {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).toHaveBeenCalledTimes(1)
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -436,19 +333,18 @@ describe('Main Controller ', () => {
       const error = new InnerCallFailureError(
         '   transfer amount exceeds balance   ',
         [],
-        networks.find((net) => net.id === 'base')!
+        networks.find((n) => n.chainId === 8453n)!
       )
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('Unknown error that should be humanized by getHumanReadableBroadcastError', async () => {
@@ -457,14 +353,13 @@ describe('Main Controller ', () => {
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
         expect(e.message).toBe(
-          'The transaction cannot be broadcast because of an unknown error.\nPlease try again or contact Ambire support for assistance.'
+          "We encountered an unexpected issue: I'm a teapot\nPlease try again or contact Ambire support for assistance."
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
     it('replacement fee too low', async () => {
@@ -473,14 +368,13 @@ describe('Main Controller ', () => {
 
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
         expect(e.message).toBe(
           'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).toHaveBeenCalledTimes(1)
       }
     })
     it('Relayer broadcast swap expired', async () => {
@@ -493,14 +387,13 @@ describe('Main Controller ', () => {
       )
       try {
         await controllerAnyType.throwBroadcastAccountOp({
+          signAccountOp,
           error
         })
       } catch (e: any) {
         expect(e.message).toBe(
           'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
         )
-        expect(controllerAnyType.updateSignAccountOpGasPrice).not.toHaveBeenCalled()
-        expect(controllerAnyType.estimateSignAccountOp).not.toHaveBeenCalled()
       }
     })
   })

@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
-import { AbiCoder, Contract, toBeHex } from 'ethers'
+import { AbiCoder, Contract, Interface, toBeHex, ZeroAddress } from 'ethers'
 
+import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -22,7 +23,6 @@ import {
 } from '../erc7677/types'
 import { RelayerPaymasterError, SponsorshipPaymasterError } from '../errorDecoder/customErrors'
 import { getHumanReadableBroadcastError } from '../errorHumanizer'
-import { PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE } from '../errorHumanizer/broadcastErrorHumanizer'
 import { getFeeTokenForEstimate } from '../estimate/estimateHelpers'
 import { TokenResult } from '../portfolio'
 import { relayerCall } from '../relayerCall/relayerCall'
@@ -36,7 +36,7 @@ export function getPaymasterDataForEstimate(): PaymasterEstimationData {
   const abiCoder = new AbiCoder()
   return {
     paymaster: AMBIRE_PAYMASTER,
-    paymasterVerificationGasLimit: toBeHex(100000) as Hex,
+    paymasterVerificationGasLimit: toBeHex(42000) as Hex,
     paymasterPostOpGasLimit: toBeHex(0) as Hex,
     paymasterData: abiCoder.encode(
       ['uint48', 'uint48', 'bytes'],
@@ -49,8 +49,6 @@ export class Paymaster extends AbstractPaymaster {
   callRelayer: Function
 
   type: PaymasterType = 'None'
-
-  sponsorDataEstimation: PaymasterEstimationData | undefined
 
   paymasterService: PaymasterService | null = null
 
@@ -70,7 +68,13 @@ export class Paymaster extends AbstractPaymaster {
     this.errorCallback = errorCallback
   }
 
-  async init(op: AccountOp, userOp: UserOperation, network: Network, provider: RPCProvider) {
+  async init(
+    op: AccountOp,
+    userOp: UserOperation,
+    account: Account,
+    network: Network,
+    provider: RPCProvider
+  ) {
     this.network = network
     this.provider = provider
     this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
@@ -78,8 +82,21 @@ export class Paymaster extends AbstractPaymaster {
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {
         this.paymasterService = op.meta.paymasterService
+
+        // when requesting stub data with an empty account, send over
+        // the deploy data as per EIP-7677 standard
+        const localOp = { ...userOp }
+        if (BigInt(localOp.nonce) === 0n && account.creation) {
+          const factoryInterface = new Interface(AmbireFactory.abi)
+          localOp.factory = account.creation.factoryAddr
+          localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+            account.creation.bytecode,
+            account.creation.salt
+          ])
+        }
+
         const response = await Promise.race([
-          getPaymasterStubData(op.meta.paymasterService, userOp, network),
+          getPaymasterStubData(op.meta.paymasterService, localOp, network),
           new Promise((_resolve, reject) => {
             setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000)
           })
@@ -126,7 +143,27 @@ export class Paymaster extends AbstractPaymaster {
   }
 
   shouldIncludePayment(): boolean {
-    return this.type === 'Ambire' || this.type === 'ERC7677'
+    return (
+      this.type === 'Ambire' ||
+      (this.type === 'ERC7677' && this.sponsorDataEstimation?.paymaster === AMBIRE_PAYMASTER)
+    )
+  }
+
+  // get the fee call type used in the estimation
+  // we use this to understand whether we should re-estimate on broadcast
+  getFeeCallType(feeTokens: TokenResult[]): string | undefined {
+    if (!this.network) throw new Error('network not set, did you call init?')
+
+    if (this.type === 'Ambire') {
+      const feeToken = getFeeTokenForEstimate(feeTokens)
+      if (!feeToken) return undefined
+      if (feeToken.flags.onGasTank) return 'gasTank'
+      if (feeToken.address === ZeroAddress) return 'native'
+      return 'erc20'
+    }
+
+    if (this.type === 'ERC7677') return 'gasTank'
+    return undefined
   }
 
   getFeeCallForEstimation(feeTokens: TokenResult[]): Call | undefined {
@@ -212,7 +249,9 @@ export class Paymaster extends AbstractPaymaster {
 
       const convertedError =
         this.type === 'ERC7677' ? new SponsorshipPaymasterError() : new RelayerPaymasterError(e)
-      const { message } = getHumanReadableBroadcastError(convertedError)
+      const message = convertedError.isHumanized
+        ? convertedError.message
+        : getHumanReadableBroadcastError(convertedError).message
       return {
         success: false,
         message,
@@ -264,12 +303,7 @@ export class Paymaster extends AbstractPaymaster {
       return getPaymasterData(this.paymasterService as PaymasterService, localUserOp, network)
     })
 
-    if (
-      !response.success &&
-      (response as PaymasterErrorReponse).message !== PAYMASTER_DOWN_BROADCAST_ERROR_MESSAGE &&
-      op.meta &&
-      op.meta.paymasterService
-    ) {
+    if (!response.success && op.meta && op.meta.paymasterService) {
       failedPaymasters.addFailedSponsorship(op.meta.paymasterService.id)
     }
 
@@ -287,5 +321,19 @@ export class Paymaster extends AbstractPaymaster {
     if (this.type === 'ERC7677') return this.#erc7677Call(op, userOp, network)
 
     throw new Error('Paymaster not configured. Please contact support')
+  }
+
+  canAutoRetryOnFailure(): boolean {
+    return this.type === 'Ambire'
+  }
+
+  isEstimateBelowMin(localOp: UserOperation): boolean {
+    const min = this.getEstimationData()
+    if (!min || !min.paymasterVerificationGasLimit) return false
+
+    return (
+      localOp.paymasterVerificationGasLimit === undefined ||
+      BigInt(localOp.paymasterVerificationGasLimit) < BigInt(min.paymasterVerificationGasLimit)
+    )
   }
 }

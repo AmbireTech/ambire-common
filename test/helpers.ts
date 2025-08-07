@@ -211,7 +211,7 @@ async function buildUserOp(
         validUntil,
         validAfter,
         userOp.sender,
-        options.signedNonce ?? userOp.nonce,
+        userOp.nonce,
         userOp.initCode,
         userOp.callData,
         userOp.accountGasLimits,
@@ -268,14 +268,16 @@ const getAccountsInfo = async (
   accounts: Account[]
 ): Promise<AccountStates> => {
   const result = await Promise.all(
-    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+    networks.map((network) =>
+      getAccountState(providers[network.chainId.toString()], network, accounts)
+    )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
     return [
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex][accIndex]]
         })
       )
     ]
@@ -380,6 +382,22 @@ const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) =>
   })
 }
 
+/**
+ * Creates internal keys for the given accounts.
+ * Most often used to force the accounts controller to fetch
+ * the account states for the given accounts.
+ */
+const mockInternalKeys = (accounts: Account[]) =>
+  accounts.map((acc) => ({
+    addr: acc.associatedKeys[0],
+    label: 'test key',
+    type: 'internal',
+    dedicatedToOneSA: false,
+    meta: {
+      createdAt: new Date().getTime()
+    }
+  }))
+
 export {
   buildUserOp,
   getAccountGasLimits,
@@ -393,6 +411,7 @@ export {
   getSignerKey,
   getTargetNonce,
   getTimelockData,
+  mockInternalKeys,
   produceMemoryStore,
   sendFunds,
   waitForAccountsCtrlFirstLoad

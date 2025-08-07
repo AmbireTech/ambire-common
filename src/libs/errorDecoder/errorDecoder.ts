@@ -1,4 +1,3 @@
-import { BundlerError } from './customErrors'
 import {
   BundlerErrorHandler,
   CustomErrorHandler,
@@ -9,22 +8,11 @@ import {
   RpcErrorHandler,
   UserRejectionHandler
 } from './handlers'
-import BiconomyEstimationErrorHandler from './handlers/biconomy'
 import InternalHandler from './handlers/internal'
-import PimlicoEstimationErrorHandler from './handlers/pimlico'
 import RelayerErrorHandler from './handlers/relayer'
 import { formatReason, getDataFromError, isReasonValid } from './helpers'
 import { DecodedError, ErrorType } from './types'
 
-// The order of these handlers is important!
-// Preprocessor handlers must be ordered by least specific to most specific
-// Why- because error reasons are overwritten by subsequent matching handlers
-// Error handlers must be ordered by most specific to least specific
-// Why- because the first valid reason cannot be overwritten by subsequent handlers
-const PREPROCESSOR_BUNDLER_HANDLERS = [
-  BiconomyEstimationErrorHandler,
-  PimlicoEstimationErrorHandler
-]
 const PREPROCESSOR_HANDLERS = [BundlerErrorHandler, RelayerErrorHandler, InnerCallFailureHandler]
 const ERROR_HANDLERS = [
   InternalHandler,
@@ -47,19 +35,10 @@ export function decodeError(e: Error): DecodedError {
     data: errorData
   }
 
-  // configure a list of preprocessorHandlers we want to use.
-  // There are very generic errors like 400 bad request that when they come
-  // from a bundler that mean one thing but from an RPC another, and from the relayer
-  // a third. So we will add additional handlers optionally
-  const preprocessorHandlers = PREPROCESSOR_HANDLERS
-  if (e instanceof BundlerError) {
-    preprocessorHandlers.unshift(...PREPROCESSOR_BUNDLER_HANDLERS)
-  }
-
   // Run preprocessor handlers first
   // The idea is that preprocessor handlers can either decode the error
   // or leave it partially decoded for the other handlers to decode
-  preprocessorHandlers.forEach((HandlerClass) => {
+  PREPROCESSOR_HANDLERS.forEach((HandlerClass) => {
     const handler = new HandlerClass()
     if (handler.matches(errorData, e)) {
       decodedError = handler.handle(errorData, e)

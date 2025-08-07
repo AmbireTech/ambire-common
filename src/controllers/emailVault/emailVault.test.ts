@@ -1,12 +1,14 @@
 /* eslint-disable class-methods-use-this */
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
+import { Hex } from '../../interfaces/hex'
+import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
@@ -41,6 +43,11 @@ class InternalSigner implements KeystoreSignerInterface {
   sign7702(hex: string): EIP7702Signature {
     throw new Error('not supported')
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    throw new Error('not supported')
+  }
 }
 
 const keystoreSigners = { internal: InternalSigner }
@@ -54,21 +61,14 @@ let keystore: KeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
     storage = produceMemoryStore()
     storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
   })
   test('login first time', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
@@ -133,7 +133,12 @@ describe('happy cases', () => {
   test('full keystore sync', async () => {
     const storage2 = produceMemoryStore()
     const storageCtrl2 = new StorageController(storage2)
-    const keystore2 = new KeystoreController(storageCtrl2, keystoreSigners, windowManager)
+    const keystore2 = new KeystoreController(
+      'default',
+      storageCtrl2,
+      keystoreSigners,
+      windowManager
+    )
 
     const keys = [
       {

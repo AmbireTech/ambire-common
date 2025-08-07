@@ -1,13 +1,17 @@
 import { Account } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 // eslint-disable-next-line import/no-cycle
-import { Action, Banner } from '../../interfaces/banner'
+import { Action, Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
-import { ActiveRoute } from '../../interfaces/swapAndBridge'
-import { getIsBridgeTxn, getQuoteRouteSteps } from '../swapAndBridge/swapAndBridge'
+import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { AccountState } from '../defiPositions/types'
+import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
-const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTxn: boolean) => {
+const getBridgeActionText = (
+  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
+  isBridgeTxn: boolean
+) => {
   if (isBridgeTxn) {
     return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
   }
@@ -15,8 +19,14 @@ const getBridgeActionText = (routeStatus: ActiveRoute['routeStatus'], isBridgeTx
   return routeStatus === 'completed' ? 'Swapped' : 'Swap'
 }
 
-const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?: Network[]) => {
-  const steps = getQuoteRouteSteps(route.route.userTxs)
+const getBridgeBannerText = (
+  route: SwapAndBridgeActiveRoute,
+  isBridgeTxn: boolean,
+  networks?: Network[]
+) => {
+  const steps = route.route?.steps || []
+  if (!steps[0]) return '' // should never happen
+
   const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
   const fromAssetSymbol = steps[0].fromAsset.symbol
   const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
@@ -33,21 +43,16 @@ const getBridgeBannerText = (route: ActiveRoute, isBridgeTxn: boolean, networks?
     }
   }
 
-  const stepsIndexText = `(step ${
-    route.routeStatus === 'completed' ? route.route.totalUserTx : route.route.currentUserTxIndex + 1
-  } of ${route.route.totalUserTx})`
-
-  return `${actionText} ${assetsText}${route.route.totalUserTx > 1 ? ` ${stepsIndexText}` : ''}`
+  return `${actionText} ${assetsText}`
 }
 
 export const getBridgeBanners = (
-  activeRoutes: ActiveRoute[],
-  accountOpActions: AccountOpAction[],
-  networks: Network[]
+  activeRoutes: SwapAndBridgeActiveRoute[],
+  accountOpActions: AccountOpAction[]
 ): Banner[] => {
-  const isBridgeTxn = (route: ActiveRoute) =>
-    route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
-  const isRouteTurnedIntoAccountOp = (route: ActiveRoute) => {
+  const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
+    !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+  const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
         (call) =>
@@ -59,98 +64,84 @@ export const getBridgeBanners = (
   }
 
   const filteredRoutes = activeRoutes.filter(isBridgeTxn).filter((route) => {
-    if (route.routeStatus === 'failed') return false
-    if (route.routeStatus !== 'ready') return true
+    if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
+      return true
     return !isRouteTurnedIntoAccountOp(route)
   })
 
-  const inProgressRoutes = filteredRoutes.filter(
-    (r) => r.routeStatus === 'in-progress' || r.routeStatus === 'waiting-approval-to-resolve'
-  )
-
+  const inProgressRoutes = filteredRoutes.filter((r) => r.routeStatus === 'in-progress')
+  const failedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'failed')
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
+  const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
+  const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
 
-  const remainingRoutes = filteredRoutes.filter(
-    (r) =>
-      r.routeStatus !== 'in-progress' &&
-      r.routeStatus !== 'completed' &&
-      r.routeStatus !== 'waiting-approval-to-resolve'
-  )
-
-  const banners: Banner[] = []
-
-  // Handle in-progress transactions grouping
+  let title = ''
+  let text = ''
+  let type: BannerType
   if (inProgressRoutes.length > 0) {
-    banners.push({
-      id: 'bridge-in-progress',
-      type: 'info',
-      category: 'bridge-in-progress',
-      title: `Bridge request${inProgressRoutes.length > 1 ? 's' : ''} in progress`,
-      text: `You have ${inProgressRoutes.length} bridge request${
-        inProgressRoutes.length > 1 ? 's' : ''
-      } in progress.`,
-      actions: [
-        {
-          label: 'Details',
-          actionName: 'open-swap-and-bridge-tab'
-        }
-      ]
-    })
+    type = 'info'
+    title = `Bridge${allRoutes.length > 1 ? 's' : ''} in progress`
+    text = `You have ${allRoutes.length} pending bridge${allRoutes.length > 1 ? 's' : ''}`
+  } else if (failedRoutes.length > 0) {
+    type = 'error'
+    title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+      completedRoutes.length > 1
+        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }${
+      refundedRoutes.length > 1
+        ? ` and ${refundedRoutes.length} refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }`
+  } else if (refundedRoutes.length > 0) {
+    type = 'warning'
+    title = `Refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${refundedRoutes.length} refunded bridge${
+      refundedRoutes.length > 1 ? 's' : ''
+    }${
+      completedRoutes.length > 1
+        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        : ''
+    }`
+  } else {
+    type = 'success'
+    title = `Bridge${completedRoutes.length > 1 ? 's' : ''} completed`
+    text = `You have ${completedRoutes.length} completed bridge${
+      completedRoutes.length > 1 ? 's' : ''
+    }.`
   }
 
-  // Handle completed transactions grouping
-  if (completedRoutes.length > 0) {
+  const banners: Banner[] = []
+  if (allRoutes.length > 0) {
     banners.push({
-      id: 'bridge-completed',
-      type: 'success',
-      category: 'bridge-completed',
-      title: `Bridge request${completedRoutes.length > 1 ? 's' : ''} completed`,
-      text: `You have ${completedRoutes.length} completed bridge request${
-        completedRoutes.length > 1 ? 's' : ''
-      }.`,
+      id: 'bridge-in-progress',
+      type,
+      category: 'bridge-in-progress',
+      title,
+      text,
       actions: [
         {
           label: 'Close',
           actionName: 'close-bridge',
-          meta: { activeRouteIds: completedRoutes.map((r) => r.activeRouteId) }
+          meta: {
+            activeRouteIds: allRoutes.map((r) => r.activeRouteId),
+            isHideStyle: true
+          }
+        },
+        {
+          label: 'View',
+          actionName: 'view-bridge'
         }
       ]
     })
   }
-
-  // Add other statuses normally
-  remainingRoutes.forEach((r) => {
-    const actions: Action[] =
-      r.routeStatus === 'ready'
-        ? [
-            {
-              label: 'Reject',
-              actionName: 'reject-bridge',
-              meta: { activeRouteIds: [r.activeRouteId] }
-            },
-            {
-              label: r.route.currentUserTxIndex >= 1 ? 'Proceed to Next Step' : 'Open',
-              actionName: 'proceed-bridge',
-              meta: { activeRouteId: r.activeRouteId }
-            }
-          ]
-        : []
-
-    banners.push({
-      id: `bridge-${r.activeRouteId}`,
-      type: 'info',
-      category: `bridge-${r.routeStatus}`,
-      title: 'Bridge request awaiting signature',
-      text: getBridgeBannerText(r, isBridgeTxn(r), networks),
-      actions
-    })
-  })
 
   return banners
 }
 
 export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin'].includes(a.type))
+  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
   if (!requests.length) return []
 
   return [
@@ -170,19 +161,19 @@ export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]):
 }
 
 const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: ActiveRoute[],
+  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
   chainId: bigint,
   nonSwapAndBridgeTxns: number,
   networks: Network[]
 ) => {
   const swapsAndBridges: string[] = []
   const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return BigInt(route.route.fromChainId) === chainId
+    return route.route && BigInt(route.route.fromChainId) === chainId
   })
 
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = route.route.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+      const isBridgeTxn = !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
       const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
@@ -212,7 +203,7 @@ export const getAccountOpBanners = ({
   selectedAccount: string
   accounts: Account[]
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: ActiveRoute[]
+  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []
@@ -222,7 +213,7 @@ export const getAccountOpBanners = ({
   if (account?.creation) {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
       actions.forEach((action) => {
-        const network = networks.filter((n) => n.id === netId)[0]
+        const network = networks.filter((n) => n.chainId.toString() === netId)[0]
         const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
           const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
             (route) => route.activeRouteId === call.fromUserRequestId
@@ -266,7 +257,7 @@ export const getAccountOpBanners = ({
     })
   } else {
     Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
-      const network = networks.filter((n) => n.id === netId)[0]
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
       const nonSwapAndBridgeTxns = actions.reduce((prev, action) => {
         action.accountOp.calls.forEach((call) => {
           const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
@@ -302,7 +293,8 @@ export const getAccountOpBanners = ({
                 actionName: 'reject-accountOp',
                 meta: {
                   err: 'User rejected the transaction request.',
-                  actionId: actions[0].id
+                  actionId: actions[0].id,
+                  shouldOpenNextAction: false
                 }
               }
             : undefined,
@@ -324,7 +316,9 @@ export const getAccountOpBanners = ({
 export const getKeySyncBanner = (addr: string, email: string, keys: string[]) => {
   const banner: Banner = {
     id: `keys-sync:${addr}:${email}`,
-    accountAddr: addr,
+    meta: {
+      accountAddr: addr
+    },
     type: 'info',
     title: 'Sync Key Store keys',
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
@@ -364,6 +358,66 @@ export const getFirstCashbackBanners = ({
       ]
     })
   }
+
+  return banners
+}
+
+export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
+
+export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
+  defiPositionsAccountState,
+  networks
+}: {
+  defiPositionsAccountState: AccountState
+  networks: Network[]
+}) => {
+  const banners: Banner[] = []
+
+  const disabledNetworks = networks.filter((n) => n.disabled)
+
+  if (!disabledNetworks.length) return []
+
+  const defiPositionsOnDisabledNetworks = []
+  const disabledNetworksWithDefiPos = new Set<Network>()
+
+  disabledNetworks.forEach((n) => {
+    if (defiPositionsAccountState[n.chainId.toString()]) {
+      defiPositionsAccountState[n.chainId.toString()].positionsByProvider.forEach((p) => {
+        defiPositionsOnDisabledNetworks.push(p)
+        disabledNetworksWithDefiPos.add(n)
+      })
+    }
+  })
+
+  if (!defiPositionsOnDisabledNetworks.length) return []
+
+  const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
+
+  banners.push({
+    id: defiPositionsOnDisabledNetworksBannerId,
+    type: 'info',
+    title: 'DeFi positions detected on disabled networks',
+    text: `You have ${defiPositionsOnDisabledNetworks.length} active DeFi ${
+      defiPositionsOnDisabledNetworks.length === 1 ? 'position' : 'positions'
+    } on${
+      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
+    }: ${disabledNetworksWithDefiPosArray
+      .map((n) => n.name)
+      .join(', ')}. Would you like to enable ${
+      disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
+    }?`,
+    actions: [
+      {
+        label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',
+        actionName: 'enable-networks',
+        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
+      },
+      {
+        label: 'Dismiss',
+        actionName: 'dismiss-defi-positions-banner'
+      }
+    ]
+  })
 
   return banners
 }

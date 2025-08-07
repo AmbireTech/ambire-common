@@ -5,20 +5,18 @@
 import { Contract, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
-import { Bundler } from '../../services/bundlers/bundler'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { paymasterFactory } from '../../services/paymaster'
-import { has7702 } from '../7702/7702'
+import wait from '../../utils/wait'
 import { BaseAccount } from '../account/BaseAccount'
-import { AccountOp, getSignableCallsForBundlerEstimate } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
@@ -27,20 +25,55 @@ import { getSigForCalculations, getUserOperation } from '../userOperation/userOp
 import { estimateWithRetries } from './estimateWithRetries'
 import { Erc4337GasLimits, EstimationFlags } from './interfaces'
 
-async function estimate(
-  bundler: Bundler,
+async function fetchBundlerGasPrice(
+  baseAcc: BaseAccount,
   network: Network,
-  accountState: AccountOnchainState,
+  switcher: BundlerSwitcher,
+  errorCallback: Function
+): Promise<GasSpeeds | Error> {
+  const bundler = switcher.getBundler()
+  const fetchGas = bundler.fetchGasPrices(network, errorCallback).catch(() => {
+    return new Error('Could not fetch gas prices, retrying...')
+  })
+
+  // if there aren't any bundlers available, just go with the original
+  // gas price fetch that auto retries on failure as we don't have a choice
+  if (!switcher.canSwitch(baseAcc)) return fetchGas
+
+  // fetchGasPrices should complete in ms, so punish slow bundlers
+  // by rotating them off
+  const prices = await Promise.race([
+    fetchGas,
+    new Promise((_resolve, reject) => {
+      setTimeout(() => reject(new Error('bundler gas request too slow')), 4000)
+    })
+  ]).catch(() => {
+    // eslint-disable-next-line no-console
+    console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed, switching and retrying`)
+    return null
+  })
+
+  if (!prices || prices instanceof Error) {
+    switcher.switch()
+    return fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
+  }
+
+  return prices as GasSpeeds | Error
+}
+
+async function estimate(
+  baseAcc: BaseAccount,
+  network: Network,
   userOp: UserOperation,
+  switcher: BundlerSwitcher,
   errorCallback: Function
 ): Promise<{
   gasPrice: GasSpeeds | Error
   estimation: any
   nonFatalErrors: Error[]
 }> {
-  const gasPrice = await bundler.fetchGasPrices(network, errorCallback).catch(() => {
-    return new Error('Could not fetch gas prices, retrying...')
-  })
+  const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
+  const bundler = switcher.getBundler()
 
   // if the gasPrice fetch fails, we will switch the bundler and try again
   if (gasPrice instanceof Error) {
@@ -59,8 +92,8 @@ async function estimate(
   const localUserOp = { ...userOp }
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    localUserOp.maxPriorityFeePerGas = gasPrice.medium.maxPriorityFeePerGas
-    localUserOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
+    localUserOp.maxPriorityFeePerGas = gasPrice.fast.maxPriorityFeePerGas
+    localUserOp.maxFeePerGas = gasPrice.fast.maxFeePerGas
   }
 
   const nonFatalErrors: Error[] = []
@@ -79,18 +112,9 @@ async function estimate(
     return getHumanReadableEstimationError(decodedError)
   }
 
-  // TODO: this should probably be moved to BaseAccount
-  const stateOverride =
-    has7702(network) && accountState.isEOA && !accountState.isSmarterEoa && !userOp.eip7702Auth
-      ? {
-          [userOp.sender]: {
-            code: AmbireAccount7702.binRuntime
-          }
-        }
-      : undefined
-
+  const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
   const initializeRequests = () => [
-    bundler.estimate(userOp, network, stateOverride).catch(estimateErrorCallback)
+    bundler.estimate(localUserOp, network, stateOverride).catch(estimateErrorCallback)
   ]
 
   const estimation = await estimateWithRetries(
@@ -98,9 +122,12 @@ async function estimate(
     'estimation-bundler',
     errorCallback
   )
+  const foundError = Array.isArray(estimation)
+    ? estimation.find((res) => res instanceof Error)
+    : null
   return {
     gasPrice,
-    estimation,
+    estimation: foundError ?? estimation,
     nonFatalErrors
   }
 }
@@ -135,11 +162,11 @@ export async function bundlerEstimate(
   const ambireAccount = new Interface(AmbireAccount.abi)
   userOp.signature = getSigForCalculations()
 
-  const paymaster = await paymasterFactory.create(op, userOp, network, provider)
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  const paymaster = await paymasterFactory.create(op, userOp, account, network, provider)
   localOp.feeCall = paymaster.getFeeCallForEstimation(feeTokens)
-  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [
-    getSignableCallsForBundlerEstimate(localOp)
-  ])
+  userOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(localOp)])
+  const feeCallType = paymaster.getFeeCallType(feeTokens)
 
   if (paymaster.isUsable()) {
     const paymasterEstimationData = paymaster.getEstimationData() as PaymasterEstimationData
@@ -156,8 +183,7 @@ export async function bundlerEstimate(
   const flags: EstimationFlags = {}
   while (true) {
     // estimate
-    const bundler = switcher.getBundler()
-    const estimations = await estimate(bundler, network, accountState, userOp, errorCallback)
+    const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -170,29 +196,35 @@ export async function bundlerEstimate(
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
         gasPrice: estimations.gasPrice as GasSpeeds,
         paymaster,
-        flags
+        flags,
+        feeCallType
       }
     }
 
-    // try again if the error is 4337_INVALID_NONCE
+    // try again if the error is 4337_INVALID_NONCE and network is not ETH
     if (
       estimations.nonFatalErrors.length &&
       estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
     ) {
-      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
-      let accountNonce = null
-      // infinite loading is fine here as this is how 4337_INVALID_NONCE error
-      // was handled in previous cases and worked pretty well: retry until fix
-      while (!accountNonce) {
-        accountNonce = await ep.getNonce(account.addr, 0, { blockTag: 'pending' }).catch(() => null)
-      }
-      userOp.nonce = toBeHex(accountNonce)
       flags.has4337NonceDiscrepancy = true
+
+      if (network.chainId === 1n) {
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
+
+      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
+      const accountNonce = await ep
+        .getNonce(account.addr, 0, { blockTag: 'pending' })
+        .catch(() => null)
+      if (!accountNonce) continue
+      userOp.nonce = toBeHex(accountNonce)
+      // wait a bit to allow the bundler to configure it's state correctly
+      await wait(1000)
       continue
     }
 
     // if there's an error but we can't switch, return the error
-    if (!switcher.canSwitch(account, estimations.estimation)) return estimations.estimation
+    if (!switcher.canSwitch(baseAcc)) return estimations.estimation
 
     // try again
     switcher.switch()

@@ -1,17 +1,19 @@
-import { hexlify, randomBytes } from 'ethers'
 /* eslint-disable class-methods-use-this */
+
+import { hexlify, randomBytes } from 'ethers'
 import fetch from 'node-fetch'
-import { EventEmitter } from 'stream'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
+import { mockWindowManager } from '../../../test/helpers/window'
+import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key } from '../../interfaces/keystore'
+import { Key, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
@@ -45,6 +47,7 @@ class InternalSigner {
     return Promise.resolve('')
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   sign7702(hex: string): EIP7702Signature {
     return {
       yParity: '0x00',
@@ -52,10 +55,15 @@ class InternalSigner {
       s: hexlify(randomBytes(32)) as Hex
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+    return '0x'
+  }
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const account: Account = {
@@ -74,21 +82,14 @@ const account: Account = {
   }
 }
 
-const windowManager = {
-  event: new EventEmitter(),
-  focus: () => Promise.resolve(),
-  open: () => Promise.resolve({ id: 0, top: 0, left: 0, width: 100, height: 100, focused: true }),
-  remove: () => Promise.resolve(),
-  sendWindowToastMessage: () => {},
-  sendWindowUiMessage: () => {}
-}
+const windowManager = mockWindowManager().windowManager
 
 const messageToSign: Message = {
   fromActionId: 1,
   content: { kind: 'message', message: '0x74657374' },
   accountAddr: account.addr,
   signature: null,
-  networkId: 'ethereum'
+  chainId: 1n
 }
 
 describe('SignMessageController', () => {
@@ -105,15 +106,25 @@ describe('SignMessageController', () => {
     await storageCtrl.set('accounts', [account])
     await storageCtrl.set('selectedAccount', account.addr)
 
-    keystoreCtrl = new KeystoreController(storageCtrl, { internal: InternalSigner }, windowManager)
-    networksCtrl = new NetworksController(
+    keystoreCtrl = new KeystoreController(
+      'default',
       storageCtrl,
-      fetch,
-      (net) => {
-        providersCtrl.setProvider(net)
-      },
-      (id) => providersCtrl.removeProvider(id)
+      { internal: InternalSigner },
+      windowManager
     )
+    networksCtrl = new NetworksController({
+      storage: storageCtrl,
+      fetch,
+      relayerUrl,
+      onAddOrUpdateNetworks: (nets) => {
+        nets.forEach((n) => {
+          providersCtrl.setProvider(n)
+        })
+      },
+      onRemoveNetwork: (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    })
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 
@@ -121,6 +132,7 @@ describe('SignMessageController', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
+      keystoreCtrl,
       () => {},
       () => {},
       () => {}
@@ -204,7 +216,7 @@ describe('SignMessageController', () => {
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest', [
-      messageToSign.networkId
+      messageToSign.chainId
     ])
 
     await signMessageController.sign()

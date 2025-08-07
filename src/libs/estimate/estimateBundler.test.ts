@@ -2,20 +2,20 @@
 /* eslint-disable max-classes-per-file */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import { describe, expect, test } from '@jest/globals'
 import { parseEther } from 'ethers'
 import fetch from 'node-fetch'
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
-import { UserOperation } from '../userOperation/types'
+
+import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { BICONOMY, BUNDLER, PIMLICO } from '../../consts/bundlers'
+import { BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { Pimlico } from '../../services/bundlers/pimlico'
 import { paymasterFactory } from '../../services/paymaster'
@@ -23,14 +23,15 @@ import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
 import { getBaseAccount } from '../account/getBaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
+import { UserOperation } from '../userOperation/types'
 import { bundlerEstimate } from './estimateBundler'
 import { BundlerEstimateResult, Erc4337GasLimits } from './interfaces'
 
 const to = '0x06564FA10c67427a187f90703fD094054f8F0408'
 
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
-const optimism = networks.find((net) => net.id === 'optimism')!
-const base = networks.find((net) => net.id === 'base')!
+const optimism = networks.find((n) => n.chainId === 10n)!
+const base = networks.find((n) => n.chainId === 8453n)!
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
@@ -53,10 +54,9 @@ const smartAccDeployed: Account = {
   }
 }
 
-const getSignAccountOpStatus = () => {
+const areUpdatesForbidden = () => {
   return null
 }
-const noStateUpdateStatuses: any[] = []
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
 const errorCallback = () => {}
@@ -77,7 +77,7 @@ describe('Bundler estimation tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [
@@ -92,7 +92,7 @@ describe('Bundler estimation tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
 
@@ -103,7 +103,7 @@ describe('Bundler estimation tests', () => {
           amount: 100n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'optimism',
+          chainId: 10n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -114,8 +114,8 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
-      const accountState = accountStates[smartAcc.addr][optimism.id]
+      const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
+      const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
       const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
       const result = await bundlerEstimate(
         baseAcc,
@@ -123,7 +123,7 @@ describe('Bundler estimation tests', () => {
         opOptimism,
         optimism,
         feeTokens,
-        providers[optimism.id],
+        providers[optimism.chainId.toString()],
         switcher,
         errorCallback
       )
@@ -146,7 +146,7 @@ describe('Bundler estimation tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: 1n, data: '0x' }],
@@ -154,7 +154,7 @@ describe('Bundler estimation tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
 
@@ -165,7 +165,7 @@ describe('Bundler estimation tests', () => {
           amount: 100n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'optimism',
+          chainId: 10n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -176,8 +176,8 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
-      const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+      const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
+      const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
       const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
       const result = await bundlerEstimate(
         baseAcc,
@@ -185,7 +185,7 @@ describe('Bundler estimation tests', () => {
         opOptimism,
         optimism,
         feeTokens,
-        providers[optimism.id],
+        providers[optimism.chainId.toString()],
         switcher,
         errorCallback
       )
@@ -205,7 +205,7 @@ describe('Bundler estimation tests', () => {
         signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
-        networkId: optimism.id,
+        chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
         calls: [{ to, value: parseEther('1'), data: '0x' }],
@@ -213,7 +213,7 @@ describe('Bundler estimation tests', () => {
       }
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
+        [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
 
@@ -224,7 +224,7 @@ describe('Bundler estimation tests', () => {
           amount: 100n,
           symbol: 'ETH',
           name: 'Ether',
-          networkId: 'optimism',
+          chainId: 10n,
           decimals: 18,
           priceIn: [],
           flags: {
@@ -235,8 +235,8 @@ describe('Bundler estimation tests', () => {
           }
         }
       ]
-      const switcher = new BundlerSwitcher(optimism, getSignAccountOpStatus, noStateUpdateStatuses)
-      const accountState = accountStates[smartAccDeployed.addr][optimism.id]
+      const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
+      const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
       const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
       const result = await bundlerEstimate(
         baseAcc,
@@ -244,7 +244,7 @@ describe('Bundler estimation tests', () => {
         opOptimism,
         optimism,
         feeTokens,
-        providers[optimism.id],
+        providers[optimism.chainId.toString()],
         switcher,
         errorCallback
       )
@@ -268,16 +268,10 @@ describe('Bundler fallback tests', () => {
     }
   }
   class ExtendedBundlerSwitcher extends BundlerSwitcher {
-    constructor(
-      network: Network,
-      getStatus: Function,
-      noUpdateStatuses: any[],
-      usedBundlers: BUNDLER[] = []
-    ) {
-      super(network, getStatus, noUpdateStatuses)
+    constructor(network: Network, areUpdatesForbbiden: Function, usedBundlers: BUNDLER[] = []) {
+      super(network, areUpdatesForbbiden)
       this.bundler = new BrokenPimlico()
-      // push pimlico as used so we could fallback to biconomy
-      usedBundlers.forEach((bun) => this.usedBundlers.push(bun))
+      this.usedBundlers = usedBundlers
     }
   }
 
@@ -288,7 +282,7 @@ describe('Bundler fallback tests', () => {
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: base.id,
+      chainId: base.chainId,
       nonce: 0n,
       signature: '0x',
       calls: [{ to, value: 1n, data: '0x' }],
@@ -296,7 +290,7 @@ describe('Bundler fallback tests', () => {
     }
     const usedNetworks = [base]
     const providers = {
-      [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
+      [base.chainId.toString()]: getRpcProvider(base.rpcUrls, base.chainId)
     }
     const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
 
@@ -307,7 +301,7 @@ describe('Bundler fallback tests', () => {
         amount: 100n,
         symbol: 'ETH',
         name: 'Ether',
-        networkId: 'base',
+        chainId: 8453n,
         decimals: 18,
         priceIn: [],
         flags: {
@@ -318,13 +312,8 @@ describe('Bundler fallback tests', () => {
         }
       }
     ]
-    const switcher = new ExtendedBundlerSwitcher(
-      base,
-      getSignAccountOpStatus,
-      noStateUpdateStatuses,
-      [PIMLICO]
-    )
-    const accountState = accountStates[smartAccDeployed.addr][base.id]
+    const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO])
+    const accountState = accountStates[smartAccDeployed.addr][base.chainId.toString()]
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
     const result = await bundlerEstimate(
       baseAcc,
@@ -332,7 +321,7 @@ describe('Bundler fallback tests', () => {
       opBase,
       base,
       feeTokens,
-      providers[base.id],
+      providers[base.chainId.toString()],
       switcher,
       errorCallback
     )
@@ -344,68 +333,5 @@ describe('Bundler fallback tests', () => {
     expect(BigInt(bundlerEstimation.verificationGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
     expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
-  })
-
-  test('should return the pimlico error if there are no other available bundlers when estimating with Pimlico but Pimlico returning an internal server error', async () => {
-    const opBase: AccountOp = {
-      accountAddr: smartAccDeployed.addr,
-      signingKeyAddr: smartAccDeployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId: base.id,
-      nonce: 0n,
-      signature: '0x',
-      calls: [{ to, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-    const usedNetworks = [base]
-    const providers = {
-      [base.id]: getRpcProvider(base.rpcUrls, base.chainId)
-    }
-    const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-
-    // if the user cannot pay in the fee token, it will revert
-    const feeTokens = [
-      {
-        address: '0x0000000000000000000000000000000000000000',
-        amount: 100n,
-        symbol: 'ETH',
-        name: 'Ether',
-        networkId: 'base',
-        decimals: 18,
-        priceIn: [],
-        flags: {
-          onGasTank: false,
-          rewardsType: null,
-          canTopUpGasTank: true,
-          isFeeToken: true
-        }
-      }
-    ]
-    const switcher = new ExtendedBundlerSwitcher(
-      base,
-      getSignAccountOpStatus,
-      noStateUpdateStatuses,
-      [PIMLICO, BICONOMY]
-    )
-    const accountState = accountStates[smartAccDeployed.addr][base.id]
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], base)
-    const result = await bundlerEstimate(
-      baseAcc,
-      accountState,
-      opBase,
-      base,
-      feeTokens,
-      providers[base.id],
-      switcher,
-      errorCallback
-    )
-
-    expect(result instanceof Error).toBe(true)
-
-    expect((result as Error).message).toBe(
-      'The bundler seems to be down at the moment. Please try again later'
-    )
   })
 })

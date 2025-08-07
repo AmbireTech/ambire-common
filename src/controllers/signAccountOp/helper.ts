@@ -1,13 +1,19 @@
 import { formatUnits, ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
-import { Network } from '../../interfaces/network'
-import { Warning, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
+import { Price } from '../../interfaces/assets'
+import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
-import { Price, TokenResult } from '../../libs/portfolio'
+import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
+
+export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
+export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
+export const SIGN_ACCOUNT_OP_TRANSFER = 'signAccountOpTransfer'
+export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap' | 'signAccountOpTransfer'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -31,20 +37,17 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 
   if (!usdPrice) return ''
 
-  const usdPriceFormatted = BigInt(usdPrice * 1e18)
-
-  // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals)
+  return safeTokenAmountAndNumberMultiplication(gasAmount, token.decimals, usdPrice)
 }
 
 function getSignificantBalanceDecreaseWarning(
   latest: AccountState,
   pending: AccountState,
-  networkId: Network['id'],
+  chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const latestNetworkData = latest?.[networkId]
-  const pendingNetworkData = pending?.[networkId]
+  const latestNetworkData = latest?.[chainId.toString()]
+  const pendingNetworkData = pending?.[chainId.toString()]
   const canDetermineIfBalanceWillDecrease =
     latestNetworkData &&
     !latestNetworkData.isLoading &&
@@ -52,13 +55,14 @@ function getSignificantBalanceDecreaseWarning(
     !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotal = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
-    const latestOnNetwork = getTotal(latestNetworkData.result?.tokens || []).usd
-    const pendingOnNetwork = getTotal(pendingNetworkData.result?.tokens || []).usd
-    const willBalanceDecreaseByMoreThan10Percent =
-      latestOnNetwork - pendingOnNetwork > latestTotal * 0.1
+    const latestTotalInUSD = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
+    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
+    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
+    const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
+    const hasSignificantBalanceDecrease =
+      absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
-    if (!willBalanceDecreaseByMoreThan10Percent) return null
+    if (!hasSignificantBalanceDecrease) return null
 
     // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
     // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
@@ -92,7 +96,7 @@ const getFeeTokenPriceUnavailableWarning = (
 
 export {
   getFeeSpeedIdentifier,
-  getTokenUsdAmount,
+  getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getFeeTokenPriceUnavailableWarning
+  getTokenUsdAmount
 }

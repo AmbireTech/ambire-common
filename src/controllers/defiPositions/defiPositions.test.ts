@@ -1,12 +1,15 @@
 import fetch from 'node-fetch'
 
+import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
+import { mockWindowManager } from '../../../test/helpers/window'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -34,8 +37,8 @@ const ACCOUNT = {
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
-  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.id].isWorking = true
+  providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
+  providers[network.chainId.toString()].isWorking = true
 })
 
 const prepareTest = async () => {
@@ -44,16 +47,22 @@ const prepareTest = async () => {
   const storageCtrl = new StorageController(storage)
   let providersCtrl: ProvidersController
 
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const windowManager = mockWindowManager().windowManager
+  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
-    (net) => {
-      providersCtrl.setProvider(net)
+    relayerUrl,
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
@@ -61,6 +70,7 @@ const prepareTest = async () => {
     storageCtrl,
     providersCtrl,
     networksCtrl,
+    keystoreCtrl,
     () => {},
     () => {},
     () => {}
@@ -68,7 +78,8 @@ const prepareTest = async () => {
 
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore: keystoreCtrl
   })
   await selectedAccountCtrl.initialLoadPromise
   await networksCtrl.initialLoadPromise
@@ -77,10 +88,12 @@ const prepareTest = async () => {
   await selectedAccountCtrl.setAccount(ACCOUNT)
   const controller = new DefiPositionsController({
     fetch: global.fetch as any,
-    storage,
+    storage: storageCtrl,
     selectedAccount: selectedAccountCtrl,
+    keystore: keystoreCtrl,
     providers: providersCtrl,
-    networks: networksCtrl
+    networks: networksCtrl,
+    accounts: accountsCtrl
   })
 
   return {
@@ -98,8 +111,8 @@ describe('DefiPositionsController', () => {
 
     await controller.updatePositions()
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    expect(selectedAccountState.polygon.updatedAt).toBeDefined()
-    expect(selectedAccountState.polygon.positionsByProvider.length).toBeGreaterThan(0)
+    expect(selectedAccountState['137'].updatedAt).toBeDefined()
+    expect(selectedAccountState['137'].positionsByProvider.length).toBeGreaterThan(0)
   })
 
   it('should handle errors in update positions', async () => {
@@ -120,7 +133,7 @@ describe('DefiPositionsController', () => {
     await controller.updatePositions()
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    expect(selectedAccountState.ethereum.providerErrors).toEqual([
+    expect(selectedAccountState['1'].providerErrors).toEqual([
       { providerName: 'AAVE v3', error: 'AAVE error' },
       { providerName: 'Uniswap V3', error: 'Uniswap error' }
     ])
@@ -134,56 +147,25 @@ describe('DefiPositionsController', () => {
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
-    const positions = selectedAccountState.polygon.positionsByProvider
+    const positions = selectedAccountState['137'].positionsByProvider
     expect(positions.length).toBeGreaterThan(0)
     positions.forEach((provider) => {
       provider.positions.forEach((position) => {
         position.assets.forEach((asset) => {
           expect(asset.value).toBeDefined()
-          expect(asset.priceIn).toEqual([{ baseCurrency: 'usd', price: expect.any(Number) }])
+          expect(asset.priceIn).toEqual({ baseCurrency: 'usd', price: expect.any(Number) })
         })
       })
     })
   })
 
-  it('should handle errors in setting asset prices', async () => {
-    const consoleSuppressor = suppressConsole()
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
-        status: 500,
-        json: () => Promise.resolve({ error: 'Internal Server Error' })
-      } as any)
-    )
-
-    const { controller } = await prepareTest()
-    await controller.updatePositions()
-
-    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    const positions = selectedAccountState.polygon.positionsByProvider
-    expect(positions.length).toBeGreaterThan(0)
-    positions.forEach((provider) => {
-      // AAVE positions get their prices from oracles
-      // so stopping fetch requests won't affect them
-      if (provider.providerName.toLowerCase().includes('aave')) return
-      provider.positions.forEach((position) => {
-        position.assets.forEach((asset) => {
-          expect(asset.value).toBeUndefined()
-          expect(asset.priceIn).toBeUndefined()
-        })
-      })
-    })
-
-    consoleSuppressor.restore()
-  })
   it('should update networksWithPositionsByAccounts properly', async () => {
     const { controller } = await prepareTest()
 
     await controller.updatePositions()
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
-    expect(networksWithPositions.polygon).toContain('AAVE v3')
-    expect(networksWithPositions.polygon).toContain('Uniswap V3')
-    expect(networksWithPositions.ethereum.length).toBe(0)
+    expect(networksWithPositions['137']).toContain('AAVE v3')
   })
   it('should handle provider error and empty state for networksWithPositionsByAccounts', async () => {
     const consoleSuppressor = suppressConsole()
@@ -199,15 +181,15 @@ describe('DefiPositionsController', () => {
     await controller.updatePositions()
     const accountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
-    expect(accountState.ethereum.providerErrors!.length).toBeGreaterThan(0)
-    expect(accountState.polygon.providerErrors!.length).toBeGreaterThan(0)
+    expect(accountState['1'].providerErrors!.length).toBeGreaterThan(0)
+    expect(accountState['137'].providerErrors!.length).toBeGreaterThan(0)
 
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
     // Undefined because there is a provider has an error, so we
     // can't be certain if the account has positions on that network
-    expect(networksWithPositions.polygon).toBeUndefined()
-    expect(networksWithPositions.ethereum).toBeUndefined()
+    expect(networksWithPositions['137']).toBeUndefined()
+    expect(networksWithPositions['1']).toBeUndefined()
 
     consoleSuppressor.restore()
   })

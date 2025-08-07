@@ -2,10 +2,11 @@ import { expect } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
+import { Call } from '../../../accountOp/types'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
 import { privilegeHumanizer } from './privileges'
 
-const transactions: { [key: string]: Array<IrCall> } = {
+const transactions: { [key: string]: Call[] } = {
   privileges: [
     {
       to: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -28,8 +29,8 @@ const transactions: { [key: string]: Array<IrCall> } = {
 describe('privileges', () => {
   const accountOp: AccountOp = {
     accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-    networkId: 'ethereum',
-    // networkId: 'polygon',
+    chainId: 1n,
+    // chainId: 137n,
     // this may not be defined, in case the user has not picked a key yet
     signingKeyAddr: null,
     signingKeyType: null,

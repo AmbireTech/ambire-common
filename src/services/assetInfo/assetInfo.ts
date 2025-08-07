@@ -1,20 +1,23 @@
-import { JsonRpcProvider } from 'ethers'
-
-import { Network, NetworkId } from '../../interfaces/network'
+import { Network } from '../../interfaces/network'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
+import { getRpcProvider } from '../provider'
 
 const RANDOM_ADDRESS = '0x0000000000000000000000000000000000000001'
 const scheduledActions: {
-  [network in NetworkId]?: {
-    promise: Promise<any>
-    data: { callback: Function; address: string }[]
-  }
+  [chainId: string]:
+    | {
+        promise: Promise<any>
+        data: { callback: Function; address: string }[]
+      }
+    | undefined
 } = {}
 
 export async function executeBatchedFetch(network: Network): Promise<void> {
-  const provider = new JsonRpcProvider(network.selectedRpcUrl || network.rpcUrls[0])
+  const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
+  const provider = getRpcProvider([rpcUrl], network.chainId)
   const allAddresses =
-    Array.from(new Set(scheduledActions[network.id]?.data.map((i) => i.address))) || []
+    Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||
+    []
   const portfolio = new Portfolio(fetch as any, provider, network)
   const options: Partial<GetOptions> = {
     disableAutoDiscovery: true,
@@ -31,7 +34,7 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
   }
   const portfolioResponse = await portfolio.get(RANDOM_ADDRESS, options)
 
-  scheduledActions[network.id]?.data.forEach((i) => {
+  scheduledActions[network.chainId.toString()]?.data.forEach((i) => {
     const tokenInfo =
       (i.address,
       portfolioResponse.tokens.find(
@@ -55,20 +58,20 @@ export async function resolveAssetInfo(
   network: Network,
   callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void
 ): Promise<void> {
-  if (!scheduledActions[network.id]?.data?.length) {
-    scheduledActions[network.id] = {
+  if (!scheduledActions[network.chainId.toString()]?.data?.length) {
+    scheduledActions[network.chainId.toString()] = {
       promise: new Promise((resolve, reject) => {
         setTimeout(async () => {
           await executeBatchedFetch(network).catch(reject)
-          scheduledActions[network.id] = undefined
+          scheduledActions[network.chainId.toString()] = undefined
           resolve(0)
         }, 500)
       }),
       data: [{ address, callback }]
     }
   } else {
-    scheduledActions[network.id]?.data.push({ address, callback })
+    scheduledActions[network.chainId.toString()]?.data.push({ address, callback })
   }
   // we are returning a promise so we can await the full execution
-  return scheduledActions[network.id]?.promise
+  return scheduledActions[network.chainId.toString()]?.promise
 }

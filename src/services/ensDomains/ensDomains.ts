@@ -41,14 +41,14 @@ export function isCorrectAddress(address: string) {
 async function resolveENSDomain(domain: string, bip44Item?: number[][]): Promise<string> {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return ''
-  const ethereum = networks.find((x) => x.id === 'ethereum')!
+  const ethereum = networks.find((n) => n.chainId === 1n)!
   const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
   const resolver = await provider.getResolver(normalizedDomainName)
   if (!resolver) return ''
   try {
     const ethAddress = await resolver.getAddress()
     const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
-    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress
+    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || ''
   } catch (e: any) {
     // If the error comes from an internal server error don't
     // show it to the user, because it happens when a domain

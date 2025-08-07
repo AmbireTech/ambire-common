@@ -18,7 +18,7 @@ import { getAccountState } from './accountState'
 
 // import { get4437Bytecode } from ''
 
-const polygon = networks.find((x) => x.id === 'polygon')
+const polygon = networks.find((n) => n.chainId === 137n)
 if (!polygon) throw new Error('unable to find polygon network in consts')
 const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 
@@ -192,7 +192,6 @@ describe('AccountState', () => {
     }
 
     const odyssey: Network = {
-      id: 'odyssey',
       chainId: 911867n,
       rpcNoStateOverride: false,
       nativeAssetName: 'Ether',

@@ -1,6 +1,5 @@
 type AddressState = {
   fieldValue: string
-  udAddress: string
   ensAddress: string
   isDomainResolving: boolean
 }
@@ -8,7 +7,6 @@ type AddressState = {
 type AddressStateOptional = {
   fieldValue?: AddressState['fieldValue']
   ensAddress?: AddressState['ensAddress']
-  udAddress?: AddressState['udAddress']
   isDomainResolving?: AddressState['isDomainResolving']
 }
 

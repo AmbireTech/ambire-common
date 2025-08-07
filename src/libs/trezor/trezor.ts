@@ -9,6 +9,8 @@ export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: str
   if (errorCode === 'Method_Interrupted')
     return 'Closing the Trezor popup interrupted the connection.'
 
+  if (errorCode === 'Method_Cancel') return 'Permission not granted.'
+
   if (errorCode === 'Failure_ActionCancelled') return 'Rejected by your Trezor device.'
 
   if (
@@ -16,6 +18,9 @@ export const getMessageFromTrezorErrorCode = (errorCode?: string, errorMsg?: str
     errorCode === 'Device_Disconnected'
   )
     return 'Trezor device got disconnected.'
+
+  if (errorCode === 'Device_CallInProgress')
+    return 'Trezor device busy. Please make sure there are no pending requests on the device.'
 
   return `${errorMsg} (${errorCode ?? 'no error code incoming'})`
 }

@@ -1,5 +1,5 @@
+import { Price } from '../../interfaces/assets'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
-import { Price } from '../portfolio'
 
 const sortByValue = (aValue?: number, bValue?: number) => {
   if (aValue && bValue) {

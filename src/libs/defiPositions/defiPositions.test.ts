@@ -1,8 +1,7 @@
-import { JsonRpcProvider } from 'ethers'
-
 import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
+import { getRpcProvider } from '../../services/provider'
 import { getAAVEPositions, getUniV3Positions } from './providers'
 
 describe('DeFi positions', () => {
@@ -12,14 +11,14 @@ describe('DeFi positions', () => {
   const userAddrUni = '0xbd67a10726e6d112295a698ea348f40d27fe5149'
   const userAddrAave = '0xe40d278afd00e6187db21ff8c96d572359ef03bf'
 
-  const ethereum = networks.find((x) => x.id === 'ethereum')
+  const ethereum = networks.find((n) => n.chainId === 1n)
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
 
-  const polygon = networks.find((x) => x.id === 'polygon')
+  const polygon = networks.find((n) => n.chainId === 137n)
   if (!polygon) throw new Error('unable to find polygon network in consts')
 
-  const providerEthereum = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
-  const providerPolygon = new JsonRpcProvider('https://invictus.ambire.com/polygon')
+  const providerEthereum = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
+  const providerPolygon = getRpcProvider(['https://invictus.ambire.com/polygon'], 137n)
 
   describe('Uni V3', () => {
     test('Get uni v3 positions on Polygon', async () => {

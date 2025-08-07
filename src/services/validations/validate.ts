@@ -45,20 +45,21 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
   if (address && selectedAcc && address === selectedAcc) {
     return {
       success: false,
-      message: 'The entered address should be different than your own account address.'
+      message: "You can't send to the same address you’re sending from."
     }
   }
 
   return { success: true, message: '' }
 }
 
+const NOT_IN_ADDRESS_BOOK_MESSAGE =
+  "This address isn't in your Address Book. Double-check the details before confirming."
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
@@ -75,7 +76,7 @@ const validateSendTransferAddress = (
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
-      message: 'The entered address should be different than the your own account address.'
+      message: "You can't send to the same address you're sending from."
     }
   }
 
@@ -89,27 +90,24 @@ const validateSendTransferAddress = (
   if (
     isRecipientAddressUnknown &&
     !addressConfirmed &&
-    !isUDAddress &&
     !isEnsAddress &&
     !isRecipientDomainResolving
   ) {
     return {
       success: false,
-      message:
-        "You're trying to send to an unknown address. If you're really sure, confirm using the checkbox below."
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE
     }
   }
 
   if (
     isRecipientAddressUnknown &&
     !addressConfirmed &&
-    (isUDAddress || isEnsAddress) &&
+    isEnsAddress &&
     !isRecipientDomainResolving
   ) {
-    const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
     return {
       success: false,
-      message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE
     }
   }
 
@@ -125,8 +123,6 @@ const validateSendTransferAddress = (
 
 const validateSendTransferAmount = (
   amount: string,
-  maxAmount: number,
-  maxAmountInFiat: number,
   selectedAsset: TokenResult
 ): ValidateReturnType => {
   const sanitizedAmount = getSanitizedAmount(amount, selectedAsset.decimals)
@@ -139,6 +135,14 @@ const validateSendTransferAmount = (
   }
 
   if (!(sanitizedAmount && Number(sanitizedAmount) > 0)) {
+    // The user has entered an amount that is outside of the valid range.
+    if (Number(amount) > 0 && selectedAsset.decimals && selectedAsset.decimals > 0) {
+      return {
+        success: false,
+        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`
+      }
+    }
+
     return {
       success: false,
       message: 'The amount must be greater than 0.'
@@ -158,9 +162,7 @@ const validateSendTransferAmount = (
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${Number(maxAmount) || 0} ${
-            selectedAsset?.symbol
-          }${maxAmountInFiat ? `/ ${Number(maxAmountInFiat)} USD.` : ''}`
+          message: 'Insufficient amount.'
         }
       }
     }
@@ -170,52 +172,6 @@ const validateSendTransferAmount = (
     return {
       success: false,
       message: 'Invalid amount.'
-    }
-  }
-
-  return { success: true, message: '' }
-}
-
-const validateSendNftAddress = (
-  address: string,
-  selectedAcc: any,
-  addressConfirmed: any,
-  isRecipientAddressUnknown: boolean,
-  isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  metadata: any,
-  selectedNetwork: any,
-  network: any,
-  isUDAddress: boolean,
-  isEnsAddress: boolean,
-  isRecipientDomainResolving: boolean
-): ValidateReturnType => {
-  const isValidAddr = validateSendTransferAddress(
-    address,
-    selectedAcc,
-    addressConfirmed,
-    isRecipientAddressUnknown,
-    isRecipientHumanizerKnownTokenOrSmartContract,
-    isUDAddress,
-    isEnsAddress,
-    isRecipientDomainResolving
-  )
-  if (!isValidAddr.success) return isValidAddr
-
-  if (
-    metadata &&
-    selectedAcc &&
-    metadata.owner?.address.toLowerCase() !== selectedAcc.toLowerCase()
-  ) {
-    return {
-      success: false,
-      message: "The NFT you're trying to send is not owned by you!"
-    }
-  }
-
-  if (selectedNetwork && network && selectedNetwork.id !== network) {
-    return {
-      success: false,
-      message: 'The selected network is not the correct one.'
     }
   }
 
@@ -238,7 +194,6 @@ export {
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount,
-  validateSendNftAddress,
   isValidCode,
   isValidPassword,
   isValidURL

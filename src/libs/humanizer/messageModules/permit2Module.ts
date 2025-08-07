@@ -1,4 +1,4 @@
-import { PERMIT_2_ADDRESS } from '../../../consts/addresses'
+import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
@@ -37,44 +37,52 @@ interface PermitDetails {
   nonce: bigint
 }
 
-const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
-  return [
-    getAction('Permit'),
-    getAddressVisualization(PERMIT_2_ADDRESS),
-    getLabel('to use'),
-    getToken(permit.token, permit.amount),
-    getLabel('for time period'),
-    getDeadline(permit.expiration)
-  ]
+interface PermitGist {
+  token: string
+  amount: bigint
+}
+
+const getPermitData = (permit: PermitDetails): PermitGist => {
+  return { token: permit.token, amount: permit.amount }
 }
 
 export const permit2Module: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
   const tm = message.content
-  const visualizations: HumanizerVisualization[] = []
   if (
     tm?.domain?.verifyingContract &&
-    tm.domain.verifyingContract.toLowerCase() === PERMIT_2_ADDRESS.toLowerCase()
+    [PERMIT_2_ADDRESS.toLowerCase(), PANCAKE_SWAP_PERMIT_2_ADDRESS.toLocaleLowerCase()].includes(
+      tm.domain.verifyingContract.toLowerCase()
+    )
   ) {
-    if (tm?.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
-      visualizations.push(
-        ...visualizePermit(tm.message.details),
-        getLabel('this whole signatuere'),
-        getDeadline(tm.message.sigDeadline)
-      )
-    } else if (tm?.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
-      tm.message.details.forEach((permitDetails: PermitDetails, i: number) => {
-        visualizations.push(
-          ...[
-            getLabel(`Permit #${i + 1}`),
-            ...visualizePermit(permitDetails),
-            getLabel('this whole signatuere'),
-            getDeadline(tm.message.sigDeadline) as HumanizerVisualization
-          ]
-        )
-      })
+    const messageType = tm?.types?.PermitSingle?.[0]?.type || tm?.types?.PermitBatch?.[0]?.type
+    if (!['PermitDetails', 'PermitDetails[]'].includes(messageType))
+      return { fullVisualization: [] }
+
+    const permits: PermitGist[] =
+      messageType === 'PermitDetails'
+        ? [getPermitData(tm.message.details)]
+        : tm.message.details.map((permitDetails: PermitDetails) => getPermitData(permitDetails))
+
+    if (!permits.length) return { fullVisualization: [] }
+
+    const permitVisualizations = permits
+      .map(({ token, amount }) => [
+        getAddressVisualization(tm.message.spender),
+        getLabel('to use'),
+        getToken(token, amount),
+        getLabel('and')
+      ])
+      .flat()
+      .slice(0, -1)
+
+    return {
+      fullVisualization: [
+        getAction('Approve'),
+        ...permitVisualizations,
+        getDeadline(tm.message.sigDeadline) as HumanizerVisualization
+      ]
     }
-    return { fullVisualization: visualizations }
   }
 
   return { fullVisualization: [] }

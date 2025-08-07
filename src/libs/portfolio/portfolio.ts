@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable guard-for-in */
 
@@ -6,7 +7,6 @@ import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { ODYSSEY_CHAIN_ID } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -14,7 +14,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { stripExternalHintsAPIResponse } from './helpers'
+import { stripExternalHintsAPIResponse, tokenFilter } from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -63,19 +63,8 @@ const defaultOptions: GetOptions = {
   blockTag: 'latest',
   priceRecency: 0,
   previousHintsFromExternalAPI: null,
-  fetchPinned: true
-}
-
-const getHardcodedOdysseyPrices = (address: string) => {
-  if (address === '0x2B44e7315B20da1A9CBE827489A2FE99545e3ba7')
-    return [
-      {
-        baseCurrency: 'usd',
-        price: 2
-      }
-    ]
-
-  return null
+  fetchPinned: true,
+  priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
 
 export class Portfolio {
@@ -93,30 +82,40 @@ export class Portfolio {
     fetch: Fetch,
     provider: Provider | JsonRpcProvider,
     network: Network,
-    velcroUrl?: string
+    velcroUrl?: string,
+    customBatcher?: Function
   ) {
-    this.batchedVelcroDiscovery = batcher(
-      fetch,
-      (queue) => {
-        const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
-        return baseCurrencies.map((baseCurrency) => {
-          const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
-          const url = `${velcroUrl}/multi-hints?networks=${queueSegment
-            .map((x) => x.data.networkId)
-            .join(',')}&accounts=${queueSegment
-            .map((x) => x.data.accountAddr)
-            .join(',')}&baseCurrency=${baseCurrency}`
-          return { queueSegment, url }
-        })
-      },
-      {
-        timeoutAfter: 3000,
-        timeoutErrorMessage: `Velcro discovery timed out on ${network.id}`
-      }
-    )
+    if (customBatcher) {
+      this.batchedVelcroDiscovery = customBatcher
+    } else {
+      this.batchedVelcroDiscovery = batcher(
+        fetch,
+        (queue) => {
+          const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))]
+          return baseCurrencies.map((baseCurrency) => {
+            const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency)
+            const url = `${velcroUrl}/multi-hints?networks=${queueSegment
+              .map((x) => x.data.chainId)
+              .join(',')}&accounts=${queueSegment
+              .map((x) => x.data.accountAddr)
+              .join(',')}&baseCurrency=${baseCurrency}`
+            return { queueSegment, url }
+          })
+        },
+        {
+          timeoutSettings: {
+            timeoutAfter: 3000,
+            timeoutErrorMessage: `Velcro discovery timed out on ${network.name}`
+          },
+          dedupeByKeys: ['chainId', 'accountAddr']
+        }
+      )
+    }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
-      timeoutAfter: 3000,
-      timeoutErrorMessage: `Cena request timed out on ${network.id}`
+      timeoutSettings: {
+        timeoutAfter: 3000,
+        timeoutErrorMessage: `Cena request timed out on ${network.name}`
+      }
     })
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
@@ -126,6 +125,10 @@ export class Portfolio {
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
+    const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
+      erc20s: [],
+      erc721s: {}
+    }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
@@ -133,7 +136,7 @@ export class Portfolio {
 
     // Get hints (addresses to check on-chain) via Velcro
     const start = Date.now()
-    const networkId = this.network.id
+    const chainId = this.network.chainId
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
@@ -143,20 +146,35 @@ export class Portfolio {
     try {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
-      if (this.network.hasRelayer && !disableAutoDiscovery) {
+      if (!disableAutoDiscovery) {
         hintsFromExternalAPI = await this.batchedVelcroDiscovery({
-          networkId,
+          chainId,
           accountAddr,
           baseCurrency
         })
 
+        if (
+          hintsFromExternalAPI &&
+          hintsFromExternalAPI.skipOverrideSavedHints &&
+          localOpts.previousHintsFromExternalAPI
+        ) {
+          hintsFromExternalAPI = {
+            ...hintsFromExternalAPI,
+            erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
+            erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
+            // Spread it just in case we have saved a false value before
+            skipOverrideSavedHints: true
+          }
+        }
+
         if (hintsFromExternalAPI) {
           hintsFromExternalAPI.lastUpdate = Date.now()
+
           hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
         }
       }
     } catch (error: any) {
-      const errorMesssage = `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
+      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
       if (localOpts.previousHintsFromExternalAPI) {
         hints = { ...localOpts.previousHintsFromExternalAPI }
         const TEN_MINUTES = 10 * 60 * 1000
@@ -168,13 +186,13 @@ export class Portfolio {
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
             : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
           message: errorMesssage,
-          level: 'critical'
+          level: isLastUpdateTooOld ? 'critical' : 'silent'
         })
       } else {
         errors.push({
           name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
           message: errorMesssage,
-          level: 'silent'
+          level: 'critical'
         })
       }
 
@@ -204,7 +222,10 @@ export class Portfolio {
     // add the fee tokens
     hints.erc20s = [
       ...hints.erc20s,
-      ...gasTankFeeTokens.filter((x) => x.networkId === this.network.id).map((x) => x.address)
+      ...Object.keys(localOpts.specialErc20Hints || {}),
+      ...(localOpts.additionalErc20Hints || []),
+      ...(localOpts.fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
+      ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
     const checksummedErc20Hints = hints.erc20s
@@ -260,25 +281,74 @@ export class Portfolio {
     const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
-    const getPriceFromCache = (address: string) => {
+    const getPriceFromCache = (address: string, priceRecency: number = localOpts.priceRecency) => {
       const cached = priceCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached
       const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      if (start - timestamp <= localOpts.priceRecency! && eligible.length) return eligible
-      return null
+      const isStale = start - timestamp > priceRecency
+      return isStale ? null : eligible
     }
 
-    const tokenFilter = ([error, result]: [TokenError, TokenResult]): boolean =>
-      error === '0x' && !!result.symbol
+    const nativeToken = tokensWithErrResult.find(
+      ([, result]) => result.address === ZeroAddress
+    )?.[1]
+
+    const isValidToken = (error: TokenError, token: TokenResult): boolean =>
+      error === '0x' && !!token.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((_tokensWithErrResult: [TokenError, TokenResult]) =>
-        tokenFilter(_tokensWithErrResult)
-      )
-      .map(([, result]: [any, TokenResult]) => result)
+      .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
+        if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
+
+        // Don't filter by balance/custom/hidden etc. if this param isn't passed
+        // The portfolio lib is used outside the controller, in which case we want to
+        // fetch all tokens regardless of their balance or type
+        if (!localOpts.specialErc20Hints) return true
+
+        const isToBeLearned =
+          localOpts.specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
+
+        return tokenFilter(
+          _tokensWithErrResult[1],
+          this.network,
+          isToBeLearned,
+          !!opts.fetchPinned,
+          nativeToken
+        )
+      })
+      .map(([, result]: [any, TokenResult]) => {
+        if (
+          !result.amount ||
+          result.flags.isCustom ||
+          result.flags.isHidden ||
+          toBeLearned.erc20s.includes(result.address)
+        ) {
+          return result
+        }
+
+        // Add tokens proposed by the controller to toBeLearned
+        if (
+          opts.specialErc20Hints &&
+          opts.specialErc20Hints[result.address] &&
+          opts.specialErc20Hints[result.address] === 'learn'
+        ) {
+          toBeLearned.erc20s.push(result.address)
+          // Add tokens proposed by the external API to toBeLearned
+          // if the response API is static. That is because the static
+          // response may change and the user may stop seeing the token
+        } else if (
+          hintsFromExternalAPI &&
+          !hintsFromExternalAPI.hasHints &&
+          !hintsFromExternalAPI.skipOverrideSavedHints
+        ) {
+          toBeLearned.erc20s.push(result.address)
+        }
+
+        return result
+      })
 
     const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
@@ -293,7 +363,7 @@ export class Portfolio {
     })
 
     const collections = unfilteredCollections
-      .filter((preFilterCollection) => tokenFilter(preFilterCollection))
+      .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
       .map(([, collection]) => collection)
 
     const oracleCallDone = Date.now()
@@ -303,12 +373,9 @@ export class Portfolio {
     const tokensWithPrices: TokenResult[] = await Promise.all(
       tokensWithoutPrices.map(async (token: { address: string }) => {
         let priceIn: TokenResult['priceIn'] = []
-        const cachedPriceIn =
-          this.network.chainId === ODYSSEY_CHAIN_ID
-            ? getHardcodedOdysseyPrices(token.address)
-            : getPriceFromCache(token.address)
+        const cachedPriceIn = getPriceFromCache(token.address)
 
-        if (cachedPriceIn) {
+        if (cachedPriceIn && cachedPriceIn !== null) {
           priceIn = cachedPriceIn
 
           return {
@@ -337,18 +404,21 @@ export class Portfolio {
             baseCurrency: baseCurr,
             price: price as number
           }))
-          if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
+          priceCache.set(token.address, [Date.now(), priceIn])
         } catch (error: any) {
           const errorMessage = error?.message || 'Unknown error'
-          priceIn = []
 
-          // Avoid duplicate errors, because this.bachedGecko is called for each token and if
-          // there is an error it will most likely be the same for all tokens
+          priceIn = getPriceFromCache(token.address, localOpts.priceRecencyOnFailure) || []
+
           if (
+            // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+            // there is an error it will most likely be the same for all tokens
             !errors.find(
               (x) =>
                 x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
-            )
+            ) &&
+            // Don't display an error if there is a cached price
+            !priceIn.length
           ) {
             errors.push({
               name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
@@ -368,6 +438,7 @@ export class Portfolio {
     const priceUpdateDone = Date.now()
 
     return {
+      toBeLearned,
       hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,
       updateStarted: start,
@@ -378,16 +449,12 @@ export class Portfolio {
       tokens: tokensWithPrices,
       feeTokens: tokensWithPrices.filter((t) => {
         // return the native token
-        if (
-          t.address === ZeroAddress &&
-          t.networkId.toLowerCase() === this.network.id.toLowerCase()
-        )
-          return true
+        if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
         return gasTankFeeTokens.find(
           (gasTankT) =>
             gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.networkId.toLowerCase() === t.networkId.toLowerCase()
+            gasTankT.chainId === t.chainId
         )
       }),
       beforeNonce,

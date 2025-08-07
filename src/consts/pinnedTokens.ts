@@ -8,29 +8,29 @@ import { PinnedTokens } from '../libs/portfolio/interfaces'
 export const PINNED_TOKENS: PinnedTokens = [
   // $ETH
   {
-    networkId: 'ethereum',
+    chainId: 1n,
     address: '0x0000000000000000000000000000000000000000',
     onGasTank: true
   },
   {
-    networkId: 'optimism',
+    chainId: 10n,
     address: '0x0000000000000000000000000000000000000000',
     onGasTank: false
   },
   // $WALLET
   {
-    networkId: 'ethereum',
+    chainId: 1n,
     address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
     onGasTank: false
   },
   // $USDC
   {
-    networkId: 'ethereum',
+    chainId: 1n,
     address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     onGasTank: true
   },
   {
-    networkId: 'optimism',
+    chainId: 10n,
     address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
     onGasTank: true
   }

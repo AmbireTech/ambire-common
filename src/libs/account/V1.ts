@@ -10,6 +10,7 @@ import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
+import { isNative } from '../portfolio/helpers'
 import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
 
@@ -29,17 +30,20 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    return feePaymentOptions.filter((opt) => opt.availableAmount > 0n)
+    return feePaymentOptions.filter(
+      (opt) => (isNative(opt.token) && opt.paidBy === this.account.addr) || opt.availableAmount > 0n
+    )
   }
 
   getGasUsed(
-    estimation: FullEstimationSummary,
+    estimation: FullEstimationSummary | Error,
     options: {
       feeToken: TokenResult
       op: AccountOp
     }
   ): bigint {
-    if (estimation.error || !estimation.ambireEstimation) return 0n
+    const isError = estimation instanceof Error
+    if (isError || !estimation.ambireEstimation) return 0n
     const providerGasUsed = estimation.providerEstimation
       ? estimation.providerEstimation.gasUsed
       : 0n
@@ -84,5 +88,14 @@ export class V1 extends BaseAccount {
       getSignableCalls(accountOp),
       getSpoof(this.account)
     ]) as Hex
+  }
+
+  getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
+    return 'supported'
+  }
+
+  getNonceId(): string {
+    // v1 accounts can only have an ambire smart contract nonce
+    return this.accountState.nonce.toString()
   }
 }

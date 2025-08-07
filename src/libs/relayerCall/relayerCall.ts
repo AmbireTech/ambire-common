@@ -7,10 +7,13 @@ export class RelayerError extends Error {
 
   public output: any
 
-  constructor(message: string, input: any, output: any) {
+  public isHumanized = false
+
+  constructor(message: string, input: any, output: any, isHumanized?: boolean) {
     super(message)
     this.input = input
     this.output = output
+    this.isHumanized = !!isHumanized
   }
 }
 export const RELAYER_DOWN_MESSAGE =
@@ -68,9 +71,13 @@ export async function relayerCall(
 ): Promise<any> {
   const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
   if (!res.success) {
-    const firstError =
-      res.errorState && res.errorState.length ? res.errorState[0].message : res.message
-    throw new RelayerError(firstError, { url: this.url, path, method, body, headers }, { res })
+    const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res
+    throw new RelayerError(
+      firstError.message,
+      { url: this.url, path, method, body, headers },
+      { res },
+      firstError?.isHumanized || false
+    )
   }
   return res
 }

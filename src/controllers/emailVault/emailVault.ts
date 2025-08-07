@@ -651,8 +651,8 @@ export class EmailVaultController extends EventEmitter {
       banners.push({
         id: 'keystore-secret-backup',
         type: 'info',
-        title: 'Enable device password reset via email',
-        text: "Email Vault recovers your device password. It is securely stored in Ambire's infrastructure cloud.",
+        title: 'Enable extension password reset via email',
+        text: "Email Vault recovers your extension password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
           {
             label: 'Dismiss',

@@ -49,16 +49,31 @@ const config: HardhatUserConfig = {
     binance: {
       url: 'https://invictus.ambire.com/binance-smart-chain',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    gnosis: {
+      url: 'https://rpc.gnosischain.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    unichain: {
+      url: 'https://unichain-rpc.publicnode.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    berachain: {
+      url: 'https://rpc.berachain-apis.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
     apiKey: {
-      base: process.env.ETHERSCAN_API_KEY,
-      optimism: process.env.ETHERSCAN_API_KEY,
+      base: process.env.BASESCAN_API_KEY,
+      optimism: process.env.OPTIMISM_API_KEY,
       odyssey: process.env.ETHERSCAN_API_KEY,
       ethereum: process.env.ETHERSCAN_API_KEY,
       sepolia: process.env.ETHERSCAN_API_KEY,
-      binance: process.env.BNB_API_KEY
+      binance: process.env.BNB_API_KEY,
+      gnosis: process.env.GNOSIS_API_KEY,
+      unichain: process.env.BASESCAN_API_KEY,
+      berachain: process.env.BERACHAIN_API_KEY
     },
     customChains: [
       {
@@ -107,6 +122,30 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.bscscan.com/api',
           browserURL: 'https://api.bscscan.com/'
+        }
+      },
+      {
+        network: 'gnosis',
+        chainId: 100,
+        urls: {
+          apiURL: 'https://api.gnosisscan.io/api',
+          browserURL: 'https://api.gnosisscan.io/'
+        }
+      },
+      {
+        network: 'unichain',
+        chainId: 130,
+        urls: {
+          apiURL: 'https://unichain.blockscout.com/api',
+          browserURL: 'https://unichain.blockscout.com/'
+        }
+      },
+      {
+        network: 'berachain',
+        chainId: 80094,
+        urls: {
+          apiURL: 'https://api.berascan.com/api',
+          browserURL: 'https://api.berascan.com'
         }
       }
     ]

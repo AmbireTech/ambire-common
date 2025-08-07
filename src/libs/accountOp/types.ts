@@ -1,3 +1,5 @@
+import { Dapp } from 'interfaces/dapp'
+
 import { Hex } from '../../interfaces/hex'
 import { Calls, UserRequest } from '../../interfaces/userRequest'
 
@@ -26,4 +28,6 @@ export interface Call {
     inToken: string
     amount: bigint
   }
+  validationError?: string
+  dapp?: Dapp
 }

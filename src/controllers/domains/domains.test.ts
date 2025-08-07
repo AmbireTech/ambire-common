@@ -5,7 +5,7 @@ import { getRpcProvider } from '../../services/provider'
 import { DomainsController } from './domains'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+  networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const ENS = {
@@ -18,11 +18,6 @@ const ENS2 = {
   name: 'josh.eth'
 }
 
-const UD = {
-  address: '0x8aaD44321A86b170879d7A244c1e8d360c99DdA8',
-  name: 'brad.x'
-}
-
 const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
 
 describe('Domains', () => {
@@ -32,12 +27,6 @@ describe('Domains', () => {
     await domainsController.reverseLookup(ENS.address)
 
     expect(domainsController.domains[ENS.address].ens).toBe(ENS.name)
-  })
-  // UD reverse lookup is removed for now
-  it.skip('should reverse lookup (UD)', async () => {
-    await domainsController.reverseLookup(UD.address)
-
-    expect(domainsController.domains[UD.address].ud).toBe(UD.name)
   })
   it('should save resolved reverse lookup', () => {
     const { name, address } = ENS2
@@ -75,11 +64,10 @@ describe('Domains', () => {
 
     expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
   })
-  it('should set both ens and ud to null if no domain is found', async () => {
+  it('should set ens to null if no domain is found', async () => {
     await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
 
     expect(domainsController.domains[NO_DOMAINS_ADDRESS].ens).toBe(null)
-    expect(domainsController.domains[NO_DOMAINS_ADDRESS].ud).toBe(null)
   })
   it('should reverse multiple addresses', async () => {
     domainsController.domains = {}

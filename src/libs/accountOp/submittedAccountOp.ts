@@ -1,9 +1,14 @@
 import { TransactionReceipt, ZeroAddress } from 'ethers'
+
 import { BUNDLER } from '../../consts/bundlers'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { getBundlerByName, getDefaultBundler } from '../../services/bundlers/getBundler'
-import { fetchUserOp } from '../../services/explorers/jiffyscan'
+import {
+  getAvailableBunlders,
+  getBundlerByName,
+  getDefaultBundler
+} from '../../services/bundlers/getBundler'
+import wait from '../../utils/wait'
 import { AccountOp } from './accountOp'
 import { AccountOpStatus, Call } from './types'
 
@@ -44,25 +49,22 @@ export interface SubmittedAccountOp extends AccountOp {
   timestamp: number
   isSingletonDeploy?: boolean
   identifiedBy: AccountOpIdentifiedBy
-  flags?: {
-    hideActivityBanner?: boolean
-  }
 }
 
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Transaction'
+  return identifiedBy && identifiedBy.type === 'Transaction'
 }
 
 export function isIdentifiedByUserOpHash(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'UserOperation'
+  return identifiedBy && identifiedBy.type === 'UserOperation'
 }
 
 export function isIdentifiedByRelayer(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'Relayer'
+  return identifiedBy && identifiedBy.type === 'Relayer'
 }
 
 export function isIdentifiedByMultipleTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
-  return identifiedBy.type === 'MultipleTxns'
+  return identifiedBy && identifiedBy.type === 'MultipleTxns'
 }
 
 export function getDappIdentifier(op: SubmittedAccountOp) {
@@ -84,6 +86,32 @@ export function getMultipleBroadcastUnconfirmedCallOrLast(op: AccountOp): {
 
   // if no BroadcastedButNotConfirmed, get the last one
   return { call: op.calls[op.calls.length - 1], callIndex: op.calls.length - 1 }
+}
+
+export async function fetchFrontRanTxnId(
+  identifiedBy: AccountOpIdentifiedBy,
+  foundTxnId: string,
+  network: Network,
+  counter = 0
+): Promise<string> {
+  // try to find the probably front ran txn id 5 times and if it can't,
+  // return the already found one. It could've really failed
+  if (counter >= 5) return foundTxnId
+
+  const userOpHash = identifiedBy.identifier
+  const bundler = identifiedBy.bundler
+    ? getBundlerByName(identifiedBy.bundler)
+    : getDefaultBundler(network)
+  const bundlerResult = await bundler.getStatus(network, userOpHash)
+  if (
+    !bundlerResult.transactionHash ||
+    bundlerResult.transactionHash.toLowerCase() === foundTxnId.toLowerCase()
+  ) {
+    await wait(2000)
+    return fetchFrontRanTxnId(identifiedBy, foundTxnId, network, counter + 1)
+  }
+
+  return bundlerResult.transactionHash
 }
 
 export async function fetchTxnId(
@@ -122,46 +150,38 @@ export async function fetchTxnId(
       ? getBundlerByName(identifiedBy.bundler)
       : getDefaultBundler(network)
 
-    const [response, bundlerResult]: [any, any] = await Promise.all([
-      fetchUserOp(userOpHash, fetchFn),
-      bundler.getStatus(network, userOpHash)
-    ])
-
-    if (bundlerResult.status === 'rejected')
-      return {
-        status: 'rejected',
-        txnId: null
+    let bundlerResult = await bundler.getStatus(network, userOpHash)
+    if (bundlerResult.status === 'rejected') {
+      // sometimes the bundlers return rejected by mistake
+      // if that's the case, make the user wait a bit longer, but then query
+      // all bundlers for the user op receipt to make sure it's really not mined
+      await wait(15000)
+      const bundlers = getAvailableBunlders(network)
+      const bundlerResults = await Promise.all(
+        bundlers.map((b) => b.getReceipt(userOpHash, network))
+      )
+      bundlerResults.forEach((res) => {
+        if (res && res.receipt && res.receipt.transactionHash) {
+          bundlerResult = {
+            status: 'found',
+            transactionHash: res.receipt.transactionHash
+          }
+        }
+      })
+      // if it's rejected even after searching all the bundlers,
+      // we return rejected
+      if (bundlerResult.status === 'rejected') {
+        return {
+          status: 'rejected',
+          txnId: null
+        }
       }
+    }
 
     if (bundlerResult.transactionHash)
       return {
         status: 'success',
         txnId: bundlerResult.transactionHash
-      }
-
-    // on custom networks the response is null
-    if (!response)
-      return {
-        status: 'not_found',
-        txnId: null
-      }
-
-    // nothing we can do if we don't have information
-    if (response.status !== 200)
-      return {
-        status: 'not_found',
-        txnId: null
-      }
-
-    const data = await response.json()
-    const userOps = data.userOps
-
-    // if there are not user ops, it means the userOpHash is not
-    // indexed, yet, so we wait
-    if (userOps.length)
-      return {
-        status: 'success',
-        txnId: userOps[0].transactionHash
       }
 
     return {
@@ -201,34 +221,8 @@ export async function fetchTxnId(
   }
 }
 
-export async function pollTxnId(
-  identifiedBy: AccountOpIdentifiedBy,
-  network: Network,
-  fetchFn: Fetch,
-  callRelayer: Function,
-  failCount = 0
-): Promise<string | null> {
-  // allow 8 retries and declate fetching the txnId a failure after
-  if (failCount >= 8) return null
-
-  const fetchTxnIdResult = await fetchTxnId(identifiedBy, network, fetchFn, callRelayer)
-  if (fetchTxnIdResult.status === 'rejected') return null
-
-  if (fetchTxnIdResult.status === 'not_found') {
-    const delayPromise = () =>
-      new Promise((resolve) => {
-        setTimeout(resolve, 1500)
-      })
-    await delayPromise()
-    const increase = failCount + 1
-    return pollTxnId(identifiedBy, network, fetchFn, callRelayer, increase)
-  }
-
-  return fetchTxnIdResult.txnId
-}
-
 export function updateOpStatus(
-  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][networkId][index]
+  // IMPORTANT: pass a reference to this.#accountsOps[accAddr][chainId][index]
   // so we could mutate it from inside this method
   opReference: SubmittedAccountOp,
   status: AccountOpStatus,
