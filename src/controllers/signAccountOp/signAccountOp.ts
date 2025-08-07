@@ -1982,6 +1982,7 @@ export class SignAccountOpController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       isInitialized: this.isInitialized,
       readyToSign: this.readyToSign,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
