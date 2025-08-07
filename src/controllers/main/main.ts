@@ -663,11 +663,16 @@ export class MainController extends EventEmitter {
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
     if (this.statuses.signAndBroadcastAccountOp !== 'INITIAL') {
+      const message =
+        this.statuses.signAndBroadcastAccountOp === 'SIGNING'
+          ? 'A transaction is already being signed. Please wait or contact support if the issue persists.'
+          : 'A transaction is already being broadcasted. Please wait a few seconds and try again or contact support if the issue persists.'
+
       this.emitError({
         level: 'major',
-        message: 'The signing process is already in progress.',
+        message,
         error: new Error(
-          'The signing process is already in progress. (handleSignAndBroadcastAccountOp)'
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}`
         )
       })
       return
@@ -737,10 +742,6 @@ export class MainController extends EventEmitter {
       }
 
       await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
-      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
-        this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-        await this.forceEmitUpdate()
-      }
     } catch (error: any) {
       if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         if ('message' in error && 'level' in error && 'error' in error) {
@@ -760,12 +761,12 @@ export class MainController extends EventEmitter {
         }
         this.statuses.signAndBroadcastAccountOp = 'ERROR'
         await this.forceEmitUpdate()
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        await this.forceEmitUpdate()
       }
     } finally {
-      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
-        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+      if (this.#signAndBroadcastCallId === signAndBroadcastCallId) {
         this.#signAndBroadcastCallId = null
-        await this.forceEmitUpdate()
       }
     }
   }
@@ -781,6 +782,9 @@ export class MainController extends EventEmitter {
       txnId?: string
     }[]
   ) {
+    // No need to fetch the transaction id when there are no dapp handlers
+    if (!dappHandlers.length) return
+
     // this could take a while
     // return the txnId to the dapp once it's confirmed as return a txId
     // that could be front ran would cause bad UX on the dapp side
@@ -1855,6 +1859,12 @@ export class MainController extends EventEmitter {
         signAccountOp,
         message: 'No transaction response received after being broadcasted.'
       })
+
+    // Allow the user to broadcast a new transaction
+    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+    await this.forceEmitUpdate()
+    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    await this.forceEmitUpdate()
 
     // simulate the swap & bridge only after a successful broadcast
     if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
