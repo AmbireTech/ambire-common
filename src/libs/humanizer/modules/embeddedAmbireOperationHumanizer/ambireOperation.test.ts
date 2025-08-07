@@ -2,13 +2,13 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { describe, it } from '@jest/globals'
 
+import { embeddedAmbireOperationHumanizer } from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Call } from '../../../accountOp/types'
 import { AmbireAccount } from '../../const/abis/AmbireAccount'
 import { HumanizerMeta, IrCall } from '../../interfaces'
-import { compareVisualizations } from '../../testHelpers'
+import { compareHumanizerVisualizations, compareVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
-import { embeddedAmbireOperationHumanizer } from '.'
 
 const accountAddr = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
 const accountAddr2 = '0xB2125Ae51ee5Ff91D5da625b9F1Fbf5F2941DD27'
@@ -19,7 +19,9 @@ const iface = new Interface([
 const USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 
 describe('Hidden ambire operations', () => {
-  it('Ambire transactions', () => {
+  // this is skipped as we will not use this functionality
+  // instead we will simply disallow signing of such things
+  it.skip('Ambire transactions', () => {
     const transactionsToWrap = [
       {
         to: USDC_ADDRESS,
@@ -150,13 +152,8 @@ describe('Hidden ambire operations', () => {
       [secondLayerTryCatch],
       {} as HumanizerMeta
     )
-    expect(irCalls.length).toBe(2)
-    expect(irCalls[0]).toMatchObject(drainCall)
-    expect(irCalls[1]).toMatchObject(executeCallToAnotherAccount)
-    compareVisualizations(irCalls[1].fullVisualization!, [
-      getAction('Execute calls'),
-      getLabel('from'),
-      getAddressVisualization(accountAddr2)
+    compareHumanizerVisualizations(irCalls, [
+      [getAction('Allow multiple actions from this account!', { warning: true })]
     ])
   })
 })

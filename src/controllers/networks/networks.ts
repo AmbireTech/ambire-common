@@ -13,10 +13,10 @@ import {
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
+  getNetworksUpdatedWithRelayerNetworks,
   getValidNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { StorageController } from '../storage/storage'
@@ -175,7 +175,7 @@ export class NetworksController extends EventEmitter {
 
     if (this.defaultNetworksMode === 'mainnet') {
       // Step 4: Merge the networks from the Relayer
-      finalNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
+      finalNetworks = await this.mergeRelayerNetworks(finalNetworks)
     }
 
     this.#networks = finalNetworks
@@ -194,11 +194,8 @@ export class NetworksController extends EventEmitter {
   async synchronizeNetworks() {
     if (this.defaultNetworksMode === 'testnet') return
 
-    const networksInStorage = await this.getNetworksInStorage()
-    const finalNetworks = { ...this.#networks }
-
     // Process updates (merge Relayer data and apply rules)
-    const updatedNetworks = await this.mergeRelayerNetworks(finalNetworks, networksInStorage)
+    const updatedNetworks = await this.mergeRelayerNetworks(this.#networks)
 
     // Finalize updates
     this.#networks = updatedNetworks
@@ -227,87 +224,28 @@ export class NetworksController extends EventEmitter {
    * 7. Applies special handling for networks like Odyssey.
    *
    */
-  async mergeRelayerNetworks(
-    finalNetworks: { [key: string]: Network },
-    networksInStorage: { [key: string]: Network }
-  ): Promise<{ [key: string]: Network }> {
+  async mergeRelayerNetworks(currentNetworks: {
+    [key: string]: Network
+  }): Promise<{ [key: string]: Network }> {
     let relayerNetworks: RelayerNetworkConfigResponse = {}
-    const updatedNetworks = { ...finalNetworks }
     try {
-      const res = await this.#callRelayer('/v2/config/networks')
+      const res = await Promise.race([
+        this.#callRelayer('/v2/config/networks'),
+        new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new Error('Relayer call to /v2/config/networks timed out after 5000ms')),
+            5000
+          )
+        })
+      ])
       relayerNetworks = res.data.extensionConfigNetworks
 
-      Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
-        const chainId = BigInt(_chainId)
-        const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
-        const storedNetwork = Object.values(networksInStorage).find(
-          (n) => n && n.chainId === chainId
-        )
-        const disabledByDefault = relayerNetwork.disabledByDefault
-        // Remove values that should not be stored
-        delete relayerNetwork.disabledByDefault
-
-        if (!storedNetwork) {
-          updatedNetworks[chainId.toString()] = {
-            ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
-            ...relayerNetwork,
-            disabled: !!disabledByDefault
-          }
-          return
-        }
-
-        // If the network is custom we assume predefinedConfigVersion = 0
-        if (storedNetwork.predefinedConfigVersion === undefined) {
-          storedNetwork.predefinedConfigVersion = 0
-        }
-
-        // Mechanism to force an update network preferences if needed
-        const shouldOverrideStoredNetwork =
-          relayerNetwork.predefinedConfigVersion > 0 &&
-          relayerNetwork.predefinedConfigVersion > storedNetwork.predefinedConfigVersion
-
-        if (shouldOverrideStoredNetwork) {
-          updatedNetworks[chainId.toString()] = {
-            ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
-            ...relayerNetwork,
-            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])]
-          }
-          // update the selectedRpcUrl on disabledByDefault networks as we can
-          // determine better which RPC is the best for our custom networks
-          if (relayerNetwork.disabledByDefault)
-            updatedNetworks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
-        } else {
-          updatedNetworks[chainId.toString()] = {
-            ...storedNetwork,
-            rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...storedNetwork.rpcUrls])],
-            iconUrls: relayerNetwork.iconUrls,
-            predefined: relayerNetwork.predefined
-          }
-        }
-      })
-
-      // Step 3: Ensure predefined networks are marked correctly and handle special cases
-      let predefinedChainIds = Object.keys(relayerNetworks)
-
-      if (!predefinedChainIds.length) {
-        predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
-      }
-
-      Object.keys(updatedNetworks).forEach((chainId: string) => {
-        const network = updatedNetworks[chainId]
-
-        // If a predefined network is removed by the relayer, mark it as custom
-        // and remove the predefined flag
-        // Update the hasRelayer flag to false just in case
-        if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
-          updatedNetworks[chainId] = { ...network, predefined: false, hasRelayer: false }
-        }
-      })
+      return getNetworksUpdatedWithRelayerNetworks(currentNetworks, relayerNetworks)
     } catch (e: any) {
       console.error('Failed to fetch networks from the Relayer', e)
     }
 
-    return updatedNetworks
+    return currentNetworks
   }
 
   /**

@@ -1734,7 +1734,7 @@ export class SwapAndBridgeController extends EventEmitter {
       this.isAutoSelectRouteDisabled = isAutoSelectDisabled
     }
 
-    await this.initSignAccountOpIfNeeded()
+    if (this.#updateQuoteId) await this.initSignAccountOpIfNeeded(this.#updateQuoteId)
     this.emitUpdate()
   }
 
@@ -2046,8 +2046,27 @@ export class SwapAndBridgeController extends EventEmitter {
     this.hasProceeded = false
   }
 
-  async initSignAccountOpIfNeeded(updateQuoteId?: string) {
-    // no updates if the user has commited
+  /**
+   * Guard to ensure we only proceed with data that matches the latest active quote in `this.#updateQuoteId`.
+   */
+  #isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard: string) {
+    return quoteIdGuard && quoteIdGuard !== this.#updateQuoteId
+  }
+
+  /**
+   * This method might be called multiple times due to async updates (e.g., tokens, routes, etc.).
+   * The `quoteIdGuard` acts as a guard to ensure we only proceed with data that matches
+   * the latest active quote in `this.#updateQuoteId`.
+   *
+   * If the component re-renders or receives stale async events (e.g., an old estimation result),
+   * this check prevents applying outdated data to the current form state.
+   *
+   * ⚠️ IMPORTANT: If you make changes here and they involve async operations,
+   * make sure to check `isQuoteIdObsoleteAfterAsyncOperation` afterwards
+   * to ensure you’re not acting on obsolete data.
+   */
+  async initSignAccountOpIfNeeded(quoteIdGuard: string) {
+    // no updates if the user has committed
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
     // shouldn't happen ever
@@ -2076,11 +2095,11 @@ export class SwapAndBridgeController extends EventEmitter {
       network.chainId
     )
 
-    if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
+    if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     const userTxn = await this.getRouteStartUserTx()
 
-    if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
+    if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
@@ -2106,7 +2125,7 @@ export class SwapAndBridgeController extends EventEmitter {
       accountState
     )
 
-    if (updateQuoteId && updateQuoteId !== this.#updateQuoteId) return
+    if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     const isBridge = this.fromChainId && this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isBridge ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
@@ -2126,7 +2145,7 @@ export class SwapAndBridgeController extends EventEmitter {
         if (!this.#signAccountOpController.accountOp.meta)
           this.#signAccountOpController.accountOp.meta = {}
         this.#signAccountOpController.accountOp.meta.swapTxn = userTxn
-        this.#signAccountOpController.accountOp.meta.fromQuoteId = updateQuoteId
+        this.#signAccountOpController.accountOp.meta.fromQuoteId = quoteIdGuard
         return
       }
     }
@@ -2154,7 +2173,7 @@ export class SwapAndBridgeController extends EventEmitter {
       meta: {
         swapTxn: userTxn,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-        fromQuoteId: updateQuoteId
+        fromQuoteId: quoteIdGuard
       }
     }
 

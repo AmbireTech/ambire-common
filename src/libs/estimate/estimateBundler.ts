@@ -92,8 +92,8 @@ async function estimate(
   const localUserOp = { ...userOp }
   if (network.isOptimistic) {
     // use medium for the gas limit estimation
-    localUserOp.maxPriorityFeePerGas = gasPrice.medium.maxPriorityFeePerGas
-    localUserOp.maxFeePerGas = gasPrice.medium.maxFeePerGas
+    localUserOp.maxPriorityFeePerGas = gasPrice.fast.maxPriorityFeePerGas
+    localUserOp.maxFeePerGas = gasPrice.fast.maxFeePerGas
   }
 
   const nonFatalErrors: Error[] = []
