@@ -3,15 +3,15 @@ import { ControllersTransactionDependencies } from '../dependencies'
 import { TransactionFormState } from '../transactionFormState'
 
 export class IntentController extends EventEmitter {
-  public formPreviousState: any
+  formPreviousState: any
 
-  public publicClient: any | undefined = undefined
+  publicClient: any | undefined = undefined
 
-  public params: any = {}
+  params: any = {}
 
-  public quote: any = null
+  quote: any = null
 
-  public transactions = []
+  transactions = []
 
   constructor(
     private readonly dependencies: ControllersTransactionDependencies,
@@ -20,7 +20,7 @@ export class IntentController extends EventEmitter {
     super()
   }
 
-  public async getProtocolQuote() {
+  async getProtocolQuote() {
     const currentState = this.formState.state
 
     // sender: '0x80B7064b28cD538FaD771465984aa799d87A1187',
@@ -118,17 +118,17 @@ export class IntentController extends EventEmitter {
   //   })
   // }
 
-  public setQuote(quote: any) {
+  setQuote(quote: any) {
     this.quote = quote
     this.emitUpdate()
   }
 
-  public setTransaction(transactions: any) {
+  setTransaction(transactions: any) {
     this.transactions = transactions
     this.emitUpdate()
   }
 
-  public setQuoteAndTransaction(quote: any, transactions: any) {
+  setQuoteAndTransaction(quote: any, transactions: any) {
     this.quote = quote
     this.transactions = transactions
     this.emitUpdate()

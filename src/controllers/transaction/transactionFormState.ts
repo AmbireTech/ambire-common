@@ -201,7 +201,7 @@ export class TransactionFormState extends EventEmitter {
     if (fromAmount !== undefined) {
       const fromAmountFormatted = fromAmount.indexOf('.') === 0 ? `0${fromAmount}` : fromAmount
       this.fromAmount = fromAmount
-      this.handleAmountConversion(fromAmount, fromAmountFormatted)
+      this.#handleAmountConversion(fromAmount, fromAmountFormatted)
     }
 
     if (fromAmountInFiat !== undefined) {
@@ -311,7 +311,7 @@ export class TransactionFormState extends EventEmitter {
     this.emitUpdate()
   }
 
-  private handleAmountConversion(fromAmount: string, fromAmountFormatted: string) {
+  #handleAmountConversion(fromAmount: string, fromAmountFormatted: string) {
     const { tokenAmount, fiatAmount } = handleAmountConversion(
       fromAmount,
       fromAmountFormatted,

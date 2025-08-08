@@ -7,34 +7,34 @@ import { ControllersTransactionDependencies, TransactionDependencies } from './d
 import { TransactionFormState } from './transactionFormState'
 
 export class TransactionManagerController extends EventEmitter {
-  public intent: IntentController
+  intent: IntentController
 
-  public formState: TransactionFormState
+  formState: TransactionFormState
 
-  private controllers: EventEmitter[] = []
+  #controllers: EventEmitter[] = []
 
-  public transactionType: 'transfer' | 'intent' | 'swap' | 'swapAndBridge' | 'error' = 'transfer'
+  transactionType: 'transfer' | 'intent' | 'swap' | 'swapAndBridge' | 'error' = 'transfer'
 
-  private dependencies: ControllersTransactionDependencies
+  #dependencies: ControllersTransactionDependencies
 
-  private chainMap = [sepolia, arbitrumSepolia, baseSepolia]
+  #chainMap = [sepolia, arbitrumSepolia, baseSepolia]
 
   constructor(deps: TransactionDependencies) {
     super()
 
     // TODO: intialize interopSDK here
-    this.dependencies = { ...deps, interopSDK: null }
+    this.#dependencies = { ...deps, interopSDK: null }
 
-    this.formState = new TransactionFormState(this.dependencies)
-    this.intent = new IntentController(this.dependencies, this.formState)
+    this.formState = new TransactionFormState(this.#dependencies)
+    this.intent = new IntentController(this.#dependencies, this.formState)
 
-    this.controllers = [this.formState, this.intent]
+    this.#controllers = [this.formState, this.intent]
 
     this.registerControllerUpdates()
   }
 
   private registerControllerUpdates(): void {
-    this.controllers.forEach((controller) => {
+    this.#controllers.forEach((controller) => {
       controller.onUpdate(async () => {
         if (controller.toJSON().name === 'TransactionFormState') {
           try {
@@ -65,7 +65,8 @@ export class TransactionManagerController extends EventEmitter {
     if (this.formState.fromChainId === this.formState.toChainId) {
       if (this.formState.toSelectedToken?.address === this.formState.fromSelectedToken?.address) {
         if (
-          this.formState.addressState.fieldValue === this.dependencies.selectedAccount.account?.addr
+          this.formState.addressState.fieldValue ===
+          this.#dependencies.selectedAccount.account?.addr
         ) {
           this.transactionType = 'error'
           return
@@ -98,7 +99,7 @@ export class TransactionManagerController extends EventEmitter {
   }
 
   private getPublicClient(chainId: number) {
-    const chain = this.chainMap.find((c) => c.id === chainId)
+    const chain = this.#chainMap.find((c) => c.id === chainId)
 
     if (!chain) return
 
