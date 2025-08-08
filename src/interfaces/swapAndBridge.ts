@@ -46,6 +46,7 @@ export interface SwapAndBridgeQuote {
   selectedRoute?: SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
+  availableRoutes: SwapAndBridgeRoute[]
 }
 
 export interface SocketAPIRoute {
@@ -100,6 +101,8 @@ export interface SwapAndBridgeRoute {
   rawRoute: SocketAPIRoute | LiFiRoute
   hasFailed?: boolean
   toToken: LiFiToken
+  disabled?: boolean
+  disabledReason?: string
 }
 
 export interface SocketAPISwapUserTx {

@@ -18,6 +18,7 @@ import {
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
   SwapAndBridgeSendTxRequest,
+  SwapAndBridgeStep,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
@@ -94,6 +95,7 @@ export enum SwapAndBridgeFormStatus {
   Invalid = 'invalid',
   FetchingRoutes = 'fetching-routes',
   NoRoutesFound = 'no-routes-found',
+  OnlyDisabledRoutesFound = 'only-disabled-routes-found',
   InvalidRouteSelected = 'invalid-route-selected',
   ReadyToEstimate = 'ready-to-estimate',
   ReadyToSubmit = 'ready-to-submit',
@@ -523,8 +525,14 @@ export class SwapAndBridgeController extends EventEmitter {
     if (this.validateFromAmount.message || this.swapSignErrors.length)
       return SwapAndBridgeFormStatus.Invalid
     if (this.updateQuoteStatus === 'LOADING') return SwapAndBridgeFormStatus.FetchingRoutes
-    if (!this.quote?.routes.filter((route) => !route.hasFailed).length)
+    if (
+      !this.quote?.routes.length ||
+      !this.quote?.availableRoutes.filter((route) => !route.hasFailed).length
+    )
       return SwapAndBridgeFormStatus.NoRoutesFound
+
+    if (this.quote?.routes.length && !this.quote?.availableRoutes.length)
+      return SwapAndBridgeFormStatus.OnlyDisabledRoutesFound
 
     if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
 
@@ -1133,6 +1141,20 @@ export class SwapAndBridgeController extends EventEmitter {
     return token
   }
 
+  #accountNativeBalance(): bigint {
+    if (!this.#selectedAccount.account || !this.fromChainId) return 0n
+
+    const currentPortfolio = this.#portfolio.getLatestPortfolioState(
+      this.#selectedAccount.account.addr
+    )
+    const currentPortfolioNetwork = currentPortfolio[this.fromChainId.toString()]
+    const native = currentPortfolioNetwork?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!native) return 0n
+    return native.amount
+  }
+
   /**
    * Add the selected token to the portfolio token list if needed. This is
    * necessary because the user may switch the "from" and "to" tokens, and the
@@ -1355,7 +1377,8 @@ export class SwapAndBridgeController extends EventEmitter {
             )
           ),
           sort: this.routePriority,
-          isOG: this.#invite.isOG
+          isOG: this.#invite.isOG,
+          accountNativeBalance: this.#accountNativeBalance()
         })
 
         if (quoteId !== this.#updateQuoteId) return
@@ -1366,13 +1389,12 @@ export class SwapAndBridgeController extends EventEmitter {
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
-          quoteResult?.routes?.[0] &&
           quoteResult.fromChainId === this.fromChainId &&
           quoteResult.toChainId === this.toChainId &&
           quoteResult.toAsset.address === this.toSelectedToken?.address
         ) {
           let routeToSelect
-          let routeToSelectSteps
+          let routeToSelectSteps: SwapAndBridgeStep[] = []
           let routes = quoteResult.routes || []
 
           try {
@@ -1487,7 +1509,11 @@ export class SwapAndBridgeController extends EventEmitter {
             return
           }
 
-          const alreadySelectedRoute = routes.find((nextRoute) => {
+          // some routes may be disabled and are not selectable (those that required
+          // native payment and the user cannot afford it) but we want to show them
+          // in the UI, hence the below check
+
+          const alreadySelectedRoute = quoteResult.availableRoutes.find((nextRoute) => {
             if (!this.quote) return false
 
             // Because we only have routes with unique bridges (bridging case)
@@ -1506,15 +1532,17 @@ export class SwapAndBridgeController extends EventEmitter {
             routeToSelect = alreadySelectedRoute
             routeToSelectSteps = alreadySelectedRoute.steps
           } else {
-            let bestRoute = routes[0]
+            let bestRoute = quoteResult.selectedRoute
             if (this.#serviceProviderAPI.id === 'socket') {
               bestRoute =
                 this.routePriority === 'output'
                   ? routes[0] // API returns highest output first
                   : routes[routes.length - 1] // API returns fastest... last
             }
-            routeToSelect = bestRoute
-            routeToSelectSteps = bestRoute.steps
+            if (bestRoute) {
+              routeToSelect = bestRoute
+              routeToSelectSteps = bestRoute.steps
+            }
           }
 
           this.quote = {
@@ -1524,7 +1552,8 @@ export class SwapAndBridgeController extends EventEmitter {
             toChainId: quoteResult.toChainId,
             selectedRoute: routeToSelect,
             selectedRouteSteps: routeToSelectSteps,
-            routes
+            routes,
+            availableRoutes: quoteResult.availableRoutes
           }
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
@@ -1718,12 +1747,13 @@ export class SwapAndBridgeController extends EventEmitter {
   }
 
   async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
-    if (!this.quote || !this.quote.routes.length) return
+    if (!this.quote || !this.quote.availableRoutes.length) return
     if (
       ![
         SwapAndBridgeFormStatus.ReadyToSubmit,
         SwapAndBridgeFormStatus.ReadyToEstimate,
-        SwapAndBridgeFormStatus.InvalidRouteSelected
+        SwapAndBridgeFormStatus.InvalidRouteSelected,
+        SwapAndBridgeFormStatus.OnlyDisabledRoutesFound
       ].includes(this.formStatus)
     )
       return
@@ -1845,17 +1875,17 @@ export class SwapAndBridgeController extends EventEmitter {
 
     const routeId = activeRouteId ?? this.quote.selectedRoute.routeId
     let routeIndex = null
-    this.quote.routes.forEach((route, i) => {
+    this.quote.availableRoutes.forEach((route, i) => {
       if (route.routeId === routeId) {
-        this.quote!.routes.splice(i, 1)
+        this.quote!.availableRoutes.splice(i, 1)
         routeIndex = i
       }
     })
 
     // no routes available
-    if (routeIndex === null || !this.quote.routes[routeIndex]) {
+    if (routeIndex === null || !this.quote.availableRoutes[routeIndex]) {
       this.quote.selectedRoute = undefined
-      this.quote.routes = []
+      this.quote.availableRoutes = []
       this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
 
@@ -1868,16 +1898,16 @@ export class SwapAndBridgeController extends EventEmitter {
       return
     }
 
-    await this.selectRoute(this.quote.routes[routeIndex])
+    await this.selectRoute(this.quote.availableRoutes[routeIndex])
   }
 
   async markSelectedRouteAsFailed() {
     if (!this.quote || !this.quote.selectedRoute) return
 
     const routeId = this.quote.selectedRoute.routeId
-    this.quote.routes.forEach((route, i) => {
+    this.quote.availableRoutes.forEach((route, i) => {
       if (route.routeId === routeId) {
-        this.quote!.routes[i].hasFailed = true
+        this.quote!.availableRoutes[i].hasFailed = true
       }
     })
 
@@ -2341,6 +2371,13 @@ export class SwapAndBridgeController extends EventEmitter {
     ) {
       errors.push({
         title: 'Min amount for bridging to Ethereum is $10'
+      })
+    }
+
+    // TODO:<Bobby> make an id for this and style it on the FE
+    if (this.formStatus === SwapAndBridgeFormStatus.OnlyDisabledRoutesFound) {
+      errors.push({
+        title: 'Insufficient native for bridge provider service fee'
       })
     }
 

@@ -33,7 +33,6 @@ import {
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
-import { MAYAN_BRIDGE } from './consts'
 import { getHumanReadableErrorMessage } from './helpers'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
@@ -148,31 +147,49 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
 
 const normalizeLiFiRouteToSwapAndBridgeRoute = (
   route: LiFiRoute,
-  userAddress: string
-): SwapAndBridgeRoute => ({
-  routeId: route.id,
-  fromChainId: route.fromChainId,
-  toChainId: route.toChainId,
-  userAddress,
-  isOnlySwapRoute: !route.containsSwitchChain,
-  fromAmount: route.fromAmount,
-  toAmount: route.toAmount,
-  currentUserTxIndex: 0,
-  ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
-    ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
-    : { usedDexName: route.steps[0].toolDetails.name }),
-  totalGasFeesInUsd: +(route.gasCostUSD || 0),
-  userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
-  steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
-  receivedValueInUsd: +route.toAmountUSD,
-  inputValueInUsd: +route.fromAmountUSD,
-  outputValueInUsd: +route.toAmountUSD,
-  serviceTime: route.steps[0].estimate.executionDuration,
-  // errorMessage: undefined
-  rawRoute: route,
-  sender: route.fromAddress,
-  toToken: route.toToken
-})
+  userAddress: string,
+  accountNativeBalance: bigint
+): SwapAndBridgeRoute => {
+  // search for a feeCost that is not included in the quote
+  // if there is one, check if the user has enough to pay for it
+  // if he doesn't, mark the route as disabled
+  let feeCostAmount = null
+  route.steps.forEach((step) => {
+    const stepFeeCosts =
+      step.estimate.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
+    if (stepFeeCosts.length) feeCostAmount = stepFeeCosts[0].amount
+  })
+
+  const disabled = feeCostAmount === null ? false : accountNativeBalance <= feeCostAmount
+  const disabledReason = disabled ? 'Insufficient native' : undefined
+
+  return {
+    routeId: route.id,
+    fromChainId: route.fromChainId,
+    toChainId: route.toChainId,
+    userAddress,
+    isOnlySwapRoute: !route.containsSwitchChain,
+    fromAmount: route.fromAmount,
+    toAmount: route.toAmount,
+    currentUserTxIndex: 0,
+    ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
+      ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
+      : { usedDexName: route.steps[0].toolDetails.name }),
+    totalGasFeesInUsd: +(route.gasCostUSD || 0),
+    userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
+    steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
+    receivedValueInUsd: +route.toAmountUSD,
+    inputValueInUsd: +route.fromAmountUSD,
+    outputValueInUsd: +route.toAmountUSD,
+    serviceTime: route.steps[0].estimate.executionDuration,
+    // errorMessage: undefined
+    rawRoute: route,
+    sender: route.fromAddress,
+    toToken: route.toToken,
+    disabled,
+    disabledReason
+  }
+}
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   parentStep: LiFiStep
@@ -430,7 +447,8 @@ export class LiFiAPI {
     userAddress,
     sort,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isOG
+    isOG,
+    accountNativeBalance
   }: {
     fromAsset: TokenResult | null
     fromChainId: number
@@ -443,6 +461,7 @@ export class LiFiAPI {
     isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
+    accountNativeBalance: bigint
   }): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -490,17 +509,15 @@ export class LiFiAPI {
     })
 
     const routes = response.routes
-      .map((r: LiFiRoute) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
-      .filter((r: SwapAndBridgeRoute) => {
-        return !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
-      })
-
-    const selectedRoute = response.routes[0]
-      ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0], userAddress)
-      : undefined
-    const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0]
-      ? response.routes[0].steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep)
-      : []
+      .map(
+        (r: LiFiRoute) =>
+          normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance),
+        accountNativeBalance
+      )
+      .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
+    const availableRoutes = routes.filter((r) => !r.disabled)
+    const selectedRoute = availableRoutes.length ? availableRoutes[0] : undefined
+    const selectedRouteSteps: SwapAndBridgeStep[] = selectedRoute ? selectedRoute.steps : []
 
     return {
       fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
@@ -509,7 +526,8 @@ export class LiFiAPI {
       toChainId,
       selectedRoute,
       selectedRouteSteps,
-      routes
+      routes,
+      availableRoutes
     }
   }
 
