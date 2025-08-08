@@ -306,7 +306,12 @@ export class ActivityController extends EventEmitter {
     await Promise.all(promises)
   }
 
-  private async hideBannersOfConfirmedAccountOps() {
+  /**
+   * Hides the banners of confirmed accountOps. The idea is to prevent
+   * displaying too many banners at once. Banners of failed transactions
+   * are not hidden, as they are useful for the user to see.
+   */
+  private hideBannersOfConfirmedAccountOps() {
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return
 
@@ -331,8 +336,6 @@ export class ActivityController extends EventEmitter {
         accountOp.flags.hideActivityBanner = true
       }
     })
-
-    await this.#storage.set('accountsOps', this.#accountsOps)
   }
 
   removeNetworkData(chainId: bigint) {
@@ -360,7 +363,7 @@ export class ActivityController extends EventEmitter {
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
     // Hide confirmed banners first as that will modify this.#accountsOps
-    await this.hideBannersOfConfirmedAccountOps()
+    this.hideBannersOfConfirmedAccountOps()
 
     // newest SubmittedAccountOp goes first in the list
     this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp })
@@ -506,9 +509,8 @@ export class ActivityController extends EventEmitter {
                     if (isSuccess === undefined) isSuccess = !!receipt.status
 
                     // This must be done before updateOpStatus is called
-                    if (isSuccess) {
-                      await this.hideBannersOfConfirmedAccountOps()
-                    }
+                    // otherwise the function will hide the banner of this accountOp
+                    this.hideBannersOfConfirmedAccountOps()
 
                     const updatedOpIfAny = updateOpStatus(
                       this.#accountsOps[selectedAccount][network.chainId.toString()][
