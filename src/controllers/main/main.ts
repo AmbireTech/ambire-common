@@ -10,6 +10,7 @@ import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
+import { FeatureFlags } from '../../consts/featureFlags'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -205,6 +206,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     velcroUrl,
+    featureFlags,
     swapApiKey,
     keystoreSigners,
     externalSignerControllers,
@@ -216,6 +218,7 @@ export class MainController extends EventEmitter {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
+    featureFlags: Partial<FeatureFlags>
     swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -229,7 +232,7 @@ export class MainController extends EventEmitter {
     this.#notificationManager = notificationManager
 
     this.storage = new StorageController(this.#storageAPI)
-    this.featureFlags = new FeatureFlagsController()
+    this.featureFlags = new FeatureFlagsController(featureFlags)
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
     this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
     this.#externalSignerControllers = externalSignerControllers
