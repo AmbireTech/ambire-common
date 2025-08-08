@@ -508,8 +508,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
-      providers: this.#providers.providers,
-      isAllReady: this.portfolio.isAllReady
+      isAllReady: this.portfolio.isAllReady,
+      providers: this.#providers.providers
     })
 
     this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]
