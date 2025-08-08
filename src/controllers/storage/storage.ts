@@ -1,11 +1,12 @@
-/* eslint-disable no-restricted-syntax */
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { STATUS_WRAPPED_METHODS } from '../../consts/storage'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+/* eslint-disable no-restricted-syntax */
+import { Statuses } from '../../interfaces/eventEmitter'
 import { StoredKey } from '../../interfaces/keystore'
 import { CashbackStatus } from '../../interfaces/selectedAccount'
-// eslint-disable-next-line import/no-cycle
-import { Storage, StorageProps } from '../../interfaces/storage'
+import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
@@ -15,15 +16,11 @@ import {
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { KeystoreController } from '../keystore/keystore'
 
-const STATUS_WRAPPED_METHODS = {
-  associateAccountKeysWithLegacySavedSeedMigration: 'INITIAL'
-} as const
-
-export class StorageController extends EventEmitter {
+export class StorageController extends EventEmitter implements IStorageController {
   #storage: Storage
 
   // Holds the initial load promise, so that one can wait until it completes

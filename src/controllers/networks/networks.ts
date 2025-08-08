@@ -1,6 +1,7 @@
 import EmittableError from '../../classes/EmittableError'
 import { networks as predefinedNetworks, STATUS_WRAPPED_METHODS } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
@@ -11,6 +12,7 @@ import {
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
+import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
@@ -18,8 +20,7 @@ import {
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { StorageController } from '../storage/storage'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
  * The NetworksController is responsible for managing networks. It handles both predefined networks and those
@@ -32,7 +33,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
   // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
   defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #fetch: Fetch
 
@@ -65,7 +66,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     onRemoveNetwork
   }: {
     defaultNetworksMode?: 'mainnet' | 'testnet'
-    storage: StorageController
+    storage: IStorageController
     fetch: Fetch
     relayerUrl: string
     onAddOrUpdateNetworks: (networks: Network[]) => void

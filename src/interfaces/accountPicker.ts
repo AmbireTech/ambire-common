@@ -1,10 +1,10 @@
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
-import EventEmitter from '../controllers/eventEmitter/eventEmitter'
 import { Account, AccountOnPage, SelectedAccountForImport } from './account'
+import { IEventEmitter } from './eventEmitter'
 import { KeyIterator } from './keyIterator'
 import { ReadyToAddKeys } from './keystore'
 
-export interface IAccountPickerController extends EventEmitter {
+export interface IAccountPickerController extends IEventEmitter {
   // initParams: {
   //   keyIterator: KeyIterator | null
   //   hdPathTemplate: HD_PATH_TEMPLATE_TYPE

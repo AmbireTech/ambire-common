@@ -1,4 +1,5 @@
 /* eslint-disable class-methods-use-this */
+/* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
 
 import { Banner } from '../../interfaces/banner'
@@ -9,16 +10,16 @@ import {
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IStorageController } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-/* eslint-disable no-await-in-loop */
-import { StorageController } from '../storage/storage'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -69,7 +70,7 @@ const STATUS_WRAPPED_METHODS = {
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
 export class EmailVaultController extends EventEmitter {
-  #storage: StorageController
+  #storage: IStorageController
 
   private initialLoadPromise: Promise<void>
 
@@ -110,7 +111,7 @@ export class EmailVaultController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
     relayerUrl: string,
     keyStore: KeystoreController,

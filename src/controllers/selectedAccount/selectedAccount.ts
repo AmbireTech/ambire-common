@@ -11,6 +11,7 @@ import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
@@ -35,7 +36,6 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -51,7 +51,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
 }
 
 export class SelectedAccountController extends EventEmitter {
-  #storage: StorageController
+  #storage: IStorageController
 
   #accounts: IAccountsController
 
@@ -132,7 +132,7 @@ export class SelectedAccountController extends EventEmitter {
     storage,
     accounts
   }: {
-    storage: StorageController
+    storage: IStorageController
     accounts: IAccountsController
   }) {
     super()

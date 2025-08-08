@@ -1,9 +1,9 @@
 import { STATUS_WRAPPED_METHODS } from 'consts/networks'
 
 import { BUNDLER } from '../consts/bundlers'
-import EventEmitter, { Statuses } from '../controllers/eventEmitter/eventEmitter'
+import { IEventEmitter, Statuses } from './eventEmitter'
 
-export interface INetworksController extends EventEmitter {
+export interface INetworksController extends IEventEmitter {
   defaultNetworksMode: 'mainnet' | 'testnet'
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>
   networkToAddOrUpdate: {

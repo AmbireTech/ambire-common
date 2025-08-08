@@ -1,4 +1,3 @@
-/* eslint-disable import/no-cycle */
 import { getAddress, isAddress } from 'ethers'
 
 import { STATUS_WRAPPED_METHODS } from '../../consts/account'
@@ -9,16 +8,17 @@ import {
   AccountStates,
   IAccountsController
 } from '../../interfaces/account'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { INetworksController } from '../../interfaces/network'
+import { IStorageController } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
 
 export class AccountsController extends EventEmitter implements IAccountsController {
-  #storage: StorageController
+  #storage: IStorageController
 
   #networks: INetworksController
 
@@ -46,7 +46,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   initialLoadPromise: Promise<void>
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     providers: ProvidersController,
     networks: INetworksController,
     keystore: KeystoreController,

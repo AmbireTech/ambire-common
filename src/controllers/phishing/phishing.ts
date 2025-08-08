@@ -1,10 +1,9 @@
 import jsYaml from 'js-yaml'
 
 import { Fetch } from '../../interfaces/fetch'
+import { IStorageController } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { StorageController } from '../storage/storage'
 
 const METAMASK_BLACKLIST_URL =
   'https://api.github.com/repos/MetaMask/eth-phishing-detect/contents/src/config.json?ref=main'
@@ -39,7 +38,7 @@ export const matchPartsAgainstList = (source: string[], list: string[]) => {
 export class PhishingController extends EventEmitter {
   #fetch: Fetch
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #windowManager: WindowManager
 
@@ -66,7 +65,7 @@ export class PhishingController extends EventEmitter {
     windowManager
   }: {
     fetch: Fetch
-    storage: StorageController
+    storage: IStorageController
     windowManager: WindowManager
   }) {
     super()

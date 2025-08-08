@@ -14,6 +14,7 @@ import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } f
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   ExternalKey,
@@ -29,6 +30,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
+import { IStorageController } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
@@ -37,9 +39,7 @@ import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { StorageController } from '../storage/storage'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
@@ -95,7 +95,7 @@ export class KeystoreController extends EventEmitter {
   // The mainKey could be encrypted with many secrets.
   #keystoreSecrets: MainKeyEncryptedWithSecret[] = []
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #keystoreSeeds: KeystoreSeed[] = []
 
@@ -126,7 +126,7 @@ export class KeystoreController extends EventEmitter {
 
   constructor(
     platform: Platform,
-    _storage: StorageController,
+    _storage: IStorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
     windowManager: WindowManager
   ) {

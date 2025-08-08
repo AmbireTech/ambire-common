@@ -1,22 +1,10 @@
 /* eslint-disable no-restricted-syntax */
+import { ErrorRef, IEventEmitter, Statuses } from '../../interfaces/eventEmitter'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-export type ErrorRef = {
-  // user-friendly message, ideally containing call to action
-  message: string
-  // error level, used for filtering
-  level: 'fatal' | 'major' | 'minor' | 'silent'
-  // error containing technical details and stack trace
-  error: Error
-}
-
-export type Statuses<T extends string> = {
-  [key in T]: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' | string
-}
-
-export default class EventEmitter {
+export default class EventEmitter implements IEventEmitter {
   #callbacksWithId: {
     id: string | null
     cb: (forceEmit?: true) => void
@@ -65,14 +53,14 @@ export default class EventEmitter {
     for (const cb of this.#callbacks) cb(true)
   }
 
-  protected emitUpdate() {
+  emitUpdate() {
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb()
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb()
   }
 
-  protected emitError(error: ErrorRef) {
+  emitError(error: ErrorRef) {
     this.#errors.push(error)
     this.#trimErrorsIfNeeded()
     console.log(
@@ -86,7 +74,7 @@ export default class EventEmitter {
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
-  protected async withStatus(
+  async withStatus(
     callName: string,
     fn: Function,
     allowConcurrentActions = false,

@@ -2,9 +2,9 @@ import { getSessionId, Session, SessionInitProps, SessionProp } from '../../clas
 import predefinedDapps from '../../consts/dappCatalog.json'
 import { Dapp } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
+import { IStorageController } from '../../interfaces/storage'
 import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { StorageController } from '../storage/storage'
 
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
@@ -16,14 +16,14 @@ import { StorageController } from '../storage/storage'
 export class DappsController extends EventEmitter {
   #dapps: Dapp[] = []
 
-  #storage: StorageController
+  #storage: IStorageController
 
   dappSessions: { [sessionId: string]: Session } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(storage: StorageController) {
+  constructor(storage: IStorageController) {
     super()
 
     this.#storage = storage

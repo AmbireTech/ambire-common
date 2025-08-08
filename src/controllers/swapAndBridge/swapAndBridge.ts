@@ -3,10 +3,12 @@ import { IAccountsController } from 'interfaces/account'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
+import { IStorageController } from '../../interfaces/storage'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
@@ -61,14 +63,13 @@ import wait from '../../utils/wait'
 import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes'
@@ -132,7 +133,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #invite: InviteController
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #serviceProviderAPI: SocketAPI | LiFiAPI
 
@@ -294,7 +295,7 @@ export class SwapAndBridgeController extends EventEmitter {
     networks: INetworksController
     activity: ActivityController
     serviceProviderAPI: SocketAPI | LiFiAPI
-    storage: StorageController
+    storage: IStorageController
     invite: InviteController
     relayerUrl: string
     portfolioUpdate?: Function

@@ -10,6 +10,7 @@ import {
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -44,7 +45,6 @@ import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -78,7 +78,7 @@ export class PortfolioController extends EventEmitter {
 
   #bannerController: BannerController
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #fetch: Fetch
 
@@ -118,7 +118,7 @@ export class PortfolioController extends EventEmitter {
   #initialLoadPromise: Promise<void>
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
     providers: ProvidersController,
     networks: INetworksController,

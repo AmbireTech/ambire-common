@@ -1,5 +1,7 @@
+import { STATUS_WRAPPED_METHODS } from 'consts/storage'
+
 import { SignedMessage } from '../controllers/activity/types'
-// eslint-disable-next-line import/no-cycle
+import { KeystoreController } from '../controllers/keystore/keystore'
 import { StoredPhishingDetection } from '../controllers/phishing/phishing'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
@@ -9,11 +11,28 @@ import {
   PreviousHintsStorage
 } from '../libs/portfolio/interfaces'
 import { Account, AccountId, AccountPreferences } from './account'
+import { IAccountPickerController } from './accountPicker'
 import { Dapp } from './dapp'
+import { IEventEmitter, Statuses } from './eventEmitter'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network } from './network'
 import { CashbackStatusByAccount } from './selectedAccount'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
+
+export interface IStorageController extends IEventEmitter {
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>
+  associateAccountKeysWithLegacySavedSeedMigration(
+    accountPicker: IAccountPickerController,
+    keystore: KeystoreController,
+    onSuccess: () => Promise<void>
+  ): Promise<void>
+  get<K extends keyof StorageProps | string | undefined>(
+    key: K,
+    defaultValue?: any
+  ): Promise<K extends keyof StorageProps ? StorageProps[K] : any>
+  set(key: string, value: any): Promise<void>
+  remove(key: string): Promise<void>
+}
 
 export type StorageProps = {
   passedMigrations: string[]

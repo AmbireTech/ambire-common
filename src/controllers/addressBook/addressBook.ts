@@ -1,9 +1,9 @@
 import { getAddress } from 'ethers'
 
 import { Account, IAccountsController } from '../../interfaces/account'
+import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 
 export type Contact = {
   name: string
@@ -26,7 +26,7 @@ export class AddressBookController extends EventEmitter {
   // Manually added contact (stored in storage)
   #manuallyAddedContacts: Contacts = []
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #initialLoadPromise: Promise<void>
 
@@ -35,7 +35,7 @@ export class AddressBookController extends EventEmitter {
   #selectedAccount: SelectedAccountController
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     accounts: IAccountsController,
     selectedAccount: SelectedAccountController
   ) {

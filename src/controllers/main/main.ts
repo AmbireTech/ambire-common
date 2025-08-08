@@ -13,6 +13,7 @@ import {
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
@@ -21,7 +22,7 @@ import { NotificationManager } from '../../interfaces/notification'
 import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
-import { Storage } from '../../interfaces/storage'
+import { IStorageController, Storage } from '../../interfaces/storage'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
@@ -65,7 +66,7 @@ import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter, { ErrorRef, Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -104,7 +105,7 @@ type CustomStatuses = {
 export class MainController extends EventEmitter {
   #storageAPI: Storage
 
-  storage: StorageController
+  storage: IStorageController
 
   fetch: Fetch
 

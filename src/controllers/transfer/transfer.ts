@@ -6,6 +6,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IStorageController } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -33,7 +34,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { StorageController } from '../storage/storage'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -58,7 +58,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const HARD_CODED_CURRENCY = 'usd'
 
 export class TransferController extends EventEmitter {
-  #storage: StorageController
+  #storage: IStorageController
 
   #networks: INetworksController
 
@@ -142,7 +142,7 @@ export class TransferController extends EventEmitter {
   #activity: ActivityController
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: SelectedAccountController,
     networks: INetworksController,

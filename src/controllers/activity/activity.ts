@@ -1,3 +1,5 @@
+import { IStorageController } from 'interfaces/storage'
+
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
@@ -22,7 +24,6 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
@@ -123,7 +124,7 @@ const BANNER_CONTENT: {
  * Older items are trimmed, keeping the most recent ones.
  */
 export class ActivityController extends EventEmitter {
-  #storage: StorageController
+  #storage: IStorageController
 
   #fetch: Fetch
 
@@ -166,7 +167,7 @@ export class ActivityController extends EventEmitter {
   #callRelayer: Function
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
     callRelayer: Function,
     accounts: IAccountsController,

@@ -7,6 +7,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IEventEmitter } from '../../interfaces/eventEmitter'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -14,7 +15,6 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
-import EventEmitterClass from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -127,7 +127,7 @@ const forceBannerRecalculation = async () => {
   await providersCtrl.forceEmitUpdate()
 }
 
-const waitNextControllerUpdate = (ctrl: EventEmitterClass) => {
+const waitNextControllerUpdate = (ctrl: IEventEmitter) => {
   return new Promise((resolve) => {
     const unsubscribe = ctrl.onUpdate(() => {
       unsubscribe()

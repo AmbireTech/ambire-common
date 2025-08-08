@@ -1,9 +1,9 @@
 import { STATUS_WRAPPED_METHODS } from '../consts/account'
-import EventEmitter, { Statuses } from '../controllers/eventEmitter/eventEmitter'
+import { IEventEmitter, Statuses } from './eventEmitter'
 import { Hex } from './hex'
 import { Network } from './network'
 
-export interface IAccountsController extends EventEmitter {
+export interface IAccountsController extends IEventEmitter {
   accounts: Account[]
   accountStates: AccountStates
   accountStatesLoadingState: {

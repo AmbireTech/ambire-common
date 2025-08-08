@@ -9,6 +9,7 @@ import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunicat
 import { AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest } from '../../interfaces/dapp'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { BuildRequest } from '../../interfaces/requests'
@@ -51,7 +52,7 @@ import {
   ActionsController
 } from '../actions/actions'
 import { DappsController } from '../dapps/dapps'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'

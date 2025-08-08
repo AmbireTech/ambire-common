@@ -1,13 +1,14 @@
+import { IStorageController } from 'interfaces/storage'
+
 import { Banner } from '../../interfaces/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { StorageController } from '../storage/storage'
 
 export class BannerController extends EventEmitter {
   #banners: Banner[] = []
 
   #dismissedBanners: (string | number)[] = []
 
-  #storage: StorageController
+  #storage: IStorageController
 
   // Used for testing
   maxBannerCount = 1
@@ -15,7 +16,7 @@ export class BannerController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(storage: StorageController) {
+  constructor(storage: IStorageController) {
     super()
     this.#storage = storage
 
