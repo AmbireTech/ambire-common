@@ -1,17 +1,20 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
 import {
   Erc4337settings,
   Network,
   NetworkFeature,
   NetworkInfo,
-  NetworkInfoLoading
+  NetworkInfoLoading,
+  RelayerNetwork
 } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getRpcProvider } from '../../services/provider'
+import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
 // bnb, gnosis, fantom, metis
@@ -360,4 +363,135 @@ export function hasRelayerSupport(network: Network) {
   return (
     network.hasRelayer || !!relayerAdditionalNetworks.find((net) => net.chainId === network.chainId)
   )
+}
+
+/**
+ * Validates a single network object against some of the Network interface requirements.
+ */
+function sanityCheckImportantNetworkProperties(network: Network) {
+  if (!network || typeof network !== 'object') return false
+
+  if (typeof network.chainId !== 'bigint') return false
+  if (typeof network.name !== 'string') return false
+  if (typeof network.nativeAssetSymbol !== 'string') return false
+  if (typeof network.nativeAssetName !== 'string') return false
+  if (typeof network.explorerUrl !== 'string') return false
+  if (typeof network.selectedRpcUrl !== 'string') return false
+
+  if (!Array.isArray(network.rpcUrls)) return false
+  if (network.rpcUrls.some((url) => typeof url !== 'string')) return false
+
+  return true
+}
+
+/**
+ * Validates networks coming from the storage, filtering out the invalid ones.
+ * This prevents crashes when networks have missing or invalid mandatory properties.
+ */
+export function getValidNetworks(networksInStorage: { [key: string]: Network }): {
+  [key: string]: Network
+} {
+  const validNetworks: { [key: string]: Network } = {}
+
+  Object.values(networksInStorage).forEach((network) => {
+    const hadValidChainId = typeof network?.chainId === 'bigint'
+
+    // Based on the crash reports received, it turned out there are users with
+    // messed-up networks in storage. So perform comprehensive validation against
+    // some of the Network interface requirements
+    if (sanityCheckImportantNetworkProperties(network)) {
+      validNetworks[network.chainId.toString()] = network
+    } else if (hadValidChainId) {
+      // Attempt to replace broken network with predefined version, if available
+      const predefinedNetwork = predefinedNetworks.find((n) => n.chainId === network.chainId)
+      if (predefinedNetwork) validNetworks[network.chainId.toString()] = predefinedNetwork
+      else {
+        console.error(`Invalid network found in storage for chainId ${network.chainId}`, network)
+      }
+    }
+  })
+
+  return validNetworks
+}
+
+/**
+ * Updates the currently stored networks with the networks coming from the relayer.
+ * To determine which networks to update, it compares the predefinedConfigVersion of the stored network
+ * with the relayer network. If no network is found in the storage, it adds the relayer network as a new one.
+ * Even if the predefinedConfigVersion is the same or lower, some properties of the stored network should be updated.
+ */
+export const getNetworksUpdatedWithRelayerNetworks = (
+  currentNetworks: { [key: string]: Network },
+  relayerNetworks: { [key: string]: RelayerNetwork }
+): { [key: string]: Network } => {
+  const networks = structuredClone(currentNetworks)
+
+  Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
+    const chainId = BigInt(_chainId)
+    const relayerNetwork = mapRelayerNetworkConfigToAmbireNetwork(chainId, network)
+    const currentNetwork = networks[chainId.toString()]
+
+    if (!currentNetwork) {
+      networks[chainId.toString()] = {
+        ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
+        ...relayerNetwork,
+        disabled: !!relayerNetwork.disabledByDefault
+      }
+      return
+    }
+
+    // If the network is custom we assume predefinedConfigVersion = 0
+    if (currentNetwork.predefinedConfigVersion === undefined) {
+      currentNetwork.predefinedConfigVersion = 0
+    }
+
+    // Mechanism to force an update network preferences if needed
+    const shouldOverrideStoredNetwork =
+      relayerNetwork.predefinedConfigVersion > 0 &&
+      relayerNetwork.predefinedConfigVersion > currentNetwork.predefinedConfigVersion
+
+    if (shouldOverrideStoredNetwork) {
+      networks[chainId.toString()] = {
+        ...currentNetwork,
+        ...relayerNetwork,
+        rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])]
+      }
+      // update the selectedRpcUrl on disabledByDefault networks as we can
+      // determine better which RPC is the best for our custom networks
+      if (relayerNetwork.disabledByDefault)
+        networks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
+    } else {
+      networks[chainId.toString()] = {
+        ...currentNetwork,
+        rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
+        iconUrls: relayerNetwork.iconUrls,
+        predefined: relayerNetwork.predefined
+      }
+    }
+  })
+
+  // Step 3: Ensure predefined networks are marked correctly and handle special cases
+  let predefinedChainIds = Object.keys(relayerNetworks)
+
+  if (!predefinedChainIds.length) {
+    predefinedChainIds = predefinedNetworks.map((network) => network.chainId.toString())
+  }
+
+  Object.keys(networks).forEach((chainId: string) => {
+    // Remove unnecessary properties:
+    if ('disabledByDefault' in networks[chainId]) {
+      delete networks[chainId].disabledByDefault
+    }
+
+    const network = networks[chainId]
+
+    // If a predefined network is removed by the relayer, mark it as custom
+    // and remove the predefined flag
+    // Update the hasRelayer flag to false just in case
+    if (!predefinedChainIds.includes(network.chainId.toString()) && network.predefined) {
+      networks[chainId] = { ...network, predefined: false, hasRelayer: false }
+    }
+  })
+
+  return networks
 }

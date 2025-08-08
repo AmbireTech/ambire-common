@@ -175,19 +175,19 @@ describe('Activity Controller ', () => {
   beforeAll(async () => {
     await storageCtrl.set('accounts', ACCOUNTS)
 
-    networksCtrl = new NetworksController(
-      storageCtrl,
+    networksCtrl = new NetworksController({
+      storage: storageCtrl,
       fetch,
       relayerUrl,
-      (nets) => {
+      onAddOrUpdateNetworks: (nets) => {
         nets.forEach((n) => {
           providersCtrl.setProvider(n)
         })
       },
-      (id) => {
+      onRemoveNetwork: (id) => {
         providersCtrl.removeProvider(id)
       }
-    )
+    })
     providersCtrl = new ProvidersController(networksCtrl)
     const windowManager = mockWindowManager().windowManager
     const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
@@ -214,7 +214,8 @@ describe('Activity Controller ', () => {
     )
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
-      accounts: accountsCtrl
+      accounts: accountsCtrl,
+      keystore
     })
 
     await selectedAccountCtrl.initialLoadPromise

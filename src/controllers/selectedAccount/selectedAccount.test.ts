@@ -10,6 +10,7 @@ import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
@@ -29,19 +30,19 @@ const providers = Object.fromEntries(
 const storage: Storage = produceMemoryStore()
 let providersCtrl: ProvidersController
 const storageCtrl = new StorageController(storage)
-const networksCtrl = new NetworksController(
-  storageCtrl,
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
   fetch,
   relayerUrl,
-  (nets) => {
+  onAddOrUpdateNetworks: (nets) => {
     nets.forEach((n) => {
       providersCtrl.setProvider(n)
     })
   },
-  (id) => {
+  onRemoveNetwork: (id) => {
     providersCtrl.removeProvider(id)
   }
-)
+})
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
@@ -67,7 +68,8 @@ const accountsCtrl = new AccountsController(
 
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore
 })
 
 const portfolioCtrl = new PortfolioController(
@@ -95,7 +97,7 @@ const defiPositionsCtrl = new DefiPositionsController({
 const accounts = [
   {
     addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-    associatedKeys: [],
+    associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
     initialPrivileges: [],
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -356,5 +358,20 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)
     })
+  })
+  test("Cashback status is not updated for the account because it's view-only", async () => {
+    ;(
+      selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
+    ).gasTankTokens[0].cashback = 0n
+    // Mocks 'no-cashback'
+    await selectedAccountCtrl.updateCashbackStatus()
+    ;(
+      selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
+    ).gasTankTokens[0].cashback = 10n
+    // Mocks 'unseen-cashback'
+    await selectedAccountCtrl.updateCashbackStatus()
+
+    // Cashback is undefined because the account is view-only
+    expect(selectedAccountCtrl.cashbackStatus).toBeUndefined()
   })
 })

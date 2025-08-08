@@ -654,9 +654,8 @@ export class ActivityController extends EventEmitter {
     if (!recentlyBroadcastedAccountOps.length) return []
 
     return recentlyBroadcastedAccountOps.map((accountOp) => {
-      const network = this.#networks.networks.find((n) => n.chainId === accountOp.chainId)!
       const url = `https://explorer.ambire.com/${getBenzinUrlParams({
-        chainId: network.chainId,
+        chainId: accountOp.chainId,
         txnId: accountOp.txnId,
         identifiedBy: accountOp.identifiedBy
       })}`

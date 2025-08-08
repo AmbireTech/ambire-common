@@ -78,19 +78,19 @@ const prepareTest = async () => {
   const storageCtrl = new StorageController(storage)
   const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
   let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (nets) => {
+    onAddOrUpdateNetworks: (nets) => {
       nets.forEach((n) => {
         providersCtrl.setProvider(n)
       })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   const providers: RPCProviders = {}
   networks.forEach((network) => {
@@ -108,14 +108,15 @@ const prepareTest = async () => {
     () => {}
   )
 
+  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
+
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore: keystoreCtrl
   })
 
   const dappsCtrl = new DappsController(storageCtrl)
-
-  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
 
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   const portfolioCtrl = new PortfolioController(
