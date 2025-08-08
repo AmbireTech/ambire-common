@@ -291,6 +291,7 @@ export class SocketAPI {
     isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
+    accountHasNative: boolean
   }): Promise<SwapAndBridgeQuote> {
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),

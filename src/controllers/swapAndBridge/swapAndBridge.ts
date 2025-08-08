@@ -5,6 +5,7 @@ import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ExternalSignerControllers } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 /* eslint-disable no-await-in-loop */
+import { Price } from '../../interfaces/assets'
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import {
   CachedSupportedChains,
@@ -1133,6 +1134,30 @@ export class SwapAndBridgeController extends EventEmitter {
     return token
   }
 
+  #accountHasNative(): boolean {
+    if (!this.#selectedAccount.account || !this.fromChainId) return false
+
+    const currentPortfolio = this.#portfolio.getLatestPortfolioState(
+      this.#selectedAccount.account.addr
+    )
+    const currentPortfolioNetwork = currentPortfolio[this.fromChainId.toString()]
+    const native = currentPortfolioNetwork?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!native || native.amount === 0n) return false
+
+    const isUsd = (price: Price) => price.baseCurrency === 'usd'
+    const nativePrice = native.priceIn.find(isUsd)?.price
+    if (!nativePrice) return false
+
+    // if you have a single unit of native, you have native
+    if (native.amount.toString().length > 18) return true
+
+    // if you have 2 cent of native, it might be enough for bridges to work
+    const oneUnit = parseFloat(native.amount.toString()) / 10 ** native.decimals
+    return oneUnit * nativePrice > 0.02
+  }
+
   /**
    * Add the selected token to the portfolio token list if needed. This is
    * necessary because the user may switch the "from" and "to" tokens, and the
@@ -1355,7 +1380,8 @@ export class SwapAndBridgeController extends EventEmitter {
             )
           ),
           sort: this.routePriority,
-          isOG: this.#invite.isOG
+          isOG: this.#invite.isOG,
+          accountHasNative: this.#accountHasNative()
         })
 
         if (quoteId !== this.#updateQuoteId) return

@@ -430,7 +430,8 @@ export class LiFiAPI {
     userAddress,
     sort,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isOG
+    isOG,
+    accountHasNative
   }: {
     fromAsset: TokenResult | null
     fromChainId: number
@@ -443,6 +444,7 @@ export class LiFiAPI {
     isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
+    accountHasNative: boolean
   }): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -472,7 +474,11 @@ export class LiFiAPI {
         allowDestinationCall: 'false',
         allowSwitchChain: 'false',
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        fee: (FEE_PERCENT / 100).toString() as string | undefined
+        fee: (FEE_PERCENT / 100).toString() as string | undefined,
+        bridges: {
+          // filter out bridges that require native if the account doesn't have any
+          deny: !accountHasNative ? ['squid', 'stargateV2', 'stargateV2Bus'] : []
+        }
       }
     }
 
