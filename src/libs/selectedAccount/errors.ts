@@ -51,6 +51,13 @@ export const getNetworksWithFailedRPCErrors = ({
       !Object.keys(networksWithAssets).includes(chainId)
   )
 
+  // Show an error for networks with no RPC providers
+  networks.forEach((network) => {
+    if (providers[network.chainId.toString()]) return
+
+    chainIds.push(network.chainId.toString())
+  })
+
   const networksData = chainIds.map(
     (id) => networks.find((n: Network) => n.chainId.toString() === id)!
   )
@@ -214,10 +221,16 @@ export const getNetworksWithPortfolioErrorErrors = ({
     // In case of additional networks don't check the RPC as there isn't one
     const rpcProvider = providers[chainId]
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
-    const isProviderWorking =
-      rpcProvider && typeof rpcProvider.isWorking === 'boolean' && rpcProvider.isWorking
+    // Also, it may be the case that isWorking is not defined. In that case there will be no RPC error banner
+    // so we must display the portfolio error banner.
+    // We are purposely checking the RPC and not the RPC banners, because they are only displayed
+    // when the RPC is not working AND the user has balance on the network.
+    // Example: The user has no balance on Berachain and the RPC is not working.
+    // In this case there will be no RPC error banner and no portfolio error banner.
+    const isRpcWorkingOrNotChecked =
+      typeof rpcProvider.isWorking !== 'boolean' || rpcProvider.isWorking
 
-    if (criticalError && (['gasTank', 'rewards'].includes(chainId) || isProviderWorking)) {
+    if (criticalError && (['gasTank', 'rewards'].includes(chainId) || isRpcWorkingOrNotChecked)) {
       errors = addPortfolioError(errors, networkName, 'portfolio-critical')
       return
     }
