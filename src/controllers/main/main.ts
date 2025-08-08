@@ -16,7 +16,12 @@ import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
-import { ExternalSignerControllers, Key, KeystoreSignerType } from '../../interfaces/keystore'
+import {
+  ExternalSignerControllers,
+  IKeystoreController,
+  Key,
+  KeystoreSignerType
+} from '../../interfaces/keystore'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Platform } from '../../interfaces/platform'
@@ -120,7 +125,7 @@ export class MainController extends EventEmitter {
 
   invite: InviteController
 
-  keystore: KeystoreController
+  keystore: IKeystoreController
 
   /**
    * Hardware wallets (usually) need an additional (external signer) controller,

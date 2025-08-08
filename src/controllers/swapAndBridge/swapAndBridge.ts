@@ -4,7 +4,7 @@ import { IAccountsController } from 'interfaces/account'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Statuses } from '../../interfaces/eventEmitter'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
@@ -65,7 +65,6 @@ import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -221,7 +220,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   #portfolio: PortfolioController
 
@@ -287,7 +286,7 @@ export class SwapAndBridgeController extends EventEmitter {
     getVisibleActionsQueue
   }: {
     accounts: IAccountsController
-    keystore: KeystoreController
+    keystore: IKeystoreController
     portfolio: PortfolioController
     externalSignerControllers: ExternalSignerControllers
     providers: ProvidersController

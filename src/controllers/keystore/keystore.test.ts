@@ -18,7 +18,13 @@ import {
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, InternalKey, Key, TxnRequest } from '../../interfaces/keystore'
+import {
+  ExternalKey,
+  IKeystoreController,
+  InternalKey,
+  Key,
+  TxnRequest
+} from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -97,7 +103,7 @@ class LedgerSigner {
 
 const windowManager = mockWindowManager().windowManager
 
-let keystore: KeystoreController
+let keystore: IKeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
 
@@ -578,7 +584,7 @@ describe('KeystoreController', () => {
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
   const timestamp = new Date().getTime()
-  let keystore2: KeystoreController
+  let keystore2: IKeystoreController
   let uid2: string
 
   beforeEach(async () => {

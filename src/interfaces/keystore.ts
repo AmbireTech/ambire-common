@@ -1,15 +1,100 @@
+import { STATUS_WRAPPED_METHODS } from 'consts/keystore'
+import { Encrypted } from 'eth-crypto'
 import { Transaction, TypedDataField } from 'ethers'
 
 import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
-import { GasFeePayment } from '../libs/accountOp/accountOp'
+import { AccountOp, GasFeePayment } from '../libs/accountOp/accountOp'
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
+import { IEventEmitter, Statuses } from './eventEmitter'
 import { Hex } from './hex'
+import { KeyIterator } from './keyIterator'
 import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 import { TypedMessage } from './userRequest'
+
+export interface IKeystoreController extends IEventEmitter {
+  keyStoreUid: string | null
+  errorMessage: string
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>
+  initialLoadPromise: Promise<void>
+  lock(): void
+  isUnlocked: boolean
+  hasTempSeed: boolean
+  isReadyToStoreKeys: boolean
+  getKeyStoreUid(): Promise<string>
+  unlockWithSecret(secretId: string, secret: string): Promise<void>
+  addSecret(
+    secretId: string,
+    secret: string,
+    extraEntropy: string,
+    leaveUnlocked: boolean
+  ): Promise<void>
+  removeSecret(secretId: string): Promise<void>
+  keys: Key[]
+  seeds: {
+    id: string
+    label: string
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    withPassphrase: boolean
+  }[]
+  addTempSeed({
+    seed,
+    seedPassphrase,
+    hdPathTemplate
+  }: Omit<KeystoreSeed, 'id' | 'label'>): Promise<void>
+  deleteTempSeed(shouldUpdate?: boolean): void
+  persistTempSeed(): Promise<void>
+  addSeed(keystoreSeed: Omit<KeystoreSeed, 'id' | 'label'>): Promise<void>
+  updateSeed({
+    id,
+    label,
+    hdPathTemplate
+  }: {
+    id: KeystoreSeed['id']
+    label?: KeystoreSeed['label']
+    hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+  }): Promise<void>
+  deleteSeed(id: KeystoreSeed['id']): Promise<void>
+  changeTempSeedHdPathTemplateIfNeeded(nextHdPathTemplate?: HD_PATH_TEMPLATE_TYPE): Promise<void>
+  addKeysExternallyStored(keysToAdd: ExternalKey[]): Promise<void>
+  addKeys(keysToAdd: ReadyToAddKeys['internal']): Promise<void>
+  removeKey(addr: Key['addr'], type: Key['type']): Promise<void>
+  exportKeyWithPasscode(
+    keyAddress: Key['addr'],
+    keyType: Key['type'],
+    passphrase: string
+  ): Promise<string>
+  sendPrivateKeyToUi(keyAddress: string): Promise<void>
+  sendSeedToUi(id: string): Promise<void>
+  sendTempSeedToUi(): Promise<void>
+  exportKeyWithPublicKeyEncryption(keyAddress: string, publicKey: string): Promise<Encrypted>
+  importKeyWithPublicKeyEncryption(encryptedSk: Encrypted, dedicatedToOneSA: boolean): Promise<void>
+  getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<KeystoreSignerInterface>
+  getSavedSeed(id: string): Promise<KeystoreSeed>
+  changeKeystorePassword(
+    newSecret: string,
+    oldSecret?: string,
+    extraEntropy?: string
+  ): Promise<void>
+  updateKeyPreferences(
+    keys: {
+      addr: Key['addr']
+      type: Key['type']
+      preferences: KeyPreferences
+    }[]
+  ): Promise<void>
+  resetErrorState(): void
+  hasPasswordSecret: boolean
+  hasKeystoreTempSeed: boolean
+  getAccountKeys(acc: Account): Key[]
+  getFeePayerKey(op: AccountOp): Key | Error
+  isKeyIteratorInitializedWithTempSeed(keyIterator?: KeyIterator | null): boolean
+  getKeystoreSeed(keyIterator?: KeyIterator | null): Promise<KeystoreSeed | null>
+  updateKeystoreKeys(): Promise<void>
+}
 
 /**
  * The ExternalSignerController interface defines the structure for controllers

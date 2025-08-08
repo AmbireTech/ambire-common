@@ -28,6 +28,7 @@ import {
   dedicatedToOneSAPriv,
   ExternalKey,
   ExternalSignerControllers,
+  IKeystoreController,
   Key,
   ReadyToAddKeys
 } from '../../interfaces/keystore'
@@ -46,8 +47,6 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { KeystoreController } from '../keystore/keystore'
 // eslint-disable-next-line import/no-cycle
 import { ProvidersController } from '../providers/providers'
 
@@ -69,7 +68,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   #networks: INetworksController
 
@@ -166,7 +165,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     onAddAccountsSuccessCallback
   }: {
     accounts: IAccountsController
-    keystore: KeystoreController
+    keystore: IKeystoreController
     networks: INetworksController
     providers: ProvidersController
     externalSignerControllers: ExternalSignerControllers

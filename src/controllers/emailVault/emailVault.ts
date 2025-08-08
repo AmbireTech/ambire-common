@@ -12,6 +12,7 @@ import {
 } from '../../interfaces/emailVault'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
@@ -19,7 +20,6 @@ import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -92,7 +92,7 @@ export class EmailVaultController extends EventEmitter {
 
   #relayerUrl: string
 
-  #keyStore: KeystoreController
+  #keyStore: IKeystoreController
 
   isReady: boolean = false
 
@@ -114,7 +114,7 @@ export class EmailVaultController extends EventEmitter {
     storage: IStorageController,
     fetch: Fetch,
     relayerUrl: string,
-    keyStore: KeystoreController,
+    keyStore: IKeystoreController,
     options?: { autoConfirmMagicLink?: boolean }
   ) {
     super()

@@ -4,7 +4,7 @@ import { STATUS_WRAPPED_METHODS } from '../../consts/storage'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 /* eslint-disable no-restricted-syntax */
 import { Statuses } from '../../interfaces/eventEmitter'
-import { StoredKey } from '../../interfaces/keystore'
+import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { CashbackStatus } from '../../interfaces/selectedAccount'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
@@ -17,8 +17,6 @@ import {
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { KeystoreController } from '../keystore/keystore'
 
 export class StorageController extends EventEmitter implements IStorageController {
   #storage: Storage
@@ -478,7 +476,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
   async #associateAccountKeysWithLegacySavedSeedMigration(
     accountPicker: IAccountPickerController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
     if (this.#associateAccountKeysWithLegacySavedSeedMigrationPassed) return
@@ -565,7 +563,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   async associateAccountKeysWithLegacySavedSeedMigration(
     accountPicker: IAccountPickerController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
     await this.withStatus(

@@ -9,6 +9,7 @@ import {
 } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
@@ -43,7 +44,6 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -112,7 +112,7 @@ export class PortfolioController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -123,7 +123,7 @@ export class PortfolioController extends EventEmitter {
     providers: ProvidersController,
     networks: INetworksController,
     accounts: IAccountsController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     relayerUrl: string,
     velcroUrl: string,
     bannerController: BannerController

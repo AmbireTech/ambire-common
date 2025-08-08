@@ -1,13 +1,12 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController } from './signAccountOp'
 
@@ -15,7 +14,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     portfolio: PortfolioController,
     activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,

@@ -8,7 +8,12 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
 import { EIP7702Auth } from '../../consts/7702'
 import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
+import {
+  IKeystoreController,
+  Key,
+  KeystoreSignerInterface,
+  TxnRequest
+} from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
@@ -57,7 +62,7 @@ const getRandomEmail = () => {
 }
 let storage: Storage
 let storageCtrl: IStorageController
-let keystore: KeystoreController
+let keystore: IKeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
 

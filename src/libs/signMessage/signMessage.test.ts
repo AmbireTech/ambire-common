@@ -14,6 +14,7 @@ import { KeystoreController } from '../../controllers/keystore/keystore'
 import { StorageController } from '../../controllers/storage/storage'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { Storage } from '../../interfaces/storage'
 import { TypedMessage } from '../../interfaces/userRequest'
@@ -140,7 +141,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 
 const windowManager = mockWindowManager().windowManager
 
-let keystore: KeystoreController
+let keystore: IKeystoreController
 describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()

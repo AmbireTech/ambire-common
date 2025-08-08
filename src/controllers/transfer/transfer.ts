@@ -4,7 +4,7 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IStorageController } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
@@ -29,7 +29,6 @@ import wait from '../../utils/wait'
 import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -104,7 +103,7 @@ export class TransferController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   #portfolio: PortfolioController
 
@@ -148,7 +147,7 @@ export class TransferController extends EventEmitter {
     networks: INetworksController,
     addressBook: AddressBookController,
     accounts: IAccountsController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     portfolio: PortfolioController,
     activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,

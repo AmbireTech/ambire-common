@@ -10,14 +10,15 @@ import {
 } from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
 
-// import { entropyToMnemonic } from 'bip39'
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import { STATUS_WRAPPED_METHODS } from '../../consts/keystore'
 import { Account } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   ExternalKey,
+  IKeystoreController,
   InternalKey,
   Key,
   KeyPreferences,
@@ -45,19 +46,6 @@ const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
   'Keystore unexpected error. If the problem persists, please contact support.'
-
-const STATUS_WRAPPED_METHODS = {
-  unlockWithSecret: 'INITIAL',
-  addSecret: 'INITIAL',
-  addSeed: 'INITIAL',
-  updateSeed: 'INITIAL',
-  deleteSeed: 'INITIAL',
-  removeSecret: 'INITIAL',
-  addKeys: 'INITIAL',
-  addKeysExternallyStored: 'INITIAL',
-  changeKeystorePassword: 'INITIAL',
-  updateKeyPreferences: 'INITIAL'
-} as const
 
 function getBytesForSecret(secret: string) {
   // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
@@ -88,7 +76,7 @@ function getBytesForSecret(secret: string) {
  *     the web SDKs we "outsource" this to the HW wallet software itself;
  *     this may not be true on mobile
  */
-export class KeystoreController extends EventEmitter {
+export class KeystoreController extends EventEmitter implements IKeystoreController {
   #mainKey: MainKey | null
 
   // Secrets are strings that are used to encrypt the mainKey.

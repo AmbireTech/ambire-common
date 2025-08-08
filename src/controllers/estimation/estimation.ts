@@ -4,6 +4,7 @@ import { ZeroAddress } from 'ethers'
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
 import { ErrorRef } from '../../interfaces/eventEmitter'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
@@ -18,12 +19,11 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import { ActivityController } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { EstimationStatus } from './types'
 
 export class EstimationController extends EventEmitter {
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   #accounts: IAccountsController
 
@@ -56,7 +56,7 @@ export class EstimationController extends EventEmitter {
   #notFatalBundlerError?: Error
 
   constructor(
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     accounts: IAccountsController,
     networks: INetworksController,
     provider: RPCProvider,

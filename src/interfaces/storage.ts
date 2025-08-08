@@ -1,7 +1,6 @@
 import { STATUS_WRAPPED_METHODS } from 'consts/storage'
 
 import { SignedMessage } from '../controllers/activity/types'
-import { KeystoreController } from '../controllers/keystore/keystore'
 import { StoredPhishingDetection } from '../controllers/phishing/phishing'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
@@ -14,7 +13,13 @@ import { Account, AccountId, AccountPreferences } from './account'
 import { IAccountPickerController } from './accountPicker'
 import { Dapp } from './dapp'
 import { IEventEmitter, Statuses } from './eventEmitter'
-import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
+import {
+  IKeystoreController,
+  Key,
+  KeystoreSeed,
+  MainKeyEncryptedWithSecret,
+  StoredKey
+} from './keystore'
 import { Network } from './network'
 import { CashbackStatusByAccount } from './selectedAccount'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
@@ -23,7 +28,7 @@ export interface IStorageController extends IEventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>
   associateAccountKeysWithLegacySavedSeedMigration(
     accountPicker: IAccountPickerController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ): Promise<void>
   get<K extends keyof StorageProps | string | undefined>(

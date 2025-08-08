@@ -33,7 +33,13 @@ import { Account, IAccountsController } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
+import {
+  ExternalKey,
+  ExternalSignerControllers,
+  IKeystoreController,
+  InternalKey,
+  Key
+} from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -94,7 +100,6 @@ import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import {
   getFeeSpeedIdentifier,
@@ -166,7 +171,7 @@ export type SignAccountOpUpdateProps = {
 export class SignAccountOpController extends EventEmitter {
   #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   #portfolio: PortfolioController
 
@@ -262,7 +267,7 @@ export class SignAccountOpController extends EventEmitter {
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     portfolio: PortfolioController,
     activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,

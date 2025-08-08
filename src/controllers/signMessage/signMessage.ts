@@ -1,7 +1,12 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
-import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import {
+  ExternalSignerControllers,
+  IKeystoreController,
+  Key,
+  KeystoreSignerInterface
+} from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { Message } from '../../interfaces/userRequest'
 import {
@@ -16,7 +21,6 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
 import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
@@ -24,7 +28,7 @@ const STATUS_WRAPPED_METHODS = {
 } as const
 
 export class SignMessageController extends EventEmitter {
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   #providers: ProvidersController
 
@@ -56,7 +60,7 @@ export class SignMessageController extends EventEmitter {
   signedMessage: SignedMessage | null = null
 
   constructor(
-    keystore: KeystoreController,
+    keystore: IKeystoreController,
     providers: ProvidersController,
     networks: INetworksController,
     accounts: IAccountsController,
