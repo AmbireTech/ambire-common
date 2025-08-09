@@ -725,7 +725,8 @@ export class SignAccountOpController extends EventEmitter {
       this.delegatedContract !== ZeroAddress &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
-      broadcastOption === BROADCAST_OPTIONS.byBundler
+      (broadcastOption === BROADCAST_OPTIONS.byBundler ||
+        broadcastOption === BROADCAST_OPTIONS.delegation)
     ) {
       warnings.push(WARNINGS.delegationDetected)
     }
@@ -1814,9 +1815,10 @@ export class SignAccountOpController extends EventEmitter {
         // a delegation request has been made
         if (!this.accountOp.meta) this.accountOp.meta = {}
 
-        const contract = this.accountOp.meta.setDelegation
-          ? getContractImplementation(this.#network.chainId)
-          : (ZeroAddress as Hex)
+        const contract =
+          this.accountOp.meta.setDelegation || this.accountOp.calls.length > 1
+            ? getContractImplementation(this.#network.chainId)
+            : (ZeroAddress as Hex)
         this.accountOp.meta.delegation = get7702Sig(
           this.#network.chainId,
           // because we're broadcasting by ourselves, we need to add 1 to the nonce
@@ -1828,6 +1830,7 @@ export class SignAccountOpController extends EventEmitter {
             getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
           )
         )
+        this.accountOp.signature = '0x'
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
