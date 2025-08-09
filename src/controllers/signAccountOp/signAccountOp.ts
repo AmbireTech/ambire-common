@@ -1295,9 +1295,10 @@ export class SignAccountOpController extends EventEmitter {
         // the bundler does a better job than us for gas price estimations
         // so we prioritize their estimation over ours if there's any
         if (this.bundlerGasPrices) {
+          const increasedGasPrices = this.#getIncreasedBundlerGasPrices()!
           const name = gasRecommendation.name as keyof GasSpeeds
-          maxPriorityFeePerGas = BigInt(this.bundlerGasPrices[name].maxPriorityFeePerGas)
-          gasPrice = BigInt(this.bundlerGasPrices[name].maxFeePerGas)
+          maxPriorityFeePerGas = BigInt(increasedGasPrices[name].maxPriorityFeePerGas)
+          gasPrice = BigInt(increasedGasPrices[name].maxFeePerGas)
         }
 
         // EOA OR 7702: pays with native by itself
