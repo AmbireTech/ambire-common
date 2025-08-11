@@ -105,7 +105,10 @@ async function estimate(
     // fatal (at estimate.ts -> estimate4337)
     nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-    if (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1) {
+    if (
+      e.message.indexOf('invalid account nonce') !== -1 ||
+      (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1)
+    ) {
       nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
     }
 
