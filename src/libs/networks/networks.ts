@@ -423,8 +423,10 @@ export function getValidNetworks(networksInStorage: { [key: string]: Network }):
 export const getNetworksUpdatedWithRelayerNetworks = (
   currentNetworks: { [key: string]: Network },
   relayerNetworks: { [key: string]: RelayerNetwork }
-): { [key: string]: Network } => {
+): { mergedNetworks: { [key: string]: Network }; updatedNetworkChainIds: Network['chainId'][] } => {
   const networks = structuredClone(currentNetworks)
+  // New networks and networks with updated RPC providers
+  const updatedNetworkChainIds: Network['chainId'][] = []
 
   Object.entries(relayerNetworks).forEach(([_chainId, network]) => {
     const chainId = BigInt(_chainId)
@@ -432,6 +434,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
     const currentNetwork = networks[chainId.toString()]
 
     if (!currentNetwork) {
+      updatedNetworkChainIds.push(relayerNetwork.chainId)
       networks[chainId.toString()] = {
         ...(predefinedNetworks.find((n) => n.chainId === relayerNetwork.chainId) || {}),
         ...relayerNetwork,
@@ -451,6 +454,7 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       relayerNetwork.predefinedConfigVersion > currentNetwork.predefinedConfigVersion
 
     if (shouldOverrideStoredNetwork) {
+      updatedNetworkChainIds.push(relayerNetwork.chainId)
       networks[chainId.toString()] = {
         ...currentNetwork,
         ...relayerNetwork,
@@ -461,6 +465,9 @@ export const getNetworksUpdatedWithRelayerNetworks = (
       if (relayerNetwork.disabledByDefault)
         networks[chainId.toString()].selectedRpcUrl = relayerNetwork.selectedRpcUrl
     } else {
+      // No need to add this network to the updated list
+      // as the selectedRpcUrl is not changed and the network is
+      // already in the extension
       networks[chainId.toString()] = {
         ...currentNetwork,
         rpcUrls: [...new Set([...relayerNetwork.rpcUrls, ...currentNetwork.rpcUrls])],
@@ -493,5 +500,8 @@ export const getNetworksUpdatedWithRelayerNetworks = (
     }
   })
 
-  return networks
+  return {
+    mergedNetworks: networks,
+    updatedNetworkChainIds
+  }
 }
