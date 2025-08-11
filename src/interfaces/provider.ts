@@ -1,16 +1,10 @@
 import { JsonRpcProvider } from 'ethers'
 
-import { IEventEmitter } from './eventEmitter'
-import { Network } from './network'
+import { ControllerInterface } from './controller'
 
-export interface IProvidersController extends IEventEmitter {
-  providers: RPCProviders
-  initialLoadPromise: Promise<void>
-  isInitialized: boolean
-  setProvider(network: Network): void
-  updateProviderIsWorking(chainId: bigint, isWorking: boolean): void
-  removeProvider(chainId: bigint): void
-}
+export type IProvidersController = ControllerInterface<
+  InstanceType<typeof import('../controllers/providers/providers').ProvidersController>
+>
 
 export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }
 

@@ -1,38 +1,10 @@
-import { STATUS_WRAPPED_METHODS } from '../consts/account'
-import { IEventEmitter, Statuses } from './eventEmitter'
+import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
 
-export interface IAccountsController extends IEventEmitter {
-  accounts: Account[]
-  accountStates: AccountStates
-  accountStatesLoadingState: {
-    [chainId: string]: Promise<AccountOnchainState[]> | undefined
-  }
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS>
-  initialLoadPromise: Promise<void>
-  updateAccountStates(
-    selectedAccountAddr: string | undefined,
-    blockTag: string | number,
-    networks: bigint[]
-  ): Promise<void>
-  updateAccountState(
-    accountAddr: Account['addr'],
-    blockTag?: 'pending' | 'latest',
-    networks?: bigint[]
-  ): Promise<void>
-  addAccounts(accounts?: Account[]): Promise<void>
-  removeAccountData(address: Account['addr']): void
-  updateAccountPreferences(
-    accounts: { addr: string; preferences: AccountPreferences }[]
-  ): Promise<void>
-  reorderAccounts({ fromIndex, toIndex }: { fromIndex: number; toIndex: number }): Promise<void>
-  areAccountStatesLoading: boolean
-  getOrFetchAccountStates(addr: string): Promise<{ [chainId: string]: AccountOnchainState }>
-  getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState>
-  resetAccountsNewlyAddedState(): void
-  forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState>
-}
+export type IAccountsController = ControllerInterface<
+  InstanceType<typeof import('../controllers/accounts/accounts').AccountsController>
+>
 
 export type AccountId = string
 

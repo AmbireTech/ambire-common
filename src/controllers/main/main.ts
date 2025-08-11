@@ -15,8 +15,10 @@ import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
+import { IInviteController } from '../../interfaces/invite'
 import {
   ExternalSignerControllers,
   IKeystoreController,
@@ -123,9 +125,9 @@ export class MainController extends EventEmitter {
 
   isReady: boolean = false
 
-  featureFlags: FeatureFlagsController
+  featureFlags: IFeatureFlagsController
 
-  invite: InviteController
+  invite: IInviteController
 
   keystore: IKeystoreController
 

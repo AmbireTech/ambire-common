@@ -84,6 +84,7 @@ describe('AccountsController', () => {
       () => {},
       () => {}
     )
+
     expect(accountsCtrl).toBeDefined()
 
     await waitForAccountsCtrlFirstLoad(accountsCtrl)

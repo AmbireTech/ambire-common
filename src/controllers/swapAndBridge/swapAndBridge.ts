@@ -1,5 +1,6 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 import { IAccountsController } from 'interfaces/account'
+import { IInviteController } from 'interfaces/invite'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -65,7 +66,6 @@ import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { InviteController } from '../invite/invite'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
@@ -130,7 +130,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #activity: ActivityController
 
-  #invite: InviteController
+  #invite: IInviteController
 
   #storage: IStorageController
 
@@ -295,7 +295,7 @@ export class SwapAndBridgeController extends EventEmitter {
     activity: ActivityController
     serviceProviderAPI: SocketAPI | LiFiAPI
     storage: IStorageController
-    invite: InviteController
+    invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: Function
     isMainSignAccountOpThrowingAnEstimationError?: Function

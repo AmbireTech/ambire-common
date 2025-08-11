@@ -1,3 +1,5 @@
+import { IInviteController } from 'interfaces/invite'
+
 import { IAccountsController } from '../../interfaces/account'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -6,7 +8,6 @@ import { IStorageController } from '../../interfaces/storage'
 import { LiFiAPI } from '../../services/lifi/api'
 import { SocketAPI } from '../../services/socket/api'
 import { ActivityController } from '../activity/activity'
-import { InviteController } from '../invite/invite'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
@@ -21,7 +22,7 @@ export type TransactionDependencies = {
   activity: ActivityController
   serviceProviderAPI: SocketAPI | LiFiAPI
   storage: IStorageController
-  invite: InviteController
+  invite: IInviteController
   portfolioUpdate?: Function
 }
 

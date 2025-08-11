@@ -1,6 +1,7 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { IInviteController } from '../../interfaces/invite'
 import {
   ExternalSignerControllers,
   IKeystoreController,
@@ -22,7 +23,6 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
-import { ProvidersController } from '../providers/providers'
 
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
@@ -39,7 +39,7 @@ export class SignMessageController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #invite: InviteController
+  #invite: IInviteController
 
   #signer: KeystoreSignerInterface | undefined
 
@@ -66,7 +66,7 @@ export class SignMessageController extends EventEmitter {
     networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: InviteController
+    invite: IInviteController
   ) {
     super()
 

@@ -1,4 +1,5 @@
 import { Fetch } from '../../interfaces/fetch'
+import { IInviteController } from '../../interfaces/invite'
 import { IStorageController } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -29,7 +30,7 @@ const DEFAULT_STATE = {
  * upon extension installation. The controller is still used to manage OG status
  * and other invite-related data.
  */
-export class InviteController extends EventEmitter {
+export class InviteController extends EventEmitter implements IInviteController {
   #storage: IStorageController
 
   #callRelayer: Function

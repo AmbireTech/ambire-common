@@ -1,10 +1,10 @@
 /* eslint-disable no-restricted-syntax */
-import { ErrorRef, IEventEmitter, Statuses } from '../../interfaces/eventEmitter'
+import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-export default class EventEmitter implements IEventEmitter {
+export default class EventEmitter {
   #callbacksWithId: {
     id: string | null
     cb: (forceEmit?: true) => void
@@ -53,14 +53,14 @@ export default class EventEmitter implements IEventEmitter {
     for (const cb of this.#callbacks) cb(true)
   }
 
-  emitUpdate() {
+  protected emitUpdate() {
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb()
     // eslint-disable-next-line no-restricted-syntax
     for (const cb of this.#callbacks) cb()
   }
 
-  emitError(error: ErrorRef) {
+  protected emitError(error: ErrorRef) {
     this.#errors.push(error)
     this.#trimErrorsIfNeeded()
     console.log(
@@ -74,7 +74,7 @@ export default class EventEmitter implements IEventEmitter {
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
-  async withStatus(
+  protected async withStatus(
     callName: string,
     fn: Function,
     allowConcurrentActions = false,

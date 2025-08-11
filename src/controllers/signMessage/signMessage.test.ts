@@ -13,6 +13,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
+import { IInviteController } from '../../interfaces/invite'
 import { IKeystoreController, Key, TxnRequest } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
@@ -100,7 +101,7 @@ describe('SignMessageController', () => {
   let accountsCtrl: IAccountsController
   let networksCtrl: INetworksController
   let providersCtrl: IProvidersController
-  let inviteCtrl: InviteController
+  let inviteCtrl: IInviteController
 
   beforeAll(async () => {
     const storage = produceMemoryStore()
