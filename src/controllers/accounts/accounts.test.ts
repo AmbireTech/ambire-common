@@ -12,6 +12,7 @@ import {
 import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
@@ -52,7 +53,7 @@ describe('AccountsController', () => {
 
   storage.set('keystoreKeys', mockKeys)
 
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController({
     storage: storageCtrl,

@@ -8,6 +8,7 @@ import {
   KeystoreSignerInterface
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
@@ -30,7 +31,7 @@ const STATUS_WRAPPED_METHODS = {
 export class SignMessageController extends EventEmitter {
   #keystore: IKeystoreController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #networks: INetworksController
 
@@ -61,7 +62,7 @@ export class SignMessageController extends EventEmitter {
 
   constructor(
     keystore: IKeystoreController,
-    providers: ProvidersController,
+    providers: IProvidersController,
     networks: INetworksController,
     accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,

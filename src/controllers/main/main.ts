@@ -26,7 +26,7 @@ import {
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { Platform } from '../../interfaces/platform'
-import { RPCProvider } from '../../interfaces/provider'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { IStorageController, Storage } from '../../interfaces/storage'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
@@ -139,7 +139,7 @@ export class MainController extends EventEmitter {
   // Subcontrollers
   networks: INetworksController
 
-  providers: ProvidersController
+  providers: IProvidersController
 
   accountPicker: IAccountPickerController
 

@@ -11,18 +11,18 @@ import {
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { ProvidersController } from '../providers/providers'
 
 export class AccountsController extends EventEmitter implements IAccountsController {
   #storage: IStorageController
 
   #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #keystore: IKeystoreController
 
@@ -47,7 +47,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   constructor(
     storage: IStorageController,
-    providers: ProvidersController,
+    providers: IProvidersController,
     networks: INetworksController,
     keystore: IKeystoreController,
     onAddAccounts: (accounts: Account[]) => void,

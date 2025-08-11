@@ -1,4 +1,5 @@
 import { IKeystoreController } from 'interfaces/keystore'
+import { IProvidersController } from 'interfaces/provider'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -17,7 +18,6 @@ import {
   ProviderName
 } from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { ProvidersController } from '../providers/providers'
 // eslint-disable-next-line import/no-cycle
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
@@ -31,7 +31,7 @@ export class DefiPositionsController extends EventEmitter {
 
   #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #fetch: Fetch
 
@@ -58,7 +58,7 @@ export class DefiPositionsController extends EventEmitter {
     keystore: IKeystoreController
     accounts: IAccountsController
     networks: INetworksController
-    providers: ProvidersController
+    providers: IProvidersController
   }) {
     super()
 

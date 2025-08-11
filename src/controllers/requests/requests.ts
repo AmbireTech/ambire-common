@@ -13,6 +13,7 @@ import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest } from '../../interfaces/requests'
 import {
   SwapAndBridgeActiveRoute,
@@ -55,7 +56,6 @@ import {
 } from '../actions/actions'
 import { DappsController } from '../dapps/dapps'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -78,7 +78,7 @@ export class RequestsController extends EventEmitter {
 
   #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #selectedAccount: SelectedAccountController
 
@@ -138,7 +138,7 @@ export class RequestsController extends EventEmitter {
     relayerUrl: string
     accounts: IAccountsController
     networks: INetworksController
-    providers: ProvidersController
+    providers: IProvidersController
     selectedAccount: SelectedAccountController
     keystore: IKeystoreController
     dapps: DappsController

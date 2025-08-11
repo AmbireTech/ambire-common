@@ -6,6 +6,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
@@ -30,7 +31,6 @@ import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -109,7 +109,7 @@ export class TransferController extends EventEmitter {
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #relayerUrl: string
 
@@ -151,7 +151,7 @@ export class TransferController extends EventEmitter {
     portfolio: PortfolioController,
     activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
-    providers: ProvidersController,
+    providers: IProvidersController,
     relayerUrl: string
   ) {
     super()

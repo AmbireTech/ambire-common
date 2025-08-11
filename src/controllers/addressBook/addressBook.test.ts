@@ -8,6 +8,7 @@ import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -66,7 +67,7 @@ const providers = Object.fromEntries(
 )
 
 describe('AddressBookController', () => {
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
     fetch,

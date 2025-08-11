@@ -1,27 +1,26 @@
-import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { IAccountsController } from '../../interfaces/account'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import { LiFiAPI } from '../../services/lifi/api'
 import { SocketAPI } from '../../services/socket/api'
-import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 
 export type TransactionDependencies = {
-  accounts: AccountsController
-  keystore: KeystoreController
+  accounts: IAccountsController
+  keystore: IKeystoreController
   portfolio: PortfolioController
   externalSignerControllers: ExternalSignerControllers
-  providers: ProvidersController
+  providers: IProvidersController
   selectedAccount: SelectedAccountController
-  networks: NetworksController
+  networks: INetworksController
   activity: ActivityController
   serviceProviderAPI: SocketAPI | LiFiAPI
-  storage: StorageController
+  storage: IStorageController
   invite: InviteController
   portfolioUpdate?: Function
 }

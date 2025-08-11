@@ -1,5 +1,6 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
+import { IProvidersController } from 'interfaces/provider'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -65,7 +66,7 @@ export class SelectedAccountController extends EventEmitter {
 
   #keystore: IKeystoreController | null = null
 
-  #providers: ProvidersController | null = null
+  #providers: IProvidersController | null = null
 
   account: Account | null = null
 
@@ -177,7 +178,7 @@ export class SelectedAccountController extends EventEmitter {
     portfolio: PortfolioController
     defiPositions: DefiPositionsController
     networks: INetworksController
-    providers: ProvidersController
+    providers: IProvidersController
   }) {
     this.#portfolio = portfolio
     this.#defiPositions = defiPositions

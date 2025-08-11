@@ -11,6 +11,7 @@ import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -44,7 +45,6 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { ProvidersController } from '../providers/providers'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
@@ -106,7 +106,7 @@ export class PortfolioController extends EventEmitter {
     learnedNfts: {}
   }
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #networks: INetworksController
 
@@ -120,7 +120,7 @@ export class PortfolioController extends EventEmitter {
   constructor(
     storage: IStorageController,
     fetch: Fetch,
-    providers: ProvidersController,
+    providers: IProvidersController,
     networks: INetworksController,
     accounts: IAccountsController,
     keystore: IKeystoreController,

@@ -6,6 +6,7 @@ import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 /* eslint-disable no-await-in-loop */
 import { SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
@@ -66,7 +67,6 @@ import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InviteController } from '../invite/invite'
 import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -226,7 +226,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
@@ -289,7 +289,7 @@ export class SwapAndBridgeController extends EventEmitter {
     keystore: IKeystoreController
     portfolio: PortfolioController
     externalSignerControllers: ExternalSignerControllers
-    providers: ProvidersController
+    providers: IProvidersController
     selectedAccount: SelectedAccountController
     networks: INetworksController
     activity: ActivityController

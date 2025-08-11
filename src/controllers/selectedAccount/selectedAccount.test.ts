@@ -8,6 +8,7 @@ import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IEventEmitter } from '../../interfaces/eventEmitter'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -28,7 +29,7 @@ const providers = Object.fromEntries(
 )
 
 const storage: Storage = produceMemoryStore()
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
