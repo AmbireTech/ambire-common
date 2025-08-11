@@ -10,6 +10,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
@@ -164,7 +165,7 @@ describe('Actions Controller', () => {
   providersCtrl.providers = providers
 
   let accountsCtrl: IAccountsController
-  let selectedAccountCtrl: SelectedAccountController
+  let selectedAccountCtrl: ISelectedAccountController
   let actionsCtrl: ActionsController
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)

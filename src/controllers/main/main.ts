@@ -14,8 +14,12 @@ import { FeatureFlags } from '../../consts/featureFlags'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IActivityController } from '../../interfaces/activity'
+import { IAddressBookController } from '../../interfaces/addressBook'
+import { IBannerController } from '../../interfaces/banner'
 import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
+import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
 import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -34,6 +38,8 @@ import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProvider } from '../../interfaces/provider'
+import { IRequestsController } from '../../interfaces/requests'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { IStorageController, Storage } from '../../interfaces/storage'
@@ -122,8 +128,6 @@ type CustomStatuses = {
 export class MainController extends EventEmitter {
   #storageAPI: Storage
 
-  storage: IStorageController
-
   fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -133,12 +137,6 @@ export class MainController extends EventEmitter {
 
   isReady: boolean = false
 
-  featureFlags: IFeatureFlagsController
-
-  invite: IInviteController
-
-  keystore: IKeystoreController
-
   /**
    * Hardware wallets (usually) need an additional (external signer) controller,
    * that is app-specific (web, mobile) and is used to interact with the device.
@@ -146,7 +144,16 @@ export class MainController extends EventEmitter {
    */
   #externalSignerControllers: ExternalSignerControllers = {}
 
-  // Subcontrollers
+  // sub-controllers
+
+  storage: IStorageController
+
+  featureFlags: IFeatureFlagsController
+
+  invite: IInviteController
+
+  keystore: IKeystoreController
+
   networks: INetworksController
 
   providers: IProvidersController
@@ -175,19 +182,19 @@ export class MainController extends EventEmitter {
 
   signAccOpInitError: string | null = null
 
-  activity: ActivityController
+  activity: IActivityController
 
-  addressBook: AddressBookController
+  addressBook: IAddressBookController
 
-  domains: DomainsController
+  domains: IDomainsController
 
   accounts: IAccountsController
 
-  selectedAccount: SelectedAccountController
+  selectedAccount: ISelectedAccountController
 
-  requests: RequestsController
+  requests: IRequestsController
 
-  banner: BannerController
+  banner: IBannerController
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 

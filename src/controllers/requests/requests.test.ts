@@ -9,6 +9,7 @@ import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
+import { IRequestsController } from '../../interfaces/requests'
 import { UserRequest } from '../../interfaces/userRequest'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -157,7 +158,7 @@ const prepareTest = async () => {
     relayerUrl
   )
 
-  const requestsController: RequestsController = {} as RequestsController
+  const requestsController: IRequestsController = {} as IRequestsController
 
   const swapAndBridgeCtrl = new SwapAndBridgeController({
     selectedAccount: selectedAccountCtrl,

@@ -1,9 +1,9 @@
 import { getAddress } from 'ethers'
 
 import { Account, IAccountsController } from '../../interfaces/account'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 export type Contact = {
   name: string
@@ -32,12 +32,12 @@ export class AddressBookController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   constructor(
     storage: IStorageController,
     accounts: IAccountsController,
-    selectedAccount: SelectedAccountController
+    selectedAccount: ISelectedAccountController
   ) {
     super()
 

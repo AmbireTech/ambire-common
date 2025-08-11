@@ -1,13 +1,16 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
-import { ISignAccountOpController } from 'interfaces/signAccountOp'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
+import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
@@ -28,11 +31,8 @@ import {
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
-import { ActivityController } from '../activity/activity'
-import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
@@ -62,11 +62,11 @@ export class TransferController extends EventEmitter {
 
   #networks: INetworksController
 
-  #addressBook: AddressBookController
+  #addressBook: IAddressBookController
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccountData: SelectedAccountController
+  #selectedAccountData: ISelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -139,18 +139,18 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #activity: ActivityController
+  #activity: IActivityController
 
   constructor(
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
-    selectedAccountData: SelectedAccountController,
+    selectedAccountData: ISelectedAccountController,
     networks: INetworksController,
-    addressBook: AddressBookController,
+    addressBook: IAddressBookController,
     accounts: IAccountsController,
     keystore: IKeystoreController,
     portfolio: IPortfolioController,
-    activity: ActivityController,
+    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
     relayerUrl: string

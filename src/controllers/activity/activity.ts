@@ -6,6 +6,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
@@ -23,7 +24,6 @@ import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
@@ -132,7 +132,7 @@ export class ActivityController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -171,7 +171,7 @@ export class ActivityController extends EventEmitter {
     fetch: Fetch,
     callRelayer: Function,
     accounts: IAccountsController,
-    selectedAccount: SelectedAccountController,
+    selectedAccount: ISelectedAccountController,
     providers: IProvidersController,
     networks: INetworksController,
     portfolio: IPortfolioController,

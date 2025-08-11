@@ -5,6 +5,13 @@ import {
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
 import { AccountId } from './account'
+import { ControllerInterface } from './controller'
+
+export type ISelectedAccountController = ControllerInterface<
+  InstanceType<
+    typeof import('../controllers/selectedAccount/selectedAccount').SelectedAccountController
+  >
+>
 
 /** A stripped version of the portfolio state that will be used in the UI */
 export type SelectedAccountPortfolioState = {

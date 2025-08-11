@@ -3,12 +3,14 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 /* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
@@ -64,10 +66,8 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountOpAction, Action } from '../actions/actions'
-import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 type SwapAndBridgeErrorType = {
@@ -124,11 +124,11 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter {
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #networks: INetworksController
 
-  #activity: ActivityController
+  #activity: IActivityController
 
   #invite: IInviteController
 
@@ -290,9 +290,9 @@ export class SwapAndBridgeController extends EventEmitter {
     portfolio: IPortfolioController
     externalSignerControllers: ExternalSignerControllers
     providers: IProvidersController
-    selectedAccount: SelectedAccountController
+    selectedAccount: ISelectedAccountController
     networks: INetworksController
-    activity: ActivityController
+    activity: IActivityController
     serviceProviderAPI: SocketAPI | LiFiAPI
     storage: IStorageController
     invite: IInviteController

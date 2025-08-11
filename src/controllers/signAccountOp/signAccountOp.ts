@@ -31,6 +31,7 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account, IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -97,7 +98,6 @@ import {
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { AccountOpAction } from '../actions/actions'
-import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -263,14 +263,14 @@ export class SignAccountOpController extends EventEmitter {
    */
   #shouldSimulate: boolean
 
-  #activity: ActivityController
+  #activity: IActivityController
 
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
     keystore: IKeystoreController,
     portfolio: IPortfolioController,
-    activity: ActivityController,
+    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,

@@ -4,6 +4,7 @@ import { IProvidersController } from 'interfaces/provider'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController } from '../../interfaces/network'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
@@ -18,12 +19,10 @@ import {
   ProviderName
 } from '../../libs/defiPositions/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 
 const ONE_MINUTE = 60000
 export class DefiPositionsController extends EventEmitter {
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #keystore: IKeystoreController
 
@@ -54,7 +53,7 @@ export class DefiPositionsController extends EventEmitter {
   }: {
     fetch: Fetch
     storage: IStorageController
-    selectedAccount: SelectedAccountController
+    selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     accounts: IAccountsController
     networks: INetworksController

@@ -3,6 +3,7 @@ import { ZeroAddress } from 'ethers'
 /* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -17,7 +18,6 @@ import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/int
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
-import { ActivityController } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { EstimationStatus } from './types'
 
@@ -50,7 +50,7 @@ export class EstimationController extends EventEmitter {
 
   #bundlerSwitcher: BundlerSwitcher
 
-  #activity: ActivityController
+  #activity: IActivityController
 
   #notFatalBundlerError?: Error
 
@@ -60,7 +60,7 @@ export class EstimationController extends EventEmitter {
     networks: INetworksController,
     provider: RPCProvider,
     portfolio: IPortfolioController,
-    activity: ActivityController,
+    activity: IActivityController,
     bundlerSwitcher: BundlerSwitcher
   ) {
     super()

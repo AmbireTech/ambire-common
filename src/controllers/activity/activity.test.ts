@@ -11,6 +11,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProviders } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
@@ -121,7 +122,7 @@ const callRelayer = relayerCall.bind({ url: '', fetch })
 let providersCtrl: ProvidersController
 let portfolioCtrl: IPortfolioController
 let accountsCtrl: IAccountsController
-let selectedAccountCtrl: SelectedAccountController
+let selectedAccountCtrl: ISelectedAccountController
 let networksCtrl: INetworksController
 
 const storage = produceMemoryStore()

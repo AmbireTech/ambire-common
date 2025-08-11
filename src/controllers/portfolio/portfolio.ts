@@ -7,7 +7,7 @@ import {
   AccountOnchainState,
   IAccountsController
 } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -43,7 +43,6 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -76,7 +75,7 @@ export class PortfolioController extends EventEmitter {
 
   #portfolioLibs: Map<string, Portfolio>
 
-  #bannerController: BannerController
+  #banner: IBannerController
 
   #storage: IStorageController
 
@@ -126,7 +125,7 @@ export class PortfolioController extends EventEmitter {
     keystore: IKeystoreController,
     relayerUrl: string,
     velcroUrl: string,
-    bannerController: BannerController
+    banner: IBannerController
   ) {
     super()
     this.#latest = {}
@@ -143,7 +142,7 @@ export class PortfolioController extends EventEmitter {
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
-    this.#bannerController = bannerController
+    this.#banner = banner
     this.#batchedVelcroDiscovery = batcher(
       fetch,
       (queue) => {
@@ -531,7 +530,7 @@ export class PortfolioController extends EventEmitter {
         })
       }
 
-      this.#bannerController.addBanner(formattedBanner)
+      this.#banner.addBanner(formattedBanner)
     }
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')

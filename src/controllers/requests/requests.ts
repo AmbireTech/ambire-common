@@ -15,6 +15,8 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest } from '../../interfaces/requests'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -58,8 +60,7 @@ import {
   ActionsController
 } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
+import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
@@ -80,7 +81,7 @@ export class RequestsController extends EventEmitter {
 
   #providers: IProvidersController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #keystore: IKeystoreController
 
@@ -92,7 +93,7 @@ export class RequestsController extends EventEmitter {
 
   #transactionManager?: ITransactionManagerController
 
-  #getSignAccountOp: () => SignAccountOpController | null
+  #getSignAccountOp: () => ISignAccountOpController | null
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -139,7 +140,7 @@ export class RequestsController extends EventEmitter {
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
-    selectedAccount: SelectedAccountController
+    selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
     dapps: IDappsController
     transfer: ITransferController
@@ -147,7 +148,7 @@ export class RequestsController extends EventEmitter {
     transactionManager?: ITransactionManagerController
     windowManager: WindowManager
     notificationManager: NotificationManager
-    getSignAccountOp: () => SignAccountOpController | null
+    getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
