@@ -1,6 +1,6 @@
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import predefinedDapps from '../../consts/dappCatalog.json'
-import { Dapp } from '../../interfaces/dapp'
+import { Dapp, IDappsController } from '../../interfaces/dapp'
 import { Messenger } from '../../interfaces/messenger'
 import { IStorageController } from '../../interfaces/storage'
 import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
@@ -13,7 +13,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
 
-export class DappsController extends EventEmitter {
+export class DappsController extends EventEmitter implements IDappsController {
   #dapps: Dapp[] = []
 
   #storage: IStorageController

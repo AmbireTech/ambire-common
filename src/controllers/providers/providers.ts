@@ -1,6 +1,6 @@
 /* eslint-disable no-underscore-dangle */
 import { INetworksController, Network } from '../../interfaces/network'
-import { RPCProviders } from '../../interfaces/provider'
+import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -8,7 +8,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
  * The ProvidersController manages RPC providers, enabling the extension to communicate with the blockchain.
  * Each network requires an initialized JsonRpcProvider, and the provider must be reinitialized whenever network.selectedRpcUrl changes.
  */
-export class ProvidersController extends EventEmitter {
+export class ProvidersController extends EventEmitter implements IProvidersController {
   #networks: INetworksController
 
   providers: RPCProviders = {}

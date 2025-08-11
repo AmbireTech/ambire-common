@@ -6,6 +6,7 @@ import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultOperation,
+  IEmailVaultController,
   MagicLinkFlow,
   OperationRequestType,
   SecretType
@@ -69,7 +70,7 @@ const STATUS_WRAPPED_METHODS = {
  * Extended documentation about the EV and its internal mechanisms
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
-export class EmailVaultController extends EventEmitter {
+export class EmailVaultController extends EventEmitter implements IEmailVaultController {
   #storage: IStorageController
 
   private initialLoadPromise: Promise<void>

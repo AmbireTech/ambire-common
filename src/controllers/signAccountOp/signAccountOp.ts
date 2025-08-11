@@ -46,6 +46,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  ISignAccountOpController,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
   Warning
@@ -169,7 +170,7 @@ export type SignAccountOpUpdateProps = {
   hasNewEstimation?: boolean
 }
 
-export class SignAccountOpController extends EventEmitter {
+export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
   #accounts: IAccountsController
 
   #keystore: IKeystoreController

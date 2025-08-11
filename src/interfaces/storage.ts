@@ -1,5 +1,5 @@
 import { SignedMessage } from '../controllers/activity/types'
-import { StoredPhishingDetection } from '../controllers/phishing/phishing'
+import { StoredPhishingDetection } from './phishing'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'

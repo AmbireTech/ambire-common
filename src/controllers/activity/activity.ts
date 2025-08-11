@@ -1,12 +1,12 @@
-import { IStorageController } from 'interfaces/storage'
-
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
@@ -123,7 +123,7 @@ const BANNER_CONTENT: {
  * 💡 For performance, items per account and network are limited to 1000.
  * Older items are trimmed, keeping the most recent ones.
  */
-export class ActivityController extends EventEmitter {
+export class ActivityController extends EventEmitter implements IActivityController {
   #storage: IStorageController
 
   #fetch: Fetch

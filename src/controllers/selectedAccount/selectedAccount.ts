@@ -1,6 +1,5 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
-import { IProvidersController } from 'interfaces/provider'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -9,9 +8,11 @@ import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
+  ISelectedAccountController,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
@@ -50,7 +51,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   pending: {}
 }
 
-export class SelectedAccountController extends EventEmitter {
+export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
   #accounts: IAccountsController

@@ -12,7 +12,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
-import { TransferUpdate } from '../../interfaces/transfer'
+import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -57,7 +57,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
-export class TransferController extends EventEmitter {
+export class TransferController extends EventEmitter implements ITransferController {
   #storage: IStorageController
 
   #networks: INetworksController

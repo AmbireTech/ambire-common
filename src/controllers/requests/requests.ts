@@ -14,7 +14,7 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { IProvidersController } from '../../interfaces/provider'
-import { BuildRequest } from '../../interfaces/requests'
+import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import {
@@ -72,7 +72,7 @@ const STATUS_WRAPPED_METHODS = {
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
  * and testability, this logic was encapsulated in this dedicated controller.
  */
-export class RequestsController extends EventEmitter {
+export class RequestsController extends EventEmitter implements IRequestsController {
   #relayerUrl: string
 
   #accounts: IAccountsController

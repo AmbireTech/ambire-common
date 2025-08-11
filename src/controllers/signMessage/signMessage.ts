@@ -1,3 +1,5 @@
+import { ISignMessageController } from 'interfaces/signMessage'
+
 import EmittableError from '../../classes/EmittableError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -22,13 +24,12 @@ import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { InviteController } from '../invite/invite'
 
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter {
+export class SignMessageController extends EventEmitter implements ISignMessageController {
   #keystore: IKeystoreController
 
   #providers: IProvidersController

@@ -1,6 +1,7 @@
 import { getAddress } from 'ethers'
 
 import { Account, IAccountsController } from '../../interfaces/account'
+import { IAddressBookController } from '../../interfaces/addressBook'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -22,7 +23,7 @@ export type Contacts = Array<Contact>
  * Both types of contacts are combined and returned as a single array of contacts.
  */
 
-export class AddressBookController extends EventEmitter {
+export class AddressBookController extends EventEmitter implements IAddressBookController {
   // Manually added contact (stored in storage)
   #manuallyAddedContacts: Contacts = []
 

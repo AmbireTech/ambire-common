@@ -1,9 +1,9 @@
-import { IKeystoreController } from 'interfaces/keystore'
-import { IProvidersController } from 'interfaces/provider'
-
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -21,7 +21,7 @@ import {
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ONE_MINUTE = 60000
-export class DefiPositionsController extends EventEmitter {
+export class DefiPositionsController extends EventEmitter implements IDefiPositionsController {
   #selectedAccount: ISelectedAccountController
 
   #keystore: IKeystoreController

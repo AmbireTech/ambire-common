@@ -11,6 +11,7 @@ import { Banner, IBannerController } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
@@ -49,7 +50,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
-export class PortfolioController extends EventEmitter {
+export class PortfolioController extends EventEmitter implements IPortfolioController {
   #latest: PortfolioControllerState
 
   #pending: PortfolioControllerState

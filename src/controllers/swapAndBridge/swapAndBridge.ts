@@ -19,6 +19,7 @@ import {
   CachedTokenListKey,
   CachedToTokenLists,
   FromToken,
+  ISwapAndBridgeController,
   SocketApiBridgeStep,
   SocketAPIBridgeUserTx,
   SwapAndBridgeActiveRoute,
@@ -123,7 +124,7 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
  *  - Fetching and updating quotes for token swaps and bridges.
  *  - Manages token active routes
  */
-export class SwapAndBridgeController extends EventEmitter {
+export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
   #selectedAccount: ISelectedAccountController
 
   #networks: INetworksController

@@ -1,9 +1,8 @@
-import { IStorageController } from 'interfaces/storage'
-
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
+import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-export class BannerController extends EventEmitter {
+export class BannerController extends EventEmitter implements IBannerController {
   #banners: Banner[] = []
 
   #dismissedBanners: (string | number)[] = []

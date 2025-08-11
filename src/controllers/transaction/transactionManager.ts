@@ -1,12 +1,16 @@
 import { createPublicClient, http } from 'viem'
 import { arbitrumSepolia, baseSepolia, sepolia } from 'viem/chains'
 
+import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { IntentController } from './controllers/intent'
 import { ControllersTransactionDependencies, TransactionDependencies } from './dependencies'
 import { TransactionFormState } from './transactionFormState'
 
-export class TransactionManagerController extends EventEmitter {
+export class TransactionManagerController
+  extends EventEmitter
+  implements ITransactionManagerController
+{
   intent: IntentController
 
   formState: TransactionFormState
