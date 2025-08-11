@@ -6,6 +6,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -18,7 +19,6 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import { ActivityController } from '../activity/activity'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { PortfolioController } from '../portfolio/portfolio'
 import { EstimationStatus } from './types'
 
 export class EstimationController extends EventEmitter {
@@ -30,7 +30,7 @@ export class EstimationController extends EventEmitter {
 
   #provider: RPCProvider
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   status: EstimationStatus = EstimationStatus.Initial
 
@@ -59,7 +59,7 @@ export class EstimationController extends EventEmitter {
     accounts: IAccountsController,
     networks: INetworksController,
     provider: RPCProvider,
-    portfolio: PortfolioController,
+    portfolio: IPortfolioController,
     activity: ActivityController,
     bundlerSwitcher: BundlerSwitcher
   ) {

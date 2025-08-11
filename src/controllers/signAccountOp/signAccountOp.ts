@@ -42,6 +42,7 @@ import {
   Key
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   SignAccountOpError,
@@ -101,7 +102,6 @@ import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { PortfolioController } from '../portfolio/portfolio'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -174,7 +174,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -269,7 +269,7 @@ export class SignAccountOpController extends EventEmitter {
     accounts: IAccountsController,
     networks: INetworksController,
     keystore: IKeystoreController,
-    portfolio: PortfolioController,
+    portfolio: IPortfolioController,
     activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,

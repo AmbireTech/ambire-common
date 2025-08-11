@@ -14,6 +14,9 @@ import { FeatureFlags } from '../../consts/featureFlags'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IDappsController } from '../../interfaces/dapp'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
+import { IEmailVaultController } from '../../interfaces/emailVault'
 import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
@@ -27,11 +30,16 @@ import {
 } from '../../interfaces/keystore'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
+import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProvider } from '../../interfaces/provider'
-import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
+import { ISignAccountOpController, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
+import { ISignMessageController } from '../../interfaces/signMessage'
 import { IStorageController, Storage } from '../../interfaces/storage'
-import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { ITransactionManagerController } from '../../interfaces/transactionManager'
+import { ITransferController } from '../../interfaces/transfer'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
@@ -145,25 +153,25 @@ export class MainController extends EventEmitter {
 
   accountPicker: IAccountPickerController
 
-  portfolio: PortfolioController
+  portfolio: IPortfolioController
 
-  defiPositions: DefiPositionsController
+  defiPositions: IDefiPositionsController
 
-  dapps: DappsController
+  dapps: IDappsController
 
-  phishing: PhishingController
+  phishing: IPhishingController
 
-  emailVault?: EmailVaultController
+  emailVault?: IEmailVaultController
 
-  signMessage: SignMessageController
+  signMessage: ISignMessageController
 
-  swapAndBridge: SwapAndBridgeController
+  swapAndBridge: ISwapAndBridgeController
 
-  transactionManager?: TransactionManagerController
+  transactionManager?: ITransactionManagerController
 
-  transfer: TransferController
+  transfer: ITransferController
 
-  signAccountOp: SignAccountOpController | null = null
+  signAccountOp: ISignAccountOpController | null = null
 
   signAccOpInitError: string | null = null
 
@@ -699,7 +707,7 @@ export class MainController extends EventEmitter {
           return this.isSignRequestStillActive
         },
         true,
-        (ctrl: SignAccountOpController) => {
+        (ctrl: ISignAccountOpController) => {
           this.traceCall(ctrl)
         }
       )
@@ -731,7 +739,7 @@ export class MainController extends EventEmitter {
     this.statuses.signAndBroadcastAccountOp = 'SIGNING'
     this.forceEmitUpdate()
 
-    let signAccountOp: SignAccountOpController | null
+    let signAccountOp: ISignAccountOpController | null
 
     if (type === SIGN_ACCOUNT_OP_MAIN) {
       signAccountOp = this.signAccountOp
@@ -853,7 +861,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #abortHWTransactionSign(signAccountOp: SignAccountOpController) {
+  #abortHWTransactionSign(signAccountOp: ISignAccountOpController) {
     if (!signAccountOp) return
 
     const isAwaitingHWSignature =
@@ -905,7 +913,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async traceCall(signAccountOpCtrl: SignAccountOpController) {
+  async traceCall(signAccountOpCtrl: ISignAccountOpController) {
     const accountOp = signAccountOpCtrl.accountOp
     if (!accountOp) return
 
@@ -1611,7 +1619,7 @@ export class MainController extends EventEmitter {
    *
    */
   async #broadcastSignedAccountOp(
-    signAccountOp: SignAccountOpController,
+    signAccountOp: ISignAccountOpController,
     type: SignAccountOpType,
     callId: string
   ) {
@@ -2038,7 +2046,7 @@ export class MainController extends EventEmitter {
     provider = undefined,
     network = undefined
   }: {
-    signAccountOp: SignAccountOpController
+    signAccountOp: ISignAccountOpController
     message?: string
     error?: Error
     accountState?: AccountOnchainState

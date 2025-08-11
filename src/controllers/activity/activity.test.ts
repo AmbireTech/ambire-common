@@ -9,6 +9,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
 import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -118,7 +119,7 @@ networks.forEach((network) => {
 const callRelayer = relayerCall.bind({ url: '', fetch })
 
 let providersCtrl: ProvidersController
-let portfolioCtrl: PortfolioController
+let portfolioCtrl: IPortfolioController
 let accountsCtrl: IAccountsController
 let selectedAccountCtrl: SelectedAccountController
 let networksCtrl: INetworksController

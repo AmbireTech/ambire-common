@@ -1,15 +1,16 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
-import { IAccountsController } from 'interfaces/account'
-import { IInviteController } from 'interfaces/invite'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { IAccountsController } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 /* eslint-disable no-await-in-loop */
-import { SignAccountOpError } from '../../interfaces/signAccountOp'
+import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import {
   CachedSupportedChains,
@@ -66,7 +67,6 @@ import { AccountOpAction, Action } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { PortfolioController } from '../portfolio/portfolio'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -222,7 +222,7 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -238,7 +238,7 @@ export class SwapAndBridgeController extends EventEmitter {
    * The reason is that the controller is not immediately destroyed after the
    * form changes, but instead is being updated after the route is started.
    */
-  #signAccountOpController: SignAccountOpController | null = null
+  #signAccountOpController: ISignAccountOpController | null = null
 
   /**
    * Holds all subscriptions (on update and on error) to the signAccountOpController.
@@ -287,7 +287,7 @@ export class SwapAndBridgeController extends EventEmitter {
   }: {
     accounts: IAccountsController
     keystore: IKeystoreController
-    portfolio: PortfolioController
+    portfolio: IPortfolioController
     externalSignerControllers: ExternalSignerControllers
     providers: IProvidersController
     selectedAccount: SelectedAccountController

@@ -1,11 +1,12 @@
-import { ActivityController } from 'controllers/activity/activity'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { ISignAccountOpController } from 'interfaces/signAccountOp'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { TransferUpdate } from '../../interfaces/transfer'
@@ -27,10 +28,10 @@ import {
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
+import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { PortfolioController } from '../portfolio/portfolio'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -105,7 +106,7 @@ export class TransferController extends EventEmitter {
 
   #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -113,7 +114,7 @@ export class TransferController extends EventEmitter {
 
   #relayerUrl: string
 
-  signAccountOpController: SignAccountOpController | null = null
+  signAccountOpController: ISignAccountOpController | null = null
 
   /**
    * Holds all subscriptions (on update and on error) to the signAccountOpController.
@@ -148,7 +149,7 @@ export class TransferController extends EventEmitter {
     addressBook: AddressBookController,
     accounts: IAccountsController,
     keystore: IKeystoreController,
-    portfolio: PortfolioController,
+    portfolio: IPortfolioController,
     activity: ActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,

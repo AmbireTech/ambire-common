@@ -4,6 +4,7 @@ import { Account, AccountId, IAccountsController } from '../../interfaces/accoun
 import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { isSmartAccount } from '../../libs/account/account'
 import {
@@ -22,7 +23,6 @@ import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { PortfolioController } from '../portfolio/portfolio'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { InternalSignedMessages, SignedMessage } from './types'
 
@@ -158,7 +158,7 @@ export class ActivityController extends EventEmitter {
 
   #networks: INetworksController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #onContractsDeployed: (network: Network) => Promise<void>
 
@@ -174,7 +174,7 @@ export class ActivityController extends EventEmitter {
     selectedAccount: SelectedAccountController,
     providers: IProvidersController,
     networks: INetworksController,
-    portfolio: PortfolioController,
+    portfolio: IPortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()

@@ -18,6 +18,7 @@ import { IKeystoreController, Key, TxnRequest } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { EIP7702Signature } from '../../interfaces/signatures'
+import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -96,7 +97,7 @@ const messageToSign: Message = {
 }
 
 describe('SignMessageController', () => {
-  let signMessageController: SignMessageController
+  let signMessageController: ISignMessageController
   let keystoreCtrl: IKeystoreController
   let accountsCtrl: IAccountsController
   let networksCtrl: INetworksController

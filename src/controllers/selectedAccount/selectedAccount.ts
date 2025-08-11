@@ -5,8 +5,10 @@ import { IProvidersController } from 'interfaces/provider'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
@@ -33,12 +35,7 @@ import {
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
 import { getIsViewOnly } from '../../utils/accounts'
-// eslint-disable-next-line import/no-cycle
-import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -58,9 +55,9 @@ export class SelectedAccountController extends EventEmitter {
 
   #accounts: IAccountsController
 
-  #portfolio: PortfolioController | null = null
+  #portfolio: IPortfolioController | null = null
 
-  #defiPositions: DefiPositionsController | null = null
+  #defiPositions: IDefiPositionsController | null = null
 
   #networks: INetworksController | null = null
 
@@ -175,8 +172,8 @@ export class SelectedAccountController extends EventEmitter {
     networks,
     providers
   }: {
-    portfolio: PortfolioController
-    defiPositions: DefiPositionsController
+    portfolio: IPortfolioController
+    defiPositions: IDefiPositionsController
     networks: INetworksController
     providers: IProvidersController
   }) {

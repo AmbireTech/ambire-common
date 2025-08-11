@@ -8,7 +8,7 @@ import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AccountId, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { DappProviderRequest } from '../../interfaces/dapp'
+import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -16,9 +16,12 @@ import { NotificationManager } from '../../interfaces/notification'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest } from '../../interfaces/requests'
 import {
+  ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
+import { ITransactionManagerController } from '../../interfaces/transactionManager'
+import { ITransferController } from '../../interfaces/transfer'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
@@ -54,13 +57,10 @@ import {
   ActionPosition,
   ActionsController
 } from '../actions/actions'
-import { DappsController } from '../dapps/dapps'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { TransactionManagerController } from '../transaction/transactionManager'
-import { TransferController } from '../transfer/transfer'
+import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -84,13 +84,13 @@ export class RequestsController extends EventEmitter {
 
   #keystore: IKeystoreController
 
-  #dapps: DappsController
+  #dapps: IDappsController
 
-  #transfer: TransferController
+  #transfer: ITransferController
 
-  #swapAndBridge: SwapAndBridgeController
+  #swapAndBridge: ISwapAndBridgeController
 
-  #transactionManager?: TransactionManagerController
+  #transactionManager?: ITransactionManagerController
 
   #getSignAccountOp: () => SignAccountOpController | null
 
@@ -141,10 +141,10 @@ export class RequestsController extends EventEmitter {
     providers: IProvidersController
     selectedAccount: SelectedAccountController
     keystore: IKeystoreController
-    dapps: DappsController
-    transfer: TransferController
-    swapAndBridge: SwapAndBridgeController
-    transactionManager?: TransactionManagerController
+    dapps: IDappsController
+    transfer: ITransferController
+    swapAndBridge: ISwapAndBridgeController
+    transactionManager?: ITransactionManagerController
     windowManager: WindowManager
     notificationManager: NotificationManager
     getSignAccountOp: () => SignAccountOpController | null
