@@ -73,10 +73,7 @@ describe('Networks Controller', () => {
       {}
     )
 
-    const updatedNetworks = await networksController.mergeRelayerNetworks(
-      finalNetworks,
-      finalNetworks
-    )
+    const updatedNetworks = await networksController.mergeRelayerNetworks(finalNetworks)
 
     // Ensure the merged networks contain "unichain" and other relayer networks
     expect(updatedNetworks).toHaveProperty('130')

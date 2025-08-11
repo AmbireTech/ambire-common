@@ -4,6 +4,7 @@ import { getAddress } from 'ethers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import {
   CashbackStatus,
@@ -30,6 +31,7 @@ import {
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import { getIsViewOnly } from '../../utils/accounts'
 // eslint-disable-next-line import/no-cycle
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -60,6 +62,8 @@ export class SelectedAccountController extends EventEmitter {
   #defiPositions: DefiPositionsController | null = null
 
   #networks: INetworksController | null = null
+
+  #keystore: IKeystoreController | null = null
 
   #providers: ProvidersController | null = null
 
@@ -130,15 +134,18 @@ export class SelectedAccountController extends EventEmitter {
 
   constructor({
     storage,
-    accounts
+    accounts,
+    keystore
   }: {
     storage: IStorageController
     accounts: IAccountsController
+    keystore: IKeystoreController
   }) {
     super()
 
     this.#storage = storage
     this.#accounts = accounts
+    this.#keystore = keystore
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -344,6 +351,10 @@ export class SelectedAccountController extends EventEmitter {
 
   async updateCashbackStatus(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
+    const importedAccountKeys = this.#keystore?.getAccountKeys(this.account) || []
+
+    // Don't update cashback status for view-only accounts
+    if (getIsViewOnly(importedAccountKeys, this.account.associatedKeys)) return
 
     const accountId = this.account.addr
     const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
@@ -495,8 +506,8 @@ export class SelectedAccountController extends EventEmitter {
     const errorBanners = getNetworksWithPortfolioErrorErrors({
       networks: this.#networks.networks,
       selectedAccountLatest: this.portfolio.latest,
-      providers: this.#providers.providers,
-      isAllReady: this.portfolio.isAllReady
+      isAllReady: this.portfolio.isAllReady,
+      providers: this.#providers.providers
     })
 
     this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]

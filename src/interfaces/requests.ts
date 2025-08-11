@@ -40,3 +40,12 @@ export type BuildRequest =
         windowId?: number
       }
     }
+  | {
+      type: 'intentRequest'
+      params: {
+        amount: string
+        recipientAddress: string
+        selectedToken: TokenResult
+        actionExecutionType: ActionExecutionType
+      }
+    }

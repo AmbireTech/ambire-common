@@ -1,5 +1,4 @@
-import { FeatureFlags, featureFlags } from '../../consts/featureFlags'
-import { INetworksController } from '../../interfaces/network'
+import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
@@ -9,13 +8,12 @@ import EventEmitter from '../eventEmitter/eventEmitter'
  * toggling, A/B testing, and gradual feature roll-outs.
  */
 export class FeatureFlagsController extends EventEmitter {
-  #flags: FeatureFlags = { ...featureFlags }
+  #flags: FeatureFlags
 
-  #networks: INetworksController
-
-  constructor(networks: INetworksController) {
+  constructor(featureFlags: Partial<FeatureFlags>) {
     super()
-    this.#networks = networks
+
+    this.#flags = { ...defaultFeatureFlags, ...(featureFlags || {}) }
   }
 
   /** Syntactic sugar for checking if a feature flag is enabled */
@@ -23,20 +21,15 @@ export class FeatureFlagsController extends EventEmitter {
     return this.#flags[flag]
   }
 
-  setFeatureFlag(flag: keyof typeof featureFlags, value: boolean): void {
+  setFeatureFlag(flag: keyof typeof defaultFeatureFlags, value: boolean): void {
     this.#flags[flag] = value
     this.emitUpdate()
-  }
-
-  get flags(): FeatureFlags {
-    return this.#flags
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      flags: this.flags
+      ...super.toJSON()
     }
   }
 }

@@ -216,7 +216,8 @@ describe('Activity Controller ', () => {
     )
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
-      accounts: accountsCtrl
+      accounts: accountsCtrl,
+      keystore
     })
 
     await selectedAccountCtrl.initialLoadPromise
