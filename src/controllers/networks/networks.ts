@@ -1,5 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
-import { networks as predefinedNetworks, STATUS_WRAPPED_METHODS } from '../../consts/networks'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -22,7 +22,10 @@ import {
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-// eslint-disable-next-line import/no-cycle
+export const STATUS_WRAPPED_METHODS = {
+  addNetwork: 'INITIAL',
+  updateNetwork: 'INITIAL'
+} as const
 
 /**
  * The NetworksController is responsible for managing networks. It handles both predefined networks and those

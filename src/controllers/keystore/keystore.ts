@@ -12,7 +12,6 @@ import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } f
 
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
-import { STATUS_WRAPPED_METHODS } from '../../consts/keystore'
 import { Account } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
@@ -46,6 +45,19 @@ const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
   'Keystore unexpected error. If the problem persists, please contact support.'
+
+export const STATUS_WRAPPED_METHODS = {
+  unlockWithSecret: 'INITIAL',
+  addSecret: 'INITIAL',
+  addSeed: 'INITIAL',
+  updateSeed: 'INITIAL',
+  deleteSeed: 'INITIAL',
+  removeSecret: 'INITIAL',
+  addKeys: 'INITIAL',
+  addKeysExternallyStored: 'INITIAL',
+  changeKeystorePassword: 'INITIAL',
+  updateKeyPreferences: 'INITIAL'
+} as const
 
 function getBytesForSecret(secret: string) {
   // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24

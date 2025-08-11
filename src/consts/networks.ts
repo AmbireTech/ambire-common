@@ -276,8 +276,3 @@ const networks: Network[] = [
 export { networks }
 
 export const ARBITRUM_CHAIN_ID = 42161n
-
-export const STATUS_WRAPPED_METHODS = {
-  addNetwork: 'INITIAL',
-  updateNetwork: 'INITIAL'
-} as const

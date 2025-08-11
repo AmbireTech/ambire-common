@@ -1,6 +1,5 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { STATUS_WRAPPED_METHODS } from '../../consts/account'
 import {
   Account,
   AccountOnchainState,
@@ -16,6 +15,11 @@ import { IStorageController } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+export const STATUS_WRAPPED_METHODS = {
+  selectAccount: 'INITIAL',
+  addAccounts: 'INITIAL'
+} as const
 
 export class AccountsController extends EventEmitter implements IAccountsController {
   #storage: IStorageController

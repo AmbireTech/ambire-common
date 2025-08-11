@@ -1,6 +1,5 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { STATUS_WRAPPED_METHODS } from '../../consts/storage'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 /* eslint-disable no-restricted-syntax */
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -17,6 +16,10 @@ import {
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+export const STATUS_WRAPPED_METHODS = {
+  associateAccountKeysWithLegacySavedSeedMigration: 'INITIAL'
+} as const
 
 export class StorageController extends EventEmitter implements IStorageController {
   #storage: Storage
