@@ -6,11 +6,10 @@ class BundlerErrorHandler implements ErrorHandler {
     const { message } = error?.error || error || {}
 
     return (
-      message.includes('UserOperation reverted during simulation') ||
+      message.includes('UserOperation reverted during simulation with reason:') ||
       message.includes('pimlico_getUserOperationGasPrice') ||
-      message.includes('UserOperation failed validation') ||
-      message.includes('UserOperation reverted') ||
-      message.includes('invalid account nonce')
+      message.includes('UserOperation failed validation with reason:') ||
+      message.includes('UserOperation reverted with reason:')
     )
   }
 
@@ -21,9 +20,26 @@ class BundlerErrorHandler implements ErrorHandler {
     if (message.includes('pimlico_getUserOperationGasPrice')) {
       reason = 'pimlico_getUserOperationGasPrice'
     } else {
-      const EntryPointErrorCode = /AA[0-9]{1,2}\s?/
-      // Remove error codes like AA1, AA2, etc. and the space after them
-      reason = reason.replace(EntryPointErrorCode, '')
+      const userOperationSimulationRegex =
+        /UserOperation reverted during simulation with reason:\s*/i
+      const userOperationValidationRegex = /UserOperation failed validation with reason:\s*/i
+      const userOperationRevertedRegex = /UserOperation reverted with reason:\s*/i
+      const regexes = [
+        userOperationSimulationRegex,
+        userOperationValidationRegex,
+        userOperationRevertedRegex
+      ]
+
+      for (let i = 0; i < regexes.length; i++) {
+        const regex = regexes[i]
+        if (regex.test(message)) {
+          const EntryPointErrorCode = /AA[0-9]{1,2}\s?/
+          reason = message.replace(regex, '')
+          // Remove error codes like AA1, AA2, etc. and the space after them
+          reason = reason.replace(EntryPointErrorCode, '')
+          break
+        }
+      }
     }
 
     return {

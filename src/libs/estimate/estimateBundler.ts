@@ -101,14 +101,10 @@ async function estimate(
     const decodedError = bundler.decodeBundlerError(e)
 
     // if the bundler estimation fails, add a nonFatalError so we can react to
-    // it on the FE. The BE at a later stage decides if this error is actually
-    // fatal (at estimate.ts -> estimate4337)
+    // it on the FE. The BE at a later stage decides if this error is actually fatal
     nonFatalErrors.push(new Error('Bundler estimation failed', { cause: '4337_ESTIMATION' }))
 
-    if (
-      e.message.indexOf('invalid account nonce') !== -1 ||
-      (decodedError.reason && decodedError.reason.indexOf('invalid account nonce') !== -1)
-    ) {
+    if (e.message.indexOf('invalid account nonce') !== -1) {
       nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
     }
 
