@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { STK_WALLET } from '../../consts/addresses'
@@ -30,8 +31,6 @@ import {
   getUpdatedHints,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
-/* eslint-disable no-restricted-syntax */
-// eslint-disable-next-line import/no-cycle
 import {
   AccountAssetsState,
   AccountState,

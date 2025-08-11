@@ -27,7 +27,6 @@ import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
-// eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithFailedRPCErrors,

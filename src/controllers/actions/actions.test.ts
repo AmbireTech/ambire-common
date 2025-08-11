@@ -9,6 +9,7 @@ import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
+import { AccountOpAction, BenzinAction, DappRequestAction } from '../../interfaces/actions'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
@@ -21,7 +22,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
-import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
+import { ActionsController } from './actions'
 
 const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
 

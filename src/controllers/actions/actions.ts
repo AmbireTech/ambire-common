@@ -1,40 +1,12 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import {
-  AccountOpAction,
-  Action,
-  BenzinAction,
-  DappRequestAction,
-  SignMessageAction,
-  SwapAndBridgeAction,
-  SwitchAccountAction
-} from '../../interfaces/actions'
+import { Action } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { FocusWindowParams, WindowManager, WindowProps } from '../../interfaces/window'
-// eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-export type {
-  AccountOpAction,
-  Action,
-  BenzinAction,
-  DappRequestAction,
-  SignMessageAction,
-  SwitchAccountAction,
-  SwapAndBridgeAction
-}
-
-export type ActionPosition = 'first' | 'last'
-
-export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
-
-export type OpenActionWindowParams = {
-  skipFocus?: boolean
-  baseWindowId?: number
-}
 
 const SWAP_AND_BRIDGE_WINDOW_SIZE = {
   width: 640,

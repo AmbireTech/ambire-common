@@ -7,6 +7,12 @@ import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AccountId, IAccountsController } from '../../interfaces/account'
+import {
+  AccountOpAction,
+  Action,
+  ActionExecutionType,
+  ActionPosition
+} from '../../interfaces/actions'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -52,13 +58,7 @@ import {
   buildTransferUserRequest,
   prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
-import {
-  AccountOpAction,
-  Action,
-  ActionExecutionType,
-  ActionPosition,
-  ActionsController
-} from '../actions/actions'
+import { ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
