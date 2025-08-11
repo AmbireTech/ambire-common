@@ -106,7 +106,8 @@ export class AddressBookController extends EventEmitter {
       this.emitError({
         message: 'Invalid address',
         level: 'minor',
-        error: new Error('Address Book: invalid address')
+        error: new Error('Address Book: invalid address'),
+        sendCrashReport: false
       })
       return ''
     }

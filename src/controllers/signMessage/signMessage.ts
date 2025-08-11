@@ -249,7 +249,14 @@ export class SignMessageController extends EventEmitter {
       const message =
         e?.message || 'Something went wrong while signing the message. Please try again.'
 
-      return Promise.reject(new EmittableError({ level: 'major', message, error }))
+      return Promise.reject(
+        new EmittableError({
+          level: 'major',
+          message,
+          error,
+          sendCrashReport: e && 'sendCrashReport' in e ? e.sendCrashReport : undefined
+        })
+      )
     }
   }
 

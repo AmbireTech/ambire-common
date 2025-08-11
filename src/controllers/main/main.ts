@@ -4,6 +4,7 @@ import { getAddress } from 'ethers'
 
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
+import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Session } from '../../classes/session'
 import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import {
@@ -1053,7 +1054,7 @@ export class MainController extends EventEmitter {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
@@ -2031,7 +2032,7 @@ export class MainController extends EventEmitter {
   }: {
     signAccountOp: SignAccountOpController
     message?: string
-    error?: Error
+    error?: Error | EmittableError | ExternalSignerError
     accountState?: AccountOnchainState
     isRelayer?: boolean
     provider?: RPCProvider
@@ -2113,7 +2114,12 @@ export class MainController extends EventEmitter {
       this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
     }
 
-    throw new EmittableError({ level: 'major', message, error: _err || new Error(message) })
+    throw new EmittableError({
+      level: 'major',
+      message,
+      error: _err || new Error(message),
+      sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
+    })
   }
 
   get isSignRequestStillActive(): boolean {
@@ -2176,7 +2182,7 @@ export class MainController extends EventEmitter {
     // because closing it will abort the signing process
     await this.requests.actions.focusActionWindow({ reopenIfNeeded: false })
     this.emitError({
-      level: 'major',
+      level: 'expected',
       message: error.message,
       error: new Error(error.error)
     })
