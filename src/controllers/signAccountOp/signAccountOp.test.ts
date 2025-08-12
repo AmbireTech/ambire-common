@@ -16,6 +16,7 @@ import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
@@ -31,6 +32,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -369,17 +371,19 @@ const init = async (
   ])
 
   let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
@@ -404,11 +408,12 @@ const init = async (
     accountsCtrl,
     keystore,
     'https://staging-relayer.ambire.com',
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
-  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
+  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
@@ -452,7 +457,8 @@ const init = async (
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -464,6 +470,12 @@ const init = async (
     networksCtrl,
     portfolio,
     () => Promise.resolve()
+  )
+  const baseAccount = getBaseAccount(
+    account,
+    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
+    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+    network
   )
   const estimationController = new EstimationController(
     keystore,
@@ -480,11 +492,17 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => ({
-    estimation: estimationController,
-    readyToSign: true,
-    isSignRequestStillActive: () => true
-  }))
+  const gasPriceController = new GasPriceController(
+    network,
+    provider,
+    baseAccount,
+    bundlerSwitcher,
+    () => ({
+      estimation: estimationController,
+      readyToSign: true,
+      isSignRequestStillActive: () => true
+    })
+  )
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController(
     accountsCtrl,

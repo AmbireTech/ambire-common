@@ -53,17 +53,19 @@ describe('AccountsController', () => {
 
   let providersCtrl: ProvidersController
   const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   const windowManager = mockWindowManager().windowManager
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers

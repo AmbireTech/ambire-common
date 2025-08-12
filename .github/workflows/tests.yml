@@ -4,41 +4,42 @@ on:
   push:
     branches:
       - v2
+      - main
   pull_request:
     branches:
       - v2
+      - main
 jobs:
   tests:
-    name: Tests 
+    name: Tests
     runs-on: ubuntu-latest
     environment: tests
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }} 
+      group: ${{ github.workflow }}-${{ github.ref }}
     steps:
-    # - name: Add SSH key to chekout a private repo
-    #   uses: webfactory/ssh-agent@v0.5.4
-    #   with:
-    #     ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+      # - name: Add SSH key to chekout a private repo
+      #   uses: webfactory/ssh-agent@v0.5.4
+      #   with:
+      #     ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
-    - name: Checkout code 🛎️
-      uses: actions/checkout@v3
+      - name: Checkout code 🛎️
+        uses: actions/checkout@v3
 
-    - name: Install Node.js ⚙️
-      uses: actions/setup-node@v3
-      with:
-        node-version: 22.12.0
+      - name: Install Node.js ⚙️
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22.12.0
 
-    - name: Install NPM packages ♾️🕳️
-      run: npm ci
+      - name: Install NPM packages ♾️🕳️
+        run: npm ci
 
-    - name: Hardhat Tests 🧑‍🔬
-      env:
-        SEED: ${{ secrets.SEED }}
-      run: npm run hardhat
-    
-    - name: JEST Tests 🧑‍🔬
-      env:
-        SEED: ${{ secrets.SEED }}
-        REACT_APP_PIMLICO_API_KEY: ${{ secrets.REACT_APP_PIMLICO_API_KEY }}
-      run: npm run jest
+      - name: Hardhat Tests 🧑‍🔬
+        env:
+          SEED: ${{ secrets.SEED }}
+        run: npm run hardhat
 
+      - name: JEST Tests 🧑‍🔬
+        env:
+          SEED: ${{ secrets.SEED }}
+          REACT_APP_PIMLICO_API_KEY: ${{ secrets.REACT_APP_PIMLICO_API_KEY }}
+        run: npm run jest

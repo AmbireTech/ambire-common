@@ -14,6 +14,7 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -76,17 +77,19 @@ const providers = Object.fromEntries(
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
 let providersCtrl: ProvidersController
-const networksCtrl = new NetworksController(
-  storageCtrl,
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
   fetch,
   relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
+  onAddOrUpdateNetworks: (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
   },
-  (id) => {
+  onRemoveNetwork: (id) => {
     providersCtrl.removeProvider(id)
   }
-)
+})
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
@@ -106,7 +109,8 @@ const accountsCtrl = new AccountsController(
 )
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore
 })
 
 const actionsCtrl = new ActionsController({
@@ -132,7 +136,8 @@ const portfolioCtrl = new PortfolioController(
   accountsCtrl,
   keystore,
   relayerUrl,
-  velcroUrl
+  velcroUrl,
+  new BannerController(storageCtrl)
 )
 
 const activityCtrl = new ActivityController(
@@ -195,14 +200,14 @@ describe('SwapAndBridge Controller', () => {
       activity: activityCtrl,
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
-      actions: actionsCtrl,
       invite: inviteCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,
       externalSignerControllers: {},
       relayerUrl,
-      userRequests: []
+      getUserRequests: () => [],
+      getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
     })
     expect(swapAndBridgeController).toBeDefined()
   })

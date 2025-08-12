@@ -7,7 +7,6 @@ import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -130,7 +129,7 @@ export class EstimationController extends EventEmitter {
     // the portfolio would not be fetched and the estimation would be fired without tokens,
     // resulting in a "nothing to pay the fee with" error which is absolutely wrong
     if (networkFeeTokens.length === 0) {
-      await this.#portfolio.updateSelectedAccount(op.accountAddr, network, undefined, {
+      await this.#portfolio.updateSelectedAccount(op.accountAddr, [network], undefined, {
         forceUpdate: true
       })
       networkFeeTokens =
@@ -167,14 +166,6 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
-    // if broadcast but not confirmed for this network and an userOp,
-    // check if the nonces match. If they do, increment the current nonce
-    const activityUserOp = this.#activity.broadcastedButNotConfirmed.find(
-      (accOp) =>
-        accOp.chainId === network.chainId &&
-        accOp.gasFeePayment &&
-        accOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byBundler
-    )
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -188,8 +179,7 @@ export class EstimationController extends EventEmitter {
         if (!this) return
         this.estimationRetryError = e
         this.emitUpdate()
-      },
-      activityUserOp?.asUserOperation
+      }
     ).catch((e) => e)
 
     const isSuccess = !(estimation instanceof Error)

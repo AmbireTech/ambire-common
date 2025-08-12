@@ -9,9 +9,11 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -174,17 +176,19 @@ describe('Activity Controller ', () => {
   beforeAll(async () => {
     await storageCtrl.set('accounts', ACCOUNTS)
 
-    networksCtrl = new NetworksController(
-      storageCtrl,
+    networksCtrl = new NetworksController({
+      storage: storageCtrl,
       fetch,
       relayerUrl,
-      (net) => {
-        providersCtrl.setProvider(net)
+      onAddOrUpdateNetworks: (nets) => {
+        nets.forEach((n) => {
+          providersCtrl.setProvider(n)
+        })
       },
-      (id) => {
+      onRemoveNetwork: (id) => {
         providersCtrl.removeProvider(id)
       }
-    )
+    })
     providersCtrl = new ProvidersController(networksCtrl)
     const windowManager = mockWindowManager().windowManager
     const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
@@ -196,7 +200,8 @@ describe('Activity Controller ', () => {
       accountsCtrl,
       keystore,
       relayerUrl,
-      velcroUrl
+      velcroUrl,
+      new BannerController(storageCtrl)
     )
     providersCtrl.providers = providers
     accountsCtrl = new AccountsController(
@@ -210,7 +215,8 @@ describe('Activity Controller ', () => {
     )
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
-      accounts: accountsCtrl
+      accounts: accountsCtrl,
+      keystore
     })
 
     await selectedAccountCtrl.initialLoadPromise
@@ -509,6 +515,58 @@ describe('Activity Controller ', () => {
         currentPage: 0,
         maxPages: 1
       })
+    })
+    test('A banner is displayed for account ops not older than 10 minutes', async () => {
+      const { controller } = await prepareTest()
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now() - 5 * 60 * 1000 // 5 minutes ago
+      }
+
+      await controller.addAccountOp(accountOp)
+
+      expect(controller.banners[0].id).toBe(accountOp.txnId)
+    })
+    test('A banner is not displayed for account ops older than 10 minutes', async () => {
+      const { controller } = await prepareTest()
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now() - 11 * 60 * 1000 // 11 minutes ago
+      }
+
+      await controller.addAccountOp(accountOp)
+
+      expect(controller.banners.length).toBe(0)
+    })
+    test('Confirmed banners are automatically hidden when a new account op is added or updated', async () => {
+      const { controller } = await prepareTest()
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.Success,
+        timestamp: Date.now() - 5 * 60 * 1000 // 5 minutes ago
+      }
+
+      await controller.addAccountOp(accountOp)
+
+      expect(controller.banners[0].id).toBe(accountOp.txnId)
+      expect(controller.banners.length).toBe(1)
+
+      // Simulate a new account op added
+      const newAccountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        id: 'new-account-op',
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now()
+      }
+
+      await controller.addAccountOp(newAccountOp)
+
+      expect(controller.banners.length).toBe(1)
     })
 
     // test('`Unknown but past nonce` status is set correctly', async () => {

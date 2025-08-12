@@ -4,7 +4,7 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
-import { DappProviderRequest } from './dapp'
+import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
 
@@ -19,7 +19,7 @@ export interface Calls {
 }
 export interface PlainTextMessage {
   kind: 'message'
-  message: string
+  message: Hex
 }
 
 export interface TypedMessage {
@@ -60,6 +60,7 @@ export interface SignUserRequest {
     isWalletSendCalls?: boolean
     submittedAccountOp?: any
     activeRouteId?: string
+    dapp?: Dapp
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest

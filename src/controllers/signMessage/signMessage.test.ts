@@ -112,15 +112,19 @@ describe('SignMessageController', () => {
       { internal: InternalSigner },
       windowManager
     )
-    networksCtrl = new NetworksController(
-      storageCtrl,
+    networksCtrl = new NetworksController({
+      storage: storageCtrl,
       fetch,
       relayerUrl,
-      (net) => {
-        providersCtrl.setProvider(net)
+      onAddOrUpdateNetworks: (nets) => {
+        nets.forEach((n) => {
+          providersCtrl.setProvider(n)
+        })
       },
-      (id) => providersCtrl.removeProvider(id)
-    )
+      onRemoveNetwork: (id) => {
+        providersCtrl.removeProvider(id)
+      }
+    })
     providersCtrl = new ProvidersController(networksCtrl)
     providersCtrl.providers = providers
 

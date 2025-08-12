@@ -29,35 +29,36 @@ const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean 
 }
 
 /**
- * Adds defi positions to the portfolio network state.
- * It updates the total balance and adds tokens that aren't handled by the portfolio.
- * It also modifies defi tokens that are handled by the portfolio
+ * Adds the defi positions tokens that aren't handled by the portfolio.
+ * Also calculates the total balance of the defi positions so it can be added to the total balance.
  */
-export const updatePortfolioNetworkWithDefiPositions = (
+export const calculateDefiPositions = (
   chainId: string,
-  networkState?: NetworkState,
+  portfolioTokens: (TokenResult & {
+    latestAmount?: bigint
+    pendingAmount?: bigint
+  })[],
   defiPositionsAccountState?: DefiPositionsAccountState
-) => {
+): {
+  defiPositionsBalance: number
+  tokens: (TokenResult & {
+    latestAmount?: bigint
+    pendingAmount?: bigint
+  })[]
+} | null => {
   const areDefiPositionsNotInitialized =
     !defiPositionsAccountState || Object.keys(defiPositionsAccountState).length === 0
 
   const isInternalChain = chainId === 'gasTank' || chainId === 'rewards'
 
   if (isInternalChain || areDefiPositionsNotInitialized) {
-    return networkState
+    return null
   }
 
   const defiPositionsNetworkState = defiPositionsAccountState[chainId]
 
-  if (!networkState || !defiPositionsNetworkState) return null
-
-  // If there is an error we can simply return the original network state
-  if (!networkState.result) {
-    return networkState
-  }
-
-  const tokens = networkState.result.tokens || []
-  let networkBalance = networkState.result.total?.usd || 0
+  const tokens = portfolioTokens
+  let networkBalance = 0
   const positions = defiPositionsNetworkState || {}
 
   positions.positionsByProvider?.forEach((posByProv: PositionsByProvider) => {
@@ -80,84 +81,86 @@ export const updatePortfolioNetworkWithDefiPositions = (
           tokenInPortfolio.amount !== 0n &&
           tokenInPortfolio.priceIn.find((p) => p.baseCurrency === 'usd' && p.price !== 0) &&
           !tokenInPortfolio.flags.isHidden
-        ) {
+        )
           return
-        }
       }
 
-      // Used to deduct the value of tokens that are already handled by the portfolio
-      let tokenBalanceToDeduct = 0
+      let shouldAddPositionUSDAmountToTheTotalBalance = true
 
       pos.assets.filter(Boolean).forEach((a) => {
-        if (a.protocolAsset) {
-          if (a.protocolAsset?.name) {
-            const protocolTokenInPortfolio = tokens.find((t) => {
-              return (
-                t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
-                t.chainId.toString() === chainId &&
-                !t.flags.rewardsType &&
-                !t.flags.onGasTank
-              )
-            })
-            if (!protocolTokenInPortfolio) {
-              const positionAsset: TokenResult = {
-                amount: a.amount,
-                // Only list the borrowed asset with no price
-                priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
-                decimals: Number(a.protocolAsset!.decimals),
-                address: a.protocolAsset!.address,
-                symbol: a.protocolAsset!.symbol,
-                name: a.protocolAsset!.name,
-                chainId: BigInt(chainId),
-                flags: {
-                  canTopUpGasTank: false,
-                  isFeeToken: false,
-                  onGasTank: false,
-                  rewardsType: null,
-                  defiTokenType: a.type
-                  // @BUG: defi positions tokens can't be hidden and can be added as custom
-                  // because processTokens is called in the portfolio
-                  // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
-                }
-              }
-              const tokenBalanceUSD = positionAsset.priceIn[0]?.price
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(positionAsset.amount),
-                      positionAsset.decimals,
-                      positionAsset.priceIn[0].price
-                    )
-                  )
-                : undefined
+        // if this "if" is ever removed, ensure that the defiTokenType flag is set correctly
+        // for these asset types
+        if (a.type === AssetType.Liquidity || a.type === AssetType.Reward) return
 
-              networkBalance += tokenBalanceUSD || 0
-              tokens.push(positionAsset)
-            } else if (protocolTokenInPortfolio.flags.defiTokenType !== AssetType.Borrow) {
-              if (
-                !protocolTokenInPortfolio.priceIn.length ||
-                protocolTokenInPortfolio.priceIn[0]?.price === 0
-              ) {
-                const shouldKeepPrice = a.type === AssetType.Collateral
-
-                protocolTokenInPortfolio.priceIn = shouldKeepPrice ? [a.priceIn] : []
-
-                protocolTokenInPortfolio.flags.defiTokenType = a.type
-
-                if (a.type !== AssetType.Borrow) {
-                  const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
-                    ? Number(
-                        safeTokenAmountAndNumberMultiplication(
-                          BigInt(protocolTokenInPortfolio.amount),
-                          protocolTokenInPortfolio.decimals,
-                          protocolTokenInPortfolio.priceIn[0].price
-                        )
-                      )
-                    : undefined
-
-                  if (!shouldKeepPrice) networkBalance += tokenBalanceUSD || 0
-                }
+        if (a.protocolAsset && a.protocolAsset?.name) {
+          const protocolTokenInPortfolio = tokens.find((t) => {
+            return (
+              t.address.toLowerCase() === (a.protocolAsset?.address || '').toLowerCase() &&
+              t.chainId.toString() === chainId &&
+              !t.flags.rewardsType &&
+              !t.flags.onGasTank
+            )
+          })
+          if (!protocolTokenInPortfolio) {
+            const positionAsset: SelectedAccountPortfolioTokenResult = {
+              amount: a.amount,
+              latestAmount: a.amount,
+              // Only list the borrowed asset with no price
+              priceIn: a.type === AssetType.Collateral ? [a.priceIn] : [],
+              decimals: Number(a.protocolAsset!.decimals),
+              address: a.protocolAsset!.address,
+              symbol: a.protocolAsset!.symbol,
+              name: a.protocolAsset!.name,
+              chainId: BigInt(chainId),
+              flags: {
+                canTopUpGasTank: false,
+                isFeeToken: false,
+                onGasTank: false,
+                rewardsType: null,
+                defiTokenType: a.type
+                // @BUG: defi positions tokens can't be hidden and can be added as custom
+                // because processTokens is called in the portfolio
+                // Issue: https://github.com/AmbireTech/ambire-app/issues/3971
               }
             }
+            const tokenBalanceUSD = positionAsset.priceIn[0]?.price
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(positionAsset.amount),
+                    positionAsset.decimals,
+                    positionAsset.priceIn[0].price
+                  )
+                )
+              : undefined
+
+            networkBalance += tokenBalanceUSD || 0
+            tokens.push(positionAsset)
+          } else if (
+            // If the asset isn't of type Borrow and has no price in USD
+            // we get the price from defi positions
+            a.type !== AssetType.Borrow &&
+            (!protocolTokenInPortfolio.priceIn.length ||
+              protocolTokenInPortfolio.priceIn[0]?.price === 0)
+          ) {
+            // Add a price.
+            // IMPORTANT: This must be done before calculating the token balance USD
+            protocolTokenInPortfolio.priceIn = [a.priceIn]
+            protocolTokenInPortfolio.flags.defiTokenType = a.type
+
+            const tokenBalanceUSD = protocolTokenInPortfolio.priceIn[0]?.price
+              ? Number(
+                  safeTokenAmountAndNumberMultiplication(
+                    BigInt(
+                      protocolTokenInPortfolio.amountPostSimulation ||
+                        protocolTokenInPortfolio.amount
+                    ),
+                    protocolTokenInPortfolio.decimals,
+                    protocolTokenInPortfolio.priceIn[0].price
+                  )
+                )
+              : undefined
+
+            networkBalance += tokenBalanceUSD || 0
           }
         }
 
@@ -182,10 +185,17 @@ export const updatePortfolioNetworkWithDefiPositions = (
               t.chainId.toString() === chainId &&
               !t.flags.rewardsType &&
               !t.flags.onGasTank &&
-              t.address === getAddress(a.address)
+              t.address === getAddress(a.protocolAsset.address)
             )
           }
 
+          // If the token or asset don't have a value we MUST! not compare them
+          // by value as that would lead to false positives
+          if (!tokenBalanceUSD || !a.value) return false
+
+          // If there is no protocol asset we have to fallback to finding the token
+          // by symbol and chainId. In that case we must ensure that the value of the two
+          // assets is similar
           return (
             // chains should match
             t.chainId.toString() === chainId &&
@@ -196,41 +206,46 @@ export const updatePortfolioNetworkWithDefiPositions = (
             // but should be a different token symbol
             t.symbol.toLowerCase() !== a.symbol.toLowerCase() &&
             // and prices should have no more than 0.5% diff
-            (!a.value || isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value))
+            isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, a.value || 0)
           )
         })
 
         if (!tokenInPortfolio || tokenInPortfolio?.flags.isHidden) return
 
-        const usdAssetValue = a.value || 0
-
-        // Get the price from defiPositions
-        tokenInPortfolio.priceIn = a.type === AssetType.Borrow ? [] : tokenInPortfolio.priceIn
-        // Deduct the value of the token that is already handled by the portfolio
-        // from the balance of the position that will be added to the total balance
-        // We don't want to double count the value of the token
-        if (a.type !== AssetType.Borrow) tokenBalanceToDeduct += usdAssetValue || 0
+        // Note: There is an edge case where only one of the assets is handled
+        // by the portfolio, but we flip the flag, which means that we won't
+        // add the value of the position to the total balance. This will make the
+        // displayed balance (REAL BALANCE - the value of the missing asset).
+        if (a.type === AssetType.Collateral) shouldAddPositionUSDAmountToTheTotalBalance = false
+        // Remove the price of borrow tokens and ensure that the token is marked as Borrow
+        else if (a.type === AssetType.Borrow) {
+          tokenInPortfolio.priceIn = []
+          tokenInPortfolio.flags.defiTokenType = AssetType.Borrow
+        }
       })
 
-      if (pos.additionalData.collateralInUSD) {
-        networkBalance += pos.additionalData.collateralInUSD || 0
-      } else {
+      // We differ from wallets like Rabby in the way we add the value of
+      // positions to the total balance - we don't deduct the value of borrowed
+      // assets. Instead we use the collateral of positions or the position value in USD if
+      // the collateral is not available.
+      // Knowing that, it's confusing why we add the value of the position here. That is because
+      // we add the collateral value by adding the tokens to the portfolio and flipping this flag
+      // to false. If the portfolio doesn't have the token and we don't know the protocol asset
+      // there is no way to add the value of the collateral tokens to the total balance.
+      // In that case we add the value of the position to the total balance in order to not confuse the user.
+      if (shouldAddPositionUSDAmountToTheTotalBalance) {
         networkBalance += pos.additionalData.positionInUSD || 0
       }
-
-      networkBalance -= tokenBalanceToDeduct
     })
   })
 
-  // eslint-disable-next-line no-param-reassign
-  networkState!.result!.total.usd = networkBalance
-  // eslint-disable-next-line no-param-reassign
-  networkState!.result!.tokens = tokens
-
-  return networkState
+  return {
+    tokens,
+    defiPositionsBalance: networkBalance
+  }
 }
 
-const stripPortfolioState = (portfolioState: AccountState) => {
+export const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
   Object.keys(portfolioState).forEach((chainId) => {
@@ -256,62 +271,84 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
-const calculateTokenArray = (
+/**
+ * Adds the latest and pending amount to the tokens array.
+ * Also returns a flag indicating whether there is a token with an amount > 0
+ */
+export const calculateTokensArray = (
   chainId: string,
   latestTokens: TokenResult[],
   pendingTokens: TokenResult[],
   isPendingValid: boolean
-) => {
+): {
+  tokens: SelectedAccountPortfolioTokenResult[]
+  hasTokenWithAmount: boolean
+} => {
+  let hasTokenWithAmount = false
+
   if (chainId === 'gasTank' || chainId === 'rewards') {
-    return latestTokens
+    return {
+      tokens: latestTokens,
+      hasTokenWithAmount: false
+    }
   }
   // If the pending state is older or there are no pending tokens
   // we shouldn't trust it to build the tokens array
   if (isPendingValid && pendingTokens.length) {
-    return pendingTokens.map((pendingToken) => {
+    const tokenList = pendingTokens.map((pendingToken) => {
       let latestAmount: bigint | undefined
 
       const latestToken = latestTokens.find((latest) => {
         return latest.address === pendingToken.address
       })
 
-      if (latestToken) {
-        latestAmount = latestToken.amount
-      } else if (pendingToken.flags.defiTokenType) {
-        // Defi positions tokens that aren't handled by the portfolio are added to only
-        // one of the portfolio states. In this case the token is only added to the pending state
-        // and has no latest amount, thus both amounts are the same
-        latestAmount = pendingToken.amount
-      }
+      if (!hasTokenWithAmount && !!(latestAmount || pendingToken.amount)) hasTokenWithAmount = true
 
       return {
         ...pendingToken,
-        latestAmount,
+        latestAmount: latestToken?.amount,
         pendingAmount: pendingToken.amount
       }
     })
+
+    return {
+      tokens: tokenList,
+      hasTokenWithAmount
+    }
   }
 
-  // Add only latestAmount to the tokens
-  return latestTokens.map((token) => {
+  const tokenList = latestTokens.map((token) => {
+    if (!hasTokenWithAmount && !!token.amount) hasTokenWithAmount = true
+
     return {
       ...token,
+      // Add only latestAmount to the tokens
       latestAmount: token.amount
     }
   })
+
+  return {
+    tokens: tokenList,
+    hasTokenWithAmount
+  }
 }
 
 /**
  * calculateSelectedAccountPortfolio is called after every portfolio update and we don't want to recalculate
  * the same network data if it hasn't changed.
  */
-const getIsRecalculationNeeded = (
+export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
-  networkData: NetworkState | undefined,
+  latestNetworkData: NetworkState | undefined,
+  pendingNetworkData: NetworkState | undefined,
+  // Can be pending or selected
+  selectedNetworkData: NetworkState | undefined,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
 ): boolean => {
   if (
-    !networkData ||
+    !latestNetworkData ||
+    !pendingNetworkData ||
+    !selectedNetworkData ||
     !pastAccountPortfolioWithDefiPositionsNetworkState ||
     !defiPositionsNetworkState
   ) {
@@ -320,12 +357,16 @@ const getIsRecalculationNeeded = (
 
   // Never recalculate if either the portfolio or defi positions are loading
   // as that would reset isAllReady to false
-  if (networkData?.isLoading || defiPositionsNetworkState.isLoading) {
+  if (
+    latestNetworkData?.isLoading ||
+    pendingNetworkData.isLoading ||
+    defiPositionsNetworkState.isLoading
+  ) {
     return false
   }
 
   const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
-  const networkDataAccountOp = networkData?.accountOps?.[0]
+  const networkDataAccountOp = selectedNetworkData?.accountOps?.[0]
 
   // If there is or was an account op we must recalculate the portfolio
   // on every update to ensure that the simulations are correct
@@ -333,7 +374,7 @@ const getIsRecalculationNeeded = (
 
   const hasPortfolioUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
-    networkData.result?.blockNumber
+    selectedNetworkData.result?.blockNumber
 
   const areDefiPositionsUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
@@ -356,7 +397,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
@@ -370,11 +410,10 @@ export function calculateSelectedAccountPortfolioByNetworks(
     pastAccountPortfolioWithDefiPositions
 
   const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
+  const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
   let isAllReady = !!hasLatest
   let isReadyToVisualize = false
-  const tokens: SelectedAccountPortfolioTokenResult[] = []
-
-  const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
+  let hasTokensWithAmount = false
 
   if (!hasLatest && !hasPending) {
     return {
@@ -403,7 +442,10 @@ export function calculateSelectedAccountPortfolioByNetworks(
       const isPendingNewer =
         pendingNetworkData.result.blockNumber! >= latestNetworkData.result.blockNumber!
 
-      if (!pendingNetworkData.criticalError && (isPendingNewer || hasSignAccountOp)) {
+      if (
+        !pendingNetworkData.criticalError &&
+        (isPendingNewer || !!pendingNetworkData.accountOps?.length)
+      ) {
         validSelectedAccountPendingState[network] = pendingNetworkData
       }
     }
@@ -432,58 +474,65 @@ export function calculateSelectedAccountPortfolioByNetworks(
 
     const shouldRecalculateState = getIsRecalculationNeeded(
       pastAccountPortfolioWithDefiPositionsNetworkState,
+      latestStateSelectedAccount[network],
+      pendingStateSelectedAccount[network],
       networkData,
       defiPositionsNetworkState
     )
 
     if (!shouldRecalculateState) {
-      tokens.push(...(pastAccountPortfolioWithDefiPositionsNetworkState?.tokens || []))
-
       newAccountPortfolioWithDefiPositions[network] =
         pastAccountPortfolioWithDefiPositionsNetworkState
+
+      if (!hasTokensWithAmount) {
+        hasTokensWithAmount = pastAccountPortfolioWithDefiPositionsNetworkState.tokens.some(
+          ({ amount }) => amount > 0n
+        )
+      }
 
       return
     }
 
-    const networkDataWithDefiPositions = updatePortfolioNetworkWithDefiPositions(
-      network,
-      networkData,
-      defiPositionsAccountState
-    )
-
-    const result = networkDataWithDefiPositions?.result
+    const result = networkData?.result
     let tokensArray: SelectedAccountPortfolioTokenResult[] = []
     let collectionsArray: CollectionResult[] = []
     let networkTotal = 0
 
-    if (networkDataWithDefiPositions && result && isNetworkReady(networkDataWithDefiPositions)) {
-      networkTotal = Number(result?.total?.usd) || 0
+    if (
+      networkData &&
+      // The network must be ready
+      isNetworkReady(networkData) &&
+      !networkData?.isLoading &&
+      !defiPositionsNetworkState?.isLoading
+    ) {
+      networkTotal = networkData?.result?.total?.usd || 0
 
       const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
       const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
       collectionsArray = result?.collections || []
 
-      tokensArray = calculateTokenArray(
+      const { tokens, hasTokenWithAmount: hasTokensWithAmountOnNetwork } = calculateTokensArray(
         network,
         latestTokens,
         pendingTokens,
         !!validSelectedAccountPendingState[network]
       )
-      tokens.push(...tokensArray)
-    }
+      tokensArray = tokens
 
-    if (
-      !networkDataWithDefiPositions ||
-      // The network is not ready
-      !isNetworkReady(networkDataWithDefiPositions) ||
-      // The networks is ready but the previous state isn't satisfactory and the network is still loading
-      (isLoadingFromScratch &&
-        (networkDataWithDefiPositions?.isLoading ||
-          // The total balance and token list are affected by the defi positions
-          defiPositionsAccountState[network]?.isLoading))
-    ) {
-      isAllReady = false
-    } else {
+      if (!hasTokensWithAmount && hasTokensWithAmountOnNetwork) {
+        hasTokensWithAmount = true
+      }
+
+      const defiPositions = calculateDefiPositions(network, tokensArray, defiPositionsAccountState)
+
+      // Replace the token list with the token list that has the defi tokens
+      if (defiPositions?.tokens.length) {
+        tokensArray = defiPositions?.tokens
+      }
+
+      // Add the defi positions balance to the total balance
+      networkTotal += defiPositions?.defiPositionsBalance || 0
+
       // Update the cached network state when the network is completely loaded
       newAccountPortfolioWithDefiPositions[network] = {
         totalBalance: networkTotal,
@@ -493,12 +542,12 @@ export function calculateSelectedAccountPortfolioByNetworks(
         defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
         simulatedAccountOp: simulatedAccountOps[network]
       }
+    } else if (isLoadingFromScratch) {
+      isAllReady = false
     }
   })
 
-  const tokensWithAmount = tokens.filter((token) => token.amount)
-
-  if ((shouldShowPartialResult && tokensWithAmount.length && !isAllReady) || isAllReady) {
+  if ((shouldShowPartialResult && hasTokensWithAmount && !isAllReady) || isAllReady) {
     // Allow the user to operate with the tokens that have loaded
     isReadyToVisualize = true
   }
@@ -521,7 +570,6 @@ export function calculateSelectedAccountPortfolio(
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
   portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
-  hasSignAccountOp: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolio: SelectedAccountPortfolio
@@ -534,7 +582,6 @@ export function calculateSelectedAccountPortfolio(
       pastAccountPortfolioWithDefiPositions,
       portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
-      hasSignAccountOp,
       isLoadingFromScratch
     )
 
@@ -542,6 +589,7 @@ export function calculateSelectedAccountPortfolio(
     tokens: [],
     collections: [],
     totalBalance: 0,
+    balancePerNetwork: {},
     isReadyToVisualize,
     isAllReady,
     networkSimulatedAccountOp: {},
@@ -559,6 +607,7 @@ export function calculateSelectedAccountPortfolio(
     selectedAccountPortfolio.tokens.push(...networkData.tokens)
     selectedAccountPortfolio.collections.push(...networkData.collections)
     selectedAccountPortfolio.totalBalance += networkData.totalBalance || 0
+    selectedAccountPortfolio.balancePerNetwork[chainId] = networkData.totalBalance || 0
   })
 
   return {
