@@ -87,10 +87,7 @@ export default class EventEmitter {
   }
 
   protected emitError(error: ErrorRef) {
-    this.#errors.push({
-      ...error,
-      sendCrashReport: error.sendCrashReport ?? error.level !== 'expected'
-    })
+    this.#errors.push(error)
     this.#trimErrorsIfNeeded()
     console.log(
       `[Еmitted error in controller ${this.constructor.name}] ${error.message}`,

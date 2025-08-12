@@ -1,4 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
+import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account } from '../../interfaces/account'
 import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
@@ -192,9 +193,12 @@ export class SignMessageController extends EventEmitter {
           signature = this.#signer.sign7702(this.messageToSign.content.message)
         }
       } catch (error: any) {
-        throw new Error(
+        throw new ExternalSignerError(
           error?.message ||
-            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.',
+          {
+            sendCrashReport: error?.sendCrashReport
+          }
         )
       }
 
@@ -254,7 +258,7 @@ export class SignMessageController extends EventEmitter {
           level: 'major',
           message,
           error,
-          sendCrashReport: e && 'sendCrashReport' in e ? e.sendCrashReport : undefined
+          sendCrashReport: e?.sendCrashReport
         })
       )
     }
