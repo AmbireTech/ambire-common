@@ -296,7 +296,7 @@ export class KeystoreController extends EventEmitter {
     if (this.#keystoreSecrets.find((x) => x.id === secretId))
       throw new EmittableError({
         message: KEYSTORE_UNEXPECTED_ERROR_MESSAGE,
-        level: 'expected',
+        level: 'major',
         error: new Error(`keystore: trying to add duplicate secret ${secretId}`)
       })
 
