@@ -10,7 +10,7 @@ export type ErrorRef = {
   message: string
   /**
    * Logged in the console - all
-   * Displayed as a banner - display, major
+   * Displayed as a banner - expected, major
    * Reported to the error tracking service by default - all, except `expected`
    */
   level: 'expected' | 'minor' | 'silent' | 'major'
