@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -315,6 +315,9 @@ export class LiFiAPI {
         })
       ])
     } catch (e: any) {
+      // Rethrow the same error if it's already humanized
+      if (e instanceof SwapAndBridgeProviderApiError) throw e
+
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
       const error = `${errorPrefix} Upstream error: <${message}>${status}`
@@ -472,7 +475,33 @@ export class LiFiAPI {
         allowDestinationCall: 'false',
         allowSwitchChain: 'false',
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        fee: (FEE_PERCENT / 100).toString() as string | undefined
+        fee: (FEE_PERCENT / 100).toString() as string | undefined,
+        // How this works:
+        // A minimum of X ms is waited for the expected results to be returned.
+        // If the expected results are not returned, the waiting time is reduced by Y ms.
+        // This is done to ensure that the user gets a result as soon as possible.
+        // Note: this logic is only applied to the third party provider requests that lifi
+        // does and does not correspond to the total waiting time for the user.
+        timing: {
+          // Applied in swaps
+          swapStepTimingStrategies: [
+            {
+              strategy: 'minWaitTime',
+              minWaitTimeMs: 600,
+              startingExpectedResults: 2,
+              reduceEveryMs: 300
+            }
+          ],
+          // Applied in bridges
+          routeTimingStrategies: [
+            {
+              strategy: 'minWaitTime',
+              minWaitTimeMs: 1000,
+              startingExpectedResults: 3,
+              reduceEveryMs: 500
+            }
+          ]
+        }
       }
     }
 
@@ -525,7 +554,10 @@ export class LiFiAPI {
     const body = JSON.stringify((route?.rawRoute as LiFiRoute).steps[0])
 
     const response = await this.#handleResponse<LiFiStep>({
-      fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {
+      // skipSimulation reduces the time it takes for the request to complete.
+      // By default LiFi does additional calculations/calls to make the gasLimit more accurate
+      // This is fine for use, because we don't use it anyway
+      fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction?skipSimulation=true`, {
         method: 'POST',
         headers: this.#headers,
         body
