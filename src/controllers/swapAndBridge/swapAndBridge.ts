@@ -1366,7 +1366,7 @@ export class SwapAndBridgeController extends EventEmitter {
           isOG: this.#invite.isOG
         })
 
-        if (quoteId !== this.#updateQuoteId) return
+        if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
         // no updates if the user has commited
         if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
           return
@@ -1539,6 +1539,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
         return true
       } catch (error: any) {
+        if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
+
         const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
 
