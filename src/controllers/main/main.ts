@@ -33,6 +33,7 @@ import {
   Key,
   KeystoreSignerType
 } from '../../interfaces/keystore'
+import { IMainController } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { NotificationManager } from '../../interfaces/notification'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -125,7 +126,7 @@ type CustomStatuses = {
   signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
 }
 
-export class MainController extends EventEmitter {
+export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
   fetch: Fetch
