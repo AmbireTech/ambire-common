@@ -352,7 +352,7 @@ export class NetworksController extends EventEmitter {
     if (chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
-        level: 'major',
+        level: 'expected',
         error: new Error('settings: addNetwork chain already added (duplicate id/chainId)')
       })
     }
