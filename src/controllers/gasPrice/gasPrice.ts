@@ -2,6 +2,7 @@
 import { BUNDLER } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { BaseAccount } from '../../libs/account/BaseAccount'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -16,6 +17,8 @@ export class GasPriceController extends EventEmitter {
   #network: Network
 
   #provider: RPCProvider
+
+  #baseAccount: BaseAccount
 
   #bundlerSwitcher: BundlerSwitcher
 
@@ -38,6 +41,7 @@ export class GasPriceController extends EventEmitter {
   constructor(
     network: Network,
     provider: RPCProvider,
+    baseAccount: BaseAccount,
     bundlerSwitcher: BundlerSwitcher,
     getSignAccountOpState: () => {
       estimation: EstimationController
@@ -48,6 +52,7 @@ export class GasPriceController extends EventEmitter {
     super()
     this.#network = network
     this.#provider = provider
+    this.#baseAccount = baseAccount
     this.#bundlerSwitcher = bundlerSwitcher
     this.#getSignAccountOpState = getSignAccountOpState
   }
@@ -96,9 +101,13 @@ export class GasPriceController extends EventEmitter {
         })
         return null
       }),
-      // try to fetch the gas price from the bundler but if it's too slow,
-      // stop it and use the values from getGasPriceRecommendations
-      this.#network.erc4337.hasBundlerSupport !== false
+      // if the account cannot broadcast on the given network using the 4337 model,
+      // we ask for gas prices from the bundler as bundler gas prices tend to be
+      // generally better than our own
+      //
+      // If it can broadcast using 4337, then bundler gas prices will be pulled and
+      // updated in signAccountOp during bundlerEstimate() in estimateBundler.ts
+      !this.#baseAccount.supportsBundlerEstimation()
         ? Promise.race([
             bundler.fetchGasPrices(this.#network, () => {}),
             new Promise((_resolve, reject) => {

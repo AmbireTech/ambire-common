@@ -585,9 +585,11 @@ export class SwapAndBridgeController extends EventEmitter {
       preselectedFromToken?: Pick<TokenResult, 'address' | 'chainId'>
       preselectedToToken?: Pick<TokenResult, 'address' | 'chainId'>
       fromAmount?: string
+      activeRouteIdToDelete?: SwapAndBridgeSendTxRequest['activeRouteId']
     }
   ) {
-    const { preselectedFromToken, preselectedToToken, fromAmount } = params || {}
+    const { preselectedFromToken, preselectedToToken, fromAmount, activeRouteIdToDelete } =
+      params || {}
     await this.#initialLoadPromise
 
     if (this.sessionIds.includes(sessionId)) return
@@ -629,6 +631,11 @@ export class SwapAndBridgeController extends EventEmitter {
     // Do not await on purpose as it's not critical for the controller state to be ready
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()
+
+    if (activeRouteIdToDelete) {
+      this.removeActiveRoute(activeRouteIdToDelete, false)
+    }
+
     this.#emitUpdateIfNeeded()
   }
 
@@ -940,7 +947,8 @@ export class SwapAndBridgeController extends EventEmitter {
           fromAmount
         },
         {
-          emitUpdate: false
+          emitUpdate: false,
+          shouldIncrementFromAmountUpdateCounter: true
         }
       )
       return
@@ -1358,7 +1366,7 @@ export class SwapAndBridgeController extends EventEmitter {
           isOG: this.#invite.isOG
         })
 
-        if (quoteId !== this.#updateQuoteId) return
+        if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
         // no updates if the user has commited
         if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
           return
@@ -1531,6 +1539,8 @@ export class SwapAndBridgeController extends EventEmitter {
 
         return true
       } catch (error: any) {
+        if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
+
         const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
 
@@ -1827,11 +1837,14 @@ export class SwapAndBridgeController extends EventEmitter {
     }
   }
 
-  removeActiveRoute(activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']) {
+  removeActiveRoute(
+    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId'],
+    shouldEmitUpdate: boolean = true
+  ) {
     this.activeRoutes = this.activeRoutes.filter((r) => r.activeRouteId !== activeRouteId)
 
     // Purposely not using `this.#emitUpdateIfNeeded()` here, as this should always emit to update banners
-    this.emitUpdate()
+    if (shouldEmitUpdate) this.emitUpdate()
   }
 
   /**
