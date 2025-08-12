@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events'
 
+import { ControllerInterface } from './controller'
+
 export type WindowId = number
 
 export type WindowProps = {
@@ -39,4 +41,12 @@ export interface WindowManager {
     }
   ) => void
   sendWindowUiMessage: (params: {}) => void
+  /**
+   * On web it should return the number of opened UI instances including popup, windows and tabs
+   */
+  getNumberOfOpenedWindows: () => number
 }
+
+export type IWindowManagerController = ControllerInterface<
+  InstanceType<typeof import('../controllers/windowManager/windowManager').WindowManagerController>
+>

@@ -49,7 +49,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interf
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { WindowManager } from '../../interfaces/window'
+import { IWindowManagerController, WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -84,6 +84,7 @@ import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { BannerController } from '../banner/banner'
+import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
@@ -111,6 +112,7 @@ import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
+import { WindowManagerController } from '../windowManager/windowManager'
 
 const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
@@ -210,9 +212,11 @@ export class MainController extends EventEmitter implements IMainController {
 
   onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
 
-  #windowManager: WindowManager
+  windowManager: IWindowManagerController
 
-  #notificationManager: NotificationManager
+  notificationManager: NotificationManager
+
+  #continuousUpdates: ContinuousUpdatesController
 
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
@@ -253,8 +257,8 @@ export class MainController extends EventEmitter implements IMainController {
     super()
     this.#storageAPI = storageAPI
     this.fetch = fetch
-    this.#windowManager = windowManager
-    this.#notificationManager = notificationManager
+    this.windowManager = new WindowManagerController({ windowManager })
+    this.notificationManager = notificationManager
 
     this.storage = new StorageController(this.#storageAPI)
     this.featureFlags = new FeatureFlagsController(featureFlags)
@@ -362,7 +366,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.phishing = new PhishingController({
       fetch: this.fetch,
       storage: this.storage,
-      windowManager: this.#windowManager
+      windowManager: this.windowManager
     })
     // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
     const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
@@ -472,8 +476,8 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
-      windowManager: this.#windowManager,
-      notificationManager: this.#notificationManager,
+      windowManager: this.windowManager,
+      notificationManager: this.notificationManager,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
       updateSignAccountOp: (props) => {
@@ -486,6 +490,14 @@ export class MainController extends EventEmitter implements IMainController {
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
       guardHWSigning: this.#guardHWSigning.bind(this)
+    })
+
+    this.#continuousUpdates = new ContinuousUpdatesController({
+      main: new Proxy(this, {
+        set: () => {
+          throw new Error('Read-only')
+        }
+      })
     })
 
     this.#initialLoadPromise = this.#load()
@@ -1043,7 +1055,7 @@ export class MainController extends EventEmitter implements IMainController {
       signedMessage.fromActionId
     )
 
-    await this.#notificationManager.create({
+    await this.notificationManager.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
@@ -1337,7 +1349,6 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  // TODO: Refactor this to accept an optional object with options
   async updateSelectedAccountPortfolio(opts?: {
     forceUpdate?: boolean
     networks?: Network[]
@@ -2025,7 +2036,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.transfer.resetForm()
     }
 
-    await this.#notificationManager.create({
+    await this.notificationManager.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
         submittedAccountOp.calls.length === accountOp.calls.length

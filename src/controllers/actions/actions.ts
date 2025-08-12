@@ -1,6 +1,11 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
-import { Action } from '../../interfaces/actions'
+import {
+  Action,
+  ActionExecutionType,
+  ActionPosition,
+  OpenActionWindowParams
+} from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { FocusWindowParams, WindowManager, WindowProps } from '../../interfaces/window'
