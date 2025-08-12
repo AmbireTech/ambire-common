@@ -39,7 +39,11 @@ export class EOA7702 extends BaseAccount {
   getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
     // the critical error should be from the provider if we can broadcast in EOA only mode
     if (!this.accountState.isSmarterEoa && op.calls.length === 1) {
-      return estimation.provider instanceof Error ? estimation.provider : null
+      if (estimation.provider instanceof Error) {
+        return estimation.ambire instanceof Error ? estimation.ambire : estimation.provider
+      }
+
+      return null
     }
 
     if (estimation.ambire instanceof Error) return estimation.ambire

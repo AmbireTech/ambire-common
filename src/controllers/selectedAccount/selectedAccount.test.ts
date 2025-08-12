@@ -188,6 +188,10 @@ describe('SelectedAccount Controller', () => {
 
   describe('Banners', () => {
     const accountAddr = accounts[0].addr
+    beforeEach(() => {
+      jest.clearAllMocks()
+      jest.restoreAllMocks()
+    })
 
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
@@ -211,16 +215,21 @@ describe('SelectedAccount Controller', () => {
       ).toBeDefined()
       providersCtrl.updateProviderIsWorking(1n, true)
     })
-    it("No RPC banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
+    it("No RPC/portfolio banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       jest
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
         .mockImplementation(() => ({ '137': true, '1': false }))
+      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
+      ).toBeUndefined()
+      expect(
+        selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'portfolio-critical')
       ).toBeUndefined()
       providersCtrl.updateProviderIsWorking(1n, true)
     })
@@ -331,7 +340,7 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
     })
-    it.skip("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
+    it("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
       selectedAccountCtrl.defiPositions = []
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.
