@@ -112,7 +112,7 @@ import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
-import { WindowManagerController } from '../windowManager/windowManager'
+import { WindowManagerController } from '../ui/windowManager'
 
 const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',

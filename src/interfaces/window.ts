@@ -1,7 +1,5 @@
 import { EventEmitter } from 'events'
 
-import { ControllerInterface } from './controller'
-
 export type WindowId = number
 
 export type WindowProps = {
@@ -46,7 +44,3 @@ export interface WindowManager {
    */
   getNumberOfOpenedWindows: () => number
 }
-
-export type IWindowManagerController = ControllerInterface<
-  InstanceType<typeof import('../controllers/windowManager/windowManager').WindowManagerController>
->
