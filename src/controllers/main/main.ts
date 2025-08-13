@@ -49,7 +49,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interf
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { IWindowManagerController, WindowManager } from '../../interfaces/window'
+import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -112,7 +112,7 @@ import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
-import { WindowManagerController } from '../ui/windowManager'
+import { UiController } from '../ui/ui'
 
 const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
@@ -212,7 +212,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
 
-  windowManager: IWindowManagerController
+  ui: UiController
 
   notificationManager: NotificationManager
 
@@ -257,7 +257,7 @@ export class MainController extends EventEmitter implements IMainController {
     super()
     this.#storageAPI = storageAPI
     this.fetch = fetch
-    this.windowManager = new WindowManagerController({ windowManager })
+    this.ui = new UiController({ windowManager })
     this.notificationManager = notificationManager
 
     this.storage = new StorageController(this.#storageAPI)
