@@ -1,6 +1,7 @@
 import { ISignMessageController } from 'interfaces/signMessage'
 
 import EmittableError from '../../classes/EmittableError'
+import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
@@ -197,9 +198,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           signature = this.#signer.sign7702(this.messageToSign.content.message)
         }
       } catch (error: any) {
-        throw new Error(
+        throw new ExternalSignerError(
           error?.message ||
-            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.',
+          {
+            sendCrashReport: error?.sendCrashReport
+          }
         )
       }
 
@@ -254,7 +258,14 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       const message =
         e?.message || 'Something went wrong while signing the message. Please try again.'
 
-      return Promise.reject(new EmittableError({ level: 'major', message, error }))
+      return Promise.reject(
+        new EmittableError({
+          level: 'major',
+          message,
+          error,
+          sendCrashReport: e?.sendCrashReport
+        })
+      )
     }
   }
 

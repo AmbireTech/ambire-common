@@ -512,7 +512,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       const formattedBanner: Banner = {
         // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
-        type: banner.type,
+        type: banner.type || 'updates',
         params: {
           startTime: banner.startTime,
           endTime: banner.endTime

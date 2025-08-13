@@ -361,6 +361,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       this.emitError({
         message: 'Email key not confirmed',
         level: 'minor',
+        sendCrashReport: false,
         error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
       })
 
@@ -397,7 +398,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     if (!state.email[email].availableSecrets[uid]) {
       this.emitError({
         message: `Resetting the password on this device is not enabled for ${email}.`,
-        level: 'major',
+        level: 'expected',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
       return
@@ -405,7 +406,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
         message: `Resetting the password on this device is not enabled for ${email}.`,
-        level: 'major',
+        level: 'expected',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
       return
@@ -417,7 +418,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     const emitExpiredMagicLinkError = () => {
       this.emitError({
         message: `The time allotted for changing your password has expired for ${email}. Please verify your email again!`,
-        level: 'major',
+        level: 'expected',
         error: new Error(`Keystore recovery: magic link expired for ${email}`)
       })
 

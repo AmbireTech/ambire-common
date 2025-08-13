@@ -39,7 +39,10 @@ describe('Networks lib', () => {
   })
   describe('getNetworksUpdatedWithRelayerNetworks works', () => {
     it('Only predefined networks are stored and so all new relayer networks should be added', () => {
-      const result = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
+      const { mergedNetworks: result } = getNetworksUpdatedWithRelayerNetworks(
+        networksObj,
+        MOCK_RELAYER_NETWORKS
+      )
 
       expect(result).toHaveProperty('2')
       expect(result['2'].chainId).toBe(2n)
@@ -53,7 +56,10 @@ describe('Networks lib', () => {
     })
     describe('disabledByDefault works as expected', () => {
       it('If the network is not stored, it should be added as disabled', () => {
-        const result = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
+        const { mergedNetworks: result } = getNetworksUpdatedWithRelayerNetworks(
+          networksObj,
+          MOCK_RELAYER_NETWORKS
+        )
 
         expect(result).toHaveProperty('2')
         expect(result['2'].disabled).toBe(true)
@@ -61,7 +67,10 @@ describe('Networks lib', () => {
       it('If the network is stored and enabled, it should remain enabled', () => {
         const relayerNetworksClone = structuredClone(MOCK_RELAYER_NETWORKS)
         relayerNetworksClone['1'].disabledByDefault = true
-        const result = getNetworksUpdatedWithRelayerNetworks(networksObj, relayerNetworksClone)
+        const { mergedNetworks: result } = getNetworksUpdatedWithRelayerNetworks(
+          networksObj,
+          relayerNetworksClone
+        )
 
         expect(result).toHaveProperty('1')
         expect(result['1'].disabled).toBeFalsy()
@@ -69,7 +78,10 @@ describe('Networks lib', () => {
       })
     })
     it('The stored network should be updated if predefinedConfigVersion is higher in the relayer network', () => {
-      const result1 = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
+      const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+        networksObj,
+        MOCK_RELAYER_NETWORKS
+      )
 
       expect(result1).toHaveProperty('1')
       expect(result1['1'].predefinedConfigVersion).toBe(3)
@@ -79,7 +91,10 @@ describe('Networks lib', () => {
       relayerNetworksClone['1'].predefinedConfigVersion = 4
       relayerNetworksClone['1'].smartAccounts!.erc4337.defaultBundler = 'gelato'
 
-      const result2 = getNetworksUpdatedWithRelayerNetworks(result1, relayerNetworksClone)
+      const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+        result1,
+        relayerNetworksClone
+      )
 
       expect(result2).toHaveProperty('1')
       expect(result2['1'].predefinedConfigVersion).toBe(4)
@@ -87,7 +102,10 @@ describe('Networks lib', () => {
       expect(result2['1'].disabled).toBeFalsy()
     })
     it('Even if predefinedConfigVersion is the same or lower, some properties of the stored network should be updated', () => {
-      const result1 = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
+      const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+        networksObj,
+        MOCK_RELAYER_NETWORKS
+      )
 
       expect(result1).toHaveProperty('1')
       expect(result1['1'].rpcUrls).toEqual(networksObj['1'].rpcUrls)
@@ -101,7 +119,10 @@ describe('Networks lib', () => {
       // This property shouldn't be updated as predefinedConfigVersion is the same
       relayerNetworksClone['1'].feeOptions.is1559 = false
 
-      const result2 = getNetworksUpdatedWithRelayerNetworks(result1, relayerNetworksClone)
+      const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+        result1,
+        relayerNetworksClone
+      )
 
       expect(result2).toHaveProperty('1')
       // Rpc urls are added to the existing ones
@@ -116,7 +137,10 @@ describe('Networks lib', () => {
       expect(result2['1'].feeOptions.is1559).toBe(true)
     })
     it("Unnecessary properties from the relayer network shouldn't be stored", () => {
-      const result = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
+      const { mergedNetworks: result } = getNetworksUpdatedWithRelayerNetworks(
+        networksObj,
+        MOCK_RELAYER_NETWORKS
+      )
       const ethereum = result['1']
 
       expect(ethereum).not.toHaveProperty('disabledByDefault')
@@ -132,7 +156,10 @@ describe('Networks lib', () => {
       relayerNetworksClone['2'].disabledByDefault = false
       relayerNetworksClone['2'].smartAccounts!.hasRelayer = true
 
-      const result1 = getNetworksUpdatedWithRelayerNetworks(networksObj, relayerNetworksClone)
+      const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+        networksObj,
+        relayerNetworksClone
+      )
 
       expect(result1).toHaveProperty('2')
       expect(result1['2'].predefined).toBe(true)
@@ -140,14 +167,20 @@ describe('Networks lib', () => {
 
       delete relayerNetworksClone['2']
 
-      const result2 = getNetworksUpdatedWithRelayerNetworks(result1, relayerNetworksClone)
+      const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+        result1,
+        relayerNetworksClone
+      )
 
       expect(result2).toHaveProperty('2')
       expect(result2['2'].predefined).toBe(false)
       expect(result2['2'].hasRelayer).toBe(false)
     })
     it('Disabled networks remain disabled despite updates from the relayer', () => {
-      const result1 = getNetworksUpdatedWithRelayerNetworks(networksObj, MOCK_RELAYER_NETWORKS)
+      const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
+        networksObj,
+        MOCK_RELAYER_NETWORKS
+      )
 
       expect(result1).toHaveProperty('2')
       expect(result1['2'].disabled).toBe(true)
@@ -157,14 +190,17 @@ describe('Networks lib', () => {
       relayerNetworksClone['2'].predefinedConfigVersion = 2
       relayerNetworksClone['2'].disabledByDefault = false
 
-      const result2 = getNetworksUpdatedWithRelayerNetworks(result1, relayerNetworksClone)
+      const { mergedNetworks: result2 } = getNetworksUpdatedWithRelayerNetworks(
+        result1,
+        relayerNetworksClone
+      )
 
       expect(result2).toHaveProperty('2')
       expect(result2['2'].disabled).toBe(true)
       expect(result2['2'].predefinedConfigVersion).toBe(2)
     })
     it('An empty relayer networks object should not change the stored networks', () => {
-      const result1 = getNetworksUpdatedWithRelayerNetworks(networksObj, {})
+      const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(networksObj, {})
 
       expect(result1).toEqual(networksObj)
     })
@@ -178,7 +214,7 @@ describe('Networks lib', () => {
         predefined: false
       }
 
-      const result1 = getNetworksUpdatedWithRelayerNetworks(
+      const { mergedNetworks: result1 } = getNetworksUpdatedWithRelayerNetworks(
         { ...networksObj, '999': customNetwork },
         MOCK_RELAYER_NETWORKS
       )
