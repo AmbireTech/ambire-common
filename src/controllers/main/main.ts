@@ -36,7 +36,6 @@ import {
 } from '../../interfaces/keystore'
 import { IMainController } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
-import { NotificationManager } from '../../interfaces/notification'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -49,8 +48,8 @@ import { IStorageController, Storage } from '../../interfaces/storage'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
+import { IUiController, UiManager } from '../../interfaces/ui'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -213,9 +212,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
 
-  ui: UiController
-
-  notificationManager: NotificationManager
+  ui: IUiController
 
   #continuousUpdates: ContinuousUpdatesController
 
@@ -240,8 +237,7 @@ export class MainController extends EventEmitter implements IMainController {
     swapApiKey,
     keystoreSigners,
     externalSignerControllers,
-    windowManager,
-    notificationManager
+    uiManager
   }: {
     platform: Platform
     storageAPI: Storage
@@ -252,19 +248,17 @@ export class MainController extends EventEmitter implements IMainController {
     swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
-    windowManager: WindowManager
-    notificationManager: NotificationManager
+    uiManager: UiManager
   }) {
     super()
     this.#storageAPI = storageAPI
     this.fetch = fetch
-    this.ui = new UiController({ windowManager })
-    this.notificationManager = notificationManager
 
     this.storage = new StorageController(this.#storageAPI)
     this.featureFlags = new FeatureFlagsController(featureFlags)
+    this.ui = new UiController({ uiManager })
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
-    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
+    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, this.ui)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController({
       defaultNetworksMode: this.featureFlags.isFeatureEnabled('testnetMode')
@@ -367,7 +361,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.phishing = new PhishingController({
       fetch: this.fetch,
       storage: this.storage,
-      windowManager: this.windowManager
+      ui: this.ui
     })
     // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
     const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
@@ -477,8 +471,7 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
-      windowManager: this.windowManager,
-      notificationManager: this.notificationManager,
+      ui: this.ui,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
       updateSignAccountOp: (props) => {
@@ -1056,7 +1049,7 @@ export class MainController extends EventEmitter implements IMainController {
       signedMessage.fromActionId
     )
 
-    await this.notificationManager.create({
+    await this.ui.notification.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
@@ -2037,7 +2030,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.transfer.resetForm()
     }
 
-    await this.notificationManager.create({
+    await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
         submittedAccountOp.calls.length === accountOp.calls.length

@@ -9,7 +9,7 @@ import {
   produceMemoryStore,
   waitForAccountsCtrlFirstLoad
 } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockWindowManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'

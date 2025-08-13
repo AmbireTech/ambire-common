@@ -1,7 +1,6 @@
 import { EventEmitter as UiEventEmitter } from 'events'
 
-import { IUiController, View } from '../../interfaces/ui'
-import { WindowManager } from '../../interfaces/window'
+import { IUiController, UiManager, View } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class UiController extends EventEmitter implements IUiController {
@@ -11,13 +10,19 @@ export class UiController extends EventEmitter implements IUiController {
 
   activeView?: View
 
-  windowManager: WindowManager
+  window: UiManager['window']
 
-  constructor({ windowManager }: { windowManager: WindowManager }) {
+  notification: UiManager['notification']
+
+  message: UiManager['message']
+
+  constructor({ uiManager }: { uiManager: UiManager }) {
     super()
 
     this.uiEvent = new UiEventEmitter()
-    this.windowManager = windowManager
+    this.window = uiManager.window
+    this.notification = uiManager.notification
+    this.message = uiManager.message
   }
 
   addView(view: View) {

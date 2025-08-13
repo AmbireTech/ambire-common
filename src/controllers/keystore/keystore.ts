@@ -31,7 +31,7 @@ import {
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
-import { WindowManager } from '../../interfaces/window'
+import { IUiController } from '../../interfaces/ui'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
@@ -120,7 +120,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  #windowManager: WindowManager
+  #ui: IUiController
 
   #scryptAdapter: ScryptAdapter
 
@@ -128,14 +128,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     platform: Platform,
     _storage: IStorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
-    windowManager: WindowManager
+    ui: IUiController
   ) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
     this.keyStoreUid = null
-    this.#windowManager = windowManager
+    this.#ui = ui
     this.#scryptAdapter = new ScryptAdapter(platform)
     this.initialLoadPromise = this.#load()
   }
@@ -758,12 +758,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   async sendPrivateKeyToUi(keyAddress: string) {
     const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
-    this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
+    this.#ui.message.sendUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
   }
 
   async sendSeedToUi(id: string) {
     const decrypted = await this.getSavedSeed(id)
-    this.#windowManager.sendWindowUiMessage({
+    this.#ui.message.sendUiMessage({
       seed: decrypted.seed,
       seedPassphrase: decrypted.seedPassphrase
     })
@@ -772,7 +772,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async sendTempSeedToUi() {
     if (!this.#tempSeed) return
 
-    this.#windowManager.sendWindowUiMessage({ tempSeed: this.#tempSeed })
+    this.#ui.message.sendUiMessage({ tempSeed: this.#tempSeed })
   }
 
   async #getPrivateKey(keyAddress: string): Promise<string> {
