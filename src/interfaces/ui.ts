@@ -41,7 +41,7 @@ export type UiManager = {
       }
     ) => void
     sendUiMessage: (params: {}) => void
-    sendNavigateMessage: (route: string, params?: any) => void
+    sendNavigateMessage: (viewId: string, route: string, params: { [key: string]: any }) => void
   }
 }
 

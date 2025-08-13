@@ -32,6 +32,14 @@ export class UiController extends EventEmitter implements IUiController {
     this.emitUpdate()
   }
 
+  updateView(viewId: string, { currentRoute }: Pick<View, 'currentRoute'>) {
+    const view = this.views.find((v) => v.id === viewId)
+    if (!view || view.currentRoute === currentRoute) return
+
+    view.currentRoute = currentRoute
+    this.emitUpdate()
+  }
+
   removeView(viewId: string) {
     this.views = this.views.filter((v) => v.id !== viewId)
 
@@ -39,13 +47,12 @@ export class UiController extends EventEmitter implements IUiController {
     this.emitUpdate()
   }
 
-  navigateView(viewId: string, route: string) {
+  navigateView(viewId: string, route: string, params: { [key: string]: any }) {
     const view = this.views.find((v) => v.id === viewId)
+    if (!view || view.currentRoute === route) return
 
-    if (!view) return
-
-    if (view.currentRoute === route) return
-
-    // TODO: this.#navigate(route)
+    view.currentRoute = route
+    this.message.sendNavigateMessage(viewId, route, params)
+    this.emitUpdate()
   }
 }

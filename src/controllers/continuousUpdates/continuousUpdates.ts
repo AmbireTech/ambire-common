@@ -20,14 +20,14 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#initPortfolioContinuousUpdate() // init
 
-    this.#main.windowManager.event.on('addView', this.#initPortfolioContinuousUpdate.bind(this))
-    this.#main.windowManager.event.on('removeView', this.#initPortfolioContinuousUpdate.bind(this))
+    this.#main.ui.uiEvent.on('addView', this.#initPortfolioContinuousUpdate.bind(this))
+    this.#main.ui.uiEvent.on('removeView', this.#initPortfolioContinuousUpdate.bind(this))
   }
 
   async #initPortfolioContinuousUpdate() {
     if (this.#updatePortfolioInterval) clearTimeout(this.#updatePortfolioInterval)
 
-    const isExtensionActive = this.#main.windowManager.views.length > 0
+    const isExtensionActive = this.#main.ui.views.length > 0
     const updateInterval = isExtensionActive
       ? ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
       : INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
