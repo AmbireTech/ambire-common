@@ -17,6 +17,8 @@ import {
 } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -70,9 +72,9 @@ const basicAccount: Account = {
 }
 
 describe('AccountPicker', () => {
-  let accountPicker: AccountPickerController
+  let accountPicker: IAccountPickerController
   const storage: Storage = produceMemoryStore()
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController({
     storage: storageCtrl,

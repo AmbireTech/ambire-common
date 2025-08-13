@@ -1,3 +1,9 @@
+import { ControllerInterface } from './controller'
+
+export type ISignAccountOpController = ControllerInterface<
+  InstanceType<typeof import('../controllers/signAccountOp/signAccountOp').SignAccountOpController>
+>
+
 type Warning = {
   id: string
   title: string

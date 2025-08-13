@@ -1,5 +1,4 @@
-// eslint-disable-next-line import/no-cycle
-import { AccountOpAction, Action, DappRequestAction } from '../../controllers/actions/actions'
+import { AccountOpAction, Action, DappRequestAction } from '../../interfaces/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
 
 export const dappRequestMethodToActionKind = (method: DappProviderRequest['method']) => {

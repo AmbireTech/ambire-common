@@ -1,15 +1,18 @@
 import EmittableError from '../../classes/EmittableError'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
   ChainId,
+  INetworksController,
   Network,
   NetworkInfo,
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
+import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
@@ -17,11 +20,9 @@ import {
   getValidNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { StorageController } from '../storage/storage'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
-const STATUS_WRAPPED_METHODS = {
+export const STATUS_WRAPPED_METHODS = {
   addNetwork: 'INITIAL',
   updateNetwork: 'INITIAL'
 } as const
@@ -31,13 +32,13 @@ const STATUS_WRAPPED_METHODS = {
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
  * for adding, updating, and removing networks.
  */
-export class NetworksController extends EventEmitter {
+export class NetworksController extends EventEmitter implements INetworksController {
   // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
   // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
   // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
   defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #fetch: Fetch
 
@@ -70,7 +71,7 @@ export class NetworksController extends EventEmitter {
     onRemoveNetwork
   }: {
     defaultNetworksMode?: 'mainnet' | 'testnet'
-    storage: StorageController
+    storage: IStorageController
     fetch: Fetch
     relayerUrl: string
     onAddOrUpdateNetworks: (networks: Network[]) => void

@@ -1,4 +1,9 @@
 import { Session } from '../classes/session'
+import { ControllerInterface } from './controller'
+
+export type IDappsController = ControllerInterface<
+  InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
+>
 
 export interface Dapp {
   id: string

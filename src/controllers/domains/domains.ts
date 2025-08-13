@@ -1,5 +1,6 @@
 import { getAddress, isAddress } from 'ethers'
 
+import { IDomainsController } from '../../interfaces/domains'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -18,7 +19,7 @@ const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
-export class DomainsController extends EventEmitter {
+export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'

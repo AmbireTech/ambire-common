@@ -1,10 +1,10 @@
 import { getAddress } from 'ethers'
 
-import { Account } from '../../interfaces/account'
-import { AccountsController } from '../accounts/accounts'
+import { Account, IAccountsController } from '../../interfaces/account'
+import { IAddressBookController } from '../../interfaces/addressBook'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 
 export type Contact = {
   name: string
@@ -23,22 +23,22 @@ export type Contacts = Array<Contact>
  * Both types of contacts are combined and returned as a single array of contacts.
  */
 
-export class AddressBookController extends EventEmitter {
+export class AddressBookController extends EventEmitter implements IAddressBookController {
   // Manually added contact (stored in storage)
   #manuallyAddedContacts: Contacts = []
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   constructor(
-    storage: StorageController,
-    accounts: AccountsController,
-    selectedAccount: SelectedAccountController
+    storage: IStorageController,
+    accounts: IAccountsController,
+    selectedAccount: ISelectedAccountController
   ) {
     super()
 

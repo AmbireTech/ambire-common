@@ -2,6 +2,15 @@ import { AccountOp } from '../libs/accountOp/accountOp'
 import { Account } from './account'
 import { DappUserRequest, SignUserRequest, UserRequest } from './userRequest'
 
+export type ActionPosition = 'first' | 'last'
+
+export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
+
+export type OpenActionWindowParams = {
+  skipFocus?: boolean
+  baseWindowId?: number
+}
+
 export type SwitchAccountAction = {
   id: UserRequest['id']
   type: 'switchAccount'

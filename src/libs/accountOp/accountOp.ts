@@ -1,6 +1,5 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
-// eslint-disable-next-line import/no-cycle
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'

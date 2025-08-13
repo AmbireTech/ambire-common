@@ -30,13 +30,24 @@ import {
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
+import { AccountOpAction } from '../../interfaces/actions'
+import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import {
+  ExternalKey,
+  ExternalSignerControllers,
+  IKeystoreController,
+  InternalKey,
+  Key
+} from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  ISignAccountOpController,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
   Warning
@@ -88,16 +99,10 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction } from '../actions/actions'
-import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -165,12 +170,12 @@ export type SignAccountOpUpdateProps = {
   hasNewEstimation?: boolean
 }
 
-export class SignAccountOpController extends EventEmitter {
-  #accounts: AccountsController
+export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
+  #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -259,14 +264,14 @@ export class SignAccountOpController extends EventEmitter {
    */
   #shouldSimulate: boolean
 
-  #activity: ActivityController
+  #activity: IActivityController
 
   constructor(
-    accounts: AccountsController,
-    networks: NetworksController,
-    keystore: KeystoreController,
-    portfolio: PortfolioController,
-    activity: ActivityController,
+    accounts: IAccountsController,
+    networks: INetworksController,
+    keystore: IKeystoreController,
+    portfolio: IPortfolioController,
+    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,

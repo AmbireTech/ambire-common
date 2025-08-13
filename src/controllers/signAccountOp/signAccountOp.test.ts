@@ -15,6 +15,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
@@ -370,7 +371,7 @@ const init = async (
     }
   ])
 
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
     fetch,

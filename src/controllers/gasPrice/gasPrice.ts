@@ -1,5 +1,6 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { BUNDLER } from '../../consts/bundlers'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -11,7 +12,7 @@ import { GasSpeeds } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class GasPriceController extends EventEmitter {
   #network: Network

@@ -17,19 +17,23 @@ import {
   AccountWithNetworkMeta,
   DerivedAccount,
   DerivedAccountWithoutNetworkMeta,
+  IAccountsController,
   ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   dedicatedToOneSAPriv,
   ExternalKey,
   ExternalSignerControllers,
+  IKeystoreController,
   Key,
   ReadyToAddKeys
 } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -43,15 +47,7 @@ import {
 import { getAccountState } from '../../libs/accountState/accountState'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../../libs/keys/keys'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-// eslint-disable-next-line import/no-cycle
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { KeystoreController } from '../keystore/keystore'
-// eslint-disable-next-line import/no-cycle
-import { NetworksController } from '../networks/networks'
-// eslint-disable-next-line import/no-cycle
-import { ProvidersController } from '../providers/providers'
 
 export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 1
@@ -66,16 +62,16 @@ const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
  * It uses a KeyIterator interface allow iterating all the keys in a specific
  * underlying store such as a hardware device or an object holding a seed.
  */
-export class AccountPickerController extends EventEmitter {
+export class AccountPickerController extends EventEmitter implements IAccountPickerController {
   #callRelayer: Function
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -167,10 +163,10 @@ export class AccountPickerController extends EventEmitter {
     fetch,
     onAddAccountsSuccessCallback
   }: {
-    accounts: AccountsController
-    keystore: KeystoreController
-    networks: NetworksController
-    providers: ProvidersController
+    accounts: IAccountsController
+    keystore: IKeystoreController
+    networks: INetworksController
+    providers: IProvidersController
     externalSignerControllers: ExternalSignerControllers
     relayerUrl: string
     fetch: Fetch

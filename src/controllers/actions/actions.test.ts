@@ -8,6 +8,10 @@ import { mockWindowManager } from '../../../test/helpers/window'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IAccountsController } from '../../interfaces/account'
+import { AccountOpAction, BenzinAction, DappRequestAction } from '../../interfaces/actions'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
@@ -18,7 +22,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
-import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
+import { ActionsController } from './actions'
 
 const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
 
@@ -143,7 +147,7 @@ describe('Actions Controller', () => {
     networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
 
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -161,8 +165,8 @@ describe('Actions Controller', () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
-  let accountsCtrl: AccountsController
-  let selectedAccountCtrl: SelectedAccountController
+  let accountsCtrl: IAccountsController
+  let selectedAccountCtrl: ISelectedAccountController
   let actionsCtrl: ActionsController
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)

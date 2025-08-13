@@ -2,14 +2,21 @@
 import { getAddress } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
 import {
   CashbackStatus,
   CashbackStatusByAccount,
+  ISelectedAccountController,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks
 } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
@@ -20,7 +27,6 @@ import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
-// eslint-disable-next-line import/no-cycle
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithFailedRPCErrors,
@@ -29,17 +35,7 @@ import {
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
 import { getIsViewOnly } from '../../utils/accounts'
-// eslint-disable-next-line import/no-cycle
-import { AccountsController } from '../accounts/accounts'
-// eslint-disable-next-line import/no-cycle
-import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-// eslint-disable-next-line import/no-cycle
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
@@ -54,20 +50,20 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   pending: {}
 }
 
-export class SelectedAccountController extends EventEmitter {
-  #storage: StorageController
+export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
+  #storage: IStorageController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #portfolio: PortfolioController | null = null
+  #portfolio: IPortfolioController | null = null
 
-  #defiPositions: DefiPositionsController | null = null
+  #defiPositions: IDefiPositionsController | null = null
 
-  #networks: NetworksController | null = null
+  #networks: INetworksController | null = null
 
-  #keystore: KeystoreController | null = null
+  #keystore: IKeystoreController | null = null
 
-  #providers: ProvidersController | null = null
+  #providers: IProvidersController | null = null
 
   account: Account | null = null
 
@@ -139,9 +135,9 @@ export class SelectedAccountController extends EventEmitter {
     accounts,
     keystore
   }: {
-    storage: StorageController
-    accounts: AccountsController
-    keystore: KeystoreController
+    storage: IStorageController
+    accounts: IAccountsController
+    keystore: IKeystoreController
   }) {
     super()
 
@@ -176,10 +172,10 @@ export class SelectedAccountController extends EventEmitter {
     networks,
     providers
   }: {
-    portfolio: PortfolioController
-    defiPositions: DefiPositionsController
-    networks: NetworksController
-    providers: ProvidersController
+    portfolio: IPortfolioController
+    defiPositions: IDefiPositionsController
+    networks: INetworksController
+    providers: IProvidersController
   }) {
     this.#portfolio = portfolio
     this.#defiPositions = defiPositions

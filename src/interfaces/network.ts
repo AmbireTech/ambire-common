@@ -1,4 +1,9 @@
 import { BUNDLER } from '../consts/bundlers'
+import { ControllerInterface } from './controller'
+
+export type INetworksController = ControllerInterface<
+  InstanceType<typeof import('../controllers/networks/networks').NetworksController>
+>
 
 export type ChainId = bigint
 
