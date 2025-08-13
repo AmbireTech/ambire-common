@@ -176,7 +176,10 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
     if (this.defaultNetworksMode === 'mainnet') {
       // Step 4: Merge the networks from the Relayer
-      finalNetworks = await this.mergeRelayerNetworks(finalNetworks)
+      // Note: there is no need to call #onAddOrUpdateNetworks here
+      // as this code runs in the initial load promise, thus the RPC providers
+      // will be instantiated from the final networks list
+      finalNetworks = (await this.mergeRelayerNetworks(finalNetworks)).mergedNetworks
     }
 
     this.#networks = finalNetworks
@@ -196,15 +199,22 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (this.defaultNetworksMode === 'testnet') return
 
     // Process updates (merge Relayer data and apply rules)
-    const updatedNetworks = await this.mergeRelayerNetworks(this.#networks)
+    const { mergedNetworks, updatedNetworkChainIds } = await this.mergeRelayerNetworks(
+      this.#networks
+    )
 
     // Finalize updates
-    this.#networks = updatedNetworks
+    this.#networks = mergedNetworks
     this.emitUpdate()
     await this.#storage.set('networks', this.#networks)
 
+    // We must call this after merging the local networks with the ones from the Relayer
+    // to ensure that RPC providers of newly enabled networks are instantiated
+    this.#onAddOrUpdateNetworks(
+      this.allNetworks.filter((n) => updatedNetworkChainIds.includes(n.chainId))
+    )
     // Asynchronously update network features
-    this.#updateNetworkFeatures(updatedNetworks)
+    this.#updateNetworkFeatures(mergedNetworks)
   }
 
   /**
@@ -225,9 +235,10 @@ export class NetworksController extends EventEmitter implements INetworksControl
    * 7. Applies special handling for networks like Odyssey.
    *
    */
-  async mergeRelayerNetworks(currentNetworks: {
-    [key: string]: Network
-  }): Promise<{ [key: string]: Network }> {
+  async mergeRelayerNetworks(currentNetworks: { [key: string]: Network }): Promise<{
+    mergedNetworks: { [key: string]: Network }
+    updatedNetworkChainIds: Network['chainId'][]
+  }> {
     let relayerNetworks: RelayerNetworkConfigResponse = {}
     try {
       const res = await Promise.race([
@@ -246,7 +257,10 @@ export class NetworksController extends EventEmitter implements INetworksControl
       console.error('Failed to fetch networks from the Relayer', e)
     }
 
-    return currentNetworks
+    return {
+      mergedNetworks: currentNetworks,
+      updatedNetworkChainIds: []
+    }
   }
 
   /**
@@ -339,7 +353,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     if (chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
-        level: 'major',
+        level: 'expected',
         error: new Error('settings: addNetwork chain already added (duplicate id/chainId)')
       })
     }

@@ -2,8 +2,8 @@ import { Account, AccountId, IAccountsController } from '../../interfaces/accoun
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
-import { INetworksController } from '../../interfaces/network'
-import { IProvidersController } from '../../interfaces/provider'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -86,10 +86,15 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     })
   }
 
-  #getShouldSkipUpdate(accountAddr: string, maxDataAgeMs = ONE_MINUTE, forceUpdate?: boolean) {
+  #getShouldSkipUpdate(
+    accountAddr: string,
+    _maxDataAgeMs = ONE_MINUTE,
+    forceUpdate: boolean = false
+  ) {
     const hasKeys = this.#keystore.keys.some(({ addr }) =>
       this.#selectedAccount.account!.associatedKeys.includes(addr)
     )
+    let maxDataAgeMs = _maxDataAgeMs
 
     // force update the positions if forceUpdate is passed,
     // the account has keys and a session with the DeFi tab is opened
@@ -169,12 +174,20 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     const lower = (s: string) => s.toLowerCase()
 
+    /**
+     * Fetches the defi positions of certain protocols using RPC calls and custom logic.
+     * Cena is used for most of the positions, but some protocols require additional data
+     * that is not available in Cena. This function fetches those positions on ENABLED
+     * networks only.
+     */
     const fetchCustomPositions = async (
       addr: string,
-      provider: any,
-      network: any,
+      provider: RPCProvider,
+      network: Network,
       previous: PositionsByProvider[]
     ): Promise<PositionsByProvider[]> => {
+      if (network.disabled) return []
+
       const [aave, uniV3] = await Promise.all([
         getAAVEPositions(addr, provider, network).catch((e: any) => {
           console.error('getAAVEPositions error:', e)
@@ -192,7 +205,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     }
 
     const updateSingleNetwork = async (
-      network: any,
+      network: Network,
       debankPositionsByProvider: PositionsByProvider[]
     ) => {
       const chain = network.chainId.toString()
