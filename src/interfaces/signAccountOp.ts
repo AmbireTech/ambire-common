@@ -3,7 +3,11 @@ type Warning = {
   title: string
   text?: string
   promptBefore?: ('sign' | 'one-click-sign')[]
+  type?: Type
+  reverse?: boolean
 }
+
+type Type = 'error' | 'warning' | 'infoWarning'
 
 type SignAccountOpError = {
   title: string
