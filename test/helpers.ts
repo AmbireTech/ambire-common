@@ -2,8 +2,7 @@ import { BaseContract, getBytes, hexlify, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 import secp256k1 from 'secp256k1'
 
-import { AccountsController } from '../src/controllers/accounts/accounts'
-import { Account, AccountStates } from '../src/interfaces/account'
+import { Account, AccountStates, IAccountsController } from '../src/interfaces/account'
 import { Hex } from '../src/interfaces/hex'
 import { Key } from '../src/interfaces/keystore'
 import { Network } from '../src/interfaces/network'
@@ -367,7 +366,7 @@ function getNativeToCheckFromEOAs(eoas: Account[], account: Account) {
     : []
 }
 
-const waitForAccountsCtrlFirstLoad = async (accountsCtrl: AccountsController) => {
+const waitForAccountsCtrlFirstLoad = async (accountsCtrl: IAccountsController) => {
   return new Promise<void>((resolve) => {
     const unsubscribe = accountsCtrl.onUpdate(() => {
       if (

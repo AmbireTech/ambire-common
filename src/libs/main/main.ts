@@ -1,5 +1,5 @@
-import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account } from '../../interfaces/account'
+import { AccountOpAction, Action } from '../../interfaces/actions'
 import { Network } from '../../interfaces/network'
 import { isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'

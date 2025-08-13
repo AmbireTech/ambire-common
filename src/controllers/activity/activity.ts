@@ -1,7 +1,12 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
@@ -18,13 +23,7 @@ import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
@@ -127,16 +126,16 @@ const BANNER_CONTENT: {
  * 💡 For performance, items per account and network are limited to 1000.
  * Older items are trimmed, keeping the most recent ones.
  */
-export class ActivityController extends EventEmitter {
-  #storage: StorageController
+export class ActivityController extends EventEmitter implements IActivityController {
+  #storage: IStorageController
 
   #fetch: Fetch
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -158,11 +157,11 @@ export class ActivityController extends EventEmitter {
     }
   } = {}
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #onContractsDeployed: (network: Network) => Promise<void>
 
@@ -175,14 +174,14 @@ export class ActivityController extends EventEmitter {
   banners: Banner[] = []
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
     callRelayer: Function,
-    accounts: AccountsController,
-    selectedAccount: SelectedAccountController,
-    providers: ProvidersController,
-    networks: NetworksController,
-    portfolio: PortfolioController,
+    accounts: IAccountsController,
+    selectedAccount: ISelectedAccountController,
+    providers: IProvidersController,
+    networks: INetworksController,
+    portfolio: IPortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()

@@ -1,33 +1,34 @@
-/* eslint-disable import/no-cycle */
 import { getAddress, isAddress } from 'ethers'
 
 import {
   Account,
   AccountOnchainState,
   AccountPreferences,
-  AccountStates
+  AccountStates,
+  IAccountsController
 } from '../../interfaces/account'
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
-const STATUS_WRAPPED_METHODS = {
+export const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
   addAccounts: 'INITIAL'
 } as const
 
-export class AccountsController extends EventEmitter {
-  #storage: StorageController
+export class AccountsController extends EventEmitter implements IAccountsController {
+  #storage: IStorageController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   accounts: Account[] = []
 
@@ -49,10 +50,10 @@ export class AccountsController extends EventEmitter {
   initialLoadPromise: Promise<void>
 
   constructor(
-    storage: StorageController,
-    providers: ProvidersController,
-    networks: NetworksController,
-    keystore: KeystoreController,
+    storage: IStorageController,
+    providers: IProvidersController,
+    networks: INetworksController,
+    keystore: IKeystoreController,
     onAddAccounts: (accounts: Account[]) => void,
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
     onAccountStateUpdate: () => void

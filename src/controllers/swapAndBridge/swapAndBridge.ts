@@ -2,15 +2,25 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { IAccountsController } from '../../interfaces/account'
+import { AccountOpAction, Action } from '../../interfaces/actions'
+import { IActivityController } from '../../interfaces/activity'
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IInviteController } from '../../interfaces/invite'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 /* eslint-disable no-await-in-loop */
-import { SignAccountOpError } from '../../interfaces/signAccountOp'
+import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
+import { IStorageController } from '../../interfaces/storage'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
   CachedToTokenLists,
   FromToken,
+  ISwapAndBridgeController,
   SocketApiBridgeStep,
   SocketAPIBridgeUserTx,
   SwapAndBridgeActiveRoute,
@@ -57,19 +67,9 @@ import {
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction, Action } from '../actions/actions'
-import { ActivityController } from '../activity/activity'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { StorageController } from '../storage/storage'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes'
@@ -124,16 +124,16 @@ const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
  *  - Fetching and updating quotes for token swaps and bridges.
  *  - Manages token active routes
  */
-export class SwapAndBridgeController extends EventEmitter {
-  #selectedAccount: SelectedAccountController
+export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
+  #selectedAccount: ISelectedAccountController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #activity: ActivityController
+  #activity: IActivityController
 
-  #invite: InviteController
+  #invite: IInviteController
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #serviceProviderAPI: SocketAPI | LiFiAPI
 
@@ -219,15 +219,15 @@ export class SwapAndBridgeController extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
@@ -239,7 +239,7 @@ export class SwapAndBridgeController extends EventEmitter {
    * The reason is that the controller is not immediately destroyed after the
    * form changes, but instead is being updated after the route is started.
    */
-  #signAccountOpController: SignAccountOpController | null = null
+  #signAccountOpController: ISignAccountOpController | null = null
 
   /**
    * Holds all subscriptions (on update and on error) to the signAccountOpController.
@@ -286,17 +286,17 @@ export class SwapAndBridgeController extends EventEmitter {
     getUserRequests,
     getVisibleActionsQueue
   }: {
-    accounts: AccountsController
-    keystore: KeystoreController
-    portfolio: PortfolioController
+    accounts: IAccountsController
+    keystore: IKeystoreController
+    portfolio: IPortfolioController
     externalSignerControllers: ExternalSignerControllers
-    providers: ProvidersController
-    selectedAccount: SelectedAccountController
-    networks: NetworksController
-    activity: ActivityController
+    providers: IProvidersController
+    selectedAccount: ISelectedAccountController
+    networks: INetworksController
+    activity: IActivityController
     serviceProviderAPI: SocketAPI | LiFiAPI
-    storage: StorageController
-    invite: InviteController
+    storage: IStorageController
+    invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: Function
     isMainSignAccountOpThrowingAnEstimationError?: Function

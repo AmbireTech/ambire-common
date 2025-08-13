@@ -1,28 +1,28 @@
-import { ExternalSignerControllers } from '../../interfaces/keystore'
+import { IActivityController } from 'interfaces/activity'
+
+import { IAccountsController } from '../../interfaces/account'
+import { IInviteController } from '../../interfaces/invite'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { LiFiAPI } from '../../services/lifi/api'
 import { SocketAPI } from '../../services/socket/api'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 
 export type TransactionDependencies = {
-  accounts: AccountsController
-  keystore: KeystoreController
-  portfolio: PortfolioController
+  accounts: IAccountsController
+  keystore: IKeystoreController
+  portfolio: IPortfolioController
   externalSignerControllers: ExternalSignerControllers
-  providers: ProvidersController
-  selectedAccount: SelectedAccountController
-  networks: NetworksController
-  activity: ActivityController
+  providers: IProvidersController
+  selectedAccount: ISelectedAccountController
+  networks: INetworksController
+  activity: IActivityController
   serviceProviderAPI: SocketAPI | LiFiAPI
-  storage: StorageController
-  invite: InviteController
+  storage: IStorageController
+  invite: IInviteController
   portfolioUpdate?: Function
 }
 

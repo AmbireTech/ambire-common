@@ -20,7 +20,9 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key, TxnRequest } from '../../interfaces/keystore'
+import { IProvidersController } from '../../interfaces/provider'
 import { EIP7702Signature } from '../../interfaces/signatures'
+import { ITransferController } from '../../interfaces/transfer'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -65,13 +67,13 @@ const STK_WALLET_ADDRESS = '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
 const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUrl)
 
-let transferController: TransferController
+let transferController: ITransferController
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 
 const account = {
   addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',

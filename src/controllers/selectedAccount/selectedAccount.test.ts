@@ -1,3 +1,4 @@
+import EventEmitter from 'controllers/eventEmitter/eventEmitter'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
@@ -7,6 +8,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -15,7 +17,6 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
-import EventEmitterClass from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -28,7 +29,7 @@ const providers = Object.fromEntries(
 )
 
 const storage: Storage = produceMemoryStore()
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
@@ -129,7 +130,7 @@ const forceBannerRecalculation = async () => {
   await providersCtrl.forceEmitUpdate()
 }
 
-const waitNextControllerUpdate = (ctrl: EventEmitterClass) => {
+const waitNextControllerUpdate = (ctrl: EventEmitter) => {
   return new Promise((resolve) => {
     const unsubscribe = ctrl.onUpdate(() => {
       unsubscribe()

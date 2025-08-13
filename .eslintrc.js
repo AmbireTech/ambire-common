@@ -42,6 +42,6 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'warn',
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/no-floating-promises': 'warn',
-    "semi": ["error", "never"]
+    semi: ['error', 'never']
   }
 }

@@ -1,7 +1,11 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
-import { RPCProvider } from '../../interfaces/provider'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
@@ -14,30 +18,23 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-// eslint-disable-next-line import/no-cycle
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 
 const ONE_MINUTE = 60000
-export class DefiPositionsController extends EventEmitter {
-  #selectedAccount: SelectedAccountController
+export class DefiPositionsController extends EventEmitter implements IDefiPositionsController {
+  #selectedAccount: ISelectedAccountController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #fetch: Fetch
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #state: DeFiPositionsState = {}
 
@@ -55,12 +52,12 @@ export class DefiPositionsController extends EventEmitter {
     providers
   }: {
     fetch: Fetch
-    storage: StorageController
-    selectedAccount: SelectedAccountController
-    keystore: KeystoreController
-    accounts: AccountsController
-    networks: NetworksController
-    providers: ProvidersController
+    storage: IStorageController
+    selectedAccount: ISelectedAccountController
+    keystore: IKeystoreController
+    accounts: IAccountsController
+    networks: INetworksController
+    providers: IProvidersController
   }) {
     super()
 

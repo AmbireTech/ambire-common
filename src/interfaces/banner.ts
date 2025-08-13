@@ -1,4 +1,9 @@
 import { AccountOpAction } from './actions'
+import { ControllerInterface } from './controller'
+
+export type IBannerController = ControllerInterface<
+  InstanceType<typeof import('../controllers/banner/banner').BannerController>
+>
 
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
