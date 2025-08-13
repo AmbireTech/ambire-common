@@ -1,9 +1,9 @@
-import { SignMessageAction } from 'controllers/actions/actions'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
 import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
+import { SignMessageAction } from './actions'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
