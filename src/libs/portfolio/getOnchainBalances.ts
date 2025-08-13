@@ -40,7 +40,8 @@ function handleSimulationError(
   afterNonce: bigint,
   simulationOps: { nonce: bigint | null; calls: [string, string, string][] }[]
 ) {
-  if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
+  if (error !== '0x')
+    throw new SimulationError(parseErr(error)?.message || error, beforeNonce, afterNonce)
 
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty

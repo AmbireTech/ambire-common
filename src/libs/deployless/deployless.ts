@@ -2,6 +2,9 @@ import assert from 'assert'
 import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
+import { decodeError } from '../errorDecoder'
+import { BROADCAST_OR_ESTIMATION_ERRORS, ESTIMATION_ERRORS } from '../errorHumanizer/errors'
+import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -15,16 +18,6 @@ const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
 // The custom error that both these contracts will raise in case the deploy process of the contract goes wrong
 // error DeployFailed();
 const deployErrorSig = '0xb4f54111'
-// Signature of Error(string)
-const errorSig = '0x08c379a0'
-// LBRouter__InvalidTokenPath
-const invalidPath = '0x4feac00c'
-// Signature of Panic(uint256)
-const panicSig = '0x4e487b71'
-// uniswap swap expired
-const expiredSwap = '0x5bf6f916'
-// uniswap signature expired
-const expiredSig = '0xcd21db4f'
 
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
@@ -231,44 +224,30 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
   }
 }
 
+export function parseErr(data: string): Error | null {
+  const error = new Error(data)
+  const decodedError = decodeError(error)
+
+  const message = getHumanReadableErrorMessage(
+    null,
+    [...BROADCAST_OR_ESTIMATION_ERRORS, ...ESTIMATION_ERRORS],
+    'The transaction cannot be sent because',
+    decodedError,
+    error
+  )
+
+  if (!message) return null
+
+  return new Error(message, {
+    cause: decodedError.reason || error.message
+  })
+}
+
 function mapResponse(data: string): string {
   if (data === deployErrorSig) throw new Error('contract deploy failed')
   const err = parseErr(data)
   if (err) throw err
   return data
-}
-
-export function parseErr(data: string): string | null {
-  const dataNoPrefix = data.slice(10)
-  if (data.startsWith(panicSig)) {
-    // https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
-    const num = parseInt(`0x${dataNoPrefix}`)
-    if (num === 0x00) return 'generic compiler error'
-    if (num === 0x01) return 'solidity assert error'
-    if (num === 0x11) return 'arithmetic error'
-    if (num === 0x12) return 'division by zero'
-    return `panic error: 0x${num.toString(16)}`
-  }
-  if (data.startsWith(errorSig)) {
-    try {
-      return abiCoder.decode(['string'], `0x${dataNoPrefix}`)[0]
-    } catch (e: any) {
-      if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
-      return e
-    }
-  }
-  if (data.startsWith(invalidPath)) {
-    return 'Transaction cannot be sent due to invalid swap path provided by the app that initiated the request. Please return to the app interface and try again.'
-  }
-  // uniswap expired error
-  if (data === expiredSwap) {
-    return 'Transaction cannot be sent because the swap has expired. Please return to the app interface and try again.'
-  }
-  // uniswap signature expired error
-  if (data.startsWith(expiredSig)) {
-    return 'Transaction cannot be sent because the signature involved in this swap has expired. Please return to the app interface and try again.'
-  }
-  return null
 }
 
 function checkDataSize(data: string): string {

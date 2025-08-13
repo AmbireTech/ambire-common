@@ -141,11 +141,16 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['0xf8618030'],
-    message: 'Quote expired'
+    message: 'the Swap quote has expired.'
   },
   {
     reasons: ['TRANSFER_FROM_FAILED'],
-    message: 'Insufficient token amount'
+    message: 'the token amount is insufficient.'
+  },
+  {
+    reasons: ['0x4feac00c'],
+    message:
+      'the Swap path is invalid. Return to the app and reinitiate the swap if you wish to proceed.'
   }
 ]
 
