@@ -5,7 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/ui'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
@@ -19,11 +19,7 @@ import { MainController } from './main'
 // Public API key, shared by Socket, for testing purposes only
 const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
-const windowManager = mockWindowManager().windowManager
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
+const uiManager = mockUiManager().uiManager
 
 const signAccountOp = {
   gasPrice: {
@@ -84,8 +80,7 @@ describe('Main Controller ', () => {
       swapApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      windowManager,
-      notificationManager,
+      uiManager,
       velcroUrl
     })
     // eslint-disable-next-line no-promise-executor-return
@@ -163,8 +158,7 @@ describe('Main Controller ', () => {
       relayerUrl,
       featureFlags: {},
       swapApiKey,
-      windowManager,
-      notificationManager,
+      uiManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       velcroUrl
@@ -207,8 +201,7 @@ describe('Main Controller ', () => {
       relayerUrl,
       featureFlags: {},
       swapApiKey,
-      windowManager,
-      notificationManager,
+      uiManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       velcroUrl
