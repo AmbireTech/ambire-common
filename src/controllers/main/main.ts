@@ -487,6 +487,9 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.#continuousUpdates = new ContinuousUpdatesController({
+      // Pass a read-only proxy of the main instance to ContinuousUpdatesController.
+      // This gives it full access to read main’s state and call its methods,
+      // but prevents any direct modification to the main state.
       main: new Proxy(this, {
         set: () => {
           throw new Error('Read-only')
