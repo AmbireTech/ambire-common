@@ -8,8 +8,6 @@ export class UiController extends EventEmitter implements IUiController {
 
   views: View[] = []
 
-  activeView?: View
-
   window: UiManager['window']
 
   notification: UiManager['notification']
