@@ -477,18 +477,16 @@ export class LiFiAPI {
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
         fee: (FEE_PERCENT / 100).toString() as string | undefined,
         // How this works:
-        // A minimum of X ms is waited for the expected results to be returned.
-        // If the expected results are not returned, the waiting time is reduced by Y ms.
-        // This is done to ensure that the user gets a result as soon as possible.
-        // Note: this logic is only applied to the third party provider requests that lifi
-        // does and does not correspond to the total waiting time for the user.
+        // When this strategy is applied, we give all tool 900ms (minWaitTimeMs) to return a result.
+        // If we received 5 or more (startingExpectedResults) results during this time we return those and don’t wait for other tools.
+        // If less than 5 results are present we wait another 300ms and check if now at least (5-1=4) results are present.
         timing: {
           // Applied in swaps
           swapStepTimingStrategies: [
             {
               strategy: 'minWaitTime',
-              minWaitTimeMs: 600,
-              startingExpectedResults: 2,
+              minWaitTimeMs: 900,
+              startingExpectedResults: 5,
               reduceEveryMs: 300
             }
           ],
@@ -496,9 +494,9 @@ export class LiFiAPI {
           routeTimingStrategies: [
             {
               strategy: 'minWaitTime',
-              minWaitTimeMs: 1000,
-              startingExpectedResults: 3,
-              reduceEveryMs: 500
+              minWaitTimeMs: 1500,
+              startingExpectedResults: 5,
+              reduceEveryMs: 300
             }
           ]
         }
