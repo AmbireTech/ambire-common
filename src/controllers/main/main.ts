@@ -609,19 +609,21 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
+    this.activity.updateAccountOpBanners()
     this.swapAndBridge.reset()
     this.transfer.resetForm()
-    await this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr])
-    // forceEmitUpdate to update the getters in the FE state of the ctrl
-    await this.forceEmitUpdate()
-    await this.requests.actions.forceEmitUpdate()
-    await this.addressBook.forceEmitUpdate()
-    await this.activity.forceEmitUpdate()
+
+    // forceEmitUpdate to update the getters in the FE state of the ctrls
+    await Promise.all([
+      this.requests.actions.forceEmitUpdate(),
+      this.addressBook.forceEmitUpdate(),
+      this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
+      this.forceEmitUpdate()
+    ])
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    this.reloadSelectedAccount({ forceUpdate: false })
-    this.emitUpdate()
+    this.reloadSelectedAccount({ forceUpdate: false, resetSelectedAccountPortfolio: false })
   }
 
   async #onAccountPickerSuccess() {
@@ -1262,14 +1264,18 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
   }
 
-  async reloadSelectedAccount(options?: { forceUpdate?: boolean; chainIds?: bigint[] }) {
-    const { forceUpdate = true, chainIds } = options || {}
+  async reloadSelectedAccount(options?: {
+    forceUpdate?: boolean
+    chainIds?: bigint[]
+    resetSelectedAccountPortfolio?: boolean
+  }) {
+    const { forceUpdate = true, chainIds, resetSelectedAccountPortfolio = true } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
-    this.selectedAccount.resetSelectedAccountPortfolio()
+    if (resetSelectedAccountPortfolio) this.selectedAccount.resetSelectedAccountPortfolio()
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.

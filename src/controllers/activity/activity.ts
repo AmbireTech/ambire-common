@@ -353,7 +353,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     this.#bannerUpdateTimeout = setTimeout(() => {
       this.updateAccountOpBanners()
-      this.emitUpdate()
       this.startBannerUpdateTimeout()
     }, 1000 * 60 * 1)
   }
@@ -374,7 +373,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * of X minutes. The UI won't know when a banner has
    * expired, until an update is emitted.
    */
-  private updateAccountOpBanners() {
+  updateAccountOpBanners(params?: { emitUpdate?: boolean }) {
+    const { emitUpdate = true } = params || {}
+
     if (
       !this.#networks.isInitialized ||
       !this.#selectedAccount.account ||
@@ -382,6 +383,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     ) {
       this.banners = []
       this.stopBannerUpdateTimeout()
+
+      if (emitUpdate) this.emitUpdate()
       return
     }
 
@@ -404,6 +407,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!accountOpsToTurnToBanners.length) {
       this.banners = []
       this.stopBannerUpdateTimeout()
+      if (emitUpdate) this.emitUpdate()
       return
     }
 
@@ -426,6 +430,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
           content?.title ||
           'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',
+        meta: {
+          accountAddr: accountOp.accountAddr
+        },
         actions: [
           {
             label: 'Close',
@@ -446,6 +453,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
     })
     this.startBannerUpdateTimeout()
+    if (emitUpdate) this.emitUpdate()
   }
 
   removeNetworkData(chainId: bigint) {
@@ -480,7 +488,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     trim(this.#accountsOps[accountAddr][chainId.toString()])
 
     await this.syncFilteredAccountsOps()
-    this.updateAccountOpBanners()
+    this.updateAccountOpBanners({ emitUpdate: false })
 
     await this.#storage.set('accountsOps', this.#accountsOps)
     this.emitUpdate()
@@ -707,7 +715,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (shouldEmitUpdate) {
       await this.#storage.set('accountsOps', this.#accountsOps)
       await this.syncFilteredAccountsOps()
-      this.updateAccountOpBanners()
+      this.updateAccountOpBanners({ emitUpdate: false })
       this.emitUpdate()
     }
 
