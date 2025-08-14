@@ -14,6 +14,7 @@ interface Domains {
 
 // 15 minutes
 const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
+const REVERSE_LOOKUP_TIMEOUT = 5000
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -88,19 +89,27 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
 
     this.loadingAddresses.push(checksummedAddress)
-    this.emitUpdate()
+    // TODO: Maybe forgotten if check?
+    if (emitUpdate) this.emitUpdate()
 
-    let ensName = null
+    let ensName: string | null = null
 
     try {
-      ensName = (await reverseLookupEns(checksummedAddress, ethereumProvider)) || null
+      ensName = await Promise.race<string | null>([
+        reverseLookupEns(checksummedAddress, ethereumProvider),
+        // Тo prevent hanging loading states
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('reverse ENS lookup too slow')), REVERSE_LOOKUP_TIMEOUT)
+        })
+      ])
+
+      this.domains[checksummedAddress] = {
+        ens: ensName,
+        savedAt: Date.now()
+      }
     } catch (e) {
       console.error('ENS reverse lookup unexpected error', e)
-    }
-
-    this.domains[checksummedAddress] = {
-      ens: ensName,
-      savedAt: Date.now()
+      // TODO: Negative cache to avoid immediate retry loops on timeouts/errors?
     }
 
     this.loadingAddresses = this.loadingAddresses.filter(
