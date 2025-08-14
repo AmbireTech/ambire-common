@@ -6,23 +6,33 @@ export function createRecurringTimeout(
   timeout: number
 ): { start: () => void; stop: () => void } {
   let timeoutId: NodeJS.Timeout | undefined
+  let running = false
 
   const stop = () => {
-    clearTimeout(timeoutId)
-    timeoutId = undefined
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = undefined
+    }
+    running = false
+  }
+
+  const loop = async () => {
+    try {
+      await fn()
+    } catch (err) {
+      console.error('Recurring task error:', err)
+    } finally {
+      if (running) {
+        timeoutId = setTimeout(loop, timeout)
+      }
+    }
   }
 
   const start = () => {
-    if (timeoutId) stop()
-
-    timeoutId = setTimeout(async () => {
-      await fn()
-      start()
-    }, timeout)
+    if (running) return // Prevent multiple overlapping loops
+    running = true
+    timeoutId = setTimeout(loop, timeout)
   }
 
-  return {
-    start,
-    stop
-  }
+  return { start, stop }
 }
