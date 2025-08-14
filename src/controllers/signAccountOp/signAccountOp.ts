@@ -452,7 +452,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #setGasFeePayment() {
-    if (this.isInitialized && this.paidBy && this.selectedFeeSpeed && this.feeTokenResult) {
+    if (
+      this.isInitialized &&
+      this.paidBy &&
+      this.selectedFeeSpeed &&
+      this.feeTokenResult &&
+      this.selectedOption
+    ) {
       this.accountOp.gasFeePayment = this.#getGasFeePayment()
     }
   }
