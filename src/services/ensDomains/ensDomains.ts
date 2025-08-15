@@ -68,7 +68,12 @@ function getBip44Items(coinTicker: string) {
 }
 
 async function reverseLookupEns(address: string, provider: RPCProvider) {
-  return provider.lookupAddress(address)
+  const lookup = provider.lookupAddress(address)
+  const lookupTimeout = new Promise<null>((resolve) => {
+    setTimeout(() => resolve(null), 10000)
+  })
+
+  return Promise.race([lookup, lookupTimeout])
 }
 
 export { resolveENSDomain, getBip44Items, reverseLookupEns }
