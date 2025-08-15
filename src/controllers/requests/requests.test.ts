@@ -4,7 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
@@ -29,13 +29,10 @@ import { StorageController } from '../storage/storage'
 import { SocketAPIMock } from '../swapAndBridge/socketApiMock'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
+import { UiController } from '../ui/ui'
 import { RequestsController } from './requests'
 
-const windowManager = mockWindowManager().windowManager
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
+const uiManager = mockUiManager().uiManager
 
 const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
 
@@ -77,7 +74,8 @@ const prepareTest = async () => {
   await storage.set('accounts', accounts)
   await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
   const storageCtrl = new StorageController(storage)
-  const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+  const uiCtrl = new UiController({ uiManager })
+  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -109,7 +107,7 @@ const prepareTest = async () => {
     () => {}
   )
 
-  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
+  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
@@ -192,8 +190,7 @@ const prepareTest = async () => {
       dapps: dappsCtrl,
       transfer: transferCtrl,
       swapAndBridge: swapAndBridgeCtrl,
-      windowManager,
-      notificationManager,
+      ui: uiCtrl,
       getSignAccountOp: () => null,
       updateSignAccountOp: () => {},
       destroySignAccountOp: () => {},
