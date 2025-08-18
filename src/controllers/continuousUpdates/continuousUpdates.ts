@@ -4,9 +4,7 @@ import {
   ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
-  ESTIMATE_UPDATE_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
-  NETWORKS_UPDATE_INTERVAL,
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 } from '../../consts/intervals'
 import { IMainController } from '../../interfaces/main'
@@ -16,7 +14,6 @@ import {
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { createRecurringTimeout } from '../../utils/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -40,8 +37,6 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   #portfolioLastUpdatedByIntervalAt: number = Date.now()
 
-  #updateNetworksInterval?: NodeJS.Timeout
-
   #updateDefiPositionsInterval?: NodeJS.Timeout
 
   #accountsOpsStatusesInterval?: NodeJS.Timeout
@@ -60,17 +55,12 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   #retriedFastAccountStateReFetchForNetworks: string[] = []
 
-  #estimateInterval?: { start: any; stop: any }
-
-  #prevIsSignAccountOpInitialized: boolean = false
-
   constructor({ main }: { main: IMainController }) {
     super()
 
     this.#main = main
 
     this.#setPortfolioContinuousUpdate() // init
-    this.#setNetworksContinuousUpdate() // init
     this.#setLatestAccountStateContinuousUpdate(ACCOUNT_STATE_STAND_BY_INTERVAL) // init
 
     this.#main.ui.uiEvent.on('addView', () => {
@@ -86,20 +76,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
         this.#setPendingAccountStateContinuousUpdate(ACCOUNT_STATE_PENDING_INTERVAL)
         this.#setAccountsOpsStatusesContinuousUpdate(ACTIVITY_REFRESH_INTERVAL)
-      }
-
-      // if the signAccountOp controller is active, reestimate at a set period of time
-      if (this.#prevIsSignAccountOpInitialized !== !!this.#main.signAccountOp) {
-        if (this.#main.signAccountOp) {
-          this.#estimateInterval && this.#estimateInterval.stop()
-
-          this.#estimateInterval = this.#setEstimateContinuousUpdate()
-          this.#estimateInterval.start()
-        } else {
-          this.#estimateInterval && this.#estimateInterval.stop()
-        }
-
-        this.#prevIsSignAccountOpInitialized = !!this.#main.signAccountOp
       }
     }, 'continuous-update')
 
@@ -155,31 +131,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     } else {
       this.#updatePortfolioInterval = setTimeout(updatePortfolio, updateInterval)
     }
-  }
-
-  /**
-   * Schedules periodic network synchronization.
-   *
-   * This function ensures that the `synchronizeNetworks` method runs every 8 hours
-   * to periodically refetch networks in case there are updates,
-   * since the extension relies on the config from relayer.
-   *
-   * Networks are also updated on NetworksController load and background process refresh,
-   * but this ensures they stay refreshed.
-   * Because of this, tt does **not** execute immediately at startup, only after the first interval.
-   */
-  #setNetworksContinuousUpdate() {
-    if (this.#updateNetworksInterval) clearTimeout(this.#updateNetworksInterval)
-
-    this.#updateNetworksInterval = setTimeout(async () => {
-      try {
-        await this.#main.networks.synchronizeNetworks()
-      } catch (error) {
-        console.error('Failed to synchronize networks:', error)
-      }
-
-      this.#setNetworksContinuousUpdate()
-    }, NETWORKS_UPDATE_INTERVAL)
   }
 
   #setDefiPositionsContinuousUpdate() {
@@ -443,14 +394,5 @@ export class ContinuousUpdatesController extends EventEmitter {
     }
 
     this.#fastAccountStateReFetchTimeout = setTimeout(updateAccountState, 8000)
-  }
-
-  #setEstimateContinuousUpdate() {
-    return createRecurringTimeout(() => {
-      if (this.#main.signAccountOp) return this.#main.signAccountOp.simulate()
-      return new Promise((resolve) => {
-        resolve()
-      })
-    }, ESTIMATE_UPDATE_INTERVAL)
   }
 }

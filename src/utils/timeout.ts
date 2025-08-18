@@ -1,20 +1,16 @@
 // Execute `fn` at a specific interval, ensuring that the current invocation of `fn`
 // completes before the next one starts. This serves as an alternative to `setInterval`,
 // but providing protection against overlapping invocations of `fn`.
-export function createRecurringTimeout(
-  fn: () => Promise<void>,
-  timeout: number
-): { start: () => void; stop: () => void } {
+
+export type RecurringTimeout = {
+  start: () => void
+  restart: () => void
+  stop: () => void
+}
+
+export function createRecurringTimeout(fn: () => Promise<void>, timeout: number): RecurringTimeout {
   let timeoutId: NodeJS.Timeout | undefined
   let running = false
-
-  const stop = () => {
-    if (timeoutId) {
-      clearTimeout(timeoutId)
-      timeoutId = undefined
-    }
-    running = false
-  }
 
   const loop = async () => {
     try {
@@ -34,5 +30,18 @@ export function createRecurringTimeout(
     timeoutId = setTimeout(loop, timeout)
   }
 
-  return { start, stop }
+  const stop = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = undefined
+    }
+    running = false
+  }
+
+  const restart = () => {
+    stop()
+    start()
+  }
+
+  return { start, restart, stop }
 }

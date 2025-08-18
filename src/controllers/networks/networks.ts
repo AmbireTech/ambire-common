@@ -1,4 +1,5 @@
 import EmittableError from '../../classes/EmittableError'
+import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -20,6 +21,7 @@ import {
   getValidNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -62,6 +64,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  #updateWithRelayerNetworksInterval?: RecurringTimeout
+
   constructor({
     defaultNetworksMode,
     storage,
@@ -86,6 +90,21 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
+
+    /**
+     * Schedules periodic network synchronization.
+     *
+     * This function ensures that the `synchronizeNetworks` method runs every 8 hours
+     * to periodically refetch networks in case there are updates,
+     * since the extension relies on the config from relayer.
+     */
+    if (this.defaultNetworksMode === 'mainnet') {
+      this.#updateWithRelayerNetworksInterval = createRecurringTimeout(
+        this.synchronizeNetworks,
+        NETWORKS_UPDATE_INTERVAL
+      )
+      this.#updateWithRelayerNetworksInterval.start()
+    }
   }
 
   get isInitialized(): boolean {
