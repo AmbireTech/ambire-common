@@ -761,6 +761,38 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
   }
 
+  /**
+   * Decrypt the private key encrypted with the main key,
+   * encrypt it with a new salt and entropy to not leak the
+   * main key's ones, and send it over with the salt and entropy
+   * to the UI
+   */
+  async sendPasswordEncryptedPrivateKeyToUi(keyAddress: string, secret: string, entropy: string) {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
+
+    const entropyGenerator = new EntropyGenerator()
+    const salt = entropyGenerator.generateRandomBytes(32, entropy)
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    await wait(0)
+    const iv = entropyGenerator.generateRandomBytes(16, entropy)
+    const derivedKey = key.slice(0, 16)
+    const counter = new aes.Counter(iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const privateKey = aesCtr.encrypt(getBytes(`0x${decryptedPrivateKey}`))
+
+    this.#windowManager.sendWindowUiMessage({
+      privateKey: hexlify(privateKey),
+      salt: hexlify(salt),
+      iv: hexlify(iv)
+    })
+  }
+
   async sendSeedToUi(id: string) {
     const decrypted = await this.getSavedSeed(id)
     this.#windowManager.sendWindowUiMessage({
