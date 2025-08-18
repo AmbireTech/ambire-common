@@ -131,6 +131,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   linkedAccountsLoading: boolean = false
 
+  linkedAccountsError: string = ''
+
   networksWithAccountStateError: bigint[] = []
 
   #derivedAccounts: DerivedAccount[] = []
@@ -1210,19 +1212,30 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (accounts.length === 0) return
 
     this.linkedAccountsLoading = true
+    this.linkedAccountsError = ''
     this.emitUpdate()
 
     const keys = accounts.map((acc) => `keys[]=${acc.addr}`).join('&')
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
-    const { data } = await this.#callRelayer(url)
+    // Relayer linked accounts found on the keys against we're meant to check
+    let relayerLinkedAccounts = []
+    try {
+      const response = await this.#callRelayer(url)
+      relayerLinkedAccounts = response.data.accounts
+    } catch (e: any) {
+      this.linkedAccountsError = `Failed to get linked accounts from the Relayer. Error details: <${
+        e?.message || 'no message'
+      }>`
+    }
+
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
-      data.accounts
+      relayerLinkedAccounts
     ).flatMap((addr: string) => {
       // In extremely rare cases, on the Relayer, the identity data could be
       // missing in the identities table but could exist in the logs table.
       // When this happens, the account data will be `null`.
-      const isIdentityDataMissing = !data.accounts[addr]
+      const isIdentityDataMissing = !relayerLinkedAccounts[addr]
       if (isIdentityDataMissing) {
         // Same error for both cases, because most prob
         this.emitError({
@@ -1236,7 +1249,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         return []
       }
 
-      const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
+      const { factoryAddr, bytecode, salt, associatedKeys } = relayerLinkedAccounts[addr]
       // Checks whether the account.addr matches the addr generated from the
       // factory. Should never happen, but could be a possible attack vector.
       const isInvalidAddress =
@@ -1255,11 +1268,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
-            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((address: string) => [
-              address,
-              // this is a default privilege hex we add on account creation
-              '0x0000000000000000000000000000000000000000000000000000000000000001'
-            ]),
+            initialPrivileges: relayerLinkedAccounts[addr].initialPrivilegesAddrs.map(
+              (address: string) => [
+                address,
+                // this is a default privilege hex we add on account creation
+                '0x0000000000000000000000000000000000000000000000000000000000000001'
+              ]
+            ),
             creation: {
               factoryAddr,
               bytecode,
