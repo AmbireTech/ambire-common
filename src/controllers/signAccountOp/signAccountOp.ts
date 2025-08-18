@@ -32,7 +32,6 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -99,6 +98,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -264,14 +264,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #shouldSimulate: boolean
 
-  #activity: IActivityController
+  /**
+   * Should this signAccountOp decide on its own terms whether
+   * to fire a new estimation or not
+   */
+  #shouldReestimate: boolean
 
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
     keystore: IKeystoreController,
     portfolio: IPortfolioController,
-    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -280,6 +283,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
+    shouldReestimate: boolean,
     traceCall?: Function
   ) {
     super()
@@ -287,7 +291,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -318,7 +321,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       networks,
       provider,
       portfolio,
-      activity,
       this.bundlerSwitcher
     )
     const emptyFunc = () => {}
@@ -335,6 +337,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     )
     this.#shouldSimulate = shouldSimulate
+    this.#shouldReestimate = shouldReestimate
 
     this.#load(shouldSimulate)
   }
@@ -391,11 +394,25 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return callError
   }
 
+  async #reestimate() {
+    if (
+      this.estimation.status === EstimationStatus.Initial ||
+      this.estimation.status === EstimationStatus.Loading
+    )
+      return
+
+    await wait(30000)
+    if (!this.#isSignRequestStillActive()) return
+
+    this.#shouldSimulate ? this.simulate(true) : this.estimate()
+  }
+
   #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      if (this.#shouldReestimate) this.#reestimate()
     })
     this.gasPrice.onUpdate(() => {
       this.update({

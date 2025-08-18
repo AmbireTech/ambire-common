@@ -2195,7 +2195,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#networks,
       this.#keystore,
       this.#portfolio,
-      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccount.account,
       network,
@@ -2212,6 +2211,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // identifiable
         return !!this.#signAccountOpController
       },
+      false,
       false,
       undefined
     )

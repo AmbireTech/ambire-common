@@ -24,7 +24,6 @@ import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
@@ -32,7 +31,6 @@ import {
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
 import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
@@ -41,7 +39,6 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
@@ -455,23 +452,6 @@ const init = async (
   const bundlerSwitcher = new BundlerSwitcher(network, () => {
     return false
   })
-  const callRelayer = relayerCall.bind({ url: '', fetch })
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore
-  })
-  const activity = new ActivityController(
-    storageCtrl,
-    fetch,
-    callRelayer,
-    accountsCtrl,
-    selectedAccountCtrl,
-    providersCtrl,
-    networksCtrl,
-    portfolio,
-    () => Promise.resolve()
-  )
   const baseAccount = getBaseAccount(
     account,
     accountsCtrl.accountStates[account.addr][network.chainId.toString()],
@@ -484,7 +464,6 @@ const init = async (
     networksCtrl,
     providers,
     portfolio,
-    activity,
     bundlerSwitcher
   )
   estimationController.estimation = estimationOrMock
@@ -510,7 +489,6 @@ const init = async (
     networksCtrl,
     keystore,
     portfolio,
-    activity,
     {},
     account,
     network,
