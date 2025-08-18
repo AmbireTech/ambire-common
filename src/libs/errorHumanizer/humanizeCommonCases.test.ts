@@ -38,7 +38,7 @@ describe('Estimation/Broadcast common errors are humanized', () => {
     }
   })
   it('Rpc timeout', () => {
-    const error = new Error('rpc-timeout')
+    const error = new Error('rpc-timeout. Rpc: https://invictus.ambire.com/ethereum')
     const decodedError = decodeError(error)
     const message = humanizeEstimationOrBroadcastError(decodedError, MESSAGE_PREFIX, error)
 
