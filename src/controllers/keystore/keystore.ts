@@ -8,7 +8,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
+import {
+  computeAddress,
+  concat,
+  getBytes,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
@@ -799,7 +808,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * main key's ones, and send it over with the salt and entropy
    * to the UI
    */
-  async sendPasswordDecryptedPrivateKeyToUi(secret: string, key: string, salt: string, iv: string) {
+  async sendPasswordDecryptedPrivateKeyToUi(
+    secret: string,
+    key: string,
+    salt: string,
+    iv: string,
+    associatedKeys: string[]
+  ) {
     await this.initialLoadPromise
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
@@ -815,9 +830,17 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(getBytes(key))
+    const privateKey = `0x${aes.utils.hex.fromBytes(decryptedBytes)}`
+    const addr = computeAddress(privateKey)
+
+    if (!associatedKeys.includes(addr)) {
+      this.errorMessage = 'Incorrect password. Please try again.'
+      this.emitUpdate()
+      return
+    }
 
     this.#windowManager.sendWindowUiMessage({
-      privateKey: `0x${aes.utils.hex.fromBytes(decryptedBytes)}`
+      privateKey
     })
   }
 
