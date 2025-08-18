@@ -739,9 +739,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount)
       throw new Error(
-        `${accountId} is not found in accounts. Accounts: ${this.#accounts.accounts
-          .map((x) => x.addr)
-          .join(', ')}`
+        `${accountId} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
       )
     if (!this.#latest[accountId]) this.#latest[accountId] = {}
     if (!this.#pending[accountId]) this.#pending[accountId] = {}
