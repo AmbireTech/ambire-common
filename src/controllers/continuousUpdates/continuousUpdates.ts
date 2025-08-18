@@ -1,7 +1,6 @@
 import {
   ACCOUNT_STATE_PENDING_INTERVAL,
   ACCOUNT_STATE_STAND_BY_INTERVAL,
-  ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
@@ -36,8 +35,6 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   #portfolioLastUpdatedByIntervalAt: number = Date.now()
 
-  #updateDefiPositionsInterval?: NodeJS.Timeout
-
   #accountsOpsStatusesInterval?: NodeJS.Timeout
 
   #updateActiveRoutesInterval?: NodeJS.Timeout
@@ -60,10 +57,6 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#main.ui.uiEvent.on('addView', () => {
       this.#setPortfolioContinuousUpdate.bind(this)
-
-      if (this.#main.ui.views.some((v) => v.type === 'popup')) {
-        this.#setDefiPositionsContinuousUpdate.bind(this)
-      }
     })
     this.#main.ui.uiEvent.on('removeView', this.#setPortfolioContinuousUpdate.bind(this))
 
@@ -124,36 +117,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     } else {
       this.#updatePortfolioInterval = setTimeout(updatePortfolio, updateInterval)
     }
-  }
-
-  #setDefiPositionsContinuousUpdate() {
-    const updateDefiPositions = async () => {
-      const isExtensionActive = this.#main.ui.views.length > 0
-
-      if (!isExtensionActive) {
-        if (this.#updateDefiPositionsInterval) {
-          clearTimeout(this.#updateDefiPositionsInterval)
-        }
-
-        return
-      }
-
-      const FIVE_MINUTES = 1000 * 60 * 5
-      await this.#main.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
-
-      // Schedule the next update only when the previous one completes
-      this.#updateDefiPositionsInterval = setTimeout(
-        updateDefiPositions,
-        ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL
-      )
-    }
-
-    // The onPopupOpen func in the MainController will update the defi positions on port init.
-    // Here, we only need to schedule the next update to avoid duplicate updates
-    this.#updateDefiPositionsInterval = setTimeout(
-      updateDefiPositions,
-      ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL
-    )
   }
 
   #setAccountsOpsStatusesContinuousUpdate(updateInterval: number) {
