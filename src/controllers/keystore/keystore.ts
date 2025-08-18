@@ -803,10 +803,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Decrypt the private key encrypted with the main key,
-   * encrypt it with a new salt and entropy to not leak the
-   * main key's ones, and send it over with the salt and entropy
-   * to the UI
+   * Decrypts an imported private key using the provided password (secret, salt, iv),
+   * validates the decrypted key against the associated keys,
+   * and sends the result to the UI.
    */
   async sendPasswordDecryptedPrivateKeyToUi(
     secret: string,
@@ -816,9 +815,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     associatedKeys: string[]
   ) {
     await this.initialLoadPromise
-    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
-    // decrypt the pk of keyAddress with the keystore's key
     const counter = new aes.Counter(getBytes(iv))
     const decryptKey = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), getBytes(salt), {
       N: scryptDefaults.N,
@@ -828,7 +825,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     })
     const derivedKey = decryptKey.slice(0, 16)
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-    // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(getBytes(key))
     const privateKey = `0x${aes.utils.hex.fromBytes(decryptedBytes)}`
     const addr = computeAddress(privateKey)
@@ -863,15 +859,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
 
-    const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress)
+    const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === 'internal')
     if (!storedKey) throw new Error('keystore: key not found')
-    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
 
     // decrypt the pk of keyAddress with the keystore's key
     const encryptedBytes = getBytes(storedKey.privKey as string)
     const counter = new aes.Counter(this.#mainKey.iv)
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-    // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
     return aes.utils.hex.fromBytes(decryptedBytes)
   }
