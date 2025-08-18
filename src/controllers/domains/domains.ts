@@ -3,6 +3,7 @@ import { getAddress, isAddress } from 'ethers'
 import { IDomainsController } from '../../interfaces/domains'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
@@ -14,7 +15,6 @@ interface Domains {
 
 // 15 minutes
 const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
-const REVERSE_LOOKUP_TIMEOUT = 5000
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -95,21 +95,15 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     let ensName: string | null = null
 
     try {
-      ensName = await Promise.race<string | null>([
-        reverseLookupEns(checksummedAddress, ethereumProvider),
-        // Тo prevent hanging loading states
-        new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('reverse ENS lookup too slow')), REVERSE_LOOKUP_TIMEOUT)
-        })
-      ])
+      ensName = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+    } catch (e: any) {
+      // Fail silently with a console error, no biggie, since that would get retried
+      console.error('reverse ENS lookup failed', e)
+    }
 
-      this.domains[checksummedAddress] = {
-        ens: ensName,
-        savedAt: Date.now()
-      }
-    } catch (e) {
-      console.error('ENS reverse lookup unexpected error', e)
-      // TODO: Negative cache to avoid immediate retry loops on timeouts/errors?
+    this.domains[checksummedAddress] = {
+      ens: ensName,
+      savedAt: Date.now()
     }
 
     this.loadingAddresses = this.loadingAddresses.filter(
