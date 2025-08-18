@@ -227,10 +227,12 @@ export const getNetworksWithPortfolioErrorErrors = ({
     // when the RPC is not working AND the user has balance on the network.
     // Example: The user has no balance on Berachain and the RPC is not working.
     // In this case there will be no RPC error banner and no portfolio error banner.
-    const isRpcWorkingOrNotChecked =
-      typeof rpcProvider.isWorking !== 'boolean' || rpcProvider.isWorking
-
-    if (criticalError && (['gasTank', 'rewards'].includes(chainId) || isRpcWorkingOrNotChecked)) {
+    if (
+      criticalError &&
+      (['gasTank', 'rewards'].includes(chainId) ||
+        typeof rpcProvider.isWorking !== 'boolean' ||
+        rpcProvider.isWorking)
+    ) {
       errors = addPortfolioError(errors, networkName, 'portfolio-critical')
       return
     }

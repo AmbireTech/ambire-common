@@ -3,7 +3,6 @@ import { ZeroAddress } from 'ethers'
 /* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
-import { IActivityController } from '../../interfaces/activity'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -50,8 +49,6 @@ export class EstimationController extends EventEmitter {
 
   #bundlerSwitcher: BundlerSwitcher
 
-  #activity: IActivityController
-
   #notFatalBundlerError?: Error
 
   constructor(
@@ -60,7 +57,6 @@ export class EstimationController extends EventEmitter {
     networks: INetworksController,
     provider: RPCProvider,
     portfolio: IPortfolioController,
-    activity: IActivityController,
     bundlerSwitcher: BundlerSwitcher
   ) {
     super()
@@ -69,7 +65,6 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#provider = provider
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#bundlerSwitcher = bundlerSwitcher
   }
 
