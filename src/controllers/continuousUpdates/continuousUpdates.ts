@@ -4,8 +4,7 @@ import {
   ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
-  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
-  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IMainController } from '../../interfaces/main'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
@@ -15,8 +14,8 @@ import {
   getActiveRoutesUpdateInterval
 } from '../../libs/swapAndBridge/swapAndBridge'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const getIntervalRefreshTime = (constUpdateInterval: number, newestOpTimestamp: number): number => {
   // 5s + new Date().getTime() - timestamp of newest op / 10
@@ -42,10 +41,6 @@ export class ContinuousUpdatesController extends EventEmitter {
   #accountsOpsStatusesInterval?: NodeJS.Timeout
 
   #updateActiveRoutesInterval?: NodeJS.Timeout
-
-  #updateSwapAndBridgeQuoteInterval?: NodeJS.Timeout
-
-  #prevUpdateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   #accountStateLatestInterval?: NodeJS.Timeout
 
@@ -96,8 +91,6 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#main.swapAndBridge.onUpdate(() => {
       this.#setActiveRoutesContinuousUpdate(this.#main.swapAndBridge.activeRoutesInProgress)
-      this.#setSwapAndBridgeQuoteContinuousUpdate()
-      this.#prevUpdateQuoteStatus = this.#main.swapAndBridge.updateQuoteStatus
     }, 'continuous-update')
   }
 
@@ -201,48 +194,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#updateActiveRoutesInterval = setTimeout(
       updateActiveRoutes,
       getActiveRoutesUpdateInterval(minServiceTime)
-    )
-  }
-
-  #setSwapAndBridgeQuoteContinuousUpdate() {
-    if (this.#main.swapAndBridge.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
-      !!this.#updateSwapAndBridgeQuoteInterval &&
-        clearTimeout(this.#updateSwapAndBridgeQuoteInterval)
-      this.#updateSwapAndBridgeQuoteInterval = undefined
-      return
-    }
-
-    // This logic is triggered when the user manually refreshes the quotes,
-    // resetting the interval to synchronize with the UI.
-    if (
-      this.#updateSwapAndBridgeQuoteInterval &&
-      this.#prevUpdateQuoteStatus === 'LOADING' &&
-      this.#main.swapAndBridge.updateQuoteStatus === 'INITIAL'
-    ) {
-      clearTimeout(this.#updateSwapAndBridgeQuoteInterval)
-      this.#updateSwapAndBridgeQuoteInterval = undefined
-    }
-
-    if (this.#updateSwapAndBridgeQuoteInterval) return
-
-    const updateSwapAndBridgeQuote = async () => {
-      if (this.#main.swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit)
-        await this.#main.swapAndBridge.updateQuote({
-          skipPreviousQuoteRemoval: true,
-          skipQuoteUpdateOnSameValues: false,
-          skipStatusUpdate: false
-        })
-
-      // Schedule the next update only when the previous one completes
-      this.#updateSwapAndBridgeQuoteInterval = setTimeout(
-        updateSwapAndBridgeQuote,
-        UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
-      )
-    }
-
-    this.#updateSwapAndBridgeQuoteInterval = setTimeout(
-      updateSwapAndBridgeQuote,
-      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
     )
   }
 

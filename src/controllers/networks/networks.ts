@@ -64,7 +64,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  #updateWithRelayerNetworksInterval?: RecurringTimeout
+  #updateWithRelayerNetworksInterval: RecurringTimeout
 
   constructor({
     defaultNetworksMode,
@@ -98,11 +98,11 @@ export class NetworksController extends EventEmitter implements INetworksControl
      * to periodically refetch networks in case there are updates,
      * since the extension relies on the config from relayer.
      */
+    this.#updateWithRelayerNetworksInterval = createRecurringTimeout(
+      this.synchronizeNetworks.bind(this),
+      NETWORKS_UPDATE_INTERVAL
+    )
     if (this.defaultNetworksMode === 'mainnet') {
-      this.#updateWithRelayerNetworksInterval = createRecurringTimeout(
-        this.synchronizeNetworks,
-        NETWORKS_UPDATE_INTERVAL
-      )
       this.#updateWithRelayerNetworksInterval.start()
     }
   }
