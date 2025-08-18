@@ -32,7 +32,6 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -99,6 +98,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -264,14 +264,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #shouldSimulate: boolean
 
-  #activity: IActivityController
+  /**
+   * Should this signAccountOp decide on its own terms whether
+   * to fire a new estimation or not
+   */
+  #shouldReestimate: boolean
+
+  #stopRefetching: boolean = false
 
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
     keystore: IKeystoreController,
     portfolio: IPortfolioController,
-    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -280,6 +285,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
+    shouldReestimate: boolean,
     traceCall?: Function
   ) {
     super()
@@ -287,7 +293,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -318,7 +323,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       networks,
       provider,
       portfolio,
-      activity,
       this.bundlerSwitcher
     )
     const emptyFunc = () => {}
@@ -335,6 +339,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     )
     this.#shouldSimulate = shouldSimulate
+    this.#shouldReestimate = shouldReestimate
 
     this.#load(shouldSimulate)
   }
@@ -391,11 +396,27 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return callError
   }
 
+  async #reestimate() {
+    if (
+      this.#stopRefetching ||
+      this.estimation.status === EstimationStatus.Initial ||
+      this.estimation.status === EstimationStatus.Loading
+    )
+      return
+
+    await wait(30000)
+
+    if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
+
+    this.#shouldSimulate ? this.simulate(true) : this.estimate()
+  }
+
   #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      if (this.#shouldReestimate) this.#reestimate()
     })
     this.gasPrice.onUpdate(() => {
       this.update({
@@ -1039,6 +1060,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+    this.#stopRefetching = true
     this.emitUpdate()
   }
 
@@ -1516,8 +1538,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningErrorAndResetToReadyToSign(error: string) {
-    this.emitError({ level: 'major', message: error, error: new Error(error) })
+  #emitSigningErrorAndResetToReadyToSign(error: string, sendCrashReport?: boolean) {
+    this.emitError({ level: 'major', message: error, error: new Error(error), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -1974,7 +1996,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
-      this.#emitSigningErrorAndResetToReadyToSign(message)
+      this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
     }
   }
 

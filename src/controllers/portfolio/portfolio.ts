@@ -425,7 +425,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
     const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
-    if (!network) throw new Error('network not found')
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
 
     const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
 
@@ -469,7 +469,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } catch (e: any) {
       this.emitError({
         level: 'silent',
-        message: "Error while executing the 'get' function in the portfolio library.",
+        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}).`,
         error: e
       })
       this.temporaryTokens[network.chainId.toString()].isLoading = false
@@ -690,7 +690,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } catch (e: any) {
       this.emitError({
         level: 'silent',
-        message: "Error while executing the 'get' function in the portfolio library.",
+        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
         error: e
       })
       state.isLoading = false
@@ -737,7 +737,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   ) {
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
-    if (!selectedAccount) throw new Error('selected account does not exist')
+    if (!selectedAccount)
+      throw new Error(
+        `${accountId} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
+      )
     if (!this.#latest[accountId]) this.#latest[accountId] = {}
     if (!this.#pending[accountId]) this.#pending[accountId] = {}
 

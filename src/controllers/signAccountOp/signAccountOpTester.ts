@@ -1,6 +1,5 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-import { IActivityController } from '../../interfaces/activity'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -16,7 +15,6 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     networks: INetworksController,
     keystore: IKeystoreController,
     portfolio: IPortfolioController,
-    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
@@ -34,7 +32,6 @@ export class SignAccountOpTesterController extends SignAccountOpController {
       networks,
       keystore,
       portfolio,
-      activity,
       externalSignerControllers,
       account,
       network,
