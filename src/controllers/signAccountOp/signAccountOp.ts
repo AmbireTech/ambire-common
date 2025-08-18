@@ -270,6 +270,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #shouldReestimate: boolean
 
+  #stopRefetching: boolean = false
+
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
@@ -396,13 +398,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   async #reestimate() {
     if (
+      this.#stopRefetching ||
       this.estimation.status === EstimationStatus.Initial ||
       this.estimation.status === EstimationStatus.Loading
     )
       return
 
     await wait(30000)
-    if (!this.#isSignRequestStillActive()) return
+
+    if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
 
     this.#shouldSimulate ? this.simulate(true) : this.estimate()
   }
@@ -1056,6 +1060,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+    this.#stopRefetching = true
     this.emitUpdate()
   }
 
