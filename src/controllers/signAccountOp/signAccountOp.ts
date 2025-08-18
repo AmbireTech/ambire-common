@@ -1533,8 +1533,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningErrorAndResetToReadyToSign(error: string) {
-    this.emitError({ level: 'major', message: error, error: new Error(error) })
+  #emitSigningErrorAndResetToReadyToSign(error: string, sendCrashReport?: boolean) {
+    this.emitError({ level: 'major', message: error, error: new Error(error), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -1991,7 +1991,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
-      this.#emitSigningErrorAndResetToReadyToSign(message)
+      this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
     }
   }
 
