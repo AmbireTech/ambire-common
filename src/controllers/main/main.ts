@@ -707,7 +707,6 @@ export class MainController extends EventEmitter implements IMainController {
         this.networks,
         this.keystore,
         this.portfolio,
-        this.activity,
         this.#externalSignerControllers,
         this.selectedAccount.account,
         network,
@@ -717,6 +716,7 @@ export class MainController extends EventEmitter implements IMainController {
         () => {
           return this.isSignRequestStillActive
         },
+        true,
         true,
         (ctrl: ISignAccountOpController) => {
           this.traceCall(ctrl)
