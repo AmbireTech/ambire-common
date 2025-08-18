@@ -6,12 +6,7 @@ import {
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IMainController } from '../../interfaces/main'
-import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
-import {
-  getActiveRoutesLowestServiceTime,
-  getActiveRoutesUpdateInterval
-} from '../../libs/swapAndBridge/swapAndBridge'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -36,8 +31,6 @@ export class ContinuousUpdatesController extends EventEmitter {
   #portfolioLastUpdatedByIntervalAt: number = Date.now()
 
   #accountsOpsStatusesInterval?: NodeJS.Timeout
-
-  #updateActiveRoutesInterval?: NodeJS.Timeout
 
   #accountStateLatestInterval?: NodeJS.Timeout
 
@@ -80,10 +73,6 @@ export class ContinuousUpdatesController extends EventEmitter {
         !!this.#accountsOpsStatusesInterval && clearTimeout(this.#accountsOpsStatusesInterval)
         this.#accountsOpsStatusesInterval = undefined
       }
-    }, 'continuous-update')
-
-    this.#main.swapAndBridge.onUpdate(() => {
-      this.#setActiveRoutesContinuousUpdate(this.#main.swapAndBridge.activeRoutesInProgress)
     }, 'continuous-update')
   }
 
@@ -131,33 +120,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     }
 
     this.#accountsOpsStatusesInterval = setTimeout(updateStatuses, updateInterval)
-  }
-
-  #setActiveRoutesContinuousUpdate(activeRoutesInProgress?: SwapAndBridgeActiveRoute[]) {
-    if (!activeRoutesInProgress || !activeRoutesInProgress.length) {
-      !!this.#updateActiveRoutesInterval && clearTimeout(this.#updateActiveRoutesInterval)
-      this.#updateActiveRoutesInterval = undefined
-      return
-    }
-    if (this.#updateActiveRoutesInterval) return
-
-    let minServiceTime = getActiveRoutesLowestServiceTime(activeRoutesInProgress)
-
-    const updateActiveRoutes = async () => {
-      minServiceTime = getActiveRoutesLowestServiceTime(activeRoutesInProgress!)
-      await this.#main.swapAndBridge.checkForNextUserTxForActiveRoutes()
-
-      // Schedule the next update only when the previous one completes
-      this.#updateActiveRoutesInterval = setTimeout(
-        updateActiveRoutes,
-        getActiveRoutesUpdateInterval(minServiceTime)
-      )
-    }
-
-    this.#updateActiveRoutesInterval = setTimeout(
-      updateActiveRoutes,
-      getActiveRoutesUpdateInterval(minServiceTime)
-    )
   }
 
   /**

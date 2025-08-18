@@ -7,12 +7,14 @@ export type RecurringTimeout = {
   start: () => void
   restart: () => void
   stop: () => void
+  updateTimeout: (newTimeout: number) => void
 }
 
 export function createRecurringTimeout(fn: () => Promise<void>, timeout: number): RecurringTimeout {
   let timeoutId: NodeJS.Timeout | undefined
   let running = false
   let debounceFlag = false
+  let currentTimeout = timeout
 
   const loop = async () => {
     try {
@@ -21,7 +23,7 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
       console.error('Recurring task error:', err)
     } finally {
       if (running) {
-        timeoutId = setTimeout(loop, timeout)
+        timeoutId = setTimeout(loop, currentTimeout)
       }
     }
   }
@@ -34,7 +36,7 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
       debounceFlag = false
       if (!running) {
         running = true
-        timeoutId = setTimeout(loop, timeout)
+        timeoutId = setTimeout(loop, currentTimeout)
       }
     }, 0)
   }
@@ -57,5 +59,9 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
     scheduleStart()
   }
 
-  return { start, restart, stop }
+  const updateTimeout = (newTimeout: number) => {
+    currentTimeout = newTimeout
+  }
+
+  return { start, restart, stop, updateTimeout }
 }

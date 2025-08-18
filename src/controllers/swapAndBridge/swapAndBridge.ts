@@ -47,6 +47,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
+  getActiveRoutesLowestServiceTime,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
@@ -272,6 +273,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #updateQuoteInterval: RecurringTimeout
 
+  #updateActiveRoutesInterval: RecurringTimeout
+
   constructor({
     accounts,
     keystore,
@@ -341,6 +344,26 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         skipStatusUpdate: false
       })
     }, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL)
+
+    this.#updateActiveRoutesInterval = createRecurringTimeout(async () => {
+      if (!this.activeRoutesInProgress.length) {
+        this.#updateActiveRoutesInterval.stop()
+        return
+      }
+
+      await this.checkForNextUserTxForActiveRoutes()
+
+      const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+      this.#updateActiveRoutesInterval.updateTimeout(minServiceTime)
+    }, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL)
+
+    this.onUpdate(() => {
+      if (this.activeRoutesInProgress.length) {
+        this.#updateActiveRoutesInterval.start()
+      } else {
+        this.#updateActiveRoutesInterval.stop()
+      }
+    }, 'swap-and-bridge')
   }
 
   #emitUpdateIfNeeded(forceUpdate: boolean = false) {
