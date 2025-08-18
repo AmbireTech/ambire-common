@@ -56,4 +56,15 @@ export class UiController extends EventEmitter implements IUiController {
     this.message.sendNavigateMessage(viewId, route, params)
     this.emitUpdate()
   }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON(),
+      uiEvent: undefined,
+      window: undefined,
+      notification: undefined,
+      message: undefined
+    }
+  }
 }
