@@ -793,6 +793,34 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     })
   }
 
+  /**
+   * Decrypt the private key encrypted with the main key,
+   * encrypt it with a new salt and entropy to not leak the
+   * main key's ones, and send it over with the salt and entropy
+   * to the UI
+   */
+  async sendPasswordDecryptedPrivateKeyToUi(secret: string, key: string, salt: string, iv: string) {
+    await this.initialLoadPromise
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+
+    // decrypt the pk of keyAddress with the keystore's key
+    const counter = new aes.Counter(getBytes(iv))
+    const decryptKey = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), getBytes(salt), {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    const derivedKey = decryptKey.slice(0, 16)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    // encrypt the pk of keyAddress with publicKey
+    const decryptedBytes = aesCtr.decrypt(getBytes(key))
+
+    this.#windowManager.sendWindowUiMessage({
+      privateKey: `0x${aes.utils.hex.fromBytes(decryptedBytes)}`
+    })
+  }
+
   async sendSeedToUi(id: string) {
     const decrypted = await this.getSavedSeed(id)
     this.#windowManager.sendWindowUiMessage({
