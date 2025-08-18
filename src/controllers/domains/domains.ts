@@ -98,7 +98,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       ensName = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
     } catch (e: any) {
       // Fail silently with a console error, no biggie, since that would get retried
-      console.error('reverse ENS lookup failed', e)
+      console.warn('reverse ENS lookup failed', e)
     }
 
     this.domains[checksummedAddress] = {
