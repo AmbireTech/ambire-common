@@ -54,6 +54,7 @@ import {
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 /* eslint-disable no-restricted-syntax */
+import { IActivityController } from '../../interfaces/activity'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -272,6 +273,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #stopRefetching: boolean = false
 
+  #activity: IActivityController
+
   constructor(
     accounts: IAccountsController,
     networks: INetworksController,
@@ -280,6 +283,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
+    activity: IActivityController,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
@@ -302,6 +306,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       network
     )
     this.#network = network
+    this.#activity = activity
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
     this.#isSignRequestStillActive = isSignRequestStillActive
@@ -323,7 +328,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       networks,
       provider,
       portfolio,
-      this.bundlerSwitcher
+      this.bundlerSwitcher,
+      this.#activity
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc

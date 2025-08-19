@@ -642,6 +642,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#externalSignerControllers,
       this.#selectedAccountData.account,
       network,
+      this.#activity,
       provider,
       randomId(), // the account op and the action are fabricated
       accountOp,

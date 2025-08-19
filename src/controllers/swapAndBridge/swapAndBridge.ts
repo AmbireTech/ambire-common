@@ -2240,6 +2240,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#externalSignerControllers,
       this.#selectedAccount.account,
       network,
+      this.#activity,
       provider,
       randomId(), // the account op and the action are fabricated
       accountOp,
