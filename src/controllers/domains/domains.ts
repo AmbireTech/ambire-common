@@ -3,6 +3,7 @@ import { getAddress, isAddress } from 'ethers'
 import { IDomainsController } from '../../interfaces/domains'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
@@ -90,12 +91,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.loadingAddresses.push(checksummedAddress)
     this.emitUpdate()
 
-    let ensName = null
+    let ensName: string | null = null
 
     try {
-      ensName = (await reverseLookupEns(checksummedAddress, ethereumProvider)) || null
-    } catch (e) {
-      console.error('ENS reverse lookup unexpected error', e)
+      ensName = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+    } catch (e: any) {
+      // Fail silently with a console error, no biggie, since that would get retried
+      console.warn('reverse ENS lookup failed', e)
     }
 
     this.domains[checksummedAddress] = {
