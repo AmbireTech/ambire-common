@@ -89,8 +89,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
 
     this.loadingAddresses.push(checksummedAddress)
-    // TODO: Maybe forgotten if check?
-    if (emitUpdate) this.emitUpdate()
+    this.emitUpdate()
 
     let ensName: string | null = null
 
