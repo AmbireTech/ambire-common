@@ -3,6 +3,7 @@ import { ZeroAddress } from 'ethers'
 /* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -51,13 +52,16 @@ export class EstimationController extends EventEmitter {
 
   #notFatalBundlerError?: Error
 
+  #activity: IActivityController
+
   constructor(
     keystore: IKeystoreController,
     accounts: IAccountsController,
     networks: INetworksController,
     provider: RPCProvider,
     portfolio: IPortfolioController,
-    bundlerSwitcher: BundlerSwitcher
+    bundlerSwitcher: BundlerSwitcher,
+    activity: IActivityController
   ) {
     super()
     this.#keystore = keystore
@@ -66,6 +70,7 @@ export class EstimationController extends EventEmitter {
     this.#provider = provider
     this.#portfolio = portfolio
     this.#bundlerSwitcher = bundlerSwitcher
+    this.#activity = activity
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
@@ -175,7 +180,13 @@ export class EstimationController extends EventEmitter {
         if (!this) return
         this.estimationRetryError = e
         this.emitUpdate()
-      }
+      },
+      this.#activity.broadcastedButNotConfirmed.find(
+        (accOp) =>
+          accOp.accountAddr === account.addr &&
+          accOp.chainId === network.chainId &&
+          !!accOp.asUserOperation
+      )
     ).catch((e) => e)
 
     const isSuccess = !(estimation instanceof Error)
@@ -185,9 +196,8 @@ export class EstimationController extends EventEmitter {
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
       this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
-      if (estimation.bundler instanceof Error) {
-        this.#notFatalBundlerError = estimation.bundler
-      }
+      this.#notFatalBundlerError =
+        estimation.bundler instanceof Error ? estimation.bundler : undefined
     } else {
       this.estimation = null
       this.error = estimation
@@ -233,6 +243,7 @@ export class EstimationController extends EventEmitter {
       })
     }
 
+    // TODO: test this
     if (
       this.estimation?.bundlerEstimation?.nonFatalErrors?.find(
         (err) => err.cause === '4337_ESTIMATION'
