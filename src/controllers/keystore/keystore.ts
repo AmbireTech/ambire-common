@@ -8,7 +8,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
+import {
+  computeAddress,
+  concat,
+  getBytes,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
@@ -761,6 +770,76 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.#ui.message.sendUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
   }
 
+  /**
+   * Decrypt the private key encrypted with the main key,
+   * encrypt it with a new salt and entropy to not leak the
+   * main key's ones, and send it over with the salt and entropy
+   * to the UI
+   */
+  async sendPasswordEncryptedPrivateKeyToUi(keyAddress: string, secret: string, entropy: string) {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
+
+    const entropyGenerator = new EntropyGenerator()
+    const salt = entropyGenerator.generateRandomBytes(32, entropy)
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    await wait(0)
+    const iv = entropyGenerator.generateRandomBytes(16, entropy)
+    const derivedKey = key.slice(0, 16)
+    const counter = new aes.Counter(iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const privateKey = aesCtr.encrypt(getBytes(`0x${decryptedPrivateKey}`))
+
+    this.#windowManager.sendWindowUiMessage({
+      privateKey: hexlify(privateKey),
+      salt: hexlify(salt),
+      iv: hexlify(iv)
+    })
+  }
+
+  /**
+   * Decrypts an imported private key using the provided password (secret, salt, iv),
+   * validates the decrypted key against the associated keys,
+   * and sends the result to the UI.
+   */
+  async sendPasswordDecryptedPrivateKeyToUi(
+    secret: string,
+    key: string,
+    salt: string,
+    iv: string,
+    associatedKeys: string[]
+  ) {
+    await this.initialLoadPromise
+
+    const counter = new aes.Counter(getBytes(iv))
+    const decryptKey = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), getBytes(salt), {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    const derivedKey = decryptKey.slice(0, 16)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const decryptedBytes = aesCtr.decrypt(getBytes(key))
+    const privateKey = `0x${aes.utils.hex.fromBytes(decryptedBytes)}`
+    const addr = computeAddress(privateKey)
+
+    if (!associatedKeys.includes(addr)) {
+      this.errorMessage = 'Incorrect password. Please try again.'
+      this.emitUpdate()
+      return
+    }
+
+    this.#windowManager.sendWindowUiMessage({
+      privateKey
+    })
+  }
+
   async sendSeedToUi(id: string) {
     const decrypted = await this.getSavedSeed(id)
     this.#ui.message.sendUiMessage({
@@ -780,15 +859,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
 
-    const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress)
+    const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === 'internal')
     if (!storedKey) throw new Error('keystore: key not found')
-    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
 
     // decrypt the pk of keyAddress with the keystore's key
     const encryptedBytes = getBytes(storedKey.privKey as string)
     const counter = new aes.Counter(this.#mainKey.iv)
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-    // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
     return aes.utils.hex.fromBytes(decryptedBytes)
   }

@@ -23,6 +23,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
+    shouldReestimate: boolean,
     traceCall: Function,
     estimateController: EstimationController,
     gasPriceController: GasPriceController
@@ -40,6 +41,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
       accountOp,
       isSignRequestStillActive,
       shouldSimulate,
+      shouldReestimate,
       traceCall
     )
 

@@ -746,7 +746,7 @@ export class MainController extends EventEmitter implements IMainController {
         level: 'major',
         message,
         error: new Error(
-          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}`
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.feePayerKey?.type}. Type: ${type}.`
         )
       })
       return

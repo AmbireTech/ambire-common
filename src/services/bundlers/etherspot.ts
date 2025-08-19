@@ -61,4 +61,8 @@ export class Etherspot extends Bundler {
   public getName(): BUNDLER {
     return ETHERSPOT
   }
+
+  public shouldReestimateBeforeBroadcast(network: Network): boolean {
+    return false
+  }
 }
