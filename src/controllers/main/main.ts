@@ -537,7 +537,6 @@ export class MainController extends EventEmitter implements IMainController {
    * caching mechanisms to prevent unnecessary calls.
    */
   async onPopupOpen(viewId: string) {
-    console.log('in popup')
     const selectedAccountAddr = this.selectedAccount.account?.addr
 
     if (selectedAccountAddr) {
@@ -554,9 +553,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
     }
 
-    console.log('in popup 2', this.ui.views)
     this.ui.updateView(viewId, { isReady: true })
-    console.log('in popup 3', this.ui.views)
   }
 
   async #load(): Promise<void> {
