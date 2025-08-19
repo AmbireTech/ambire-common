@@ -29,13 +29,13 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   updatePortfolioInterval: RecurringTimeout
 
-  #accountsOpsStatusesInterval?: NodeJS.Timeout
+  accountsOpsStatusesInterval: RecurringTimeout
 
   accountStateLatestInterval: RecurringTimeout
 
   accountStatePendingInterval: RecurringTimeout
 
-  #fastAccountStateReFetchTimeout?: NodeJS.Timeout
+  fastAccountStateReFetchTimeout: RecurringTimeout
 
   #retriedFastAccountStateReFetchForNetworks: string[] = []
 
@@ -66,6 +66,7 @@ export class ContinuousUpdatesController extends EventEmitter {
         this.updatePortfolioInterval.restart({
           timeout: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         })
+        this.fastAccountStateReFetchTimeout.start()
       }
     })
     this.#main.ui.uiEvent.on('removeView', () => {
@@ -73,6 +74,7 @@ export class ContinuousUpdatesController extends EventEmitter {
         this.updatePortfolioInterval.restart({
           timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         })
+        this.fastAccountStateReFetchTimeout.stop()
       }
     })
 
@@ -128,62 +130,20 @@ export class ContinuousUpdatesController extends EventEmitter {
       this.accountStatePendingInterval.updateTimeout({ timeout: interval })
     }, ACCOUNT_STATE_PENDING_INTERVAL)
 
-    this.#main.onUpdate(() => {
-      if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
-        this.accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
-        this.#setAccountsOpsStatusesContinuousUpdate(ACTIVITY_REFRESH_INTERVAL)
-      }
-    }, 'continuous-update')
-
-    this.#main.providers.onUpdate(() => {
-      this.#setFrequentLatestAccountStateContinuousUpdate()
-    }, 'continuous-update')
-
-    this.#main.activity.onUpdate(() => {
-      if (this.#main.activity.broadcastedButNotConfirmed.length) {
-        if (!this.#accountsOpsStatusesInterval) {
-          this.#setAccountsOpsStatusesContinuousUpdate(ACTIVITY_REFRESH_INTERVAL)
-        }
-      } else {
-        !!this.#accountsOpsStatusesInterval && clearTimeout(this.#accountsOpsStatusesInterval)
-        this.#accountsOpsStatusesInterval = undefined
-      }
-    }, 'continuous-update')
-  }
-
-  #setAccountsOpsStatusesContinuousUpdate(updateInterval: number) {
-    if (this.#accountsOpsStatusesInterval) clearTimeout(this.#accountsOpsStatusesInterval)
-
-    const updateStatuses = async () => {
+    this.accountsOpsStatusesInterval = createRecurringTimeout(async () => {
       const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
-
       // Schedule the next update only when the previous one completes
-      const interval = getIntervalRefreshTime(updateInterval, newestOpTimestamp)
-      this.#accountsOpsStatusesInterval = setTimeout(updateStatuses, interval)
-    }
+      const interval = getIntervalRefreshTime(ACTIVITY_REFRESH_INTERVAL, newestOpTimestamp)
+      this.accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
+    }, ACTIVITY_REFRESH_INTERVAL)
 
-    this.#accountsOpsStatusesInterval = setTimeout(updateStatuses, updateInterval)
-  }
-
-  /**
-   * Update failed network states more often. If a network's first failed
-   *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
-   */
-  #setFrequentLatestAccountStateContinuousUpdate() {
-    const isExtensionActive = this.#main.ui.views.length > 0
-
-    if (this.#fastAccountStateReFetchTimeout) clearTimeout(this.#fastAccountStateReFetchTimeout)
-
-    // If there are no open ports the account state will be updated
-    // automatically when the extension is opened.
-    if (!isExtensionActive) return
-
-    const updateAccountState = async () => {
-      const failedChainIds = getNetworksWithFailedRPC({
-        providers: this.#main.providers.providers
-      })
-
-      if (!failedChainIds.length) return
+    /**
+     * Update failed network states more often. If a network's first failed
+     *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
+     */
+    this.fastAccountStateReFetchTimeout = createRecurringTimeout(async () => {
+      const failedChainIds = getNetworksWithFailedRPC({ providers: this.#main.providers.providers })
+      if (!failedChainIds.length) this.fastAccountStateReFetchTimeout.stop()
 
       const retriedFastAccountStateReFetchForNetworks =
         this.#retriedFastAccountStateReFetchForNetworks
@@ -222,11 +182,28 @@ export class ContinuousUpdatesController extends EventEmitter {
         retriedFastAccountStateReFetchForNetworks.push(id)
       })
 
-      if (!failedChainIds.length) return
+      if (!failedChainIds.length) this.fastAccountStateReFetchTimeout.stop()
 
-      this.#fastAccountStateReFetchTimeout = setTimeout(updateAccountState, updateTime)
-    }
+      this.fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
+    }, 8000)
 
-    this.#fastAccountStateReFetchTimeout = setTimeout(updateAccountState, 8000)
+    this.#main.onUpdate(() => {
+      if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
+        this.accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
+        this.accountsOpsStatusesInterval.start()
+      }
+    }, 'continuous-update')
+
+    this.#main.providers.onUpdate(() => {
+      this.fastAccountStateReFetchTimeout.restart()
+    }, 'continuous-update')
+
+    this.#main.activity.onUpdate(() => {
+      if (this.#main.activity.broadcastedButNotConfirmed.length) {
+        this.accountsOpsStatusesInterval.start()
+      } else {
+        this.accountsOpsStatusesInterval.stop()
+      }
+    }, 'continuous-update')
   }
 }
