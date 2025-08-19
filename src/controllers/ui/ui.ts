@@ -26,16 +26,19 @@ export class UiController extends EventEmitter implements IUiController {
   addView(view: View) {
     this.views.push(view)
 
-    this.uiEvent.emit('addView')
-    console.log('add view', view.type)
+    this.uiEvent.emit('addView', view)
     this.emitUpdate()
   }
 
-  updateView(viewId: string, { currentRoute }: Pick<View, 'currentRoute'>) {
+  updateView(viewId: string, updatedProps: Pick<View, 'currentRoute' | 'isReady'>) {
     const view = this.views.find((v) => v.id === viewId)
-    if (!view || view.currentRoute === currentRoute) return
+    if (!view) return
 
-    view.currentRoute = currentRoute
+    // @ts-ignore
+    const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => view[key] !== value)
+    if (!shouldUpdate) return
+
+    Object.assign(view, updatedProps)
     this.emitUpdate()
   }
 
@@ -46,7 +49,6 @@ export class UiController extends EventEmitter implements IUiController {
     this.views = this.views.filter((v) => v.id !== viewId)
 
     this.uiEvent.emit('removeView', view)
-    console.log('remove view', view.type)
     this.emitUpdate()
   }
 

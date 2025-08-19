@@ -48,7 +48,7 @@ import { IStorageController, Storage } from '../../interfaces/storage'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
-import { IUiController, UiManager } from '../../interfaces/ui'
+import { IUiController, UiManager, View } from '../../interfaces/ui'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -209,8 +209,6 @@ export class MainController extends EventEmitter implements IMainController {
   isOffline: boolean = false
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
-
-  onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
 
   ui: IUiController
 
@@ -506,6 +504,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           new AccountPickerController({
             accounts: this.accounts,
@@ -524,6 +523,10 @@ export class MainController extends EventEmitter implements IMainController {
         )
       }
     })
+
+    this.ui.uiEvent.on('addView', async (view: View) => {
+      if (view.type === 'popup') await this.onPopupOpen(view.id)
+    })
   }
 
   /**
@@ -533,11 +536,9 @@ export class MainController extends EventEmitter implements IMainController {
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
-  async onPopupOpen() {
+  async onPopupOpen(viewId: string) {
+    console.log('in popup')
     const selectedAccountAddr = this.selectedAccount.account?.addr
-
-    this.onPopupOpenStatus = 'LOADING'
-    await this.forceEmitUpdate()
 
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
@@ -553,11 +554,9 @@ export class MainController extends EventEmitter implements IMainController {
       }
     }
 
-    this.onPopupOpenStatus = 'SUCCESS'
-    await this.forceEmitUpdate()
-
-    this.onPopupOpenStatus = 'INITIAL'
-    await this.forceEmitUpdate()
+    console.log('in popup 2', this.ui.views)
+    this.ui.updateView(viewId, { isReady: true })
+    console.log('in popup 3', this.ui.views)
   }
 
   async #load(): Promise<void> {
