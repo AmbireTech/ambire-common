@@ -490,7 +490,14 @@ export class MainController extends EventEmitter implements IMainController {
       // This gives it full access to read main’s state and call its methods,
       // but prevents any direct modification to the main state.
       main: new Proxy(this, {
-        set: () => {
+        get(target, prop, receiver) {
+          const value = Reflect.get(target, prop, receiver)
+          if (typeof value === 'function') {
+            return value.bind(target) // bind original instance to preserve `this`
+          }
+          return value
+        },
+        set() {
           throw new Error('Read-only')
         }
       })

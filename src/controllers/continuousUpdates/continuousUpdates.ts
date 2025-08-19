@@ -8,7 +8,6 @@ import {
 import { IMainController } from '../../interfaces/main'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
 import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
-import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
@@ -24,7 +23,7 @@ const getIntervalRefreshTime = (constUpdateInterval: number, newestOpTimestamp: 
     ? constUpdateInterval
     : constUpdateInterval + (new Date().getTime() - newestOpTimestamp) / 10
 }
-export class ContinuousUpdatesController extends EventEmitter {
+export class ContinuousUpdatesController {
   #main: IMainController
 
   updatePortfolioInterval: RecurringTimeout
@@ -40,8 +39,6 @@ export class ContinuousUpdatesController extends EventEmitter {
   #retriedFastAccountStateReFetchForNetworks: string[] = []
 
   constructor({ main }: { main: IMainController }) {
-    super()
-
     this.#main = main
 
     // Postpone the portfolio update for the next interval
