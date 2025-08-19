@@ -32,6 +32,8 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
+/* eslint-disable no-restricted-syntax */
+import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -53,8 +55,6 @@ import {
 } from '../../interfaces/signAccountOp'
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
-/* eslint-disable no-restricted-syntax */
-import { IActivityController } from '../../interfaces/activity'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -160,6 +160,7 @@ export type SignAccountOpUpdateProps = {
   gasPrices?: GasRecommendation[] | null
   feeToken?: TokenResult
   paidBy?: string
+  paidByKeyType?: Key['type']
   speed?: FeeSpeed
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
@@ -475,10 +476,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
 
+    if (this.accountOp.gasFeePayment && !this.accountOp.gasFeePayment.paidByKeyType) {
+      const key = this.#keystore.getFeePayerKey(this.accountOp)
+
+      if (key instanceof Error) return
+
+      this.accountOp.gasFeePayment.paidByKeyType = key.type
+    }
+
     // we can set a default paidBy and feeToken here if they aren't any set
   }
 
-  #setGasFeePayment() {
+  #setGasFeePayment(paidByKeyType?: Key['type']) {
     if (
       this.isInitialized &&
       this.paidBy &&
@@ -486,7 +495,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.feeTokenResult &&
       this.selectedOption
     ) {
-      this.accountOp.gasFeePayment = this.#getGasFeePayment()
+      this.accountOp.gasFeePayment = this.#getGasFeePayment(paidByKeyType)
     }
   }
 
@@ -846,7 +855,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     bundlerGasPrices,
     blockGasLimit,
     signedTransactionsCount,
-    hasNewEstimation
+    hasNewEstimation,
+    paidByKeyType
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -998,7 +1008,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
-      this.#setGasFeePayment()
+      this.#setGasFeePayment(paidByKeyType)
       this.updateStatus()
       this.calculateWarnings()
     } catch (e: any) {
@@ -1389,7 +1399,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
   }
 
-  #getGasFeePayment(): GasFeePayment | null {
+  #getGasFeePayment(paidByKeyType?: Key['type']): GasFeePayment | null {
     if (!this.isInitialized) {
       this.emitError({
         level: 'major',
@@ -1468,6 +1478,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     return {
       paidBy: this.paidBy,
+      // Update the paidByKeyType or keep the existing one (as this function is called)
+      // on every update, we must persist the chosen paidByKeyType
+      paidByKeyType: paidByKeyType || this.accountOp.gasFeePayment?.paidByKeyType || null,
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenChainId: this.feeTokenResult.chainId,

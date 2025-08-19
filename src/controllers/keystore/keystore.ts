@@ -1069,11 +1069,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   getFeePayerKey(op: AccountOp): Key | Error {
-    const feePayerKeys = this.keys.filter((key) => key.addr === op.gasFeePayment!.paidBy)
-    const feePayerKey =
-      // Temporarily prioritize the key with the same type as the signing key.
-      // TODO: Implement a way to choose the key type to broadcast with.
-      feePayerKeys.find((key) => key.type === op.signingKeyType) || feePayerKeys[0]
+    const feePayerKeys = this.keys.filter((key) => key.addr === op.gasFeePayment?.paidBy)
+    const { paidByKeyType } = op.gasFeePayment || {}
+    let feePayerKey = feePayerKeys[0]
+
+    if (paidByKeyType) {
+      feePayerKey = feePayerKeys.find((key) => key.type === paidByKeyType) || feePayerKey
+    }
 
     if (!feePayerKey) {
       const missingKeyAddr = shortenAddress(op.gasFeePayment!.paidBy, 13)
