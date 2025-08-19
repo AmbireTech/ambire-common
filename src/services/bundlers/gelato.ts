@@ -8,7 +8,9 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class Gelato extends Bundler {
   protected getUrl(network: Network): string {
-    return `https://api.gelato.digital/bundlers/${network.chainId.toString()}/rpc`
+    return `https://api.gelato.digital/bundlers/${network.chainId.toString()}/rpc?apiKey=${
+      process.env.REACT_APP_GELATO_API_KEY
+    }`
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
