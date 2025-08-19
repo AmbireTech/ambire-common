@@ -5,8 +5,9 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/ui'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
+import { UiController } from '../ui/ui'
 import { Hex } from '../../interfaces/hex'
 import {
   IKeystoreController,
@@ -66,14 +67,14 @@ let keystore: IKeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
     storage = produceMemoryStore()
     storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
   })
   test('login first time', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
@@ -138,12 +139,7 @@ describe('happy cases', () => {
   test('full keystore sync', async () => {
     const storage2 = produceMemoryStore()
     const storageCtrl2 = new StorageController(storage2)
-    const keystore2 = new KeystoreController(
-      'default',
-      storageCtrl2,
-      keystoreSigners,
-      windowManager
-    )
+    const keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, uiCtrl)
 
     const keys = [
       {

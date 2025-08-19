@@ -5,13 +5,14 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/ui'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { EIP_7702_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { KeystoreController } from '../../controllers/keystore/keystore'
 import { StorageController } from '../../controllers/storage/storage'
+import { UiController } from '../../controllers/ui/ui'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -139,19 +140,14 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
-const windowManager = mockWindowManager().windowManager
-
 let keystore: IKeystoreController
 describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(
-      'default',
-      storageCtrl,
-      { internal: KeystoreSigner },
-      windowManager
-    )
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
+    keystore = new KeystoreController('default', storageCtrl, { internal: KeystoreSigner }, uiCtrl)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([
@@ -916,12 +912,9 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController(
-      'default',
-      storageCtrl,
-      { internal: KeystoreSigner },
-      windowManager
-    )
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
+    keystore = new KeystoreController('default', storageCtrl, { internal: KeystoreSigner }, uiCtrl)
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
     await keystore.addKeys([

@@ -1,4 +1,3 @@
-import { IAccountsController } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -9,9 +8,10 @@ import {
   produceMemoryStore,
   waitForAccountsCtrlFirstLoad
 } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/ui'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IAccountsController } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
@@ -19,6 +19,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { AccountsController } from './accounts'
 
 describe('AccountsController', () => {
@@ -68,18 +69,20 @@ describe('AccountsController', () => {
       providersCtrl.removeProvider(id)
     }
   })
-  const windowManager = mockWindowManager().windowManager
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
   let accountsCtrl: IAccountsController
   test('should init AccountsController', async () => {
     await storageCtrl.set('accounts', accounts)
+
     accountsCtrl = new AccountsController(
       storageCtrl,
       providersCtrl,
       networksCtrl,
-      new KeystoreController('default', storageCtrl, {}, windowManager),
+      new KeystoreController('default', storageCtrl, {}, uiCtrl),
       () => {},
       () => {},
       () => {}

@@ -4,7 +4,7 @@ import { describe, expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/ui'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
@@ -24,6 +24,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { ActivityController } from './activity'
 import { SignedMessage } from './types'
 
@@ -194,8 +195,10 @@ describe('Activity Controller ', () => {
       }
     })
     providersCtrl = new ProvidersController(networksCtrl)
-    const windowManager = mockWindowManager().windowManager
-    const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
+    const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
     portfolioCtrl = new PortfolioController(
       storageCtrl,
       fetch,
