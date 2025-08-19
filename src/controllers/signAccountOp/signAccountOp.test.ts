@@ -497,6 +497,7 @@ const init = async (
     op,
     () => {},
     true,
+    true,
     () => {},
     estimationController,
     gasPriceController
