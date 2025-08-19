@@ -710,6 +710,7 @@ export class MainController extends EventEmitter implements IMainController {
         this.#externalSignerControllers,
         this.selectedAccount.account,
         network,
+        this.activity,
         this.providers.providers[network.chainId.toString()],
         actionId,
         accountOp,
