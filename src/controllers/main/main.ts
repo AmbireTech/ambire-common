@@ -619,6 +619,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.transfer.resetForm()
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
+    this.#continuousUpdates.accountStatePendingInterval.restart()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
