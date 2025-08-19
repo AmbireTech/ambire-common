@@ -6,22 +6,35 @@ import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
-import { DappProviderRequest } from '../../interfaces/dapp'
-import { Network } from '../../interfaces/network'
-import { NotificationManager } from '../../interfaces/notification'
-import { BuildRequest } from '../../interfaces/requests'
+import { AccountId, IAccountsController } from '../../interfaces/account'
 import {
+  AccountOpAction,
+  Action,
+  ActionExecutionType,
+  ActionPosition
+} from '../../interfaces/actions'
+import { Banner } from '../../interfaces/banner'
+import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { NotificationManager } from '../../interfaces/notification'
+import { IProvidersController } from '../../interfaces/provider'
+import { BuildRequest, IRequestsController } from '../../interfaces/requests'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { ISignAccountOpController } from '../../interfaces/signAccountOp'
+import {
+  ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
+import { ITransactionManagerController } from '../../interfaces/transactionManager'
+import { ITransferController } from '../../interfaces/transfer'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { WindowManager } from '../../interfaces/window'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
-// eslint-disable-next-line import/no-cycle
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork
@@ -45,26 +58,10 @@ import {
   buildTransferUserRequest,
   prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
-import { AccountsController } from '../accounts/accounts'
-// eslint-disable-next-line import/no-cycle
-import {
-  AccountOpAction,
-  Action,
-  ActionExecutionType,
-  ActionPosition,
-  ActionsController
-} from '../actions/actions'
-import { DappsController } from '../dapps/dapps'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-// eslint-disable-next-line import/no-cycle
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { TransactionManagerController } from '../transaction/transactionManager'
-import { TransferController } from '../transfer/transfer'
+import { ActionsController } from '../actions/actions'
+import EventEmitter from '../eventEmitter/eventEmitter'
+import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
+import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -75,28 +72,28 @@ const STATUS_WRAPPED_METHODS = {
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
  * and testability, this logic was encapsulated in this dedicated controller.
  */
-export class RequestsController extends EventEmitter {
+export class RequestsController extends EventEmitter implements IRequestsController {
   #relayerUrl: string
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #dapps: DappsController
+  #dapps: IDappsController
 
-  #transfer: TransferController
+  #transfer: ITransferController
 
-  #swapAndBridge: SwapAndBridgeController
+  #swapAndBridge: ISwapAndBridgeController
 
-  #transactionManager?: TransactionManagerController
+  #transactionManager?: ITransactionManagerController
 
-  #getSignAccountOp: () => SignAccountOpController | null
+  #getSignAccountOp: () => ISignAccountOpController | null
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -140,18 +137,18 @@ export class RequestsController extends EventEmitter {
     guardHWSigning
   }: {
     relayerUrl: string
-    accounts: AccountsController
-    networks: NetworksController
-    providers: ProvidersController
-    selectedAccount: SelectedAccountController
-    keystore: KeystoreController
-    dapps: DappsController
-    transfer: TransferController
-    swapAndBridge: SwapAndBridgeController
-    transactionManager?: TransactionManagerController
+    accounts: IAccountsController
+    networks: INetworksController
+    providers: IProvidersController
+    selectedAccount: ISelectedAccountController
+    keystore: IKeystoreController
+    dapps: IDappsController
+    transfer: ITransferController
+    swapAndBridge: ISwapAndBridgeController
+    transactionManager?: ITransactionManagerController
     windowManager: WindowManager
     notificationManager: NotificationManager
-    getSignAccountOp: () => SignAccountOpController | null
+    getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>

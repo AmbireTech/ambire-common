@@ -7,7 +7,9 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
+import { ISwapAndBridgeController } from '../../interfaces/swapAndBridge'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
@@ -63,7 +65,7 @@ const accounts = [
 //
 // In order to test the status better, we either need real data or a mock on signAccountOp
 
-let swapAndBridgeController: SwapAndBridgeController
+let swapAndBridgeController: ISwapAndBridgeController
 const windowManager = mockWindowManager().windowManager
 
 const notificationManager = {
@@ -76,7 +78,7 @@ const providers = Object.fromEntries(
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
   fetch,

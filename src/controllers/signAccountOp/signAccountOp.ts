@@ -30,13 +30,23 @@ import {
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
+import { AccountOpAction } from '../../interfaces/actions'
 import { Price } from '../../interfaces/assets'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, ExternalSignerControllers, InternalKey, Key } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import {
+  ExternalKey,
+  ExternalSignerControllers,
+  IKeystoreController,
+  InternalKey,
+  Key
+} from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
+  ISignAccountOpController,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
   Warning
@@ -44,6 +54,7 @@ import {
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 /* eslint-disable no-restricted-syntax */
+import { IActivityController } from '../../interfaces/activity'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -88,16 +99,11 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
-import { AccountsController } from '../accounts/accounts'
-import { AccountOpAction } from '../actions/actions'
-import { ActivityController } from '../activity/activity'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
@@ -165,12 +171,12 @@ export type SignAccountOpUpdateProps = {
   hasNewEstimation?: boolean
 }
 
-export class SignAccountOpController extends EventEmitter {
-  #accounts: AccountsController
+export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
+  #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -259,22 +265,31 @@ export class SignAccountOpController extends EventEmitter {
    */
   #shouldSimulate: boolean
 
-  #activity: ActivityController
+  /**
+   * Should this signAccountOp decide on its own terms whether
+   * to fire a new estimation or not
+   */
+  #shouldReestimate: boolean
+
+  #stopRefetching: boolean = false
+
+  #activity: IActivityController
 
   constructor(
-    accounts: AccountsController,
-    networks: NetworksController,
-    keystore: KeystoreController,
-    portfolio: PortfolioController,
-    activity: ActivityController,
+    accounts: IAccountsController,
+    networks: INetworksController,
+    keystore: IKeystoreController,
+    portfolio: IPortfolioController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
+    activity: IActivityController,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
+    shouldReestimate: boolean,
     traceCall?: Function
   ) {
     super()
@@ -282,7 +297,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -292,6 +306,7 @@ export class SignAccountOpController extends EventEmitter {
       network
     )
     this.#network = network
+    this.#activity = activity
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
     this.#isSignRequestStillActive = isSignRequestStillActive
@@ -313,8 +328,8 @@ export class SignAccountOpController extends EventEmitter {
       networks,
       provider,
       portfolio,
-      activity,
-      this.bundlerSwitcher
+      this.bundlerSwitcher,
+      this.#activity
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc
@@ -330,6 +345,7 @@ export class SignAccountOpController extends EventEmitter {
       })
     )
     this.#shouldSimulate = shouldSimulate
+    this.#shouldReestimate = shouldReestimate
 
     this.#load(shouldSimulate)
   }
@@ -386,11 +402,27 @@ export class SignAccountOpController extends EventEmitter {
     return callError
   }
 
+  async #reestimate() {
+    if (
+      this.#stopRefetching ||
+      this.estimation.status === EstimationStatus.Initial ||
+      this.estimation.status === EstimationStatus.Loading
+    )
+      return
+
+    await wait(30000)
+
+    if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
+
+    this.#shouldSimulate ? this.simulate(true) : this.estimate()
+  }
+
   #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      if (this.#shouldReestimate) this.#reestimate()
     })
     this.gasPrice.onUpdate(() => {
       this.update({
@@ -447,7 +479,13 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #setGasFeePayment() {
-    if (this.isInitialized && this.paidBy && this.selectedFeeSpeed && this.feeTokenResult) {
+    if (
+      this.isInitialized &&
+      this.paidBy &&
+      this.selectedFeeSpeed &&
+      this.feeTokenResult &&
+      this.selectedOption
+    ) {
       this.accountOp.gasFeePayment = this.#getGasFeePayment()
     }
   }
@@ -1028,6 +1066,7 @@ export class SignAccountOpController extends EventEmitter {
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+    this.#stopRefetching = true
     this.emitUpdate()
   }
 
@@ -1505,8 +1544,8 @@ export class SignAccountOpController extends EventEmitter {
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningErrorAndResetToReadyToSign(error: string) {
-    this.emitError({ level: 'major', message: error, error: new Error(error) })
+  #emitSigningErrorAndResetToReadyToSign(error: string, sendCrashReport?: boolean) {
+    this.emitError({ level: 'major', message: error, error: new Error(error), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -1963,7 +2002,7 @@ export class SignAccountOpController extends EventEmitter {
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
-      this.#emitSigningErrorAndResetToReadyToSign(message)
+      this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
     }
   }
 

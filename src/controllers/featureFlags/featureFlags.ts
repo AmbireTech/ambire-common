@@ -1,4 +1,5 @@
 import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
@@ -7,7 +8,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
  * enables or disables features only at runtime. Can be useful for feature
  * toggling, A/B testing, and gradual feature roll-outs.
  */
-export class FeatureFlagsController extends EventEmitter {
+export class FeatureFlagsController extends EventEmitter implements IFeatureFlagsController {
   #flags: FeatureFlags
 
   constructor(featureFlags: Partial<FeatureFlags>) {

@@ -11,10 +11,14 @@ import { mockWindowManager } from '../../../test/helpers/window'
 import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key, TxnRequest } from '../../interfaces/keystore'
+import { IInviteController } from '../../interfaces/invite'
+import { IKeystoreController, Key, TxnRequest } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { EIP7702Signature } from '../../interfaces/signatures'
+import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -93,12 +97,12 @@ const messageToSign: Message = {
 }
 
 describe('SignMessageController', () => {
-  let signMessageController: SignMessageController
-  let keystoreCtrl: KeystoreController
-  let accountsCtrl: AccountsController
-  let networksCtrl: NetworksController
-  let providersCtrl: ProvidersController
-  let inviteCtrl: InviteController
+  let signMessageController: ISignMessageController
+  let keystoreCtrl: IKeystoreController
+  let accountsCtrl: IAccountsController
+  let networksCtrl: INetworksController
+  let providersCtrl: IProvidersController
+  let inviteCtrl: IInviteController
 
   beforeAll(async () => {
     const storage = produceMemoryStore()

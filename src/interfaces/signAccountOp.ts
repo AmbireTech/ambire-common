@@ -1,9 +1,18 @@
+import { ControllerInterface } from './controller'
+
+export type ISignAccountOpController = ControllerInterface<
+  InstanceType<typeof import('../controllers/signAccountOp/signAccountOp').SignAccountOpController>
+>
+
 type Warning = {
   id: string
   title: string
   text?: string
   promptBefore?: ('sign' | 'one-click-sign')[]
+  type?: Type
 }
+
+type Type = 'error' | 'warning' | 'info3'
 
 type SignAccountOpError = {
   title: string

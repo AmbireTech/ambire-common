@@ -1,5 +1,5 @@
-import { AccountOpAction, Action } from '../../controllers/actions/actions'
 import { Account, AccountId } from '../../interfaces/account'
+import { AccountOpAction, Action } from '../../interfaces/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'

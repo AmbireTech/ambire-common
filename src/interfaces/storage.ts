@@ -1,6 +1,5 @@
 import { SignedMessage } from '../controllers/activity/types'
-// eslint-disable-next-line import/no-cycle
-import { StoredPhishingDetection } from '../controllers/phishing/phishing'
+import { StoredPhishingDetection } from './phishing'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
@@ -9,11 +8,16 @@ import {
   PreviousHintsStorage
 } from '../libs/portfolio/interfaces'
 import { Account, AccountId, AccountPreferences } from './account'
+import { ControllerInterface } from './controller'
 import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network } from './network'
 import { CashbackStatusByAccount } from './selectedAccount'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
+
+export type IStorageController = ControllerInterface<
+  InstanceType<typeof import('../controllers/storage/storage').StorageController>
+>
 
 export type StorageProps = {
   passedMigrations: string[]

@@ -11,7 +11,8 @@ class RpcErrorHandler implements ErrorHandler {
   public matches(data: string, error: any) {
     // This is the only case in which we want to check for a specific error message
     // because it's a custom error that should be handled as an RPC error
-    if (error?.message === RPC_HARDCODED_ERRORS.rpcTimeout) return true
+    if (error?.message && (error.message as string).startsWith(RPC_HARDCODED_ERRORS.rpcTimeout))
+      return true
 
     return (
       !data &&

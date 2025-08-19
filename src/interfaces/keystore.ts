@@ -6,10 +6,15 @@ import { GasFeePayment } from '../libs/accountOp/accountOp'
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
+import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 import { TypedMessage } from './userRequest'
+
+export type IKeystoreController = ControllerInterface<
+  InstanceType<typeof import('../controllers/keystore/keystore').KeystoreController>
+>
 
 /**
  * The ExternalSignerController interface defines the structure for controllers

@@ -4,6 +4,7 @@ import { expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockWindowManager } from '../../../test/helpers/window'
+import { IPhishingController } from '../../interfaces/phishing'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from '../storage/storage'
 import { PhishingController } from './phishing'
@@ -13,7 +14,7 @@ const storageCtrl = new StorageController(storage)
 
 const windowManager = mockWindowManager().windowManager
 
-let phishing: PhishingController
+let phishing: IPhishingController
 const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
 describe('PhishingController', () => {
   beforeEach(async () => {

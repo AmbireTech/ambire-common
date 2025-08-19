@@ -15,6 +15,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
@@ -370,7 +371,7 @@ const init = async (
     }
   ])
 
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
     fetch,
@@ -454,12 +455,18 @@ const init = async (
   const bundlerSwitcher = new BundlerSwitcher(network, () => {
     return false
   })
-  const callRelayer = relayerCall.bind({ url: '', fetch })
+  const baseAccount = getBaseAccount(
+    account,
+    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
+    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+    network
+  )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
     keystore
   })
+  const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
     storageCtrl,
     fetch,
@@ -471,20 +478,14 @@ const init = async (
     portfolio,
     () => Promise.resolve()
   )
-  const baseAccount = getBaseAccount(
-    account,
-    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
-    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-    network
-  )
   const estimationController = new EstimationController(
     keystore,
     accountsCtrl,
     networksCtrl,
     providers,
     portfolio,
-    activity,
-    bundlerSwitcher
+    bundlerSwitcher,
+    activity
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -509,14 +510,15 @@ const init = async (
     networksCtrl,
     keystore,
     portfolio,
-    activity,
     {},
     account,
     network,
+    activity,
     provider,
     1,
     op,
     () => {},
+    true,
     true,
     () => {},
     estimationController,

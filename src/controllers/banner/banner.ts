@@ -1,13 +1,13 @@
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
+import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { StorageController } from '../storage/storage'
 
-export class BannerController extends EventEmitter {
+export class BannerController extends EventEmitter implements IBannerController {
   #banners: Banner[] = []
 
   #dismissedBanners: (string | number)[] = []
 
-  #storage: StorageController
+  #storage: IStorageController
 
   // Used for testing
   maxBannerCount = 1
@@ -15,7 +15,7 @@ export class BannerController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  constructor(storage: StorageController) {
+  constructor(storage: IStorageController) {
     super()
     this.#storage = storage
 

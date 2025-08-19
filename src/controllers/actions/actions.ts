@@ -1,43 +1,17 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import {
-  AccountOpAction,
   Action,
-  BenzinAction,
-  DappRequestAction,
-  SignMessageAction,
-  SwapAndBridgeAction,
-  SwitchAccountAction
+  ActionExecutionType,
+  ActionPosition,
+  OpenActionWindowParams
 } from '../../interfaces/actions'
 import { NotificationManager } from '../../interfaces/notification'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { FocusWindowParams, WindowManager, WindowProps } from '../../interfaces/window'
-// eslint-disable-next-line import/no-cycle
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// Kind of inevitable, the AccountsController has SelectedAccountController, which has ActionsController
-// eslint-disable-next-line import/no-cycle
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-
-// TODO: Temporarily. Refactor imports across the codebase to ref /interfaces/actions instead.
-export type {
-  AccountOpAction,
-  Action,
-  BenzinAction,
-  DappRequestAction,
-  SignMessageAction,
-  SwitchAccountAction,
-  SwapAndBridgeAction
-}
-
-export type ActionPosition = 'first' | 'last'
-
-export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
-
-export type OpenActionWindowParams = {
-  skipFocus?: boolean
-  baseWindowId?: number
-}
 
 const SWAP_AND_BRIDGE_WINDOW_SIZE = {
   width: 640,
@@ -55,7 +29,7 @@ const SWAP_AND_BRIDGE_WINDOW_SIZE = {
  * All pending/unresolved actions can be accessed later from the banners on the Dashboard screen.
  */
 export class ActionsController extends EventEmitter {
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #windowManager: WindowManager
 
@@ -140,7 +114,7 @@ export class ActionsController extends EventEmitter {
     notificationManager,
     onActionWindowClose
   }: {
-    selectedAccount: SelectedAccountController
+    selectedAccount: ISelectedAccountController
     windowManager: WindowManager
     notificationManager: NotificationManager
     onActionWindowClose: () => Promise<void>
