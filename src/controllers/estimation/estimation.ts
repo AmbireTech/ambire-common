@@ -243,7 +243,6 @@ export class EstimationController extends EventEmitter {
       })
     }
 
-    // TODO: test this
     if (
       this.estimation?.bundlerEstimation?.nonFatalErrors?.find(
         (err) => err.cause === '4337_ESTIMATION'
