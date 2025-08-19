@@ -621,6 +621,8 @@ export class MainController extends EventEmitter implements IMainController {
     this.activity.updateAccountOpBanners()
     this.swapAndBridge.reset()
     this.transfer.resetForm()
+    this.#continuousUpdates.updatePortfolioInterval.restart()
+    this.#continuousUpdates.accountStateLatestInterval.restart()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([

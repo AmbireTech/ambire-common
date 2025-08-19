@@ -4,10 +4,10 @@
 // debounce logic so that redundant start/restart calls within the same tick are collapsed.
 
 export type RecurringTimeout = {
-  start: () => void
-  restart: () => void
+  start: (options?: { timeout?: number; runImmediately?: boolean }) => void
+  restart: (options?: { timeout?: number; runImmediately?: boolean }) => void
   stop: () => void
-  updateTimeout: (newTimeout: number) => void
+  updateTimeout: (options: { timeout: number }) => void
 }
 
 export function createRecurringTimeout(fn: () => Promise<void>, timeout: number): RecurringTimeout {
@@ -28,7 +28,17 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
     }
   }
 
-  const scheduleStart = () => {
+  const updateTimeout = ({ timeout: newTimeout }: { timeout: number }) => {
+    currentTimeout = newTimeout
+  }
+
+  const scheduleStart = ({
+    timeout: newTimeout,
+    runImmediately
+  }: {
+    timeout?: number
+    runImmediately?: boolean
+  }) => {
     // Debounce repeated start/restart calls within the same tick
     if (debounceFlag) return
     debounceFlag = true
@@ -36,14 +46,23 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
       debounceFlag = false
       if (!running) {
         running = true
-        timeoutId = setTimeout(loop, currentTimeout)
+        if (runImmediately) {
+          loop()
+        } else {
+          if (newTimeout) updateTimeout({ timeout: newTimeout })
+          timeoutId = setTimeout(loop, currentTimeout)
+        }
       }
     }, 0)
   }
 
-  const start = () => {
+  const start = ({
+    timeout: newTimeout,
+    runImmediately
+  }: { timeout?: number; runImmediately?: boolean } = {}) => {
     if (running) return // Already running
-    scheduleStart()
+
+    scheduleStart({ timeout: newTimeout, runImmediately })
   }
 
   const stop = () => {
@@ -54,13 +73,13 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
     running = false
   }
 
-  const restart = () => {
+  const restart = ({
+    timeout: newTimeout,
+    runImmediately
+  }: { timeout?: number; runImmediately?: boolean } = {}) => {
     stop()
-    scheduleStart()
-  }
-
-  const updateTimeout = (newTimeout: number) => {
-    currentTimeout = newTimeout
+    if (newTimeout) updateTimeout({ timeout: newTimeout })
+    scheduleStart({ runImmediately })
   }
 
   return { start, restart, stop, updateTimeout }

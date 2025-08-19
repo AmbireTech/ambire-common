@@ -90,8 +90,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     }, ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL)
 
     this.#ui.uiEvent.on('addView', () => {
-      if (this.#ui.views.some((v) => v.type === 'popup'))
-        this.#positionsContinuousUpdateInterval.restart()
+      this.#positionsContinuousUpdateInterval.start()
     })
 
     this.#ui.uiEvent.on('removeView', () => {

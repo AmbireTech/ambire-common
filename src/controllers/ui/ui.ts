@@ -27,6 +27,7 @@ export class UiController extends EventEmitter implements IUiController {
     this.views.push(view)
 
     this.uiEvent.emit('addView')
+    console.log('add view', view.type)
     this.emitUpdate()
   }
 
@@ -45,6 +46,7 @@ export class UiController extends EventEmitter implements IUiController {
     this.views = this.views.filter((v) => v.id !== viewId)
 
     this.uiEvent.emit('removeView', view)
+    console.log('remove view', view.type)
     this.emitUpdate()
   }
 

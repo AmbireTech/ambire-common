@@ -354,7 +354,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       await this.checkForNextUserTxForActiveRoutes()
 
       const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-      this.#updateActiveRoutesInterval.updateTimeout(minServiceTime)
+      this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
     }, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL)
 
     this.onUpdate(() => {

@@ -7,6 +7,7 @@ import {
 } from '../../consts/intervals'
 import { IMainController } from '../../interfaces/main'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -26,15 +27,13 @@ const getIntervalRefreshTime = (constUpdateInterval: number, newestOpTimestamp: 
 export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
-  #updatePortfolioInterval?: NodeJS.Timeout
-
-  #portfolioLastUpdatedByIntervalAt: number = Date.now()
+  updatePortfolioInterval: RecurringTimeout
 
   #accountsOpsStatusesInterval?: NodeJS.Timeout
 
-  #accountStateLatestInterval?: NodeJS.Timeout
+  accountStateLatestInterval: RecurringTimeout
 
-  #accountStatePendingInterval?: NodeJS.Timeout
+  accountStatePendingInterval: RecurringTimeout
 
   #fastAccountStateReFetchTimeout?: NodeJS.Timeout
 
@@ -45,17 +44,93 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#main = main
 
-    this.#setPortfolioContinuousUpdate() // init
-    this.#setLatestAccountStateContinuousUpdate(ACCOUNT_STATE_STAND_BY_INTERVAL) // init
+    // Postpone the portfolio update for the next interval
+    // if we have broadcasted but not yet confirmed acc op.
+    // Here's why:
+    // 1. On the Dashboard, we show a pending-to-be-confirmed token badge
+    //    if an acc op has been broadcasted but is still unconfirmed.
+    // 2. To display the expected balance change, we calculate it from the portfolio's pending simulation state.
+    // 3. When we sign and broadcast the acc op, we remove it from the Main controller.
+    // 4. If we trigger a portfolio update at this point, we will lose the pending simulation state.
+    // 5. Therefore, to ensure the badge is displayed, we pause the portfolio update temporarily.
+    //    Once the acc op is confirmed or failed, the portfolio interval will resume as normal.
+    // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
+    //    However, this is not a frequent case, and we can make a compromise here.
+    this.updatePortfolioInterval = createRecurringTimeout(async () => {
+      if (this.#main.activity.broadcastedButNotConfirmed.length) return
+      await this.#main.updateSelectedAccountPortfolio()
+    }, INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL)
 
     this.#main.ui.uiEvent.on('addView', () => {
-      this.#setPortfolioContinuousUpdate.bind(this)
+      if (this.#main.ui.views.length === 1) {
+        this.updatePortfolioInterval.restart({
+          timeout: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+        })
+      }
     })
-    this.#main.ui.uiEvent.on('removeView', this.#setPortfolioContinuousUpdate.bind(this))
+    this.#main.ui.uiEvent.on('removeView', () => {
+      if (!this.#main.ui.views.length) {
+        this.updatePortfolioInterval.restart({
+          timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+        })
+      }
+    })
+
+    /**
+     * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
+     */
+    this.accountStateLatestInterval = createRecurringTimeout(async () => {
+      if (!this.#main.selectedAccount.account) {
+        console.error('No selected account to latest state')
+        return
+      }
+
+      const failedChainIds = getNetworksWithFailedRPC({
+        providers: this.#main.providers.providers
+      })
+      const networksToUpdate = this.#main.networks.networks
+        .filter(({ chainId }) => !failedChainIds.includes(chainId.toString()))
+        .map(({ chainId }) => chainId)
+
+      await this.#main.accounts.updateAccountState(
+        this.#main.selectedAccount.account.addr,
+        'latest',
+        networksToUpdate
+      )
+    }, ACCOUNT_STATE_STAND_BY_INTERVAL)
+    this.accountStateLatestInterval.start()
+
+    this.accountStatePendingInterval = createRecurringTimeout(async () => {
+      if (!this.#main.selectedAccount.account) {
+        console.error('No selected account to update pending state')
+        return
+      }
+
+      const networksToUpdate = this.#main.activity.broadcastedButNotConfirmed
+        .map((op) => op.chainId)
+        .filter((chainId, index, self) => self.indexOf(chainId) === index)
+
+      if (!networksToUpdate.length) this.accountStatePendingInterval.stop()
+
+      await this.#main.accounts.updateAccountState(
+        this.#main.selectedAccount.account.addr,
+        'pending',
+        networksToUpdate
+      )
+
+      const newestOpTimestamp = this.#main.activity.broadcastedButNotConfirmed.reduce(
+        (newestTimestamp, accOp) => {
+          return accOp.timestamp > newestTimestamp ? accOp.timestamp : newestTimestamp
+        },
+        0
+      )
+      const interval = getIntervalRefreshTime(ACCOUNT_STATE_PENDING_INTERVAL, newestOpTimestamp)
+      this.accountStatePendingInterval.updateTimeout({ timeout: interval })
+    }, ACCOUNT_STATE_PENDING_INTERVAL)
 
     this.#main.onUpdate(() => {
       if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
-        this.#setPendingAccountStateContinuousUpdate(ACCOUNT_STATE_PENDING_INTERVAL)
+        this.accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
         this.#setAccountsOpsStatusesContinuousUpdate(ACTIVITY_REFRESH_INTERVAL)
       }
     }, 'continuous-update')
@@ -76,38 +151,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
   }
 
-  async #setPortfolioContinuousUpdate() {
-    if (this.#updatePortfolioInterval) clearTimeout(this.#updatePortfolioInterval)
-
-    const isExtensionActive = this.#main.ui.views.length > 0
-    const updateInterval = isExtensionActive
-      ? ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-      : INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-
-    const updatePortfolio = async () => {
-      if (this.#main.activity.broadcastedButNotConfirmed.length) {
-        this.#updatePortfolioInterval = setTimeout(updatePortfolio, updateInterval)
-        return
-      }
-
-      await this.#main.updateSelectedAccountPortfolio()
-
-      this.#portfolioLastUpdatedByIntervalAt = Date.now()
-      this.#updatePortfolioInterval = setTimeout(updatePortfolio, updateInterval)
-    }
-
-    const isAtLeastOnePortfolioUpdateMissed =
-      Date.now() - this.#portfolioLastUpdatedByIntervalAt >
-      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
-
-    if (isAtLeastOnePortfolioUpdateMissed) {
-      clearTimeout(this.#updatePortfolioInterval)
-      await updatePortfolio()
-    } else {
-      this.#updatePortfolioInterval = setTimeout(updatePortfolio, updateInterval)
-    }
-  }
-
   #setAccountsOpsStatusesContinuousUpdate(updateInterval: number) {
     if (this.#accountsOpsStatusesInterval) clearTimeout(this.#accountsOpsStatusesInterval)
 
@@ -120,91 +163,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     }
 
     this.#accountsOpsStatusesInterval = setTimeout(updateStatuses, updateInterval)
-  }
-
-  /**
-   * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
-   */
-  async #setLatestAccountStateContinuousUpdate(intervalLength: number) {
-    if (this.#accountStateLatestInterval) clearTimeout(this.#accountStateLatestInterval)
-
-    const updateAccountState = async () => {
-      if (!this.#main.selectedAccount.account) {
-        console.error('No selected account to latest state')
-        return
-      }
-      const failedChainIds = getNetworksWithFailedRPC({
-        providers: this.#main.providers.providers
-      })
-      const networksToUpdate = this.#main.networks.networks
-        .filter(({ chainId }) => !failedChainIds.includes(chainId.toString()))
-        .map(({ chainId }) => chainId)
-
-      await this.#main.accounts.updateAccountState(
-        this.#main.selectedAccount.account.addr,
-        'latest',
-        networksToUpdate
-      )
-      this.#accountStateLatestInterval = setTimeout(updateAccountState, intervalLength)
-    }
-
-    // Start the first update
-    this.#accountStateLatestInterval = setTimeout(updateAccountState, intervalLength)
-  }
-
-  async #setPendingAccountStateContinuousUpdate(intervalLength: number) {
-    if (!this.#main.selectedAccount.account) {
-      console.error('No selected account to update pending state')
-      return
-    }
-
-    if (this.#accountStatePendingInterval) clearTimeout(this.#accountStatePendingInterval)
-
-    const networksToUpdate = this.#main.activity.broadcastedButNotConfirmed
-      .map((op) => op.chainId)
-      .filter((chainId, index, self) => self.indexOf(chainId) === index)
-    await this.#main.accounts.updateAccountState(
-      this.#main.selectedAccount.account.addr,
-      'pending',
-      networksToUpdate
-    )
-
-    const updateAccountState = async (chainIds: bigint[]) => {
-      if (!this.#main.selectedAccount.account) {
-        console.error('No selected account to update pending state')
-        return
-      }
-
-      await this.#main.accounts.updateAccountState(
-        this.#main.selectedAccount.account.addr,
-        'pending',
-        chainIds
-      )
-
-      // if there are no more broadcastedButNotConfirmed ops for the network, remove the timeout
-      const networks = this.#main.activity.broadcastedButNotConfirmed
-        .map((op) => op.chainId)
-        .filter((chainId, index, self) => self.indexOf(chainId) === index)
-      if (!networks.length) {
-        clearTimeout(this.#accountStatePendingInterval)
-      } else {
-        // Schedule the next update
-        const newestOpTimestamp = this.#main.activity.broadcastedButNotConfirmed.reduce(
-          (newestTimestamp, accOp) => {
-            return accOp.timestamp > newestTimestamp ? accOp.timestamp : newestTimestamp
-          },
-          0
-        )
-        const interval = getIntervalRefreshTime(intervalLength, newestOpTimestamp)
-        this.#accountStatePendingInterval = setTimeout(() => updateAccountState(networks), interval)
-      }
-    }
-
-    // Start the first update
-    this.#accountStatePendingInterval = setTimeout(
-      () => updateAccountState(networksToUpdate),
-      intervalLength / 2
-    )
   }
 
   /**
