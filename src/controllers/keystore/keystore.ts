@@ -795,7 +795,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     const privateKey = aesCtr.encrypt(getBytes(`0x${decryptedPrivateKey}`))
 
-    this.#windowManager.sendWindowUiMessage({
+    this.#ui.message.sendUiMessage({
       privateKey: hexlify(privateKey),
       salt: hexlify(salt),
       iv: hexlify(iv)
@@ -835,9 +835,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       return
     }
 
-    this.#windowManager.sendWindowUiMessage({
-      privateKey
-    })
+    this.#ui.message.sendUiMessage({ privateKey })
   }
 
   async sendSeedToUi(id: string) {
