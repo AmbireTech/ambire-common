@@ -146,6 +146,10 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['TRANSFER_FROM_FAILED'],
     message: 'Insufficient token amount'
+  },
+  {
+    reasons: ['0x6679996d'],
+    message: 'your health factor will drop below the liquidation threshold.'
   }
 ]
 
