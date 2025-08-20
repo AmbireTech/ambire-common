@@ -63,7 +63,7 @@ export abstract class Bundler {
     return getRpcProvider([this.getUrl(network)], network.chainId)
   }
 
-  private async sendEstimateReq(
+  protected async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
     stateOverride?: BundlerStateOverride
