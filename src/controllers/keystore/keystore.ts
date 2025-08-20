@@ -281,7 +281,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       this.emitUpdate()
 
       const error = new Error(this.errorMessage)
-      throw new EmittableError({ level: 'silent', message: this.errorMessage, error })
+      throw new EmittableError({
+        level: 'silent',
+        message: this.errorMessage,
+        error,
+        sendCrashReport: false
+      })
     }
     this.errorMessage = ''
 
