@@ -1520,6 +1520,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
   }
 
+  get feePayerKeyStoreKeys(): Key[] {
+    const feePayer = this.#accounts.accounts.find(
+      ({ addr }) => addr === this.accountOp.gasFeePayment?.paidBy
+    )
+
+    if (!feePayer) return []
+
+    return this.#keystore.getAccountKeys(feePayer)
+  }
+
   // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
@@ -2054,6 +2064,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isInitialized: this.isInitialized,
       readyToSign: this.readyToSign,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
+      feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
