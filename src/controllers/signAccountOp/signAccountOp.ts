@@ -931,6 +931,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       if (signingKeyAddr && signingKeyType && this.isInitialized) {
         this.accountOp.signingKeyAddr = signingKeyAddr
         this.accountOp.signingKeyType = signingKeyType
+
+        // If the fee is paid by the signer, then we should set the fee payer
+        // key type to the signing key type (so the user doesn't have to select
+        // the same key type twice)
+        if (this.accountOp.gasFeePayment?.paidBy === signingKeyAddr) {
+          this.accountOp.gasFeePayment.paidByKeyType = signingKeyType
+        }
       }
 
       // set the rbf is != undefined
