@@ -1418,12 +1418,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       return null
     }
-    // Update the paidByKeyType or keep the existing one (as this function is called)
-    // on every update, we must persist the chosen paidByKeyType
-    let updatedPaidByKeyType = paidByKeyType || this.accountOp.gasFeePayment?.paidByKeyType || null
 
-    if (!updatedPaidByKeyType) {
-      const key = this.#keystore.getFeePayerKey(this.accountOp)
+    let updatedPaidByKeyType = null
+
+    // Update only if it's not set or it's passed as an argument
+    if (paidByKeyType || !this.accountOp.gasFeePayment?.paidByKeyType) {
+      const key = this.#keystore.getFeePayerKey(
+        this.accountOp.accountAddr,
+        this.paidBy,
+        paidByKeyType
+      )
 
       if (key instanceof Error) return null
 

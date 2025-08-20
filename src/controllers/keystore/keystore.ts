@@ -41,7 +41,6 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { WindowManager } from '../../interfaces/window'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -1068,9 +1067,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return this.keys.filter((key) => acc.associatedKeys.includes(key.addr))
   }
 
-  getFeePayerKey(op: AccountOp): Key | Error {
-    const feePayerKeys = this.keys.filter((key) => key.addr === op.gasFeePayment?.paidBy)
-    const { paidByKeyType } = op.gasFeePayment || {}
+  getFeePayerKey(
+    accountAddr: Account['addr'],
+    paidByKeyAddr: Key['addr'],
+    paidByKeyType?: Key['type']
+  ): Key | Error {
+    const feePayerKeys = this.keys.filter((key) => key.addr === paidByKeyAddr)
     let feePayerKey = feePayerKeys[0]
 
     if (paidByKeyType) {
@@ -1078,8 +1080,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
 
     if (!feePayerKey) {
-      const missingKeyAddr = shortenAddress(op.gasFeePayment!.paidBy, 13)
-      const accAddr = shortenAddress(op.accountAddr, 13)
+      const missingKeyAddr = shortenAddress(paidByKeyAddr, 13)
+      const accAddr = shortenAddress(accountAddr, 13)
       return new Error(
         `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. 'Please try again or contact support if the problem persists.'`
       )
