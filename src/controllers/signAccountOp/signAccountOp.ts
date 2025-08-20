@@ -1429,19 +1429,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         paidByKeyType
       )
 
-      if (key instanceof Error) return null
-
-      updatedPaidByKeyType = key.type
+      if (key instanceof Error) updatedPaidByKeyType = null
+      else {
+        updatedPaidByKeyType = key.type
+      }
     }
 
-    if (!updatedPaidByKeyType) {
-      this.emitError({
-        level: 'silent',
-        message: '',
-        error: new Error('SignAccountOpController: paidByKeyType not set')
-      })
-      return null
-    }
     if (!this.feeTokenResult) {
       this.emitError({
         level: 'silent',

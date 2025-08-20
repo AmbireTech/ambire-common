@@ -1655,8 +1655,7 @@ export class MainController extends EventEmitter implements IMainController {
       !accountOp.signingKeyType ||
       !accountOp.signature ||
       !bundlerSwitcher ||
-      !accountOp.gasFeePayment ||
-      !accountOp.gasFeePayment.paidByKeyType
+      !accountOp.gasFeePayment
     ) {
       const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ signAccountOp, message })
