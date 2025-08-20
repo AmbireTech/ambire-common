@@ -1500,10 +1500,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.accountOp.gasFeePayment?.inToken || null
   }
 
-  get feePaidBy(): string | null {
-    return this.accountOp.gasFeePayment?.paidBy || null
-  }
-
   get accountKeyStoreKeys(): Key[] {
     return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
   }
@@ -2043,7 +2039,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       readyToSign: this.readyToSign,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feeToken: this.feeToken,
-      feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,
