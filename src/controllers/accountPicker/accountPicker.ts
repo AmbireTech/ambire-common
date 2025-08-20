@@ -459,6 +459,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.pageError = null
 
     this.linkedAccountsLoading = false
+    this.linkedAccountsError = ''
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
     this.#linkedAccounts = []
