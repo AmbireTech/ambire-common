@@ -1418,6 +1418,26 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       return null
     }
+    // Update the paidByKeyType or keep the existing one (as this function is called)
+    // on every update, we must persist the chosen paidByKeyType
+    let updatedPaidByKeyType = paidByKeyType || this.accountOp.gasFeePayment?.paidByKeyType || null
+
+    if (!updatedPaidByKeyType) {
+      const key = this.#keystore.getFeePayerKey(this.accountOp)
+
+      if (key instanceof Error) return null
+
+      updatedPaidByKeyType = key.type
+    }
+
+    if (!updatedPaidByKeyType) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: paidByKeyType not set')
+      })
+      return null
+    }
     if (!this.feeTokenResult) {
       this.emitError({
         level: 'silent',
@@ -1470,34 +1490,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         error: new Error('SignAccountOpController: fee speed not selected')
       })
 
-      return null
-    }
-
-    // Update the paidByKeyType or keep the existing one (as this function is called)
-    // on every update, we must persist the chosen paidByKeyType
-    let updatedPaidByKeyType = paidByKeyType || this.accountOp.gasFeePayment?.paidByKeyType || null
-
-    if (!updatedPaidByKeyType) {
-      const key = this.#keystore.getFeePayerKey(this.accountOp)
-
-      if (key instanceof Error) {
-        this.emitError({
-          level: 'silent',
-          message: `Error getting the fee payer key: ${key.message}`,
-          error: key
-        })
-        return null
-      }
-
-      updatedPaidByKeyType = key.type
-    }
-
-    if (!updatedPaidByKeyType) {
-      this.emitError({
-        level: 'silent',
-        message: '',
-        error: new Error('SignAccountOpController: paidByKeyType not set')
-      })
       return null
     }
 
