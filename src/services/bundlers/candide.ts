@@ -18,7 +18,6 @@ export class Candide extends Bundler {
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
     const provider = this.getProvider(network)
     const prices: any = await provider.send('voltaire_feesPerGas', [])
-    console.log('voltaire prices', prices)
 
     return {
       slow: {
@@ -49,8 +48,6 @@ export class Candide extends Bundler {
 
       return null
     })
-
-    console.log('the status of the user op', status)
 
     if (!status) {
       return {
