@@ -356,14 +356,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
       this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
     }, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL)
-
-    this.onUpdate(() => {
-      if (this.activeRoutesInProgress.length) {
-        this.#updateActiveRoutesInterval.start()
-      } else {
-        this.#updateActiveRoutesInterval.stop()
-      }
-    }, 'swap-and-bridge')
   }
 
   #emitUpdateIfNeeded(forceUpdate: boolean = false) {
@@ -608,6 +600,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activeRoutes = value
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('swapAndBridgeActiveRoutes', value)
+
+    if (this.activeRoutesInProgress.length) {
+      this.#updateActiveRoutesInterval.start()
+    } else {
+      this.#updateActiveRoutesInterval.stop()
+    }
   }
 
   get shouldEnableRoutesSelection() {
