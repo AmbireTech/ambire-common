@@ -147,6 +147,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
 
+  // Used in order to expose the ongoing "find linked accounts" task, so other
+  // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
@@ -711,21 +713,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.accountsLoading = false
     this.emitUpdate()
 
-    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
-      accounts: this.#derivedAccounts
-        .filter(
-          (acc) =>
-            // Since v4.60.0, linked accounts are searched for 1) EOAs
-            // and 2) EOAs derived for Smart Account keys ONLY
-            // (workaround so that the Relayer returns information if the Smart
-            // Account with this key is used (with identity) or not).
-            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
-        )
-        .map((acc) => acc.account)
-    }).finally(() => {
-      this.findAndSetLinkedAccountsPromise = undefined
-    })
-    await this.findAndSetLinkedAccountsPromise
+    await this.findAndSetLinkedAccounts()
   }
 
   #updateStateWithTheLatestFromAccounts() {
@@ -1224,9 +1212,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const response = await this.#callRelayer(url)
       relayerLinkedAccounts = response.data.accounts
     } catch (e: any) {
-      this.linkedAccountsError = `Failed to get linked accounts from the Relayer. Error details: <${
-        e?.message || 'no message'
-      }>`
+      const upstreamError = e?.message || ''
+      let errorMessage = 'The attempt to discover linked smart accounts failed.'
+      errorMessage += upstreamError ? ` Error details: <${upstreamError}>` : ''
+      this.linkedAccountsError = errorMessage
     }
 
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
@@ -1304,6 +1293,24 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.linkedAccountsLoading = false
     this.emitUpdate()
+  }
+
+  async findAndSetLinkedAccounts() {
+    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
+      accounts: this.#derivedAccounts
+        .filter(
+          (acc) =>
+            // Since v4.60.0, linked accounts are searched for 1) EOAs
+            // and 2) EOAs derived for Smart Account keys ONLY
+            // (workaround so that the Relayer returns information if the Smart
+            // Account with this key is used (with identity) or not).
+            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
+        )
+        .map((acc) => acc.account)
+    }).finally(() => {
+      this.findAndSetLinkedAccountsPromise = undefined
+    })
+    await this.findAndSetLinkedAccountsPromise
   }
 
   /**
