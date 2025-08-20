@@ -11,7 +11,10 @@ import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-const getIntervalRefreshTime = (constUpdateInterval: number, newestOpTimestamp: number): number => {
+const getAccountOpsIntervalRefreshTime = (
+  constUpdateInterval: number,
+  newestOpTimestamp: number
+): number => {
   // 5s + new Date().getTime() - timestamp of newest op / 10
   // here are some example of what this means:
   // 1s diff between now and newestOpTimestamp: 5.1s
@@ -123,14 +126,20 @@ export class ContinuousUpdatesController {
         },
         0
       )
-      const interval = getIntervalRefreshTime(ACCOUNT_STATE_PENDING_INTERVAL, newestOpTimestamp)
+      const interval = getAccountOpsIntervalRefreshTime(
+        ACCOUNT_STATE_PENDING_INTERVAL,
+        newestOpTimestamp
+      )
       this.accountStatePendingInterval.updateTimeout({ timeout: interval })
     }, ACCOUNT_STATE_PENDING_INTERVAL)
 
     this.accountsOpsStatusesInterval = createRecurringTimeout(async () => {
       const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
       // Schedule the next update only when the previous one completes
-      const interval = getIntervalRefreshTime(ACTIVITY_REFRESH_INTERVAL, newestOpTimestamp)
+      const interval = getAccountOpsIntervalRefreshTime(
+        ACTIVITY_REFRESH_INTERVAL,
+        newestOpTimestamp
+      )
       this.accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
     }, ACTIVITY_REFRESH_INTERVAL)
 
