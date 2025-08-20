@@ -1,7 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
-import { IUiController } from 'interfaces/ui'
 
 import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
@@ -30,6 +29,7 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
+import { IUiController } from '../../interfaces/ui'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
