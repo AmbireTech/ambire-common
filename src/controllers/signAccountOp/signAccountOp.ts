@@ -475,15 +475,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
-
-    if (this.accountOp.gasFeePayment && !this.accountOp.gasFeePayment.paidByKeyType) {
-      const key = this.#keystore.getFeePayerKey(this.accountOp)
-
-      if (key instanceof Error) return
-
-      this.accountOp.gasFeePayment.paidByKeyType = key.type
-    }
-
     // we can set a default paidBy and feeToken here if they aren't any set
   }
 
@@ -925,6 +916,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       if (feeToken && paidBy) {
         this.paidBy = paidBy
         this.feeTokenResult = feeToken
+
+        if (this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.paidBy !== paidBy) {
+          // Reset paidByKeyType if the payer has changed
+          // A default value will be set in #setGasFeePayment
+          this.accountOp.gasFeePayment.paidByKeyType = null
+        }
       }
 
       if (speed && this.isInitialized) {
@@ -1476,11 +1473,37 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return null
     }
 
+    // Update the paidByKeyType or keep the existing one (as this function is called)
+    // on every update, we must persist the chosen paidByKeyType
+    let updatedPaidByKeyType = paidByKeyType || this.accountOp.gasFeePayment?.paidByKeyType || null
+
+    if (!updatedPaidByKeyType) {
+      const key = this.#keystore.getFeePayerKey(this.accountOp)
+
+      if (key instanceof Error) {
+        this.emitError({
+          level: 'silent',
+          message: `Error getting the fee payer key: ${key.message}`,
+          error: key
+        })
+        return null
+      }
+
+      updatedPaidByKeyType = key.type
+    }
+
+    if (!updatedPaidByKeyType) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: paidByKeyType not set')
+      })
+      return null
+    }
+
     return {
       paidBy: this.paidBy,
-      // Update the paidByKeyType or keep the existing one (as this function is called)
-      // on every update, we must persist the chosen paidByKeyType
-      paidByKeyType: paidByKeyType || this.accountOp.gasFeePayment?.paidByKeyType || null,
+      paidByKeyType: updatedPaidByKeyType,
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenChainId: this.feeTokenResult.chainId,
