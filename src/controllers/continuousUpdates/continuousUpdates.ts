@@ -6,6 +6,7 @@ import {
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IMainController } from '../../interfaces/main'
+import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
 import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 
@@ -90,8 +91,17 @@ export class ContinuousUpdatesController {
       const failedChainIds = getNetworksWithFailedRPC({
         providers: this.#main.providers.providers
       })
+
+      const networksWithPendingAccountOp = this.#main.activity.broadcastedButNotConfirmed
+        .map((op) => op.chainId)
+        .filter((chainId, index, self) => self.indexOf(chainId) === index)
+
       const networksToUpdate = this.#main.networks.networks
-        .filter(({ chainId }) => !failedChainIds.includes(chainId.toString()))
+        .filter(
+          ({ chainId }) =>
+            !networksWithPendingAccountOp.includes(chainId) &&
+            !failedChainIds.includes(chainId.toString())
+        )
         .map(({ chainId }) => chainId)
 
       await this.#main.accounts.updateAccountState(
@@ -112,7 +122,11 @@ export class ContinuousUpdatesController {
         .map((op) => op.chainId)
         .filter((chainId, index, self) => self.indexOf(chainId) === index)
 
-      if (!networksToUpdate.length) this.accountStatePendingInterval.stop()
+      if (!networksToUpdate.length) {
+        this.accountStatePendingInterval.stop()
+        this.accountStateLatestInterval.restart()
+        return
+      }
 
       await this.#main.accounts.updateAccountState(
         this.#main.selectedAccount.account.addr,
@@ -149,7 +163,21 @@ export class ContinuousUpdatesController {
      */
     this.fastAccountStateReFetchTimeout = createRecurringTimeout(async () => {
       const failedChainIds = getNetworksWithFailedRPC({ providers: this.#main.providers.providers })
-      if (!failedChainIds.length) this.fastAccountStateReFetchTimeout.stop()
+      if (!failedChainIds.length) {
+        this.fastAccountStateReFetchTimeout.stop()
+        this.#retriedFastAccountStateReFetchForNetworks = []
+        return
+      }
+
+      await this.#main.accounts.updateAccountStates(
+        this.#main.selectedAccount.account?.addr,
+        'latest',
+        failedChainIds.map((id) => BigInt(id))
+      )
+
+      const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
+        providers: this.#main.providers.providers
+      })
 
       const retriedFastAccountStateReFetchForNetworks =
         this.#retriedFastAccountStateReFetchForNetworks
@@ -157,38 +185,41 @@ export class ContinuousUpdatesController {
       // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
       // if the RPC goes down again
       if (retriedFastAccountStateReFetchForNetworks.length) {
+        const networksToUpdate: Network[] = []
         retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
-          if (!failedChainIds.includes(chainId)) {
+          if (!failedChainIdsAfterUpdate.includes(chainId)) {
             delete retriedFastAccountStateReFetchForNetworks[index]
 
             const network = this.#main.networks.networks.find(
               (n) => n.chainId.toString() === chainId
             )
-            this.#main.updateSelectedAccountPortfolio({ networks: network ? [network] : undefined })
+
+            if (network) networksToUpdate.push(network)
           }
+        })
+        this.#main.updateSelectedAccountPortfolio({
+          networks: networksToUpdate.length ? networksToUpdate : undefined
         })
       }
 
       // Filter out the network ids that have already been retried
-      const recentlyFailedNetworks = failedChainIds.filter(
+      const recentlyFailedNetworks = failedChainIdsAfterUpdate.filter(
         (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
       )
 
       const updateTime = recentlyFailedNetworks.length ? 8000 : 20000
 
-      await this.#main.accounts.updateAccountStates(
-        this.#main.selectedAccount.account?.addr,
-        'latest',
-        failedChainIds.map((id) => BigInt(id))
-      )
       // Add the network ids that have been retried to the list
-      failedChainIds.forEach((id) => {
+      failedChainIdsAfterUpdate.forEach((id) => {
         if (retriedFastAccountStateReFetchForNetworks.includes(id)) return
-
         retriedFastAccountStateReFetchForNetworks.push(id)
       })
 
-      if (!failedChainIds.length) this.fastAccountStateReFetchTimeout.stop()
+      if (!failedChainIdsAfterUpdate.length) {
+        this.fastAccountStateReFetchTimeout.stop()
+        this.#retriedFastAccountStateReFetchForNetworks = []
+        return
+      }
 
       this.fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
     }, 8000)
@@ -196,6 +227,7 @@ export class ContinuousUpdatesController {
     this.#main.onUpdate(() => {
       if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
         this.accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
+        this.accountStateLatestInterval.restart()
         this.accountsOpsStatusesInterval.start()
       }
     }, 'continuous-update')
