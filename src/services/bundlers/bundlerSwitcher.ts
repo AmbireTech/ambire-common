@@ -40,7 +40,7 @@ export class BundlerSwitcher {
     return this.bundler
   }
 
-  canSwitch(baseAcc: BaseAccount): boolean {
+  canSwitch(baseAcc?: BaseAccount): boolean {
     // don't switch the bundler if the account op is in a state of signing
     if (this.hasControllerForbiddenUpdates()) return false
 
@@ -54,7 +54,7 @@ export class BundlerSwitcher {
 
     // only pimlico can do txn type 4 and if pimlico is
     // not working, we have nothing to fallback to
-    if (baseAcc.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) return false
+    if (baseAcc && baseAcc.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) return false
 
     return true
   }
