@@ -197,20 +197,23 @@ export class ContinuousUpdatesController extends EventEmitter {
           failedChainIds.map((id) => BigInt(id))
         )
 
+        // Add the networks that have been retried to the list
+        failedChainIds.forEach((id) => {
+          if (this.#retriedFastAccountStateReFetchForNetworks.includes(id)) return
+          this.#retriedFastAccountStateReFetchForNetworks.push(id)
+        })
+
         const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
           providers: this.#main.providers.providers
         })
 
-        const retriedFastAccountStateReFetchForNetworks =
-          this.#retriedFastAccountStateReFetchForNetworks
-
         // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
         // if the RPC goes down again
-        if (retriedFastAccountStateReFetchForNetworks.length) {
+        if (this.#retriedFastAccountStateReFetchForNetworks.length) {
           const networksToUpdate: Network[] = []
-          retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
+          this.#retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
             if (!failedChainIdsAfterUpdate.includes(chainId)) {
-              delete retriedFastAccountStateReFetchForNetworks[index]
+              delete this.#retriedFastAccountStateReFetchForNetworks[index]
 
               const network = this.#main.networks.networks.find(
                 (n) => n.chainId.toString() === chainId
@@ -225,17 +228,11 @@ export class ContinuousUpdatesController extends EventEmitter {
         }
 
         // Filter out the network ids that have already been retried
-        const recentlyFailedNetworks = failedChainIdsAfterUpdate.filter(
+        const networksNotYetRetried = failedChainIdsAfterUpdate.filter(
           (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
         )
 
-        const updateTime = recentlyFailedNetworks.length ? 8000 : 20000
-
-        // Add the network ids that have been retried to the list
-        failedChainIdsAfterUpdate.forEach((id) => {
-          if (retriedFastAccountStateReFetchForNetworks.includes(id)) return
-          retriedFastAccountStateReFetchForNetworks.push(id)
-        })
+        const updateTime = networksNotYetRetried.length ? 8000 : 20000
 
         if (!failedChainIdsAfterUpdate.length) {
           this.fastAccountStateReFetchTimeout.stop()
