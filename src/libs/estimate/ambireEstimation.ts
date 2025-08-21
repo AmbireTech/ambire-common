@@ -114,6 +114,7 @@ export async function ambireEstimateGas(
   const opNonce = isStillPureEoa ? BigInt(EOA_SIMULATION_NONCE) : op.nonce!
   const nonceError = getNonceDiscrepancyFailure(opNonce, outcomeNonce)
   const flags: EstimationFlags = {}
+  flags.hasInitialGasLimitFailed = accountOp.initialGasLimitFailed
   if (nonceError) {
     flags.hasNonceDiscrepancy = true
   }

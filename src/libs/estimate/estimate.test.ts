@@ -33,6 +33,7 @@ import {
 } from './interfaces'
 
 const ethereum = networks.find((x) => x.chainId === 1n)!
+const bsc = networks.find((x) => x.chainId === 56n)!
 ethereum.areContractsDeployed = true
 const optimism = networks.find((x) => x.chainId === 10n)
 const arbitrum = networks.find((x) => x.chainId === 42161n)!
@@ -64,6 +65,27 @@ const smartAccDeployed: Account = {
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
+}
+
+const devconSmart: Account = {
+  addr: '0xae376B42699fDB0D80e9ceE068A4f75ae6d70d85',
+  initialPrivileges: [
+    [
+      '0xD5Cdb05Df16FB0f84a02ebff3405f80e441d7D57',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  creation: {
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fa85abbdf4f476f0727ae1450f282935c0d57708ae82c281b3fa758db2e21c89b553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  associatedKeys: ['0xD5Cdb05Df16FB0f84a02ebff3405f80e441d7D57'],
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
@@ -1176,5 +1198,140 @@ describe('estimate', () => {
     expect((response as Error).message).toBe(
       'Transaction cannot be sent because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
     )
+  })
+
+  it('[v2] bnb, GasGuard, it should estimate successfully by entering the initialGasLimitFailed case', async () => {
+    const gasGuardAbi = [
+      {
+        inputs: [
+          { internalType: 'uint256', name: 'gasLeft', type: 'uint256' },
+          { internalType: 'uint256', name: 'required', type: 'uint256' }
+        ],
+        name: 'InsufficientGas',
+        type: 'error'
+      },
+      {
+        inputs: [{ internalType: 'uint256', name: 'minGasRequired', type: 'uint256' }],
+        name: 'guardedCall',
+        outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const gasGuardInterface = new Interface(gasGuardAbi)
+    const accountStates = await getAccountsInfo([devconSmart])
+    const accountState = accountStates[devconSmart.addr][bsc.chainId.toString()]
+    const baseAcc = getBaseAccount(devconSmart, accountState, [], bsc)
+    const bscProvider = getRpcProvider(bsc.rpcUrls, bsc.chainId)
+    const switcher = new BundlerSwitcher(bsc, areUpdatesForbidden)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = false, everything normal
+     **************************************** */
+
+    const gasGuardCallPassWithInitialGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [20000])
+    }
+    const op = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithInitialGasLimit]
+    }
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      op,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas instanceof Error).toBe(false)
+    expect(ambireGas.flags.hasInitialGasLimitFailed).toBe(false)
+    const originalGas = ambireGas.gasUsed
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, pass after simulation with increased gas
+     **************************************** */
+
+    const gasGuardCallPassWithIncreasedGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [60000])
+    }
+    const opTwo = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithIncreasedGasLimit]
+    }
+    const responseTwo = await getEstimation(
+      baseAcc,
+      accountState,
+      opTwo,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseTwo instanceof Error).toBe(false)
+    const resTwo = responseTwo as FullEstimation
+    const ambireGasTwo = resTwo.ambire as AmbireEstimation
+    expect(ambireGasTwo instanceof Error).toBe(false)
+    expect(ambireGasTwo.flags.hasInitialGasLimitFailed).toBe(true)
+    expect(ambireGasTwo.gasUsed * 2n).toBeGreaterThan(originalGas)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, fail even after increased gas
+     **************************************** */
+
+    const gasGuardCallPassWithUnreasonableGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [600000])
+    }
+    const opThree = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithUnreasonableGasLimit]
+    }
+    const responseThree = await getEstimation(
+      baseAcc,
+      accountState,
+      opThree,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseThree instanceof Error).toBe(true)
   })
 })
