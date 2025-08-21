@@ -1,13 +1,13 @@
-import EventEmitter from 'controllers/eventEmitter/eventEmitter'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { UiController } from '../ui/ui'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
@@ -17,6 +17,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -48,13 +49,13 @@ const networksCtrl = new NetworksController({
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const keystore = new KeystoreController(
   'default',
   storageCtrl,
   { internal: KeystoreSigner },
-  windowManager
+  uiCtrl
 )
 
 const accountsCtrl = new AccountsController(
@@ -92,7 +93,8 @@ const defiPositionsCtrl = new DefiPositionsController({
   keystore,
   networks: networksCtrl,
   providers: providersCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  ui: uiCtrl
 })
 
 const accounts = [

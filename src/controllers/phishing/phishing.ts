@@ -3,7 +3,7 @@ import jsYaml from 'js-yaml'
 import { Fetch } from '../../interfaces/fetch'
 import { IPhishingController, StoredPhishingDetection } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { WindowManager } from '../../interfaces/window'
+import { IUiController } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const METAMASK_BLACKLIST_URL =
@@ -35,7 +35,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #storage: IStorageController
 
-  #windowManager: WindowManager
+  #ui: IUiController
 
   #blacklist: string[] = [] // list of blacklisted URLs
 
@@ -57,17 +57,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   constructor({
     fetch,
     storage,
-    windowManager
+    ui
   }: {
     fetch: Fetch
     storage: IStorageController
-    windowManager: WindowManager
+    ui: IUiController
   }) {
     super()
 
     this.#fetch = fetch
     this.#storage = storage
-    this.#windowManager = windowManager
+    this.#ui = ui
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -189,7 +189,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     await this.initialLoadPromise
 
     const isBlacklisted = await this.getIsBlacklisted(url)
-    this.#windowManager.sendWindowUiMessage({
+    this.#ui.message.sendUiMessage({
       hostname: isBlacklisted ? 'BLACKLISTED' : 'NOT_BLACKLISTED'
     })
   }
