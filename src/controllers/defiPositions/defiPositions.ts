@@ -79,15 +79,19 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#providers = providers
     this.#ui = ui
 
-    this.#positionsContinuousUpdateInterval = createRecurringTimeout(async () => {
-      if (!this.#ui.views.length) {
-        this.#positionsContinuousUpdateInterval.stop()
-        return
-      }
+    this.#positionsContinuousUpdateInterval = createRecurringTimeout(
+      async () => {
+        if (!this.#ui.views.length) {
+          this.#positionsContinuousUpdateInterval.stop()
+          return
+        }
 
-      const FIVE_MINUTES = 1000 * 60 * 5
-      await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
-    }, ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL)
+        const FIVE_MINUTES = 1000 * 60 * 5
+        await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+      },
+      ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
 
     this.#ui.uiEvent.on('addView', () => {
       this.#positionsContinuousUpdateInterval.start()

@@ -332,30 +332,38 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
 
-    this.#updateQuoteInterval = createRecurringTimeout(async () => {
-      if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
-        this.#updateQuoteInterval.stop()
-        return
-      }
+    this.#updateQuoteInterval = createRecurringTimeout(
+      async () => {
+        if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+          this.#updateQuoteInterval.stop()
+          return
+        }
 
-      await this.updateQuote({
-        skipPreviousQuoteRemoval: true,
-        skipQuoteUpdateOnSameValues: false,
-        skipStatusUpdate: false
-      })
-    }, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL)
+        await this.updateQuote({
+          skipPreviousQuoteRemoval: true,
+          skipQuoteUpdateOnSameValues: false,
+          skipStatusUpdate: false
+        })
+      },
+      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
+      this.emitError.bind(this)
+    )
 
-    this.#updateActiveRoutesInterval = createRecurringTimeout(async () => {
-      if (!this.activeRoutesInProgress.length) {
-        this.#updateActiveRoutesInterval.stop()
-        return
-      }
+    this.#updateActiveRoutesInterval = createRecurringTimeout(
+      async () => {
+        if (!this.activeRoutesInProgress.length) {
+          this.#updateActiveRoutesInterval.stop()
+          return
+        }
 
-      await this.checkForNextUserTxForActiveRoutes()
+        await this.checkForNextUserTxForActiveRoutes()
 
-      const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-      this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
-    }, UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL)
+        const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
+      },
+      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
+      this.emitError.bind(this)
+    )
   }
 
   #emitUpdateIfNeeded(forceUpdate: boolean = false) {

@@ -100,7 +100,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
      */
     this.#updateWithRelayerNetworksInterval = createRecurringTimeout(
       this.synchronizeNetworks.bind(this),
-      NETWORKS_UPDATE_INTERVAL
+      NETWORKS_UPDATE_INTERVAL,
+      this.emitError.bind(this)
     )
     if (this.defaultNetworksMode === 'mainnet') {
       this.#updateWithRelayerNetworksInterval.start()

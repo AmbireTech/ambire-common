@@ -9,6 +9,7 @@ import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
 import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
@@ -27,7 +28,7 @@ const getAccountOpsIntervalRefreshTime = (
     ? constUpdateInterval
     : constUpdateInterval + (new Date().getTime() - newestOpTimestamp) / 10
 }
-export class ContinuousUpdatesController {
+export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
   updatePortfolioInterval: RecurringTimeout
@@ -43,6 +44,8 @@ export class ContinuousUpdatesController {
   #retriedFastAccountStateReFetchForNetworks: string[] = []
 
   constructor({ main }: { main: IMainController }) {
+    super()
+
     this.#main = main
 
     // Postpone the portfolio update for the next interval
@@ -57,10 +60,14 @@ export class ContinuousUpdatesController {
     //    Once the acc op is confirmed or failed, the portfolio interval will resume as normal.
     // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
     //    However, this is not a frequent case, and we can make a compromise here.
-    this.updatePortfolioInterval = createRecurringTimeout(async () => {
-      if (this.#main.activity.broadcastedButNotConfirmed.length) return
-      await this.#main.updateSelectedAccountPortfolio()
-    }, INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL)
+    this.updatePortfolioInterval = createRecurringTimeout(
+      async () => {
+        if (this.#main.activity.broadcastedButNotConfirmed.length) return
+        await this.#main.updateSelectedAccountPortfolio()
+      },
+      INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
 
     this.#main.ui.uiEvent.on('addView', () => {
       if (this.#main.ui.views.length === 1) {
@@ -82,147 +89,165 @@ export class ContinuousUpdatesController {
     /**
      * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
      */
-    this.accountStateLatestInterval = createRecurringTimeout(async () => {
-      if (!this.#main.selectedAccount.account) {
-        console.error('No selected account to latest state')
-        return
-      }
+    this.accountStateLatestInterval = createRecurringTimeout(
+      async () => {
+        if (!this.#main.selectedAccount.account) {
+          console.error('No selected account to latest state')
+          return
+        }
 
-      const failedChainIds = getNetworksWithFailedRPC({
-        providers: this.#main.providers.providers
-      })
+        const failedChainIds = getNetworksWithFailedRPC({
+          providers: this.#main.providers.providers
+        })
 
-      const networksWithPendingAccountOp = this.#main.activity.broadcastedButNotConfirmed
-        .map((op) => op.chainId)
-        .filter((chainId, index, self) => self.indexOf(chainId) === index)
+        const networksWithPendingAccountOp = this.#main.activity.broadcastedButNotConfirmed
+          .map((op) => op.chainId)
+          .filter((chainId, index, self) => self.indexOf(chainId) === index)
 
-      const networksToUpdate = this.#main.networks.networks
-        .filter(
-          ({ chainId }) =>
-            !networksWithPendingAccountOp.includes(chainId) &&
-            !failedChainIds.includes(chainId.toString())
+        const networksToUpdate = this.#main.networks.networks
+          .filter(
+            ({ chainId }) =>
+              !networksWithPendingAccountOp.includes(chainId) &&
+              !failedChainIds.includes(chainId.toString())
+          )
+          .map(({ chainId }) => chainId)
+
+        await this.#main.accounts.updateAccountState(
+          this.#main.selectedAccount.account.addr,
+          'latest',
+          networksToUpdate
         )
-        .map(({ chainId }) => chainId)
-
-      await this.#main.accounts.updateAccountState(
-        this.#main.selectedAccount.account.addr,
-        'latest',
-        networksToUpdate
-      )
-    }, ACCOUNT_STATE_STAND_BY_INTERVAL)
+      },
+      ACCOUNT_STATE_STAND_BY_INTERVAL,
+      this.emitError.bind(this)
+    )
     this.accountStateLatestInterval.start()
 
-    this.accountStatePendingInterval = createRecurringTimeout(async () => {
-      if (!this.#main.selectedAccount.account) {
-        console.error('No selected account to update pending state')
-        return
-      }
+    this.accountStatePendingInterval = createRecurringTimeout(
+      async () => {
+        if (!this.#main.selectedAccount.account) {
+          console.error('No selected account to update pending state')
+          return
+        }
 
-      const networksToUpdate = this.#main.activity.broadcastedButNotConfirmed
-        .map((op) => op.chainId)
-        .filter((chainId, index, self) => self.indexOf(chainId) === index)
+        const networksToUpdate = this.#main.activity.broadcastedButNotConfirmed
+          .map((op) => op.chainId)
+          .filter((chainId, index, self) => self.indexOf(chainId) === index)
 
-      if (!networksToUpdate.length) {
-        this.accountStatePendingInterval.stop()
-        this.accountStateLatestInterval.restart()
-        return
-      }
+        if (!networksToUpdate.length) {
+          this.accountStatePendingInterval.stop()
+          this.accountStateLatestInterval.restart()
+          return
+        }
 
-      await this.#main.accounts.updateAccountState(
-        this.#main.selectedAccount.account.addr,
-        'pending',
-        networksToUpdate
-      )
+        await this.#main.accounts.updateAccountState(
+          this.#main.selectedAccount.account.addr,
+          'pending',
+          networksToUpdate
+        )
 
-      const newestOpTimestamp = this.#main.activity.broadcastedButNotConfirmed.reduce(
-        (newestTimestamp, accOp) => {
-          return accOp.timestamp > newestTimestamp ? accOp.timestamp : newestTimestamp
-        },
-        0
-      )
-      const interval = getAccountOpsIntervalRefreshTime(
-        ACCOUNT_STATE_PENDING_INTERVAL,
-        newestOpTimestamp
-      )
-      this.accountStatePendingInterval.updateTimeout({ timeout: interval })
-    }, ACCOUNT_STATE_PENDING_INTERVAL)
+        const newestOpTimestamp = this.#main.activity.broadcastedButNotConfirmed.reduce(
+          (newestTimestamp, accOp) => {
+            return accOp.timestamp > newestTimestamp ? accOp.timestamp : newestTimestamp
+          },
+          0
+        )
+        const interval = getAccountOpsIntervalRefreshTime(
+          ACCOUNT_STATE_PENDING_INTERVAL,
+          newestOpTimestamp
+        )
+        this.accountStatePendingInterval.updateTimeout({ timeout: interval })
+      },
+      ACCOUNT_STATE_PENDING_INTERVAL,
+      this.emitError.bind(this)
+    )
 
-    this.accountsOpsStatusesInterval = createRecurringTimeout(async () => {
-      const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
-      // Schedule the next update only when the previous one completes
-      const interval = getAccountOpsIntervalRefreshTime(
-        ACTIVITY_REFRESH_INTERVAL,
-        newestOpTimestamp
-      )
-      this.accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
-    }, ACTIVITY_REFRESH_INTERVAL)
+    this.accountsOpsStatusesInterval = createRecurringTimeout(
+      async () => {
+        const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
+        // Schedule the next update only when the previous one completes
+        const interval = getAccountOpsIntervalRefreshTime(
+          ACTIVITY_REFRESH_INTERVAL,
+          newestOpTimestamp
+        )
+        this.accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
+      },
+      ACTIVITY_REFRESH_INTERVAL,
+      this.emitError.bind(this)
+    )
 
     /**
      * Update failed network states more often. If a network's first failed
      *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
      */
-    this.fastAccountStateReFetchTimeout = createRecurringTimeout(async () => {
-      const failedChainIds = getNetworksWithFailedRPC({ providers: this.#main.providers.providers })
-      if (!failedChainIds.length) {
-        this.fastAccountStateReFetchTimeout.stop()
-        this.#retriedFastAccountStateReFetchForNetworks = []
-        return
-      }
-
-      await this.#main.accounts.updateAccountStates(
-        this.#main.selectedAccount.account?.addr,
-        'latest',
-        failedChainIds.map((id) => BigInt(id))
-      )
-
-      const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
-        providers: this.#main.providers.providers
-      })
-
-      const retriedFastAccountStateReFetchForNetworks =
-        this.#retriedFastAccountStateReFetchForNetworks
-
-      // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
-      // if the RPC goes down again
-      if (retriedFastAccountStateReFetchForNetworks.length) {
-        const networksToUpdate: Network[] = []
-        retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
-          if (!failedChainIdsAfterUpdate.includes(chainId)) {
-            delete retriedFastAccountStateReFetchForNetworks[index]
-
-            const network = this.#main.networks.networks.find(
-              (n) => n.chainId.toString() === chainId
-            )
-
-            if (network) networksToUpdate.push(network)
-          }
+    this.fastAccountStateReFetchTimeout = createRecurringTimeout(
+      async () => {
+        const failedChainIds = getNetworksWithFailedRPC({
+          providers: this.#main.providers.providers
         })
-        this.#main.updateSelectedAccountPortfolio({
-          networks: networksToUpdate.length ? networksToUpdate : undefined
+        if (!failedChainIds.length) {
+          this.fastAccountStateReFetchTimeout.stop()
+          this.#retriedFastAccountStateReFetchForNetworks = []
+          return
+        }
+
+        await this.#main.accounts.updateAccountStates(
+          this.#main.selectedAccount.account?.addr,
+          'latest',
+          failedChainIds.map((id) => BigInt(id))
+        )
+
+        const failedChainIdsAfterUpdate = getNetworksWithFailedRPC({
+          providers: this.#main.providers.providers
         })
-      }
 
-      // Filter out the network ids that have already been retried
-      const recentlyFailedNetworks = failedChainIdsAfterUpdate.filter(
-        (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
-      )
+        const retriedFastAccountStateReFetchForNetworks =
+          this.#retriedFastAccountStateReFetchForNetworks
 
-      const updateTime = recentlyFailedNetworks.length ? 8000 : 20000
+        // Delete the network ids that have been successfully re-fetched so the logic can be re-applied
+        // if the RPC goes down again
+        if (retriedFastAccountStateReFetchForNetworks.length) {
+          const networksToUpdate: Network[] = []
+          retriedFastAccountStateReFetchForNetworks.forEach((chainId, index) => {
+            if (!failedChainIdsAfterUpdate.includes(chainId)) {
+              delete retriedFastAccountStateReFetchForNetworks[index]
 
-      // Add the network ids that have been retried to the list
-      failedChainIdsAfterUpdate.forEach((id) => {
-        if (retriedFastAccountStateReFetchForNetworks.includes(id)) return
-        retriedFastAccountStateReFetchForNetworks.push(id)
-      })
+              const network = this.#main.networks.networks.find(
+                (n) => n.chainId.toString() === chainId
+              )
 
-      if (!failedChainIdsAfterUpdate.length) {
-        this.fastAccountStateReFetchTimeout.stop()
-        this.#retriedFastAccountStateReFetchForNetworks = []
-        return
-      }
+              if (network) networksToUpdate.push(network)
+            }
+          })
+          this.#main.updateSelectedAccountPortfolio({
+            networks: networksToUpdate.length ? networksToUpdate : undefined
+          })
+        }
 
-      this.fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
-    }, 8000)
+        // Filter out the network ids that have already been retried
+        const recentlyFailedNetworks = failedChainIdsAfterUpdate.filter(
+          (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
+        )
+
+        const updateTime = recentlyFailedNetworks.length ? 8000 : 20000
+
+        // Add the network ids that have been retried to the list
+        failedChainIdsAfterUpdate.forEach((id) => {
+          if (retriedFastAccountStateReFetchForNetworks.includes(id)) return
+          retriedFastAccountStateReFetchForNetworks.push(id)
+        })
+
+        if (!failedChainIdsAfterUpdate.length) {
+          this.fastAccountStateReFetchTimeout.stop()
+          this.#retriedFastAccountStateReFetchForNetworks = []
+          return
+        }
+
+        this.fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
+      },
+      8000,
+      this.emitError.bind(this)
+    )
 
     this.#main.onUpdate(() => {
       if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {

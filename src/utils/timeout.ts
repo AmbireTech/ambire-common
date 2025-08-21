@@ -3,6 +3,8 @@
 // but providing protection against overlapping invocations of `fn`. It also includes
 // debounce logic so that redundant start/restart calls within the same tick are collapsed.
 
+import EventEmitter from '../controllers/eventEmitter/eventEmitter'
+
 export type RecurringTimeout = {
   start: (options?: { timeout?: number; runImmediately?: boolean }) => void
   restart: (options?: { timeout?: number; runImmediately?: boolean }) => void
@@ -10,7 +12,11 @@ export type RecurringTimeout = {
   updateTimeout: (options: { timeout: number }) => void
 }
 
-export function createRecurringTimeout(fn: () => Promise<void>, timeout: number): RecurringTimeout {
+export function createRecurringTimeout(
+  fn: () => Promise<void>,
+  timeout: number,
+  emitError?: EventEmitter['emitError']
+): RecurringTimeout {
   let timeoutId: NodeJS.Timeout | undefined
   let running = false
   let debounceFlag = false
@@ -19,8 +25,15 @@ export function createRecurringTimeout(fn: () => Promise<void>, timeout: number)
   const loop = async () => {
     try {
       await fn()
-    } catch (err) {
+      throw new Error('alabala')
+    } catch (err: any) {
       console.error('Recurring task error:', err)
+      !!emitError &&
+        emitError({
+          error: new Error(err),
+          message: 'Recurring task failed',
+          level: 'minor'
+        })
     } finally {
       if (running) {
         timeoutId = setTimeout(loop, currentTimeout)
