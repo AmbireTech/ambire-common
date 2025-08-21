@@ -7,7 +7,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -27,6 +27,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
 class InternalSigner {
@@ -86,8 +87,6 @@ const account: Account = {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
-
 const messageToSign: Message = {
   fromActionId: 1,
   content: { kind: 'message', message: '0x74657374' },
@@ -109,12 +108,13 @@ describe('SignMessageController', () => {
     const storageCtrl = new StorageController(storage)
     await storageCtrl.set('accounts', [account])
     await storageCtrl.set('selectedAccount', account.addr)
-
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
     keystoreCtrl = new KeystoreController(
       'default',
       storageCtrl,
       { internal: InternalSigner },
-      windowManager
+      uiCtrl
     )
     networksCtrl = new NetworksController({
       storage: storageCtrl,
