@@ -81,7 +81,6 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
   type: 'accountOp',
   accountOp: {
     accountAddr: SIGN_ACCOUNT_OP_REQUEST.meta.accountAddr,
-    accountOpToExecuteBefore: null,
     calls: [
       {
         ...(SIGN_ACCOUNT_OP_REQUEST.action as Calls).calls[0],

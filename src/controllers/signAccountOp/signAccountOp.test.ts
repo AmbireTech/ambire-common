@@ -95,7 +95,6 @@ const createEOAAccountOp = (account: Account) => {
     chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
-    accountOpToExecuteBefore: null,
     signature: null
   }
 
@@ -160,7 +159,6 @@ const createAccountOp = (
     chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
-    accountOpToExecuteBefore: null,
     signature: null
   }
 

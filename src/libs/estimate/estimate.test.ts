@@ -312,8 +312,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -374,8 +373,7 @@ describe('estimate', () => {
       chainId: 137n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -451,8 +449,7 @@ describe('estimate', () => {
       chainId: 137n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -510,8 +507,7 @@ describe('estimate', () => {
       chainId: 137n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -549,8 +545,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const portfolioResponse = await portfolio.get('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
@@ -611,8 +606,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: 1n, data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
@@ -652,8 +646,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: 1n,
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
@@ -716,8 +709,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
@@ -765,8 +757,7 @@ describe('estimate', () => {
           value: 0n,
           data: ERC20Interface.encodeFunctionData('transfer', [eoaAddr, 1])
         }
-      ],
-      accountOpToExecuteBefore: null
+      ]
     }
 
     const accountStates = await getAccountsInfo([deprycatedV2])
@@ -783,8 +774,6 @@ describe('estimate', () => {
       new BundlerSwitcher(arbitrum, areUpdatesForbidden),
       errorCallback
     )
-
-    console.log(response)
 
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
@@ -808,8 +797,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce: 6n, // corrupt the nonce
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
@@ -855,7 +843,6 @@ describe('estimate', () => {
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -910,7 +897,6 @@ describe('estimate', () => {
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
-      accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -963,7 +949,6 @@ describe('estimate', () => {
           data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100])
         }
       ],
-      accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -1002,8 +987,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce,
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
@@ -1048,8 +1032,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce,
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
@@ -1100,8 +1083,7 @@ describe('estimate', () => {
       chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }]
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
@@ -1134,8 +1116,7 @@ describe('estimate', () => {
       chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
@@ -1173,8 +1154,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to, value: BigInt(0), data: expiredData }],
-      accountOpToExecuteBefore: null
+      calls: [{ to, value: BigInt(0), data: expiredData }]
     }
 
     const accountStates = await getAccountsInfo([v1Acc])

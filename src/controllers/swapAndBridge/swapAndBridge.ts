@@ -2178,7 +2178,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       gasFeePayment: null,
       nonce: accountState.nonce,
       signature: null,
-      accountOpToExecuteBefore: null,
       calls,
       flags: {
         hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)

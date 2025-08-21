@@ -1,6 +1,6 @@
 import {
-  AccountState as DefiAccountState,
   AssetType,
+  AccountState as DefiAccountState,
   NetworkState as DefiNetworkState
 } from '../defiPositions/types'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -776,8 +776,7 @@ PENDING_PORTFOLIO_STATE['1']!.accountOps = [
     calls: [],
     gasLimit: null,
     signature: '0x',
-    gasFeePayment: null,
-    accountOpToExecuteBefore: null
+    gasFeePayment: null
   }
 ]
 

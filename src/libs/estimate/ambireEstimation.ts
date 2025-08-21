@@ -68,12 +68,6 @@ export async function ambireEstimateGas(
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
-    [
-      account.addr,
-      op.accountOpToExecuteBefore?.nonce || 0,
-      op.accountOpToExecuteBefore?.calls || [],
-      op.accountOpToExecuteBefore?.signature || '0x'
-    ],
     [account.addr, op.nonce || 1, calls, '0x'],
     getProbableCallData(account, op, accountState, network),
     account.associatedKeys,
@@ -96,7 +90,6 @@ export async function ambireEstimateGas(
   const [
     [
       deployment,
-      accountOpToExecuteBefore,
       accountOp,
       outcomeNonce,
       feeTokenOutcomes,
@@ -125,7 +118,7 @@ export async function ambireEstimateGas(
     flags.hasNonceDiscrepancy = true
   }
 
-  const gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  const gasUsed = deployment.gasUsed + accountOp.gasUsed
 
   const feeTokenOptions: FeePaymentOption[] = feeTokens.map(
     (token: TokenResult | GasTankTokenResult, key: number) => {

@@ -43,7 +43,7 @@ contract FeeTokens is SimulateSigned {
 
       // Only simulate if the amount is nonzero
       if (feeTokenOutcomes[i].amount > 0) {
-        SimulationOutcome memory outcome = simulateSigned(simulationOp);
+        SimulationOutcome memory outcome = simulateSigned(simulationOp, 0, false);
         // We ignore the errors here on purpose, we will just leave gasUsed as 0
         // We only care about `gasUsed - baseGasConsumption` because paying the fee will be a part of
         // another AccountOp, so we don't care about the base AccountOp overhead

@@ -84,7 +84,6 @@ describe('Bundler estimation tests', () => {
           // native passes even though native balance is below 10
           { to, value: parseEther('10'), data: '0x' }
         ],
-        accountOpToExecuteBefore: null,
         meta: {
           entryPointAuthorization:
             '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -149,8 +148,7 @@ describe('Bundler estimation tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -208,8 +206,7 @@ describe('Bundler estimation tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: parseEther('1'), data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: parseEther('1'), data: '0x' }]
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -285,8 +282,7 @@ describe('Bundler fallback tests', () => {
       chainId: base.chainId,
       nonce: 0n,
       signature: '0x',
-      calls: [{ to, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to, value: 1n, data: '0x' }]
     }
     const usedNetworks = [base]
     const providers = {
