@@ -25,15 +25,9 @@ export function createRecurringTimeout(
   const loop = async () => {
     try {
       await fn()
-      throw new Error('alabala')
     } catch (err: any) {
       console.error('Recurring task error:', err)
-      !!emitError &&
-        emitError({
-          error: new Error(err),
-          message: 'Recurring task failed',
-          level: 'minor'
-        })
+      !!emitError && emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
     } finally {
       if (running) {
         timeoutId = setTimeout(loop, currentTimeout)
