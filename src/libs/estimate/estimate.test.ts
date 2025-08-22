@@ -1299,7 +1299,84 @@ describe('estimate', () => {
     const ambireGasTwo = resTwo.ambire as AmbireEstimation
     expect(ambireGasTwo instanceof Error).toBe(false)
     expect(ambireGasTwo.flags.hasInitialGasLimitFailed).toBe(true)
-    expect(ambireGasTwo.gasUsed * 2n).toBeGreaterThan(originalGas)
+    expect(ambireGasTwo.gasUsed).toBe(originalGas * 2n)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, 2 iterations without touching upper limit
+     **************************************** */
+
+    const gasGuardCallPassWithMoreIncreasedGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [80000])
+    }
+    const opFour = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithMoreIncreasedGasLimit]
+    }
+    const responseFour = await getEstimation(
+      baseAcc,
+      accountState,
+      opFour,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseFour instanceof Error).toBe(false)
+    const resFour = responseFour as FullEstimation
+    const ambireGasFour = resFour.ambire as AmbireEstimation
+    expect(ambireGasFour instanceof Error).toBe(false)
+    expect(ambireGasFour.flags.hasInitialGasLimitFailed).toBe(true)
+    expect(ambireGasFour.gasUsed).toBeGreaterThan(originalGas * 2n)
+    expect(ambireGasFour.gasUsed).toBeLessThan(originalGas * 3n)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, hits upper limit
+     **************************************** */
+
+    const gasGuardCallPassWithGasLimitToTheRoof = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [90000])
+    }
+    const opFive = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithGasLimitToTheRoof]
+    }
+    const responseFive = await getEstimation(
+      baseAcc,
+      accountState,
+      opFive,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseFive instanceof Error).toBe(false)
+    const resFive = responseFive as FullEstimation
+    const ambireGasFive = resFive.ambire as AmbireEstimation
+    expect(ambireGasFive instanceof Error).toBe(false)
+    expect(ambireGasFive.flags.hasInitialGasLimitFailed).toBe(true)
+    expect(ambireGasFive.gasUsed).toBe(originalGas * 3n)
 
     /** **************************************
      * hasInitialGasLimitFailed = true, fail even after increased gas

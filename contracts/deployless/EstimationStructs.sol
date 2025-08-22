@@ -33,4 +33,10 @@ contract EstimationStructs {
     uint gasUsed;
     uint amount;
   }
+
+  struct GasLimits {
+    uint256 gasLimit;
+    uint256 upperBoundLimit;
+    bool shouldRevertIfConditionsMet;
+  }
 }

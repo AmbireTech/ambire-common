@@ -188,7 +188,9 @@ contract Estimation is FeeTokens, Spoof {
     }
     op.signature = spoofSig;
     if (spoofSig.length > 0) {
-      try this.simulateSigned(op, 0, true) returns (SimulationOutcome memory errorOutcome) {
+      try this.simulateSigned(op, GasLimits(0, 0, true)) returns (
+        SimulationOutcome memory errorOutcome
+      ) {
         // success case, but if simulateSigned enters here while having a gasLimit of 0,
         // it means it has resolved with an error. Which is what we want
         outcome = errorOutcome;
@@ -203,25 +205,14 @@ contract Estimation is FeeTokens, Spoof {
           }
         }
 
-        // decode RevertWithSuccess and try again with the calculated gasLimit + 10% buffer
+        // decode RevertWithSuccess and try again with the calculated gasLimit + 5% buffer
         uint256 gasLimit;
         assembly {
           gasLimit := mload(add(revertData, 36))
         }
-        uint256 raisedGasLimit = gasLimit + gasLimit / 10;
-        try this.simulateSigned(op, raisedGasLimit, true) returns (
-          SimulationOutcome memory successOutcome
-        ) {
-          // all good, no OOG, returning success
-          outcome = successOutcome;
-        } catch (bytes memory) {
-          // OOG, raised the gasLimit 3 times and try again
-          // no reverts here, if this fails, declare a final error
-          raisedGasLimit = raisedGasLimit * 3;
-          outcome = simulateSigned(op, raisedGasLimit, false);
-          outcome.gasUsed = raisedGasLimit;
-          outcome.initialGasLimitFailed = true;
-        }
+        uint256 raisedGasLimit = gasLimit + gasLimit / 20;
+        uint256 upperLimit = raisedGasLimit * 3;
+        outcome = simulateSigned(op, GasLimits(raisedGasLimit, upperLimit, false));
       }
     } else {
       outcome.err = bytes('SPOOF_ERROR');
@@ -243,7 +234,7 @@ contract Estimation is FeeTokens, Spoof {
     // the first time the account may not be added to the accessList which will distort the difference
     // However, if the previous simulations have been successful it will be, and if they're not, we don't care
     // about the accuracy of the baseGas
-    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp, 0, false);
+    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp, GasLimits(0, 0, false));
     require(
       emptyOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
@@ -256,7 +247,7 @@ contract Estimation is FeeTokens, Spoof {
     twoCallOp.calls = new Transaction[](2);
     twoCallOp.calls[0].to = address(this);
     twoCallOp.calls[1].to = address(this);
-    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp, 0, false);
+    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp, GasLimits(0, 0, false));
     require(
       twoCallOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
