@@ -21,7 +21,7 @@ import {
   getValidNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {

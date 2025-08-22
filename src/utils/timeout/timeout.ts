@@ -3,7 +3,7 @@
 // but providing protection against overlapping invocations of `fn`. It also includes
 // debounce logic so that redundant start/restart calls within the same tick are collapsed.
 
-import EventEmitter from '../controllers/eventEmitter/eventEmitter'
+import EventEmitter from '../../controllers/eventEmitter/eventEmitter'
 
 export type RecurringTimeout = {
   start: (options?: { timeout?: number; runImmediately?: boolean }) => void

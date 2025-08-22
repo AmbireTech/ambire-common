@@ -67,7 +67,7 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'

@@ -20,7 +20,7 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ONE_MINUTE = 60000

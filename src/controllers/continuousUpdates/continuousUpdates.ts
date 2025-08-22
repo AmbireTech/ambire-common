@@ -8,7 +8,7 @@ import {
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
