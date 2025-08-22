@@ -1120,7 +1120,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.actions.actionsQueue
       ),
       selectedAccount: this.#selectedAccount.account.addr,
-      accounts: this.#accounts.accounts,
       networks: this.#networks.networks,
       swapAndBridgeRoutesPendingSignature
     })
