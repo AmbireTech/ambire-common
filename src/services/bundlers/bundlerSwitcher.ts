@@ -28,12 +28,12 @@ export class BundlerSwitcher {
   constructor(
     network: Network,
     hasControllerForbiddenUpdates: Function,
-    opts: { canDelegate: boolean; preferedBundler?: BUNDLER } = { canDelegate: false }
+    opts: { canDelegate: boolean; preferredBundler?: BUNDLER } = { canDelegate: false }
   ) {
     this.network = network
     this.bundler =
-      opts.preferedBundler && getAvailableBundlerNames(network).includes(opts.preferedBundler)
-        ? getBundlerByName(opts.preferedBundler)
+      opts.preferredBundler && getAvailableBundlerNames(network).includes(opts.preferredBundler)
+        ? getBundlerByName(opts.preferredBundler)
         : getDefaultBundler(network, opts)
     this.usedBundlers.push(this.bundler.getName())
     this.hasControllerForbiddenUpdates = hasControllerForbiddenUpdates
