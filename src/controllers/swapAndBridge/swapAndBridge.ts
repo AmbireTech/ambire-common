@@ -2,6 +2,7 @@ import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
@@ -46,6 +47,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
+  getActiveRoutesLowestServiceTime,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
@@ -65,6 +67,7 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
@@ -268,6 +271,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #relayerUrl: string
 
+  #updateQuoteInterval: RecurringTimeout
+
+  #updateActiveRoutesInterval: RecurringTimeout
+
   constructor({
     accounts,
     keystore,
@@ -324,6 +331,39 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
+
+    this.#updateQuoteInterval = createRecurringTimeout(
+      async () => {
+        if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+          this.#updateQuoteInterval.stop()
+          return
+        }
+
+        await this.updateQuote({
+          skipPreviousQuoteRemoval: true,
+          skipQuoteUpdateOnSameValues: false,
+          skipStatusUpdate: false
+        })
+      },
+      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
+      this.emitError.bind(this)
+    )
+
+    this.#updateActiveRoutesInterval = createRecurringTimeout(
+      async () => {
+        if (!this.activeRoutesInProgress.length) {
+          this.#updateActiveRoutesInterval.stop()
+          return
+        }
+
+        await this.checkForNextUserTxForActiveRoutes()
+
+        const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
+      },
+      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
+      this.emitError.bind(this)
+    )
   }
 
   #emitUpdateIfNeeded(forceUpdate: boolean = false) {
@@ -568,6 +608,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activeRoutes = value
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('swapAndBridgeActiveRoutes', value)
+
+    if (this.activeRoutesInProgress.length) {
+      this.#updateActiveRoutesInterval.start()
+    } else {
+      this.#updateActiveRoutesInterval.stop()
+    }
   }
 
   get shouldEnableRoutesSelection() {
@@ -849,6 +895,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         : undefined,
       updateQuote ? this.updateQuote({ debounce: true }) : undefined
     ])
+    this.#updateQuoteInterval.restart()
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -879,6 +926,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
+    this.#updateQuoteInterval.stop()
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }

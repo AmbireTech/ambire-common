@@ -36,7 +36,6 @@ import {
 } from '../../interfaces/keystore'
 import { IMainController } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
-import { NotificationManager } from '../../interfaces/notification'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -49,8 +48,8 @@ import { IStorageController, Storage } from '../../interfaces/storage'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
+import { IUiController, UiManager, View } from '../../interfaces/ui'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { WindowManager } from '../../interfaces/window'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -85,6 +84,7 @@ import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { BannerController } from '../banner/banner'
+import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
@@ -112,6 +112,7 @@ import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
+import { UiController } from '../ui/ui'
 
 const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
@@ -209,11 +210,9 @@ export class MainController extends EventEmitter implements IMainController {
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
 
-  onPopupOpenStatus: 'LOADING' | 'INITIAL' | 'SUCCESS' = 'INITIAL'
+  ui: IUiController
 
-  #windowManager: WindowManager
-
-  #notificationManager: NotificationManager
+  #continuousUpdates: ContinuousUpdatesController
 
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
@@ -236,8 +235,7 @@ export class MainController extends EventEmitter implements IMainController {
     swapApiKey,
     keystoreSigners,
     externalSignerControllers,
-    windowManager,
-    notificationManager
+    uiManager
   }: {
     platform: Platform
     storageAPI: Storage
@@ -248,19 +246,17 @@ export class MainController extends EventEmitter implements IMainController {
     swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
-    windowManager: WindowManager
-    notificationManager: NotificationManager
+    uiManager: UiManager
   }) {
     super()
     this.#storageAPI = storageAPI
     this.fetch = fetch
-    this.#windowManager = windowManager
-    this.#notificationManager = notificationManager
 
     this.storage = new StorageController(this.#storageAPI)
     this.featureFlags = new FeatureFlagsController(featureFlags)
+    this.ui = new UiController({ uiManager })
     this.invite = new InviteController({ relayerUrl, fetch, storage: this.storage })
-    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, windowManager)
+    this.keystore = new KeystoreController(platform, this.storage, keystoreSigners, this.ui)
     this.#externalSignerControllers = externalSignerControllers
     this.networks = new NetworksController({
       defaultNetworksMode: this.featureFlags.isFeatureEnabled('testnetMode')
@@ -321,7 +317,8 @@ export class MainController extends EventEmitter implements IMainController {
       keystore: this.keystore,
       accounts: this.accounts,
       networks: this.networks,
-      providers: this.providers
+      providers: this.providers,
+      ui: this.ui
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -363,7 +360,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.phishing = new PhishingController({
       fetch: this.fetch,
       storage: this.storage,
-      windowManager: this.#windowManager
+      ui: this.ui
     })
     // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
     const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
@@ -473,8 +470,7 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
-      windowManager: this.#windowManager,
-      notificationManager: this.#notificationManager,
+      ui: this.ui,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
       updateSignAccountOp: (props) => {
@@ -489,6 +485,24 @@ export class MainController extends EventEmitter implements IMainController {
       guardHWSigning: this.#guardHWSigning.bind(this)
     })
 
+    this.#continuousUpdates = new ContinuousUpdatesController({
+      // Pass a read-only proxy of the main instance to ContinuousUpdatesController.
+      // This gives it full access to read main’s state and call its methods,
+      // but prevents any direct modification to the main state.
+      main: new Proxy(this, {
+        get(target, prop, receiver) {
+          const value = Reflect.get(target, prop, receiver)
+          if (typeof value === 'function') {
+            return value.bind(target) // bind original instance to preserve `this`
+          }
+          return value
+        },
+        set() {
+          throw new Error('Read-only')
+        }
+      })
+    })
+
     this.#initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
@@ -497,6 +511,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           new AccountPickerController({
             accounts: this.accounts,
@@ -515,6 +530,10 @@ export class MainController extends EventEmitter implements IMainController {
         )
       }
     })
+
+    this.ui.uiEvent.on('addView', async (view: View) => {
+      if (view.type === 'popup') await this.onPopupOpen(view.id)
+    })
   }
 
   /**
@@ -524,11 +543,8 @@ export class MainController extends EventEmitter implements IMainController {
    * It's not a problem to call it many times consecutively as all methods have internal
    * caching mechanisms to prevent unnecessary calls.
    */
-  async onPopupOpen() {
+  async onPopupOpen(viewId: string) {
     const selectedAccountAddr = this.selectedAccount.account?.addr
-
-    this.onPopupOpenStatus = 'LOADING'
-    await this.forceEmitUpdate()
 
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
@@ -544,11 +560,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
     }
 
-    this.onPopupOpenStatus = 'SUCCESS'
-    await this.forceEmitUpdate()
-
-    this.onPopupOpenStatus = 'INITIAL'
-    await this.forceEmitUpdate()
+    this.ui.updateView(viewId, { isReady: true })
   }
 
   async #load(): Promise<void> {
@@ -612,6 +624,9 @@ export class MainController extends EventEmitter implements IMainController {
     this.activity.updateAccountOpBanners()
     this.swapAndBridge.reset()
     this.transfer.resetForm()
+    this.#continuousUpdates.updatePortfolioInterval.restart()
+    this.#continuousUpdates.accountStateLatestInterval.restart()
+    this.#continuousUpdates.accountStatePendingInterval.restart()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
@@ -1047,7 +1062,7 @@ export class MainController extends EventEmitter implements IMainController {
       signedMessage.fromActionId
     )
 
-    await this.#notificationManager.create({
+    await this.ui.notification.create({
       title: 'Done!',
       message: 'The Message was successfully signed.'
     })
@@ -1345,7 +1360,6 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  // TODO: Refactor this to accept an optional object with options
   async updateSelectedAccountPortfolio(opts?: {
     forceUpdate?: boolean
     networks?: Network[]
@@ -2033,7 +2047,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.transfer.resetForm()
     }
 
-    await this.#notificationManager.create({
+    await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
         submittedAccountOp.calls.length === accountOp.calls.length
