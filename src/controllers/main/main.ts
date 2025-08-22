@@ -201,9 +201,6 @@ export class MainController extends EventEmitter implements IMainController {
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
-  // TODO: Temporary solution to expose the fee payer key during Account Op broadcast.
-  feePayerKey: Key | null = null
-
   lastUpdate: Date = new Date()
 
   isOffline: boolean = false
@@ -754,7 +751,7 @@ export class MainController extends EventEmitter implements IMainController {
         level: 'major',
         message,
         error: new Error(
-          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.feePayerKey?.type}. Type: ${type}.`
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
         )
       })
       return
@@ -891,13 +888,14 @@ export class MainController extends EventEmitter implements IMainController {
   #abortHWTransactionSign(signAccountOp: ISignAccountOpController) {
     if (!signAccountOp) return
 
+    const paidByKeyType = this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType
     const isAwaitingHWSignature =
       (signAccountOp.accountOp.signingKeyType !== 'internal' &&
         this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
-      // this.feePayerKey should be set before checking if it's type is internal
+      // paidByKeyType should be set before checking if it's type is internal
       // if it's not, we are not waiting for a hw sig
-      (this.feePayerKey &&
-        this.feePayerKey.type !== 'internal' &&
+      (paidByKeyType &&
+        paidByKeyType !== 'internal' &&
         this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
 
     // Reset these flags only if we were awaiting a HW signature
@@ -911,9 +909,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.#signAndBroadcastCallId = null
     }
 
-    const uniqueSigningKeys = [
-      ...new Set([signAccountOp.accountOp.signingKeyType, this.feePayerKey?.type])
-    ]
+    const uniqueSigningKeys = [...new Set([signAccountOp.accountOp.signingKeyType, paidByKeyType])]
 
     // Call the cleanup method for each unique signing key type
     uniqueSigningKeys.forEach((keyType) => {
@@ -929,7 +925,6 @@ export class MainController extends EventEmitter implements IMainController {
     if (!this.signAccountOp) return
 
     this.#abortHWTransactionSign(this.signAccountOp)
-    this.feePayerKey = null
     this.signAccountOp.reset()
     this.signAccountOp = null
     this.signAccOpInitError = null
@@ -1747,20 +1742,19 @@ export class MainController extends EventEmitter implements IMainController {
       }
 
       try {
-        const feePayerKey = this.keystore.getFeePayerKey(accountOp)
-        if (feePayerKey instanceof Error) {
-          return this.throwBroadcastAccountOp({
-            signAccountOp,
-            message: feePayerKey.message,
-            accountState
-          })
-        }
-        this.feePayerKey = feePayerKey
-        this.emitUpdate()
+        const { gasFeePayment } = accountOp
 
-        const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
+        if (!gasFeePayment.paidBy || !gasFeePayment.paidByKeyType) {
+          const message = `Missing gas fee payment details. ${contactSupportPrompt}`
+          return this.throwBroadcastAccountOp({ signAccountOp, message })
+        }
+
+        const signer = await this.keystore.getSigner(
+          gasFeePayment.paidBy,
+          gasFeePayment.paidByKeyType
+        )
         if (signer.init) {
-          signer.init(this.#externalSignerControllers[feePayerKey.type])
+          signer.init(this.#externalSignerControllers[gasFeePayment.paidByKeyType])
         }
 
         const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
@@ -2060,8 +2054,6 @@ export class MainController extends EventEmitter implements IMainController {
       } successfully signed and broadcast to the network.`
     })
 
-    // reset the fee payer key
-    this.feePayerKey = null
     return Promise.resolve()
   }
 
@@ -2153,7 +2145,6 @@ export class MainController extends EventEmitter implements IMainController {
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
     signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
-    this.feePayerKey = null
 
     // remove the active route on broadcast failure
     if (signAccountOp?.accountOp.meta?.swapTxn) {
