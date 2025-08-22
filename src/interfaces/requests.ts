@@ -1,5 +1,5 @@
-import { ActionExecutionType } from '../controllers/actions/actions'
 import { TokenResult } from '../libs/portfolio'
+import { ActionExecutionType } from './actions'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'

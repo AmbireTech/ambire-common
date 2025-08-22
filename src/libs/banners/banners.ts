@@ -191,7 +191,6 @@ const getAccountOpBannerText = (
 export const getAccountOpBanners = ({
   accountOpActionsByNetwork,
   selectedAccount,
-  accounts,
   networks,
   swapAndBridgeRoutesPendingSignature
 }: {
@@ -200,77 +199,25 @@ export const getAccountOpBanners = ({
   }
 
   selectedAccount: string
-  accounts: Account[]
   networks: Network[]
   swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!accountOpActionsByNetwork) return []
   const txnBanners: Banner[] = []
 
-  const account = accounts.find((acc) => acc.addr === selectedAccount)
-
-  if (account?.creation) {
-    Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
-      actions.forEach((action) => {
-        const network = networks.filter((n) => n.chainId.toString() === netId)[0]
-        const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
-          const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-            (route) => route.activeRouteId === call.fromUserRequestId
-          )
-
-          if (isSwapAndBridge) return prev
-
-          return prev + 1
-        }, 0)
-        const text = getAccountOpBannerText(
-          swapAndBridgeRoutesPendingSignature,
-          BigInt(network.chainId),
-          nonSwapAndBridgeTxns,
-          networks
+  Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
+    actions.forEach((action) => {
+      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
+      const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
+        const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
+          (route) => route.activeRouteId === call.fromUserRequestId
         )
 
-        txnBanners.push({
-          id: `${selectedAccount}-${netId}`,
-          type: 'info',
-          category: 'pending-to-be-signed-acc-op',
-          title: `Transaction waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-          text,
-          actions: [
-            {
-              label: 'Reject',
-              actionName: 'reject-accountOp',
-              meta: {
-                err: 'User rejected the transaction request.',
-                actionId: action.id,
-                shouldOpenNextAction: false
-              }
-            },
-            {
-              label: 'Open',
-              actionName: 'open-accountOp',
-              meta: { actionId: action.id }
-            }
-          ]
-        })
-      })
-    })
-  } else {
-    Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
-      const network = networks.filter((n) => n.chainId.toString() === netId)[0]
-      const nonSwapAndBridgeTxns = actions.reduce((prev, action) => {
-        action.accountOp.calls.forEach((call) => {
-          const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-            (route) => route.activeRouteId === call.fromUserRequestId
-          )
+        if (isSwapAndBridge) return prev
 
-          if (isSwapAndBridge) return prev
-
-          return prev + 1
-        })
-
-        return prev
+        return prev + 1
       }, 0)
-
+      const callCount = action.accountOp.calls.length
       const text = getAccountOpBannerText(
         swapAndBridgeRoutesPendingSignature,
         BigInt(network.chainId),
@@ -281,33 +228,30 @@ export const getAccountOpBanners = ({
       txnBanners.push({
         id: `${selectedAccount}-${netId}`,
         type: 'info',
-        title: `${actions.length} transaction${
-          actions.length > 1 ? 's' : ''
+        category: 'pending-to-be-signed-acc-op',
+        title: `${
+          callCount === 1 ? 'Transaction' : `${callCount} Transactions`
         } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
         text,
         actions: [
-          actions.length <= 1
-            ? {
-                label: 'Reject',
-                actionName: 'reject-accountOp',
-                meta: {
-                  err: 'User rejected the transaction request.',
-                  actionId: actions[0].id,
-                  shouldOpenNextAction: false
-                }
-              }
-            : undefined,
+          {
+            label: 'Reject',
+            actionName: 'reject-accountOp',
+            meta: {
+              err: 'User rejected the transaction request.',
+              actionId: action.id,
+              shouldOpenNextAction: false
+            }
+          },
           {
             label: 'Open',
             actionName: 'open-accountOp',
-            meta: {
-              actionId: actions[0].id
-            }
+            meta: { actionId: action.id }
           }
-        ].filter(Boolean) as Action[]
+        ]
       })
     })
-  }
+  })
 
   return txnBanners
 }
