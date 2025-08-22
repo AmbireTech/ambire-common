@@ -3,8 +3,9 @@ import fetch from 'node-fetch'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { networks } from '../../consts/networks'
+import { UiController } from '../ui/ui'
 import { RPCProviders } from '../../interfaces/provider'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { getRpcProvider } from '../../services/provider'
@@ -47,8 +48,9 @@ const prepareTest = async () => {
   const storageCtrl = new StorageController(storage)
   let providersCtrl: ProvidersController
 
-  const windowManager = mockWindowManager().windowManager
-  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
+  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -93,7 +95,8 @@ const prepareTest = async () => {
     keystore: keystoreCtrl,
     providers: providersCtrl,
     networks: networksCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    ui: uiCtrl
   })
 
   return {
