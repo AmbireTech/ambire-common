@@ -5,7 +5,12 @@ import { Network } from '../../interfaces/network'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { Bundler } from './bundler'
-import { getAvailableBunlders, getDefaultBundler } from './getBundler'
+import {
+  getAvailableBundlerNames,
+  getAvailableBunlders,
+  getBundlerByName,
+  getDefaultBundler
+} from './getBundler'
 
 export class BundlerSwitcher {
   protected network: Network
@@ -23,10 +28,13 @@ export class BundlerSwitcher {
   constructor(
     network: Network,
     hasControllerForbiddenUpdates: Function,
-    opts: { canDelegate: boolean } = { canDelegate: false }
+    opts: { canDelegate: boolean; preferedBundler?: BUNDLER } = { canDelegate: false }
   ) {
     this.network = network
-    this.bundler = getDefaultBundler(network, opts)
+    this.bundler =
+      opts.preferedBundler && getAvailableBundlerNames(network).includes(opts.preferedBundler)
+        ? getBundlerByName(opts.preferedBundler)
+        : getDefaultBundler(network, opts)
     this.usedBundlers.push(this.bundler.getName())
     this.hasControllerForbiddenUpdates = hasControllerForbiddenUpdates
   }
@@ -67,6 +75,27 @@ export class BundlerSwitcher {
     const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
       return this.usedBundlers.indexOf(bundler.getName()) === -1
     })
+    this.bundler = availableBundlers[0]
+    this.usedBundlers.push(this.bundler.getName())
+    return this.bundler
+  }
+
+  /**
+   * Use this when you don't know which is the correct bundler for the
+   * userOp and you are guessing. Otherwise, refrain from using it
+   */
+  forceSwitch(): Bundler {
+    const availableBundlers = getAvailableBunlders(this.network).filter((bundler) => {
+      return this.usedBundlers.indexOf(bundler.getName()) === -1
+    })
+
+    // reset on force so we always have a bundler available
+    if (availableBundlers.length === 0) {
+      this.usedBundlers = []
+      this.bundler = getAvailableBunlders(this.network)[0]
+      return this.bundler
+    }
+
     this.bundler = availableBundlers[0]
     this.usedBundlers.push(this.bundler.getName())
     return this.bundler
