@@ -19,6 +19,11 @@ import { AccountOpStatus, Call } from './types'
 export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
+  /**
+   * The account may be controlled by multiple keys. In this case, the user should
+   * be able to choose which key to use.
+   */
+  paidByKeyType: Key['type'] | null
   inToken: string
   // optional, because older versions of the extension did not have this stored locally
   feeTokenChainId?: bigint
