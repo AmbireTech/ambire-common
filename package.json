@@ -5,7 +5,7 @@
   "scripts": {
     "humanizer:update:metamaskContactMetadata": "node scripts/updateHumanizerInfoWithMetaMaskContactMetadata.js",
     "humanizer:generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
-    "compile:contracts": "ts-node scripts/compileContracts.js",
+    "compile:contracts": "npx hardhat compile && ts-node scripts/compileContracts.js",
     "hardhat": "npx hardhat compile; npx hardhat test",
     "jest": "node runTests.js",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",

@@ -34,7 +34,9 @@ We follow a lightweight Git branching model:
 
 ## Compiling
 
-This package **does not** include compiled output in the repository.
+### JS and TS
+
+This package **does not** include compiled **JS and TS** output in the repository.
 
 Each Ambire app compiles it individually as needed.
 
@@ -52,6 +54,16 @@ tsc src/libs/portfolio/getOnchainBalances.ts \
   --sourceMap true \
   --resolveJsonModule true \
   --outDir ./dist
+```
+
+### Contracts
+
+This package contains all of the contracts that are used within ambire-common, as well as contracts that are used in projects that have ambire-common as dependency. Do not delete compiled contracts unless you are sure they are not used in the Ambire web wallet, mobile wallet and relayer.
+
+To compile specific set of contracts, simply list the **contract names** in the command `compile:contracts` like so:
+
+```bash
+npm run compile:contracts WALLETSupplyController LegendsNFTImplementation
 ```
 
 ## Rules
