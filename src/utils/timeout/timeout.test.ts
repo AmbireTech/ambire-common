@@ -32,24 +32,27 @@ describe('createRecurringTimeout', () => {
     const t = createRecurringTimeout(fn, 1000)
     t.start()
 
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
     expect(fn).not.toHaveBeenCalled() // not run immediately by default
 
-    jest.advanceTimersByTime(999)
+    await jest.advanceTimersByTimeAsync(999)
     expect(fn).not.toHaveBeenCalled()
 
-    jest.advanceTimersByTime(1)
-
+    await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(1) // loop() started and awaited fn()
 
     deferred.resolve() // complete the execution of the fn
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
-    jest.advanceTimersByTime(999)
+    await jest.advanceTimersByTimeAsync(999)
     expect(fn).toHaveBeenCalledTimes(1)
 
-    jest.advanceTimersByTime(1)
+    await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(2)
-    expect(callOrder).toContain('fn-start')
+
+    deferred.resolve() // complete the execution of the fn
+    await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
+    expect(callOrder).toEqual(['fn-start', 'fn-end', 'fn-start', 'fn-end'])
   })
   test('start with runImmediately should call the fn without initial delay', async () => {
     const deferred = createDeferred()
@@ -58,15 +61,16 @@ describe('createRecurringTimeout', () => {
     const t = createRecurringTimeout(fn, 500)
     t.start({ runImmediately: true })
 
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
     expect(fn).toHaveBeenCalledTimes(1)
 
     deferred.resolve()
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
-    jest.advanceTimersByTime(499)
+    await jest.advanceTimersByTimeAsync(499)
     expect(fn).toHaveBeenCalledTimes(1)
 
-    jest.advanceTimersByTime(1)
+    await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(2)
   })
   test('should not overlap: next fn run waits until the previous one resolves', async () => {
@@ -79,10 +83,12 @@ describe('createRecurringTimeout', () => {
 
     const t = createRecurringTimeout(fn, 200)
     t.start({ runImmediately: true })
+
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
     expect(fn).toHaveBeenCalledTimes(1)
 
     // Advance much more than 200ms; should not start again until first resolves
-    jest.advanceTimersByTime(1000)
+    await jest.advanceTimersByTimeAsync(1000)
     expect(fn).toHaveBeenCalledTimes(1)
 
     // Resolve first; only now the next setTimeout is scheduled
@@ -90,7 +96,7 @@ describe('createRecurringTimeout', () => {
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
     // Now advance to trigger the second run
-    jest.advanceTimersByTime(200)
+    await jest.advanceTimersByTimeAsync(200)
     expect(fn).toHaveBeenCalledTimes(2)
   })
   test('stop should prevent further fn runs and clears timer', async () => {
@@ -99,6 +105,8 @@ describe('createRecurringTimeout', () => {
 
     const t = createRecurringTimeout(fn, 300)
     t.start({ runImmediately: true })
+
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
     expect(fn).toHaveBeenCalledTimes(1)
 
     t.stop() // call stop while in progress
@@ -106,7 +114,7 @@ describe('createRecurringTimeout', () => {
     d1.resolve()
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
-    jest.advanceTimersByTime(10000)
+    await jest.advanceTimersByTimeAsync(10000)
     expect(fn).toHaveBeenCalledTimes(1) // no new run should be scheduled
   })
   test('restart should apply new timeout and force restart the timer', async () => {
@@ -119,6 +127,8 @@ describe('createRecurringTimeout', () => {
 
     const t = createRecurringTimeout(fn, 1000)
     t.start({ runImmediately: true })
+
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
     expect(fn).toHaveBeenCalledTimes(1)
 
     t.restart({ timeout: 100, runImmediately: false }) // restart while fn is in progress
@@ -126,10 +136,10 @@ describe('createRecurringTimeout', () => {
     d1.resolve()
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
-    jest.advanceTimersByTime(99)
+    await jest.advanceTimersByTimeAsync(99)
     expect(fn).toHaveBeenCalledTimes(1)
 
-    jest.advanceTimersByTime(1)
+    await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(2)
 
     d2.resolve()
@@ -145,6 +155,8 @@ describe('createRecurringTimeout', () => {
 
     const t = createRecurringTimeout(fn, 1000)
     t.start({ runImmediately: true })
+
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
     expect(fn).toHaveBeenCalledTimes(1)
 
     t.updateTimeout({ timeout: 200 }) // update timeout while the fn is in progress
@@ -152,10 +164,10 @@ describe('createRecurringTimeout', () => {
     d1.resolve()
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
-    jest.advanceTimersByTime(199)
+    await jest.advanceTimersByTimeAsync(199)
     expect(fn).toHaveBeenCalledTimes(1)
 
-    jest.advanceTimersByTime(1)
+    await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(2)
 
     d2.resolve()
@@ -171,7 +183,7 @@ describe('createRecurringTimeout', () => {
     t.restart()
     t.restart({ runImmediately: true })
 
-    jest.advanceTimersByTime(0) // move to the next tick
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
 
     expect(fn).toHaveBeenCalledTimes(1)
 
@@ -187,6 +199,8 @@ describe('createRecurringTimeout', () => {
 
     t.start({ runImmediately: true })
 
+    await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
+
     await Promise.resolve() // this await the promise of the fn to run its .then/.catch/.finally
 
     expect(emitError).toHaveBeenCalledWith(
@@ -194,7 +208,7 @@ describe('createRecurringTimeout', () => {
     )
 
     // after failure, next run still schedules
-    jest.advanceTimersByTime(250)
+    await jest.advanceTimersByTimeAsync(250)
     expect(fn).toHaveBeenCalledTimes(2)
   })
 })

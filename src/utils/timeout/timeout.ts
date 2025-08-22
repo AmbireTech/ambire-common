@@ -21,6 +21,8 @@ export function createRecurringTimeout(
   let running = false
   let debounceFlag = false
   let currentTimeout = timeout
+  // NEW: capture latest options within a tick
+  let pendingOptions: { timeout?: number; runImmediately?: boolean } | null = null
 
   const loop = async () => {
     try {
@@ -47,16 +49,28 @@ export function createRecurringTimeout(
     runImmediately?: boolean
   }) => {
     // Debounce repeated start/restart calls within the same tick
-    if (debounceFlag) return
+    if (debounceFlag) {
+      pendingOptions = {
+        ...(pendingOptions || {}),
+        timeout: newTimeout ?? pendingOptions?.timeout,
+        runImmediately: runImmediately ?? pendingOptions?.runImmediately
+      }
+      return
+    }
     debounceFlag = true
+    pendingOptions = { timeout: newTimeout, runImmediately }
     setTimeout(() => {
       debounceFlag = false
+      const opts = pendingOptions || {}
+      pendingOptions = null
+
       if (!running) {
         running = true
-        if (runImmediately) {
+        if (opts.runImmediately) {
+          if (opts.timeout) updateTimeout({ timeout: opts.timeout })
           loop()
         } else {
-          if (newTimeout) updateTimeout({ timeout: newTimeout })
+          if (opts.timeout) updateTimeout({ timeout: opts.timeout })
           timeoutId = setTimeout(loop, currentTimeout)
         }
       }
