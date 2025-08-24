@@ -621,6 +621,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
       broadcastOption: BROADCAST_OPTIONS.bySelf,
+      paidByKeyType: 'internal',
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenChainId: 1n,
