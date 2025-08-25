@@ -1461,7 +1461,11 @@ export class MainController extends EventEmitter implements IMainController {
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
 
-    await this.updateSelectedAccountPortfolio()
+    const networkToUpdate = this.networks.networks.find((n) => n.chainId === network.chainId)
+
+    await this.updateSelectedAccountPortfolio({
+      networks: networkToUpdate ? [networkToUpdate] : undefined
+    })
   }
 
   removeNetworkData(chainId: bigint) {
