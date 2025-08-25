@@ -51,7 +51,6 @@ export interface SwapAndBridgeQuote {
   selectedRoute?: SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
-  availableRoutes: SwapAndBridgeRoute[]
 }
 
 export interface SocketAPIRoute {
@@ -79,7 +78,6 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
-  errorMessage?: string
 }
 
 export interface SwapAndBridgeRoute {
@@ -102,9 +100,7 @@ export interface SwapAndBridgeRoute {
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
-  errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
-  hasFailed?: boolean
   toToken: LiFiToken
   disabled?: boolean
   disabledReason?: string

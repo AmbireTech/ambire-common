@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -148,7 +148,8 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
 const normalizeLiFiRouteToSwapAndBridgeRoute = (
   route: LiFiRoute,
   userAddress: string,
-  accountNativeBalance: bigint
+  accountNativeBalance: bigint,
+  nativeSymbol: string
 ): SwapAndBridgeRoute => {
   // search for a feeCost that is not included in the quote
   // if there is one, check if the user has enough to pay for it
@@ -161,7 +162,10 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   })
 
   const disabled = feeCostAmount === null ? false : accountNativeBalance <= feeCostAmount
-  const disabledReason = disabled ? 'Insufficient native' : undefined
+  const swapOrBridgeText = route.fromChainId === route.toChainId ? 'swap' : 'bridge'
+  const disabledReason = disabled
+    ? `Insufficient ${nativeSymbol}. This ${swapOrBridgeText} imposes a fee that must be paid in ${nativeSymbol}`
+    : undefined
 
   return {
     routeId: route.id,
@@ -451,7 +455,8 @@ export class LiFiAPI {
     sort,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isOG,
-    accountNativeBalance
+    accountNativeBalance,
+    nativeSymbol
   }: {
     fromAsset: TokenResult | null
     fromChainId: number
@@ -465,6 +470,7 @@ export class LiFiAPI {
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
     accountNativeBalance: bigint
+    nativeSymbol: string
   }): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -538,12 +544,16 @@ export class LiFiAPI {
     const routes = response.routes
       .map(
         (r: LiFiRoute) =>
-          normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance),
+          normalizeLiFiRouteToSwapAndBridgeRoute(
+            r,
+            userAddress,
+            accountNativeBalance,
+            nativeSymbol
+          ),
         accountNativeBalance
       )
       .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
-    const availableRoutes = routes.filter((r) => !r.disabled)
-    const selectedRoute = availableRoutes.length ? availableRoutes[0] : undefined
+    const selectedRoute = routes.length ? routes[0] : undefined
     const selectedRouteSteps: SwapAndBridgeStep[] = selectedRoute ? selectedRoute.steps : []
 
     return {
@@ -553,8 +563,7 @@ export class LiFiAPI {
       toChainId,
       selectedRoute,
       selectedRouteSteps,
-      routes,
-      availableRoutes
+      routes
     }
   }
 
