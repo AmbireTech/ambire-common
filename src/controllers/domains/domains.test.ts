@@ -2,7 +2,12 @@ import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
-import { DomainsController } from './domains'
+import * as withTimeoutModule from '../../utils/with-timeout'
+import {
+  DomainsController,
+  PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS,
+  PERSIST_DOMAIN_FOR_IN_MS
+} from './domains'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -36,33 +41,79 @@ describe('Domains', () => {
 
     expect(domainsController.domains[address].ens).toBe(name)
   })
-  it('reverse lookup should expire after 24 hours', async () => {
+  it(`reverse lookup should expire after ${
+    PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
+  } min, if the lookup succeeds (the happy case)`, async () => {
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(start)
+
     const { address, name } = ENS2
 
     await domainsController.reverseLookup(address)
-
     expect(domainsController.domains[address].ens).toBe(name)
 
-    const timestampForwardInTime = new Date(Date.UTC(2028, 1, 1)).valueOf()
+    // 1 min before expiry
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
 
-    Date.now = jest.fn(() => timestampForwardInTime)
+    const previousUpdatedAt = domainsController.domains[address].updatedAt
+    await domainsController.reverseLookup(address)
+    expect(domainsController.domains[address].updatedAt).toBe(previousUpdatedAt)
+
+    // 1 min after expiry
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
 
     await domainsController.reverseLookup(address)
+    expect(domainsController.domains[address].updatedAt).toBe(
+      start + PERSIST_DOMAIN_FOR_IN_MS + 60000
+    )
 
-    expect(domainsController.domains[address].savedAt).toBe(timestampForwardInTime)
+    nowSpy.mockRestore()
   })
-  it('should not reverse lookup if already resolved', async () => {
+  it(`reverse lookup should expire after ${
+    PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS / 1000 / 60
+  } min, if the last lookup had failed (the unhappy case)`, async () => {
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(start)
+
+    const withTimeoutSpy = jest
+      .spyOn(withTimeoutModule, 'withTimeout')
+      .mockImplementation(async () => {
+        throw new Error('forced failure')
+      })
+
+    const FAIL_ADDRESS = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF'
+
+    // Initial failed lookup sets updateFailedAt
+    await domainsController.reverseLookup(FAIL_ADDRESS)
+    const firstFailedAt = domainsController.domains[FAIL_ADDRESS].updateFailedAt
+    expect(typeof firstFailedAt).toBe('number')
+
+    // 1 min before failure-expiry -> no retry, timestamp unchanged
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS - 60000)
+    await domainsController.reverseLookup(FAIL_ADDRESS)
+    expect(domainsController.domains[FAIL_ADDRESS].updateFailedAt).toBe(firstFailedAt)
+
+    // 1 min after failure-expiry -> retry, timestamp updated
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000)
+    await domainsController.reverseLookup(FAIL_ADDRESS)
+    expect(domainsController.domains[FAIL_ADDRESS].updateFailedAt).toBe(
+      start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000
+    )
+
+    withTimeoutSpy.mockRestore()
+    nowSpy.mockRestore()
+  })
+  it('should NOT reverse lookup if already resolved', async () => {
     const { address } = ENS2
 
+    const lastUpdatedAt = domainsController.domains[address].updatedAt
     await domainsController.reverseLookup(address)
-
-    const savedAtFirstCall = domainsController.domains[address].savedAt
-
-    expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
+    expect(domainsController.domains[address].updatedAt).toBe(lastUpdatedAt)
 
     await domainsController.reverseLookup(address)
-
-    expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
+    expect(domainsController.domains[address].updatedAt).toBe(lastUpdatedAt)
   })
   it('should set ens to null if no domain is found', async () => {
     await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
