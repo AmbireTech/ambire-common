@@ -57,13 +57,12 @@ describe('Domains', () => {
   it('should NOT reverse lookup if already resolved', async () => {
     const { address } = ENS2
 
+    const lastUpdatedAt = domainsController.domains[address].updatedAt
     await domainsController.reverseLookup(address)
-
-    const savedAtFirstCall = domainsController.domains[address].createdAt
-    expect(domainsController.domains[address].createdAt).toBe(savedAtFirstCall)
+    expect(domainsController.domains[address].updatedAt).toBe(lastUpdatedAt)
 
     await domainsController.reverseLookup(address)
-    expect(domainsController.domains[address].updatedAt).toBe(savedAtFirstCall)
+    expect(domainsController.domains[address].updatedAt).toBe(lastUpdatedAt)
   })
   it('should set ens to null if no domain is found', async () => {
     await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
