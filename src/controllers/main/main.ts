@@ -1182,14 +1182,18 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp } =
+    const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
 
-      if (shouldUpdatePortfolio) {
-        this.updateSelectedAccountPortfolio({ forceUpdate: true })
+      if (chainsToUpdate.length) {
+        const networks = chainsToUpdate
+          ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
+          : undefined
+
+        this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
       }
     }
 
