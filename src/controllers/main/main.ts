@@ -399,8 +399,14 @@ export class MainController extends EventEmitter implements IMainController {
       serviceProviderAPI: lifiAPI,
       storage: this.storage,
       relayerUrl,
-      portfolioUpdate: () => {
-        this.updateSelectedAccountPortfolio({ forceUpdate: true })
+      portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
+        if (chainsToUpdate.length) {
+          const networks = chainsToUpdate
+            ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
+            : undefined
+
+          this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
+        }
       },
       isMainSignAccountOpThrowingAnEstimationError: (
         fromChainId: number | null,
