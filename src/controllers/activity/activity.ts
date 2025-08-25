@@ -12,6 +12,7 @@ import {
   AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
   fetchTxnId,
+  hasTimePassedSinceBroadcast,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp,
@@ -506,7 +507,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
    */
   async updateAccountsOpsStatuses(): Promise<{
     shouldEmitUpdate: boolean
-    shouldUpdatePortfolio: boolean
+    // Which networks require a portfolio update?
+    chainsToUpdate: Network['chainId'][]
     updatedAccountsOps: SubmittedAccountOp[]
     newestOpTimestamp: number
   }> {
@@ -515,7 +517,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return {
         shouldEmitUpdate: false,
-        shouldUpdatePortfolio: false,
+        chainsToUpdate: [],
         updatedAccountsOps: [],
         newestOpTimestamp: 0
       }
@@ -524,7 +526,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
 
-    let shouldUpdatePortfolio = false
+    const chainsToUpdate = new Set<Network['chainId']>()
     const updatedAccountsOps: SubmittedAccountOp[] = []
 
     // Use this flag to make the auto-refresh slower with the passege of time.
@@ -555,11 +557,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   newestOpTimestamp = accountOp.timestamp
                 }
 
-                const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
-                  const accountOpDate = new Date(op.timestamp)
-                  accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
-                  const aQuaterHasPassed = accountOpDate < new Date()
-                  if (aQuaterHasPassed) {
+                const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
+                  if (hasTimePassedSinceBroadcast(op, 5)) {
                     const updatedOpIfAny = updateOpStatus(
                       this.#accountsOps[selectedAccount][network.chainId.toString()][
                         accountOpIndex
@@ -573,7 +572,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 const fetchTxnIdResult = await fetchTxnId(
                   accountOp.identifiedBy,
                   network,
-                  this.#fetch,
                   this.#callRelayer,
                   accountOp
                 )
@@ -586,7 +584,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   return
                 }
                 if (fetchTxnIdResult.status === 'not_found') {
-                  declareStuckIfQuaterPassed(accountOp)
+                  declareStuckIfFiveMinsPassed(accountOp)
                   return
                 }
 
@@ -640,8 +638,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     )
                     if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
 
-                    if (receipt.status) {
-                      shouldUpdatePortfolio = true
+                    if (isSuccess && updatedOpIfAny) {
+                      chainsToUpdate.add(updatedOpIfAny.chainId)
                     }
 
                     if (accountOp.isSingletonDeploy && receipt.status) {
@@ -666,7 +664,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   // if there's no txn and 15 minutes have passed, declare it a failure
                   const txn = await provider.getTransaction(txnId)
                   if (txn) return
-                  declareStuckIfQuaterPassed(accountOp)
+                  declareStuckIfFiveMinsPassed(accountOp)
                 } catch {
                   this.emitError({
                     level: 'silent',
@@ -719,7 +717,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp }
+    return {
+      shouldEmitUpdate,
+      chainsToUpdate: Array.from(chainsToUpdate),
+      updatedAccountsOps,
+      newestOpTimestamp
+    }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {
