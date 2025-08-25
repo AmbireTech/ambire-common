@@ -1,3 +1,4 @@
+import { SocketModule } from '.'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
@@ -12,7 +13,6 @@ import {
   getTokenWithChain
 } from '../../utils'
 import AcrossModule from '../Across'
-import { SocketModule } from '.'
 
 const transactions = [
   {
@@ -37,11 +37,7 @@ const accountOp: AccountOp = {
   calls: [],
   gasLimit: null,
   signature: null,
-  gasFeePayment: null,
-  // This is used when we have an account recovery to finalize before executing the AccountOp,
-  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
-  // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null
+  gasFeePayment: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be

@@ -137,7 +137,6 @@ export const makeAccountOpAction = ({
     gasFeePayment: null,
     nonce,
     signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-    accountOpToExecuteBefore: null, // @TODO from pending recoveries
     calls: batchCallsFromUserRequests({
       accountAddr: account.addr,
       chainId,

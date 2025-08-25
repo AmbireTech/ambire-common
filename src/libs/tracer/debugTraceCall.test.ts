@@ -60,7 +60,6 @@ describe('Debug tracecall detection for transactions', () => {
       },
       nonce: 1n,
       signature: '0x000000000000000000000000db26aeea3b986887feaba661df6d211e725797a003',
-      accountOpToExecuteBefore: null,
       calls: [
         {
           to: '0xb7330c592dc5feafda855867b1e172be3a8d4abf',
