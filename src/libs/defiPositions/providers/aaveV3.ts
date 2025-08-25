@@ -42,8 +42,6 @@ export async function getAAVEPositions(
     }))
     .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
 
-  console.log('Debug: userAssets', userAssets, accountData)
-
   if (accountData.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER) {
     accountData.healthFactor = null
   }
