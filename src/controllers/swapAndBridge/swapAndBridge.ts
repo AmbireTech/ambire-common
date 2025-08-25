@@ -760,7 +760,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!this.quote || !this.quote.selectedRoute) return
 
     const msg = `${this.quote.routes.length} ${
-      this.quote.routes.length === 1 ? 'route found but failed' : 'routes found but all failed'
+      this.quote.routes.length === 1
+        ? 'route found, but simulation shows it fails on-chain'
+        : 'routes found, but simulations show they all fail on-chain'
     }.`
     this.addOrUpdateError({
       id: 'all-routes-failed',
