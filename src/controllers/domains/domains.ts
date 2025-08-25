@@ -9,12 +9,15 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 interface Domains {
   [address: string]: {
     ens: string | null
-    savedAt: number
+    createdAt?: number
+    updatedAt?: number
+    updateFailedAt?: number
   }
 }
 
 // 15 minutes
-const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
+export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
+const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -55,11 +58,14 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     type: 'ens'
   }) {
     const checksummedAddress = getAddress(address)
-    const { ens: oldEns } = this.domains[checksummedAddress] || { ens: null }
+    const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null }
 
+    const existing = this.domains[checksummedAddress]
+    const now = Date.now()
     this.domains[checksummedAddress] = {
-      ens: type === 'ens' ? name : oldEns,
-      savedAt: Date.now()
+      ens: type === 'ens' ? name : prevEns,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
     }
     this.emitUpdate()
   }
@@ -80,29 +86,39 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
     const checksummedAddress = getAddress(address)
-    const isAlreadyResolved = !!this.domains[checksummedAddress]
-    const isExpired =
-      isAlreadyResolved &&
-      Date.now() - this.domains[checksummedAddress].savedAt > PERSIST_DOMAIN_FOR_IN_MS
 
-    if ((isAlreadyResolved && !isExpired) || this.loadingAddresses.includes(checksummedAddress))
-      return
+    const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt
+
+    const hasExpired = hasLastUpdateFailed
+      ? Date.now() - (this.domains[checksummedAddress]?.updateFailedAt ?? 0) >
+        PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+      : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+
+    if (!hasExpired || this.loadingAddresses.includes(checksummedAddress)) return
 
     this.loadingAddresses.push(checksummedAddress)
     this.emitUpdate()
 
-    let ensName: string | null = null
-
     try {
-      ensName = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+      const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+
+      const now = Date.now()
+      const existing = this.domains[checksummedAddress]
+      this.domains[checksummedAddress] = {
+        ens,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now
+      }
     } catch (e: any) {
       // Fail silently with a console error, no biggie, since that would get retried
       console.warn('reverse ENS lookup failed', e)
-    }
 
-    this.domains[checksummedAddress] = {
-      ens: ensName,
-      savedAt: Date.now()
+      const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
+      if (hasBeenResolvedOnce) {
+        this.domains[checksummedAddress].updateFailedAt = Date.now()
+      } else {
+        this.domains[checksummedAddress] = { ens: null, updateFailedAt: Date.now() }
+      }
     }
 
     this.loadingAddresses = this.loadingAddresses.filter(

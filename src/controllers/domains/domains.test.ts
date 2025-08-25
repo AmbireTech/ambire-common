@@ -2,7 +2,7 @@ import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
-import { DomainsController } from './domains'
+import { DomainsController, PERSIST_DOMAIN_FOR_IN_MS } from './domains'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -36,33 +36,34 @@ describe('Domains', () => {
 
     expect(domainsController.domains[address].ens).toBe(name)
   })
-  it('reverse lookup should expire after 24 hours', async () => {
+  it(`reverse lookup should expire after ${PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60} min`, async () => {
     const { address, name } = ENS2
 
     await domainsController.reverseLookup(address)
 
     expect(domainsController.domains[address].ens).toBe(name)
 
-    const timestampForwardInTime = new Date(Date.UTC(2028, 1, 1)).valueOf()
+    const expiredTimestampForwardInTime =
+      new Date(domainsController.domains[address].createdAt ?? 0).valueOf() +
+      PERSIST_DOMAIN_FOR_IN_MS +
+      1000 // + a moment to make sure it got expired
 
-    Date.now = jest.fn(() => timestampForwardInTime)
+    Date.now = jest.fn(() => expiredTimestampForwardInTime)
 
     await domainsController.reverseLookup(address)
 
-    expect(domainsController.domains[address].savedAt).toBe(timestampForwardInTime)
+    expect(domainsController.domains[address].updatedAt).toBe(expiredTimestampForwardInTime)
   })
-  it('should not reverse lookup if already resolved', async () => {
+  it('should NOT reverse lookup if already resolved', async () => {
     const { address } = ENS2
 
     await domainsController.reverseLookup(address)
 
-    const savedAtFirstCall = domainsController.domains[address].savedAt
-
-    expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
+    const savedAtFirstCall = domainsController.domains[address].createdAt
+    expect(domainsController.domains[address].createdAt).toBe(savedAtFirstCall)
 
     await domainsController.reverseLookup(address)
-
-    expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
+    expect(domainsController.domains[address].updatedAt).toBe(savedAtFirstCall)
   })
   it('should set ens to null if no domain is found', async () => {
     await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
