@@ -2,7 +2,12 @@ import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
-import { DomainsController, PERSIST_DOMAIN_FOR_IN_MS } from './domains'
+import * as withTimeoutModule from '../../utils/with-timeout'
+import {
+  DomainsController,
+  PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS,
+  PERSIST_DOMAIN_FOR_IN_MS
+} from './domains'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -63,6 +68,41 @@ describe('Domains', () => {
       start + PERSIST_DOMAIN_FOR_IN_MS + 60000
     )
 
+    nowSpy.mockRestore()
+  })
+  it(`reverse lookup should expire after ${
+    PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS / 1000 / 60
+  } min, if the last lookup had failed (the unhappy case)`, async () => {
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(start)
+
+    const withTimeoutSpy = jest
+      .spyOn(withTimeoutModule, 'withTimeout')
+      .mockImplementation(async () => {
+        throw new Error('forced failure')
+      })
+
+    const FAIL_ADDRESS = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF'
+
+    // Initial failed lookup sets updateFailedAt
+    await domainsController.reverseLookup(FAIL_ADDRESS)
+    const firstFailedAt = domainsController.domains[FAIL_ADDRESS].updateFailedAt
+    expect(typeof firstFailedAt).toBe('number')
+
+    // 1 min before failure-expiry -> no retry, timestamp unchanged
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS - 60000)
+    await domainsController.reverseLookup(FAIL_ADDRESS)
+    expect(domainsController.domains[FAIL_ADDRESS].updateFailedAt).toBe(firstFailedAt)
+
+    // 1 min after failure-expiry -> retry, timestamp updated
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000)
+    await domainsController.reverseLookup(FAIL_ADDRESS)
+    expect(domainsController.domains[FAIL_ADDRESS].updateFailedAt).toBe(
+      start + PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS + 60000
+    )
+
+    withTimeoutSpy.mockRestore()
     nowSpy.mockRestore()
   })
   it('should NOT reverse lookup if already resolved', async () => {
