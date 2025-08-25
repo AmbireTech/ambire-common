@@ -10,6 +10,8 @@ export type RecurringTimeout = {
   restart: (options?: { timeout?: number; runImmediately?: boolean }) => void
   stop: () => void
   updateTimeout: (options: { timeout: number }) => void
+  getTimeout: () => number
+  getPromise: () => Promise<void> | undefined
 }
 
 export function createRecurringTimeout(
@@ -23,10 +25,14 @@ export function createRecurringTimeout(
   let currentTimeout = timeout
   // NEW: capture latest options within a tick
   let pendingOptions: { timeout?: number; runImmediately?: boolean } | null = null
+  let promise: Promise<void> | undefined
 
   const loop = async () => {
     try {
-      await fn()
+      promise = fn()
+      await promise.finally(() => {
+        promise = undefined
+      })
     } catch (err: any) {
       console.error('Recurring task error:', err)
       !!emitError && emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
@@ -103,5 +109,12 @@ export function createRecurringTimeout(
     scheduleStart({ runImmediately })
   }
 
-  return { start, restart, stop, updateTimeout }
+  return {
+    start,
+    restart,
+    stop,
+    updateTimeout,
+    getTimeout: () => currentTimeout,
+    getPromise: async () => promise
+  }
 }

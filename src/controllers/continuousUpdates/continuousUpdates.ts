@@ -31,9 +31,17 @@ const getAccountOpsIntervalRefreshTime = (
 export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
-  updatePortfolioInterval: RecurringTimeout
+  #updatePortfolioInterval: RecurringTimeout
 
-  accountsOpsStatusesInterval: RecurringTimeout
+  get updatePortfolioInterval() {
+    return this.#updatePortfolioInterval
+  }
+
+  #accountsOpsStatusesInterval: RecurringTimeout
+
+  get accountsOpsStatusesInterval() {
+    return this.#accountsOpsStatusesInterval
+  }
 
   accountStateLatestInterval: RecurringTimeout
 
@@ -60,18 +68,15 @@ export class ContinuousUpdatesController extends EventEmitter {
     //    Once the acc op is confirmed or failed, the portfolio interval will resume as normal.
     // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
     //    However, this is not a frequent case, and we can make a compromise here.
-    this.updatePortfolioInterval = createRecurringTimeout(
-      async () => {
-        if (this.#main.activity.broadcastedButNotConfirmed.length) return
-        await this.#main.updateSelectedAccountPortfolio()
-      },
+    this.#updatePortfolioInterval = createRecurringTimeout(
+      () => this.updatePortfolio(),
       INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
 
     this.#main.ui.uiEvent.on('addView', () => {
       if (this.#main.ui.views.length === 1) {
-        this.updatePortfolioInterval.restart({
+        this.#updatePortfolioInterval.restart({
           timeout: ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         })
         this.fastAccountStateReFetchTimeout.start()
@@ -79,7 +84,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     })
     this.#main.ui.uiEvent.on('removeView', () => {
       if (!this.#main.ui.views.length) {
-        this.updatePortfolioInterval.restart({
+        this.#updatePortfolioInterval.restart({
           timeout: INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
         })
         this.fastAccountStateReFetchTimeout.stop()
@@ -162,16 +167,8 @@ export class ContinuousUpdatesController extends EventEmitter {
       this.emitError.bind(this)
     )
 
-    this.accountsOpsStatusesInterval = createRecurringTimeout(
-      async () => {
-        const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
-        // Schedule the next update only when the previous one completes
-        const interval = getAccountOpsIntervalRefreshTime(
-          ACTIVITY_REFRESH_INTERVAL,
-          newestOpTimestamp
-        )
-        this.accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
-      },
+    this.#accountsOpsStatusesInterval = createRecurringTimeout(
+      async () => this.updateAccountsOpsStatuses(),
       ACTIVITY_REFRESH_INTERVAL,
       this.emitError.bind(this)
     )
@@ -250,7 +247,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       if (this.#main.statuses.signAndBroadcastAccountOp === 'SUCCESS') {
         this.accountStatePendingInterval.start({ timeout: ACCOUNT_STATE_PENDING_INTERVAL / 2 })
         this.accountStateLatestInterval.restart()
-        this.accountsOpsStatusesInterval.start()
       }
     }, 'continuous-update')
 
@@ -260,10 +256,23 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     this.#main.activity.onUpdate(() => {
       if (this.#main.activity.broadcastedButNotConfirmed.length) {
-        this.accountsOpsStatusesInterval.start()
+        this.#accountsOpsStatusesInterval.start()
       } else {
-        this.accountsOpsStatusesInterval.stop()
+        this.#accountsOpsStatusesInterval.stop()
       }
     }, 'continuous-update')
+  }
+
+  async updatePortfolio() {
+    if (this.#main.activity.broadcastedButNotConfirmed.length) return
+    await this.#main.updateSelectedAccountPortfolio()
+  }
+
+  async updateAccountsOpsStatuses() {
+    const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
+    // Schedule the next update only when the previous one completes
+    const interval = getAccountOpsIntervalRefreshTime(ACTIVITY_REFRESH_INTERVAL, newestOpTimestamp)
+
+    this.#accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
   }
 }

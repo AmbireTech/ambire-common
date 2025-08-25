@@ -214,6 +214,10 @@ export class MainController extends EventEmitter implements IMainController {
 
   #continuousUpdates: ContinuousUpdatesController
 
+  get continuousUpdates() {
+    return this.#continuousUpdates
+  }
+
   #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
 
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
