@@ -8,7 +8,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -16,7 +16,10 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
+import { UiController } from '../ui/ui'
 import { Account } from '../../interfaces/account'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -27,8 +30,6 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
 import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
-
-const windowManager = mockWindowManager().windowManager
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -70,9 +71,9 @@ const basicAccount: Account = {
 }
 
 describe('AccountPicker', () => {
-  let accountPicker: AccountPickerController
+  let accountPicker: IAccountPickerController
   const storage: Storage = produceMemoryStore()
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -89,7 +90,9 @@ describe('AccountPicker', () => {
   })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
-  const keystoreController = new KeystoreController('default', storageCtrl, {}, windowManager)
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
+  const keystoreController = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
   const accountsCtrl = new AccountsController(
     storageCtrl,
@@ -103,7 +106,7 @@ describe('AccountPicker', () => {
   beforeEach(() => {
     accountPicker = new AccountPickerController({
       accounts: accountsCtrl,
-      keystore: new KeystoreController('default', storageCtrl, {}, windowManager),
+      keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl),
       networks: networksCtrl,
       providers: providersCtrl,
       relayerUrl,

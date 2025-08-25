@@ -2,6 +2,11 @@ import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
 import { TokenResult } from '../libs/portfolio'
+import { ControllerInterface } from './controller'
+
+export type ISwapAndBridgeController = ControllerInterface<
+  InstanceType<typeof import('../controllers/swapAndBridge/swapAndBridge').SwapAndBridgeController>
+>
 
 export interface SocketAPIResponse<T> {
   result: T

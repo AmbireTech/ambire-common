@@ -1,5 +1,5 @@
 {
-  "version": "2.67.2",
+  "version": "2.69.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -23,7 +23,8 @@
     "events": "^3.3.0",
     "js-yaml": "^4.1.0",
     "scrypt-js": "^3.0.1",
-    "uuid": "9.0.0"
+    "uuid": "9.0.0",
+    "viem": "^2.33.3"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",

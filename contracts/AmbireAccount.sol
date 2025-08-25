@@ -9,7 +9,7 @@ import './deployless/IAmbireAccount.sol';
 import './libs/Eip712HashBuilder.sol';
 
 /**
- * @notice  A validator that performs DKIM signature recovery
+ * @notice  Ambire Account implementation
  * @dev     All external/public functions (that are not view/pure) use `payable` because AmbireAccount
  * is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
  * makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas

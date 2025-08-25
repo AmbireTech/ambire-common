@@ -6,22 +6,34 @@ import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
-import { DappProviderRequest } from '../../interfaces/dapp'
-import { Network } from '../../interfaces/network'
-import { NotificationManager } from '../../interfaces/notification'
-import { BuildRequest } from '../../interfaces/requests'
+import { AccountId, IAccountsController } from '../../interfaces/account'
 import {
+  AccountOpAction,
+  Action,
+  ActionExecutionType,
+  ActionPosition
+} from '../../interfaces/actions'
+import { Banner } from '../../interfaces/banner'
+import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
+import { BuildRequest, IRequestsController } from '../../interfaces/requests'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { ISignAccountOpController } from '../../interfaces/signAccountOp'
+import {
+  ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
+import { ITransactionManagerController } from '../../interfaces/transactionManager'
+import { ITransferController } from '../../interfaces/transfer'
+import { IUiController } from '../../interfaces/ui'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { WindowManager } from '../../interfaces/window'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
-// eslint-disable-next-line import/no-cycle
 import {
   dappRequestMethodToActionKind,
   getAccountOpActionsByNetwork
@@ -42,27 +54,13 @@ import {
 import {
   buildClaimWalletRequest,
   buildMintVestingRequest,
-  buildTransferUserRequest
+  buildTransferUserRequest,
+  prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
-import { AccountsController } from '../accounts/accounts'
-// eslint-disable-next-line import/no-cycle
-import {
-  AccountOpAction,
-  Action,
-  ActionExecutionType,
-  ActionPosition,
-  ActionsController
-} from '../actions/actions'
-import { DappsController } from '../dapps/dapps'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-// eslint-disable-next-line import/no-cycle
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { TransferController } from '../transfer/transfer'
+import { ActionsController } from '../actions/actions'
+import EventEmitter from '../eventEmitter/eventEmitter'
+import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
+import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -73,26 +71,28 @@ const STATUS_WRAPPED_METHODS = {
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
  * and testability, this logic was encapsulated in this dedicated controller.
  */
-export class RequestsController extends EventEmitter {
+export class RequestsController extends EventEmitter implements IRequestsController {
   #relayerUrl: string
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #dapps: DappsController
+  #dapps: IDappsController
 
-  #transfer: TransferController
+  #transfer: ITransferController
 
-  #swapAndBridge: SwapAndBridgeController
+  #swapAndBridge: ISwapAndBridgeController
 
-  #getSignAccountOp: () => SignAccountOpController | null
+  #transactionManager?: ITransactionManagerController
+
+  #getSignAccountOp: () => ISignAccountOpController | null
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -125,8 +125,8 @@ export class RequestsController extends EventEmitter {
     dapps,
     transfer,
     swapAndBridge,
-    windowManager,
-    notificationManager,
+    transactionManager,
+    ui,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
@@ -135,17 +135,17 @@ export class RequestsController extends EventEmitter {
     guardHWSigning
   }: {
     relayerUrl: string
-    accounts: AccountsController
-    networks: NetworksController
-    providers: ProvidersController
-    selectedAccount: SelectedAccountController
-    keystore: KeystoreController
-    dapps: DappsController
-    transfer: TransferController
-    swapAndBridge: SwapAndBridgeController
-    windowManager: WindowManager
-    notificationManager: NotificationManager
-    getSignAccountOp: () => SignAccountOpController | null
+    accounts: IAccountsController
+    networks: INetworksController
+    providers: IProvidersController
+    selectedAccount: ISelectedAccountController
+    keystore: IKeystoreController
+    dapps: IDappsController
+    transfer: ITransferController
+    swapAndBridge: ISwapAndBridgeController
+    transactionManager?: ITransactionManagerController
+    ui: IUiController
+    getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
@@ -163,6 +163,7 @@ export class RequestsController extends EventEmitter {
     this.#dapps = dapps
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
+    this.#transactionManager = transactionManager
 
     this.#getSignAccountOp = getSignAccountOp
     this.#updateSignAccountOp = updateSignAccountOp
@@ -173,8 +174,7 @@ export class RequestsController extends EventEmitter {
 
     this.actions = new ActionsController({
       selectedAccount: this.#selectedAccount,
-      windowManager,
-      notificationManager,
+      ui,
       onActionWindowClose: async () => {
         // eslint-disable-next-line no-restricted-syntax
         for (const r of this.userRequests) {
@@ -527,6 +527,10 @@ export class RequestsController extends EventEmitter {
     if (type === 'mintVestingRequest') {
       await this.#buildMintVestingUserRequest(params)
     }
+
+    if (type === 'intentRequest') {
+      await this.#buildIntentUserRequest(params)
+    }
   }
 
   async #buildUserRequestFromDAppRequest(
@@ -755,6 +759,61 @@ export class RequestsController extends EventEmitter {
     }
 
     await this.#addSwitchAccountUserRequest(userRequest)
+  }
+
+  async #buildIntentUserRequest({
+    amount,
+    recipientAddress,
+    selectedToken,
+    actionExecutionType = 'open-action-window'
+  }: {
+    amount: string
+    recipientAddress: string
+    selectedToken: TokenResult
+    actionExecutionType: ActionExecutionType
+  }) {
+    await this.initialLoadPromise
+    if (!this.#selectedAccount.account) return
+
+    if (!this.#transactionManager) {
+      this.emitError({
+        error: new Error('Error: TransactionManagerController feature is not enabled'),
+        message: 'This feature is currently disabled',
+        level: 'major'
+      })
+      return
+    }
+
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      await this.#accounts.getOrFetchAccountOnChainState(
+        this.#selectedAccount.account.addr,
+        selectedToken.chainId
+      ),
+      this.#keystore.getAccountKeys(this.#selectedAccount.account),
+      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+    )
+
+    const userRequests = prepareIntentUserRequest({
+      selectedAccount: this.#selectedAccount.account.addr,
+      selectedToken,
+      recipientAddress,
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+      transactions: this.#transactionManager.intent?.transactions
+    })
+
+    if (!userRequests.length) {
+      this.emitError({
+        level: 'major',
+        message: 'Unexpected error while building intent request',
+        error: new Error(
+          'buildUserRequestFromIntentRequest: bad parameters passed to buildIntentUserRequest'
+        )
+      })
+      return
+    }
+
+    await this.addUserRequests(userRequests, { actionExecutionType, actionPosition: 'last' })
   }
 
   async #buildTransferUserRequest({

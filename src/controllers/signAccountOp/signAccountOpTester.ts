@@ -1,33 +1,31 @@
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import { IActivityController } from '../../interfaces/activity'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController } from './signAccountOp'
 
 export class SignAccountOpTesterController extends SignAccountOpController {
   constructor(
-    accounts: AccountsController,
-    networks: NetworksController,
-    keystore: KeystoreController,
-    portfolio: PortfolioController,
-    activity: ActivityController,
+    accounts: IAccountsController,
+    networks: INetworksController,
+    keystore: IKeystoreController,
+    portfolio: IPortfolioController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
+    activity: IActivityController,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
+    shouldReestimate: boolean,
     traceCall: Function,
     estimateController: EstimationController,
     gasPriceController: GasPriceController
@@ -37,15 +35,16 @@ export class SignAccountOpTesterController extends SignAccountOpController {
       networks,
       keystore,
       portfolio,
-      activity,
       externalSignerControllers,
       account,
       network,
+      activity,
       provider,
       fromActionId,
       accountOp,
       isSignRequestStillActive,
       shouldSimulate,
+      shouldReestimate,
       traceCall
     )
 

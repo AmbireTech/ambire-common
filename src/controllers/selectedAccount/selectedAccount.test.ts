@@ -4,9 +4,11 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { UiController } from '../ui/ui'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -15,7 +17,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
-import EventEmitterClass from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -28,7 +30,7 @@ const providers = Object.fromEntries(
 )
 
 const storage: Storage = produceMemoryStore()
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 const storageCtrl = new StorageController(storage)
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
@@ -47,13 +49,13 @@ const networksCtrl = new NetworksController({
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const keystore = new KeystoreController(
   'default',
   storageCtrl,
   { internal: KeystoreSigner },
-  windowManager
+  uiCtrl
 )
 
 const accountsCtrl = new AccountsController(
@@ -91,7 +93,8 @@ const defiPositionsCtrl = new DefiPositionsController({
   keystore,
   networks: networksCtrl,
   providers: providersCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  ui: uiCtrl
 })
 
 const accounts = [
@@ -129,7 +132,7 @@ const forceBannerRecalculation = async () => {
   await providersCtrl.forceEmitUpdate()
 }
 
-const waitNextControllerUpdate = (ctrl: EventEmitterClass) => {
+const waitNextControllerUpdate = (ctrl: EventEmitter) => {
   return new Promise((resolve) => {
     const unsubscribe = ctrl.onUpdate(() => {
       unsubscribe()
@@ -188,6 +191,10 @@ describe('SelectedAccount Controller', () => {
 
   describe('Banners', () => {
     const accountAddr = accounts[0].addr
+    beforeEach(() => {
+      jest.clearAllMocks()
+      jest.restoreAllMocks()
+    })
 
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
@@ -211,16 +218,21 @@ describe('SelectedAccount Controller', () => {
       ).toBeDefined()
       providersCtrl.updateProviderIsWorking(1n, true)
     })
-    it("No RPC banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
+    it("No RPC/portfolio banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       jest
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
         .mockImplementation(() => ({ '137': true, '1': false }))
+      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
+      ).toBeUndefined()
+      expect(
+        selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'portfolio-critical')
       ).toBeUndefined()
       providersCtrl.updateProviderIsWorking(1n, true)
     })
@@ -331,7 +343,7 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
     })
-    it.skip("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
+    it("Defi error banner is displayed when there is a critical error and we don't know if the user has positions or not", async () => {
       selectedAccountCtrl.defiPositions = []
       // Bypass the `updatePositions` cache by setting `maxDataAgeMs` to 0.
       // Otherwise, no update is emitted and the test cannot proceed.

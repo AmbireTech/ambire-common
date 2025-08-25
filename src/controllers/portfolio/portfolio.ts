@@ -1,10 +1,20 @@
+/* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
 
 import { STK_WALLET } from '../../consts/addresses'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Banner } from '../../interfaces/banner'
+import {
+  Account,
+  AccountId,
+  AccountOnchainState,
+  IAccountsController
+} from '../../interfaces/account'
+import { Banner, IBannerController } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import { isBasicAccount } from '../../libs/account/account'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -21,8 +31,6 @@ import {
   getUpdatedHints,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
-/* eslint-disable no-restricted-syntax */
-// eslint-disable-next-line import/no-cycle
 import {
   AccountAssetsState,
   AccountState,
@@ -35,19 +43,13 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountsController } from '../accounts/accounts'
-import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
 
-export class PortfolioController extends EventEmitter {
+export class PortfolioController extends EventEmitter implements IPortfolioController {
   #latest: PortfolioControllerState
 
   #pending: PortfolioControllerState
@@ -73,9 +75,9 @@ export class PortfolioController extends EventEmitter {
 
   #portfolioLibs: Map<string, Portfolio>
 
-  #bannerController: BannerController
+  #banner: IBannerController
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #fetch: Fetch
 
@@ -103,27 +105,27 @@ export class PortfolioController extends EventEmitter {
     learnedNfts: {}
   }
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
-    providers: ProvidersController,
-    networks: NetworksController,
-    accounts: AccountsController,
-    keystore: KeystoreController,
+    providers: IProvidersController,
+    networks: INetworksController,
+    accounts: IAccountsController,
+    keystore: IKeystoreController,
     relayerUrl: string,
     velcroUrl: string,
-    bannerController: BannerController
+    banner: IBannerController
   ) {
     super()
     this.#latest = {}
@@ -140,7 +142,7 @@ export class PortfolioController extends EventEmitter {
     this.#keystore = keystore
     this.temporaryTokens = {}
     this.#toBeLearnedTokens = {}
-    this.#bannerController = bannerController
+    this.#banner = banner
     this.#batchedVelcroDiscovery = batcher(
       fetch,
       (queue) => {
@@ -423,7 +425,7 @@ export class PortfolioController extends EventEmitter {
   async getTemporaryTokens(accountId: AccountId, chainId: bigint, additionalHint: string) {
     const network = this.#networks.networks.find((x) => x.chainId === chainId)
 
-    if (!network) throw new Error('network not found')
+    if (!network) throw new Error(`Network with chainId ${chainId} not found`)
 
     const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, chainId, network)
 
@@ -467,7 +469,7 @@ export class PortfolioController extends EventEmitter {
     } catch (e: any) {
       this.emitError({
         level: 'silent',
-        message: "Error while executing the 'get' function in the portfolio library.",
+        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}).`,
         error: e
       })
       this.temporaryTokens[network.chainId.toString()].isLoading = false
@@ -510,7 +512,7 @@ export class PortfolioController extends EventEmitter {
       const formattedBanner: Banner = {
         // eslint-disable-next-line no-underscore-dangle
         id: banner.id || banner._id,
-        type: banner.type,
+        type: banner.type || 'updates',
         params: {
           startTime: banner.startTime,
           endTime: banner.endTime
@@ -528,7 +530,7 @@ export class PortfolioController extends EventEmitter {
         })
       }
 
-      this.#bannerController.addBanner(formattedBanner)
+      this.#banner.addBanner(formattedBanner)
     }
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
@@ -688,7 +690,7 @@ export class PortfolioController extends EventEmitter {
     } catch (e: any) {
       this.emitError({
         level: 'silent',
-        message: "Error while executing the 'get' function in the portfolio library.",
+        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
         error: e
       })
       state.isLoading = false
@@ -735,7 +737,10 @@ export class PortfolioController extends EventEmitter {
   ) {
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
-    if (!selectedAccount) throw new Error('selected account does not exist')
+    if (!selectedAccount)
+      throw new Error(
+        `${accountId} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
+      )
     if (!this.#latest[accountId]) this.#latest[accountId] = {}
     if (!this.#pending[accountId]) this.#pending[accountId] = {}
 

@@ -7,14 +7,18 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key, TxnRequest } from '../../interfaces/keystore'
+import { IInviteController } from '../../interfaces/invite'
+import { IKeystoreController, Key, TxnRequest } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { EIP7702Signature } from '../../interfaces/signatures'
+import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -23,6 +27,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
 class InternalSigner {
@@ -82,8 +87,6 @@ const account: Account = {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
-
 const messageToSign: Message = {
   fromActionId: 1,
   content: { kind: 'message', message: '0x74657374' },
@@ -93,24 +96,25 @@ const messageToSign: Message = {
 }
 
 describe('SignMessageController', () => {
-  let signMessageController: SignMessageController
-  let keystoreCtrl: KeystoreController
-  let accountsCtrl: AccountsController
-  let networksCtrl: NetworksController
-  let providersCtrl: ProvidersController
-  let inviteCtrl: InviteController
+  let signMessageController: ISignMessageController
+  let keystoreCtrl: IKeystoreController
+  let accountsCtrl: IAccountsController
+  let networksCtrl: INetworksController
+  let providersCtrl: IProvidersController
+  let inviteCtrl: IInviteController
 
   beforeAll(async () => {
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
     await storageCtrl.set('accounts', [account])
     await storageCtrl.set('selectedAccount', account.addr)
-
+    const { uiManager } = mockUiManager()
+    const uiCtrl = new UiController({ uiManager })
     keystoreCtrl = new KeystoreController(
       'default',
       storageCtrl,
       { internal: InternalSigner },
-      windowManager
+      uiCtrl
     )
     networksCtrl = new NetworksController({
       storage: storageCtrl,

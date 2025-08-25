@@ -1,22 +1,16 @@
 import jsYaml from 'js-yaml'
 
 import { Fetch } from '../../interfaces/fetch'
-import { WindowManager } from '../../interfaces/window'
+import { IPhishingController, StoredPhishingDetection } from '../../interfaces/phishing'
+import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { StorageController } from '../storage/storage'
 
 const METAMASK_BLACKLIST_URL =
   'https://api.github.com/repos/MetaMask/eth-phishing-detect/contents/src/config.json?ref=main'
 
 const PHANTOM_BLACKLIST_URL =
   'https://api.github.com/repos/phantom/blocklist/contents/blocklist.yaml?ref=master'
-
-export type StoredPhishingDetection = {
-  timestamp: number
-  metamaskBlacklist: string[]
-  phantomBlacklist: string[]
-} | null
 
 export const domainToParts = (domain: string) => {
   try {
@@ -36,12 +30,12 @@ export const matchPartsAgainstList = (source: string[], list: string[]) => {
   })
 }
 
-export class PhishingController extends EventEmitter {
+export class PhishingController extends EventEmitter implements IPhishingController {
   #fetch: Fetch
 
-  #storage: StorageController
+  #storage: IStorageController
 
-  #windowManager: WindowManager
+  #ui: IUiController
 
   #blacklist: string[] = [] // list of blacklisted URLs
 
@@ -63,17 +57,17 @@ export class PhishingController extends EventEmitter {
   constructor({
     fetch,
     storage,
-    windowManager
+    ui
   }: {
     fetch: Fetch
-    storage: StorageController
-    windowManager: WindowManager
+    storage: IStorageController
+    ui: IUiController
   }) {
     super()
 
     this.#fetch = fetch
     this.#storage = storage
-    this.#windowManager = windowManager
+    this.#ui = ui
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
@@ -195,7 +189,7 @@ export class PhishingController extends EventEmitter {
     await this.initialLoadPromise
 
     const isBlacklisted = await this.getIsBlacklisted(url)
-    this.#windowManager.sendWindowUiMessage({
+    this.#ui.message.sendUiMessage({
       hostname: isBlacklisted ? 'BLACKLISTED' : 'NOT_BLACKLISTED'
     })
   }

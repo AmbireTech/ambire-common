@@ -1,7 +1,9 @@
 import { getAddress, isAddress } from 'ethers'
 
+import { IDomainsController } from '../../interfaces/domains'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
@@ -18,7 +20,7 @@ const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
-export class DomainsController extends EventEmitter {
+export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
 
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
@@ -89,12 +91,13 @@ export class DomainsController extends EventEmitter {
     this.loadingAddresses.push(checksummedAddress)
     this.emitUpdate()
 
-    let ensName = null
+    let ensName: string | null = null
 
     try {
-      ensName = (await reverseLookupEns(checksummedAddress, ethereumProvider)) || null
-    } catch (e) {
-      console.error('ENS reverse lookup unexpected error', e)
+      ensName = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+    } catch (e: any) {
+      // Fail silently with a console error, no biggie, since that would get retried
+      console.warn('reverse ENS lookup failed', e)
     }
 
     this.domains[checksummedAddress] = {

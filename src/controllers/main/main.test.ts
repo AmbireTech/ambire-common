@@ -5,7 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
@@ -19,11 +19,7 @@ import { MainController } from './main'
 // Public API key, shared by Socket, for testing purposes only
 const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
 
-const windowManager = mockWindowManager().windowManager
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
+const uiManager = mockUiManager().uiManager
 
 const signAccountOp = {
   gasPrice: {
@@ -80,11 +76,11 @@ describe('Main Controller ', () => {
       storageAPI: storage,
       fetch,
       relayerUrl,
+      featureFlags: {},
       swapApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
-      windowManager,
-      notificationManager,
+      uiManager,
       velcroUrl
     })
     // eslint-disable-next-line no-promise-executor-return
@@ -123,13 +119,17 @@ describe('Main Controller ', () => {
     // console.log(
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
-    controller.emailVault.uploadKeyStoreSecret(email)
+    controller.emailVault?.uploadKeyStoreSecret(email)
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => {
-      const unsubscribe = controller.emailVault.onUpdate(() => {
-        unsubscribe()
+      if (controller.emailVault) {
+        const unsubscribe = controller.emailVault.onUpdate(() => {
+          unsubscribe()
+          resolve(null)
+        })
+      } else {
         resolve(null)
-      })
+      }
     })
     // console.log(JSON.stringify(controller.emailVault, null, 2))
   })
@@ -156,9 +156,9 @@ describe('Main Controller ', () => {
       storageAPI: storage,
       fetch,
       relayerUrl,
+      featureFlags: {},
       swapApiKey,
-      windowManager,
-      notificationManager,
+      uiManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       velcroUrl
@@ -199,9 +199,9 @@ describe('Main Controller ', () => {
       storageAPI: storage,
       fetch,
       relayerUrl,
+      featureFlags: {},
       swapApiKey,
-      windowManager,
-      notificationManager,
+      uiManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       velcroUrl

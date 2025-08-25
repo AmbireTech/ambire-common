@@ -4,10 +4,12 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
+import { ISwapAndBridgeController } from '../../interfaces/swapAndBridge'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
@@ -22,6 +24,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
@@ -63,12 +66,7 @@ const accounts = [
 //
 // In order to test the status better, we either need real data or a mock on signAccountOp
 
-let swapAndBridgeController: SwapAndBridgeController
-const windowManager = mockWindowManager().windowManager
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
+let swapAndBridgeController: ISwapAndBridgeController
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -76,7 +74,7 @@ const providers = Object.fromEntries(
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 const networksCtrl = new NetworksController({
   storage: storageCtrl,
   fetch,
@@ -93,8 +91,10 @@ const networksCtrl = new NetworksController({
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 
-const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
 storage.set('selectedAccount', accounts[0].addr)
 
@@ -115,8 +115,7 @@ const selectedAccountCtrl = new SelectedAccountController({
 
 const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
-  windowManager,
-  notificationManager,
+  ui: uiCtrl,
   onActionWindowClose: () => Promise.resolve()
 })
 

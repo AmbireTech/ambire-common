@@ -1,7 +1,12 @@
 import { ActionExecutionType } from '../controllers/actions/actions'
 import { TokenResult } from '../libs/portfolio'
+import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
+
+export type IRequestsController = ControllerInterface<
+  InstanceType<typeof import('../controllers/requests/requests').RequestsController>
+>
 
 export type BuildRequest =
   | {
@@ -38,5 +43,14 @@ export type BuildRequest =
       params: {
         token: TokenResult
         windowId?: number
+      }
+    }
+  | {
+      type: 'intentRequest'
+      params: {
+        amount: string
+        recipientAddress: string
+        selectedToken: TokenResult
+        actionExecutionType: ActionExecutionType
       }
     }

@@ -1,5 +1,13 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/intervals'
+import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController, RPCProvider } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
@@ -12,36 +20,34 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
-import { AccountsController } from '../accounts/accounts'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
-// eslint-disable-next-line import/no-cycle
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 
 const ONE_MINUTE = 60000
-export class DefiPositionsController extends EventEmitter {
-  #selectedAccount: SelectedAccountController
+export class DefiPositionsController extends EventEmitter implements IDefiPositionsController {
+  #selectedAccount: ISelectedAccountController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
+
+  #ui: IUiController
 
   #fetch: Fetch
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #state: DeFiPositionsState = {}
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
   sessionIds: string[] = []
+
+  #positionsContinuousUpdateInterval: RecurringTimeout
 
   constructor({
     fetch,
@@ -50,15 +56,17 @@ export class DefiPositionsController extends EventEmitter {
     keystore,
     accounts,
     networks,
-    providers
+    providers,
+    ui
   }: {
     fetch: Fetch
-    storage: StorageController
-    selectedAccount: SelectedAccountController
-    keystore: KeystoreController
-    accounts: AccountsController
-    networks: NetworksController
-    providers: ProvidersController
+    storage: IStorageController
+    selectedAccount: ISelectedAccountController
+    keystore: IKeystoreController
+    accounts: IAccountsController
+    networks: INetworksController
+    providers: IProvidersController
+    ui: IUiController
   }) {
     super()
 
@@ -69,6 +77,29 @@ export class DefiPositionsController extends EventEmitter {
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
+    this.#ui = ui
+
+    this.#positionsContinuousUpdateInterval = createRecurringTimeout(
+      async () => {
+        if (!this.#ui.views.length) {
+          this.#positionsContinuousUpdateInterval.stop()
+          return
+        }
+
+        const FIVE_MINUTES = 1000 * 60 * 5
+        await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+      },
+      ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
+
+    this.#ui.uiEvent.on('addView', () => {
+      this.#positionsContinuousUpdateInterval.start()
+    })
+
+    this.#ui.uiEvent.on('removeView', () => {
+      if (!this.#ui.views.length) this.#positionsContinuousUpdateInterval.stop()
+    })
   }
 
   #setProviderError(
@@ -87,10 +118,15 @@ export class DefiPositionsController extends EventEmitter {
     })
   }
 
-  #getShouldSkipUpdate(accountAddr: string, maxDataAgeMs = ONE_MINUTE, forceUpdate?: boolean) {
+  #getShouldSkipUpdate(
+    accountAddr: string,
+    _maxDataAgeMs = ONE_MINUTE,
+    forceUpdate: boolean = false
+  ) {
     const hasKeys = this.#keystore.keys.some(({ addr }) =>
       this.#selectedAccount.account!.associatedKeys.includes(addr)
     )
+    let maxDataAgeMs = _maxDataAgeMs
 
     // force update the positions if forceUpdate is passed,
     // the account has keys and a session with the DeFi tab is opened
@@ -170,12 +206,20 @@ export class DefiPositionsController extends EventEmitter {
 
     const lower = (s: string) => s.toLowerCase()
 
+    /**
+     * Fetches the defi positions of certain protocols using RPC calls and custom logic.
+     * Cena is used for most of the positions, but some protocols require additional data
+     * that is not available in Cena. This function fetches those positions on ENABLED
+     * networks only.
+     */
     const fetchCustomPositions = async (
       addr: string,
-      provider: any,
-      network: any,
+      provider: RPCProvider,
+      network: Network,
       previous: PositionsByProvider[]
     ): Promise<PositionsByProvider[]> => {
+      if (network.disabled) return []
+
       const [aave, uniV3] = await Promise.all([
         getAAVEPositions(addr, provider, network).catch((e: any) => {
           console.error('getAAVEPositions error:', e)
@@ -193,7 +237,7 @@ export class DefiPositionsController extends EventEmitter {
     }
 
     const updateSingleNetwork = async (
-      network: any,
+      network: Network,
       debankPositionsByProvider: PositionsByProvider[]
     ) => {
       const chain = network.chainId.toString()

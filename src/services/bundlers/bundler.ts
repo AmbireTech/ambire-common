@@ -16,7 +16,7 @@ import { BundlerEstimateResult, BundlerStateOverride } from '../../libs/estimate
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
-import { GasSpeeds, UserOpStatus } from './types'
+import { BundlerTransactionReceipt, GasSpeeds, UserOpStatus } from './types'
 
 require('dotenv').config()
 
@@ -63,7 +63,7 @@ export abstract class Bundler {
     return getRpcProvider([this.getUrl(network)], network.chainId)
   }
 
-  private async sendEstimateReq(
+  protected async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
     stateOverride?: BundlerStateOverride
@@ -121,7 +121,10 @@ export abstract class Bundler {
    * @param userOperationHash
    * @returns Receipt | null
    */
-  async getReceipt(userOperationHash: string, network: Network) {
+  async getReceipt(
+    userOperationHash: string,
+    network: Network
+  ): Promise<BundlerTransactionReceipt> {
     const provider = this.getProvider(network)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
   }

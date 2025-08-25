@@ -51,6 +51,13 @@ export const getNetworksWithFailedRPCErrors = ({
       !Object.keys(networksWithAssets).includes(chainId)
   )
 
+  // Show an error for networks with no RPC providers
+  networks.forEach((network) => {
+    if (providers[network.chainId.toString()]) return
+
+    chainIds.push(network.chainId.toString())
+  })
+
   const networksData = chainIds.map(
     (id) => networks.find((n: Network) => n.chainId.toString() === id)!
   )
@@ -190,9 +197,17 @@ export const getNetworksWithPortfolioErrorErrors = ({
       return
     }
 
-    if (portfolioForNetwork?.isLoading) {
+    // If the network is loading a loading-too-long error is added
+    // BUT only if there is no critical error+no result, as that implies that the first
+    // loading has failed and a subsequent loading is in the process.
+    // Scenario: on the first load all networks fail with a critical error. Something triggers
+    // a second portfolio load. The state is: isLoading = true, criticalError = true, result = undefined.
+    // In this case we MUST display an error in the UI, so this branch is skipped.
+    if (portfolioForNetwork?.isLoading && !(criticalError && !portfolioForNetwork.result)) {
       // Add an error if the network is preventing the portfolio from going ready
-      // Otherwise skip the network
+      // The error is added, regardless of whether the loading is taking too long (> 5s)
+      // or not. This is determined in the UI. The error is added so the UI knows which networks
+      // are preventing the portfolio from going ready.
       if (!isAllReady) errors = addPortfolioError(errors, networkName, 'loading-too-long')
       return
     }
@@ -204,9 +219,19 @@ export const getNetworksWithPortfolioErrorErrors = ({
     if (!portfolioForNetwork || !chainId) return
     // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
     // In case of additional networks don't check the RPC as there isn't one
+    const rpcProvider = providers[chainId]
+    // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
+    // Also, it may be the case that isWorking is not defined. In that case there will be no RPC error banner
+    // so we must display the portfolio error banner.
+    // We are purposely checking the RPC and not the RPC banners, because they are only displayed
+    // when the RPC is not working AND the user has balance on the network.
+    // Example: The user has no balance on Berachain and the RPC is not working.
+    // In this case there will be no RPC error banner and no portfolio error banner.
     if (
       criticalError &&
-      (['gasTank', 'rewards'].includes(chainId) || providers[chainId]?.isWorking)
+      (['gasTank', 'rewards'].includes(chainId) ||
+        typeof rpcProvider.isWorking !== 'boolean' ||
+        rpcProvider.isWorking)
     ) {
       errors = addPortfolioError(errors, networkName, 'portfolio-critical')
       return

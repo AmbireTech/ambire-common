@@ -9,5 +9,9 @@ export const HUMANIZED_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['The same token cannot be used as both the source and destination'],
     message: 'The same token cannot be used as both the source and destination.'
+  },
+  {
+    reasons: ['is invalid or in deny list'],
+    message: 'This token is not supported by our service provider.'
   }
 ]

@@ -1,12 +1,18 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
-import { Network } from '../../interfaces/network'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
   fetchTxnId,
+  hasTimePassedSinceBroadcast,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp,
@@ -18,13 +24,7 @@ import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
 import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import { StorageController } from '../storage/storage'
 import { InternalSignedMessages, SignedMessage } from './types'
 
 export interface Pagination {
@@ -72,6 +72,8 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
   }
 }
 
+const CONFIRMED_STATUSES = [AccountOpStatus.Success, AccountOpStatus.UnknownButPastNonce]
+
 const BANNER_CONTENT: {
   category: BannerCategory
   title: string
@@ -81,14 +83,15 @@ const BANNER_CONTENT: {
   {
     category: 'pending-to-be-confirmed-acc-op',
     type: 'success',
-    title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+    title:
+      'Transaction was successfully signed and broadcasted!\nCheck it out on the block explorer!',
     statuses: [AccountOpStatus.Pending, AccountOpStatus.BroadcastedButNotConfirmed]
   },
   {
     category: 'successful-acc-op',
     type: 'success',
     title: 'Transaction confirmed!\nCheck it out on the block explorer!',
-    statuses: [AccountOpStatus.Success, AccountOpStatus.UnknownButPastNonce]
+    statuses: CONFIRMED_STATUSES
   },
   {
     category: 'failed-acc-op',
@@ -124,16 +127,16 @@ const BANNER_CONTENT: {
  * 💡 For performance, items per account and network are limited to 1000.
  * Older items are trimmed, keeping the most recent ones.
  */
-export class ActivityController extends EventEmitter {
-  #storage: StorageController
+export class ActivityController extends EventEmitter implements IActivityController {
+  #storage: IStorageController
 
   #fetch: Fetch
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #selectedAccount: SelectedAccountController
+  #selectedAccount: ISelectedAccountController
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -155,11 +158,11 @@ export class ActivityController extends EventEmitter {
     }
   } = {}
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #onContractsDeployed: (network: Network) => Promise<void>
 
@@ -167,15 +170,19 @@ export class ActivityController extends EventEmitter {
 
   #callRelayer: Function
 
+  #bannerUpdateTimeout: NodeJS.Timeout | null = null
+
+  banners: Banner[] = []
+
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
     callRelayer: Function,
-    accounts: AccountsController,
-    selectedAccount: SelectedAccountController,
-    providers: ProvidersController,
-    networks: NetworksController,
-    portfolio: PortfolioController,
+    accounts: IAccountsController,
+    selectedAccount: ISelectedAccountController,
+    providers: IProvidersController,
+    networks: INetworksController,
+    portfolio: IPortfolioController,
     onContractsDeployed: (network: Network) => Promise<void>
   ) {
     super()
@@ -303,6 +310,153 @@ export class ActivityController extends EventEmitter {
     await Promise.all(promises)
   }
 
+  /**
+   * Hides the banners of confirmed accountOps. The idea is to prevent
+   * displaying too many banners at once. Banners of failed transactions
+   * are not hidden, as they are useful for the user to see.
+   */
+  private hideBannersOfConfirmedAccountOps() {
+    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
+      return
+
+    const latestAccountOps = Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
+      .flat()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      // Performance optimization. There is a very low probability that the user will have
+      // more than 9 pending or failed account ops at the same time.
+      // Even if some user has more than 10 he can close the banner manually
+      .slice(0, 10)
+
+    latestAccountOps.forEach((accountOp) => {
+      if (
+        accountOp.status &&
+        CONFIRMED_STATUSES.includes(accountOp.status) &&
+        !accountOp.flags?.hideActivityBanner
+      ) {
+        // eslint-disable-next-line no-param-reassign
+        if (!accountOp.flags) accountOp.flags = {}
+
+        // eslint-disable-next-line no-param-reassign
+        accountOp.flags.hideActivityBanner = true
+      }
+    })
+  }
+
+  /**
+   * Starts a timeout to update banners ONLY if there are banners to update.
+   */
+  private startBannerUpdateTimeout() {
+    if (this.#bannerUpdateTimeout) {
+      this.stopBannerUpdateTimeout()
+    }
+
+    if (!this.banners.length) return
+
+    this.#bannerUpdateTimeout = setTimeout(() => {
+      this.updateAccountOpBanners()
+      this.startBannerUpdateTimeout()
+    }, 1000 * 60 * 1)
+  }
+
+  /**
+   * Stops the banner update timeout if it exists.
+   */
+  private stopBannerUpdateTimeout() {
+    if (this.#bannerUpdateTimeout) {
+      clearTimeout(this.#bannerUpdateTimeout)
+      this.#bannerUpdateTimeout = null
+    }
+  }
+
+  /**
+   * Updates banners based on the latest accountOps.
+   * A getter cannot be used, because banners have a lifetime
+   * of X minutes. The UI won't know when a banner has
+   * expired, until an update is emitted.
+   */
+  updateAccountOpBanners(params?: { emitUpdate?: boolean }) {
+    const { emitUpdate = true } = params || {}
+
+    if (
+      !this.#networks.isInitialized ||
+      !this.#selectedAccount.account ||
+      !this.#accountsOps[this.#selectedAccount.account.addr]
+    ) {
+      this.banners = []
+      this.stopBannerUpdateTimeout()
+
+      if (emitUpdate) this.emitUpdate()
+      return
+    }
+
+    const latestAccountOps = Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
+      .flat()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 10) // Performance optimization: only check the last 10 ops
+
+    const accountOpsToTurnToBanners = latestAccountOps.filter((accountOp) => {
+      const TEN_MINUTES = 1000 * 60 * 10
+      const isClosed = accountOp.flags && accountOp.flags.hideActivityBanner
+      const isRecent = accountOp.timestamp >= Date.now() - TEN_MINUTES
+      const isBroadcasted =
+        accountOp.status !== AccountOpStatus.Pending &&
+        accountOp.status !== AccountOpStatus.Rejected
+
+      return isRecent && !isClosed && isBroadcasted
+    }, [] as SubmittedAccountOp[])
+
+    if (!accountOpsToTurnToBanners.length) {
+      this.banners = []
+      this.stopBannerUpdateTimeout()
+      if (emitUpdate) this.emitUpdate()
+      return
+    }
+
+    this.banners = accountOpsToTurnToBanners.map((accountOp) => {
+      const url = `https://explorer.ambire.com/${getBenzinUrlParams({
+        chainId: accountOp.chainId,
+        txnId: accountOp.txnId,
+        identifiedBy: accountOp.identifiedBy
+      })}`
+
+      const content = BANNER_CONTENT.find((c) =>
+        c.statuses.includes(accountOp.status as AccountOpStatus)
+      )
+
+      return {
+        id: accountOp.txnId || accountOp.identifiedBy.identifier,
+        type: content?.type || 'success',
+        category: content?.category || 'pending-to-be-confirmed-acc-op',
+        title:
+          content?.title ||
+          'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+        text: '',
+        meta: {
+          accountAddr: accountOp.accountAddr
+        },
+        actions: [
+          {
+            label: 'Close',
+            actionName: 'hide-activity-banner',
+            meta: {
+              addr: accountOp.accountAddr,
+              chainId: accountOp.chainId,
+              timestamp: accountOp.timestamp,
+              isHideStyle: true
+            }
+          },
+          {
+            label: 'Check',
+            actionName: 'open-external-url' as const,
+            meta: { url }
+          }
+        ] as Banner['actions']
+      }
+    })
+    this.startBannerUpdateTimeout()
+    if (emitUpdate) this.emitUpdate()
+  }
+
   removeNetworkData(chainId: bigint) {
     Object.keys(this.accountsOps).forEach(async (sessionId) => {
       const state = this.accountsOps[sessionId]
@@ -327,11 +481,15 @@ export class ActivityController extends EventEmitter {
     if (!this.#accountsOps[accountAddr][chainId.toString()])
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
+    // Hide confirmed banners first as that will modify this.#accountsOps
+    this.hideBannersOfConfirmedAccountOps()
+
     // newest SubmittedAccountOp goes first in the list
     this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp })
     trim(this.#accountsOps[accountAddr][chainId.toString()])
 
     await this.syncFilteredAccountsOps()
+    this.updateAccountOpBanners({ emitUpdate: false })
 
     await this.#storage.set('accountsOps', this.#accountsOps)
     this.emitUpdate()
@@ -398,11 +556,8 @@ export class ActivityController extends EventEmitter {
                   newestOpTimestamp = accountOp.timestamp
                 }
 
-                const declareStuckIfQuaterPassed = (op: SubmittedAccountOp) => {
-                  const accountOpDate = new Date(op.timestamp)
-                  accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
-                  const aQuaterHasPassed = accountOpDate < new Date()
-                  if (aQuaterHasPassed) {
+                const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
+                  if (hasTimePassedSinceBroadcast(op, 5)) {
                     const updatedOpIfAny = updateOpStatus(
                       this.#accountsOps[selectedAccount][network.chainId.toString()][
                         accountOpIndex
@@ -416,7 +571,6 @@ export class ActivityController extends EventEmitter {
                 const fetchTxnIdResult = await fetchTxnId(
                   accountOp.identifiedBy,
                   network,
-                  this.#fetch,
                   this.#callRelayer,
                   accountOp
                 )
@@ -429,7 +583,7 @@ export class ActivityController extends EventEmitter {
                   return
                 }
                 if (fetchTxnIdResult.status === 'not_found') {
-                  declareStuckIfQuaterPassed(accountOp)
+                  declareStuckIfFiveMinsPassed(accountOp)
                   return
                 }
 
@@ -470,6 +624,10 @@ export class ActivityController extends EventEmitter {
                     // if it's not an userOp or it is, but isSuccess was not found
                     if (isSuccess === undefined) isSuccess = !!receipt.status
 
+                    // This must be done before updateOpStatus is called
+                    // otherwise the function will hide the banner of this accountOp
+                    this.hideBannersOfConfirmedAccountOps()
+
                     const updatedOpIfAny = updateOpStatus(
                       this.#accountsOps[selectedAccount][network.chainId.toString()][
                         accountOpIndex
@@ -505,7 +663,7 @@ export class ActivityController extends EventEmitter {
                   // if there's no txn and 15 minutes have passed, declare it a failure
                   const txn = await provider.getTransaction(txnId)
                   if (txn) return
-                  declareStuckIfQuaterPassed(accountOp)
+                  declareStuckIfFiveMinsPassed(accountOp)
                 } catch {
                   this.emitError({
                     level: 'silent',
@@ -554,6 +712,7 @@ export class ActivityController extends EventEmitter {
     if (shouldEmitUpdate) {
       await this.#storage.set('accountsOps', this.#accountsOps)
       await this.syncFilteredAccountsOps()
+      this.updateAccountOpBanners({ emitUpdate: false })
       this.emitUpdate()
     }
 
@@ -614,6 +773,7 @@ export class ActivityController extends EventEmitter {
     if (!op.flags) op.flags = {}
     op.flags.hideActivityBanner = true
 
+    this.updateAccountOpBanners()
     this.emitUpdate()
 
     await this.#storage.set('accountsOps', this.#accountsOps)
@@ -626,71 +786,6 @@ export class ActivityController extends EventEmitter {
     return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
-  }
-
-  get banners(): Banner[] {
-    if (
-      !this.#networks.isInitialized ||
-      !this.#selectedAccount.account ||
-      !this.#accountsOps[this.#selectedAccount.account.addr]
-    )
-      return []
-
-    const recentlyBroadcastedAccountOps = Object.values(
-      this.#accountsOps[this.#selectedAccount.account.addr]
-    )
-      .flat()
-      .filter((accountOp) => {
-        const TEN_MINUTES = 1000 * 60 * 10
-        const isClosed = accountOp.flags && accountOp.flags.hideActivityBanner
-        const isRecent = accountOp.timestamp >= Date.now() - TEN_MINUTES
-        const isBroadcasted =
-          accountOp.status !== AccountOpStatus.Pending &&
-          accountOp.status !== AccountOpStatus.Rejected
-
-        return isRecent && !isClosed && isBroadcasted
-      })
-
-    if (!recentlyBroadcastedAccountOps.length) return []
-
-    return recentlyBroadcastedAccountOps.map((accountOp) => {
-      const url = `https://explorer.ambire.com/${getBenzinUrlParams({
-        chainId: accountOp.chainId,
-        txnId: accountOp.txnId,
-        identifiedBy: accountOp.identifiedBy
-      })}`
-
-      const content = BANNER_CONTENT.find((c) =>
-        c.statuses.includes(accountOp.status as AccountOpStatus)
-      )
-
-      return {
-        id: accountOp.txnId,
-        type: 'success',
-        category: content?.category || 'pending-to-be-confirmed-acc-op',
-        title:
-          content?.title ||
-          'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
-        text: '',
-        actions: [
-          {
-            label: 'Close',
-            actionName: 'hide-activity-banner',
-            meta: {
-              addr: accountOp.accountAddr,
-              chainId: accountOp.chainId,
-              timestamp: accountOp.timestamp,
-              isHideStyle: true
-            }
-          },
-          {
-            label: 'Check',
-            actionName: 'open-external-url',
-            meta: { url }
-          }
-        ]
-      } as Banner
-    })
   }
 
   /**

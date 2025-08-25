@@ -1,7 +1,18 @@
+import { ISignMessageController } from 'interfaces/signMessage'
+
 import EmittableError from '../../classes/EmittableError'
-import { Account } from '../../interfaces/account'
-import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import ExternalSignerError from '../../classes/ExternalSignerError'
+import { Account, IAccountsController } from '../../interfaces/account'
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IInviteController } from '../../interfaces/invite'
+import {
+  ExternalSignerControllers,
+  IKeystoreController,
+  Key,
+  KeystoreSignerInterface
+} from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
@@ -12,30 +23,25 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter {
-  #keystore: KeystoreController
+export class SignMessageController extends EventEmitter implements ISignMessageController {
+  #keystore: IKeystoreController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #invite: InviteController
+  #invite: IInviteController
 
   #signer: KeystoreSignerInterface | undefined
 
@@ -57,12 +63,12 @@ export class SignMessageController extends EventEmitter {
   signedMessage: SignedMessage | null = null
 
   constructor(
-    keystore: KeystoreController,
-    providers: ProvidersController,
-    networks: NetworksController,
-    accounts: AccountsController,
+    keystore: IKeystoreController,
+    providers: IProvidersController,
+    networks: INetworksController,
+    accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: InviteController
+    invite: IInviteController
   ) {
     super()
 
@@ -192,9 +198,12 @@ export class SignMessageController extends EventEmitter {
           signature = this.#signer.sign7702(this.messageToSign.content.message)
         }
       } catch (error: any) {
-        throw new Error(
+        throw new ExternalSignerError(
           error?.message ||
-            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.',
+          {
+            sendCrashReport: error?.sendCrashReport
+          }
         )
       }
 
@@ -249,7 +258,14 @@ export class SignMessageController extends EventEmitter {
       const message =
         e?.message || 'Something went wrong while signing the message. Please try again.'
 
-      return Promise.reject(new EmittableError({ level: 'major', message, error }))
+      return Promise.reject(
+        new EmittableError({
+          level: 'major',
+          message,
+          error,
+          sendCrashReport: e?.sendCrashReport
+        })
+      )
     }
   }
 

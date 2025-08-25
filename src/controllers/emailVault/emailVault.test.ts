@@ -5,12 +5,18 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
+import { UiController } from '../ui/ui'
 import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
+import {
+  IKeystoreController,
+  Key,
+  KeystoreSignerInterface,
+  TxnRequest
+} from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
-import { Storage } from '../../interfaces/storage'
+import { IStorageController, Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { KeystoreController } from '../keystore/keystore'
@@ -56,19 +62,19 @@ const getRandomEmail = () => {
   return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 let storage: Storage
-let storageCtrl: StorageController
-let keystore: KeystoreController
+let storageCtrl: IStorageController
+let keystore: IKeystoreController
 let email: string
 const testingOptions = { autoConfirmMagicLink: true }
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
     storage = produceMemoryStore()
     storageCtrl = new StorageController(storage)
-    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
   })
   test('login first time', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
@@ -133,12 +139,7 @@ describe('happy cases', () => {
   test('full keystore sync', async () => {
     const storage2 = produceMemoryStore()
     const storageCtrl2 = new StorageController(storage2)
-    const keystore2 = new KeystoreController(
-      'default',
-      storageCtrl2,
-      keystoreSigners,
-      windowManager
-    )
+    const keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, uiCtrl)
 
     const keys = [
       {

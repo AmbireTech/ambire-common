@@ -4,10 +4,14 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IAccountsController } from '../../interfaces/account'
+import { AccountOpAction, BenzinAction, DappRequestAction } from '../../interfaces/actions'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
 import { Calls, DappUserRequest, SignUserRequest } from '../../interfaces/userRequest'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
@@ -18,7 +22,8 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
-import { AccountOpAction, ActionsController, BenzinAction, DappRequestAction } from './actions'
+import { UiController } from '../ui/ui'
+import { ActionsController } from './actions'
 
 const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
 
@@ -110,11 +115,8 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
 }
 
 describe('Actions Controller', () => {
-  const { windowManager, getWindowId, eventEmitter: event } = mockWindowManager()
-
-  const notificationManager = {
-    create: () => Promise.resolve()
-  }
+  const { uiManager, getWindowId, eventEmitter: event } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
 
   const storage: Storage = produceMemoryStore()
   const accounts = [
@@ -143,7 +145,7 @@ describe('Actions Controller', () => {
     networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
   )
 
-  let providersCtrl: ProvidersController
+  let providersCtrl: IProvidersController
   const storageCtrl = new StorageController(storage)
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -161,8 +163,8 @@ describe('Actions Controller', () => {
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
 
-  let accountsCtrl: AccountsController
-  let selectedAccountCtrl: SelectedAccountController
+  let accountsCtrl: IAccountsController
+  let selectedAccountCtrl: ISelectedAccountController
   let actionsCtrl: ActionsController
   test('should init ActionsController', async () => {
     await storage.set('accounts', accounts)
@@ -170,7 +172,7 @@ describe('Actions Controller', () => {
       storageCtrl,
       providersCtrl,
       networksCtrl,
-      new KeystoreController('default', storageCtrl, {}, windowManager),
+      new KeystoreController('default', storageCtrl, {}, uiCtrl),
       () => {},
       () => {},
       () => {}
@@ -178,7 +180,7 @@ describe('Actions Controller', () => {
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
       accounts: accountsCtrl,
-      keystore: new KeystoreController('default', storageCtrl, {}, windowManager)
+      keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl)
     })
     await accountsCtrl.initialLoadPromise
     await networksCtrl.initialLoadPromise
@@ -188,8 +190,7 @@ describe('Actions Controller', () => {
 
     actionsCtrl = new ActionsController({
       selectedAccount: selectedAccountCtrl,
-      windowManager,
-      notificationManager,
+      ui: uiCtrl,
       onActionWindowClose: () => Promise.resolve()
     })
     expect(actionsCtrl).toBeDefined()
@@ -386,7 +387,7 @@ describe('Actions Controller', () => {
       }
     })
 
-    event.emit('windowRemoved', getWindowId())
+    uiManager.window.event.emit('windowRemoved', getWindowId())
   })
   test('select back the first account', (done) => {
     let emitCounter = 0

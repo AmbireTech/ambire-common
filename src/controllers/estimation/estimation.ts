@@ -2,6 +2,12 @@ import { ZeroAddress } from 'ethers'
 
 /* eslint-disable class-methods-use-this */
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
+import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
+import { ErrorRef } from '../../interfaces/eventEmitter'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -12,24 +18,19 @@ import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/int
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
-import { AccountsController } from '../accounts/accounts'
-import { ActivityController } from '../activity/activity'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { EstimationStatus } from './types'
 
 export class EstimationController extends EventEmitter {
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #provider: RPCProvider
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   status: EstimationStatus = EstimationStatus.Initial
 
@@ -49,18 +50,18 @@ export class EstimationController extends EventEmitter {
 
   #bundlerSwitcher: BundlerSwitcher
 
-  #activity: ActivityController
-
   #notFatalBundlerError?: Error
 
+  #activity: IActivityController
+
   constructor(
-    keystore: KeystoreController,
-    accounts: AccountsController,
-    networks: NetworksController,
+    keystore: IKeystoreController,
+    accounts: IAccountsController,
+    networks: INetworksController,
     provider: RPCProvider,
-    portfolio: PortfolioController,
-    activity: ActivityController,
-    bundlerSwitcher: BundlerSwitcher
+    portfolio: IPortfolioController,
+    bundlerSwitcher: BundlerSwitcher,
+    activity: IActivityController
   ) {
     super()
     this.#keystore = keystore
@@ -68,8 +69,8 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#provider = provider
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#bundlerSwitcher = bundlerSwitcher
+    this.#activity = activity
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
@@ -179,7 +180,13 @@ export class EstimationController extends EventEmitter {
         if (!this) return
         this.estimationRetryError = e
         this.emitUpdate()
-      }
+      },
+      this.#activity.broadcastedButNotConfirmed.find(
+        (accOp) =>
+          accOp.accountAddr === account.addr &&
+          accOp.chainId === network.chainId &&
+          !!accOp.asUserOperation
+      )
     ).catch((e) => e)
 
     const isSuccess = !(estimation instanceof Error)
@@ -189,9 +196,8 @@ export class EstimationController extends EventEmitter {
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
       this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
-      if (estimation.bundler instanceof Error) {
-        this.#notFatalBundlerError = estimation.bundler
-      }
+      this.#notFatalBundlerError =
+        estimation.bundler instanceof Error ? estimation.bundler : undefined
     } else {
       this.estimation = null
       this.error = estimation

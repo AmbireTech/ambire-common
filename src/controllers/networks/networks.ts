@@ -1,15 +1,19 @@
 import EmittableError from '../../classes/EmittableError'
+import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import {
   AddNetworkRequestParams,
   ChainId,
+  INetworksController,
   Network,
   NetworkInfo,
   NetworkInfoLoading,
   RelayerNetworkConfigResponse
 } from '../../interfaces/network'
+import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
   getNetworkInfo,
@@ -17,11 +21,10 @@ import {
   getValidNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { StorageController } from '../storage/storage'
+import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
-const STATUS_WRAPPED_METHODS = {
+export const STATUS_WRAPPED_METHODS = {
   addNetwork: 'INITIAL',
   updateNetwork: 'INITIAL'
 } as const
@@ -31,13 +34,13 @@ const STATUS_WRAPPED_METHODS = {
  * that users can add either through a dApp request or manually via the UI. This controller provides functions
  * for adding, updating, and removing networks.
  */
-export class NetworksController extends EventEmitter {
+export class NetworksController extends EventEmitter implements INetworksController {
   // To enable testnet-only mode, pass defaultNetworksMode = 'testnet' when constructing the NetworksController in the MainController.
   // On a fresh installation of the extension, the testnetNetworks constants will be used to initialize the NetworksController.
   // Adding custom networks remains possible in testnet mode, as no network filtering is applied.
   defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
-  #storage: StorageController
+  #storage: IStorageController
 
   #fetch: Fetch
 
@@ -61,6 +64,8 @@ export class NetworksController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
+  #updateWithRelayerNetworksInterval: RecurringTimeout
+
   constructor({
     defaultNetworksMode,
     storage,
@@ -70,7 +75,7 @@ export class NetworksController extends EventEmitter {
     onRemoveNetwork
   }: {
     defaultNetworksMode?: 'mainnet' | 'testnet'
-    storage: StorageController
+    storage: IStorageController
     fetch: Fetch
     relayerUrl: string
     onAddOrUpdateNetworks: (networks: Network[]) => void
@@ -85,6 +90,22 @@ export class NetworksController extends EventEmitter {
     this.#onRemoveNetwork = onRemoveNetwork
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load()
+
+    /**
+     * Schedules periodic network synchronization.
+     *
+     * This function ensures that the `synchronizeNetworks` method runs every 8 hours
+     * to periodically refetch networks in case there are updates,
+     * since the extension relies on the config from relayer.
+     */
+    this.#updateWithRelayerNetworksInterval = createRecurringTimeout(
+      this.synchronizeNetworks.bind(this),
+      NETWORKS_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
+    if (this.defaultNetworksMode === 'mainnet') {
+      this.#updateWithRelayerNetworksInterval.start()
+    }
   }
 
   get isInitialized(): boolean {
@@ -175,7 +196,10 @@ export class NetworksController extends EventEmitter {
 
     if (this.defaultNetworksMode === 'mainnet') {
       // Step 4: Merge the networks from the Relayer
-      finalNetworks = await this.mergeRelayerNetworks(finalNetworks)
+      // Note: there is no need to call #onAddOrUpdateNetworks here
+      // as this code runs in the initial load promise, thus the RPC providers
+      // will be instantiated from the final networks list
+      finalNetworks = (await this.mergeRelayerNetworks(finalNetworks)).mergedNetworks
     }
 
     this.#networks = finalNetworks
@@ -195,15 +219,22 @@ export class NetworksController extends EventEmitter {
     if (this.defaultNetworksMode === 'testnet') return
 
     // Process updates (merge Relayer data and apply rules)
-    const updatedNetworks = await this.mergeRelayerNetworks(this.#networks)
+    const { mergedNetworks, updatedNetworkChainIds } = await this.mergeRelayerNetworks(
+      this.#networks
+    )
 
     // Finalize updates
-    this.#networks = updatedNetworks
+    this.#networks = mergedNetworks
     this.emitUpdate()
     await this.#storage.set('networks', this.#networks)
 
+    // We must call this after merging the local networks with the ones from the Relayer
+    // to ensure that RPC providers of newly enabled networks are instantiated
+    this.#onAddOrUpdateNetworks(
+      this.allNetworks.filter((n) => updatedNetworkChainIds.includes(n.chainId))
+    )
     // Asynchronously update network features
-    this.#updateNetworkFeatures(updatedNetworks)
+    this.#updateNetworkFeatures(mergedNetworks)
   }
 
   /**
@@ -224,9 +255,10 @@ export class NetworksController extends EventEmitter {
    * 7. Applies special handling for networks like Odyssey.
    *
    */
-  async mergeRelayerNetworks(currentNetworks: {
-    [key: string]: Network
-  }): Promise<{ [key: string]: Network }> {
+  async mergeRelayerNetworks(currentNetworks: { [key: string]: Network }): Promise<{
+    mergedNetworks: { [key: string]: Network }
+    updatedNetworkChainIds: Network['chainId'][]
+  }> {
     let relayerNetworks: RelayerNetworkConfigResponse = {}
     try {
       const res = await Promise.race([
@@ -245,7 +277,10 @@ export class NetworksController extends EventEmitter {
       console.error('Failed to fetch networks from the Relayer', e)
     }
 
-    return currentNetworks
+    return {
+      mergedNetworks: currentNetworks,
+      updatedNetworkChainIds: []
+    }
   }
 
   /**
@@ -338,7 +373,7 @@ export class NetworksController extends EventEmitter {
     if (chainIds.indexOf(BigInt(network.chainId)) !== -1) {
       throw new EmittableError({
         message: 'The network you are trying to add has already been added.',
-        level: 'major',
+        level: 'expected',
         error: new Error('settings: addNetwork chain already added (duplicate id/chainId)')
       })
     }
