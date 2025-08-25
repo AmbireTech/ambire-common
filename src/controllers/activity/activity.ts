@@ -638,7 +638,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     )
                     if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
 
-                    if (receipt.status) {
+                    if (isSuccess && updatedOpIfAny) {
                       chainsToUpdate.add(
                         this.#accountsOps[selectedAccount][network.chainId.toString()][
                           accountOpIndex
