@@ -43,6 +43,16 @@ describe('bigintJson', () => {
     expect(parse(stringify({ num: 1 }))).toEqual({ num: 1 })
   })
 
+  it('stringify/parse errors', async () => {
+    const error = new Error('Test error')
+
+    const parsedError = parse(stringify({ error }))
+
+    expect(parsedError.error.message).toBe(error.message)
+    expect(parsedError.error.stack).toBe(error.stack)
+    expect(parsedError.error.name).toBe(error.name)
+  })
+
   it('has not a performance overhead', async () => {
     // We are creating a relatively large data object to test performance.
     // In a real-world scenario, the data would be much smaller.

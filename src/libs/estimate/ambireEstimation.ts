@@ -93,19 +93,15 @@ export async function ambireEstimateGas(
 
   if (ambireEstimation instanceof Error) return ambireEstimation
 
-  const [
-    [
-      deployment,
-      accountOpToExecuteBefore,
-      accountOp,
-      outcomeNonce,
-      feeTokenOutcomes,
-      ,
-      nativeAssetBalances,
-      ,
-      l1GasEstimation
-    ]
-  ] = ambireEstimation
+  const {
+    deployment,
+    accountOpToExecuteBefore,
+    op: accountOp,
+    nonce: outcomeNonce,
+    feeTokenOutcomes,
+    nativeAssetBalances,
+    l1GasEstimation
+  } = ambireEstimation
 
   const ambireEstimationError = getInnerCallFailure(
     accountOp,
