@@ -18,25 +18,26 @@ interface Options {
   pretty?: boolean
 }
 
-const BIGINT_MARKER = '__BIGINT__'
-const ERROR_MARKER = '__ERROR__'
-const END_MARKER = '__END__'
-
 export function stringify(obj: any, opts?: Options): string {
   return JSON.stringify(
     obj,
     (key, value) => {
-      switch (typeof value) {
-        case 'bigint':
-          return `${BIGINT_MARKER}${value.toString()}${END_MARKER}`
-        case 'object':
-          if (value instanceof Error) {
-            return `${ERROR_MARKER}${value.name}|${value.message}|${value.stack || ''}${END_MARKER}`
-          }
-          return value
-        default:
-          return value
+      if (typeof value === 'bigint') {
+        return { $bigint: value.toString() }
       }
+
+      if (value instanceof Error) {
+        const error: any = {}
+
+        Object.getOwnPropertyNames(value).forEach((propName) => {
+          // @ts-ignore
+          error[propName] = value[propName]
+        })
+
+        return error
+      }
+
+      return value
     },
     opts?.pretty ? 4 : 0
   )
@@ -44,22 +45,22 @@ export function stringify(obj: any, opts?: Options): string {
 
 export function parse(json: string) {
   return JSON.parse(json, (key, value) => {
-    if (typeof value === 'string') {
-      if (value.startsWith(BIGINT_MARKER)) {
-        return BigInt(value.slice(BIGINT_MARKER.length, -7))
-      }
-      if (value.startsWith(ERROR_MARKER)) {
-        const [name, message, stack] = value.slice(9, -5).split('|')
-        const error = new Error(message)
-        error.name = name
-        if (stack) error.stack = stack
-        return error
-      }
-    }
-    // Compatibility with the old format
-    if (typeof value === 'object' && value?.$bigint) {
+    if (value?.$bigint) {
       return BigInt(value.$bigint)
     }
+
+    if (value?.stack?.startsWith('Error')) {
+      const error = new Error(value.message)
+      Object.getOwnPropertyNames(value).forEach((propName) => {
+        if (propName !== 'message') {
+          // @ts-ignore
+          error[propName] = value[propName]
+        }
+      })
+
+      return error
+    }
+
     return value
   })
 }
