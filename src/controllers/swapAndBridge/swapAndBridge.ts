@@ -250,7 +250,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #signAccountOpSubscriptions: Function[] = []
 
-  #portfolioUpdate: Function
+  #portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
 
   #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
 
@@ -305,7 +305,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage: IStorageController
     invite: IInviteController
     relayerUrl: string
-    portfolioUpdate?: Function
+    portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isMainSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
     getVisibleActionsQueue: () => Action[]
@@ -316,7 +316,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#portfolio = portfolio
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
-    this.#portfolioUpdate = portfolioUpdate || (() => {})
+    this.#portfolioUpdate = portfolioUpdate
     this.#isMainSignAccountOpThrowingAnEstimationError =
       isMainSignAccountOpThrowingAnEstimationError
     this.#selectedAccount = selectedAccount
@@ -1746,7 +1746,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           },
           true
         )
-        this.#portfolioUpdate()
+        if (
+          this.#portfolioUpdate &&
+          activeRoute.route.fromChainId !== activeRoute.route.toChainId
+        ) {
+          this.#portfolioUpdate([BigInt(activeRoute.route.toChainId)])
+        }
       } else if (status === 'ready') {
         this.updateActiveRoute(
           activeRoute.activeRouteId,
