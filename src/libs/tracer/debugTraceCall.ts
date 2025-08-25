@@ -168,13 +168,15 @@ export async function debugTraceCall(
     deploylessOpts
   )
 
-  const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = await Promise.all([
+  const result = await Promise.all([
     deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
     getNftsPromise
   ])
 
-  const beforeNftCollections = before[0]
-  const afterNftCollections = after[0]
+  const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = result
+
+  const beforeNftCollections = before.collections
+  const afterNftCollections = after.collections
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
     nfts: foundNftTransfers.filter((nft, i) => {

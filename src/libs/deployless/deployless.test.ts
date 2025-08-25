@@ -44,7 +44,7 @@ describe('Deployless', () => {
 
   test('should invoke a method: proxy mode', async () => {
     const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
-    const [result] = await localDeployless.call('helloWorld', [], {
+    const result = await localDeployless.call('helloWorld', [], {
       mode: DeploylessMode.ProxyContract
     })
     expect(result).toBe('hello world')
@@ -127,11 +127,11 @@ describe('Deployless', () => {
     )
     // we should already be aware that we are not limited by the 24kb limit
     expect(localDeployless.isLimitedAt24kbData).toBe(false)
-    const [result] = await localDeployless.call('helloWorld', [], {
+    const result = await localDeployless.call('helloWorld', [], {
       mode: DeploylessMode.StateOverride
     })
     expect(result).toBe('hello world')
-    const [result2] = await localDeployless.call('helloWorld', [])
+    const result2 = await localDeployless.call('helloWorld', [])
     expect(result2).toBe('hello world')
   })
 
