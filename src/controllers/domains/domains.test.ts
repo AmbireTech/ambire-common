@@ -36,23 +36,34 @@ describe('Domains', () => {
 
     expect(domainsController.domains[address].ens).toBe(name)
   })
-  it(`reverse lookup should expire after ${PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60} min`, async () => {
+  it(`reverse lookup should expire after ${
+    PERSIST_DOMAIN_FOR_IN_MS / 1000 / 60
+  } min, if the lookup succeeds (the happy case)`, async () => {
+    const start = Date.now()
+    const nowSpy = jest.spyOn(Date, 'now')
+    nowSpy.mockReturnValue(start)
+
     const { address, name } = ENS2
 
     await domainsController.reverseLookup(address)
-
     expect(domainsController.domains[address].ens).toBe(name)
 
-    const expiredTimestampForwardInTime =
-      new Date(domainsController.domains[address].createdAt ?? 0).valueOf() +
-      PERSIST_DOMAIN_FOR_IN_MS +
-      1000 // + a moment to make sure it got expired
+    // 1 min before expiry
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS - 60000)
 
-    Date.now = jest.fn(() => expiredTimestampForwardInTime)
+    const previousUpdatedAt = domainsController.domains[address].updatedAt
+    await domainsController.reverseLookup(address)
+    expect(domainsController.domains[address].updatedAt).toBe(previousUpdatedAt)
+
+    // 1 min after expiry
+    nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
 
     await domainsController.reverseLookup(address)
+    expect(domainsController.domains[address].updatedAt).toBe(
+      start + PERSIST_DOMAIN_FOR_IN_MS + 60000
+    )
 
-    expect(domainsController.domains[address].updatedAt).toBe(expiredTimestampForwardInTime)
+    nowSpy.mockRestore()
   })
   it('should NOT reverse lookup if already resolved', async () => {
     const { address } = ENS2
