@@ -142,10 +142,12 @@ describe('Deployless', () => {
       helloWorld.bin,
       helloWorld.binRuntime
     )
-    expect.assertions(2)
+    expect.assertions(3)
     try {
       await localDeployless.call('helloWorld', [], { blockTag: '0x1' })
     } catch (e: any) {
+      // Sometimes we get a timeout. Rerun the test if that happens
+      expect(e.code).not.toBe('ETIMEDOUT')
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
       const noSHR = 'invalid opcode: SHR'
       const notActivated = 'EVM error: NotActivated'
