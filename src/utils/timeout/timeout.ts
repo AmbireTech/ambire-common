@@ -12,6 +12,7 @@ export type RecurringTimeout = {
   updateTimeout: (options: { timeout: number }) => void
   getTimeout: () => number
   getPromise: () => Promise<void> | undefined
+  getIsRunning: () => boolean
 }
 
 export function createRecurringTimeout(
@@ -115,6 +116,7 @@ export function createRecurringTimeout(
     stop,
     updateTimeout,
     getTimeout: () => currentTimeout,
-    getPromise: async () => promise
+    getPromise: async () => promise,
+    getIsRunning: () => running
   }
 }

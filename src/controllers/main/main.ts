@@ -134,7 +134,7 @@ export class MainController extends EventEmitter implements IMainController {
   fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  initialLoadPromise: Promise<void>
 
   callRelayer: Function
 
@@ -507,7 +507,7 @@ export class MainController extends EventEmitter implements IMainController {
       })
     })
 
-    this.#initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load()
     paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
       if (!this.signAccountOp) return
       this.emitError(e)
@@ -598,7 +598,7 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #selectAccount(toAccountAddr: string | null) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!toAccountAddr) {
       await this.selectedAccount.setAccount(null)
 
@@ -1189,7 +1189,7 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp } =
       await this.activity.updateAccountsOpsStatuses()
@@ -1212,7 +1212,7 @@ export class MainController extends EventEmitter implements IMainController {
   // call this function after a call to the singleton has been made
   // it will check if the factory has been deployed and update the network settings if it has been
   async setContractsDeployedToTrueIfDeployed(network: Network) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (network.areContractsDeployed) return
 
     const provider = this.providers.providers[network.chainId.toString()]
@@ -1371,7 +1371,7 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     const { networks, maxDataAgeMs, forceUpdate } = opts || {}
 
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
     if (!this.selectedAccount.account) return
     const canUpdateSignAccountOp = !this.signAccountOp || this.signAccountOp.canUpdate()
     if (!canUpdateSignAccountOp) return
