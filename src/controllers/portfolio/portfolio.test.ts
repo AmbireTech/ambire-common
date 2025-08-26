@@ -396,30 +396,25 @@ describe('Portfolio Controller ', () => {
       expect(done).not.toHaveBeenCalled()
     })
 
-    test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
+    test('Latest and Pending are fetched, because `forceUpdate` flag is set', async () => {
       const { controller } = prepareTest()
 
-      controller.onUpdate(() => {
-        const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
-        const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
-
-        if (latestState?.isReady && pendingState?.isReady) {
-          expect(latestState.isReady).toEqual(true)
-          expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
-
-          expect(pendingState.isReady).toEqual(true)
-          expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-          expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
-          expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
-          done()
-        }
-      })
-
-      controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
+      await controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
         forceUpdate: true
       })
+
+      const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
+      const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
+
+      expect(latestState?.isReady).toEqual(true)
+      expect(latestState?.result?.tokens.length).toBeGreaterThan(0)
+      expect(latestState?.result?.collections?.length).toBeGreaterThan(0)
+      expect(latestState?.result?.hintsFromExternalAPI).toBeTruthy()
+
+      expect(pendingState?.isReady).toEqual(true)
+      expect(pendingState?.result?.tokens.length).toBeGreaterThan(0)
+      expect(pendingState?.result?.collections?.length).toBeGreaterThan(0)
+      expect(pendingState?.result?.hintsFromExternalAPI).toBeTruthy()
     })
   })
 

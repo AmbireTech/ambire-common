@@ -5,6 +5,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { velcroUrl } from '../../../test/config'
+import { suppressConsole } from '../../../test/helpers/console'
 import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PORTFOLIO_TESTS_V2 } from '../../consts/addresses'
@@ -327,6 +328,7 @@ describe('Portfolio', () => {
   })
 
   test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
+    const { restore } = suppressConsole()
     const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -388,6 +390,8 @@ describe('Portfolio', () => {
         'simulation error: Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
       )
     }
+
+    restore()
   })
 
   test('simulation should revert with SV_NO_KEYS for an account we do not posses the associated key for', async () => {
