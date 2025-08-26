@@ -932,9 +932,7 @@ describe('estimate', () => {
     )
 
     expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
-      "Transaction cannot be sent because you don't have enough ETH to cover the gas costs for this transaction."
-    )
+    expect((response as Error).message).toBe('Insufficient ETH')
     expect((response as Error).cause).toBe('Insufficient ETH for transaction calls')
   })
 
@@ -1118,9 +1116,7 @@ describe('estimate', () => {
       errorCallback
     )
     expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
-      "Transaction cannot be sent because you don't have enough POL to cover the gas costs for this transaction."
-    )
+    expect((response as Error).message).toBe('Insufficient POL')
     expect((response as Error).cause).toBe('Insufficient POL for transaction calls')
   })
 
