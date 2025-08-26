@@ -1576,7 +1576,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
               })
             }
 
-            routes = routes.sort((a, b) => Number(!!a.disabledReason) - Number(!!b.disabledReason))
+            routes = routes.sort(
+              (a, b) => Number(a.disabled === true) - Number(b.disabled === true)
+            )
           } catch (error) {
             // if the filtration fails for some reason continue with the original routes
             // array without interrupting the rest of the logic

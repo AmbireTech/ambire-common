@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -161,7 +161,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     if (stepFeeCosts.length) feeCostAmount = stepFeeCosts[0].amount
   })
 
-  const disabled = feeCostAmount === null ? false : accountNativeBalance <= feeCostAmount
+  const disabled = feeCostAmount === null ? false : accountNativeBalance < feeCostAmount
   const swapOrBridgeText = route.fromChainId === route.toChainId ? 'swap' : 'bridge'
   const disabledReason = disabled
     ? `Insufficient ${nativeSymbol}. This ${swapOrBridgeText} imposes a fee that must be paid in ${nativeSymbol}.`
@@ -542,15 +542,8 @@ export class LiFiAPI {
     })
 
     const routes = response.routes
-      .map(
-        (r: LiFiRoute) =>
-          normalizeLiFiRouteToSwapAndBridgeRoute(
-            r,
-            userAddress,
-            accountNativeBalance,
-            nativeSymbol
-          ),
-        accountNativeBalance
+      .map((r: LiFiRoute) =>
+        normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol)
       )
       .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
     const selectedRoute = routes.length ? routes[0] : undefined
