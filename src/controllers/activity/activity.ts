@@ -507,7 +507,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
    */
   async updateAccountsOpsStatuses(): Promise<{
     shouldEmitUpdate: boolean
-    shouldUpdatePortfolio: boolean
+    // Which networks require a portfolio update?
+    chainsToUpdate: Network['chainId'][]
     updatedAccountsOps: SubmittedAccountOp[]
     newestOpTimestamp: number
   }> {
@@ -516,7 +517,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return {
         shouldEmitUpdate: false,
-        shouldUpdatePortfolio: false,
+        chainsToUpdate: [],
         updatedAccountsOps: [],
         newestOpTimestamp: 0
       }
@@ -525,7 +526,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
 
-    let shouldUpdatePortfolio = false
+    const chainsToUpdate = new Set<Network['chainId']>()
     const updatedAccountsOps: SubmittedAccountOp[] = []
 
     // Use this flag to make the auto-refresh slower with the passege of time.
@@ -637,8 +638,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     )
                     if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
 
-                    if (receipt.status) {
-                      shouldUpdatePortfolio = true
+                    if (isSuccess && updatedOpIfAny) {
+                      chainsToUpdate.add(updatedOpIfAny.chainId)
                     }
 
                     if (accountOp.isSingletonDeploy && receipt.status) {
@@ -716,7 +717,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
       this.emitUpdate()
     }
 
-    return { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp }
+    return {
+      shouldEmitUpdate,
+      chainsToUpdate: Array.from(chainsToUpdate),
+      updatedAccountsOps,
+      newestOpTimestamp
+    }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {

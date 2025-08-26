@@ -399,8 +399,14 @@ export class MainController extends EventEmitter implements IMainController {
       serviceProviderAPI: lifiAPI,
       storage: this.storage,
       relayerUrl,
-      portfolioUpdate: () => {
-        this.updateSelectedAccountPortfolio({ forceUpdate: true })
+      portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
+        if (chainsToUpdate.length) {
+          const networks = chainsToUpdate
+            ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
+            : undefined
+
+          this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
+        }
       },
       isMainSignAccountOpThrowingAnEstimationError: (
         fromChainId: number | null,
@@ -1182,14 +1188,18 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio, updatedAccountsOps, newestOpTimestamp } =
+    const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
       await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
 
-      if (shouldUpdatePortfolio) {
-        this.updateSelectedAccountPortfolio({ forceUpdate: true })
+      if (chainsToUpdate.length) {
+        const networks = chainsToUpdate
+          ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
+          : undefined
+
+        this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
       }
     }
 
@@ -1451,7 +1461,11 @@ export class MainController extends EventEmitter implements IMainController {
   async addNetwork(network: AddNetworkRequestParams) {
     await this.networks.addNetwork(network)
 
-    await this.updateSelectedAccountPortfolio()
+    const networkToUpdate = this.networks.networks.find((n) => n.chainId === network.chainId)
+
+    await this.updateSelectedAccountPortfolio({
+      networks: networkToUpdate ? [networkToUpdate] : undefined
+    })
   }
 
   removeNetworkData(chainId: bigint) {
