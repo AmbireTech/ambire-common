@@ -24,6 +24,31 @@ import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
+/**
+ * Put a list of all the banned addresses (left side) with their
+ * corresponding valid/correct address (right side).
+ * This is fixing the case of token duplication like EURe. / CELO
+ * where if the incorrect (outdated) address is used instead of the
+ * new one in the swap, no routes will be found
+ */
+const MAP_BANNED_TO_VALID_ADDRESSES: {
+  [chainId: string]: { [bannedAddr: string]: string }
+} = {
+  '137': {
+    '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d': '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6'
+  },
+  '100': {
+    '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430': '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+  },
+  '42220': { '0x471EcE3750Da237f93B8E339c536989b8978a438': ZeroAddress }
+}
+
+const getBannedToTokenList = (chainId: string): string[] => {
+  if (!MAP_BANNED_TO_VALID_ADDRESSES[chainId]) return []
+
+  return Object.keys(MAP_BANNED_TO_VALID_ADDRESSES[chainId])
+}
+
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   // Pending tokens go on top
   const isAPending =
@@ -360,27 +385,20 @@ const lifiMapNativeToAddr = (chainId: number, tokenAddr: string) => {
 
   return '0x471EcE3750Da237f93B8E339c536989b8978a438'
 }
-
-const lifiTokenListFilter = (t: SwapAndBridgeToToken) => {
-  // disabled tokens, this one is CELO as an addr on CELO chain (exists as native)
-  return !(t.chainId === 42220 && t.address === '0x471EcE3750Da237f93B8E339c536989b8978a438')
-}
-
 /**
  * Map the token address back to native when needed
  */
-const mapNativeToAddr = (
+const mapBannedToValidAddr = (
   serviceProviderId: 'lifi' | 'socket',
   chainId: number,
   tokenAddr: string
 ) => {
   if (serviceProviderId === 'socket') return tokenAddr
 
-  if (chainId !== 42220) return tokenAddr
+  const bannedToValidList = MAP_BANNED_TO_VALID_ADDRESSES[chainId]
+  if (!bannedToValidList || !bannedToValidList[tokenAddr]) return tokenAddr
 
-  if (tokenAddr !== '0x471EcE3750Da237f93B8E339c536989b8978a438') return tokenAddr
-
-  return ZeroAddress
+  return bannedToValidList[tokenAddr]
 }
 
 export {
@@ -389,8 +407,9 @@ export {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
+  getBannedToTokenList,
   getSwapAndBridgeCalls,
   lifiMapNativeToAddr,
-  lifiTokenListFilter,
-  mapNativeToAddr
+  MAP_BANNED_TO_VALID_ADDRESSES,
+  mapBannedToValidAddr
 }

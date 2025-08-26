@@ -49,11 +49,11 @@ import {
   convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
+  getBannedToTokenList,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
-  lifiTokenListFilter,
-  mapNativeToAddr,
+  mapBannedToValidAddr,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -814,7 +814,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const chainId = toChainId ?? this.toChainId
     const toSelectedTokenAddr =
       chainId && props.toSelectedTokenAddr
-        ? mapNativeToAddr(this.#serviceProviderAPI.id, Number(chainId), props.toSelectedTokenAddr)
+        ? mapBannedToValidAddr(
+            this.#serviceProviderAPI.id,
+            Number(chainId),
+            props.toSelectedTokenAddr
+          )
         : undefined
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
@@ -1115,15 +1119,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // so we should not update the to token list as another update is in progress
     if (toTokenListKeyAtStart !== this.#toTokenListKey) return
 
+    const chainBannedTokens: string[] = getBannedToTokenList(toTokenNetwork.chainId.toString())
     this.#toTokenList = sortTokenListResponse(
       [...toTokenList, ...additionalTokensFromPortfolio],
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
-    )
-
-    // if the provider is lifi, filter out tokens that are not supported by it
-    if (this.#serviceProviderAPI.id === 'lifi') {
-      this.#toTokenList = this.#toTokenList.filter(lifiTokenListFilter)
-    }
+    ).filter((t) => !chainBannedTokens.includes(t.address))
 
     if (!this.toSelectedToken) {
       if (addressToSelect) {
