@@ -759,6 +759,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #addOrUpdateAllRoutesFailedError() {
     if (!this.quote || !this.quote.selectedRoute) return
 
+    this.isAutoSelectRouteDisabled = true
     const msg = `${this.quote.routes.length} ${
       this.quote.routes.length === 1
         ? 'route found, but simulation shows it fails onchain'
