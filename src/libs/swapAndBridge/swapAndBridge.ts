@@ -31,22 +31,45 @@ import { getTokenBalanceInUSD } from '../portfolio/helpers'
  * where if the incorrect (outdated) address is used instead of the
  * new one in the swap, no routes will be found
  */
-const MAP_BANNED_TO_VALID_ADDRESSES: {
+const getBannedToValidAddresses = (): {
   [chainId: string]: { [bannedAddr: string]: string }
-} = {
-  '137': {
-    '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d': '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6'
-  },
-  '100': {
-    '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430': '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
-  },
-  '42220': { '0x471EcE3750Da237f93B8E339c536989b8978a438': ZeroAddress }
+} => {
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedEurePolygon = '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d'
+  const validEurePolygon = '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6'
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedEureGnosis = '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430'
+  const validEureGnosis = '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedCelo = '0x471EcE3750Da237f93B8E339c536989b8978a438'
+  const validCelo = ZeroAddress
+
+  return {
+    '137': {
+      [bannedEurePolygon]: validEurePolygon
+    },
+    '100': {
+      [bannedEureGnosis]: validEureGnosis
+    },
+    '42220': {
+      [bannedCelo]: validCelo
+    }
+  }
 }
 
 const getBannedToTokenList = (chainId: string): string[] => {
-  if (!MAP_BANNED_TO_VALID_ADDRESSES[chainId]) return []
+  const list = getBannedToValidAddresses()
+  if (!list[chainId]) return []
 
-  return Object.keys(MAP_BANNED_TO_VALID_ADDRESSES[chainId])
+  return Object.keys(list[chainId])
 }
 
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
@@ -388,17 +411,11 @@ const lifiMapNativeToAddr = (chainId: number, tokenAddr: string) => {
 /**
  * Map the token address back to native when needed
  */
-const mapBannedToValidAddr = (
-  serviceProviderId: 'lifi' | 'socket',
-  chainId: number,
-  tokenAddr: string
-) => {
-  if (serviceProviderId === 'socket') return tokenAddr
+const mapBannedToValidAddr = (chainId: number, tokenAddr: string) => {
+  const list = getBannedToValidAddresses()[chainId]
+  if (!list || !list[tokenAddr]) return tokenAddr
 
-  const bannedToValidList = MAP_BANNED_TO_VALID_ADDRESSES[chainId]
-  if (!bannedToValidList || !bannedToValidList[tokenAddr]) return tokenAddr
-
-  return bannedToValidList[tokenAddr]
+  return list[tokenAddr]
 }
 
 export {
@@ -410,6 +427,5 @@ export {
   getBannedToTokenList,
   getSwapAndBridgeCalls,
   lifiMapNativeToAddr,
-  MAP_BANNED_TO_VALID_ADDRESSES,
   mapBannedToValidAddr
 }

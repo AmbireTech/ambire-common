@@ -1,4 +1,4 @@
-import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { formatUnits, getAddress, isAddress, parseUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -761,8 +761,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const msg = `${this.quote.routes.length} ${
       this.quote.routes.length === 1
-        ? 'route found, but simulation shows it fails on-chain'
-        : 'routes found, but simulations show they all fail on-chain'
+        ? 'route found, but simulation shows it fails onchain'
+        : 'routes found, but simulations show they all fail onchain'
     }.`
     this.addOrUpdateError({
       id: 'all-routes-failed',
@@ -798,11 +798,26 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmount,
       fromAmountInFiat,
       fromAmountFieldMode,
-      fromSelectedToken,
       toChainId,
       shouldSetMaxAmount,
       routePriority
     } = props
+
+    // set the correct fromSelectedToken as the user might have selected
+    // a duplicate from his portfolio instead
+    let fromSelectedToken = props.fromSelectedToken
+    if (fromSelectedToken) {
+      const validAddr = mapBannedToValidAddr(
+        Number(fromSelectedToken.chainId),
+        fromSelectedToken.address
+      )
+      if (validAddr !== fromSelectedToken.address) {
+        const validToken = this.portfolioTokenList.find(
+          (t) => t.address === validAddr && t.chainId === fromSelectedToken!.chainId
+        )
+        if (validToken) fromSelectedToken = validToken
+      }
+    }
 
     const {
       emitUpdate = true,
@@ -814,11 +829,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const chainId = toChainId ?? this.toChainId
     const toSelectedTokenAddr =
       chainId && props.toSelectedTokenAddr
-        ? mapBannedToValidAddr(
-            this.#serviceProviderAPI.id,
-            Number(chainId),
-            props.toSelectedTokenAddr
-          )
+        ? mapBannedToValidAddr(Number(chainId), props.toSelectedTokenAddr)
         : undefined
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
@@ -1123,7 +1134,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#toTokenList = sortTokenListResponse(
       [...toTokenList, ...additionalTokensFromPortfolio],
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
-    ).filter((t) => !chainBannedTokens.includes(t.address))
+    ).filter((t) => !chainBannedTokens.includes(getAddress(t.address)))
 
     if (!this.toSelectedToken) {
       if (addressToSelect) {
@@ -1987,7 +1998,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   /**
    * We need this as a separate method as it's called from the UI as well
    */
-  async markSelectedRouteAsFailed(disabledReason: string, shouldEmitUpdate = true) {
+  async markSelectedRouteAsFailed(disabledReason: string, shouldStopAutoUpdates = true) {
     if (!this.quote || !this.quote.selectedRoute) return
 
     this.quote.selectedRoute.disabled = true
@@ -2001,7 +2012,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     })
 
-    if (shouldEmitUpdate) this.emitUpdate()
+    if (shouldStopAutoUpdates) {
+      this.isAutoSelectRouteDisabled = true
+      this.emitUpdate()
+    }
   }
 
   // update active route if needed on SubmittedAccountOp update
