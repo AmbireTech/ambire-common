@@ -1,7 +1,8 @@
-/* eslint-disable no-console */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
+/* eslint-disable no-console */
+import { yieldToMain } from '../../utils/scheduler'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
@@ -213,66 +214,72 @@ export async function getNFTs(
   ]
 }
 
+const mapToken = (token: any, network: Network, address: string, opts: Partial<GetOptions>) => {
+  let symbol = 'Unknown'
+  try {
+    symbol = overrideSymbol(address, network.chainId, token.symbol)
+  } catch (e: any) {
+    console.log(`no symbol was found for token with address ${address} on ${network.name}`)
+  }
+
+  let tokenName = symbol
+  try {
+    tokenName = token.name
+  } catch (e: any) {
+    console.log(
+      `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
+    )
+  }
+
+  const tokenFlags: TokenResult['flags'] = getFlags(
+    {},
+    network.chainId.toString(),
+    network.chainId,
+    address
+  )
+
+  if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
+    const value = opts.specialErc20Hints[address]
+
+    if (value === 'custom') {
+      tokenFlags.isCustom = true
+    } else if (value === 'hidden') {
+      tokenFlags.isHidden = true
+    } else if (value === 'hidden-custom') {
+      tokenFlags.isHidden = true
+      tokenFlags.isCustom = true
+    }
+  }
+
+  return {
+    amount: token.amount,
+    chainId: network.chainId,
+    decimals: Number(token.decimals),
+    name:
+      address === '0x0000000000000000000000000000000000000000'
+        ? network.nativeAssetName
+        : tokenName,
+    symbol:
+      address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : symbol,
+    address,
+    flags: tokenFlags
+  } as TokenResult
+}
+
 export async function getTokens(
   network: Network,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
-  tokenAddrs: string[]
+  tokenAddrs: string[],
+  pageIndex?: number
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
-  const mapToken = (token: any, address: string) => {
-    let symbol = 'Unknown'
-    try {
-      symbol = overrideSymbol(address, network.chainId, token.symbol)
-    } catch (e: any) {
-      console.log(`no symbol was found for token with address ${address} on ${network.name}`)
-    }
-
-    let tokenName = symbol
-    try {
-      tokenName = token.name
-    } catch (e: any) {
-      console.log(
-        `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
-      )
-    }
-
-    const tokenFlags: TokenResult['flags'] = getFlags(
-      {},
-      network.chainId.toString(),
-      network.chainId,
-      address
-    )
-
-    if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
-      const value = opts.specialErc20Hints[address]
-
-      if (value === 'custom') {
-        tokenFlags.isCustom = true
-      } else if (value === 'hidden') {
-        tokenFlags.isHidden = true
-      } else if (value === 'hidden-custom') {
-        tokenFlags.isHidden = true
-        tokenFlags.isCustom = true
-      }
-    }
-
-    return {
-      amount: token.amount,
-      chainId: network.chainId,
-      decimals: Number(token.decimals),
-      name:
-        address === '0x0000000000000000000000000000000000000000'
-          ? network.nativeAssetName
-          : tokenName,
-      symbol:
-        address === '0x0000000000000000000000000000000000000000'
-          ? network.nativeAssetSymbol
-          : symbol,
-      address,
-      flags: tokenFlags
-    } as TokenResult
+  if (typeof pageIndex === 'number' && pageIndex > 0) {
+    // Allow the main thread to process other tasks before continuing
+    // as encode/decode operations (in deployless) are very CPU intensive
+    await yieldToMain()
   }
+
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   if (!opts.simulation) {
     const [results, blockNumber] = await deployless.call(
@@ -282,7 +289,10 @@ export async function getTokens(
     )
 
     return [
-      results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),
+      results.map((token: any, i: number) => [
+        token.error,
+        mapToken(token, network, tokenAddrs[i], opts)
+      ]),
       {
         blockNumber
       }
@@ -345,7 +355,7 @@ export async function getTokens(
       return [
         token.error,
         {
-          ...mapToken(token, tokenAddrs[i]),
+          ...mapToken(token, network, tokenAddrs[i], opts),
           simulationAmount: simulation ? simulation.amount - token.amount : undefined,
           amountPostSimulation: simulation ? simulation.amount : token.amount
         }
