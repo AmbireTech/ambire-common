@@ -52,12 +52,19 @@ const getBannedToValidAddresses = (): {
   const bannedCelo = '0x471EcE3750Da237f93B8E339c536989b8978a438'
   const validCelo = ZeroAddress
 
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedGbpeGnosis = '0x8E34bfEC4f6Eb781f9743D9b4af99CD23F9b7053'
+  const validGbpeGnosis = '0x5Cb9073902F2035222B9749F8fB0c9BFe5527108'
+
   return {
     '137': {
       [bannedEurePolygon]: validEurePolygon
     },
     '100': {
-      [bannedEureGnosis]: validEureGnosis
+      [bannedEureGnosis]: validEureGnosis,
+      [bannedGbpeGnosis]: validGbpeGnosis
     },
     '42220': {
       [bannedCelo]: validCelo
