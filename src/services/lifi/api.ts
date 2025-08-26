@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse
 } from '@lifi/types'
@@ -164,7 +164,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   const disabled = feeCostAmount === null ? false : accountNativeBalance <= feeCostAmount
   const swapOrBridgeText = route.fromChainId === route.toChainId ? 'swap' : 'bridge'
   const disabledReason = disabled
-    ? `Insufficient ${nativeSymbol}. This ${swapOrBridgeText} imposes a fee that must be paid in ${nativeSymbol}`
+    ? `Insufficient ${nativeSymbol}. This ${swapOrBridgeText} imposes a fee that must be paid in ${nativeSymbol}.`
     : undefined
 
   return {
