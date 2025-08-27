@@ -67,7 +67,7 @@ export class ContinuousUpdatesController extends EventEmitter {
   #retriedFastAccountStateReFetchForNetworks: string[] = []
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void> | undefined
+  initialLoadPromise?: Promise<void> | undefined
 
   constructor({ main }: { main: IMainController }) {
     super()
@@ -138,7 +138,8 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#fastAccountStateReFetchTimeout = new RecurringTimeout(
       async () => this.fastAccountStateReFetch(),
       8000,
-      this.emitError.bind(this)
+      this.emitError.bind(this),
+      'fastAccountStateReFetchTimeout'
     )
 
     this.#main.onUpdate(() => {
@@ -149,7 +150,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.providers.onUpdate(() => {
-      this.#fastAccountStateReFetchTimeout.restart()
+      // this.#fastAccountStateReFetchTimeout.restart()
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {

@@ -15,6 +15,7 @@ export interface IRecurringTimeout {
   startedRunningAt: number
   currentTimeout: number
   promise: Promise<void> | undefined
+  startScheduled: boolean
 }
 
 export class RecurringTimeout implements IRecurringTimeout {
@@ -22,23 +23,24 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #timeoutId?: NodeJS.Timeout
 
-  #debounceFlag = false
+  #emitError?: EventEmitter['emitError']
 
   #fn: () => Promise<void>
-
-  #pendingOptions: { timeout?: number; runImmediately?: boolean } | null = null
 
   sessionId: number = 0
 
   running = false
 
-  startedRunningAt: number = Date.now()
+  startedRunningAt: number = 0
 
   currentTimeout: number
 
   promise: Promise<void> | undefined
 
-  #emitError?: EventEmitter['emitError']
+  // collapse multiple start/restart calls in the same tick
+  #pendingStart?: { timeout?: number; runImmediately?: boolean }
+
+  startScheduled = false
 
   constructor(
     fn: () => Promise<void>,
@@ -56,82 +58,72 @@ export class RecurringTimeout implements IRecurringTimeout {
     this.currentTimeout = timeout
   }
 
-  start({
-    timeout: newTimeout,
-    runImmediately
-  }: { timeout?: number; runImmediately?: boolean } = {}) {
-    if (this.running) return // Already running
-    this.#scheduleStart({ timeout: newTimeout, runImmediately })
+  start(opts: { timeout?: number; runImmediately?: boolean } = {}) {
+    this.#scheduleStart(opts)
   }
 
   stop() {
+    this.running = false
+    this.promise = undefined
+    this.startScheduled = false
+
     if (this.#timeoutId) {
       clearTimeout(this.#timeoutId)
       this.#timeoutId = undefined
     }
-    this.running = false
-    this.promise = undefined
   }
 
-  restart({
-    timeout: newTimeout,
-    runImmediately
-  }: { timeout?: number; runImmediately?: boolean } = {}) {
+  restart(opts: { timeout?: number; runImmediately?: boolean } = {}) {
     this.stop()
-    if (newTimeout) this.updateTimeout({ timeout: newTimeout })
-    this.#scheduleStart({ runImmediately })
+    this.#scheduleStart(opts)
   }
 
-  #loop() {
-    this.promise = this.#fn()
-      .catch((err) => {
-        console.error('Recurring task error:', err)
-        if (this.#emitError)
-          this.#emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
-      })
-      .finally(() => {
+  async #loop() {
+    if (this.promise) return // prevents multiple executions in one tick
+
+    try {
+      this.promise = this.#fn()
+      await this.promise
+    } catch (err: any) {
+      if (!this.promise) return
+      console.error('Recurring task error:', err)
+      if (this.#emitError)
+        this.#emitError({ error: err, message: 'Recurring task failed', level: 'minor' })
+    } finally {
+      if (this.promise) {
         if (this.running) this.#timeoutId = setTimeout(this.#loop.bind(this), this.currentTimeout)
         this.promise = undefined
-      })
+      }
+    }
   }
 
-  #scheduleStart({
-    timeout: newTimeout,
-    runImmediately
-  }: {
-    timeout?: number
-    runImmediately?: boolean
-  }) {
-    // Debounce repeated start/restart calls within the same tick
-    if (this.#debounceFlag) {
-      this.#pendingOptions = {
-        ...(this.#pendingOptions || {}),
-        timeout: newTimeout ?? this.#pendingOptions?.timeout,
-        runImmediately: runImmediately ?? this.#pendingOptions?.runImmediately
+  #scheduleStart(
+    opts: {
+      timeout?: number
+      runImmediately?: boolean
+    } = {}
+  ) {
+    if (this.running) return
+    this.#pendingStart = opts // collect latest opts for this tick
+    if (this.startScheduled) return
+    this.startScheduled = true
+
+    queueMicrotask(() => {
+      this.startScheduled = false
+      const { timeout: newTimeout, runImmediately } = this.#pendingStart || {}
+      this.#pendingStart = undefined
+
+      this.running = true
+      this.startedRunningAt = Date.now()
+      this.sessionId += 1
+
+      if (newTimeout) this.updateTimeout({ timeout: newTimeout })
+
+      if (runImmediately) {
+        this.#loop()
+      } else {
+        this.#timeoutId = setTimeout(this.#loop.bind(this), this.currentTimeout)
       }
-      return
-    }
-    this.#debounceFlag = true
-    this.#pendingOptions = { timeout: newTimeout, runImmediately }
-    this.sessionId += 1
-
-    setTimeout(() => {
-      this.#debounceFlag = false
-      const opts = this.#pendingOptions || {}
-      this.#pendingOptions = null
-
-      if (!this.running) {
-        this.running = true
-        this.startedRunningAt = Date.now()
-        if (opts.runImmediately) {
-          if (opts.timeout) this.updateTimeout({ timeout: opts.timeout })
-          this.#loop()
-        } else {
-          if (opts.timeout) this.updateTimeout({ timeout: opts.timeout })
-
-          this.#timeoutId = setTimeout(() => this.#loop(), this.currentTimeout)
-        }
-      }
-    }, 0)
+    })
   }
 }

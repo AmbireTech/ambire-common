@@ -73,7 +73,7 @@ const STATUS_WRAPPED_METHODS = {
 export class EmailVaultController extends EventEmitter implements IEmailVaultController {
   #storage: IStorageController
 
-  private initialLoadPromise: Promise<void>
+  private initialLoadPromise?: Promise<void>
 
   #isWaitingEmailConfirmation: boolean = false
 

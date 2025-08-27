@@ -221,7 +221,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   routePriority: 'output' | 'time' = 'output'
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -333,7 +333,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#getVisibleActionsQueue = getVisibleActionsQueue
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
 
     this.#updateQuoteInterval = new RecurringTimeout(
       async () => {

@@ -127,7 +127,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   #ui: IUiController
 
@@ -146,7 +146,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.keyStoreUid = null
     this.#ui = ui
     this.#scryptAdapter = new ScryptAdapter(platform)
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {

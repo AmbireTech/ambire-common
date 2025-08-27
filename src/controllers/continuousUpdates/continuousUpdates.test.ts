@@ -1,3 +1,5 @@
+/* eslint-disable no-await-in-loop */
+/* eslint-disable prettier/prettier */
 import fetch from 'node-fetch'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
@@ -67,7 +69,9 @@ const prepareTest = async () => {
     velcroUrl
   })
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
+  mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockResolvedValue(undefined)
   mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
+  mainCtrl.accounts.updateAccountStates = jest.fn().mockResolvedValue(undefined)
 
   return { mainCtrl }
 }
@@ -76,7 +80,6 @@ const waitForMainCtrlReady = async (mainCtrl: MainController) => {
   await jest.advanceTimersByTimeAsync(0)
 
   while (!mainCtrl.isReady) {
-    // eslint-disable-next-line no-await-in-loop
     await jest.advanceTimersByTimeAsync(20)
   }
 }
@@ -85,7 +88,6 @@ const waitForContinuousUpdatesCtrlReady = async (mainCtrl: MainController) => {
   await jest.advanceTimersByTimeAsync(0)
 
   while (mainCtrl.continuousUpdates.initialLoadPromise) {
-    // eslint-disable-next-line no-await-in-loop
     await jest.advanceTimersByTimeAsync(20)
   }
 }
@@ -95,13 +97,15 @@ const waitForFnToBeCalledAndExecuted = async (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   id: string = '' // for testing
 ) => {
+  while (recurringTimeout.startScheduled) {
+    await jest.advanceTimersByTimeAsync(1)
+  }
   expect(recurringTimeout.running).toBe(true)
   let sessionId = recurringTimeout.sessionId
   await jest.advanceTimersByTimeAsync(recurringTimeout.currentTimeout)
   // can be restarted while in progress
   while (sessionId !== recurringTimeout.sessionId) {
     sessionId = recurringTimeout.sessionId
-    // eslint-disable-next-line no-await-in-loop
     await jest.advanceTimersByTimeAsync(
       recurringTimeout.currentTimeout - (Date.now() - recurringTimeout.startedRunningAt)
     )
@@ -110,7 +114,6 @@ const waitForFnToBeCalledAndExecuted = async (
   // promise might be undefined if it is terminated from within the fn
   if (recurringTimeout.promise)
     while (recurringTimeout.promise) {
-      // eslint-disable-next-line no-await-in-loop
       await jest.advanceTimersByTimeAsync(1)
     }
   expect(recurringTimeout.promise).toBe(undefined)
@@ -133,11 +136,7 @@ describe('ContinuousUpdatesController intervals', () => {
     await waitForMainCtrlReady(mainCtrl)
 
     jest.spyOn(mainCtrl.continuousUpdates.updatePortfolioInterval, 'restart')
-    const updatePortfolioMock = jest
-      .spyOn(mainCtrl.continuousUpdates, 'updatePortfolio')
-      .mockImplementation(async () => {
-        await wait(MOCK_FN_EXECUTION_TIME)
-      })
+    const updatePortfolioMock = jest.spyOn(mainCtrl.continuousUpdates, 'updatePortfolio')
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.restart).toHaveBeenCalled()
@@ -268,24 +267,22 @@ describe('ContinuousUpdatesController intervals', () => {
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
-    jest
-      .spyOn(mainCtrl.continuousUpdates, 'updateAccountStateLatest')
-      .mockImplementation(async () => {
-        await wait(MOCK_FN_EXECUTION_TIME)
-      })
-    jest
-      .spyOn(mainCtrl.continuousUpdates, 'updateAccountStatePending')
-      .mockImplementation(async () => {
-        await wait(MOCK_FN_EXECUTION_TIME)
-      })
-    const fastAccountStateReFetchMock = jest
-      .spyOn(mainCtrl.continuousUpdates, 'fastAccountStateReFetch')
-      .mockImplementation(async () => {
-        await wait(MOCK_FN_EXECUTION_TIME)
-      })
+    jest.spyOn(mainCtrl.continuousUpdates, 'updateAccountStateLatest')
+    jest.spyOn(mainCtrl.continuousUpdates, 'updateAccountStatePending')
+
+    const fastAccountStateReFetchMock = jest.spyOn(
+      mainCtrl.continuousUpdates,
+      'fastAccountStateReFetch'
+    )
+
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.start).toHaveBeenCalledTimes(1)
+    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(0)
+    // ensure there is at least one provider that is not working
+    if (Object.values(mainCtrl.providers.providers).some((p) => !p.isWorking)) {
+      mainCtrl.providers.providers[1].isWorking = false
+    }
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
     expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(1)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)

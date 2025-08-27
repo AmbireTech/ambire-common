@@ -99,7 +99,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   areControllersInitialized: boolean = false
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
@@ -146,7 +146,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#keystore = keystore
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {

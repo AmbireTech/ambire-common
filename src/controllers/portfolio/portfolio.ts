@@ -114,7 +114,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #keystore: IKeystoreController
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   constructor(
     storage: IStorageController,
@@ -173,7 +173,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     )
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
   }
 
   async #load() {
