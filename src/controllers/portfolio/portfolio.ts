@@ -595,6 +595,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return isWithinMinUpdateInterval || networkState.isLoading
   }
 
+  static #isManualUpdate(maxDataAgeMs?: number) {
+    return maxDataAgeMs === 0
+  }
+
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
@@ -626,7 +630,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
-    if (maxDataAgeMs === 0) state.criticalError = undefined
+    if (PortfolioController.#isManualUpdate(maxDataAgeMs)) state.criticalError = undefined
 
     this.emitUpdate()
 
@@ -653,7 +657,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
-      if (maxDataAgeMs === 0 && hasError) {
+      if (PortfolioController.#isManualUpdate(maxDataAgeMs) && hasError) {
         lastSuccessfulUpdate = 0
       } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
@@ -695,7 +699,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         name: e?.name
       }
 
-      if (maxDataAgeMs === 0 && state.result) {
+      if (PortfolioController.#isManualUpdate(maxDataAgeMs) && state.result) {
         // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
         // is likely expecting a change in the portfolio.
         state.result.lastSuccessfulUpdate = 0
@@ -772,7 +776,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             currentAccountOps && simulatedAccountOps
               ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
               : currentAccountOps !== simulatedAccountOps
-          const maxDataAgeMs = areAccountOpsChanged ? 0 : opts?.maxDataAgeMs
+          // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
+          // We pass undefined, because setting the value to 0 would imply a manual update by the user.
+          const maxDataAgeMs = areAccountOpsChanged ? undefined : opts?.maxDataAgeMs
 
           const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
           const additionalErc20Hints = Object.keys(

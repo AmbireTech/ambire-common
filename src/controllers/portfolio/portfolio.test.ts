@@ -327,23 +327,16 @@ describe('Portfolio Controller ', () => {
           })
       )
 
-    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined, {
-      forceUpdate: true
-    })
+    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined)
 
-    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined, {
-      forceUpdate: true
-    })
+    controller.updateSelectedAccount(account.addr, ethereum ? [ethereum] : undefined, undefined)
 
     // We need to wait for the latest update, or the bellow expect will run too soon,
     // and we won't be able to check the queue properly.
     await controller.updateSelectedAccount(
       account.addr,
       ethereum ? [ethereum] : undefined,
-      undefined,
-      {
-        forceUpdate: true
-      }
+      undefined
     )
 
     expect(queueOrder).toEqual([
@@ -372,7 +365,7 @@ describe('Portfolio Controller ', () => {
     })
 
     // @TODO redo this test
-    test('Latest tokens are fetched only once in a short period of time (controller.minUpdateInterval)', async () => {
+    test('Latest tokens are fetched only once in a short period of time (20s maxDataAgeMs)', async () => {
       const done = jest.fn(() => null)
       const { controller } = prepareTest()
       let pendingState1: any
@@ -391,35 +384,11 @@ describe('Portfolio Controller ', () => {
         }
       })
       await controller.updateSelectedAccount(account.addr)
-      await controller.updateSelectedAccount(account.addr)
+      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+        maxDataAgeMs: 20 * 1000
+      })
 
       expect(done).not.toHaveBeenCalled()
-    })
-
-    test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
-      const { controller } = prepareTest()
-
-      controller.onUpdate(() => {
-        const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
-        const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
-
-        if (latestState?.isReady && pendingState?.isReady) {
-          expect(latestState.isReady).toEqual(true)
-          expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
-
-          expect(pendingState.isReady).toEqual(true)
-          expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-          expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
-          expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
-          done()
-        }
-      })
-
-      controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
-        forceUpdate: true
-      })
     })
   })
 
@@ -508,17 +477,10 @@ describe('Portfolio Controller ', () => {
         accountOps: accountOp,
         states: accountStates[account.addr]
       })
-      await controller.updateSelectedAccount(
-        account.addr,
-        undefined,
-        {
-          accountOps: accountOp,
-          states: accountStates[account.addr]
-        },
-        {
-          forceUpdate: true
-        }
-      )
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]
+      })
 
       expect(done).toHaveBeenCalled()
     })
@@ -536,17 +498,10 @@ describe('Portfolio Controller ', () => {
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       )['1']!
 
-      await controller.updateSelectedAccount(
-        account.addr,
-        undefined,
-        {
-          accountOps: accountOp,
-          states: accountStates[account.addr]
-        },
-        {
-          forceUpdate: true
-        }
-      )
+      await controller.updateSelectedAccount(account.addr, undefined, {
+        accountOps: accountOp,
+        states: accountStates[account.addr]
+      })
       const pendingState2 = controller.getPendingPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
       )['1']!
@@ -596,8 +551,7 @@ describe('Portfolio Controller ', () => {
         // we pass a network here, just because the portfolio is trying to perform a call to an undefined network,
         // and it throws a silent error
         [networks.find((network) => network.chainId === 1n)!],
-        undefined,
-        { forceUpdate: true }
+        undefined
       )
 
       PINNED_TOKENS.filter((token) => token.chainId === 1n).forEach((pinnedToken) => {
@@ -683,9 +637,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.learnTokens([BANANA_TOKEN_ADDR], 1n)
 
-      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(account.addr)
 
       const token = controller
         .getLatestPortfolioState(account.addr)
@@ -701,9 +653,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
-      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(account.addr)
 
       const previousHintsStorage = await storageCtrl.get('previousHints', {})
 
@@ -716,9 +666,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.learnTokens([ERC_20_MATIC_ADDR], 137n)
 
-      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(account.addr)
 
       const hasErc20Matic = controller
         .getLatestPortfolioState(account.addr)
@@ -764,9 +712,7 @@ describe('Portfolio Controller ', () => {
       // Learn a token discovered by velcro
       await controller.learnTokens([firstTokenOnEth!.address], 1n)
 
-      await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-        forceUpdate: true
-      })
+      await controller.updateSelectedAccount(account.addr)
 
       const previousHintsStorage = await storageCtrl.get('previousHints', {})
       const firstTokenOnEthInLearned =
@@ -795,10 +741,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(
         account.addr,
         clonedEthereum ? [clonedEthereum] : undefined,
-        undefined,
-        {
-          forceUpdate: true
-        }
+        undefined
       )
 
       const toBeLearnedToken = controller
@@ -840,10 +783,7 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(
         account2.addr,
         clonedEthereum ? [clonedEthereum] : undefined,
-        undefined,
-        {
-          forceUpdate: true
-        }
+        undefined
       )
 
       const toBeLearnedToken = controller
@@ -1029,32 +969,35 @@ describe('Portfolio Controller ', () => {
       // @ts-ignore
       .spyOn(controller, 'updatePortfolioState')
       .mockImplementationOnce(() => {
+        console.log('Mocked updatePortfolioState called - simulating failure')
         throw new Error('Failed to update portfolio')
       })
+
     await controller.updateSelectedAccount(account.addr)
 
     const newLastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
       ?.lastSuccessfulUpdate
 
     // Last successful update should not change if the update fails
-    expect(lastSuccessfulUpdate).toEqual(newLastSuccessfulUpdate)
+    expect(newLastSuccessfulUpdate).toEqual(lastSuccessfulUpdate)
 
+    // Set maxDataAgeMs to simulate a manual update, which should reset lastSuccessfulUpdate to 0
+    // and then be updated again once the update is successful
     await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-      forceUpdate: true
+      maxDataAgeMs: 0
     })
 
     const newLastSuccessfulUpdate2 = controller.getLatestPortfolioState(account.addr)['1']?.result
       ?.lastSuccessfulUpdate
 
-    // Last successful update should reset on a force update
+    // Last successful update should reset on a manual update (passing maxDataAgeMs: 0)
     expect(lastSuccessfulUpdate).not.toEqual(newLastSuccessfulUpdate2)
+    expect(lastSuccessfulUpdate).toBe(0)
   })
   test('removeAccountData', async () => {
     const { controller } = prepareTest()
     await controller.updateSelectedAccount(account.addr)
-    await controller.updateSelectedAccount(account.addr, undefined, undefined, {
-      forceUpdate: true
-    })
+    await controller.updateSelectedAccount(account.addr)
     const hasItems = (obj: any) => !!Object.keys(obj).length
 
     expect(hasItems(controller.getLatestPortfolioState(account.addr))).toBeTruthy()

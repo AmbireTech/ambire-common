@@ -196,9 +196,8 @@ export class Portfolio {
             console.log(`Debug: using cached hints, Velcro skipped on ${this.network.name}`)
           hints = { ...localOpts.previousHintsFromExternalAPI }
         }
-      } else {
+      } else if (localOpts.blockTag === 'latest')
         console.log(`Debug: skipping Velcro request, using learned tokens on ${this.network.name}`)
-      }
     } catch (error: any) {
       const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
       if (localOpts.previousHintsFromExternalAPI) {
