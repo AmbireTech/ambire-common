@@ -91,7 +91,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     [accountId: string]: AccountAssetsState
   } = {}
 
-  #minUpdateInterval: number = 20000 // 20 seconds
+  #externalAPIHintsTTL: number = 15 * 60 * 1000 // 15 minutes
 
   /**
    * Hints stored in storage, divided into three categories:
@@ -215,10 +215,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     await this.updateSelectedAccount(
       selectedAccountAddr,
       networkData ? [networkData] : undefined,
-      undefined,
-      {
-        forceUpdate: true
-      }
+      undefined
     )
   }
 
@@ -479,11 +476,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
-  async #getAdditionalPortfolio(accountId: AccountId, forceUpdate?: boolean) {
+  async #getAdditionalPortfolio(accountId: AccountId, maxDataAgeMs?: number) {
     const rewardsOrGasTankState =
       this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
     const canSkipUpdate = rewardsOrGasTankState
-      ? this.#getCanSkipUpdate(rewardsOrGasTankState, forceUpdate)
+      ? PortfolioController.#getCanSkipUpdate(rewardsOrGasTankState, maxDataAgeMs)
       : false
 
     if (canSkipUpdate) return
@@ -587,14 +584,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.emitUpdate()
   }
 
-  #getCanSkipUpdate(
-    networkState?: NetworkState,
-    forceUpdate?: boolean,
-    maxDataAgeMs: number = this.#minUpdateInterval
-  ) {
+  static #getCanSkipUpdate(networkState?: NetworkState, maxDataAgeMs?: number) {
     const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical')
 
-    if (forceUpdate || !networkState || networkState.criticalError || hasImportantErrors)
+    if (!maxDataAgeMs || !networkState || networkState.criticalError || hasImportantErrors)
       return false
     const updateStarted = networkState.result?.updateStarted || 0
     const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < maxDataAgeMs
@@ -609,7 +602,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     network: Network,
     portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
-    forceUpdate: boolean,
     maxDataAgeMs?: number
   ): Promise<boolean> {
     const blockTag = portfolioProps.blockTag
@@ -625,9 +617,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
 
-    const canSkipUpdate = this.#getCanSkipUpdate(
+    const canSkipUpdate = PortfolioController.#getCanSkipUpdate(
       accountState[network.chainId.toString()],
-      forceUpdate,
       maxDataAgeMs
     )
 
@@ -635,7 +626,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
-    if (forceUpdate) state.criticalError = undefined
+    if (maxDataAgeMs === 0) state.criticalError = undefined
 
     this.emitUpdate()
 
@@ -662,7 +653,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
-      if (forceUpdate && hasError) {
+      if (maxDataAgeMs === 0 && hasError) {
         lastSuccessfulUpdate = 0
       } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
@@ -704,7 +695,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         name: e?.name
       }
 
-      if (forceUpdate && state.result) {
+      if (maxDataAgeMs === 0 && state.result) {
         // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
         // is likely expecting a change in the portfolio.
         state.result.lastSuccessfulUpdate = 0
@@ -733,7 +724,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
     },
-    opts?: { forceUpdate?: boolean; maxDataAgeMs?: number }
+    opts?: { maxDataAgeMs?: number }
   ) {
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -749,7 +740,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const networksToUpdate = networks || this.#networks.networks
     await Promise.all([
-      this.#getAdditionalPortfolio(accountId, opts?.forceUpdate),
+      this.#getAdditionalPortfolio(accountId, opts?.maxDataAgeMs),
       ...networksToUpdate.map(async (network) => {
         const key = `${network.chainId}:${accountId}`
 
@@ -781,22 +772,24 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             currentAccountOps && simulatedAccountOps
               ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
               : currentAccountOps !== simulatedAccountOps
-          const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
+          const maxDataAgeMs = areAccountOpsChanged ? 0 : opts?.maxDataAgeMs
 
           const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
-
           const additionalErc20Hints = Object.keys(
             (this.#previousHints?.learnedTokens &&
               this.#previousHints?.learnedTokens[network.chainId.toString()]) ??
               {}
           )
-
           const specialErc20Hints = getSpecialHints(
             network.chainId,
             this.customTokens,
             this.tokenPreferences,
             this.#toBeLearnedTokens
           )
+          const canSkipExternalApiHintsUpdate =
+            !!previousHintsFromExternalAPI &&
+            opts?.maxDataAgeMs !== 0 &&
+            Date.now() - previousHintsFromExternalAPI.lastUpdate < this.#externalAPIHintsTTL
 
           // TODO: Add custom ERC721 tokens to the hints
           const additionalErc721Hints = Object.fromEntries(
@@ -822,10 +815,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               portfolioLib,
               {
                 blockTag: 'latest',
-                ...allHints
+                ...allHints,
+                disableAutoDiscovery: canSkipExternalApiHintsUpdate
               },
-              forceUpdate,
-              opts?.maxDataAgeMs
+              maxDataAgeMs
             ),
             this.updatePortfolioState(
               accountId,
@@ -841,10 +834,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
                       state
                     }
                   }),
+                disableAutoDiscovery: canSkipExternalApiHintsUpdate,
                 ...allHints
               },
-              forceUpdate,
-              opts?.maxDataAgeMs
+              maxDataAgeMs
             )
           ])
 
@@ -863,7 +856,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
             // Either a valid response or there is no external API to fetch hints from
             const isExternalHintsApiResponseValid =
-              !!networkResult?.hintsFromExternalAPI || !network.hasRelayer
+              !!networkResult?.hintsFromExternalAPI?.erc20s.length
+
+            console.log(`Debug: isExternalHintsApiResponseValid for ${network.name}`, {
+              isExternalHintsApiResponseValid,
+              hintsFromExternalAPI: networkResult?.hintsFromExternalAPI,
+              hasRelayer: network.hasRelayer
+            })
 
             if (
               isExternalHintsApiResponseValid &&
@@ -1061,7 +1060,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
         }
       : undefined
-    return this.updateSelectedAccount(op.accountAddr, [network], simulation, { forceUpdate: true })
+    return this.updateSelectedAccount(op.accountAddr, [network], simulation)
   }
 
   toJSON() {

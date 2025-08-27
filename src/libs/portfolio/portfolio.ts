@@ -144,34 +144,60 @@ export class Portfolio {
     let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
 
     try {
-      // if the network doesn't have a relayer, velcro will not work
-      // but we should not record an error if such is the case
-      if (!disableAutoDiscovery) {
-        hintsFromExternalAPI = await this.batchedVelcroDiscovery({
-          chainId,
-          accountAddr,
-          baseCurrency
-        })
+      if (localOpts.blockTag === 'latest')
+        console.log(
+          `Debug: Network ${this.network.name}'s hints in storage: `,
+          localOpts.previousHintsFromExternalAPI?.hasHints,
+          localOpts.previousHintsFromExternalAPI?.erc20s.length,
+          'were updated',
+          Date.now() - (localOpts.previousHintsFromExternalAPI?.lastUpdate || 0),
+          'ms ago'
+        )
 
-        if (
-          hintsFromExternalAPI &&
-          hintsFromExternalAPI.skipOverrideSavedHints &&
-          localOpts.previousHintsFromExternalAPI
-        ) {
-          hintsFromExternalAPI = {
-            ...hintsFromExternalAPI,
-            erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
-            erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
-            // Spread it just in case we have saved a false value before
-            skipOverrideSavedHints: true
+      const areHintsStaticAndTokensLearnedLately =
+        localOpts.previousHintsFromExternalAPI &&
+        // We MUST explicitly check for hasHints===false, and not !!, because
+        // hasHints is undefined in the previous version of the extension
+        localOpts.previousHintsFromExternalAPI.hasHints === false &&
+        Date.now() - localOpts.previousHintsFromExternalAPI.lastUpdate < 60 * 60 * 1000
+
+      if (!areHintsStaticAndTokensLearnedLately) {
+        // if the network doesn't have a relayer, velcro will not work
+        // but we should not record an error if such is the case
+        if (!disableAutoDiscovery) {
+          hintsFromExternalAPI = await this.batchedVelcroDiscovery({
+            chainId,
+            accountAddr,
+            baseCurrency
+          })
+
+          if (
+            hintsFromExternalAPI &&
+            hintsFromExternalAPI.skipOverrideSavedHints &&
+            localOpts.previousHintsFromExternalAPI
+          ) {
+            hintsFromExternalAPI = {
+              ...hintsFromExternalAPI,
+              erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
+              erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
+              // Spread it just in case we have saved a false value before
+              skipOverrideSavedHints: true
+            }
           }
-        }
 
-        if (hintsFromExternalAPI) {
-          hintsFromExternalAPI.lastUpdate = Date.now()
+          if (hintsFromExternalAPI) {
+            hintsFromExternalAPI.lastUpdate = Date.now()
 
-          hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
+            hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
+          }
+          // In this case we simply retrieve the hints from the storage (which acts as cache)
+        } else if (disableAutoDiscovery && localOpts.previousHintsFromExternalAPI) {
+          if (localOpts.blockTag === 'latest')
+            console.log(`Debug: using cached hints, Velcro skipped on ${this.network.name}`)
+          hints = { ...localOpts.previousHintsFromExternalAPI }
         }
+      } else {
+        console.log(`Debug: skipping Velcro request, using learned tokens on ${this.network.name}`)
       }
     } catch (error: any) {
       const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
@@ -279,6 +305,15 @@ export class Portfolio {
       afterNonce: bigint
     }
     const [collectionsWithErrResult] = collectionsWithErr
+
+    if (localOpts.blockTag === 'latest')
+      console.log(
+        `Debug: portfolio lib on ${this.network.name} took ${Date.now() - start}ms to fetch ${
+          tokensWithErrResult.length
+        } tokens and ${collectionsWithErrResult.length} collections.`,
+        'additionalHints count: ',
+        localOpts.additionalErc20Hints?.length || 0
+      )
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string, priceRecency: number = localOpts.priceRecency) => {

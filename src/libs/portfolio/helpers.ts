@@ -181,12 +181,13 @@ export const stripExternalHintsAPIResponse = (
 ): StrippedExternalHintsAPIResponse | null => {
   if (!response) return null
 
-  const { erc20s, erc721s, lastUpdate, skipOverrideSavedHints } = response
+  const { erc20s, erc721s, lastUpdate, hasHints, skipOverrideSavedHints } = response
 
   return {
     erc20s,
     erc721s,
     lastUpdate,
+    hasHints,
     skipOverrideSavedHints: !!skipOverrideSavedHints
   }
 }

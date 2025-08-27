@@ -104,7 +104,7 @@ export type ExternalHintsAPIResponse = Hints & {
 
 export type StrippedExternalHintsAPIResponse = Pick<
   ExternalHintsAPIResponse,
-  'erc20s' | 'erc721s' | 'lastUpdate' | 'skipOverrideSavedHints'
+  'erc20s' | 'erc721s' | 'lastUpdate' | 'hasHints' | 'skipOverrideSavedHints'
 >
 
 export interface ExtendedError extends Error {
