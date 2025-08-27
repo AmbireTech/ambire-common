@@ -756,17 +756,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
   }
 
-  #addOrUpdateAllRoutesFailedError(routes: SwapAndBridgeRoute[]) {
-    this.isAutoSelectRouteDisabled = true
-    const msg = `${routes.length} ${routes.length === 1 ? 'route' : 'routes'} found but failed.`
-    this.addOrUpdateError({
-      id: 'all-routes-failed',
-      title: 'All routes failed',
-      text: msg,
-      level: 'error'
-    })
-  }
-
   removeError(id: SwapAndBridgeErrorType['id'], shouldEmit?: boolean) {
     this.errors = this.errors.filter((e) => e.id !== id)
     if (shouldEmit) this.#emitUpdateIfNeeded()
@@ -1454,8 +1443,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
         // no updates if the user has commited
-        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
-          return
+        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
         if (
           this.#getIsFormValidToFetchQuote() &&
@@ -1614,12 +1602,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
               routeToSelect = bestRoute
               routeToSelectSteps = bestRoute.steps
             }
-          }
-
-          // if there's a routeToSelect and it's disabled, it means all routes
-          // from the quote are disabled. Display the all route failed error
-          if (routeToSelect?.disabled) {
-            this.#addOrUpdateAllRoutesFailedError(routes)
           }
 
           this.quote = {
@@ -1976,7 +1958,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const firstEnabledRoute = this.quote.routes.find((r) => !r.disabled)
     if (!firstEnabledRoute) {
-      this.#addOrUpdateAllRoutesFailedError(this.quote.routes)
       this.updateQuoteStatus = 'INITIAL'
       this.isAutoSelectRouteDisabled = true
       this.emitUpdate()
