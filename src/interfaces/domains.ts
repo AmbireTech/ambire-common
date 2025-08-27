@@ -1,3 +1,9 @@
+import { ControllerInterface } from './controller'
+
+export type IDomainsController = ControllerInterface<
+  InstanceType<typeof import('../controllers/domains/domains').DomainsController>
+>
+
 type AddressState = {
   fieldValue: string
   ensAddress: string

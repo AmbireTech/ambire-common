@@ -3,15 +3,13 @@ import { getAssetValue } from '../helpers'
 import { AssetType, Position, PositionAsset, PositionsByProvider } from '../types'
 
 export function getStakedWalletPositions(stkWallet?: TokenResult): PositionsByProvider | null {
-  if (!stkWallet) return null
+  if (!stkWallet || !stkWallet.amount) return null
 
   const positionInUSD = getAssetValue(
     BigInt(stkWallet.amount),
     Number(stkWallet.decimals),
     stkWallet.priceIn
   )
-
-  if (!positionInUSD) return null
 
   const positions: Position[] = [
     {

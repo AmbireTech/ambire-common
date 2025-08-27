@@ -63,6 +63,8 @@ export class Deployless {
 
   private isProviderInvictus: boolean = false
 
+  private providerUrl: string = ''
+
   // We need to detect whether the provider supports state override
   private detectionPromise?: Promise<void>
 
@@ -87,11 +89,17 @@ export class Deployless {
       !abi.includes((x: any) => x.type === 'constructor'),
       'contract cannot have a constructor, as it is not supported in state override mode'
     )
+    assert.ok(!!provider, 'provider must be provided')
     this.contractBytecode = code
     this.provider = provider
-    // eslint-disable-next-line no-underscore-dangle
-    this.isProviderInvictus = (provider as any)._getConnection().url.includes('invictus')
     this.iface = new Interface(abi)
+
+    if (provider && provider instanceof JsonRpcProvider) {
+      // eslint-disable-next-line no-underscore-dangle
+      this.providerUrl = provider._getConnection().url
+      this.isProviderInvictus = this.providerUrl?.includes('invictus')
+    }
+
     if (codeAtRuntime !== undefined) {
       assert.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x')
       this.stateOverrideSupported = true
@@ -190,7 +198,15 @@ export class Deployless {
       callPromise,
       new Promise((_resolve, reject) => {
         // Custom providers may take longer to respond, so we set a longer timeout for them.
-        setTimeout(() => reject(new Error('rpc-timeout')), this.isProviderInvictus ? 15000 : 20000)
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `rpc-timeout. Rpc: ${this.isProviderInvictus ? this.providerUrl : 'custom'}`
+              )
+            ),
+          this.isProviderInvictus ? 15000 : 20000
+        )
       })
     ])
 

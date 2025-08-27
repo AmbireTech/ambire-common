@@ -1,4 +1,9 @@
 import { BUNDLER } from '../consts/bundlers'
+import { ControllerInterface } from './controller'
+
+export type INetworksController = ControllerInterface<
+  InstanceType<typeof import('../controllers/networks/networks').NetworksController>
+>
 
 export type ChainId = bigint
 
@@ -50,6 +55,10 @@ export interface NetworkFeature {
   level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
+/**
+ * If you add a new mandatory property, make sure to adjust accordingly
+ * `sanityCheckImportantNetworkProperties` function, if needed
+ */
 export interface Network {
   chainId: bigint
   name: string
@@ -133,6 +142,7 @@ export type RelayerNetwork = {
   predefinedConfigVersion: number
   ambireId: string
   platformId: string
+  chainId: number
   name: string
   iconUrls: string[]
   explorerUrl: string

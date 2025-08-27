@@ -1,5 +1,4 @@
-import { DomainsController } from '../controllers/domains/domains'
-import { AddressState } from '../interfaces/domains'
+import { AddressState, IDomainsController } from '../interfaces/domains'
 
 const getAddressFromAddressState = (addressState: AddressState) => {
   return (addressState.ensAddress || addressState.fieldValue || '').trim()
@@ -8,7 +7,7 @@ const getAddressFromAddressState = (addressState: AddressState) => {
 const findAccountDomainFromPartialDomain = (
   address: string,
   search: string,
-  domains: DomainsController['domains']
+  domains: IDomainsController['domains']
 ) => {
   const lowercaseSearch = search.toLowerCase()
   const domainsEntry = domains[address]

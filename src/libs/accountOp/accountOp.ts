@@ -1,6 +1,5 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
-// eslint-disable-next-line import/no-cycle
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
@@ -20,6 +19,11 @@ import { AccountOpStatus, Call } from './types'
 export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
+  /**
+   * The account may be controlled by multiple keys. In this case, the user should
+   * be able to choose which key to use.
+   */
+  paidByKeyType: Key['type'] | null
   inToken: string
   // optional, because older versions of the extension did not have this stored locally
   feeTokenChainId?: bigint
@@ -56,13 +60,6 @@ export interface AccountOp {
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
-  // This is used when we have an account recovery to finalize before executing the AccountOp,
-  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
-  // for example account migration (from v1 QuickAcc to v2)
-  // theoretically you can recurse these (an AccountOp set as *ToExecuteBefore can have another accountOpToExecuteBefore)
-  // however, in practice we only use this for recovery atm and we never have a case with more than one
-  // Supporting this can done relatively easily via executeMany() for v2 accounts, and with multiple UserOps via 4337 (again v2 accs)
-  accountOpToExecuteBefore: AccountOp | null
   txnId?: string
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp

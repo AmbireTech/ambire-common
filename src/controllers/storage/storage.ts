@@ -1,10 +1,11 @@
-/* eslint-disable no-restricted-syntax */
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { StoredKey } from '../../interfaces/keystore'
+import { IAccountPickerController } from '../../interfaces/accountPicker'
+/* eslint-disable no-restricted-syntax */
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { CashbackStatus } from '../../interfaces/selectedAccount'
-// eslint-disable-next-line import/no-cycle
-import { Storage, StorageProps } from '../../interfaces/storage'
+import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
@@ -14,17 +15,13 @@ import {
   migrateHiddenTokens,
   migrateNetworkPreferencesToNetworks
 } from '../../libs/storage/storage'
-// eslint-disable-next-line import/no-cycle
-import { AccountPickerController } from '../accountPicker/accountPicker'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-// eslint-disable-next-line import/no-cycle
-import { KeystoreController } from '../keystore/keystore'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
-const STATUS_WRAPPED_METHODS = {
+export const STATUS_WRAPPED_METHODS = {
   associateAccountKeysWithLegacySavedSeedMigration: 'INITIAL'
 } as const
 
-export class StorageController extends EventEmitter {
+export class StorageController extends EventEmitter implements IStorageController {
   #storage: Storage
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -55,6 +52,8 @@ export class StorageController extends EventEmitter {
       await this.#clearHumanizerMetaObjectFromStorage() // As of version v4.34.0
       await this.#migrateTokenPreferences() // As of version 4.51.0
       await this.#migrateCashbackStatusToNewFormat() // As of version 4.53.0
+      await this.#removeIsDefaultWalletStorageIfExist() // As of version 4.57.0
+      await this.#removeOnboardingStateStorageIfExist() // As of version 4.59.0
       await this.#migrateNetworkIdToChainId()
     } catch (error) {
       console.error('Storage migration error: ', error)
@@ -445,6 +444,24 @@ export class StorageController extends EventEmitter {
     ])
   }
 
+  // As of version 4.57.0, we the Ambire wallet is always the default wallet, so we no longer need 'isDefaultWallet' in the storage.
+  async #removeIsDefaultWalletStorageIfExist() {
+    const isDefaultWalletStorageSet = await this.#storage.get('isDefaultWallet', undefined)
+
+    if (isDefaultWalletStorageSet !== undefined) {
+      await this.#storage.remove('isDefaultWallet')
+    }
+  }
+
+  // As of version 4.59.0. the onboarding flow (stories) has been removed, we no longer need 'onboardingState' in the storage.
+  async #removeOnboardingStateStorageIfExist() {
+    const isOnboardingStateExists = await this.#storage.get('onboardingState', undefined)
+
+    if (isOnboardingStateExists !== undefined) {
+      await this.#storage.remove('onboardingState')
+    }
+  }
+
   async get<K extends keyof StorageProps | string | undefined>(
     key: K,
     defaultValue?: any
@@ -481,8 +498,8 @@ export class StorageController extends EventEmitter {
 
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
   async #associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: AccountPickerController,
-    keystore: KeystoreController,
+    accountPicker: IAccountPickerController,
+    keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
     if (this.#associateAccountKeysWithLegacySavedSeedMigrationPassed) return
@@ -568,8 +585,8 @@ export class StorageController extends EventEmitter {
   }
 
   async associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: AccountPickerController,
-    keystore: KeystoreController,
+    accountPicker: IAccountPickerController,
+    keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
     await this.withStatus(

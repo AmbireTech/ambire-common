@@ -40,9 +40,7 @@ export class Etherspot extends Bundler {
     const provider = this.getProvider(network)
 
     const status = await provider.send('eth_getUserOperationByHash', [userOpHash]).catch((e) => {
-      console.log('etherspot eth_getUserOperationByHash returned an error')
-      console.log(e)
-
+      // etherspot throws an error when the userOpHash is not found
       return null
     })
 
@@ -60,5 +58,9 @@ export class Etherspot extends Bundler {
 
   public getName(): BUNDLER {
     return ETHERSPOT
+  }
+
+  public shouldReestimateBeforeBroadcast(network: Network): boolean {
+    return false
   }
 }

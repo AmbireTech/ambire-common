@@ -11,18 +11,25 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
-import { ExternalKey, InternalKey, Key, TxnRequest } from '../../interfaces/keystore'
+import {
+  ExternalKey,
+  IKeystoreController,
+  InternalKey,
+  Key,
+  TxnRequest
+} from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { KeystoreController } from './keystore'
 
 class InternalSigner {
@@ -95,9 +102,9 @@ class LedgerSigner {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
+const uiManager = mockUiManager().uiManager
 
-let keystore: KeystoreController
+let keystore: IKeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
 
@@ -109,8 +116,9 @@ const keyPublicAddress = new ethers.Wallet(privKey).address
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
+  const uiCtrl = new UiController({ uiManager })
   test('should initialize', () => {
-    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
     expect(keystore).toBeDefined()
   })
 
@@ -578,7 +586,7 @@ describe('KeystoreController', () => {
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
   const timestamp = new Date().getTime()
-  let keystore2: KeystoreController
+  let keystore2: IKeystoreController
   let uid2: string
 
   beforeEach(async () => {
@@ -586,9 +594,10 @@ describe('import/export with pub key test', () => {
     const storage2 = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
     const storageCtrl2 = new StorageController(storage2)
+    const uiCtrl = new UiController({ uiManager })
 
-    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, windowManager)
-    keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, windowManager)
+    keystore = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    keystore2 = new KeystoreController('default', storageCtrl2, keystoreSigners, uiCtrl)
 
     await keystore2.addSecret('123', '123', '', false)
     await keystore2.unlockWithSecret('123', '123')

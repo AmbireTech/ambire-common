@@ -24,7 +24,9 @@ export class EOA extends BaseAccount {
   getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
     const numberOfCalls = op.calls.length
     if (numberOfCalls === 1) {
-      if (estimation.provider instanceof Error) return estimation.provider
+      if (estimation.provider instanceof Error) {
+        return estimation.ambire instanceof Error ? estimation.ambire : estimation.provider
+      }
     }
     if (numberOfCalls > 1) {
       if (estimation.ambire instanceof Error) return estimation.ambire
@@ -68,9 +70,12 @@ export class EOA extends BaseAccount {
     }
 
     const ambireGasUsed = estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed : 0n
-    return estimation.providerEstimation.gasUsed > ambireGasUsed
-      ? estimation.providerEstimation.gasUsed
-      : ambireGasUsed
+    const gasUsed =
+      estimation.providerEstimation.gasUsed > ambireGasUsed
+        ? estimation.providerEstimation.gasUsed
+        : ambireGasUsed
+    // add a 10% overhead to prevent OOG
+    return gasUsed + gasUsed / 10n
   }
 
   getBroadcastOption(

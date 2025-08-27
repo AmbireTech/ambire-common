@@ -1,9 +1,18 @@
-import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
+import { ISignMessageController } from 'interfaces/signMessage'
 
 import EmittableError from '../../classes/EmittableError'
-import { Account } from '../../interfaces/account'
-import { ExternalSignerControllers, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { Network } from '../../interfaces/network'
+import ExternalSignerError from '../../classes/ExternalSignerError'
+import { Account, IAccountsController } from '../../interfaces/account'
+import { Statuses } from '../../interfaces/eventEmitter'
+import { IInviteController } from '../../interfaces/invite'
+import {
+  ExternalSignerControllers,
+  IKeystoreController,
+  Key,
+  KeystoreSignerInterface
+} from '../../interfaces/keystore'
+import { INetworksController, Network } from '../../interfaces/network'
+import { IProvidersController } from '../../interfaces/provider'
 import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
@@ -12,31 +21,27 @@ import {
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
+import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { AccountsController } from '../accounts/accounts'
 import { SignedMessage } from '../activity/types'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { ProvidersController } from '../providers/providers'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const STATUS_WRAPPED_METHODS = {
   sign: 'INITIAL'
 } as const
 
-export class SignMessageController extends EventEmitter {
-  #keystore: KeystoreController
+export class SignMessageController extends EventEmitter implements ISignMessageController {
+  #keystore: IKeystoreController
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #invite: InviteController
+  #invite: IInviteController
 
   #signer: KeystoreSignerInterface | undefined
 
@@ -58,12 +63,12 @@ export class SignMessageController extends EventEmitter {
   signedMessage: SignedMessage | null = null
 
   constructor(
-    keystore: KeystoreController,
-    providers: ProvidersController,
-    networks: NetworksController,
-    accounts: AccountsController,
+    keystore: IKeystoreController,
+    providers: IProvidersController,
+    networks: INetworksController,
+    accounts: IAccountsController,
     externalSignerControllers: ExternalSignerControllers,
-    invite: InviteController
+    invite: IInviteController
   ) {
     super()
 
@@ -90,9 +95,7 @@ export class SignMessageController extends EventEmitter {
     await this.#accounts.initialLoadPromise
 
     if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
-      if (dapp) {
-        this.dapp = dapp
-      }
+      if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.isInitialized = true
       this.emitUpdate()
@@ -161,16 +164,11 @@ export class SignMessageController extends EventEmitter {
 
       const accountState = this.#accounts.accountStates[account.addr][network.chainId.toString()]
       let signature
-      // It is defined when messageToSign.content.kind === 'message'
-      let hexMessage: string | undefined
 
       try {
-        if (this.messageToSign.content.kind === 'message') {
-          const message = this.messageToSign.content.message
-          hexMessage = isHexString(message) ? message : hexlify(toUtf8Bytes(message))
-
+        if (isPlainTextMessage(this.messageToSign.content)) {
           signature = await getPlainTextSignature(
-            hexMessage,
+            this.messageToSign.content.message,
             network,
             account,
             accountState,
@@ -200,9 +198,12 @@ export class SignMessageController extends EventEmitter {
           signature = this.#signer.sign7702(this.messageToSign.content.message)
         }
       } catch (error: any) {
-        throw new Error(
+        throw new ExternalSignerError(
           error?.message ||
-            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.',
+          {
+            sendCrashReport: error?.sendCrashReport
+          }
         )
       }
 
@@ -220,8 +221,8 @@ export class SignMessageController extends EventEmitter {
         signer: this.messageToSign?.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
-        ...(this.messageToSign.content.kind === 'message'
-          ? { message: hexStringToUint8Array(hexMessage!) }
+        ...(isPlainTextMessage(this.messageToSign.content)
+          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
               typedData: {
@@ -257,7 +258,14 @@ export class SignMessageController extends EventEmitter {
       const message =
         e?.message || 'Something went wrong while signing the message. Please try again.'
 
-      return Promise.reject(new EmittableError({ level: 'major', message, error }))
+      return Promise.reject(
+        new EmittableError({
+          level: 'major',
+          message,
+          error,
+          sendCrashReport: e?.sendCrashReport
+        })
+      )
     }
   }
 

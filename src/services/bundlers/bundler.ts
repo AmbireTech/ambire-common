@@ -16,14 +16,9 @@ import { BundlerEstimateResult, BundlerStateOverride } from '../../libs/estimate
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 import { getRpcProvider } from '../provider'
-import { GasSpeeds, UserOpStatus } from './types'
+import { BundlerTransactionReceipt, GasSpeeds, UserOpStatus } from './types'
 
 require('dotenv').config()
-
-function addExtra(gasInWei: bigint, percentageIncrease: bigint): Hex {
-  const percent = 100n / percentageIncrease
-  return toBeHex(gasInWei + gasInWei / percent) as Hex
-}
 
 export abstract class Bundler {
   /**
@@ -54,6 +49,12 @@ export abstract class Bundler {
   public abstract getName(): BUNDLER
 
   /**
+   * Each bundler should declare the conditions upon a reestimate before
+   * broadcast is needed
+   */
+  public abstract shouldReestimateBeforeBroadcast(network: Network): boolean
+
+  /**
    * Get the bundler RPC
    *
    * @param network
@@ -62,7 +63,7 @@ export abstract class Bundler {
     return getRpcProvider([this.getUrl(network)], network.chainId)
   }
 
-  private async sendEstimateReq(
+  protected async sendEstimateReq(
     userOperation: UserOperation,
     network: Network,
     stateOverride?: BundlerStateOverride
@@ -120,7 +121,10 @@ export abstract class Bundler {
    * @param userOperationHash
    * @returns Receipt | null
    */
-  async getReceipt(userOperationHash: string, network: Network) {
+  async getReceipt(
+    userOperationHash: string,
+    network: Network
+  ): Promise<BundlerTransactionReceipt> {
     const provider = this.getProvider(network)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
   }
@@ -172,25 +176,7 @@ export abstract class Bundler {
       return this.fetchGasPrices(network, errorCallback, increment)
     }
 
-    const results = response as GasSpeeds
-    return {
-      slow: {
-        maxFeePerGas: addExtra(BigInt(results.slow.maxFeePerGas), 5n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.slow.maxPriorityFeePerGas), 5n)
-      },
-      medium: {
-        maxFeePerGas: addExtra(BigInt(results.medium.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.medium.maxPriorityFeePerGas), 7n)
-      },
-      fast: {
-        maxFeePerGas: addExtra(BigInt(results.fast.maxFeePerGas), 10n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.fast.maxPriorityFeePerGas), 10n)
-      },
-      ape: {
-        maxFeePerGas: addExtra(BigInt(results.ape.maxFeePerGas), 20n),
-        maxPriorityFeePerGas: addExtra(BigInt(results.ape.maxPriorityFeePerGas), 20n)
-      }
-    }
+    return response as GasSpeeds
   }
 
   // used when catching errors from bundler requests

@@ -1,33 +1,41 @@
 import { getAddress, isAddress } from 'ethers'
 
+import { IDomainsController } from '../../interfaces/domains'
 import { RPCProviders } from '../../interfaces/provider'
 import { reverseLookupEns } from '../../services/ensDomains'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
   [address: string]: {
     ens: string | null
-    savedAt: number
+    createdAt?: number
+    updatedAt?: number
+    updateFailedAt?: number
   }
 }
 
 // 15 minutes
-const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
+export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
+export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
  * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
-export class DomainsController extends EventEmitter {
+export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
+
+  #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
 
   domains: Domains = {}
 
   loadingAddresses: string[] = []
 
-  constructor(providers: RPCProviders) {
+  constructor(providers: RPCProviders, defaultNetworksMode?: 'mainnet' | 'testnet') {
     super()
     this.#providers = providers
+    if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
   }
 
   async batchReverseLookup(addresses: string[]) {
@@ -50,11 +58,14 @@ export class DomainsController extends EventEmitter {
     type: 'ens'
   }) {
     const checksummedAddress = getAddress(address)
-    const { ens: oldEns } = this.domains[checksummedAddress] || { ens: null }
+    const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null }
 
+    const existing = this.domains[checksummedAddress]
+    const now = Date.now()
     this.domains[checksummedAddress] = {
-      ens: type === 'ens' ? name : oldEns,
-      savedAt: Date.now()
+      ens: type === 'ens' ? name : prevEns,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
     }
     this.emitUpdate()
   }
@@ -63,7 +74,10 @@ export class DomainsController extends EventEmitter {
    * Resolves the ENS names for an address if such exist.
    */
   async reverseLookup(address: string, emitUpdate = true) {
-    if (!('1' in this.#providers)) {
+    const ethereumProvider =
+      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+
+    if (!ethereumProvider) {
       this.emitError({
         error: new Error('domains.reverseLookup: Ethereum provider is not available'),
         message: 'The RPC provider for Ethereum is not available.',
@@ -72,28 +86,39 @@ export class DomainsController extends EventEmitter {
       return
     }
     const checksummedAddress = getAddress(address)
-    const isAlreadyResolved = !!this.domains[checksummedAddress]
-    const isExpired =
-      isAlreadyResolved &&
-      Date.now() - this.domains[checksummedAddress].savedAt > PERSIST_DOMAIN_FOR_IN_MS
 
-    if ((isAlreadyResolved && !isExpired) || this.loadingAddresses.includes(checksummedAddress))
-      return
+    const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt
+
+    const hasExpired = hasLastUpdateFailed
+      ? Date.now() - (this.domains[checksummedAddress]?.updateFailedAt ?? 0) >
+        PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+      : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+
+    if (!hasExpired || this.loadingAddresses.includes(checksummedAddress)) return
 
     this.loadingAddresses.push(checksummedAddress)
     this.emitUpdate()
 
-    let ensName = null
-
     try {
-      ensName = (await reverseLookupEns(checksummedAddress, this.#providers['1'])) || null
-    } catch (e) {
-      console.error('ENS reverse lookup unexpected error', e)
-    }
+      const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
 
-    this.domains[checksummedAddress] = {
-      ens: ensName,
-      savedAt: Date.now()
+      const now = Date.now()
+      const existing = this.domains[checksummedAddress]
+      this.domains[checksummedAddress] = {
+        ens,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now
+      }
+    } catch (e: any) {
+      // Fail silently with a console error, no biggie, since that would get retried
+      console.warn('reverse ENS lookup failed', e)
+
+      const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
+      if (hasBeenResolvedOnce) {
+        this.domains[checksummedAddress].updateFailedAt = Date.now()
+      } else {
+        this.domains[checksummedAddress] = { ens: null, updateFailedAt: Date.now() }
+      }
     }
 
     this.loadingAddresses = this.loadingAddresses.filter(
@@ -101,5 +126,12 @@ export class DomainsController extends EventEmitter {
     )
 
     if (emitUpdate) this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      ...super.toJSON()
+    }
   }
 }

@@ -2,6 +2,11 @@ import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
 import { TokenResult } from '../libs/portfolio'
+import { ControllerInterface } from './controller'
+
+export type ISwapAndBridgeController = ControllerInterface<
+  InstanceType<typeof import('../controllers/swapAndBridge/swapAndBridge').SwapAndBridgeController>
+>
 
 export interface SocketAPIResponse<T> {
   result: T
@@ -73,7 +78,6 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
-  errorMessage?: string
 }
 
 export interface SwapAndBridgeRoute {
@@ -96,10 +100,10 @@ export interface SwapAndBridgeRoute {
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
-  errorMessage?: string
   rawRoute: SocketAPIRoute | LiFiRoute
-  hasFailed?: boolean
   toToken: LiFiToken
+  disabled?: boolean
+  disabledReason?: string
 }
 
 export interface SocketAPISwapUserTx {

@@ -4,16 +4,19 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
+import { ISwapAndBridgeController } from '../../interfaces/swapAndBridge'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -21,6 +24,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController } from './swapAndBridge'
 
@@ -62,12 +66,7 @@ const accounts = [
 //
 // In order to test the status better, we either need real data or a mock on signAccountOp
 
-let swapAndBridgeController: SwapAndBridgeController
-const windowManager = mockWindowManager().windowManager
-
-const notificationManager = {
-  create: () => Promise.resolve()
-}
+let swapAndBridgeController: ISwapAndBridgeController
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -75,23 +74,27 @@ const providers = Object.fromEntries(
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
-let providersCtrl: ProvidersController
-const networksCtrl = new NetworksController(
-  storageCtrl,
+let providersCtrl: IProvidersController
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
   fetch,
   relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
+  onAddOrUpdateNetworks: (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
   },
-  (id) => {
+  onRemoveNetwork: (id) => {
     providersCtrl.removeProvider(id)
   }
-)
+})
 
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 
-const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
 storage.set('selectedAccount', accounts[0].addr)
 
@@ -106,13 +109,13 @@ const accountsCtrl = new AccountsController(
 )
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore
 })
 
 const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
-  windowManager,
-  notificationManager,
+  ui: uiCtrl,
   onActionWindowClose: () => Promise.resolve()
 })
 
@@ -132,7 +135,8 @@ const portfolioCtrl = new PortfolioController(
   accountsCtrl,
   keystore,
   relayerUrl,
-  velcroUrl
+  velcroUrl,
+  new BannerController(storageCtrl)
 )
 
 const activityCtrl = new ActivityController(
@@ -195,14 +199,14 @@ describe('SwapAndBridge Controller', () => {
       activity: activityCtrl,
       storage: storageCtrl,
       serviceProviderAPI: socketAPIMock as any,
-      actions: actionsCtrl,
       invite: inviteCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,
       externalSignerControllers: {},
       relayerUrl,
-      userRequests: []
+      getUserRequests: () => [],
+      getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
     })
     expect(swapAndBridgeController).toBeDefined()
   })

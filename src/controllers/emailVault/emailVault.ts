@@ -1,24 +1,26 @@
 /* eslint-disable class-methods-use-this */
+/* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
 
 import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultOperation,
+  IEmailVaultController,
   MagicLinkFlow,
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
+import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IKeystoreController } from '../../interfaces/keystore'
+import { IStorageController } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
-import EventEmitter, { Statuses } from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-/* eslint-disable no-await-in-loop */
-import { StorageController } from '../storage/storage'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 export enum EmailVaultState {
   Loading = 'loading',
@@ -68,8 +70,8 @@ const STATUS_WRAPPED_METHODS = {
  * Extended documentation about the EV and its internal mechanisms
  * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
  */
-export class EmailVaultController extends EventEmitter {
-  #storage: StorageController
+export class EmailVaultController extends EventEmitter implements IEmailVaultController {
+  #storage: IStorageController
 
   private initialLoadPromise: Promise<void>
 
@@ -91,7 +93,7 @@ export class EmailVaultController extends EventEmitter {
 
   #relayerUrl: string
 
-  #keyStore: KeystoreController
+  #keyStore: IKeystoreController
 
   isReady: boolean = false
 
@@ -110,10 +112,10 @@ export class EmailVaultController extends EventEmitter {
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     fetch: Fetch,
     relayerUrl: string,
-    keyStore: KeystoreController,
+    keyStore: IKeystoreController,
     options?: { autoConfirmMagicLink?: boolean }
   ) {
     super()
@@ -359,6 +361,7 @@ export class EmailVaultController extends EventEmitter {
       this.emitError({
         message: 'Email key not confirmed',
         level: 'minor',
+        sendCrashReport: false,
         error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
       })
 
@@ -395,7 +398,7 @@ export class EmailVaultController extends EventEmitter {
     if (!state.email[email].availableSecrets[uid]) {
       this.emitError({
         message: `Resetting the password on this device is not enabled for ${email}.`,
-        level: 'major',
+        level: 'expected',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
       return
@@ -403,7 +406,7 @@ export class EmailVaultController extends EventEmitter {
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
         message: `Resetting the password on this device is not enabled for ${email}.`,
-        level: 'major',
+        level: 'expected',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
       return
@@ -415,7 +418,7 @@ export class EmailVaultController extends EventEmitter {
     const emitExpiredMagicLinkError = () => {
       this.emitError({
         message: `The time allotted for changing your password has expired for ${email}. Please verify your email again!`,
-        level: 'major',
+        level: 'expected',
         error: new Error(`Keystore recovery: magic link expired for ${email}`)
       })
 

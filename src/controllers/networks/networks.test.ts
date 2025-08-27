@@ -7,22 +7,26 @@ import { describe, expect, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { AddNetworkRequestParams, NetworkInfo } from '../../interfaces/network'
+import { AddNetworkRequestParams, INetworksController, NetworkInfo } from '../../interfaces/network'
 import { StorageController } from '../storage/storage'
 import { NetworksController } from './networks'
 
 describe('Networks Controller', () => {
-  let networksController: NetworksController
+  let networksController: INetworksController
+  let skipBeforeEach = false
+
   beforeEach(async () => {
+    if (skipBeforeEach) return
+
     const storage = produceMemoryStore()
     const storageCtrl = new StorageController(storage)
-    networksController = new NetworksController(
-      storageCtrl,
+    networksController = new NetworksController({
+      storage: storageCtrl,
       fetch,
       relayerUrl,
-      () => {},
-      () => {}
-    )
+      onAddOrUpdateNetworks: () => {},
+      onRemoveNetwork: () => {}
+    })
   })
 
   test('should initialize with predefined networks if storage is empty', async () => {
@@ -69,15 +73,12 @@ describe('Networks Controller', () => {
       {}
     )
 
-    const updatedNetworks = await networksController.mergeRelayerNetworks(
-      finalNetworks,
-      finalNetworks
-    )
+    const { mergedNetworks } = await networksController.mergeRelayerNetworks(finalNetworks)
 
     // Ensure the merged networks contain "unichain" and other relayer networks
-    expect(updatedNetworks).toHaveProperty('130')
-    expect(updatedNetworks['130'].rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
-    expect(updatedNetworks['130'].predefined).toBe(false) // Ensure "unichain" details are correct
+    expect(mergedNetworks).toHaveProperty('130')
+    expect(mergedNetworks['130'].rpcUrls).toContain('https://unichain.rpc.url-2') // Ensure the custom "unichain" network is added to rpcUrls array
+    expect(mergedNetworks['130'].predefined).toBe(false) // Ensure "unichain" details are correct
   })
 
   test('should update network preferences', (done) => {
@@ -217,6 +218,26 @@ describe('Networks Controller', () => {
       rpcUrl: 'https://evm-rpc.sei-apis.com',
       chainId: 1329n
     })
+  })
+
+  test('should work in testnet mode', async () => {
+    skipBeforeEach = true
+    const storage = produceMemoryStore()
+    const storageCtrl = new StorageController(storage)
+    const testnetNetworksController = new NetworksController({
+      defaultNetworksMode: 'testnet',
+      storage: storageCtrl,
+      fetch,
+      relayerUrl,
+      onAddOrUpdateNetworks: () => {},
+      onRemoveNetwork: () => {}
+    })
+
+    await testnetNetworksController.initialLoadPromise
+    expect(testnetNetworksController.networks.find((n) => n.chainId === 1n)).toBe(undefined)
+    expect(testnetNetworksController.networks.find((n) => n.chainId === 11155111n)).not.toBe(
+      undefined
+    )
   })
 
   // TODO: Refactor Fantom test as well

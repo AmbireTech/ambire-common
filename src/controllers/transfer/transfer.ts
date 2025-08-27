@@ -1,10 +1,18 @@
-import { ActivityController } from 'controllers/activity/activity'
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
+import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
+import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
-import { ExternalSignerControllers } from '../../interfaces/keystore'
-import { TransferUpdate } from '../../interfaces/transfer'
+import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
+import { INetworksController } from '../../interfaces/network'
+import { IPortfolioController } from '../../interfaces/portfolio'
+import { IProvidersController } from '../../interfaces/provider'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { ISignAccountOpController } from '../../interfaces/signAccountOp'
+import { IStorageController } from '../../interfaces/storage'
+import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -23,17 +31,9 @@ import {
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { AddressBookController } from '../addressBook/addressBook'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import { StorageController } from '../storage/storage'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -57,16 +57,16 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const HARD_CODED_CURRENCY = 'usd'
 
-export class TransferController extends EventEmitter {
-  #storage: StorageController
+export class TransferController extends EventEmitter implements ITransferController {
+  #storage: IStorageController
 
-  #networks: NetworksController
+  #networks: INetworksController
 
-  #addressBook: AddressBookController
+  #addressBook: IAddressBookController
 
   #selectedToken: TokenResult | null = null
 
-  #selectedAccountData: SelectedAccountController
+  #selectedAccountData: ISelectedAccountController
 
   #humanizerInfo: HumanizerMeta | null = null
 
@@ -102,19 +102,19 @@ export class TransferController extends EventEmitter {
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
-  #accounts: AccountsController
+  #accounts: IAccountsController
 
-  #keystore: KeystoreController
+  #keystore: IKeystoreController
 
-  #portfolio: PortfolioController
+  #portfolio: IPortfolioController
 
   #externalSignerControllers: ExternalSignerControllers
 
-  #providers: ProvidersController
+  #providers: IProvidersController
 
   #relayerUrl: string
 
-  signAccountOpController: SignAccountOpController | null = null
+  signAccountOpController: ISignAccountOpController | null = null
 
   /**
    * Holds all subscriptions (on update and on error) to the signAccountOpController.
@@ -125,6 +125,8 @@ export class TransferController extends EventEmitter {
   latestBroadcastedAccountOp: AccountOp | null = null
 
   latestBroadcastedToken: TokenResult | null = null
+
+  #shouldTrackLatestBroadcastedAccountOp: boolean = true
 
   hasProceeded: boolean = false
 
@@ -137,20 +139,20 @@ export class TransferController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
-  #activity: ActivityController
+  #activity: IActivityController
 
   constructor(
-    storage: StorageController,
+    storage: IStorageController,
     humanizerInfo: HumanizerMeta,
-    selectedAccountData: SelectedAccountController,
-    networks: NetworksController,
-    addressBook: AddressBookController,
-    accounts: AccountsController,
-    keystore: KeystoreController,
-    portfolio: PortfolioController,
-    activity: ActivityController,
+    selectedAccountData: ISelectedAccountController,
+    networks: INetworksController,
+    addressBook: IAddressBookController,
+    accounts: IAccountsController,
+    keystore: IKeystoreController,
+    portfolio: IPortfolioController,
+    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
-    providers: ProvidersController,
+    providers: IProvidersController,
     relayerUrl: string
   ) {
     super()
@@ -191,6 +193,14 @@ export class TransferController extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('shouldSkipTransactionQueuedModal', value)
     this.emitUpdate()
+  }
+
+  get shouldTrackLatestBroadcastedAccountOp() {
+    return this.#shouldTrackLatestBroadcastedAccountOp
+  }
+
+  set shouldTrackLatestBroadcastedAccountOp(value: boolean) {
+    this.#shouldTrackLatestBroadcastedAccountOp = value
   }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
@@ -254,7 +264,7 @@ export class TransferController extends EventEmitter {
     )
   }
 
-  resetForm() {
+  resetForm(shouldDestroyAccountOp = true) {
     this.selectedToken = null
     this.amount = ''
     this.amountInFiat = ''
@@ -263,7 +273,10 @@ export class TransferController extends EventEmitter {
     this.#onRecipientAddressChange()
     this.programmaticUpdateCounter = 0
 
-    this.destroySignAccountOp()
+    if (shouldDestroyAccountOp) {
+      this.destroySignAccountOp()
+    }
+
     this.emitUpdate()
   }
 
@@ -345,6 +358,8 @@ export class TransferController extends EventEmitter {
     isTopUp,
     amountFieldMode
   }: TransferUpdate) {
+    this.shouldTrackLatestBroadcastedAccountOp = true
+
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -612,7 +627,6 @@ export class TransferController extends EventEmitter {
       gasFeePayment: null,
       nonce: accountState.nonce,
       signature: null,
-      accountOpToExecuteBefore: null,
       calls,
       meta: {
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
@@ -624,14 +638,15 @@ export class TransferController extends EventEmitter {
       this.#networks,
       this.#keystore,
       this.#portfolio,
-      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccountData.account,
       network,
+      this.#activity,
       provider,
       randomId(), // the account op and the action are fabricated
       accountOp,
       () => true,
+      false,
       false,
       undefined
     )
@@ -717,7 +732,7 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  unloadScreen(forceUnload: boolean) {
+  unloadScreen(forceUnload?: boolean) {
     if (this.hasPersistedState && !forceUnload) return
 
     this.destroyLatestBroadcastedAccountOp()

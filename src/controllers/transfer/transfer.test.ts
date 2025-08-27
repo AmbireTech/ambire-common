@@ -11,7 +11,7 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -20,7 +20,9 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key, TxnRequest } from '../../interfaces/keystore'
+import { IProvidersController } from '../../interfaces/provider'
 import { EIP7702Signature } from '../../interfaces/signatures'
+import { ITransferController } from '../../interfaces/transfer'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -28,12 +30,14 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -64,13 +68,13 @@ const STK_WALLET_ADDRESS = '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
 const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUrl)
 
-let transferController: TransferController
+let transferController: ITransferController
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
-let providersCtrl: ProvidersController
+let providersCtrl: IProvidersController
 
 const account = {
   addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -99,17 +103,19 @@ storage.set('keystoreKeys', mockKeys)
 
 storageCtrl.set('accounts', accounts)
 
-const networksCtrl = new NetworksController(
-  storageCtrl,
+const networksCtrl = new NetworksController({
+  storage: storageCtrl,
   fetch,
   relayerUrl,
-  (net) => {
-    providersCtrl.setProvider(net)
+  onAddOrUpdateNetworks: (nets) => {
+    nets.forEach((n) => {
+      providersCtrl.setProvider(n)
+    })
   },
-  (id) => {
+  onRemoveNetwork: (id) => {
     providersCtrl.removeProvider(id)
   }
-)
+})
 providersCtrl = new ProvidersController(networksCtrl)
 providersCtrl.providers = providers
 
@@ -184,14 +190,10 @@ class LedgerSigner {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-const keystoreController = new KeystoreController(
-  'default',
-  storageCtrl,
-  keystoreSigners,
-  windowManager
-)
+const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
 
 const accountsCtrl = new AccountsController(
   storageCtrl,
@@ -205,7 +207,8 @@ const accountsCtrl = new AccountsController(
 
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore: keystoreController
 })
 
 const addressBookController = new AddressBookController(
@@ -224,7 +227,8 @@ const portfolioController = new PortfolioController(
   accountsCtrl,
   keystoreController,
   relayerUrl,
-  velcroUrl
+  velcroUrl,
+  new BannerController(storageCtrl)
 )
 const activity = new ActivityController(
   storageCtrl,

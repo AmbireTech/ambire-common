@@ -1,5 +1,10 @@
+import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
+
+export type IAccountsController = ControllerInterface<
+  InstanceType<typeof import('../controllers/accounts/accounts').AccountsController>
+>
 
 export type AccountId = string
 

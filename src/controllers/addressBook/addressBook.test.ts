@@ -4,10 +4,11 @@ import { expect, jest } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -16,6 +17,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { AddressBookController } from './addressBook'
 
 const storage: Storage = produceMemoryStore()
@@ -66,32 +68,37 @@ const providers = Object.fromEntries(
 )
 
 describe('AddressBookController', () => {
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  let providersCtrl: IProvidersController
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
     networksCtrl,
-    new KeystoreController('default', storageCtrl, {}, mockWindowManager().windowManager),
+    new KeystoreController('default', storageCtrl, {}, uiCtrl),
     () => {},
     () => {},
     () => {}
   )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl)
   })
   const addressBookController = new AddressBookController(
     storageCtrl,

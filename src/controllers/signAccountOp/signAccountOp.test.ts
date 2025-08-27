@@ -9,13 +9,15 @@ import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-u
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
+import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
@@ -31,6 +33,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -40,6 +43,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
@@ -92,7 +96,6 @@ const createEOAAccountOp = (account: Account) => {
     chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
-    accountOpToExecuteBefore: null,
     signature: null
   }
 
@@ -157,7 +160,6 @@ const createAccountOp = (
     chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
-    accountOpToExecuteBefore: null,
     signature: null
   }
 
@@ -328,8 +330,8 @@ const gasTankToken: TokenResult = {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const init = async (
   account: Account,
   accountOp: {
@@ -350,7 +352,7 @@ const init = async (
     'default',
     storageCtrl,
     { internal: KeystoreSigner },
-    windowManager
+    uiCtrl
   )
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
@@ -368,18 +370,20 @@ const init = async (
     }
   ])
 
-  let providersCtrl: ProvidersController
-  const networksCtrl = new NetworksController(
-    storageCtrl,
+  let providersCtrl: IProvidersController
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
     fetch,
     relayerUrl,
-    (net) => {
-      providersCtrl.setProvider(net)
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
     },
-    (id) => {
+    onRemoveNetwork: (id) => {
       providersCtrl.removeProvider(id)
     }
-  )
+  })
   providersCtrl = new ProvidersController(networksCtrl)
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
@@ -404,11 +408,12 @@ const init = async (
     accountsCtrl,
     keystore,
     'https://staging-relayer.ambire.com',
-    velcroUrl
+    velcroUrl,
+    new BannerController(storageCtrl)
   )
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
-  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : network)
+  await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
   if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
@@ -449,11 +454,18 @@ const init = async (
   const bundlerSwitcher = new BundlerSwitcher(network, () => {
     return false
   })
-  const callRelayer = relayerCall.bind({ url: '', fetch })
+  const baseAccount = getBaseAccount(
+    account,
+    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
+    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+    network
+  )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore
   })
+  const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
     storageCtrl,
     fetch,
@@ -471,8 +483,8 @@ const init = async (
     networksCtrl,
     providers,
     portfolio,
-    activity,
-    bundlerSwitcher
+    bundlerSwitcher,
+    activity
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -480,25 +492,32 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, bundlerSwitcher, () => ({
-    estimation: estimationController,
-    readyToSign: true,
-    isSignRequestStillActive: () => true
-  }))
+  const gasPriceController = new GasPriceController(
+    network,
+    provider,
+    baseAccount,
+    bundlerSwitcher,
+    () => ({
+      estimation: estimationController,
+      readyToSign: true,
+      isSignRequestStillActive: () => true
+    })
+  )
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController(
     accountsCtrl,
     networksCtrl,
     keystore,
     portfolio,
-    activity,
     {},
     account,
     network,
+    activity,
     provider,
     1,
     op,
     () => {},
+    true,
     true,
     () => {},
     estimationController,
@@ -600,6 +619,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
       broadcastOption: BROADCAST_OPTIONS.bySelf,
+      paidByKeyType: 'internal',
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenChainId: 1n,

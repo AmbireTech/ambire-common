@@ -1,4 +1,9 @@
 import { AccountCreation, AccountId } from './account'
+import { ControllerInterface } from './controller'
+
+export type IEmailVaultController = ControllerInterface<
+  InstanceType<typeof import('../controllers/emailVault/emailVault').EmailVaultController>
+>
 
 export type MagicLinkFlow = 'recovery' | 'setup'
 

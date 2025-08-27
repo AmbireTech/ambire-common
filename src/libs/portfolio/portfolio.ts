@@ -14,7 +14,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { stripExternalHintsAPIResponse } from './helpers'
+import { stripExternalHintsAPIResponse, tokenFilter } from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -125,6 +125,10 @@ export class Portfolio {
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
+    const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
+      erc20s: [],
+      erc721s: {}
+    }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
@@ -218,6 +222,9 @@ export class Portfolio {
     // add the fee tokens
     hints.erc20s = [
       ...hints.erc20s,
+      ...Object.keys(localOpts.specialErc20Hints || {}),
+      ...(localOpts.additionalErc20Hints || []),
+      ...(localOpts.fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
@@ -285,14 +292,63 @@ export class Portfolio {
       return isStale ? null : eligible
     }
 
-    const tokenFilter = ([error, result]: [TokenError, TokenResult]): boolean =>
-      error === '0x' && !!result.symbol
+    const nativeToken = tokensWithErrResult.find(
+      ([, result]) => result.address === ZeroAddress
+    )?.[1]
+
+    const isValidToken = (error: TokenError, token: TokenResult): boolean =>
+      error === '0x' && !!token.symbol
 
     const tokensWithoutPrices = tokensWithErrResult
-      .filter((_tokensWithErrResult: [TokenError, TokenResult]) =>
-        tokenFilter(_tokensWithErrResult)
-      )
-      .map(([, result]: [any, TokenResult]) => result)
+      .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
+        if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
+
+        // Don't filter by balance/custom/hidden etc. if this param isn't passed
+        // The portfolio lib is used outside the controller, in which case we want to
+        // fetch all tokens regardless of their balance or type
+        if (!localOpts.specialErc20Hints) return true
+
+        const isToBeLearned =
+          localOpts.specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
+
+        return tokenFilter(
+          _tokensWithErrResult[1],
+          this.network,
+          isToBeLearned,
+          !!opts.fetchPinned,
+          nativeToken
+        )
+      })
+      .map(([, result]: [any, TokenResult]) => {
+        if (
+          !result.amount ||
+          result.flags.isCustom ||
+          result.flags.isHidden ||
+          toBeLearned.erc20s.includes(result.address)
+        ) {
+          return result
+        }
+
+        // Add tokens proposed by the controller to toBeLearned
+        if (
+          opts.specialErc20Hints &&
+          opts.specialErc20Hints[result.address] &&
+          opts.specialErc20Hints[result.address] === 'learn'
+        ) {
+          toBeLearned.erc20s.push(result.address)
+          // Add tokens proposed by the external API to toBeLearned
+          // if the response API is static. That is because the static
+          // response may change and the user may stop seeing the token
+        } else if (
+          hintsFromExternalAPI &&
+          !hintsFromExternalAPI.hasHints &&
+          !hintsFromExternalAPI.skipOverrideSavedHints
+        ) {
+          toBeLearned.erc20s.push(result.address)
+        }
+
+        return result
+      })
 
     const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
@@ -307,7 +363,7 @@ export class Portfolio {
     })
 
     const collections = unfilteredCollections
-      .filter((preFilterCollection) => tokenFilter(preFilterCollection))
+      .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
       .map(([, collection]) => collection)
 
     const oracleCallDone = Date.now()
@@ -354,13 +410,15 @@ export class Portfolio {
 
           priceIn = getPriceFromCache(token.address, localOpts.priceRecencyOnFailure) || []
 
-          // Avoid duplicate errors, because this.bachedGecko is called for each token and if
-          // there is an error it will most likely be the same for all tokens
           if (
+            // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+            // there is an error it will most likely be the same for all tokens
             !errors.find(
               (x) =>
                 x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
-            )
+            ) &&
+            // Don't display an error if there is a cached price
+            !priceIn.length
           ) {
             errors.push({
               name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
@@ -380,6 +438,7 @@ export class Portfolio {
     const priceUpdateDone = Date.now()
 
     return {
+      toBeLearned,
       hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
       errors,
       updateStarted: start,
