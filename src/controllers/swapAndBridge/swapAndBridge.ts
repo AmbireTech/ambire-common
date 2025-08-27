@@ -1572,36 +1572,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             return
           }
 
-          const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
-            if (!this.quote) return false
-
-            // Because we only have routes with unique bridges (bridging case)
-            const selectedRouteUsedBridge = this.quote.selectedRoute?.usedBridgeNames?.[0]
-            if (selectedRouteUsedBridge)
-              return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
-
-            // Assuming to only have routes with unique DEXes (swapping case)
-            const selectedRouteUsedDex = this.quote.selectedRoute?.usedDexName
-            if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
-
-            return false // should never happen, but just in case of bad data
-          })
-
-          if (alreadySelectedRoute) {
-            routeToSelect = alreadySelectedRoute
-            routeToSelectSteps = alreadySelectedRoute.steps
-          } else {
-            let bestRoute = quoteResult.selectedRoute
-            if (this.#serviceProviderAPI.id === 'socket') {
-              bestRoute =
-                this.routePriority === 'output'
-                  ? routes[0] // API returns highest output first
-                  : routes[routes.length - 1] // API returns fastest... last
-            }
-            if (bestRoute) {
-              routeToSelect = bestRoute
-              routeToSelectSteps = bestRoute.steps
-            }
+          let bestRoute = quoteResult.selectedRoute
+          if (this.#serviceProviderAPI.id === 'socket') {
+            bestRoute =
+              this.routePriority === 'output'
+                ? routes[0] // API returns highest output first
+                : routes[routes.length - 1] // API returns fastest... last
+          }
+          if (bestRoute) {
+            routeToSelect = bestRoute
+            routeToSelectSteps = bestRoute.steps
           }
 
           this.quote = {
@@ -1613,6 +1593,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             selectedRouteSteps: routeToSelectSteps,
             routes
           }
+          this.isAutoSelectRouteDisabled = !routeToSelect || !!routeToSelect.disabled
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
 
