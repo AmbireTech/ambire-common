@@ -109,7 +109,8 @@ async function estimateGas(
     return estimateGas(provider, from, call, nonce, gasLimit, counter + 1)
   }
 
-  return gasLimit
+  // add a 10% overhead to prevent OOG
+  return gasLimit + gasLimit
 }
 
 export async function getTxnData(
