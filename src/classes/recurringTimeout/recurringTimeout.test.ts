@@ -1,6 +1,6 @@
-import { createRecurringTimeout } from './timeout'
+import { RecurringTimeout } from './recurringTimeout'
 
-describe('createRecurringTimeout', () => {
+describe('RecurringTimeout', () => {
   beforeEach(() => {
     jest.useFakeTimers()
     jest.spyOn(global.console, 'error').mockImplementation(() => {})
@@ -29,7 +29,7 @@ describe('createRecurringTimeout', () => {
       return deferred.promise.finally(() => callOrder.push('fn-end'))
     })
 
-    const t = createRecurringTimeout(fn, 1000)
+    const t = new RecurringTimeout(fn, 1000)
     t.start()
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
@@ -58,7 +58,7 @@ describe('createRecurringTimeout', () => {
     const deferred = createDeferred()
     const fn = jest.fn(() => deferred.promise)
 
-    const t = createRecurringTimeout(fn, 500)
+    const t = new RecurringTimeout(fn, 500)
     t.start({ runImmediately: true })
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
@@ -81,7 +81,7 @@ describe('createRecurringTimeout', () => {
       .mockImplementationOnce(() => first.promise)
       .mockImplementationOnce(() => second.promise)
 
-    const t = createRecurringTimeout(fn, 200)
+    const t = new RecurringTimeout(fn, 200)
     t.start({ runImmediately: true })
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
@@ -103,7 +103,7 @@ describe('createRecurringTimeout', () => {
     const d1 = createDeferred()
     const fn = jest.fn(() => d1.promise)
 
-    const t = createRecurringTimeout(fn, 300)
+    const t = new RecurringTimeout(fn, 300)
     t.start({ runImmediately: true })
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
@@ -125,7 +125,7 @@ describe('createRecurringTimeout', () => {
       .mockImplementationOnce(() => d1.promise)
       .mockImplementationOnce(() => d2.promise)
 
-    const t = createRecurringTimeout(fn, 1000)
+    const t = new RecurringTimeout(fn, 1000)
     t.start({ runImmediately: true })
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
@@ -153,7 +153,7 @@ describe('createRecurringTimeout', () => {
       .mockImplementationOnce(() => d1.promise)
       .mockImplementationOnce(() => d2.promise)
 
-    const t = createRecurringTimeout(fn, 1000)
+    const t = new RecurringTimeout(fn, 1000)
     t.start({ runImmediately: true })
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
@@ -176,7 +176,7 @@ describe('createRecurringTimeout', () => {
   test('debounce should collapse multiple start/restart calls within same tick', async () => {
     const d = createDeferred()
     const fn = jest.fn(() => d.promise)
-    const t = createRecurringTimeout(fn, 100)
+    const t = new RecurringTimeout(fn, 100)
 
     t.start()
     t.start()
@@ -195,7 +195,7 @@ describe('createRecurringTimeout', () => {
     const fn = jest.fn().mockRejectedValueOnce(err).mockResolvedValueOnce(undefined)
 
     const emitError = jest.fn()
-    const t = createRecurringTimeout(fn, 250, emitError)
+    const t = new RecurringTimeout(fn, 250, emitError)
 
     t.start({ runImmediately: true })
 

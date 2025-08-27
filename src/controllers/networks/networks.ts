@@ -1,4 +1,8 @@
 import EmittableError from '../../classes/EmittableError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
@@ -21,7 +25,6 @@ import {
   getValidNetworks
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -64,7 +67,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise: Promise<void>
 
-  #updateWithRelayerNetworksInterval: RecurringTimeout
+  #updateWithRelayerNetworksInterval: IRecurringTimeout
 
   constructor({
     defaultNetworksMode,
@@ -98,7 +101,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
      * to periodically refetch networks in case there are updates,
      * since the extension relies on the config from relayer.
      */
-    this.#updateWithRelayerNetworksInterval = createRecurringTimeout(
+    this.#updateWithRelayerNetworksInterval = new RecurringTimeout(
       this.synchronizeNetworks.bind(this),
       NETWORKS_UPDATE_INTERVAL,
       this.emitError.bind(this)

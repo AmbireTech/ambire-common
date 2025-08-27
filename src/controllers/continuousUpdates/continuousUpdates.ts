@@ -1,4 +1,8 @@
 import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
+import {
   ACCOUNT_STATE_PENDING_INTERVAL,
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
@@ -8,7 +12,6 @@ import {
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -31,31 +34,31 @@ const getAccountOpsIntervalRefreshTime = (
 export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
-  #updatePortfolioInterval: RecurringTimeout
+  #updatePortfolioInterval: IRecurringTimeout
 
   get updatePortfolioInterval() {
     return this.#updatePortfolioInterval
   }
 
-  #accountsOpsStatusesInterval: RecurringTimeout
+  #accountsOpsStatusesInterval: IRecurringTimeout
 
   get accountsOpsStatusesInterval() {
     return this.#accountsOpsStatusesInterval
   }
 
-  #accountStateLatestInterval: RecurringTimeout
+  #accountStateLatestInterval: IRecurringTimeout
 
   get accountStateLatestInterval() {
     return this.#accountStateLatestInterval
   }
 
-  #accountStatePendingInterval: RecurringTimeout
+  #accountStatePendingInterval: IRecurringTimeout
 
   get accountStatePendingInterval() {
     return this.#accountStatePendingInterval
   }
 
-  #fastAccountStateReFetchTimeout: RecurringTimeout
+  #fastAccountStateReFetchTimeout: IRecurringTimeout
 
   get fastAccountStateReFetchTimeout() {
     return this.#fastAccountStateReFetchTimeout
@@ -83,7 +86,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     //    Once the acc op is confirmed or failed, the portfolio interval will resume as normal.
     // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
     //    However, this is not a frequent case, and we can make a compromise here.
-    this.#updatePortfolioInterval = createRecurringTimeout(
+    this.#updatePortfolioInterval = new RecurringTimeout(
       () => this.updatePortfolio(),
       INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
       this.emitError.bind(this)
@@ -109,19 +112,20 @@ export class ContinuousUpdatesController extends EventEmitter {
     /**
      * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
      */
-    this.#accountStateLatestInterval = createRecurringTimeout(
+    this.#accountStateLatestInterval = new RecurringTimeout(
       async () => this.updateAccountStateLatest(),
       ACCOUNT_STATE_STAND_BY_INTERVAL,
       this.emitError.bind(this)
     )
 
-    this.#accountStatePendingInterval = createRecurringTimeout(
+    this.#accountStatePendingInterval = new RecurringTimeout(
       async () => this.updateAccountStatePending(),
       ACCOUNT_STATE_PENDING_INTERVAL,
-      this.emitError.bind(this)
+      this.emitError.bind(this),
+      'accountStatePendingInterval'
     )
 
-    this.#accountsOpsStatusesInterval = createRecurringTimeout(
+    this.#accountsOpsStatusesInterval = new RecurringTimeout(
       async () => this.updateAccountsOpsStatuses(),
       ACTIVITY_REFRESH_INTERVAL,
       this.emitError.bind(this)
@@ -131,7 +135,7 @@ export class ContinuousUpdatesController extends EventEmitter {
      * Update failed network states more often. If a network's first failed
      *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
      */
-    this.#fastAccountStateReFetchTimeout = createRecurringTimeout(
+    this.#fastAccountStateReFetchTimeout = new RecurringTimeout(
       async () => this.fastAccountStateReFetch(),
       8000,
       this.emitError.bind(this)
@@ -298,18 +302,18 @@ export class ContinuousUpdatesController extends EventEmitter {
       })
     }
 
+    if (!failedChainIdsAfterUpdate.length) {
+      this.#fastAccountStateReFetchTimeout.stop()
+      this.#retriedFastAccountStateReFetchForNetworks = []
+      return
+    }
+
     // Filter out the network ids that have already been retried
     const networksNotYetRetried = failedChainIdsAfterUpdate.filter(
       (id) => !this.#retriedFastAccountStateReFetchForNetworks.find((chainId) => chainId === id)
     )
 
     const updateTime = networksNotYetRetried.length ? 8000 : 20000
-
-    if (!failedChainIdsAfterUpdate.length) {
-      this.#fastAccountStateReFetchTimeout.stop()
-      this.#retriedFastAccountStateReFetchForNetworks = []
-      return
-    }
 
     this.#fastAccountStateReFetchTimeout.updateTimeout({ timeout: updateTime })
   }

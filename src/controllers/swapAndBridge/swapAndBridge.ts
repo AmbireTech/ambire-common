@@ -1,6 +1,10 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
@@ -67,7 +71,6 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout/timeout'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
@@ -271,7 +274,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #relayerUrl: string
 
-  #updateQuoteInterval: RecurringTimeout
+  #updateQuoteInterval: IRecurringTimeout
 
   #updateActiveRoutesInterval: RecurringTimeout
 
@@ -332,7 +335,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load()
 
-    this.#updateQuoteInterval = createRecurringTimeout(
+    this.#updateQuoteInterval = new RecurringTimeout(
       async () => {
         if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
           this.#updateQuoteInterval.stop()
@@ -349,7 +352,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.emitError.bind(this)
     )
 
-    this.#updateActiveRoutesInterval = createRecurringTimeout(
+    this.#updateActiveRoutesInterval = new RecurringTimeout(
       async () => {
         if (!this.activeRoutesInProgress.length) {
           this.#updateActiveRoutesInterval.stop()
