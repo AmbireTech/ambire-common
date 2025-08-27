@@ -342,7 +342,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         await this.updateQuote({
           skipPreviousQuoteRemoval: true,
-          skipQuoteUpdateOnSameValues: false,
+          skipQuoteUpdateOnSameValues: this.isAutoSelectRouteDisabled,
           skipStatusUpdate: false
         })
       },
@@ -756,15 +756,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
   }
 
-  #addOrUpdateAllRoutesFailedError() {
-    if (!this.quote || !this.quote.selectedRoute) return
-
+  #addOrUpdateAllRoutesFailedError(routes: SwapAndBridgeRoute[]) {
     this.isAutoSelectRouteDisabled = true
-    const msg = `${this.quote.routes.length} ${
-      this.quote.routes.length === 1
-        ? 'route found, but simulation shows it fails onchain'
-        : 'routes found, but simulations show they all fail onchain'
-    }.`
+    const msg = `${routes.length} ${routes.length === 1 ? 'route' : 'routes'} found but failed.`
     this.addOrUpdateError({
       id: 'all-routes-failed',
       title: 'All routes failed',
@@ -1388,8 +1382,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       debounce = false
     } = options || {}
     // no updates if the user has commited
-    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
-      return
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
     // no quote fetch if there are errors
     if (this.swapSignErrors.length) return
@@ -1626,7 +1619,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // if there's a routeToSelect and it's disabled, it means all routes
           // from the quote are disabled. Display the all route failed error
           if (routeToSelect?.disabled) {
-            this.#addOrUpdateAllRoutesFailedError()
+            this.#addOrUpdateAllRoutesFailedError(routes)
           }
 
           this.quote = {
@@ -1983,7 +1976,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const firstEnabledRoute = this.quote.routes.find((r) => !r.disabled)
     if (!firstEnabledRoute) {
-      this.#addOrUpdateAllRoutesFailedError()
+      this.#addOrUpdateAllRoutesFailedError(this.quote.routes)
       this.updateQuoteStatus = 'INITIAL'
       this.isAutoSelectRouteDisabled = true
       this.emitUpdate()
