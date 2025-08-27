@@ -189,7 +189,7 @@ export class SelectedAccountController extends EventEmitter {
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateDefiPositionsErrors', () => {
-        this.#updatePortfolioErrors(true)
+        this.#updatePortfolioErrors()
         this.#updateDefiPositionsErrors()
       })
     })
@@ -209,7 +209,7 @@ export class SelectedAccountController extends EventEmitter {
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount()
-        this.#updatePortfolioErrors(true)
+        this.#updatePortfolioErrors()
         this.#updateDefiPositionsErrors()
       })
     })
@@ -325,7 +325,7 @@ export class SelectedAccountController extends EventEmitter {
 
     this.portfolio = newSelectedAccountPortfolio
     this.#portfolioByNetworks = newSelectedAccountPortfolioByNetworks
-    this.#updatePortfolioErrors(true)
+    this.#updatePortfolioErrors()
     this.updateCashbackStatus(skipUpdate)
 
     if (!skipUpdate) {
