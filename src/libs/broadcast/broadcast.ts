@@ -110,7 +110,7 @@ async function estimateGas(
   }
 
   // add a 10% overhead to prevent OOG
-  return gasLimit + gasLimit / 10
+  return BigInt(gasLimit) + BigInt(gasLimit) / 10n
 }
 
 export async function getTxnData(
