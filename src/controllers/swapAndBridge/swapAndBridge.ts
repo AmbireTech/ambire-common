@@ -342,7 +342,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         await this.updateQuote({
           skipPreviousQuoteRemoval: true,
-          skipQuoteUpdateOnSameValues: false,
+          skipQuoteUpdateOnSameValues: this.isAutoSelectRouteDisabled,
           skipStatusUpdate: false
         })
       },
@@ -754,23 +754,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.errors[errorIndex] = error
     }
     this.#emitUpdateIfNeeded()
-  }
-
-  #addOrUpdateAllRoutesFailedError() {
-    if (!this.quote || !this.quote.selectedRoute) return
-
-    this.isAutoSelectRouteDisabled = true
-    const msg = `${this.quote.routes.length} ${
-      this.quote.routes.length === 1
-        ? 'route found, but simulation shows it fails onchain'
-        : 'routes found, but simulations show they all fail onchain'
-    }.`
-    this.addOrUpdateError({
-      id: 'all-routes-failed',
-      title: 'All routes failed',
-      text: msg,
-      level: 'error'
-    })
   }
 
   removeError(id: SwapAndBridgeErrorType['id'], shouldEmit?: boolean) {
@@ -1388,8 +1371,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       debounce = false
     } = options || {}
     // no updates if the user has commited
-    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
-      return
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
     // no quote fetch if there are errors
     if (this.swapSignErrors.length) return
@@ -1461,8 +1443,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
         // no updates if the user has commited
-        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
-          return
+        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
         if (
           this.#getIsFormValidToFetchQuote() &&
@@ -1591,42 +1572,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             return
           }
 
-          const alreadySelectedRoute = quoteResult.routes.find((nextRoute) => {
-            if (!this.quote) return false
-
-            // Because we only have routes with unique bridges (bridging case)
-            const selectedRouteUsedBridge = this.quote.selectedRoute?.usedBridgeNames?.[0]
-            if (selectedRouteUsedBridge)
-              return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
-
-            // Assuming to only have routes with unique DEXes (swapping case)
-            const selectedRouteUsedDex = this.quote.selectedRoute?.usedDexName
-            if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
-
-            return false // should never happen, but just in case of bad data
-          })
-
-          if (alreadySelectedRoute) {
-            routeToSelect = alreadySelectedRoute
-            routeToSelectSteps = alreadySelectedRoute.steps
-          } else {
-            let bestRoute = quoteResult.selectedRoute
-            if (this.#serviceProviderAPI.id === 'socket') {
-              bestRoute =
-                this.routePriority === 'output'
-                  ? routes[0] // API returns highest output first
-                  : routes[routes.length - 1] // API returns fastest... last
-            }
-            if (bestRoute) {
-              routeToSelect = bestRoute
-              routeToSelectSteps = bestRoute.steps
-            }
+          let bestRoute = quoteResult.selectedRoute
+          if (this.#serviceProviderAPI.id === 'socket') {
+            bestRoute =
+              this.routePriority === 'output'
+                ? routes[0] // API returns highest output first
+                : routes[routes.length - 1] // API returns fastest... last
           }
-
-          // if there's a routeToSelect and it's disabled, it means all routes
-          // from the quote are disabled. Display the all route failed error
-          if (routeToSelect?.disabled) {
-            this.#addOrUpdateAllRoutesFailedError()
+          if (bestRoute) {
+            routeToSelect = bestRoute
+            routeToSelectSteps = bestRoute.steps
           }
 
           this.quote = {
@@ -1638,6 +1593,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             selectedRouteSteps: routeToSelectSteps,
             routes
           }
+          this.isAutoSelectRouteDisabled = !routeToSelect || !!routeToSelect.disabled
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
 
@@ -1983,7 +1939,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const firstEnabledRoute = this.quote.routes.find((r) => !r.disabled)
     if (!firstEnabledRoute) {
-      this.#addOrUpdateAllRoutesFailedError()
       this.updateQuoteStatus = 'INITIAL'
       this.isAutoSelectRouteDisabled = true
       this.emitUpdate()
