@@ -29,6 +29,7 @@ import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  isNoFeeToken,
   lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -528,7 +529,7 @@ export class LiFiAPI {
       }
     }
 
-    const shouldRemoveConvenienceFee = isOG
+    const shouldRemoveConvenienceFee = isOG || isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
