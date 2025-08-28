@@ -45,6 +45,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
+  shouldShowPartialResult: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
