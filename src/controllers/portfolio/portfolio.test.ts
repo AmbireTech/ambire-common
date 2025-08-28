@@ -5,6 +5,7 @@ import { describe, expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -14,6 +15,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { Portfolio } from '../../libs/portfolio'
 import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -214,6 +216,10 @@ const prepareTest = () => {
 }
 
 describe('Portfolio Controller ', () => {
+  beforeEach(() => {
+    jest.restoreAllMocks()
+    jest.clearAllMocks()
+  })
   async function getAccountOp() {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new ethers.Interface(ABI)
@@ -956,9 +962,11 @@ describe('Portfolio Controller ', () => {
     expect(tokenInPreferencesAfterDelete).toBeFalsy()
   })
   test('lastSuccessfulUpdate is updated properly', async () => {
+    const { restore } = suppressConsole()
     const { controller } = prepareTest()
+    const ethereum = [networks.find((n) => n.chainId === 1n)!]
 
-    await controller.updateSelectedAccount(account.addr)
+    await controller.updateSelectedAccount(account.addr, ethereum)
 
     const lastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
       ?.lastSuccessfulUpdate
@@ -967,32 +975,35 @@ describe('Portfolio Controller ', () => {
 
     jest
       // @ts-ignore
-      .spyOn(controller, 'updatePortfolioState')
-      .mockImplementationOnce(() => {
-        console.log('Mocked updatePortfolioState called - simulating failure')
-        throw new Error('Failed to update portfolio')
-      })
+      .spyOn(Portfolio.prototype, 'get')
+      // Mock an error twice
+      .mockRejectedValueOnce(new Error('Simulated error'))
 
-    await controller.updateSelectedAccount(account.addr)
-
-    const newLastSuccessfulUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
+    await controller.updateSelectedAccount(account.addr, ethereum)
+    const lastSuccessfulUpdate2 = controller.getLatestPortfolioState(account.addr)['1']?.result
       ?.lastSuccessfulUpdate
 
     // Last successful update should not change if the update fails
-    expect(newLastSuccessfulUpdate).toEqual(lastSuccessfulUpdate)
+    expect(lastSuccessfulUpdate2).toEqual(lastSuccessfulUpdate)
 
-    // Set maxDataAgeMs to simulate a manual update, which should reset lastSuccessfulUpdate to 0
-    // and then be updated again once the update is successful
-    await controller.updateSelectedAccount(account.addr, undefined, undefined, {
+    jest
+      // @ts-ignore
+      .spyOn(Portfolio.prototype, 'get')
+      // Mock an error twice
+      .mockRejectedValueOnce(new Error('Simulated error'))
+
+    // Set maxDataAgeMs to 0 (simulate a manual update), which should reset lastSuccessfulUpdate to 0
+    await controller.updateSelectedAccount(account.addr, ethereum, undefined, {
       maxDataAgeMs: 0
     })
 
-    const newLastSuccessfulUpdate2 = controller.getLatestPortfolioState(account.addr)['1']?.result
+    const lastSuccessfulUpdate3 = controller.getLatestPortfolioState(account.addr)['1']?.result
       ?.lastSuccessfulUpdate
-
     // Last successful update should reset on a manual update (passing maxDataAgeMs: 0)
-    expect(lastSuccessfulUpdate).not.toEqual(newLastSuccessfulUpdate2)
-    expect(lastSuccessfulUpdate).toBe(0)
+    expect(lastSuccessfulUpdate2).not.toEqual(lastSuccessfulUpdate3)
+    expect(lastSuccessfulUpdate3).toBe(0)
+
+    restore()
   })
   test('removeAccountData', async () => {
     const { controller } = prepareTest()
