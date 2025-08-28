@@ -908,7 +908,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
           this.updateToTokenList(true, nextToToken?.address || toSelectedTokenAddr)
         : undefined,
-      updateQuote ? this.updateQuote({ debounce: true }) : undefined
+      updateQuote
+        ? this.updateQuote({
+            skipQuoteUpdateOnSameValues: !shouldSetMaxAmount,
+            debounce: true
+          })
+        : undefined
     ])
     this.#updateQuoteInterval.restart()
   }
@@ -2403,6 +2408,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
+    this.isAutoSelectRouteDisabled = true
     this.emitUpdate()
   }
 

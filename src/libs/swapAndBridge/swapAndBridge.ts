@@ -425,6 +425,19 @@ const mapBannedToValidAddr = (chainId: number, tokenAddr: string) => {
   return list[tokenAddr]
 }
 
+const isNoFeeToken = (chainId: number, tokenAddr: string) => {
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+
+  if (chainId === 1) {
+    // stETH
+    return tokenAddr === '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+  }
+
+  return false
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
@@ -433,6 +446,7 @@ export {
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
   getSwapAndBridgeCalls,
+  isNoFeeToken,
   lifiMapNativeToAddr,
   mapBannedToValidAddr
 }

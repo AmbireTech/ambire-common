@@ -44,7 +44,7 @@ describe('Deployless', () => {
 
   test('should invoke a method: proxy mode', async () => {
     const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
-    const [result] = await localDeployless.call('helloWorld', [], {
+    const result = await localDeployless.call('helloWorld', [], {
       mode: DeploylessMode.ProxyContract
     })
     expect(result).toBe('hello world')
@@ -127,11 +127,11 @@ describe('Deployless', () => {
     )
     // we should already be aware that we are not limited by the 24kb limit
     expect(localDeployless.isLimitedAt24kbData).toBe(false)
-    const [result] = await localDeployless.call('helloWorld', [], {
+    const result = await localDeployless.call('helloWorld', [], {
       mode: DeploylessMode.StateOverride
     })
     expect(result).toBe('hello world')
-    const [result2] = await localDeployless.call('helloWorld', [])
+    const result2 = await localDeployless.call('helloWorld', [])
     expect(result2).toBe('hello world')
   })
 
@@ -142,10 +142,12 @@ describe('Deployless', () => {
       helloWorld.bin,
       helloWorld.binRuntime
     )
-    expect.assertions(2)
+    expect.assertions(3)
     try {
       await localDeployless.call('helloWorld', [], { blockTag: '0x1' })
     } catch (e: any) {
+      // Sometimes we get a timeout. Rerun the test if that happens
+      expect(e.code).not.toBe('ETIMEDOUT')
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
       const noSHR = 'invalid opcode: SHR'
       const notActivated = 'EVM error: NotActivated'
