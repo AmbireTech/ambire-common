@@ -203,7 +203,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     // Scenario: on the first load all networks fail with a critical error. Something triggers
     // a second portfolio load. The state is: isLoading = true, criticalError = true, result = undefined.
     // In this case we MUST display an error in the UI, so this branch is skipped.
-    if (portfolioForNetwork?.isLoading && !(criticalError && !portfolioForNetwork.result)) {
+    if (portfolioForNetwork?.isLoading && !(criticalError && portfolioForNetwork.result)) {
       // Add an error if the network is preventing the portfolio from going ready
       // The error is added, regardless of whether the loading is taking too long (> 5s)
       // or not. This is determined in the UI. The error is added so the UI knows which networks

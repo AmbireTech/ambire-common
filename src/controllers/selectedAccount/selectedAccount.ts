@@ -486,7 +486,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isReadyToVisualize
+      !this.portfolio.shouldShowPartialResult
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {

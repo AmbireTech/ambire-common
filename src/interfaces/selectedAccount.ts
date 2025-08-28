@@ -64,6 +64,8 @@ export interface SelectedAccountPortfolio {
   isReadyToVisualize: boolean
   /** True after all networks have initially loaded. May be true even if a network is loading (e.g. during an interval update). */
   isAllReady: boolean
+  /** True if the portfolio is not fully ready, but a timeout has been reached and there are tokens to show. */
+  shouldShowPartialResult: boolean
   balancePerNetwork: {
     [chainId: string]: number
   }
