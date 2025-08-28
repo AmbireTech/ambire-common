@@ -9,10 +9,7 @@ import { IRecurringTimeout } from '../../classes/recurringTimeout/recurringTimeo
 import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import wait from '../../utils/wait'
 import { MainController } from '../main/main'
-
-const MOCK_FN_EXECUTION_TIME = 2000
 
 // Public API key, shared by Socket, for testing purposes only
 const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
@@ -72,6 +69,8 @@ const prepareTest = async () => {
   mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockResolvedValue(undefined)
   mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
   mainCtrl.accounts.updateAccountStates = jest.fn().mockResolvedValue(undefined)
+  mainCtrl.accounts.updateAccountState = jest.fn().mockResolvedValue(undefined)
+  mainCtrl.updateAccountsOpsStatuses = jest.fn().mockResolvedValue({ newestOpTimestamp: 0 })
 
   return { mainCtrl }
 }
@@ -133,24 +132,23 @@ describe('ContinuousUpdatesController intervals', () => {
 
   test('should run updatePortfolioInterval', async () => {
     const { mainCtrl } = await prepareTest()
-    await waitForMainCtrlReady(mainCtrl)
-
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
     jest.spyOn(mainCtrl.continuousUpdates.updatePortfolioInterval, 'restart')
-    const updatePortfolioMock = jest.spyOn(mainCtrl.continuousUpdates, 'updatePortfolio')
+    const updatePortfolioSpy = jest.spyOn(mainCtrl.continuousUpdates, 'updatePortfolio')
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.restart).toHaveBeenCalled()
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
-    expect(updatePortfolioMock).toHaveBeenCalledTimes(1)
+    expect(updatePortfolioSpy).toHaveBeenCalledTimes(1)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
-    expect(updatePortfolioMock).toHaveBeenCalledTimes(2)
+    expect(updatePortfolioSpy).toHaveBeenCalledTimes(2)
     mainCtrl.ui.removeView('1')
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.restart).toHaveBeenCalledTimes(2)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
-    expect(updatePortfolioMock).toHaveBeenCalledTimes(3)
+    expect(updatePortfolioSpy).toHaveBeenCalledTimes(3)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
-    expect(updatePortfolioMock).toHaveBeenCalledTimes(4)
+    expect(updatePortfolioSpy).toHaveBeenCalledTimes(4)
   })
 
   test('should run accountsOpsStatusesInterval', async () => {
@@ -159,14 +157,10 @@ describe('ContinuousUpdatesController intervals', () => {
 
     jest.spyOn(mainCtrl.continuousUpdates.accountsOpsStatusesInterval, 'start')
     jest.spyOn(mainCtrl.continuousUpdates.accountsOpsStatusesInterval, 'stop')
-    const updateAccountsOpsStatuses = jest
-      .spyOn(mainCtrl.continuousUpdates, 'updateAccountsOpsStatuses')
-      .mockImplementation(async () => {
-        await wait(MOCK_FN_EXECUTION_TIME)
-        mainCtrl.continuousUpdates.accountsOpsStatusesInterval.updateTimeout({
-          timeout: MOCK_FN_EXECUTION_TIME * 2
-        })
-      })
+    const updateAccountsOpsStatuses = jest.spyOn(
+      mainCtrl.continuousUpdates,
+      'updateAccountsOpsStatuses'
+    )
 
     await mainCtrl.activity.addAccountOp({
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -201,9 +195,6 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.start).toHaveBeenCalled()
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountsOpsStatusesInterval)
     expect(updateAccountsOpsStatuses).toHaveBeenCalledTimes(1)
-    expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.currentTimeout).toEqual(
-      MOCK_FN_EXECUTION_TIME * 2
-    )
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountsOpsStatusesInterval)
     expect(updateAccountsOpsStatuses).toHaveBeenCalledTimes(2)
     jest.spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get').mockReturnValue([])
@@ -219,25 +210,14 @@ describe('ContinuousUpdatesController intervals', () => {
     jest.spyOn(mainCtrl.continuousUpdates.accountStateLatestInterval, 'restart')
     jest.spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'start')
     jest.spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'stop')
-    const updateAccountStateLatestMock = jest
-      .spyOn(mainCtrl.continuousUpdates, 'updateAccountStateLatest')
-      .mockImplementation(async () => {
-        await wait(MOCK_FN_EXECUTION_TIME)
-      })
-    const updateAccountStatePendingMock = jest
-      .spyOn(mainCtrl.continuousUpdates, 'updateAccountStatePending')
-      .mockImplementation(async () => {
-        const networksToUpdate = mainCtrl.activity.broadcastedButNotConfirmed
-          .map((op) => op.chainId)
-          .filter((chainId, index, self) => self.indexOf(chainId) === index)
-
-        if (!networksToUpdate.length) {
-          mainCtrl.continuousUpdates.accountStatePendingInterval.stop()
-          mainCtrl.continuousUpdates.accountStateLatestInterval.restart()
-          return
-        }
-        await wait(MOCK_FN_EXECUTION_TIME)
-      })
+    const updateAccountStateLatestMock = jest.spyOn(
+      mainCtrl.continuousUpdates,
+      'updateAccountStateLatest'
+    )
+    const updateAccountStatePendingMock = jest.spyOn(
+      mainCtrl.continuousUpdates,
+      'updateAccountStatePending'
+    )
 
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
 
