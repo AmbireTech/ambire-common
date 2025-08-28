@@ -1,4 +1,4 @@
-import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { formatUnits, getAddress, isAddress, parseUnits } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -29,6 +29,7 @@ import {
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
   SwapAndBridgeSendTxRequest,
+  SwapAndBridgeStep,
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
@@ -48,11 +49,11 @@ import {
   convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
+  getBannedToTokenList,
   getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
-  lifiTokenListFilter,
-  mapNativeToAddr,
+  mapBannedToValidAddr,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -75,7 +76,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 type SwapAndBridgeErrorType = {
-  id: 'to-token-list-fetch-failed' | 'no-routes'
+  id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
   title: string
   text?: string
   level: 'error' | 'warning'
@@ -341,7 +342,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         await this.updateQuote({
           skipPreviousQuoteRemoval: true,
-          skipQuoteUpdateOnSameValues: false,
+          skipQuoteUpdateOnSameValues: this.isAutoSelectRouteDisabled,
           skipStatusUpdate: false
         })
       },
@@ -563,10 +564,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (this.validateFromAmount.message || this.swapSignErrors.length)
       return SwapAndBridgeFormStatus.Invalid
     if (this.updateQuoteStatus === 'LOADING') return SwapAndBridgeFormStatus.FetchingRoutes
-    if (!this.quote?.routes.filter((route) => !route.hasFailed).length)
-      return SwapAndBridgeFormStatus.NoRoutesFound
+    if (!this.quote || !this.quote.routes.length) return SwapAndBridgeFormStatus.NoRoutesFound
 
-    if (this.quote?.selectedRoute?.errorMessage) return SwapAndBridgeFormStatus.InvalidRouteSelected
+    if (this.quote?.selectedRoute?.disabled) return SwapAndBridgeFormStatus.InvalidRouteSelected
 
     if (
       !this.signAccountOpController ||
@@ -782,11 +782,26 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmount,
       fromAmountInFiat,
       fromAmountFieldMode,
-      fromSelectedToken,
       toChainId,
       shouldSetMaxAmount,
       routePriority
     } = props
+
+    // set the correct fromSelectedToken as the user might have selected
+    // a duplicate from his portfolio instead
+    let fromSelectedToken = props.fromSelectedToken
+    if (fromSelectedToken) {
+      const validAddr = mapBannedToValidAddr(
+        Number(fromSelectedToken.chainId),
+        fromSelectedToken.address
+      )
+      if (validAddr !== fromSelectedToken.address) {
+        const validToken = this.portfolioTokenList.find(
+          (t) => t.address === validAddr && t.chainId === fromSelectedToken!.chainId
+        )
+        if (validToken) fromSelectedToken = validToken
+      }
+    }
 
     const {
       emitUpdate = true,
@@ -798,7 +813,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const chainId = toChainId ?? this.toChainId
     const toSelectedTokenAddr =
       chainId && props.toSelectedTokenAddr
-        ? mapNativeToAddr(this.#serviceProviderAPI.id, Number(chainId), props.toSelectedTokenAddr)
+        ? mapBannedToValidAddr(Number(chainId), props.toSelectedTokenAddr)
         : undefined
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
@@ -893,7 +908,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
           this.updateToTokenList(true, nextToToken?.address || toSelectedTokenAddr)
         : undefined,
-      updateQuote ? this.updateQuote({ debounce: true }) : undefined
+      updateQuote
+        ? this.updateQuote({
+            skipQuoteUpdateOnSameValues: !shouldSetMaxAmount,
+            debounce: true
+          })
+        : undefined
     ])
     this.#updateQuoteInterval.restart()
   }
@@ -1099,15 +1119,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // so we should not update the to token list as another update is in progress
     if (toTokenListKeyAtStart !== this.#toTokenListKey) return
 
+    const chainBannedTokens: string[] = getBannedToTokenList(toTokenNetwork.chainId.toString())
     this.#toTokenList = sortTokenListResponse(
       [...toTokenList, ...additionalTokensFromPortfolio],
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
-    )
-
-    // if the provider is lifi, filter out tokens that are not supported by it
-    if (this.#serviceProviderAPI.id === 'lifi') {
-      this.#toTokenList = this.#toTokenList.filter(lifiTokenListFilter)
-    }
+    ).filter((t) => !chainBannedTokens.includes(getAddress(t.address)))
 
     if (!this.toSelectedToken) {
       if (addressToSelect) {
@@ -1187,6 +1203,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#emitUpdateIfNeeded()
     return token
+  }
+
+  #accountNativeBalance(): bigint {
+    if (!this.#selectedAccount.account || !this.fromChainId) return 0n
+
+    const currentPortfolio = this.#portfolio.getLatestPortfolioState(
+      this.#selectedAccount.account.addr
+    )
+    const currentPortfolioNetwork = currentPortfolio[this.fromChainId.toString()]
+    const native = currentPortfolioNetwork?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!native) return 0n
+    return native.amount
   }
 
   /**
@@ -1346,8 +1376,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       debounce = false
     } = options || {}
     // no updates if the user has commited
-    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
-      return
+    if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
     // no quote fetch if there are errors
     if (this.swapSignErrors.length) return
@@ -1394,6 +1423,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
 
       try {
+        const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
         const quoteResult = await this.#serviceProviderAPI.quote({
           fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
@@ -1411,24 +1441,24 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             )
           ),
           sort: this.routePriority,
-          isOG: this.#invite.isOG
+          isOG: this.#invite.isOG,
+          accountNativeBalance: this.#accountNativeBalance(),
+          nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
 
         if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
         // no updates if the user has commited
-        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded || this.isAutoSelectRouteDisabled)
-          return
+        if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
         if (
           this.#getIsFormValidToFetchQuote() &&
           quoteResult &&
-          quoteResult?.routes?.[0] &&
           quoteResult.fromChainId === this.fromChainId &&
           quoteResult.toChainId === this.toChainId &&
           quoteResult.toAsset.address === this.toSelectedToken?.address
         ) {
           let routeToSelect
-          let routeToSelectSteps
+          let routeToSelectSteps: SwapAndBridgeStep[] = []
           let routes = quoteResult.routes || []
 
           try {
@@ -1523,14 +1553,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
                   // Trick to show the error message on the UI, as the API doesn't handle this
                   // eslint-disable-next-line no-param-reassign
-                  route.errorMessage = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} (${insufficientAssetAmountInUsd}) on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
+                  route.disabled = true
+                  // eslint-disable-next-line no-param-reassign
+                  route.disabledReason = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} (${insufficientAssetAmountInUsd}) on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
                 }
 
                 return route
               })
             }
 
-            routes = routes.sort((a, b) => Number(!!a.errorMessage) - Number(!!b.errorMessage))
+            routes = routes.sort(
+              (a, b) => Number(a.disabled === true) - Number(b.disabled === true)
+            )
           } catch (error) {
             // if the filtration fails for some reason continue with the original routes
             // array without interrupting the rest of the logic
@@ -1543,32 +1577,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             return
           }
 
-          const alreadySelectedRoute = routes.find((nextRoute) => {
-            if (!this.quote) return false
-
-            // Because we only have routes with unique bridges (bridging case)
-            const selectedRouteUsedBridge = this.quote.selectedRoute?.usedBridgeNames?.[0]
-            if (selectedRouteUsedBridge)
-              return nextRoute.usedBridgeNames?.[0] === selectedRouteUsedBridge
-
-            // Assuming to only have routes with unique DEXes (swapping case)
-            const selectedRouteUsedDex = this.quote.selectedRoute?.usedDexName
-            if (selectedRouteUsedDex) return nextRoute.usedDexName === selectedRouteUsedDex
-
-            return false // should never happen, but just in case of bad data
-          })
-
-          if (alreadySelectedRoute) {
-            routeToSelect = alreadySelectedRoute
-            routeToSelectSteps = alreadySelectedRoute.steps
-          } else {
-            let bestRoute = routes[0]
-            if (this.#serviceProviderAPI.id === 'socket') {
-              bestRoute =
-                this.routePriority === 'output'
-                  ? routes[0] // API returns highest output first
-                  : routes[routes.length - 1] // API returns fastest... last
-            }
+          let bestRoute = quoteResult.selectedRoute
+          if (this.#serviceProviderAPI.id === 'socket') {
+            bestRoute =
+              this.routePriority === 'output'
+                ? routes[0] // API returns highest output first
+                : routes[routes.length - 1] // API returns fastest... last
+          }
+          if (bestRoute) {
             routeToSelect = bestRoute
             routeToSelectSteps = bestRoute.steps
           }
@@ -1582,6 +1598,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             selectedRouteSteps: routeToSelectSteps,
             routes
           }
+          this.isAutoSelectRouteDisabled = !routeToSelect || !!routeToSelect.disabled
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
 
@@ -1602,6 +1619,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.quoteRoutesStatuses = {}
         this.updateQuoteStatus = 'INITIAL'
         this.removeError('no-routes')
+        this.removeError('all-routes-failed')
         this.#emitUpdateIfNeeded()
       }
       return
@@ -1610,6 +1628,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!skipStatusUpdate) {
       this.updateQuoteStatus = 'LOADING'
       this.removeError('no-routes')
+      this.removeError('all-routes-failed')
       this.#emitUpdateIfNeeded()
     }
 
@@ -1903,51 +1922,63 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   /**
    * Find the next route in line and try to re-estimate with it
    */
-  async onEstimationFailure(
-    activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId'],
-    error?: SwapAndBridgeErrorType | null
-  ) {
+  async onEstimationFailure(activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId']) {
     if (!this.quote || !this.quote.selectedRoute || this.isAutoSelectRouteDisabled) return
 
     const routeId = activeRouteId ?? this.quote.selectedRoute.routeId
     let routeIndex = null
     this.quote.routes.forEach((route, i) => {
-      if (route.routeId === routeId) {
-        this.quote!.routes.splice(i, 1)
-        routeIndex = i
-      }
+      if (route.routeId === routeId) routeIndex = i
     })
 
-    // no routes available
-    if (routeIndex === null || !this.quote.routes[routeIndex]) {
+    // this shouldn't happen; there's no reason for the activeRouteId to not be
+    // present in the this.quote.routes;
+    // however, just to be on the safe side if it ever were to happen, reset all
+    if (routeIndex === null) {
       this.quote.selectedRoute = undefined
       this.quote.routes = []
       this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
-
-      // Emit an error only if there are no routes left
-      // and one is provided
-      if (error) {
-        this.addOrUpdateError(error)
-      }
-
       return
     }
 
-    await this.selectRoute(this.quote.routes[routeIndex])
+    const firstEnabledRoute = this.quote.routes.find((r) => !r.disabled)
+    if (!firstEnabledRoute) {
+      this.updateQuoteStatus = 'INITIAL'
+      this.isAutoSelectRouteDisabled = true
+      this.emitUpdate()
+      return
+    }
+
+    // push the failed route to the end of the routes array
+    // and select the next one
+    const route = this.quote.routes[routeIndex]
+    this.quote.routes.splice(routeIndex, 1)
+    this.quote.routes.push(route)
+    await this.selectRoute(firstEnabledRoute)
   }
 
-  async markSelectedRouteAsFailed() {
+  /**
+   * We need this as a separate method as it's called from the UI as well
+   */
+  async markSelectedRouteAsFailed(disabledReason: string, shouldStopAutoUpdates = true) {
     if (!this.quote || !this.quote.selectedRoute) return
+
+    this.quote.selectedRoute.disabled = true
+    this.quote.selectedRoute.disabledReason = disabledReason
 
     const routeId = this.quote.selectedRoute.routeId
     this.quote.routes.forEach((route, i) => {
       if (route.routeId === routeId) {
-        this.quote!.routes[i].hasFailed = true
+        this.quote!.routes[i].disabled = true
+        this.quote!.routes[i].disabledReason = disabledReason
       }
     })
 
-    this.emitUpdate()
+    if (shouldStopAutoUpdates) {
+      this.isAutoSelectRouteDisabled = true
+      this.emitUpdate()
+    }
   }
 
   // update active route if needed on SubmittedAccountOp update
@@ -2171,7 +2202,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // auto select the next route and continue on
     if (!userTxn || !userTxn.success) {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.onEstimationFailure(undefined, userTxn)
+      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote', false)
+
+      // if we're not auto updating routes, just show the error
+      if (this.isAutoSelectRouteDisabled) {
+        this.updateQuoteStatus = 'INITIAL'
+        this.emitUpdate()
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.onEstimationFailure(undefined)
       return
     }
 
@@ -2231,7 +2272,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       gasFeePayment: null,
       nonce: accountState.nonce,
       signature: null,
-      accountOpToExecuteBefore: null,
       calls,
       flags: {
         hideActivityBanner: this.fromSelectedToken.chainId !== BigInt(this.toSelectedToken.chainId)
@@ -2303,6 +2343,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           this.#signAccountOpController.estimation.status === EstimationStatus.Error
         ) {
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.markSelectedRouteAsFailed(
+            this.#signAccountOpController.estimation.error?.message || 'Invalid quote',
+            false
+          )
+
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.onEstimationFailure(
             this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
           )
@@ -2362,6 +2408,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
+    this.isAutoSelectRouteDisabled = true
     this.emitUpdate()
   }
 
