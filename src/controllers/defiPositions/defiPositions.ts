@@ -52,6 +52,10 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   #positionsContinuousUpdateInterval: IRecurringTimeout
 
+  get positionsContinuousUpdateInterval() {
+    return this.#positionsContinuousUpdateInterval
+  }
+
   constructor({
     fetch,
     storage,
@@ -83,15 +87,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#ui = ui
 
     this.#positionsContinuousUpdateInterval = new RecurringTimeout(
-      async () => {
-        if (!this.#ui.views.length) {
-          this.#positionsContinuousUpdateInterval.stop()
-          return
-        }
-
-        const FIVE_MINUTES = 1000 * 60 * 5
-        await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
-      },
+      async () => this.positionsContinuousUpdate(),
       ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -555,6 +551,16 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   removeSession(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     this.emitUpdate()
+  }
+
+  async positionsContinuousUpdate() {
+    if (!this.#ui.views.length) {
+      this.#positionsContinuousUpdateInterval.stop()
+      return
+    }
+
+    const FIVE_MINUTES = 1000 * 60 * 5
+    await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
   }
 
   toJSON() {

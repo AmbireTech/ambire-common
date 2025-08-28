@@ -5,7 +5,7 @@ import fetch from 'node-fetch'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { IRecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
+import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -119,34 +119,6 @@ const waitForContinuousUpdatesCtrlReady = async (mainCtrl: MainController) => {
   while (mainCtrl.continuousUpdates.initialLoadPromise) {
     await jest.advanceTimersByTimeAsync(20)
   }
-}
-
-const waitForFnToBeCalledAndExecuted = async (
-  recurringTimeout: IRecurringTimeout,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  id: string = '' // for testing
-) => {
-  while (recurringTimeout.startScheduled) {
-    await jest.advanceTimersByTimeAsync(1)
-  }
-  expect(recurringTimeout.running).toBe(true)
-  let sessionId = recurringTimeout.sessionId
-  await jest.advanceTimersByTimeAsync(recurringTimeout.currentTimeout)
-  // can be restarted while in progress
-  while (sessionId !== recurringTimeout.sessionId) {
-    sessionId = recurringTimeout.sessionId
-    await jest.advanceTimersByTimeAsync(
-      recurringTimeout.currentTimeout - (Date.now() - recurringTimeout.startedRunningAt)
-    )
-  }
-
-  // promise might be undefined if it is terminated from within the fn
-  if (recurringTimeout.promise)
-    while (recurringTimeout.promise) {
-      await jest.advanceTimersByTimeAsync(1)
-    }
-  expect(recurringTimeout.promise).toBe(undefined)
-  await Promise.resolve()
 }
 
 describe('ContinuousUpdatesController intervals', () => {

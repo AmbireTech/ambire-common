@@ -197,7 +197,7 @@ export class ContinuousUpdatesController extends EventEmitter {
       return
     }
 
-    const failedChainIds = getNetworksWithFailedRPC({
+    const failedChainIds: string[] = getNetworksWithFailedRPC({
       providers: this.#main.providers.providers
     })
 
@@ -260,7 +260,7 @@ export class ContinuousUpdatesController extends EventEmitter {
   async fastAccountStateReFetch() {
     await this.initialLoadPromise
 
-    const failedChainIds = getNetworksWithFailedRPC({
+    const failedChainIds: string[] = getNetworksWithFailedRPC({
       providers: this.#main.providers.providers
     })
     if (!failedChainIds.length) {
