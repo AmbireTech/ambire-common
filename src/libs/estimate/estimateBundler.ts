@@ -236,10 +236,6 @@ export async function bundlerEstimate(
     ) {
       flags.has4337NonceDiscrepancy = true
 
-      if (network.chainId === 1n) {
-        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
-      }
-
       // wait a bit to allow the state to sync
       await wait(2000)
       const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
@@ -247,6 +243,11 @@ export async function bundlerEstimate(
         .getNonce(account.addr, 0, { blockTag: 'pending' })
         .catch(() => null)
       if (!accountNonce) continue
+
+      if (network.chainId === 1n && BigInt(userOp.nonce) === BigInt(accountNonce)) {
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
+
       userOp.nonce = toBeHex(accountNonce)
       continue
     }
