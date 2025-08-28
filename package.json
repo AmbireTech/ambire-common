@@ -1,5 +1,5 @@
 {
-  "version": "2.69.0",
+  "version": "2.71.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -27,7 +27,6 @@
     "viem": "^2.33.3"
   },
   "peerDependencies": {
-    "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@ethersproject/abstract-signer": "^5.7.0",
     "@noble/hashes": "^1.8.0",
@@ -91,5 +90,8 @@
     "ts-jest": "^29.4.1",
     "ts-node": "^10.9.1",
     "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "elliptic": "^6.6.1"
   }
 }

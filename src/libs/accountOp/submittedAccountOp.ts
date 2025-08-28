@@ -1,7 +1,7 @@
 import { TransactionReceipt, ZeroAddress } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'
-import { Fetch } from '../../interfaces/fetch'
+import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import {
   getAvailableBunlders,
@@ -114,12 +114,17 @@ export async function fetchFrontRanTxnId(
   return bundlerResult.transactionHash
 }
 
+export function hasTimePassedSinceBroadcast(op: SubmittedAccountOp, mins: number): boolean {
+  const accountOpDate = new Date(op.timestamp)
+  accountOpDate.setMinutes(accountOpDate.getMinutes() + mins)
+  return accountOpDate < new Date()
+}
+
 export async function fetchTxnId(
   identifiedBy: AccountOpIdentifiedBy,
   network: Network,
-  fetchFn: Fetch,
   callRelayer: Function,
-  op?: AccountOp
+  op?: SubmittedAccountOp
 ): Promise<{ status: string; txnId: string | null }> {
   if (isIdentifiedByTxn(identifiedBy))
     return {
@@ -164,7 +169,7 @@ export async function fetchTxnId(
         if (res && res.receipt && res.receipt.transactionHash) {
           bundlerResult = {
             status: 'found',
-            transactionHash: res.receipt.transactionHash
+            transactionHash: res.receipt.transactionHash as Hex
           }
         }
       })
@@ -183,6 +188,19 @@ export async function fetchTxnId(
         status: 'success',
         txnId: bundlerResult.transactionHash
       }
+
+    // anytime after 3 mins past broadcast, check the receipt
+    // as bundlers return "not found" if the status is searched for
+    // after more than 30 mins
+    if (op && hasTimePassedSinceBroadcast(op, 3)) {
+      const receipt = await bundler.getReceipt(userOpHash, network)
+      if (receipt) {
+        return {
+          status: 'success',
+          txnId: receipt.receipt.transactionHash
+        }
+      }
+    }
 
     return {
       status: 'not_found',

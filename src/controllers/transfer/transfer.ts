@@ -629,7 +629,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       gasFeePayment: null,
       nonce: accountState.nonce,
       signature: null,
-      accountOpToExecuteBefore: null,
       calls,
       meta: {
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
