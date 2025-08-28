@@ -2408,6 +2408,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
+    this.isAutoSelectRouteDisabled = true
     this.emitUpdate()
   }
 
