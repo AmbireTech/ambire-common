@@ -182,6 +182,7 @@ describe('RecurringTimeout', () => {
     t.start()
     t.restart()
     t.restart({ runImmediately: true })
+    t.restart({ runImmediately: true })
 
     await jest.advanceTimersByTimeAsync(0) // wait for the debounce timeout
 
