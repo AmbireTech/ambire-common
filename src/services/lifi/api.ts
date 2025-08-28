@@ -482,8 +482,17 @@ export class LiFiAPI {
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
 
+    // make sure the slippage doesn't exceed 100$
+    // we do so by having a base of 0.005
+    // to have a slippage of 100$, we need a fromAmountInUsd of at least 20000$,
+    // so each time the from amount makes a jump of 20000$, we lower
+    // the slippage by half
     const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-    const slippage = Number(fromAmountInUsd) <= 400 ? '0.010' : '0.005'
+    const slippage =
+      Number(fromAmountInUsd) < 400
+        ? '0.01'
+        : (0.005 / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
+
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
