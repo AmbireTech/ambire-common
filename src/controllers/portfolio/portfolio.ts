@@ -864,12 +864,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             const isExternalHintsApiResponseValid =
               !!networkResult?.hintsFromExternalAPI?.erc20s.length
 
-            console.log(`Debug: isExternalHintsApiResponseValid for ${network.name}`, {
-              isExternalHintsApiResponseValid,
-              hintsFromExternalAPI: networkResult?.hintsFromExternalAPI,
-              hasRelayer: network.hasRelayer
-            })
-
             if (
               isExternalHintsApiResponseValid &&
               !networkResult?.hintsFromExternalAPI?.skipOverrideSavedHints
@@ -1030,7 +1024,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#networks.networks.forEach((network) => {
       const key = `${network.chainId}:${address}`
 
-      if (key in this.#previousHints.fromExternalAPI) {
+      if (this.#previousHints.fromExternalAPI && key in this.#previousHints.fromExternalAPI) {
         delete this.#previousHints.fromExternalAPI[key]
       }
       if (key in this.#portfolioLibs) {

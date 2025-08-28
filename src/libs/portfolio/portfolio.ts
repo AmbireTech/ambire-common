@@ -14,7 +14,11 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { stripExternalHintsAPIResponse, tokenFilter } from './helpers'
+import {
+  stripExternalHintsAPIResponse,
+  stripExternalHintsAPIResponseAndEnsureNotCached,
+  tokenFilter
+} from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -24,6 +28,7 @@ import {
   LimitsOptions,
   PortfolioLibGetResult,
   PriceCache,
+  StrippedExternalHintsAPIResponse,
   TokenError,
   TokenResult
 } from './interfaces'
@@ -55,7 +60,8 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
-  erc721s: {}
+  erc721s: {},
+  externalApi: undefined
 })
 
 const defaultOptions: GetOptions = {
@@ -122,6 +128,132 @@ export class Portfolio {
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
 
+  /**
+   * Fetch the hints from the external API (Velcro).
+   * Main return cases:
+   * - hints with `externalApi` property set if the hints are coming from the external API (and not from storage)
+   * - empty hints if the hints are static and were learned less than X minutes ago. The goal is to reduce
+   * unnecessary requests to deployless. Once every X minutes we make a call to Velcro, get the static hints and
+   * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
+   * - hints from `previousHintsFromExternalAPI` if the request fails and previousHintsFromExternalAPI is set
+   */
+  protected async externalHintsAPIDiscovery(options?: {
+    previousHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
+    disableAutoDiscovery?: boolean
+    chainId: bigint
+    accountAddr: string
+    baseCurrency: string
+  }): Promise<{
+    hints: Hints
+
+    error?: PortfolioLibGetResult['errors'][number]
+  }> {
+    const {
+      previousHintsFromExternalAPI,
+      disableAutoDiscovery = false,
+      chainId,
+      accountAddr,
+      baseCurrency
+    } = options || {}
+    let hints: Hints = getEmptyHints()
+
+    try {
+      const areHintsStaticAndTokensLearnedLately =
+        previousHintsFromExternalAPI &&
+        // We MUST explicitly check for hasHints===false, and not !!, because
+        // hasHints is undefined in the previous version of the extension
+        previousHintsFromExternalAPI.hasHints === false &&
+        Date.now() - previousHintsFromExternalAPI.lastUpdate < 60 * 60 * 1000
+
+      if (areHintsStaticAndTokensLearnedLately) {
+        return {
+          hints
+        }
+      }
+
+      if (!disableAutoDiscovery) {
+        let hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
+          chainId,
+          accountAddr,
+          baseCurrency
+        })
+
+        if (hintsFromExternalAPI) {
+          // If the db is temporarily unavailable, the server falls back to static hints, even
+          // for networks where hints are dynamic (coming from the db). In this case, we don't
+          // want to override the saved hints, because they are more relevant to the user.
+          if (hintsFromExternalAPI.skipOverrideSavedHints && previousHintsFromExternalAPI) {
+            hintsFromExternalAPI = {
+              ...hintsFromExternalAPI,
+              erc20s: previousHintsFromExternalAPI.erc20s,
+              erc721s: previousHintsFromExternalAPI.erc721s,
+              // Spread it just in case we have saved a false value before
+              skipOverrideSavedHints: true
+            }
+          }
+
+          const stripped = stripExternalHintsAPIResponse(hintsFromExternalAPI)
+
+          if (stripped) {
+            hints = stripped
+            // Attach the property as the hints are coming from the external API
+            hints.externalApi = {
+              lastUpdate: Date.now(),
+              prices: hintsFromExternalAPI.prices,
+              hasHints: !!hintsFromExternalAPI.hasHints,
+              skipOverrideSavedHints: hintsFromExternalAPI.skipOverrideSavedHints
+            }
+          }
+        }
+
+        return {
+          hints
+        }
+      }
+
+      if (previousHintsFromExternalAPI) {
+        hints = { ...previousHintsFromExternalAPI }
+      }
+
+      return {
+        hints
+      }
+    } catch (error: any) {
+      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
+
+      // It's important for DX to see this error
+      // eslint-disable-next-line no-console
+      console.error(errorMesssage)
+
+      if (!previousHintsFromExternalAPI) {
+        return {
+          hints,
+          error: {
+            name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+            message: errorMesssage,
+            level: 'critical'
+          }
+        }
+      }
+
+      hints = { ...previousHintsFromExternalAPI }
+      const TEN_MINUTES = 10 * 60 * 1000
+      const lastUpdate = previousHintsFromExternalAPI.lastUpdate
+      const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
+
+      return {
+        hints,
+        error: {
+          name: isLastUpdateTooOld
+            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
+            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
+          message: errorMesssage,
+          level: isLastUpdateTooOld ? 'critical' : 'silent'
+        }
+      }
+    }
+  }
+
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
@@ -140,91 +272,18 @@ export class Portfolio {
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
-    let hints: Hints = getEmptyHints()
-    let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
+    const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
+      previousHintsFromExternalAPI: localOpts.previousHintsFromExternalAPI ?? null,
+      disableAutoDiscovery,
+      chainId,
+      accountAddr,
+      baseCurrency
+    })
+    // Clone the hints as we are modifying them below and the original
+    // result is needed in the return value.
+    const originalApiHints = structuredClone(hints)
 
-    try {
-      if (localOpts.blockTag === 'latest')
-        console.log(
-          `Debug: Network ${this.network.name}'s hints in storage: `,
-          localOpts.previousHintsFromExternalAPI?.hasHints,
-          localOpts.previousHintsFromExternalAPI?.erc20s.length,
-          'were updated',
-          Date.now() - (localOpts.previousHintsFromExternalAPI?.lastUpdate || 0),
-          'ms ago'
-        )
-
-      const areHintsStaticAndTokensLearnedLately =
-        localOpts.previousHintsFromExternalAPI &&
-        // We MUST explicitly check for hasHints===false, and not !!, because
-        // hasHints is undefined in the previous version of the extension
-        localOpts.previousHintsFromExternalAPI.hasHints === false &&
-        Date.now() - localOpts.previousHintsFromExternalAPI.lastUpdate < 60 * 60 * 1000
-
-      if (!areHintsStaticAndTokensLearnedLately) {
-        // if the network doesn't have a relayer, velcro will not work
-        // but we should not record an error if such is the case
-        if (!disableAutoDiscovery) {
-          hintsFromExternalAPI = await this.batchedVelcroDiscovery({
-            chainId,
-            accountAddr,
-            baseCurrency
-          })
-
-          if (
-            hintsFromExternalAPI &&
-            hintsFromExternalAPI.skipOverrideSavedHints &&
-            localOpts.previousHintsFromExternalAPI
-          ) {
-            hintsFromExternalAPI = {
-              ...hintsFromExternalAPI,
-              erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
-              erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
-              // Spread it just in case we have saved a false value before
-              skipOverrideSavedHints: true
-            }
-          }
-
-          if (hintsFromExternalAPI) {
-            hintsFromExternalAPI.lastUpdate = Date.now()
-
-            hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
-          }
-          // In this case we simply retrieve the hints from the storage (which acts as cache)
-        } else if (disableAutoDiscovery && localOpts.previousHintsFromExternalAPI) {
-          if (localOpts.blockTag === 'latest')
-            console.log(`Debug: using cached hints, Velcro skipped on ${this.network.name}`)
-          hints = { ...localOpts.previousHintsFromExternalAPI }
-        }
-      } else if (localOpts.blockTag === 'latest')
-        console.log(`Debug: skipping Velcro request, using learned tokens on ${this.network.name}`)
-    } catch (error: any) {
-      const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
-      if (localOpts.previousHintsFromExternalAPI) {
-        hints = { ...localOpts.previousHintsFromExternalAPI }
-        const TEN_MINUTES = 10 * 60 * 1000
-        const lastUpdate = localOpts.previousHintsFromExternalAPI.lastUpdate
-        const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
-
-        errors.push({
-          name: isLastUpdateTooOld
-            ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
-            : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
-          message: errorMesssage,
-          level: isLastUpdateTooOld ? 'critical' : 'silent'
-        })
-      } else {
-        errors.push({
-          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-          message: errorMesssage,
-          level: 'critical'
-        })
-      }
-
-      // It's important for DX to see this error
-      // eslint-disable-next-line no-console
-      console.error(errorMesssage)
-    }
+    if (hintsError) errors.push(hintsError)
 
     // Please note 2 things:
     // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
@@ -270,8 +329,8 @@ export class Portfolio {
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
-    for (const addr in hintsFromExternalAPI?.prices || {}) {
-      const priceHint = hintsFromExternalAPI?.prices[addr]
+    for (const addr in hints.externalApi?.prices || {}) {
+      const priceHint = hints.externalApi?.prices[addr]
       // eslint-disable-next-line no-continue
       if (!priceHint) continue
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
@@ -304,15 +363,6 @@ export class Portfolio {
       afterNonce: bigint
     }
     const [collectionsWithErrResult] = collectionsWithErr
-
-    if (localOpts.blockTag === 'latest')
-      console.log(
-        `Debug: portfolio lib on ${this.network.name} took ${Date.now() - start}ms to fetch ${
-          tokensWithErrResult.length
-        } tokens and ${collectionsWithErrResult.length} collections.`,
-        'additionalHints count: ',
-        localOpts.additionalErc20Hints?.length || 0
-      )
 
     // Re-map/filter into our format
     const getPriceFromCache = (address: string, priceRecency: number = localOpts.priceRecency) => {
@@ -374,9 +424,9 @@ export class Portfolio {
           // if the response API is static. That is because the static
           // response may change and the user may stop seeing the token
         } else if (
-          hintsFromExternalAPI &&
-          !hintsFromExternalAPI.hasHints &&
-          !hintsFromExternalAPI.skipOverrideSavedHints
+          hints.externalApi &&
+          !hints.externalApi.hasHints &&
+          !hints.externalApi.skipOverrideSavedHints
         ) {
           toBeLearned.erc20s.push(result.address)
         }
@@ -473,7 +523,7 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
+      hintsFromExternalAPI: stripExternalHintsAPIResponseAndEnsureNotCached(originalApiHints),
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,

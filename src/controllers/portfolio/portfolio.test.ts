@@ -16,7 +16,7 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { Portfolio } from '../../libs/portfolio'
-import { CollectionResult, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
+import { CollectionResult, Hints, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
@@ -766,10 +766,7 @@ describe('Portfolio Controller ', () => {
       expect(tokenInLearnedTokens).toBeFalsy()
     })
 
-    // TODO: this test is skipped as it's no longer valid
-    // we're making velcro requests for all networks now and making hasRelayer false
-    // does not work anymore
-    test.skip('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
+    test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
       const { storageCtrl, controller } = prepareTest()
       const polygon = networks.find((network) => network.chainId === 137n)!
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
@@ -778,19 +775,28 @@ describe('Portfolio Controller ', () => {
       // 3. check if the token is persisted in learnedTokens with timestamp.
       // in learnedTokens as a new token, when found with balance from toBeLearned list.
 
-      // This will work on networks without relayer support so we mock one,
-      // otherwise the token will be fetched from the relayer and won't be available for learnedTokens,
-      // but will be stored in fromExternalAPI.
-      const clonedEthereum = structuredClone(polygon)
-      clonedEthereum.hasRelayer = false
+      const hints: Hints = {
+        erc20s: [ZeroAddress],
+        erc721s: {},
+        externalApi: {
+          hasHints: true,
+          skipOverrideSavedHints: false,
+          lastUpdate: Date.now(),
+          prices: {}
+        }
+      }
 
-      await controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
-
-      await controller.updateSelectedAccount(
-        account2.addr,
-        clonedEthereum ? [clonedEthereum] : undefined,
-        undefined
+      // @ts-ignore
+      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockImplementationOnce(() =>
+        // @ts-ignore
+        Promise.resolve({
+          hints
+        })
       )
+
+      controller.addTokensToBeLearned(['0xc2132D05D31c914a87C6611C10748AEb04B58e8F'], 137n)
+
+      await controller.updateSelectedAccount(account2.addr, [polygon], undefined)
 
       const toBeLearnedToken = controller
         .getLatestPortfolioState(account2.addr)

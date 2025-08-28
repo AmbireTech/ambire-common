@@ -10,6 +10,7 @@ import {
   AccountState,
   AdditionalPortfolioNetworkResult,
   GetOptions,
+  Hints,
   NetworkState,
   PortfolioGasTankResult,
   PreviousHintsStorage,
@@ -176,6 +177,9 @@ export const getAccountPortfolioTotal = (
   }, 0)
 }
 
+/**
+ * Turns `ExternalHintsAPIResponse` into `StrippedExternalHintsAPIResponse`.
+ */
 export const stripExternalHintsAPIResponse = (
   response: StrippedExternalHintsAPIResponse | null
 ): StrippedExternalHintsAPIResponse | null => {
@@ -190,6 +194,22 @@ export const stripExternalHintsAPIResponse = (
     hasHints,
     skipOverrideSavedHints: !!skipOverrideSavedHints
   }
+}
+
+/**
+ * Turns `Hints` into `StrippedExternalHintsAPIResponse`.
+ * Returns null if the hints are not originating from the external API.
+ * (e.g. they were loaded from previousHintsFromExternalAPI)
+ */
+export const stripExternalHintsAPIResponseAndEnsureNotCached = (hints: Hints) => {
+  if (!hints.externalApi) return null
+
+  return stripExternalHintsAPIResponse({
+    erc20s: hints.erc20s,
+    erc721s: hints.erc721s,
+    ...hints.externalApi,
+    skipOverrideSavedHints: !!hints.externalApi.skipOverrideSavedHints
+  })
 }
 
 const getLowercaseAddressArrayForNetwork = (

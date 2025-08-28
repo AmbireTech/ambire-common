@@ -629,7 +629,9 @@ describe('Portfolio', () => {
             '0xba100000625a3754423978a60c9317c58a424e3D'
           ],
           erc721s: {},
-          lastUpdate: Date.now()
+          lastUpdate: Date.now(),
+          hasHints: true,
+          skipOverrideSavedHints: false
         }
         const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
           previousHintsFromExternalAPI: previousHints
@@ -650,7 +652,9 @@ describe('Portfolio', () => {
               isKnown: false,
               tokens: ['2647']
             }
-          }
+          },
+          hasHints: true,
+          skipOverrideSavedHints: false
         }
         const additionalErc721Hints = {
           '0x026224A2940bFE258D0dbE947919B62fE321F042': {
@@ -698,6 +702,12 @@ describe('Portfolio', () => {
       })
 
       expect(result.tokens.length).toBeGreaterThan(0)
+    })
+    test('Velcro hints are read from storage, even if velcro discovery is disabled', async () => {})
+    describe('Static hints', () => {
+      it('Tokens with balance are returned in toBeLearned', async () => {})
+      it('If static hints have been read in the past hour, only learned tokens are used as hints (to avoid unnecessary RPC calls)', async () => {})
+      it('If static hints have been read in the past hour, velcro hints are not read from storage (to avoid unnecessary RPC calls)', async () => {})
     })
   })
 })
