@@ -18,8 +18,7 @@ const accountOp: AccountOp = {
   calls: [],
   gasLimit: null,
   signature: null,
-  gasFeePayment: null,
-  accountOpToExecuteBefore: null
+  gasFeePayment: null
 }
 const transactions = [
   { to: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', value: 0n, data: '0x68656c6c6f' },

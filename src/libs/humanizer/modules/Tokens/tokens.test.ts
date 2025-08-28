@@ -2,10 +2,10 @@ import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { genericErc20Humanizer, genericErc721Humanizer } from '.'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
-import { genericErc20Humanizer, genericErc721Humanizer } from './'
+import { HumanizerMeta, HumanizerVisualization } from '../../interfaces'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -18,11 +18,7 @@ const accountOp: AccountOp = {
   calls: [],
   gasLimit: null,
   signature: null,
-  gasFeePayment: null,
-  // This is used when we have an account recovery to finalize before executing the AccountOp,
-  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
-  // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null
+  gasFeePayment: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be

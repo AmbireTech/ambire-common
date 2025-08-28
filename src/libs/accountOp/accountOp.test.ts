@@ -20,8 +20,7 @@ describe('AccountOp', () => {
       calls: txns,
       gasLimit: null,
       signature: null,
-      gasFeePayment: null,
-      accountOpToExecuteBefore: null
+      gasFeePayment: null
     }
     const accountOpHash = accountOpSignableHash(op, 1n)
     expect(ethers.hexlify(accountOpHash)).toBe(
@@ -41,8 +40,7 @@ describe('AccountOp', () => {
       calls: txns,
       gasLimit: null,
       signature: null,
-      gasFeePayment: null,
-      accountOpToExecuteBefore: null
+      gasFeePayment: null
     }
     const accountOpHash = accountOpSignableHash(op, 1n)
     // if the above statement does not throw an error, we're good
