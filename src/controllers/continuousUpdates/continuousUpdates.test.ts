@@ -47,6 +47,36 @@ const accounts = [
   }
 ]
 
+const submittedAccountOp = {
+  accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+  signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+  gasLimit: null,
+  gasFeePayment: {
+    isGasTank: false,
+    paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    inToken: '0x0000000000000000000000000000000000000000',
+    amount: 1n,
+    simulatedGasLimit: 1n,
+    gasPrice: 1n
+  },
+  chainId: 1n,
+  nonce: 225n,
+  signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+  calls: [
+    {
+      to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+      value: BigInt(0),
+      data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+    }
+  ],
+  txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+  status: 'broadcasted-but-not-confirmed',
+  identifiedBy: {
+    type: 'Transaction',
+    identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+  }
+} as SubmittedAccountOp
+
 const prepareTest = async () => {
   const storage = produceMemoryStore()
   await storage.set('accounts', accounts)
@@ -138,10 +168,17 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.restart).toHaveBeenCalled()
+    const updateSelectedAccountPortfolioSpy = jest.spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(updatePortfolioSpy).toHaveBeenCalledTimes(1)
+    const updateSelectedAccountCalledTimes = updateSelectedAccountPortfolioSpy.mock.calls.length
+    await mainCtrl.activity.addAccountOp(submittedAccountOp)
+    await jest.advanceTimersByTimeAsync(0)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(updatePortfolioSpy).toHaveBeenCalledTimes(2)
+    expect(updateSelectedAccountPortfolioSpy).toHaveBeenCalledTimes(
+      updateSelectedAccountCalledTimes
+    ) // tests the branching in the updatePortfolio func
     mainCtrl.ui.removeView('1')
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.restart).toHaveBeenCalledTimes(2)
@@ -162,35 +199,7 @@ describe('ContinuousUpdatesController intervals', () => {
       'updateAccountsOpsStatuses'
     )
 
-    await mainCtrl.activity.addAccountOp({
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-      gasLimit: null,
-      gasFeePayment: {
-        isGasTank: false,
-        paidBy: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        inToken: '0x0000000000000000000000000000000000000000',
-        amount: 1n,
-        simulatedGasLimit: 1n,
-        gasPrice: 1n
-      },
-      chainId: 1n,
-      nonce: 225n,
-      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-      calls: [
-        {
-          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
-          value: BigInt(0),
-          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
-        }
-      ],
-      txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-      status: 'broadcasted-but-not-confirmed',
-      identifiedBy: {
-        type: 'Transaction',
-        identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
-      }
-    } as SubmittedAccountOp)
+    await mainCtrl.activity.addAccountOp(submittedAccountOp)
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.start).toHaveBeenCalled()
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountsOpsStatusesInterval)
