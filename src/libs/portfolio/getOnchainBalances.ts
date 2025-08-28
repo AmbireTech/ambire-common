@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -82,7 +83,7 @@ function handleSimulationError(
 export function getDeploylessOpts(
   accountAddr: string,
   supportsStateOverride: boolean,
-  opts: Partial<GetOptions>
+  opts: Pick<GetOptions, 'simulation' | 'blockTag'>
 ) {
   const hasEOAOverride =
     opts.simulation && shouldUseStateOverrideForEOA(opts.simulation.account, opts.simulation.state)
@@ -102,7 +103,7 @@ export function getDeploylessOpts(
 export async function getNFTs(
   network: Network,
   deployless: Deployless,
-  opts: Partial<GetOptions>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag'>,
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
@@ -214,7 +215,12 @@ export async function getNFTs(
   ]
 }
 
-const mapToken = (token: any, network: Network, address: string, opts: Partial<GetOptions>) => {
+const mapToken = (
+  token: any,
+  network: Network,
+  address: string,
+  opts: Pick<GetOptions, 'specialErc20Hints'>
+) => {
   let symbol = 'Unknown'
   try {
     symbol = overrideSymbol(address, network.chainId, token.symbol)
@@ -269,7 +275,7 @@ const mapToken = (token: any, network: Network, address: string, opts: Partial<G
 export async function getTokens(
   network: Network,
   deployless: Deployless,
-  opts: Partial<GetOptions>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints'>,
   accountAddr: string,
   tokenAddrs: string[],
   pageIndex?: number

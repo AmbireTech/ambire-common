@@ -213,11 +213,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     if (!selectedAccountAddr) return
 
     const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
-    await this.updateSelectedAccount(
-      selectedAccountAddr,
-      networkData ? [networkData] : undefined,
-      undefined
-    )
+    await this.updateSelectedAccount(selectedAccountAddr, networkData ? [networkData] : undefined)
   }
 
   async addCustomToken(

@@ -165,12 +165,15 @@ export class Portfolio {
         previousHintsFromExternalAPI.hasHints === false &&
         Date.now() - previousHintsFromExternalAPI.lastUpdate < 60 * 60 * 1000
 
+      // The static hints the user has are already learned. Skip fetching
+      // them or reading them from storage, simply return empty hints.
       if (areHintsStaticAndTokensLearnedLately) {
         return {
           hints
         }
       }
 
+      // Fetch the latest hints from the external API (Velcro)
       if (!disableAutoDiscovery) {
         let hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
           chainId,
@@ -211,6 +214,7 @@ export class Portfolio {
         }
       }
 
+      // Read the hints from storage (if they exist)
       if (previousHintsFromExternalAPI) {
         hints = { ...previousHintsFromExternalAPI }
       }
@@ -236,13 +240,12 @@ export class Portfolio {
         }
       }
 
-      hints = { ...previousHintsFromExternalAPI }
       const TEN_MINUTES = 10 * 60 * 1000
       const lastUpdate = previousHintsFromExternalAPI.lastUpdate
       const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
 
       return {
-        hints,
+        hints: { ...previousHintsFromExternalAPI },
         error: {
           name: isLastUpdateTooOld
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
@@ -256,24 +259,32 @@ export class Portfolio {
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
     const errors: PortfolioLibGetResult['errors'] = []
-    const localOpts = { ...defaultOptions, ...opts }
+    const {
+      simulation,
+      previousHintsFromExternalAPI,
+      disableAutoDiscovery = false,
+      baseCurrency,
+      fetchPinned,
+      additionalErc20Hints,
+      additionalErc721Hints,
+      specialErc20Hints,
+      blockTag,
+      priceRecencyOnFailure,
+      priceCache: paramsPriceCache,
+      priceRecency
+    } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
       erc721s: {}
     }
-    const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
-    const { baseCurrency } = localOpts
-    if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
+    if (simulation && simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
 
-    // Get hints (addresses to check on-chain) via Velcro
     const start = Date.now()
     const chainId = this.network.chainId
 
-    // Make sure portfolio lib still works, even in the case Velcro discovery fails.
-    // Because of this, we fall back to Velcro default response.
     const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
-      previousHintsFromExternalAPI: localOpts.previousHintsFromExternalAPI ?? null,
+      previousHintsFromExternalAPI: previousHintsFromExternalAPI ?? null,
       disableAutoDiscovery,
       chainId,
       accountAddr,
@@ -291,24 +302,24 @@ export class Portfolio {
     // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
     // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
     // However, we have chosen to keep it as simple as possible and disregard this rare case.
-    if (localOpts.additionalErc721Hints) {
-      hints.erc721s = { ...localOpts.additionalErc721Hints, ...hints.erc721s }
+    if (additionalErc721Hints) {
+      hints.erc721s = { ...additionalErc721Hints, ...hints.erc721s }
     }
 
-    if (localOpts.additionalErc20Hints) {
-      hints.erc20s = [...hints.erc20s, ...localOpts.additionalErc20Hints]
+    if (additionalErc20Hints) {
+      hints.erc20s = [...hints.erc20s, ...additionalErc20Hints]
     }
 
-    if (localOpts.fetchPinned) {
+    if (fetchPinned) {
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
     }
 
     // add the fee tokens
     hints.erc20s = [
       ...hints.erc20s,
-      ...Object.keys(localOpts.specialErc20Hints || {}),
-      ...(localOpts.additionalErc20Hints || []),
-      ...(localOpts.fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
+      ...Object.keys(specialErc20Hints || {}),
+      ...(additionalErc20Hints || []),
+      ...(fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
@@ -328,7 +339,7 @@ export class Portfolio {
     hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
-    const priceCache: PriceCache = localOpts.priceCache || new Map()
+    const priceCache: PriceCache = paramsPriceCache || new Map()
     for (const addr in hints.externalApi?.prices || {}) {
       const priceHint = hints.externalApi?.prices[addr]
       // eslint-disable-next-line no-continue
@@ -346,12 +357,26 @@ export class Portfolio {
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page, index) =>
-          getTokens(this.network, this.deploylessTokens, localOpts, accountAddr, page, index)
+          getTokens(
+            this.network,
+            this.deploylessTokens,
+            { simulation, blockTag, specialErc20Hints },
+            accountAddr,
+            page,
+            index
+          )
         )
       ),
       flattenResults(
         paginate(collectionsHints, limits.erc721).map((page) =>
-          getNFTs(this.network, this.deploylessNfts, localOpts, accountAddr, page, limits)
+          getNFTs(
+            this.network,
+            this.deploylessNfts,
+            { simulation, blockTag },
+            accountAddr,
+            page,
+            limits
+          )
         )
       )
     ])
@@ -365,14 +390,14 @@ export class Portfolio {
     const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
-    const getPriceFromCache = (address: string, priceRecency: number = localOpts.priceRecency) => {
+    const getPriceFromCache = (address: string, _priceRecency: number = priceRecency) => {
       const cached = priceCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached
       const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      const isStale = start - timestamp > priceRecency
+      const isStale = start - timestamp > _priceRecency
       return isStale ? null : eligible
     }
 
@@ -390,16 +415,15 @@ export class Portfolio {
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
         // The portfolio lib is used outside the controller, in which case we want to
         // fetch all tokens regardless of their balance or type
-        if (!localOpts.specialErc20Hints) return true
+        if (!specialErc20Hints) return true
 
-        const isToBeLearned =
-          localOpts.specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
+        const isToBeLearned = specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
 
         return tokenFilter(
           _tokensWithErrResult[1],
           this.network,
           isToBeLearned,
-          !!opts.fetchPinned,
+          !!fetchPinned,
           nativeToken
         )
       })
@@ -415,9 +439,9 @@ export class Portfolio {
 
         // Add tokens proposed by the controller to toBeLearned
         if (
-          opts.specialErc20Hints &&
-          opts.specialErc20Hints[result.address] &&
-          opts.specialErc20Hints[result.address] === 'learn'
+          specialErc20Hints &&
+          specialErc20Hints[result.address] &&
+          specialErc20Hints[result.address] === 'learn'
         ) {
           toBeLearned.erc20s.push(result.address)
           // Add tokens proposed by the external API to toBeLearned
@@ -492,7 +516,7 @@ export class Portfolio {
         } catch (error: any) {
           const errorMessage = error?.message || 'Unknown error'
 
-          priceIn = getPriceFromCache(token.address, localOpts.priceRecencyOnFailure) || []
+          priceIn = getPriceFromCache(token.address, priceRecencyOnFailure) || []
 
           if (
             // Avoid duplicate errors, because this.bachedGecko is called for each token and if
