@@ -1378,8 +1378,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // no updates if the user has commited
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
-    console.log('entering update quote')
-
     // no quote fetch if there are errors
     if (this.swapSignErrors.length) return
 
@@ -1412,7 +1410,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           isToNetworkSame &&
           isToAddressSame
         ) {
-          console.log('is returning because everything is the same???')
           return
         }
       }
