@@ -406,7 +406,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
 } {
   const now = Date.now()
   const shouldShowPartialResult =
-    portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
+    !!portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
     pastAccountPortfolioWithDefiPositions
 
@@ -554,7 +554,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
   }
 
   return {
-    shouldShowPartialResult: !!shouldShowPartialResult,
+    shouldShowPartialResult,
     isReadyToVisualize,
     isAllReady,
     selectedAccountPortfolioByNetworks: newAccountPortfolioWithDefiPositions
