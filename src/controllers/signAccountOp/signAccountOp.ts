@@ -562,11 +562,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'No signer available'
+        title: 'No keys available to sign this transaction.',
+        code: 'NO_KEYS_AVAILABLE'
       })
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
