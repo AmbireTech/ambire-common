@@ -111,8 +111,9 @@ export type ExternalHintsAPIResponse = Omit<Hints, 'externalApi'> &
 
 export type StrippedExternalHintsAPIResponse = Pick<
   ExternalHintsAPIResponse,
-  'erc20s' | 'erc721s' | 'lastUpdate' | 'hasHints' | 'skipOverrideSavedHints'
->
+  'erc20s' | 'erc721s' | 'lastUpdate' | 'hasHints'
+> &
+  Partial<Pick<ExternalHintsAPIResponse, 'skipOverrideSavedHints'>>
 
 export interface ExtendedError extends Error {
   simulationErrorMsg?: string

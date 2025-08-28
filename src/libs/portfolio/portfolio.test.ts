@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, ethers, JsonRpcProvider } from 'ethers'
+import { AbiCoder, Contract, ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -18,7 +18,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
-import { StrippedExternalHintsAPIResponse } from './interfaces'
+import { Hints, PreviousHintsStorage, StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
@@ -707,11 +707,127 @@ describe('Portfolio', () => {
 
       expect(result.tokens.length).toBeGreaterThan(0)
     })
-    test('Velcro hints are read from storage, even if velcro discovery is disabled', async () => {})
+    test('Velcro hints are read from storage, even if auto discovery is disabled', async () => {
+      const interceptedRequests = monitor()
+      const baseProvider = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
+      const basePortfolio = new Portfolio(
+        fetch,
+        baseProvider,
+        networks.find(({ chainId }) => chainId === 8453n)!,
+        velcroUrl
+      )
+
+      const resultWithDiscoveryEmptyHints = await basePortfolio.get(
+        '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        {
+          disableAutoDiscovery: true,
+          previousHintsFromExternalAPI: {
+            erc20s: [ZeroAddress],
+            erc721s: {},
+            lastUpdate: Date.now(),
+            hasHints: true
+          }
+        }
+      )
+
+      expect(resultWithDiscoveryEmptyHints.hintsFromExternalAPI).toBe(null)
+      expect(
+        resultWithDiscoveryEmptyHints.tokens.find((t) => t.address === USDT_ADDRESS)
+      ).not.toBeDefined()
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        disableAutoDiscovery: true,
+        previousHintsFromExternalAPI: {
+          // Replace it with any token that is not in the other hints (gasTank tokens and pinned tokens)
+          erc20s: ['0x306fD3e7b169Aa4ee19412323e1a5995B8c1a1f4'],
+          erc721s: {},
+          lastUpdate: Date.now(),
+          hasHints: true
+        }
+      })
+
+      expect(result.hintsFromExternalAPI).toBe(null)
+      expect(
+        result.tokens.find((t) => t.address === '0x306fD3e7b169Aa4ee19412323e1a5995B8c1a1f4')
+      ).toBeDefined()
+      expect(
+        interceptedRequests.find((req) => req?.url.pathname?.includes('/multi-hints'))
+      ).toBeUndefined()
+    })
     describe('Static hints', () => {
-      it('Tokens with balance are returned in toBeLearned', async () => {})
-      it('If static hints have been read in the past hour, only learned tokens are used as hints (to avoid unnecessary RPC calls)', async () => {})
-      it('If static hints have been read in the past hour, velcro hints are not read from storage (to avoid unnecessary RPC calls)', async () => {})
+      it('Tokens with balance are returned in toBeLearned', async () => {
+        const hints: Hints = {
+          erc20s: [ZeroAddress],
+          erc721s: {},
+          externalApi: {
+            lastUpdate: Date.now(),
+            hasHints: false,
+            skipOverrideSavedHints: false,
+            prices: {}
+          }
+        }
+
+        // @ts-ignore
+        jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
+          hints
+        })
+
+        const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          specialErc20Hints: {
+            [USDT_ADDRESS]: 'learn'
+          }
+        })
+
+        expect(result.toBeLearned.erc20s).toContain(USDT_ADDRESS)
+        expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
+      })
+      it('If static hints have been read in the past hour externalHintsAPIDiscovery returns an empty list (to avoid unnecessary RPC calls)', async () => {
+        const previousHintsFromExternalAPI: PreviousHintsStorage['fromExternalAPI'][string] = {
+          erc20s: [USDT_ADDRESS],
+          erc721s: {},
+          lastUpdate: Date.now() - 59 * 60 * 1000, // 59 minutes ago
+          hasHints: false,
+          skipOverrideSavedHints: false
+        }
+
+        // @ts-ignore
+        const { hints } = await portfolio.externalHintsAPIDiscovery({
+          previousHintsFromExternalAPI,
+          chainId: 1n,
+          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          baseCurrency: 'usd'
+        })
+
+        expect(hints.erc20s.length).toBe(0)
+        expect(hints.erc721s).toEqual({})
+
+        // Works even while the response should be cached
+        // @ts-ignore
+        const { hints: hints2 } = await portfolio.externalHintsAPIDiscovery({
+          previousHintsFromExternalAPI,
+          disableAutoDiscovery: true, // shouldn't matter
+          chainId: 1n,
+          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          baseCurrency: 'usd'
+        })
+
+        expect(hints2.erc20s.length).toBe(0)
+        expect(hints2.erc721s).toEqual({})
+
+        // Fast-forward in time, now the hints are older than 1 hour
+        previousHintsFromExternalAPI.lastUpdate = Date.now() - 61 * 60 * 1000 // 61 minutes ago
+
+        // @ts-ignore
+        const result = await portfolio.externalHintsAPIDiscovery({
+          previousHintsFromExternalAPI,
+          chainId: 1n,
+          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          baseCurrency: 'usd'
+        })
+
+        expect(result.hints.erc20s.length).toBeGreaterThan(0)
+        expect(Object.keys(result.hints.erc721s).length).toBeGreaterThan(0)
+      })
     })
   })
 })

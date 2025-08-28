@@ -637,6 +637,10 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
+    afterEach(() => {
+      jest.restoreAllMocks()
+      jest.clearAllMocks()
+    })
     test('Zero balance token from learned tokens is filtered out', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
@@ -827,6 +831,54 @@ describe('Portfolio Controller ', () => {
 
         expect(nativeToken).toBeTruthy()
       })
+    })
+
+    test('External API hints are persisted (cached) for 15 minutes', async () => {
+      const { controller } = prepareTest()
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState = controller.getLatestPortfolioState(account.addr)?.['1']!
+
+      expect(latestState.result?.hintsFromExternalAPI).toBeDefined()
+      expect(latestState.result?.hintsFromExternalAPI?.erc20s.length).toBeGreaterThan(0)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
+      expect(latestState2.result?.hintsFromExternalAPI).toBe(null)
+
+      const originalDateNow = Date.now
+      // Spy on Date.now and move time 16 minutes forward
+      jest.spyOn(Date, 'now').mockImplementation(() => originalDateNow() + 16 * 60 * 1000)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+      const latestState3 = controller.getLatestPortfolioState(account.addr)?.['1']!
+      expect(latestState3.result?.hintsFromExternalAPI).not.toBe(null)
+      expect(latestState3.result?.hintsFromExternalAPI?.lastUpdate).toBeGreaterThan(
+        latestState.result?.hintsFromExternalAPI?.lastUpdate!
+      )
+    })
+    test("External API hints aren't persisted (cached) on a manual update (0 maxDataAgeMs)", async () => {
+      const { controller } = prepareTest()
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState = controller.getLatestPortfolioState(account.addr)?.['1']!
+      const firstUpdatedAt = latestState.result?.hintsFromExternalAPI?.lastUpdate
+
+      expect(latestState.result?.hintsFromExternalAPI).not.toBe(null)
+      expect(latestState.result?.hintsFromExternalAPI?.erc20s.length).toBeGreaterThan(0)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+        maxDataAgeMs: 0
+      })
+
+      const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
+      expect(latestState2.result?.hintsFromExternalAPI).not.toBe(null)
+      expect(latestState2.result?.hintsFromExternalAPI?.lastUpdate).toBeGreaterThan(firstUpdatedAt!)
     })
   })
 
