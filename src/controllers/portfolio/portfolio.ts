@@ -49,6 +49,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 
 const LEARNED_TOKENS_NETWORK_LIMIT = 50
+const EXTERNAL_API_HINTS_TTL = {
+  dynamic: 15 * 60 * 1000,
+  static: 60 * 60 * 1000
+}
 
 export class PortfolioController extends EventEmitter implements IPortfolioController {
   #latest: PortfolioControllerState
@@ -91,8 +95,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #networksWithAssetsByAccounts: {
     [accountId: string]: AccountAssetsState
   } = {}
-
-  #externalAPIHintsTTL: number = 15 * 60 * 1000 // 15 minutes
 
   /**
    * Hints stored in storage, divided into three categories:
@@ -791,10 +793,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             this.tokenPreferences,
             this.#toBeLearnedTokens
           )
+          const areHintsStatic =
+            previousHintsFromExternalAPI && !previousHintsFromExternalAPI.hasHints
           const canSkipExternalApiHintsUpdate =
             !!previousHintsFromExternalAPI &&
             !isManualUpdate &&
-            Date.now() - previousHintsFromExternalAPI.lastUpdate < this.#externalAPIHintsTTL
+            Date.now() - previousHintsFromExternalAPI.lastUpdate <
+              EXTERNAL_API_HINTS_TTL[areHintsStatic ? 'static' : 'dynamic']
 
           // TODO: Add custom ERC721 tokens to the hints
           const additionalErc721Hints = Object.fromEntries(

@@ -18,7 +18,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
 import { stringify } from '../richJson/richJson'
-import { Hints, PreviousHintsStorage, StrippedExternalHintsAPIResponse } from './interfaces'
+import { Hints, StrippedExternalHintsAPIResponse } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
@@ -754,80 +754,56 @@ describe('Portfolio', () => {
         interceptedRequests.find((req) => req?.url.pathname?.includes('/multi-hints'))
       ).toBeUndefined()
     })
-    describe('Static hints', () => {
-      it('Tokens with balance are returned in toBeLearned', async () => {
-        const hints: Hints = {
-          erc20s: [ZeroAddress],
-          erc721s: {},
-          externalApi: {
-            lastUpdate: Date.now(),
-            hasHints: false,
-            skipOverrideSavedHints: false,
-            prices: {}
-          }
-        }
-
-        // @ts-ignore
-        jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
-          hints
-        })
-
-        const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-          specialErc20Hints: {
-            [USDT_ADDRESS]: 'learn'
-          }
-        })
-
-        expect(result.toBeLearned.erc20s).toContain(USDT_ADDRESS)
-        expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
-      })
-      it('If static hints have been read in the past hour externalHintsAPIDiscovery returns an empty list (to avoid unnecessary RPC calls)', async () => {
-        const previousHintsFromExternalAPI: PreviousHintsStorage['fromExternalAPI'][string] = {
-          erc20s: [USDT_ADDRESS],
-          erc721s: {},
-          lastUpdate: Date.now() - 59 * 60 * 1000, // 59 minutes ago
+    it('Tokens with balance are returned in toBeLearned', async () => {
+      const hints: Hints = {
+        erc20s: [ZeroAddress],
+        erc721s: {},
+        externalApi: {
+          lastUpdate: Date.now(),
           hasHints: false,
-          skipOverrideSavedHints: false
+          skipOverrideSavedHints: false,
+          prices: {}
         }
+      }
 
-        // @ts-ignore
-        const { hints } = await portfolio.externalHintsAPIDiscovery({
-          previousHintsFromExternalAPI,
-          chainId: 1n,
-          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          baseCurrency: 'usd'
-        })
-
-        expect(hints.erc20s.length).toBe(0)
-        expect(hints.erc721s).toEqual({})
-
-        // Works even while the response should be cached
-        // @ts-ignore
-        const { hints: hints2 } = await portfolio.externalHintsAPIDiscovery({
-          previousHintsFromExternalAPI,
-          disableAutoDiscovery: true, // shouldn't matter
-          chainId: 1n,
-          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          baseCurrency: 'usd'
-        })
-
-        expect(hints2.erc20s.length).toBe(0)
-        expect(hints2.erc721s).toEqual({})
-
-        // Fast-forward in time, now the hints are older than 1 hour
-        previousHintsFromExternalAPI.lastUpdate = Date.now() - 61 * 60 * 1000 // 61 minutes ago
-
-        // @ts-ignore
-        const result = await portfolio.externalHintsAPIDiscovery({
-          previousHintsFromExternalAPI,
-          chainId: 1n,
-          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-          baseCurrency: 'usd'
-        })
-
-        expect(result.hints.erc20s.length).toBeGreaterThan(0)
-        expect(Object.keys(result.hints.erc721s).length).toBeGreaterThan(0)
+      // @ts-ignore
+      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
+        hints
       })
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        specialErc20Hints: {
+          [USDT_ADDRESS]: 'learn'
+        }
+      })
+
+      expect(result.toBeLearned.erc20s).toContain(USDT_ADDRESS)
+      expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
+    })
+    it('Only tokens with balance are kept in hintsFromExternalAPI if hasHints=false', async () => {
+      const TOKEN_WITHOUT_BALANCE = '0x8fc17671D853341D9e8B001F5Fc3C892d09CB53A'
+      const hints: Hints = {
+        erc20s: [ZeroAddress, USDT_ADDRESS, TOKEN_WITHOUT_BALANCE],
+        erc721s: {},
+        externalApi: {
+          lastUpdate: Date.now(),
+          hasHints: false,
+          skipOverrideSavedHints: false,
+          prices: {}
+        }
+      }
+
+      // @ts-ignore
+      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
+        hints
+      })
+
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+
+      expect(result.hintsFromExternalAPI?.erc20s).toContain(USDT_ADDRESS)
+      expect(result.hintsFromExternalAPI?.hasHints).toBe(false)
+      expect(result.hintsFromExternalAPI?.erc20s).not.toContain(TOKEN_WITHOUT_BALANCE)
+      expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
     })
   })
 })

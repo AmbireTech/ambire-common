@@ -158,21 +158,6 @@ export class Portfolio {
     let hints: Hints = getEmptyHints()
 
     try {
-      const areHintsStaticAndTokensLearnedLately =
-        previousHintsFromExternalAPI &&
-        // We MUST explicitly check for hasHints===false, and not !!, because
-        // hasHints is undefined in the previous version of the extension
-        previousHintsFromExternalAPI.hasHints === false &&
-        Date.now() - previousHintsFromExternalAPI.lastUpdate < 60 * 60 * 1000
-
-      // The static hints the user has are already learned. Skip fetching
-      // them or reading them from storage, simply return empty hints.
-      if (areHintsStaticAndTokensLearnedLately) {
-        return {
-          hints
-        }
-      }
-
       // Fetch the latest hints from the external API (Velcro)
       if (!disableAutoDiscovery) {
         let hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
@@ -427,7 +412,19 @@ export class Portfolio {
           nativeToken
         )
       })
-      .map(([, result]: [any, TokenResult]) => {
+      .map(([, result]) => {
+        // Filter out hints of zero-balance tokens
+        if (
+          result.amount === 0n &&
+          originalApiHints.externalApi?.hasHints === false &&
+          originalApiHints.erc20s.includes(result.address)
+        ) {
+          console.log('Filtering out zero-balance token', result.address)
+          originalApiHints.erc20s = originalApiHints.erc20s.filter(
+            (x) => x.toLowerCase() !== result.address.toLowerCase()
+          )
+        }
+
         if (
           !result.amount ||
           result.flags.isCustom ||

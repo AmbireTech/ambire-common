@@ -161,6 +161,17 @@ const ambireV2Account = {
   }
 }
 
+const accountWithManyAssets = {
+  addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+  initialPrivileges: [],
+  associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
+  creation: null,
+  preferences: {
+    label: 'Vitalik',
+    pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+  }
+}
+
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 const prepareTest = () => {
@@ -172,7 +183,8 @@ const prepareTest = () => {
     account3,
     account4,
     emptyAccount,
-    ambireV2Account
+    ambireV2Account,
+    accountWithManyAssets
   ])
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   let providersCtrl: ProvidersController
