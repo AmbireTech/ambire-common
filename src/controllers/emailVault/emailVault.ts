@@ -73,7 +73,7 @@ const STATUS_WRAPPED_METHODS = {
 export class EmailVaultController extends EventEmitter implements IEmailVaultController {
   #storage: IStorageController
 
-  private initialLoadPromise?: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #isWaitingEmailConfirmation: boolean = false
 
@@ -124,7 +124,9 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#storage = storage
     this.#emailVault = new EmailVault(fetch, relayerUrl)
     this.#keyStore = keyStore
-    this.initialLoadPromise = this.load()
+    this.#initialLoadPromise = this.load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
     this.#autoConfirmMagicLink = options?.autoConfirmMagicLink || false
   }
 
@@ -174,7 +176,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async handleMagicLinkKey(email: string, fn?: Function, flow?: MagicLinkFlow) {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
       this.#isWaitingEmailConfirmation = false
@@ -254,7 +256,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #getSessionKey(email: string): Promise<string | null> {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
     return this.#sessionKeys[email]
   }
 
@@ -267,7 +269,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
   async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
     // if we have valid magicLinkKey => returns it else null
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
 
     return this.getMagicLinkKeyByEmail(email)
   }

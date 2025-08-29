@@ -68,13 +68,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAccountStateUpdate = onAccountStateUpdate
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
-      .finally(() => {
-        this.initialLoadPromise = undefined
-      })
-      .finally(() => {
-        this.initialLoadPromise = undefined
-      })
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   #getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr?: string | null): Account[] {
