@@ -1,7 +1,8 @@
-/* eslint-disable no-console */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
+/* eslint-disable no-console */
+import { yieldToMain } from '../../utils/scheduler'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
@@ -119,20 +120,18 @@ export async function getNFTs(
   }
 
   if (!opts.simulation) {
-    const collections = (
-      await deployless.call(
-        'getAllNFTs',
-        [
-          accountAddr,
-          tokenAddrs.map(([address]) => address),
-          tokenAddrs.map(([, x]) =>
-            x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
-          ),
-          limits.erc721Tokens
-        ],
-        deploylessOpts
-      )
-    )[0]
+    const collections = await deployless.call(
+      'getAllNFTs',
+      [
+        accountAddr,
+        tokenAddrs.map(([address]) => address),
+        tokenAddrs.map(([, x]) =>
+          x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
+        ),
+        limits.erc721Tokens
+      ],
+      deploylessOpts
+    )
 
     return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
   }
@@ -162,22 +161,22 @@ export async function getNFTs(
     deploylessOpts
   )
 
-  const beforeNonce = before[1]
-  const afterNonce = after[1]
+  const beforeNonce = before.nonce
+  const afterNonce = after.nonce
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
   const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
-    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+    ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
         ...mapToken(simulationToken),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
 
   return [
-    before[0].map((beforeToken: any, i: number) => {
+    before.collections.map((beforeToken: any, i: number) => {
       const simulationToken = simulationTokens
         ? simulationTokens.find(
             (token: any) => token.addr.toLowerCase() === tokenAddrs[i][0].toLowerCase()
@@ -215,66 +214,72 @@ export async function getNFTs(
   ]
 }
 
+const mapToken = (token: any, network: Network, address: string, opts: Partial<GetOptions>) => {
+  let symbol = 'Unknown'
+  try {
+    symbol = overrideSymbol(address, network.chainId, token.symbol)
+  } catch (e: any) {
+    console.log(`no symbol was found for token with address ${address} on ${network.name}`)
+  }
+
+  let tokenName = symbol
+  try {
+    tokenName = token.name
+  } catch (e: any) {
+    console.log(
+      `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
+    )
+  }
+
+  const tokenFlags: TokenResult['flags'] = getFlags(
+    {},
+    network.chainId.toString(),
+    network.chainId,
+    address
+  )
+
+  if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
+    const value = opts.specialErc20Hints[address]
+
+    if (value === 'custom') {
+      tokenFlags.isCustom = true
+    } else if (value === 'hidden') {
+      tokenFlags.isHidden = true
+    } else if (value === 'hidden-custom') {
+      tokenFlags.isHidden = true
+      tokenFlags.isCustom = true
+    }
+  }
+
+  return {
+    amount: token.amount,
+    chainId: network.chainId,
+    decimals: Number(token.decimals),
+    name:
+      address === '0x0000000000000000000000000000000000000000'
+        ? network.nativeAssetName
+        : tokenName,
+    symbol:
+      address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : symbol,
+    address,
+    flags: tokenFlags
+  } as TokenResult
+}
+
 export async function getTokens(
   network: Network,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
-  tokenAddrs: string[]
+  tokenAddrs: string[],
+  pageIndex?: number
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
-  const mapToken = (token: any, address: string) => {
-    let symbol = 'Unknown'
-    try {
-      symbol = overrideSymbol(address, network.chainId, token.symbol)
-    } catch (e: any) {
-      console.log(`no symbol was found for token with address ${address} on ${network.name}`)
-    }
-
-    let tokenName = symbol
-    try {
-      tokenName = token.name
-    } catch (e: any) {
-      console.log(
-        `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
-      )
-    }
-
-    const tokenFlags: TokenResult['flags'] = getFlags(
-      {},
-      network.chainId.toString(),
-      network.chainId,
-      address
-    )
-
-    if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
-      const value = opts.specialErc20Hints[address]
-
-      if (value === 'custom') {
-        tokenFlags.isCustom = true
-      } else if (value === 'hidden') {
-        tokenFlags.isHidden = true
-      } else if (value === 'hidden-custom') {
-        tokenFlags.isHidden = true
-        tokenFlags.isCustom = true
-      }
-    }
-
-    return {
-      amount: token.amount,
-      chainId: network.chainId,
-      decimals: Number(token.decimals),
-      name:
-        address === '0x0000000000000000000000000000000000000000'
-          ? network.nativeAssetName
-          : tokenName,
-      symbol:
-        address === '0x0000000000000000000000000000000000000000'
-          ? network.nativeAssetSymbol
-          : symbol,
-      address,
-      flags: tokenFlags
-    } as TokenResult
+  if (typeof pageIndex === 'number' && pageIndex > 0) {
+    // Allow the main thread to process other tasks before continuing
+    // as encode/decode operations (in deployless) are very CPU intensive
+    await yieldToMain()
   }
+
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
   if (!opts.simulation) {
     const [results, blockNumber] = await deployless.call(
@@ -284,7 +289,10 @@ export async function getTokens(
     )
 
     return [
-      results.map((token: any, i: number) => [token.error, mapToken(token, tokenAddrs[i])]),
+      results.map((token: any, i: number) => [
+        token.error,
+        mapToken(token, network, tokenAddrs[i], opts)
+      ]),
       {
         blockNumber
       }
@@ -313,22 +321,22 @@ export async function getTokens(
       deploylessOpts
     )
 
-  const beforeNonce = before[1]
-  const afterNonce = after[1]
+  const beforeNonce = before.nonce
+  const afterNonce = after.nonce
   handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
   const simulationTokens = hasSimulation
-    ? after[0].map((simulationToken: any, tokenIndex: number) => ({
+    ? after.balances.map((simulationToken: any, tokenIndex: number) => ({
         ...simulationToken,
         amount: simulationToken.amount,
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
   return [
-    before[0].map((token: any, i: number) => {
+    before.balances.map((token: any, i: number) => {
       const simulation = simulationTokens
         ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
         : null
@@ -338,16 +346,16 @@ export async function getTokens(
       // AccountA attempts to transfer 5 USDC (not signed yet).
       // An external entity sends 3 USDC to AccountA on-chain.
       // Deployless simulation contract processing:
-      //   - Balance before simulation (before[0]): 10 USDC + 3 USDC = 13 USDC.
-      //   - Balance after simulation (after[0]): 10 USDC - 5 USDC + 3 USDC = 8 USDC.
+      //   - Balance before simulation (before.balances): 10 USDC + 3 USDC = 13 USDC.
+      //   - Balance after simulation (after.balances): 10 USDC - 5 USDC + 3 USDC = 8 USDC.
       // Simulation-only balance displayed on the Sign Screen (we will call it `simulationAmount`):
       //   - difference between after simulation and before: 8 USDC - 13 USDC = -5 USDC
       // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
-      //   - after[0], 8 USDC.
+      //   - after.balances, 8 USDC.
       return [
         token.error,
         {
-          ...mapToken(token, tokenAddrs[i]),
+          ...mapToken(token, network, tokenAddrs[i], opts),
           simulationAmount: simulation ? simulation.amount - token.amount : undefined,
           amountPostSimulation: simulation ? simulation.amount : token.amount
         }
