@@ -14,14 +14,16 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   providers: RPCProviders = {}
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   constructor(networks: INetworksController) {
     super()
 
     this.#networks = networks
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   get isInitialized() {

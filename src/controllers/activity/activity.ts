@@ -132,7 +132,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #fetch: Fetch
 
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #accounts: IAccountsController
 
@@ -195,7 +195,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#networks = networks
     this.#portfolio = portfolio
     this.#onContractsDeployed = onContractsDeployed
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
   }
 
   async #load(): Promise<void> {
