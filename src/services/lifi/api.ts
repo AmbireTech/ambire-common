@@ -376,7 +376,7 @@ export class LiFiAPI {
         // Upstream error coming from LiFi, that must be the most accurate
         upstreamMessage && upstreamCode
           ? `${upstreamMessage} Reference: ${upstreamCode}`
-          : upstreamMessage || JSON.stringify(responseBody).slice(0, 200)
+          : upstreamMessage || JSON.stringify(responseBody).slice(0, 200) // results a toast up to 5 lines
 
       const error = `${errorPrefix} Our service provider LiFi responded: <${fallbackMessage}>`
       throw new SwapAndBridgeProviderApiError(error)
