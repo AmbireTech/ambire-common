@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Session } from '../../classes/session'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
@@ -15,9 +16,11 @@ import {
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
+import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  SOCKET_EXPLORER_URL
 } from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
@@ -228,7 +231,9 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
     })
   )
 
-  return serviceTimes.sort((a, b) => a - b)[0]
+  const min = serviceTimes.sort((a, b) => a - b)[0]
+
+  return min > UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL ? min : UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
@@ -456,6 +461,12 @@ const getSlippage = (
     : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
 }
 
+const getLink = (route: SwapAndBridgeActiveRoute) => {
+  return route.serviceProviderId === 'socket'
+    ? `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+    : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
@@ -463,6 +474,7 @@ export {
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getLink,
   getSlippage,
   getSwapAndBridgeCalls,
   isNoFeeToken,

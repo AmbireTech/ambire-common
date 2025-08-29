@@ -2024,7 +2024,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // learn the additional step tokens so if the route fails alongs the way,
     // the user has the token learnt in his portfolio
     activeRoute.route?.steps.forEach((step) => {
-      this.#portfolio.addTokensToBeLearned([step.toAsset.address], BigInt(step.chainId))
+      this.#portfolio.addTokensToBeLearned([step.toAsset.address], BigInt(step.toAsset.chainId))
     })
 
     this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'in-progress' })

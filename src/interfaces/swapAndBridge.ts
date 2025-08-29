@@ -212,7 +212,7 @@ export interface SocketApiBridgeStep {
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
 export type SwapAndBridgeStep = {
-  chainId: number
+  chainId?: number
   fromAmount: string
   fromAsset: SwapAndBridgeToToken
   gasFees: {
@@ -378,7 +378,10 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   toAsset: SocketAPIToken
 }
 
-export type SocketRouteStatus = 'ready' | 'completed' | null
+export interface SocketRouteStatus {
+  sourceTxStatus: 'COMPLETED' | 'PENDING'
+  destinationTxStatus: 'COMPLETED' | 'PENDING'
+}
 
 export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
 

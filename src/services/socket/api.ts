@@ -409,28 +409,20 @@ export class SocketAPI {
     return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 
-  async getRouteStatus({
-    activeRouteId,
-    userTxIndex,
-    txHash
-  }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
-    txHash: string
-  }) {
+  async getRouteStatus({ txHash, fromChainId }: { txHash: string; fromChainId: number }) {
     const params = new URLSearchParams({
-      activeRouteId: activeRouteId.toString(),
-      userTxIndex: userTxIndex.toString(),
-      txHash
+      fromChainId: fromChainId.toString(),
+      transactionHash: txHash
     })
-    const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
+    const url = `${this.#baseUrl}/bridge-status?${params.toString()}`
 
-    const response = await this.#handleResponse<SocketRouteStatus>({
+    const response = await this.#handleResponse<SocketRouteStatus | null>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
-
-    return response
+    if (!response || response.destinationTxStatus === 'PENDING') return null
+    // <TODO<Bobby>: there should be a refunded status>
+    return 'completed'
   }
 
   async getActiveRoute(
