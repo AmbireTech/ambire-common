@@ -7,6 +7,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -139,7 +140,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #storage: IStorageController
 
+  /**
+   * TODO<Bobby>
+   * Long term, neither of the providers should exist as their own
+   * implementations in the controller. There should be a service
+   * that encapsulates them depending on the goal:
+   * - SwapProviderSwitcher, if the goal is fallback mechanism OR lottery
+   * - SwapProviderAggregator, if the goal is to call all providers and aggregate routes
+   * Each service should have a quote(), startRoute() and the other API methods
+   * and decide on its own what should be the proper handling
+   */
   #serviceProviderAPI: SocketAPI | LiFiAPI
+  // eslint-disable-next-line @typescript-eslint/lines-between-class-members
+  #fallbackProviderAPI: SocketAPI | LiFiAPI
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
 
@@ -285,7 +298,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     selectedAccount,
     networks,
     activity,
-    serviceProviderAPI,
+    fetch,
     storage,
     invite,
     portfolioUpdate,
@@ -302,7 +315,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     selectedAccount: ISelectedAccountController
     networks: INetworksController
     activity: IActivityController
-    serviceProviderAPI: SocketAPI | LiFiAPI
+    fetch: Fetch
     storage: IStorageController
     invite: IInviteController
     relayerUrl: string
@@ -323,7 +336,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
-    this.#serviceProviderAPI = serviceProviderAPI
+    this.#serviceProviderAPI = new SocketAPI({
+      apiKey: process.env.SOCKET_API_KEY!,
+      fetch
+    })
+    this.#fallbackProviderAPI = new LiFiAPI({
+      apiKey: process.env.LI_FI_API_KEY!,
+      fetch
+    })
     this.#storage = storage
     this.#invite = invite
     this.#relayerUrl = relayerUrl

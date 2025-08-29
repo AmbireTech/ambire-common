@@ -229,7 +229,6 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl,
     velcroUrl,
     featureFlags,
-    swapApiKey,
     keystoreSigners,
     externalSignerControllers,
     uiManager
@@ -240,7 +239,6 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl: string
     velcroUrl: string
     featureFlags: Partial<FeatureFlags>
-    swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
@@ -359,8 +357,6 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       ui: this.ui
     })
-    // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
-    const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.storage)
 
     this.selectedAccount.initControllers({
@@ -394,10 +390,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
-      // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
-      serviceProviderAPI: lifiAPI,
       storage: this.storage,
+      fetch: this.fetch,
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
@@ -455,7 +449,11 @@ export class MainController extends EventEmitter implements IMainController {
         networks: this.networks,
         activity: this.activity,
         invite: this.invite,
-        serviceProviderAPI: lifiAPI,
+        // TODO<Bobby>: will need help configuring this once the plan forward is clear
+        serviceProviderAPI: new LiFiAPI({
+          apiKey: process.env.LI_FI_API_KEY!,
+          fetch
+        }),
         storage: this.storage,
         portfolioUpdate: () => {
           this.updateSelectedAccountPortfolio({ forceUpdate: true })

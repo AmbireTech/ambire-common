@@ -198,7 +198,7 @@ describe('SwapAndBridge Controller', () => {
       accounts: accountsCtrl,
       activity: activityCtrl,
       storage: storageCtrl,
-      serviceProviderAPI: socketAPIMock as any,
+      fetch,
       invite: inviteCtrl,
       keystore,
       portfolio: portfolioCtrl,

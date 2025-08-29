@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Session } from '../../classes/session'
+import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -438,6 +439,23 @@ const isNoFeeToken = (chainId: number, tokenAddr: string) => {
   return false
 }
 
+const getSlippage = (
+  fromAsset: TokenResult,
+  fromAmount: bigint,
+  upperBoundary: string,
+  delimeter: number
+) => {
+  // make sure the slippage doesn't exceed 100$
+  // we do so by having a base of 0.005
+  // to have a slippage of 100$, we need a fromAmountInUsd of at least 20000$,
+  // so each time the from amount makes a jump of 20000$, we lower
+  // the slippage by half
+  const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
+  return Number(fromAmountInUsd) < 400
+    ? upperBoundary
+    : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
@@ -445,6 +463,7 @@ export {
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getSlippage,
   getSwapAndBridgeCalls,
   isNoFeeToken,
   lifiMapNativeToAddr,

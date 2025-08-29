@@ -21,7 +21,8 @@ import {
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
-import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
+import { TokenResult } from '../../libs/portfolio'
+import { addCustomTokensIfNeeded, getSlippage } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
@@ -90,6 +91,7 @@ export class SocketAPI {
 
   #fetch: Fetch
 
+  // https://public-backend.bungee.exchange/api/v1
   #baseUrl = 'https://api.socket.tech/v2'
 
   #headers: RequestInitWithCustomHeaders['headers']
@@ -272,6 +274,7 @@ export class SocketAPI {
   }
 
   async quote({
+    fromAsset,
     fromChainId,
     fromTokenAddress,
     toChainId,
@@ -282,6 +285,7 @@ export class SocketAPI {
     sort,
     isOG
   }: {
+    fromAsset: TokenResult | null
     fromChainId: number
     fromTokenAddress: string
     toChainId: number
@@ -293,6 +297,11 @@ export class SocketAPI {
     isOG: InviteController['isOG']
     accountNativeBalance: bigint
   }): Promise<SwapAndBridgeQuote> {
+    if (!fromAsset)
+      throw new SwapAndBridgeProviderApiError(
+        'Quote requested, but missing required params. Error details: <from token details are missing>'
+      )
+
     const params = new URLSearchParams({
       fromChainId: fromChainId.toString(),
       fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
@@ -302,8 +311,8 @@ export class SocketAPI {
       userAddress,
       isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
       sort,
-      singleTxOnly: 'false',
-      defaultSwapSlippage: '1',
+      singleTxOnly: 'true',
+      defaultSwapSlippage: getSlippage(fromAsset, fromAmount, '1', 0.5),
       uniqueRoutesPerBridge: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
@@ -312,9 +321,6 @@ export class SocketAPI {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feePercent', FEE_PERCENT.toString())
     }
-    // TODO: Temporarily exclude Mayan bridge when fetching quotes for SA, as
-    // batching is currently not not supported by Mayan (and funds get lost).
-    if (isSmartAccount) params.append('excludeBridges', ['mayan'].join(','))
 
     const url = `${this.#baseUrl}/quote?${params.toString()}`
 
