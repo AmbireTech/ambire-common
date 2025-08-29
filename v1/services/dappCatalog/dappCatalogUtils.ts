@@ -1,9 +1,10 @@
 import { fetchCaught } from '../fetch'
 import { AmbireDappManifest, SupportedWeb3Connectivity } from './types'
+import { networks } from 'consts/networks'
 
-export const chainIdToWalletNetworkId = (chainId: number): NetworkId | null => {
+export const chainIdToWalletNetworkId = (chainId: number): string | null => {
   // TODO: v2
-  // return networks.find((n) => n.chainId === chainId)?.id || null
+  return networks.find((n) => n.chainId === BigInt(chainId))?.name || null
 }
 
 export const getDappId = (name: string): string => {

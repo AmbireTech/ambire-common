@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../v1/hooks/useDapps/index.ts"],"names":[],"mappings":";;;AAAA,kEAAiC;AAEjC,kBAAe,kBAAQ,CAAA;AACvB,kDAAuB","sourcesContent":["import useDapps from './useDapps'\n\nexport default useDapps\nexport * from './types'\n"]}

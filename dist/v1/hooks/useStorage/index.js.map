@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../v1/hooks/useStorage/index.ts"],"names":[],"mappings":";;;AAAA,sEAAqC;AAErC,kDAAuB;AACvB,kBAAe,oBAAU,CAAA","sourcesContent":["import useStorage from './useStorage'\n\nexport * from './types'\nexport default useStorage\n"]}

@@ -35,6 +35,6 @@
     "strictPropertyInitialization": true,
     "resolveJsonModule": true,
   },
-  "include": ["src"],
+  "include": ["src", "v1"],
   "exclude": ["node_modules", "audits", "test", "scripts", "src/**/*.test.ts", "src/**/tests"]
 }
