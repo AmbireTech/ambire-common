@@ -27,6 +27,7 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #fn: () => Promise<void>
 
+  // used mainly for testing how many times the fn was called
   sessionId: number = 0
 
   running = false
