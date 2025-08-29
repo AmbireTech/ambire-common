@@ -340,7 +340,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.portfolio = newSelectedAccountPortfolio
     this.#portfolioByNetworks = newSelectedAccountPortfolioByNetworks
-    this.#updatePortfolioErrors()
+    this.#updatePortfolioErrors(true)
     this.updateCashbackStatus(skipUpdate)
 
     if (!skipUpdate) {
@@ -487,7 +487,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.shouldShowPartialResult
+      (!this.portfolio.isAllReady && !this.portfolio.shouldShowPartialResult)
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
