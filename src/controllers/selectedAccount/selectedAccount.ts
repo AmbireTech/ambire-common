@@ -209,7 +209,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateDefiPositionsErrors', () => {
-        this.#updatePortfolioErrors()
+        this.#updatePortfolioErrors(true)
         this.#updateDefiPositionsErrors()
       })
     })
@@ -229,7 +229,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount()
-        this.#updatePortfolioErrors()
+        this.#updatePortfolioErrors(true)
         this.#updateDefiPositionsErrors()
       })
     })
