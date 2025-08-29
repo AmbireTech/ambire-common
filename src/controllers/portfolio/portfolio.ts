@@ -594,20 +594,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return isWithinMinUpdateInterval || networkState.isLoading
   }
 
-  static #isManualUpdate(maxDataAgeMs?: number) {
-    return maxDataAgeMs === 0
-  }
-
   // By our convention, we always stick with private (#) instead of protected methods.
   // However, we made a compromise here to allow Jest tests to mock updatePortfolioState.
   protected async updatePortfolioState(
     accountId: string,
     network: Network,
     portfolioLib: Portfolio | null,
-    portfolioProps: Partial<GetOptions> & { blockTag: 'latest' | 'pending' },
-    maxDataAgeMs?: number
+    portfolioProps: Partial<GetOptions> & {
+      blockTag: 'latest' | 'pending'
+      maxDataAgeMs?: number
+      isManualUpdate?: boolean
+    }
   ): Promise<boolean> {
-    const blockTag = portfolioProps.blockTag
+    const { blockTag, maxDataAgeMs, isManualUpdate } = portfolioProps
     const stateKeys = { latest: this.#latest, pending: this.#pending }
     const accountState = stateKeys[blockTag][accountId]
 
@@ -629,7 +628,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
-    if (PortfolioController.#isManualUpdate(maxDataAgeMs)) state.criticalError = undefined
+    if (isManualUpdate) state.criticalError = undefined
 
     this.emitUpdate()
 
@@ -654,9 +653,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       let lastSuccessfulUpdate =
         accountState[network.chainId.toString()]?.result?.lastSuccessfulUpdate || 0
 
-      // Reset lastSuccessfulUpdate on forceUpdate in case of critical errors as the user
+      // Reset lastSuccessfulUpdate on isManualUpdate in case of critical errors as the user
       // is likely expecting a change in the portfolio.
-      if (PortfolioController.#isManualUpdate(maxDataAgeMs) && hasError) {
+      if (isManualUpdate && hasError) {
         lastSuccessfulUpdate = 0
       } else if (!hasError) {
         // Update the last successful update only if there are no critical errors.
@@ -698,7 +697,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         name: e?.name
       }
 
-      if (PortfolioController.#isManualUpdate(maxDataAgeMs) && state.result) {
+      if (isManualUpdate && state.result) {
         // Reset lastSuccessfulUpdate on forceUpdate in case of a critical error as the user
         // is likely expecting a change in the portfolio.
         state.result.lastSuccessfulUpdate = 0
@@ -727,8 +726,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
     },
-    opts?: { maxDataAgeMs?: number }
+    opts?: { maxDataAgeMs?: number; isManualUpdate?: boolean }
   ) {
+    const { maxDataAgeMs: paramsMaxDataAgeMs = 0, isManualUpdate } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount)
@@ -743,7 +743,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const networksToUpdate = networks || this.#networks.networks
     await Promise.all([
-      this.#getAdditionalPortfolio(accountId, opts?.maxDataAgeMs),
+      this.#getAdditionalPortfolio(accountId, paramsMaxDataAgeMs),
       ...networksToUpdate.map(async (network) => {
         const key = `${network.chainId}:${accountId}`
 
@@ -777,7 +777,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               : currentAccountOps !== simulatedAccountOps
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
-          const maxDataAgeMs = areAccountOpsChanged ? undefined : opts?.maxDataAgeMs
+          const maxDataAgeMs = areAccountOpsChanged ? undefined : paramsMaxDataAgeMs
 
           const previousHintsFromExternalAPI = this.#previousHints?.fromExternalAPI?.[key]
           const additionalErc20Hints = Object.keys(
@@ -793,7 +793,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
           const canSkipExternalApiHintsUpdate =
             !!previousHintsFromExternalAPI &&
-            opts?.maxDataAgeMs !== 0 &&
+            !isManualUpdate &&
             Date.now() - previousHintsFromExternalAPI.lastUpdate < this.#externalAPIHintsTTL
 
           // TODO: Add custom ERC721 tokens to the hints
@@ -814,36 +814,28 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
-            this.updatePortfolioState(
-              accountId,
-              network,
-              portfolioLib,
-              {
-                blockTag: 'latest',
-                ...allHints,
-                disableAutoDiscovery: canSkipExternalApiHintsUpdate
-              },
-              maxDataAgeMs
-            ),
-            this.updatePortfolioState(
-              accountId,
-              network,
-              portfolioLib,
-              {
-                blockTag: 'pending',
-                ...(currentAccountOps &&
-                  state && {
-                    simulation: {
-                      account: selectedAccount,
-                      accountOps: currentAccountOps,
-                      state
-                    }
-                  }),
-                disableAutoDiscovery: canSkipExternalApiHintsUpdate,
-                ...allHints
-              },
-              maxDataAgeMs
-            )
+            this.updatePortfolioState(accountId, network, portfolioLib, {
+              blockTag: 'latest',
+              maxDataAgeMs,
+              isManualUpdate,
+              ...allHints,
+              disableAutoDiscovery: canSkipExternalApiHintsUpdate
+            }),
+            this.updatePortfolioState(accountId, network, portfolioLib, {
+              blockTag: 'pending',
+              maxDataAgeMs,
+              isManualUpdate,
+              ...(currentAccountOps &&
+                state && {
+                  simulation: {
+                    account: selectedAccount,
+                    accountOps: currentAccountOps,
+                    state
+                  }
+                }),
+              disableAutoDiscovery: canSkipExternalApiHintsUpdate,
+              ...allHints
+            })
           ])
 
           // Persist latest state in previousHints in the disk storage for further requests

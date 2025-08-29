@@ -1316,7 +1316,7 @@ export class MainController extends EventEmitter implements IMainController {
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio({
         networks: networksToUpdate,
-        maxDataAgeMs: isManualReload ? 0 : undefined
+        isManualUpdate: isManualReload
       }),
       this.defiPositions.updatePositions({ chainIds, forceUpdate: isManualReload })
     ])
@@ -1371,8 +1371,12 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  async updateSelectedAccountPortfolio(opts?: { networks?: Network[]; maxDataAgeMs?: number }) {
-    const { networks, maxDataAgeMs } = opts || {}
+  async updateSelectedAccountPortfolio(opts?: {
+    networks?: Network[]
+    isManualUpdate?: boolean
+    maxDataAgeMs?: number
+  }) {
+    const { networks, maxDataAgeMs, isManualUpdate } = opts || {}
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1394,7 +1398,7 @@ export class MainController extends EventEmitter implements IMainController {
             states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
           }
         : undefined,
-      { maxDataAgeMs }
+      { maxDataAgeMs, isManualUpdate }
     )
     this.#updateIsOffline()
   }

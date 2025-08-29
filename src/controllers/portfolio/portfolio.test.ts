@@ -860,7 +860,7 @@ describe('Portfolio Controller ', () => {
         latestState.result?.hintsFromExternalAPI?.lastUpdate!
       )
     })
-    test("External API hints aren't persisted (cached) on a manual update (0 maxDataAgeMs)", async () => {
+    test("External API hints aren't persisted (cached) on a manual update", async () => {
       const { controller } = prepareTest()
       const ethereum = networks.find((network) => network.chainId === 1n)!
 
@@ -873,7 +873,7 @@ describe('Portfolio Controller ', () => {
       expect(latestState.result?.hintsFromExternalAPI?.erc20s.length).toBeGreaterThan(0)
 
       await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
-        maxDataAgeMs: 0
+        isManualUpdate: true
       })
 
       const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
@@ -1052,7 +1052,7 @@ describe('Portfolio Controller ', () => {
 
     // Set maxDataAgeMs to 0 (simulate a manual update), which should reset lastSuccessfulUpdate to 0
     await controller.updateSelectedAccount(account.addr, ethereum, undefined, {
-      maxDataAgeMs: 0
+      isManualUpdate: true
     })
 
     const lastSuccessfulUpdate3 = controller.getLatestPortfolioState(account.addr)['1']?.result
