@@ -150,7 +150,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.providers.onUpdate(() => {
-      // this.#fastAccountStateReFetchTimeout.restart()
+      this.#fastAccountStateReFetchTimeout.restart()
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {
