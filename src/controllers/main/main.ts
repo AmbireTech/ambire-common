@@ -644,7 +644,10 @@ export class MainController extends EventEmitter implements IMainController {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    this.reloadSelectedAccount({ resetSelectedAccountPortfolio: false })
+    this.reloadSelectedAccount({
+      maxDataAgeMs: 5 * 60 * 1000,
+      resetSelectedAccountPortfolio: false
+    })
   }
 
   async #onAccountPickerSuccess() {
@@ -1290,9 +1293,15 @@ export class MainController extends EventEmitter implements IMainController {
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     resetSelectedAccountPortfolio?: boolean
+    maxDataAgeMs?: number
     isManualReload?: boolean
   }) {
-    const { chainIds, isManualReload = false, resetSelectedAccountPortfolio = true } = options || {}
+    const {
+      chainIds,
+      isManualReload = false,
+      maxDataAgeMs,
+      resetSelectedAccountPortfolio = true
+    } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
@@ -1316,9 +1325,10 @@ export class MainController extends EventEmitter implements IMainController {
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
       this.updateSelectedAccountPortfolio({
         networks: networksToUpdate,
-        isManualUpdate: isManualReload
+        isManualUpdate: isManualReload,
+        maxDataAgeMs
       }),
-      this.defiPositions.updatePositions({ chainIds, forceUpdate: isManualReload })
+      this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
     ])
   }
 
