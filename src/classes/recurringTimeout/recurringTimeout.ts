@@ -63,18 +63,11 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   stop() {
-    this.running = false
-    this.promise = undefined
-    this.startScheduled = false
-
-    if (this.#timeoutId) {
-      clearTimeout(this.#timeoutId)
-      this.#timeoutId = undefined
-    }
+    this.#reset()
   }
 
   restart(opts: { timeout?: number; runImmediately?: boolean } = {}) {
-    this.stop()
+    this.#reset()
     this.#scheduleStart(opts)
   }
 
@@ -125,5 +118,17 @@ export class RecurringTimeout implements IRecurringTimeout {
         this.#timeoutId = setTimeout(this.#loop.bind(this), this.currentTimeout)
       }
     })
+  }
+
+  #reset() {
+    this.running = false
+    this.promise = undefined
+    this.startScheduled = false
+    this.startedRunningAt = 0
+
+    if (this.#timeoutId) {
+      clearTimeout(this.#timeoutId)
+      this.#timeoutId = undefined
+    }
   }
 }

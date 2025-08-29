@@ -275,9 +275,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #relayerUrl: string
 
-  #updateQuoteInterval: IRecurringTimeout
+  updateQuoteInterval: IRecurringTimeout
 
   #updateActiveRoutesInterval: RecurringTimeout
+
+  get updateActiveRoutesInterval() {
+    return this.#updateActiveRoutesInterval
+  }
 
   constructor({
     accounts,
@@ -338,35 +342,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#initialLoadPromise = undefined
     })
 
-    this.#updateQuoteInterval = new RecurringTimeout(
-      async () => {
-        if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
-          this.#updateQuoteInterval.stop()
-          return
-        }
-
-        await this.updateQuote({
-          skipPreviousQuoteRemoval: true,
-          skipQuoteUpdateOnSameValues: this.isAutoSelectRouteDisabled,
-          skipStatusUpdate: false
-        })
-      },
+    this.updateQuoteInterval = new RecurringTimeout(
+      async () => this.continuouslyUpdateQuote(),
       UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
-      this.emitError.bind(this)
+      this.emitError.bind(this),
+      'id'
     )
 
     this.#updateActiveRoutesInterval = new RecurringTimeout(
-      async () => {
-        if (!this.activeRoutesInProgress.length) {
-          this.#updateActiveRoutesInterval.stop()
-          return
-        }
-
-        await this.checkForNextUserTxForActiveRoutes()
-
-        const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
-      },
+      async () => this.continuouslyUpdateActiveRoutes(),
       UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -920,7 +904,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           })
         : undefined
     ])
-    this.#updateQuoteInterval.restart()
+    this.updateQuoteInterval.restart()
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -951,7 +935,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
-    this.#updateQuoteInterval.stop()
+    this.updateQuoteInterval.stop()
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -2480,6 +2464,31 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
     return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+  }
+
+  async continuouslyUpdateQuote() {
+    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+      this.updateQuoteInterval.stop()
+      return
+    }
+
+    await this.updateQuote({
+      skipPreviousQuoteRemoval: true,
+      skipQuoteUpdateOnSameValues: false,
+      skipStatusUpdate: false
+    })
+  }
+
+  async continuouslyUpdateActiveRoutes() {
+    if (!this.activeRoutesInProgress.length) {
+      this.#updateActiveRoutesInterval.stop()
+      return
+    }
+
+    await this.checkForNextUserTxForActiveRoutes()
+
+    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+    this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
   }
 
   toJSON() {
