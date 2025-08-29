@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getManifestFromDappUrl = exports.canOpenInIframe = exports.getNormalizedUrl = exports.getDappId = exports.chainIdToWalletNetworkId = void 0;
 const fetch_1 = require("../fetch");
 const types_1 = require("./types");
-const networks_1 = require("consts/networks");
+const networks_1 = require("../../../src/consts/networks");
 const chainIdToWalletNetworkId = (chainId) => {
     // TODO: v2
     return networks_1.networks.find((n) => n.chainId === BigInt(chainId))?.name || null;

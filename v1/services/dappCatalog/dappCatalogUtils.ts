@@ -1,6 +1,6 @@
 import { fetchCaught } from '../fetch'
 import { AmbireDappManifest, SupportedWeb3Connectivity } from './types'
-import { networks } from 'consts/networks'
+import { networks } from '../../../src/consts/networks'
 
 export const chainIdToWalletNetworkId = (chainId: number): string | null => {
   // TODO: v2
