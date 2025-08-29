@@ -121,7 +121,7 @@ export class TransactionFormState extends EventEmitter {
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #toTokenList: SwapAndBridgeToToken[] = []
 
@@ -155,7 +155,9 @@ export class TransactionFormState extends EventEmitter {
   constructor(private readonly dependencies: ControllersTransactionDependencies) {
     super()
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
     this.supportedChainIds = testnetNetworks.map((c) => BigInt(c.chainId))
   }
 
