@@ -375,7 +375,7 @@ export class LiFiAPI {
       const fallbackMessage =
         // Upstream error coming from LiFi, that must be the most accurate
         upstreamMessage && upstreamCode
-          ? `${upstreamMessage} (code: ${upstreamCode})`
+          ? `${upstreamMessage} Reference: ${upstreamCode}`
           : upstreamMessage || JSON.stringify(responseBody).slice(0, 200)
 
       const error = `${errorPrefix} Our service provider LiFi responded: <${fallbackMessage}>`
