@@ -24,55 +24,23 @@ export async function getAAVEPositions(
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
     DeFiPositionsDeploylessCode,
-    network.rpcNoStateOverride
+    network.rpcNoStateOverride // Why?
   )
-  const [[result0], [result1], [result2]] = await Promise.all([
+  const [result0, result1, result2] = await Promise.all([
     deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 0, 15], {}),
     deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 15, 30], {}),
     deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 30, 45], {})
   ])
 
-  const accountDataRes = result0[1]
+  const accountData = result0.accountData
 
-  const userAssets = [...result0[0], ...result1[0], ...result2[0]]
-    .map((asset: any) => ({
-      address: asset[0],
-      symbol: asset[1],
-      name: asset[2],
-      balance: asset[3],
-      decimals: asset[4],
-      price: asset[5],
-      borrowAssetBalance: asset[6],
-      stableBorrowAssetBalance: asset[7],
-      currentLiquidityRate: asset[8],
-      currentVariableBorrowRate: asset[9],
-      currentStableBorrowRate: asset[10],
-
-      aaveAddress: asset[11],
-      aaveSymbol: asset[12],
-      aaveName: asset[13],
-      aaveDecimals: asset[14],
-
-      aaveSDebtAddr: asset[15],
-      aaveSDebtSymbol: asset[16],
-      aaveSDebtName: asset[17],
-      aaveSDebtDecimals: asset[18],
-
-      aaveVDebtAddr: asset[19],
-      aaveVDebtSymbol: asset[20],
-      aaveVDebtName: asset[21],
-      aaveVDebtDecimals: asset[22]
+  const userAssets = [...result0.userBalance, ...result1.userBalance, ...result2.userBalance]
+    .map(({ addr, ...rest }) => ({
+      address: addr,
+      aaveAddress: rest.aaveAddr,
+      ...rest
     }))
     .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
-
-  const accountData = {
-    totalCollateralBase: accountDataRes[0],
-    totalDebtBase: accountDataRes[1],
-    availableBorrowsBase: accountDataRes[2],
-    currentLiquidationThreshold: accountDataRes[3],
-    ltv: accountDataRes[4],
-    healthFactor: accountDataRes[5]
-  }
 
   if (accountData.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER) {
     accountData.healthFactor = null

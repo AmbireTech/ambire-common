@@ -47,7 +47,7 @@ export class InviteController extends EventEmitter implements IInviteController 
    */
   isOG: boolean = false
 
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   constructor({
     relayerUrl,
@@ -62,7 +62,9 @@ export class InviteController extends EventEmitter implements IInviteController 
 
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
   }
 
   async #load() {

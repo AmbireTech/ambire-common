@@ -13,14 +13,16 @@ export class BannerController extends EventEmitter implements IBannerController 
   maxBannerCount = 1
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   constructor(storage: IStorageController) {
     super()
     this.#storage = storage
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   #getValidBanners(banners: Banner[]) {

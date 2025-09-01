@@ -113,7 +113,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   constructor({
     relayerUrl,
@@ -210,7 +210,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     this.actions.onUpdate(() => this.emitUpdate(), 'requests-on-update-listener')
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {

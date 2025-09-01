@@ -6,7 +6,14 @@ import { ErrorHumanizerError } from './types'
 const insufficientPaymasterFunds =
   "the Paymaster has insufficient funds. Please report this to the team. We've disabled it, so please try again with the updated fee payment options."
 
-const noPrefixReasons = ['0xf8618030', 'TRANSFER_FROM_FAILED']
+const noPrefixReasons = [
+  '0xf8618030',
+  'TRANSFER_FROM_FAILED',
+  'Insufficient ETH for transaction calls',
+  'Insufficient AVAX for transaction calls',
+  'Insufficient BNB for transaction calls',
+  'Insufficient POL for transaction calls'
+]
 
 const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   // Rpc
@@ -61,19 +68,19 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   // TODO: Figure out a more elegant way to handle errors with dynamic messages
   {
     reasons: ['Insufficient ETH for transaction calls'],
-    message: "you don't have enough ETH to cover the gas costs for this transaction."
+    message: 'Insufficient ETH'
   },
   {
     reasons: ['Insufficient AVAX for transaction calls'],
-    message: "you don't have enough AVAX to cover the gas costs for this transaction."
+    message: 'Insufficient AVAX'
   },
   {
     reasons: ['Insufficient BNB for transaction calls'],
-    message: "you don't have enough BNB to cover the gas costs for this transaction."
+    message: 'Insufficient BNB'
   },
   {
     reasons: ['Insufficient POL for transaction calls'],
-    message: "you don't have enough POL to cover the gas costs for this transaction."
+    message: 'Insufficient POL'
   },
   // End of TODO
   // Smart Accounts

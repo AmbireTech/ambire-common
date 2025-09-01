@@ -251,8 +251,7 @@ describe('Bundler tests', () => {
         chainId: arbitrum.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 10000000000000n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 10000000000000n, data: '0x' }]
       }
       const usedNetworks = [arbitrum]
       const providers = {
@@ -297,8 +296,7 @@ describe('Bundler tests', () => {
         chainId: arbitrum.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [arbitrum]
       const providers = {
@@ -356,8 +354,7 @@ describe('Bundler tests', () => {
             value: 0n,
             data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
           }
-        ],
-        accountOpToExecuteBefore: null
+        ]
       }
       const usedNetworks = [arbitrum]
       const providers = {
@@ -407,8 +404,7 @@ describe('Bundler tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -464,8 +460,7 @@ describe('Bundler tests', () => {
         chainId: optimism.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -530,8 +525,7 @@ describe('Bundler tests', () => {
             value: 0n,
             data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
           }
-        ],
-        accountOpToExecuteBefore: null
+        ]
       }
       const usedNetworks = [optimism]
       const providers = {
@@ -579,8 +573,7 @@ describe('Bundler tests', () => {
         chainId: 84532n,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [baseSepolia]
       const providers = {
@@ -624,8 +617,7 @@ describe('Bundler tests', () => {
         chainId: 100n,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [gnosis]
       const providers = {
@@ -677,8 +669,7 @@ describe('Bundler tests', () => {
         chainId: mantle.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [mantle]
       const providers = {
@@ -734,8 +725,7 @@ describe('Bundler tests', () => {
             value: 0n,
             data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 10])
           }
-        ],
-        accountOpToExecuteBefore: null
+        ]
       }
       const usedNetworks = [mantle]
       const providers = {
@@ -790,8 +780,7 @@ describe('Bundler tests', () => {
         chainId: base.chainId,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: 1n, data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: 1n, data: '0x' }]
       }
       const usedNetworks = [base]
       const providers = {
@@ -840,8 +829,7 @@ describe('Bundler tests', () => {
         chainId: 8453n,
         nonce: 0n,
         signature: '0x',
-        calls: [{ to, value: parseEther('1'), data: '0x' }],
-        accountOpToExecuteBefore: null
+        calls: [{ to, value: parseEther('1'), data: '0x' }]
       }
       const usedNetworks = [base]
       const providers = {

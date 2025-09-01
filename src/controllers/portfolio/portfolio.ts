@@ -43,6 +43,7 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { yieldToMain } from '../../utils/scheduler'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -114,7 +115,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   #keystore: IKeystoreController
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   constructor(
     storage: IStorageController,
@@ -173,7 +174,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     )
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
   }
 
   async #load() {
@@ -898,6 +901,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.chainId.toString()]
+        await yieldToMain()
       })
     ])
 

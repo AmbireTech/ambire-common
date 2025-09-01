@@ -24,6 +24,61 @@ import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
+/**
+ * Put a list of all the banned addresses (left side) with their
+ * corresponding valid/correct address (right side).
+ * This is fixing the case of token duplication like EURe. / CELO
+ * where if the incorrect (outdated) address is used instead of the
+ * new one in the swap, no routes will be found
+ */
+const getBannedToValidAddresses = (): {
+  [chainId: string]: { [bannedAddr: string]: string }
+} => {
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedEurePolygon = '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d'
+  const validEurePolygon = '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6'
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedEureGnosis = '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430'
+  const validEureGnosis = '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedCelo = '0x471EcE3750Da237f93B8E339c536989b8978a438'
+  const validCelo = ZeroAddress
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedGbpeGnosis = '0x8E34bfEC4f6Eb781f9743D9b4af99CD23F9b7053'
+  const validGbpeGnosis = '0x5Cb9073902F2035222B9749F8fB0c9BFe5527108'
+
+  return {
+    '137': {
+      [bannedEurePolygon]: validEurePolygon
+    },
+    '100': {
+      [bannedEureGnosis]: validEureGnosis,
+      [bannedGbpeGnosis]: validGbpeGnosis
+    },
+    '42220': {
+      [bannedCelo]: validCelo
+    }
+  }
+}
+
+const getBannedToTokenList = (chainId: string): string[] => {
+  const list = getBannedToValidAddresses()
+  if (!list[chainId]) return []
+
+  return Object.keys(list[chainId])
+}
+
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   // Pending tokens go on top
   const isAPending =
@@ -360,27 +415,27 @@ const lifiMapNativeToAddr = (chainId: number, tokenAddr: string) => {
 
   return '0x471EcE3750Da237f93B8E339c536989b8978a438'
 }
-
-const lifiTokenListFilter = (t: SwapAndBridgeToToken) => {
-  // disabled tokens, this one is CELO as an addr on CELO chain (exists as native)
-  return !(t.chainId === 42220 && t.address === '0x471EcE3750Da237f93B8E339c536989b8978a438')
-}
-
 /**
  * Map the token address back to native when needed
  */
-const mapNativeToAddr = (
-  serviceProviderId: 'lifi' | 'socket',
-  chainId: number,
-  tokenAddr: string
-) => {
-  if (serviceProviderId === 'socket') return tokenAddr
+const mapBannedToValidAddr = (chainId: number, tokenAddr: string) => {
+  const list = getBannedToValidAddresses()[chainId]
+  if (!list || !list[tokenAddr]) return tokenAddr
 
-  if (chainId !== 42220) return tokenAddr
+  return list[tokenAddr]
+}
 
-  if (tokenAddr !== '0x471EcE3750Da237f93B8E339c536989b8978a438') return tokenAddr
+const isNoFeeToken = (chainId: number, tokenAddr: string) => {
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
 
-  return ZeroAddress
+  if (chainId === 1) {
+    // stETH
+    return tokenAddr === '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+  }
+
+  return false
 }
 
 export {
@@ -389,8 +444,9 @@ export {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
+  getBannedToTokenList,
   getSwapAndBridgeCalls,
+  isNoFeeToken,
   lifiMapNativeToAddr,
-  lifiTokenListFilter,
-  mapNativeToAddr
+  mapBannedToValidAddr
 }
