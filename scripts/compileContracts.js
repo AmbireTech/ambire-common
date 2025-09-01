@@ -59,7 +59,7 @@ async function main() {
   if (process.argv.length < 3) {
     console.log(
       '❗❗❗ No contract name passed for compilation. You should pass at least one as argument to the script!'
-    )``
+    )
     return
   }
 
