@@ -16,13 +16,14 @@ async function moveContractsFromDir(dir) {
   for (let i = 0; i < entries.length; i++) {
     if (!contractsToCompile.length) return
     const entry = entries[i]
-    const { name, path: folderPath } = entry
+    const { name } = entry
+    const folderPath = path.join(dir, name)
 
-    if (!name.endsWith('.sol') && entry.isDirectory()) {
-      await moveContractsFromDir(entry.path)
+    if (!name.toLowerCase().endsWith('.sol') && entry.isDirectory()) {
+      await moveContractsFromDir(path.join(dir, name))
       continue
     }
-    if (!name.endsWith('.sol') || !entry.isDirectory()) continue
+    if (!name.toLowerCase().endsWith('.sol') || !entry.isDirectory()) continue
 
     const filesInFolder = await fs.readdir(folderPath, { withFileTypes: true })
     for (let j = 0; j < filesInFolder.length; j++) {
@@ -31,8 +32,9 @@ async function moveContractsFromDir(dir) {
       if (f.isDirectory()) continue
       if (f.name.endsWith('.dbg.json') || !f.name.endsWith('.json')) continue
 
+      const filePath = path.join(folderPath, f.name)
       const { abi, bytecode, deployedBytecode } = await fs
-        .readFile(f.path, 'utf-8')
+        .readFile(filePath, 'utf-8')
         .then(JSON.parse)
 
       const outputFile = `${outputDir}/${f.name}`
