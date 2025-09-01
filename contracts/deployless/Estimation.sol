@@ -189,11 +189,11 @@ contract Estimation is FeeTokens, Spoof {
     op.signature = spoofSig;
     if (spoofSig.length > 0) {
       try this.simulateSigned(op, GasLimits(0, 0, true)) returns (
-        SimulationOutcome memory errorOutcome
+        SimulationOutcome memory callsRevertedOutcome
       ) {
-        // success case, but if simulateSigned enters here while having a gasLimit of 0,
-        // it means it has resolved with an error. Which is what we want
-        outcome = errorOutcome;
+        // if simulateSigned enters here while having a gasLimit of 0,
+        // it means it has resolved with an error (onchain failure)
+        outcome = callsRevertedOutcome;
       } catch (bytes memory revertData) {
         bytes4 selector = RevertWithSuccess.selector;
 
