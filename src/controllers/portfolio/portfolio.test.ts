@@ -5,7 +5,7 @@ import { describe, expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
@@ -22,6 +22,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { PortfolioController } from './portfolio'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
@@ -158,8 +159,8 @@ const ambireV2Account = {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const prepareTest = () => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
@@ -171,7 +172,7 @@ const prepareTest = () => {
     emptyAccount,
     ambireV2Account
   ])
-  const keystore = new KeystoreController('default', storageCtrl, {}, windowManager)
+  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -395,30 +396,25 @@ describe('Portfolio Controller ', () => {
       expect(done).not.toHaveBeenCalled()
     })
 
-    test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
+    test('Latest and Pending are fetched, because `forceUpdate` flag is set', async () => {
       const { controller } = prepareTest()
 
-      controller.onUpdate(() => {
-        const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
-        const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
-
-        if (latestState?.isReady && pendingState?.isReady) {
-          expect(latestState.isReady).toEqual(true)
-          expect(latestState.result?.tokens.length).toBeGreaterThan(0)
-          expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-          expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
-
-          expect(pendingState.isReady).toEqual(true)
-          expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-          expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
-          expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
-          done()
-        }
-      })
-
-      controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
+      await controller.updateSelectedAccount(ambireV2Account.addr, undefined, undefined, {
         forceUpdate: true
       })
+
+      const latestState = controller.getLatestPortfolioState(ambireV2Account.addr)?.['42161']
+      const pendingState = controller.getPendingPortfolioState(ambireV2Account.addr)?.['42161']
+
+      expect(latestState?.isReady).toEqual(true)
+      expect(latestState?.result?.tokens.length).toBeGreaterThan(0)
+      expect(latestState?.result?.collections?.length).toBeGreaterThan(0)
+      expect(latestState?.result?.hintsFromExternalAPI).toBeTruthy()
+
+      expect(pendingState?.isReady).toEqual(true)
+      expect(pendingState?.result?.tokens.length).toBeGreaterThan(0)
+      expect(pendingState?.result?.collections?.length).toBeGreaterThan(0)
+      expect(pendingState?.result?.hintsFromExternalAPI).toBeTruthy()
     })
   })
 

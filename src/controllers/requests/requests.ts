@@ -18,7 +18,6 @@ import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
-import { NotificationManager } from '../../interfaces/notification'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -30,8 +29,8 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
+import { IUiController } from '../../interfaces/ui'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
-import { WindowManager } from '../../interfaces/window'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Call } from '../../libs/accountOp/types'
@@ -114,7 +113,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   constructor({
     relayerUrl,
@@ -127,8 +126,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     transfer,
     swapAndBridge,
     transactionManager,
-    windowManager,
-    notificationManager,
+    ui,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
@@ -146,8 +144,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     transfer: ITransferController
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
-    windowManager: WindowManager
-    notificationManager: NotificationManager
+    ui: IUiController
     getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
@@ -177,8 +174,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     this.actions = new ActionsController({
       selectedAccount: this.#selectedAccount,
-      windowManager,
-      notificationManager,
+      ui,
       onActionWindowClose: async () => {
         // eslint-disable-next-line no-restricted-syntax
         for (const r of this.userRequests) {
@@ -214,7 +210,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     this.actions.onUpdate(() => this.emitUpdate(), 'requests-on-update-listener')
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {

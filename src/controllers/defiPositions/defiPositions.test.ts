@@ -3,7 +3,8 @@ import fetch from 'node-fetch'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
+import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
 import * as defiProviders from '../../libs/defiPositions/providers'
@@ -14,6 +15,7 @@ import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { DefiPositionsController } from './defiPositions'
 
 global.fetch = fetch as any
@@ -47,8 +49,9 @@ const prepareTest = async () => {
   const storageCtrl = new StorageController(storage)
   let providersCtrl: ProvidersController
 
-  const windowManager = mockWindowManager().windowManager
-  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, windowManager)
+  const { uiManager } = mockUiManager()
+  const uiCtrl = new UiController({ uiManager })
+  const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
   const networksCtrl = new NetworksController({
     storage: storageCtrl,
@@ -93,12 +96,14 @@ const prepareTest = async () => {
     keystore: keystoreCtrl,
     providers: providersCtrl,
     networks: networksCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    ui: uiCtrl
   })
 
   return {
     controller,
-    storage
+    storage,
+    ui: uiCtrl
   }
 }
 
@@ -192,5 +197,47 @@ describe('DefiPositionsController', () => {
     expect(networksWithPositions['1']).toBeUndefined()
 
     consoleSuppressor.restore()
+  })
+
+  it('should continuously update the defi positions', async () => {
+    jest.useFakeTimers()
+    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+
+    const { controller, ui } = await prepareTest()
+    controller.updatePositions = jest.fn().mockResolvedValue(undefined)
+    jest.spyOn(controller.positionsContinuousUpdateInterval, 'start')
+    jest.spyOn(controller.positionsContinuousUpdateInterval, 'stop')
+    jest.spyOn(controller, 'positionsContinuousUpdate')
+
+    expect(controller.positionsContinuousUpdateInterval.start).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdateInterval.stop).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdate).toHaveBeenCalledTimes(0)
+    const FIVE_MINUTES = 1000 * 60 * 5
+    await jest.advanceTimersByTimeAsync(FIVE_MINUTES)
+    expect(controller.positionsContinuousUpdateInterval.start).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdateInterval.stop).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdate).toHaveBeenCalledTimes(0)
+    ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+    await jest.advanceTimersByTimeAsync(0)
+    expect(controller.positionsContinuousUpdateInterval.start).toHaveBeenCalledTimes(1)
+    expect(controller.positionsContinuousUpdateInterval.stop).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdate).toHaveBeenCalledTimes(0)
+    await waitForFnToBeCalledAndExecuted(controller.positionsContinuousUpdateInterval)
+    expect(controller.positionsContinuousUpdateInterval.start).toHaveBeenCalledTimes(1)
+    expect(controller.positionsContinuousUpdateInterval.stop).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdate).toHaveBeenCalledTimes(1)
+    await waitForFnToBeCalledAndExecuted(controller.positionsContinuousUpdateInterval)
+    expect(controller.positionsContinuousUpdateInterval.start).toHaveBeenCalledTimes(1)
+    expect(controller.positionsContinuousUpdateInterval.stop).toHaveBeenCalledTimes(0)
+    expect(controller.positionsContinuousUpdate).toHaveBeenCalledTimes(2)
+    ui.removeView('1')
+    await jest.advanceTimersByTimeAsync(0)
+    expect(controller.positionsContinuousUpdateInterval.start).toHaveBeenCalledTimes(1)
+    expect(controller.positionsContinuousUpdateInterval.stop).toHaveBeenCalledTimes(1)
+    expect(controller.positionsContinuousUpdate).toHaveBeenCalledTimes(2)
+    jest.clearAllTimers()
+    jest.useRealTimers()
+    jest.clearAllMocks()
+    ;(console.error as jest.Mock).mockRestore()
   })
 })

@@ -1,3 +1,8 @@
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
+import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { Fetch } from '../../interfaces/fetch'
@@ -6,6 +11,7 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue } from '../../libs/defiPositions/helpers'
 import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
@@ -32,6 +38,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   #providers: IProvidersController
 
+  #ui: IUiController
+
   #fetch: Fetch
 
   #storage: IStorageController
@@ -42,6 +50,12 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   sessionIds: string[] = []
 
+  #positionsContinuousUpdateInterval: IRecurringTimeout
+
+  get positionsContinuousUpdateInterval() {
+    return this.#positionsContinuousUpdateInterval
+  }
+
   constructor({
     fetch,
     storage,
@@ -49,7 +63,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     keystore,
     accounts,
     networks,
-    providers
+    providers,
+    ui
   }: {
     fetch: Fetch
     storage: IStorageController
@@ -58,6 +73,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
+    ui: IUiController
   }) {
     super()
 
@@ -68,6 +84,21 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
+    this.#ui = ui
+
+    this.#positionsContinuousUpdateInterval = new RecurringTimeout(
+      async () => this.positionsContinuousUpdate(),
+      ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
+      this.emitError.bind(this)
+    )
+
+    this.#ui.uiEvent.on('addView', () => {
+      this.#positionsContinuousUpdateInterval.start()
+    })
+
+    this.#ui.uiEvent.on('removeView', () => {
+      if (!this.#ui.views.length) this.#positionsContinuousUpdateInterval.stop()
+    })
   }
 
   #setProviderError(
@@ -520,6 +551,16 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   removeSession(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     this.emitUpdate()
+  }
+
+  async positionsContinuousUpdate() {
+    if (!this.#ui.views.length) {
+      this.#positionsContinuousUpdateInterval.stop()
+      return
+    }
+
+    const FIVE_MINUTES = 1000 * 60 * 5
+    await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
   }
 
   toJSON() {

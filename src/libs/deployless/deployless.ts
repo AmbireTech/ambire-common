@@ -1,5 +1,6 @@
 import assert from 'assert'
 import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
 
@@ -54,7 +55,7 @@ const defaultOptions: CallOptions = {
 }
 
 export class Deployless {
-  private iface: Interface
+  private abi: any[]
 
   // the contract deploy (constructor) code: this is the code that tjhe solidity compiler outputs
   private contractBytecode: string
@@ -92,7 +93,7 @@ export class Deployless {
     assert.ok(!!provider, 'provider must be provided')
     this.contractBytecode = code
     this.provider = provider
-    this.iface = new Interface(abi)
+    this.abi = abi
 
     if (provider && provider instanceof JsonRpcProvider) {
       // eslint-disable-next-line no-underscore-dangle
@@ -160,7 +161,12 @@ export class Deployless {
       throw new Error(`${methodName}: state override requested but not supported`)
     }
 
-    const callData = this.iface.encodeFunctionData(methodName, args)
+    const callData = encodeFunctionData({
+      abi: this.abi,
+      functionName: methodName,
+      args
+    })
+
     const toAddr = opts.to ?? arbitraryAddr
     const callPromise =
       !!this.stateOverrideSupported && !forceProxy
@@ -211,7 +217,12 @@ export class Deployless {
     ])
 
     const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
-    return this.iface.decodeFunctionResult(methodName, returnDataRaw)
+
+    return decodeFunctionResult({
+      abi: this.abi,
+      functionName: methodName,
+      data: returnDataRaw as `0x${string}`
+    })
   }
 }
 
@@ -251,6 +262,7 @@ function mapResponse(data: string): string {
 
 export function parseErr(data: string): string | null {
   const dataNoPrefix = data.slice(10)
+
   if (data.startsWith(panicSig)) {
     // https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
     const num = parseInt(`0x${dataNoPrefix}`)
