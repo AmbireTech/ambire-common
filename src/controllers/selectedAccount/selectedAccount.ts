@@ -45,6 +45,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
+  shouldShowPartialResult: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -488,7 +489,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isReadyToVisualize
+      (!this.portfolio.isAllReady && !this.portfolio.shouldShowPartialResult)
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
