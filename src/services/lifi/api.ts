@@ -1,12 +1,13 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
-  TokensResponse as LiFiTokensResponse
+  TokensResponse as LiFiTokensResponse,
+  ToolError
 } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
@@ -342,14 +343,14 @@ export class LiFiAPI {
 
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
-      const error = `${errorPrefix} Upstream error: <${message}>${status}`
+      const error = `${errorPrefix} Our service provider LiFi could not be reached: <${message}>${status}`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
     if (response.status === 429) {
       this.activateApiKey()
       const error =
-        'Our service provider received too many requests, temporarily preventing your request from being processed.'
+        'Our service provider LiFi received too many requests, temporarily preventing your request from being processed.'
       throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
     }
 
@@ -357,7 +358,7 @@ export class LiFiAPI {
     try {
       responseBody = await response.json()
     } catch (e: any) {
-      const error = 'Our service provider is temporarily unavailable.'
+      const error = 'Our service provider LiFi is temporarily unavailable.'
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -368,8 +369,16 @@ export class LiFiAPI {
         throw new SwapAndBridgeProviderApiError(humanizedMessage)
       }
 
-      const fallbackMessage = JSON.stringify(responseBody)
-      const error = `${errorPrefix} Our service provider upstream error: <${fallbackMessage}>`
+      const upstreamMessage = (responseBody as ToolError)?.message
+      const upstreamCode = (responseBody as ToolError)?.code
+
+      const fallbackMessage =
+        // Upstream error coming from LiFi, that must be the most accurate
+        upstreamMessage && upstreamCode
+          ? `${upstreamMessage} Reference: ${upstreamCode}`
+          : upstreamMessage || JSON.stringify(responseBody).slice(0, 250) // up to about 5 lines of toast
+
+      const error = `${errorPrefix} Our service provider LiFi responded: <${fallbackMessage}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
