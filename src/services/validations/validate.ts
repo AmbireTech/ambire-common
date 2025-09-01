@@ -54,6 +54,10 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
 
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
+const FIRST_TIME_SEND_MESSAGE =
+  "You're trying to send to an address you've never sent funds to before. Double-check before confirming."
+const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE =
+  'Bear in mind you have not send to this address before, but it is in your Address Book.'
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
@@ -63,7 +67,8 @@ const validateSendTransferAddress = (
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
-  isSWWarningAgreed?: boolean
+  isSWWarningAgreed?: boolean,
+  isRecipientAddressFirstTimeSend?: boolean
 ): ValidateReturnType => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -87,8 +92,22 @@ const validateSendTransferAddress = (
     }
   }
 
+  if (isRecipientAddressFirstTimeSend) {
+    if (isRecipientAddressUnknown) {
+      return {
+        success: false,
+        message: FIRST_TIME_SEND_MESSAGE
+      }
+    }
+    return {
+      success: false,
+      message: FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
+    }
+  }
+
   if (
     isRecipientAddressUnknown &&
+    isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
     !isEnsAddress &&
     !isRecipientDomainResolving
@@ -101,6 +120,7 @@ const validateSendTransferAddress = (
 
   if (
     isRecipientAddressUnknown &&
+    isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
     isEnsAddress &&
     !isRecipientDomainResolving
