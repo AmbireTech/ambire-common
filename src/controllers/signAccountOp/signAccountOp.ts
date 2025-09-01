@@ -538,21 +538,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (
       this.#blockGasLimit &&
-      this.selectedOption &&
-      this.selectedOption.gasUsed > this.#blockGasLimit
+      this.accountOp.gasFeePayment &&
+      this.accountOp.gasFeePayment.simulatedGasLimit > this.#blockGasLimit
     ) {
       errors.push({
-        title: 'The transaction gas limit exceeds the network block gas limit.'
-      })
-    }
-
-    if (
-      this.#network.predefined &&
-      this.selectedOption &&
-      this.selectedOption.gasUsed > 500000000n
-    ) {
-      errors.push({
-        title: 'Unreasonably high estimation. This transaction will probably fail'
+        title: 'Transaction invalid: out of gas.'
       })
     }
 
