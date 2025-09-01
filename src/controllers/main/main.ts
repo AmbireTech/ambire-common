@@ -996,7 +996,7 @@ export class MainController extends EventEmitter implements IMainController {
         stateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
-      const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
+      const learnedNewNfts = await this.portfolio.learnNfts(nfts, account.addr, network.chainId)
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.requests.actions.visibleActionsQueue,

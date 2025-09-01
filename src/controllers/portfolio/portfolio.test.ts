@@ -657,6 +657,7 @@ describe('Portfolio Controller ', () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const { controller } = prepareTest()
 
+      // @ts-ignore
       await controller.learnTokens([BANANA_TOKEN_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr)
@@ -673,6 +674,7 @@ describe('Portfolio Controller ', () => {
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
       const { storageCtrl, controller } = prepareTest()
 
+      // @ts-ignore
       await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr)
@@ -686,6 +688,7 @@ describe('Portfolio Controller ', () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
       const { controller } = prepareTest()
 
+      // @ts-ignore
       await controller.learnTokens([ERC_20_MATIC_ADDR], 137n)
 
       await controller.updateSelectedAccount(account.addr)
@@ -732,6 +735,7 @@ describe('Portfolio Controller ', () => {
         )
 
       // Learn a token discovered by velcro
+      // @ts-ignore
       await controller.learnTokens([firstTokenOnEth!.address], 1n)
 
       await controller.updateSelectedAccount(account.addr)

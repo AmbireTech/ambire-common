@@ -1,11 +1,10 @@
 import fetch from 'node-fetch'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe } from '@jest/globals'
 
 import { velcroUrl } from '../../../test/config'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
-import { getUpdatedHints } from './helpers'
 import { Portfolio } from './portfolio'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -29,43 +28,5 @@ const getTokens = async () => {
 }
 
 describe('Portfolio helpers', () => {
-  test('getUpdatedHints', async () => {
-    const tokens = await getTokens()
-    const key = `1:${TEST_ACCOUNT_ADDRESS}`
-
-    const updatedHints = getUpdatedHints(
-      {
-        erc20s: ['0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'],
-        erc721s: {},
-        lastUpdate: Date.now()
-      },
-      tokens,
-      [],
-      1n,
-      {
-        learnedTokens: {
-          '1': {
-            [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]: null
-          }
-        },
-        learnedNfts: {},
-        fromExternalAPI: {
-          [key]: {
-            lastUpdate: Date.now(),
-            erc20s: [],
-            erc721s: {}
-          }
-        }
-      },
-      key,
-      [],
-      []
-    )
-
-    expect(tokens.find((token) => token.address === LEARNED_TOKEN_WITH_BALANCE_ADDRESS))
-    expect(updatedHints.fromExternalAPI[key]?.erc20s).toContain(
-      '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7'
-    )
-    expect(updatedHints.learnedTokens['1'][LEARNED_TOKEN_WITH_BALANCE_ADDRESS]).toBeDefined()
-  })
+  // @TODO: Tests
 })

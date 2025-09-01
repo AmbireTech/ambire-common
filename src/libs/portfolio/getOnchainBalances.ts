@@ -105,7 +105,7 @@ export async function getNFTs(
   deployless: Deployless,
   opts: Pick<GetOptions, 'simulation' | 'blockTag'>,
   accountAddr: string,
-  tokenAddrs: [string, any][],
+  tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
@@ -126,9 +126,7 @@ export async function getNFTs(
       [
         accountAddr,
         tokenAddrs.map(([address]) => address),
-        tokenAddrs.map(([, x]) =>
-          x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
-        ),
+        tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
         limits.erc721Tokens
       ],
       deploylessOpts
@@ -153,7 +151,7 @@ export async function getNFTs(
       accountAddr,
       account.associatedKeys,
       tokenAddrs.map(([address]) => address),
-      tokenAddrs.map(([, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
+      tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
       limits.erc721Tokens,
       factory,
       factoryCalldata,
@@ -221,6 +219,8 @@ const mapToken = (
   address: string,
   opts: Pick<GetOptions, 'specialErc20Hints'>
 ) => {
+  const { specialErc20Hints } = opts
+
   let symbol = 'Unknown'
   try {
     symbol = overrideSymbol(address, network.chainId, token.symbol)
@@ -244,16 +244,11 @@ const mapToken = (
     address
   )
 
-  if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
-    const value = opts.specialErc20Hints[address]
-
-    if (value === 'custom') {
+  if (specialErc20Hints) {
+    if (specialErc20Hints.custom.includes(address)) {
       tokenFlags.isCustom = true
-    } else if (value === 'hidden') {
+    } else if (specialErc20Hints.hidden.includes(address)) {
       tokenFlags.isHidden = true
-    } else if (value === 'hidden-custom') {
-      tokenFlags.isHidden = true
-      tokenFlags.isCustom = true
     }
   }
 

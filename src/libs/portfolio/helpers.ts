@@ -8,13 +8,13 @@ import { RPCProvider } from '../../interfaces/provider'
 import { CustomToken, TokenPreference } from './customToken'
 import {
   AccountState,
-  AdditionalPortfolioNetworkResult,
+  ERC721s,
+  ExternalHintsAPIResponse,
+  FormattedExternalHintsAPIResponse,
   GetOptions,
   Hints,
   NetworkState,
   PortfolioGasTankResult,
-  PreviousHintsStorage,
-  StrippedExternalHintsAPIResponse,
   TokenResult
 } from './interfaces'
 
@@ -73,6 +73,22 @@ export function getFlags(
     isFeeToken,
     isHidden: false
   }
+}
+
+export function mergeERC721s(sources: ERC721s[]): ERC721s {
+  const result: ERC721s = {}
+
+  // Get all unique addresses
+  const addresses = new Set(sources.flatMap((source) => Object.keys(source)))
+
+  addresses.forEach((address) => {
+    // Merge arrays and remove duplicates
+    const merged = Array.from(new Set(sources.flatMap((source) => source[address] || [])))
+
+    result[address] = merged
+  })
+
+  return result
 }
 
 export const validateERC20Token = async (
@@ -178,163 +194,32 @@ export const getAccountPortfolioTotal = (
 }
 
 /**
- * Turns `ExternalHintsAPIResponse` into `StrippedExternalHintsAPIResponse`.
+ * Formats and strips the original velcro response
  */
-export const stripExternalHintsAPIResponse = (
-  response: StrippedExternalHintsAPIResponse | null
-): StrippedExternalHintsAPIResponse | null => {
+export const formatExternalHintsAPIResponse = (
+  response: ExternalHintsAPIResponse | null
+): FormattedExternalHintsAPIResponse | null => {
   if (!response) return null
 
   const { erc20s, erc721s, lastUpdate, hasHints, skipOverrideSavedHints } = response
 
+  const formattedErc721s: Hints['erc721s'] = {}
+
+  Object.entries(erc721s).forEach(([collectionAddress, value]) => {
+    if (!('tokens' in value)) {
+      formattedErc721s[collectionAddress] = []
+      return
+    }
+
+    formattedErc721s[collectionAddress] = value.tokens.map((id) => BigInt(id))
+  })
+
   return {
     erc20s,
-    erc721s,
+    erc721s: formattedErc721s,
     lastUpdate,
     hasHints,
     skipOverrideSavedHints: !!skipOverrideSavedHints
-  }
-}
-
-/**
- * Turns `Hints` into `StrippedExternalHintsAPIResponse`.
- * Returns null if the hints are not originating from the external API.
- * (e.g. they were loaded from previousHintsFromExternalAPI)
- */
-export const stripExternalHintsAPIResponseAndEnsureNotCached = (hints: Hints) => {
-  if (!hints.externalApi) return null
-
-  return stripExternalHintsAPIResponse({
-    erc20s: hints.erc20s,
-    erc721s: hints.erc721s,
-    ...hints.externalApi,
-    skipOverrideSavedHints: !!hints.externalApi.skipOverrideSavedHints
-  })
-}
-
-const getLowercaseAddressArrayForNetwork = (
-  array: { address: string; chainId?: bigint }[],
-  chainId: bigint
-) =>
-  array
-    .filter((item) => !chainId || item.chainId === chainId)
-    .map((item) => item.address.toLowerCase())
-
-/**
- * Tasks:
- * - updates the external hints for [network:account] with the latest from the external API
- * - cleans the learned tokens by removing non-ERC20 items
- * - updates the timestamp of learned tokens
- * - returns the updated hints
- */
-export function getUpdatedHints(
-  // Can only be null in case of no external api hints
-  latestHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null,
-  tokens: TokenResult[],
-  tokenErrors: AdditionalPortfolioNetworkResult['tokenErrors'],
-  chainId: bigint,
-  storagePreviousHints: PreviousHintsStorage,
-  key: string,
-  customTokens: CustomToken[],
-  tokenPreferences: TokenPreference[]
-): PreviousHintsStorage {
-  const previousHints = { ...storagePreviousHints }
-
-  if (!previousHints.fromExternalAPI) previousHints.fromExternalAPI = {}
-  if (!previousHints.learnedTokens) previousHints.learnedTokens = {}
-
-  const { learnedTokens, learnedNfts } = previousHints
-  const latestERC20HintsFromExternalAPI = latestHintsFromExternalAPI?.erc20s || []
-  const networkLearnedTokens = learnedTokens[chainId.toString()] || {}
-
-  // The keys in learnedTokens are addresses of tokens
-  const networkLearnedTokenAddresses = Object.keys(networkLearnedTokens)
-
-  // Self-cleaning mechanism for removing non-ERC20 items from the learned tokens.
-  // There's a possibility that the discovered tokens (from debug_traceCall or mostly Humanizer) include items that are not ERC20 tokens.
-  // For instance, a SmartContract address can be passed as a learned token.
-  // Thanks to BalanceGetter, we know which tokens encounter an error when we try to update the portfolio.
-  // All the errors are collected in `tokenErrors`, and if we cannot retrieve its balance,
-  // the contract returns `bytes('unkn')`, which is equal to `0x756e6b6e`.
-  // Note:
-  // When we extract tokens from `debug_traceCall`, we are already filtering the tokens the same way as here (relying on BalanceGetter).
-  // However, for the Humanizer tokens, we skipped that check because the Humanizer is invoked more frequently on the Sign screen,
-  // and this validation may slow down the performance of the page. Because of this, we perform the check here, where we are calling BalanceGetter anyway.
-  const unknownBalanceError = '0x756e6b6e'
-  const networkLearnedTokenAddressesHavingError = networkLearnedTokenAddresses.filter(
-    (tokenAddress) => {
-      const hasError = !!tokenErrors?.find(
-        (errorToken) =>
-          errorToken.address.toLowerCase() === tokenAddress.toLowerCase() &&
-          errorToken.error === unknownBalanceError
-      )
-
-      return hasError
-    }
-  )
-
-  if (networkLearnedTokenAddresses.length) {
-    // Lowercase all addresses outside of the loop for better performance
-    const lowercaseNetworkPinnedTokenAddresses = getLowercaseAddressArrayForNetwork(
-      PINNED_TOKENS,
-      chainId
-    )
-    const lowercaseCustomTokens = getLowercaseAddressArrayForNetwork(customTokens, chainId)
-    const lowercaseTokenPreferences = getLowercaseAddressArrayForNetwork(tokenPreferences, chainId)
-    const networkTokensWithBalance = tokens.filter((token) => token.amount > 0n)
-    const lowercaseNetworkTokenAddressesWithBalance = getLowercaseAddressArrayForNetwork(
-      networkTokensWithBalance,
-      chainId
-    )
-    const lowercaseERC20HintsFromExternalAPI = latestERC20HintsFromExternalAPI.map((hint) =>
-      hint.toLowerCase()
-    )
-
-    // Update the timestamp of learned tokens
-    // and self-clean non-ERC20 items.
-    // eslint-disable-next-line no-restricted-syntax
-    for (const address of networkLearnedTokenAddresses) {
-      const lowercaseAddress = address.toLowerCase()
-
-      // Delete non-ERC20 items from the learned tokens
-      if (
-        networkLearnedTokenAddressesHavingError.find(
-          (errorToken) => errorToken.toLowerCase() === lowercaseAddress
-        )
-      ) {
-        delete learnedTokens[chainId.toString()][lowercaseAddress]
-        // eslint-disable-next-line no-continue
-        continue
-      }
-
-      const isPinned = lowercaseNetworkPinnedTokenAddresses.includes(lowercaseAddress)
-      const isCustomToken = lowercaseCustomTokens.includes(lowercaseAddress)
-      const isTokenPreference = lowercaseTokenPreferences.includes(lowercaseAddress)
-      const isTokenInExternalAPIHints =
-        lowercaseERC20HintsFromExternalAPI.includes(lowercaseAddress)
-      const hasBalance = lowercaseNetworkTokenAddressesWithBalance.includes(lowercaseAddress)
-
-      if (
-        !isTokenInExternalAPIHints &&
-        !isPinned &&
-        !isCustomToken &&
-        !isTokenPreference &&
-        hasBalance
-      ) {
-        // Don't set the timestamp back to null if the account doesn't have balance for the token
-        // as learnedTokens aren't account specific and one account can have balance for the token
-        // while other don't
-        learnedTokens[chainId.toString()][address] = Date.now().toString()
-      }
-    }
-  }
-  // Update the external hints for [network:account] with the latest from the external API
-  previousHints.fromExternalAPI[key] = latestHintsFromExternalAPI
-
-  return {
-    fromExternalAPI: previousHints.fromExternalAPI,
-    learnedTokens,
-    learnedNfts
   }
 }
 
@@ -342,37 +227,34 @@ export const getSpecialHints = (
   chainId: Network['chainId'],
   customTokens: CustomToken[],
   tokenPreferences: TokenPreference[],
-  toBeLearnedTokens: {
+  toBeLearnedTokens?: {
     [chainId: string]: string[]
   }
 ) => {
-  // The order is important here.
-  // Learned tokens are first because they can be overridden by custom or hidden tokens.
-  // Custom tokens are second because they can become hidden-custom
-  // Hidden tokens are last because they can become hidden-custom if a custom token with the same address exists.
-  const specialErc20Hints: GetOptions['specialErc20Hints'] = {}
-
-  if (toBeLearnedTokens && toBeLearnedTokens[chainId.toString()]) {
-    toBeLearnedTokens[chainId.toString()].forEach((token) => {
-      specialErc20Hints[token] = 'learn'
-    })
+  const specialErc20Hints: GetOptions['specialErc20Hints'] = {
+    custom: [],
+    hidden: [],
+    learn: []
   }
+  const networkToBeLearned = toBeLearnedTokens?.[chainId.toString()] || []
 
   customTokens.forEach((token) => {
     if (token.chainId === chainId && token.standard === 'ERC20') {
-      specialErc20Hints[token.address] = 'custom'
+      specialErc20Hints.custom.push(token.address)
     }
   })
 
   tokenPreferences.forEach((token) => {
     if (token.chainId === chainId && token.isHidden) {
-      if (specialErc20Hints[token.address]) {
-        specialErc20Hints[token.address] = 'hidden-custom'
-      } else {
-        specialErc20Hints[token.address] = 'hidden'
-      }
+      specialErc20Hints.hidden.push(token.address)
     }
   })
+
+  if (networkToBeLearned) {
+    networkToBeLearned.forEach((token) => {
+      specialErc20Hints.learn.push(token)
+    })
+  }
 
   return specialErc20Hints
 }

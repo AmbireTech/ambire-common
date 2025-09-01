@@ -14,11 +14,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import {
-  stripExternalHintsAPIResponse,
-  stripExternalHintsAPIResponseAndEnsureNotCached,
-  tokenFilter
-} from './helpers'
+import { formatExternalHintsAPIResponse, mergeERC721s, tokenFilter } from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -28,7 +24,6 @@ import {
   LimitsOptions,
   PortfolioLibGetResult,
   PriceCache,
-  StrippedExternalHintsAPIResponse,
   TokenError,
   TokenResult
 } from './interfaces'
@@ -135,22 +130,20 @@ export class Portfolio {
    * - empty hints if the hints are static and were learned less than X minutes ago. The goal is to reduce
    * unnecessary requests to deployless. Once every X minutes we make a call to Velcro, get the static hints and
    * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
-   * - hints from `previousHintsFromExternalAPI` if the request fails and previousHintsFromExternalAPI is set
    */
   protected async externalHintsAPIDiscovery(options?: {
-    previousHintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
+    previousHintsFromExternalAPI: PortfolioLibGetResult['hintsFromExternalAPI'] | null
     disableAutoDiscovery?: boolean
     chainId: bigint
     accountAddr: string
     baseCurrency: string
   }): Promise<{
     hints: Hints
-
     error?: PortfolioLibGetResult['errors'][number]
   }> {
     const {
-      previousHintsFromExternalAPI,
       disableAutoDiscovery = false,
+      previousHintsFromExternalAPI,
       chainId,
       accountAddr,
       baseCurrency
@@ -160,30 +153,17 @@ export class Portfolio {
     try {
       // Fetch the latest hints from the external API (Velcro)
       if (!disableAutoDiscovery) {
-        let hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
+        const hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
           chainId,
           accountAddr,
           baseCurrency
         })
 
         if (hintsFromExternalAPI) {
-          // If the db is temporarily unavailable, the server falls back to static hints, even
-          // for networks where hints are dynamic (coming from the db). In this case, we don't
-          // want to override the saved hints, because they are more relevant to the user.
-          if (hintsFromExternalAPI.skipOverrideSavedHints && previousHintsFromExternalAPI) {
-            hintsFromExternalAPI = {
-              ...hintsFromExternalAPI,
-              erc20s: previousHintsFromExternalAPI.erc20s,
-              erc721s: previousHintsFromExternalAPI.erc721s,
-              // Spread it just in case we have saved a false value before
-              skipOverrideSavedHints: true
-            }
-          }
+          const formatted = formatExternalHintsAPIResponse(hintsFromExternalAPI)
 
-          const stripped = stripExternalHintsAPIResponse(hintsFromExternalAPI)
-
-          if (stripped) {
-            hints = stripped
+          if (formatted) {
+            hints = formatted
             // Attach the property as the hints are coming from the external API
             hints.externalApi = {
               lastUpdate: Date.now(),
@@ -197,11 +177,6 @@ export class Portfolio {
         return {
           hints
         }
-      }
-
-      // Read the hints from storage (if they exist)
-      if (previousHintsFromExternalAPI) {
-        hints = { ...previousHintsFromExternalAPI }
       }
 
       return {
@@ -230,7 +205,7 @@ export class Portfolio {
       const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
 
       return {
-        hints: { ...previousHintsFromExternalAPI },
+        hints,
         error: {
           name: isLastUpdateTooOld
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
@@ -253,6 +228,7 @@ export class Portfolio {
       additionalErc20Hints,
       additionalErc721Hints,
       specialErc20Hints,
+      specialErc721Hints,
       blockTag,
       priceRecencyOnFailure,
       priceCache: paramsPriceCache,
@@ -281,32 +257,19 @@ export class Portfolio {
 
     if (hintsError) errors.push(hintsError)
 
-    // Please note 2 things:
-    // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
-    // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
-    // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
-    // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
-    // However, we have chosen to keep it as simple as possible and disregard this rare case.
-    if (additionalErc721Hints) {
-      hints.erc721s = { ...additionalErc721Hints, ...hints.erc721s }
-    }
-
-    if (additionalErc20Hints) {
-      hints.erc20s = [...hints.erc20s, ...additionalErc20Hints]
-    }
-
-    if (fetchPinned) {
-      hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
-    }
-
-    // add the fee tokens
     hints.erc20s = [
       ...hints.erc20s,
       ...Object.keys(specialErc20Hints || {}),
       ...(additionalErc20Hints || []),
       ...(fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
+      // add the fee tokens
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
+    hints.erc721s = mergeERC721s([
+      additionalErc721Hints || {},
+      hints.erc721s,
+      ...Object.values(specialErc721Hints || {})
+    ])
 
     const checksummedErc20Hints = hints.erc20s
       .map((address) => {
@@ -402,7 +365,7 @@ export class Portfolio {
         // fetch all tokens regardless of their balance or type
         if (!specialErc20Hints) return true
 
-        const isToBeLearned = specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
+        const isToBeLearned = specialErc20Hints.learn.includes(_tokensWithErrResult[1].address)
 
         return tokenFilter(
           _tokensWithErrResult[1],
@@ -435,11 +398,7 @@ export class Portfolio {
         }
 
         // Add tokens proposed by the controller to toBeLearned
-        if (
-          specialErc20Hints &&
-          specialErc20Hints[result.address] &&
-          specialErc20Hints[result.address] === 'learn'
-        ) {
+        if (specialErc20Hints && specialErc20Hints.learn.includes(result.address)) {
           toBeLearned.erc20s.push(result.address)
           // Add tokens proposed by the external API to toBeLearned
           // if the response API is static. That is because the static
@@ -469,7 +428,13 @@ export class Portfolio {
 
     const collections = unfilteredCollections
       .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
-      .map(([, collection]) => collection)
+      .map(([, collection]) => {
+        if (specialErc721Hints?.learn[collection.address]) {
+          toBeLearned.erc721s[collection.address] = collection.collectibles
+        }
+
+        return collection
+      })
 
     const oracleCallDone = Date.now()
 
@@ -544,7 +509,12 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      hintsFromExternalAPI: stripExternalHintsAPIResponseAndEnsureNotCached(originalApiHints),
+      hintsFromExternalAPI: originalApiHints.externalApi
+        ? {
+            lastUpdate: originalApiHints.externalApi.lastUpdate,
+            hasHints: originalApiHints.externalApi.hasHints
+          }
+        : null,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,

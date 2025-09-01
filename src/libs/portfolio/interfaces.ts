@@ -61,8 +61,12 @@ export interface ERC721Innumerable {
   tokens: string[]
 }
 
+export interface VelcroERC721Hints {
+  [address: string]: ERC721Enumerable | ERC721Innumerable
+}
+
 export interface ERC721s {
-  [name: string]: ERC721Enumerable | ERC721Innumerable
+  [address: string]: bigint[]
 }
 
 export interface Hints {
@@ -101,19 +105,23 @@ export interface Hints {
   }
 }
 
-export type ExternalHintsAPIResponse = Omit<Hints, 'externalApi'> &
-  (Required<Hints['externalApi']> & {
-    networkId: string
-    chainId: number
-    accountAddr: string
-    error?: string
-  })
+export type ExternalHintsAPIResponse = {
+  erc20s: Hints['erc20s']
+  erc721s: VelcroERC721Hints
+} & (Required<Hints['externalApi']> & {
+  networkId: string
+  chainId: number
+  accountAddr: string
+  error?: string
+})
 
-export type StrippedExternalHintsAPIResponse = Pick<
-  ExternalHintsAPIResponse,
-  'erc20s' | 'erc721s' | 'lastUpdate' | 'hasHints'
-> &
-  Partial<Pick<ExternalHintsAPIResponse, 'skipOverrideSavedHints'>>
+export type FormattedExternalHintsAPIResponse = {
+  erc20s: Hints['erc20s']
+  erc721s: Hints['erc721s']
+  lastUpdate: ExternalHintsAPIResponse['lastUpdate']
+  hasHints: ExternalHintsAPIResponse['hasHints']
+  skipOverrideSavedHints?: ExternalHintsAPIResponse['skipOverrideSavedHints']
+}
 
 export interface ExtendedError extends Error {
   simulationErrorMsg?: string
@@ -137,7 +145,10 @@ export interface PortfolioLibGetResult {
   }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  hintsFromExternalAPI: StrippedExternalHintsAPIResponse | null
+  hintsFromExternalAPI: {
+    lastUpdate: number
+    hasHints: boolean
+  } | null
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
@@ -231,6 +242,8 @@ export type TemporaryTokens = {
   }
 }
 
+type SpecialHintType = 'custom' | 'hidden' | 'learn'
+
 export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
@@ -250,11 +263,45 @@ export interface GetOptions {
    * conditions, such as balance and flags.
    */
   specialErc20Hints?: {
-    [address: string]: 'custom' | 'hidden' | 'hidden-custom' | 'learn'
+    [key in SpecialHintType]: string[]
+  }
+  /**
+   * The same as `specialErc20Hints`. The only supported type at the moment
+   * is `learn`.
+   */
+  specialErc721Hints?: {
+    [key in SpecialHintType]: {
+      [collectionAddr: string]: bigint[]
+    }
   }
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
   disableAutoDiscovery?: boolean
+}
+
+/**
+ * Learned assets, divided by standard. They are passed to the portfolio lib
+ * on every update. Assets are learned after a successful portfolio update, by
+ * relying on toBeLearned, returned by the portfolio lib.
+ */
+export interface LearnedAssets {
+  /**
+   * [chainId:account]: Hints
+   */
+  erc20s: {
+    [chainIdAndAccount: string]: {
+      /**
+       * [tokenAddress]: A timestamp of the last time the token was seen with a balance > 0
+       */
+      [tokenAddress: string]: number | null
+    }
+  }
+  /**
+   * [chainId:account]: Hints
+   */
+  erc721s: {
+    [chainIdAndAccount: string]: { [nftAddress: string]: bigint[] }
+  }
 }
 
 export interface PreviousHintsStorage {
