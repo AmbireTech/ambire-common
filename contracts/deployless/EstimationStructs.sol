@@ -39,9 +39,10 @@ contract EstimationStructs {
     // we use this for the very first simulation
     uint256 gasLimit;
     uint256 upperBoundLimit;
-    // whether we should revert with the outcome of a successful simulation;
-    // the goal of this is to simulate an accountOp WITHOUT modifying the state,
+    // whether we should revert with the outcome of a successful simulation
+    // with a set gasLimit of 0, meaning it is the first simulation.
+    // The goal of this is to simulate an accountOp WITHOUT modifying the state,
     // so we can simulate it again later
-    bool shouldRevertUponSuccess;
+    bool shouldRevertUponSuccessIfFirstSimulation;
   }
 }

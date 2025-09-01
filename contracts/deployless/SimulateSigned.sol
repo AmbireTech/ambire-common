@@ -28,14 +28,17 @@ contract SimulateSigned is EstimationStructs {
     }
     outcome.gasUsed = doingFirstSimulation ? gasInitial - gasleft() : gasLimits.gasLimit;
 
-    bool isCaseWithNoGasLimits = doingFirstSimulation && !gasLimits.shouldRevertUponSuccess;
+    bool isCaseWithNoGasLimits = doingFirstSimulation &&
+      !gasLimits.shouldRevertUponSuccessIfFirstSimulation;
     bool isRevertingWithoutOOG = doingFirstSimulation && !outcome.success;
     bool isSuccessWithSetGas = !doingFirstSimulation && outcome.success;
     if (isCaseWithNoGasLimits || isRevertingWithoutOOG || isSuccessWithSetGas) {
       return outcome;
     }
 
-    if (gasLimits.shouldRevertUponSuccess && outcome.success && doingFirstSimulation) {
+    if (
+      gasLimits.shouldRevertUponSuccessIfFirstSimulation && outcome.success && doingFirstSimulation
+    ) {
       revert RevertWithSuccess(outcome.gasUsed);
     }
 
