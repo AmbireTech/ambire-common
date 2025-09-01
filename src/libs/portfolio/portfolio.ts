@@ -168,8 +168,7 @@ export class Portfolio {
             hints.externalApi = {
               lastUpdate: Date.now(),
               prices: hintsFromExternalAPI.prices,
-              hasHints: !!hintsFromExternalAPI.hasHints,
-              skipOverrideSavedHints: hintsFromExternalAPI.skipOverrideSavedHints
+              hasHints: !!hintsFromExternalAPI.hasHints
             }
           }
         }
@@ -251,9 +250,6 @@ export class Portfolio {
       accountAddr,
       baseCurrency
     })
-    // Clone the hints as we are modifying them below and the original
-    // result is needed in the return value.
-    const originalApiHints = structuredClone(hints)
 
     if (hintsError) errors.push(hintsError)
 
@@ -376,38 +372,13 @@ export class Portfolio {
         )
       })
       .map(([, result]) => {
-        // Filter out hints of zero-balance tokens
         if (
-          result.amount === 0n &&
-          originalApiHints.externalApi?.hasHints === false &&
-          originalApiHints.erc20s.includes(result.address)
+          result.amount &&
+          !result.flags.isCustom &&
+          !result.flags.isHidden &&
+          !toBeLearned.erc20s.includes(result.address)
         ) {
-          console.log('Filtering out zero-balance token', result.address)
-          originalApiHints.erc20s = originalApiHints.erc20s.filter(
-            (x) => x.toLowerCase() !== result.address.toLowerCase()
-          )
-        }
-
-        if (
-          !result.amount ||
-          result.flags.isCustom ||
-          result.flags.isHidden ||
-          toBeLearned.erc20s.includes(result.address)
-        ) {
-          return result
-        }
-
-        // Add tokens proposed by the controller to toBeLearned
-        if (specialErc20Hints && specialErc20Hints.learn.includes(result.address)) {
-          toBeLearned.erc20s.push(result.address)
-          // Add tokens proposed by the external API to toBeLearned
-          // if the response API is static. That is because the static
-          // response may change and the user may stop seeing the token
-        } else if (
-          hints.externalApi &&
-          !hints.externalApi.hasHints &&
-          !hints.externalApi.skipOverrideSavedHints
-        ) {
+          // Add non-zero tokens to toBeLearned
           toBeLearned.erc20s.push(result.address)
         }
 
@@ -429,7 +400,7 @@ export class Portfolio {
     const collections = unfilteredCollections
       .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
       .map(([, collection]) => {
-        if (specialErc721Hints?.learn[collection.address]) {
+        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
@@ -509,10 +480,10 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      hintsFromExternalAPI: originalApiHints.externalApi
+      hintsFromExternalAPI: hints.externalApi
         ? {
-            lastUpdate: originalApiHints.externalApi.lastUpdate,
-            hasHints: originalApiHints.externalApi.hasHints
+            lastUpdate: hints.externalApi.lastUpdate,
+            hasHints: hints.externalApi.hasHints
           }
         : null,
       errors,

@@ -94,13 +94,8 @@ export interface Hints {
      */
     hasHints: boolean
     /**
-     * When true, prevents external API hints from overriding locally saved hints
-     * and suppresses related UI errors. This flag is used when the hints database
-     * is temporarily unavailable and the server falls back to static hints.
+     * Attached by the application after the request response
      */
-    skipOverrideSavedHints?: boolean
-    // Attached by the application error handling logic.
-    // All other props, are provided by Velcro Discovery request.
     lastUpdate: number
   }
 }
@@ -120,7 +115,6 @@ export type FormattedExternalHintsAPIResponse = {
   erc721s: Hints['erc721s']
   lastUpdate: ExternalHintsAPIResponse['lastUpdate']
   hasHints: ExternalHintsAPIResponse['hasHints']
-  skipOverrideSavedHints?: ExternalHintsAPIResponse['skipOverrideSavedHints']
 }
 
 export interface ExtendedError extends Error {
@@ -251,7 +245,10 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   priceRecencyOnFailure?: number
-  previousHintsFromExternalAPI?: StrippedExternalHintsAPIResponse | null
+  previousHintsFromExternalAPI?: {
+    lastUpdate: number
+    hasHints: boolean
+  } | null
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type

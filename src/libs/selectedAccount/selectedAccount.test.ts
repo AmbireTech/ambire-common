@@ -1,6 +1,6 @@
 import {
-  AssetType,
   AccountState as DefiAccountState,
+  AssetType,
   NetworkState as DefiNetworkState
 } from '../defiPositions/types'
 /* eslint-disable @typescript-eslint/no-use-before-define */
@@ -401,10 +401,8 @@ const PORTFOLIO_STATE: AccountState = {
     errors: [],
     result: {
       hintsFromExternalAPI: {
-        erc20s: [],
-        erc721s: {},
-        lastUpdate: 1753192918712,
-        skipOverrideSavedHints: false
+        hasHints: true,
+        lastUpdate: 1753192918712
       },
       errors: [],
       updateStarted: 1753192918299,
@@ -506,10 +504,8 @@ const PORTFOLIO_STATE: AccountState = {
     errors: [],
     result: {
       hintsFromExternalAPI: {
-        erc20s: [],
-        erc721s: {},
-        lastUpdate: 1753192918712,
-        skipOverrideSavedHints: false
+        hasHints: true,
+        lastUpdate: 1753192918712
       },
       errors: [],
       updateStarted: 1753192918299,

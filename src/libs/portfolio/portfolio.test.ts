@@ -17,8 +17,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
-import { stringify } from '../richJson/richJson'
-import { Hints, StrippedExternalHintsAPIResponse } from './interfaces'
+import { Hints } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const providers = Object.fromEntries(
@@ -80,19 +79,37 @@ describe('Portfolio', () => {
   test('batching works', async () => {
     const interceptedRequests = monitor()
 
+    const [{ hints: hints1 }, { hints: hints2 }]: [{ hints: Hints }, { hints: Hints }] =
+      await Promise.all([
+        // @ts-ignore
+        portfolio.externalHintsAPIDiscovery({
+          previousHintsFromExternalAPI: null,
+          chainId: 1n,
+          accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+          baseCurrency: 'usd'
+        }),
+        // @ts-ignore
+        portfolio.externalHintsAPIDiscovery({
+          previousHintsFromExternalAPI: null,
+          chainId: 1n,
+          accountAddr: '0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6',
+          baseCurrency: 'usd'
+        })
+      ])
+
     // 💡 Important Note: BATCH_LIMIT is set to 40 in portfolio/gecko.ts.
     // To simplify testing, we've chosen addresses that contain no more than 40 tokens.
     // This allows us to predict the number of requests in advance.
     // If more advanced testing is required, we'll need to count the number of hints and calculate the expected
     // number of paginated requests accordingly.
-    const [result1, result2] = await Promise.all([
+    await Promise.all([
       portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       portfolio.get('0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6')
     ])
 
     const tokens =
-      (result1.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0) +
-      (result2.hintsFromExternalAPI?.erc20s.filter((addr) => Number(addr) !== 0).length || 0)
+      (hints1.erc20s.filter((addr) => Number(addr) !== 0).length || 0) +
+      (hints2.erc20s.filter((addr) => Number(addr) !== 0).length || 0)
 
     stopMonitoring()
 
@@ -113,7 +130,7 @@ describe('Portfolio', () => {
       (req) => req?.url === 'https://invictus.ambire.com/ethereum'
     )
 
-    expect(multiHintsReqs.length).toEqual(1)
+    expect(multiHintsReqs.length).toEqual(2)
     expect(nativePriceReqs.length).toEqual(1)
     // Expect tokenPriceReqs to be paginated. 40 is the max tokens per request.
     expect(tokenPriceReqs.length).toEqual(Math.ceil(tokens / 40))
@@ -598,88 +615,29 @@ describe('Portfolio', () => {
   })
 
   describe('Hints', () => {
-    describe('With blocked Velcro discovery', () => {
+    describe.skip('With blocked Velcro discovery', () => {
       // Done in beforeEach instead of a reusable function because
       // mocks can't be reused as functions
-      beforeEach(() => {
-        // Simulate a Velcro Discovery failure
-        jest.mock('node-fetch', () => {
-          return jest.fn((url: any) => {
-            // @ts-ignore
-            const { Response } = jest.requireActual('node-fetch')
-            if (url.includes(`${velcroUrl}/multi-hints`)) {
-              const body = stringify({ message: 'API error' })
-              const headers = { status: 200 }
-
-              return Promise.resolve(new Response(body, headers))
-            }
-
-            // @ts-ignore
-            return jest.requireActual('node-fetch')(url)
-          })
-        })
-      })
-      afterEach(() => {
-        // Restore the original implementations
-        jest.restoreAllMocks()
-      })
-
-      test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
-        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
-        const previousHints = {
-          erc20s: [
-            '0x0000000000000000000000000000000000000000',
-            '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
-            '0xba100000625a3754423978a60c9317c58a424e3D'
-          ],
-          erc721s: {},
-          lastUpdate: Date.now(),
-          hasHints: true,
-          skipOverrideSavedHints: false
-        }
-        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-          previousHintsFromExternalAPI: previousHints
-        })
-
-        expect(
-          result.tokens
-            .map((token) => token.address)
-            .filter((token) => previousHints.erc20s.includes(token))
-        ).toEqual(previousHints.erc20s)
-      })
-      test('Erc 721 external api hints should be prioritized over additional hints', async () => {
-        const hintsFromExternalAPI: StrippedExternalHintsAPIResponse = {
-          erc20s: [],
-          lastUpdate: Date.now(),
-          erc721s: {
-            '0x026224A2940bFE258D0dbE947919B62fE321F042': {
-              isKnown: false,
-              tokens: ['2647']
-            }
-          },
-          hasHints: true,
-          skipOverrideSavedHints: false
-        }
-        const additionalErc721Hints = {
-          '0x026224A2940bFE258D0dbE947919B62fE321F042': {
-            isKnown: false,
-            tokens: ['2648'] // Different token id on purpose
-          }
-        }
-
-        const portfolioInner = new Portfolio(fetch, provider, ethereum, velcroUrl)
-
-        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-          previousHintsFromExternalAPI: hintsFromExternalAPI,
-          additionalErc721Hints
-        })
-
-        // The correct tokenId was found
-        expect(
-          result.collections.find((c) => c.address === '0x026224A2940bFE258D0dbE947919B62fE321F042')
-            ?.collectibles.length
-        ).toBe(1)
-      })
+      // beforeEach(() => {
+      //   // Simulate a Velcro Discovery failure
+      //   jest.mock('node-fetch', () => {
+      //     return jest.fn((url: any) => {
+      //       // @ts-ignore
+      //       const { Response } = jest.requireActual('node-fetch')
+      //       if (url.includes(`${velcroUrl}/multi-hints`)) {
+      //         const body = stringify({ message: 'API error' })
+      //         const headers = { status: 200 }
+      //         return Promise.resolve(new Response(body, headers))
+      //       }
+      //       // @ts-ignore
+      //       return jest.requireActual('node-fetch')(url)
+      //     })
+      //   })
+      // })
+      // afterEach(() => {
+      //   // Restore the original implementations
+      //   jest.restoreAllMocks()
+      // })
     })
     test('Hints are deduped', async () => {
       const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
@@ -707,53 +665,6 @@ describe('Portfolio', () => {
 
       expect(result.tokens.length).toBeGreaterThan(0)
     })
-    test('Velcro hints are read from storage, even if auto discovery is disabled', async () => {
-      const interceptedRequests = monitor()
-      const baseProvider = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
-      const basePortfolio = new Portfolio(
-        fetch,
-        baseProvider,
-        networks.find(({ chainId }) => chainId === 8453n)!,
-        velcroUrl
-      )
-
-      const resultWithDiscoveryEmptyHints = await basePortfolio.get(
-        '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        {
-          disableAutoDiscovery: true,
-          previousHintsFromExternalAPI: {
-            erc20s: [ZeroAddress],
-            erc721s: {},
-            lastUpdate: Date.now(),
-            hasHints: true
-          }
-        }
-      )
-
-      expect(resultWithDiscoveryEmptyHints.hintsFromExternalAPI).toBe(null)
-      expect(
-        resultWithDiscoveryEmptyHints.tokens.find((t) => t.address === USDT_ADDRESS)
-      ).not.toBeDefined()
-
-      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
-        disableAutoDiscovery: true,
-        previousHintsFromExternalAPI: {
-          // Replace it with any token that is not in the other hints (gasTank tokens and pinned tokens)
-          erc20s: ['0x306fD3e7b169Aa4ee19412323e1a5995B8c1a1f4'],
-          erc721s: {},
-          lastUpdate: Date.now(),
-          hasHints: true
-        }
-      })
-
-      expect(result.hintsFromExternalAPI).toBe(null)
-      expect(
-        result.tokens.find((t) => t.address === '0x306fD3e7b169Aa4ee19412323e1a5995B8c1a1f4')
-      ).toBeDefined()
-      expect(
-        interceptedRequests.find((req) => req?.url.pathname?.includes('/multi-hints'))
-      ).toBeUndefined()
-    })
     it('Tokens with balance are returned in toBeLearned', async () => {
       const hints: Hints = {
         erc20s: [ZeroAddress],
@@ -761,7 +672,6 @@ describe('Portfolio', () => {
         externalApi: {
           lastUpdate: Date.now(),
           hasHints: false,
-          skipOverrideSavedHints: false,
           prices: {}
         }
       }
@@ -773,36 +683,13 @@ describe('Portfolio', () => {
 
       const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
         specialErc20Hints: {
-          [USDT_ADDRESS]: 'learn'
+          learn: [USDT_ADDRESS],
+          hidden: [],
+          custom: []
         }
       })
 
       expect(result.toBeLearned.erc20s).toContain(USDT_ADDRESS)
-      expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
-    })
-    it('Only tokens with balance are kept in hintsFromExternalAPI if hasHints=false', async () => {
-      const TOKEN_WITHOUT_BALANCE = '0x8fc17671D853341D9e8B001F5Fc3C892d09CB53A'
-      const hints: Hints = {
-        erc20s: [ZeroAddress, USDT_ADDRESS, TOKEN_WITHOUT_BALANCE],
-        erc721s: {},
-        externalApi: {
-          lastUpdate: Date.now(),
-          hasHints: false,
-          skipOverrideSavedHints: false,
-          prices: {}
-        }
-      }
-
-      // @ts-ignore
-      jest.spyOn(Portfolio.prototype, 'externalHintsAPIDiscovery').mockResolvedValueOnce({
-        hints
-      })
-
-      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-
-      expect(result.hintsFromExternalAPI?.erc20s).toContain(USDT_ADDRESS)
-      expect(result.hintsFromExternalAPI?.hasHints).toBe(false)
-      expect(result.hintsFromExternalAPI?.erc20s).not.toContain(TOKEN_WITHOUT_BALANCE)
       expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
     })
   })

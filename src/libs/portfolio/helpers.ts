@@ -201,7 +201,7 @@ export const formatExternalHintsAPIResponse = (
 ): FormattedExternalHintsAPIResponse | null => {
   if (!response) return null
 
-  const { erc20s, erc721s, lastUpdate, hasHints, skipOverrideSavedHints } = response
+  const { erc20s, erc721s, lastUpdate, hasHints } = response
 
   const formattedErc721s: Hints['erc721s'] = {}
 
@@ -218,8 +218,7 @@ export const formatExternalHintsAPIResponse = (
     erc20s,
     erc721s: formattedErc721s,
     lastUpdate,
-    hasHints,
-    skipOverrideSavedHints: !!skipOverrideSavedHints
+    hasHints
   }
 }
 

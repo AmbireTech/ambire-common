@@ -16,7 +16,12 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { Portfolio } from '../../libs/portfolio'
-import { CollectionResult, Hints, PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
+import {
+  CollectionResult,
+  Hints,
+  LearnedAssets,
+  PortfolioGasTankResult
+} from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
@@ -669,19 +674,20 @@ describe('Portfolio Controller ', () => {
       expect(token).toBeFalsy()
     })
 
-    test('Learned tokens to avoid persisting non-ERC20 tokens', async () => {
+    test('Non-asset passed to addTokensToBeLearned is not learned', async () => {
       const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
       const { storageCtrl, controller } = prepareTest()
 
-      // @ts-ignore
-      await controller.learnTokens([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
+      controller.addTokensToBeLearned([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr)
 
-      const previousHintsStorage = await storageCtrl.get('previousHints', {})
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const key = `${1}:${account.addr}`
 
-      expect(previousHintsStorage.learnedTokens?.['1']).not.toHaveProperty(SMART_CONTRACT_ADDR)
+      expect(learnedAssets.erc20s[key]).not.toHaveProperty(SMART_CONTRACT_ADDR)
+      expect(learnedAssets.erc20s[key]).toHaveProperty(BANANA_TOKEN_ADDR)
     })
 
     test('Portfolio should filter out ER20 tokens that mimic native tokens (same symbol and amount)', async () => {
@@ -786,21 +792,20 @@ describe('Portfolio Controller ', () => {
       expect(tokenInLearnedTokens).toBeFalsy()
     })
 
-    test('To be learned token is returned from portfolio and updated with timestamp in learnedTokens', async () => {
+    test('To be learned token is returned from portfolio and updated with timestamp in learnedAssets', async () => {
       const { storageCtrl, controller } = prepareTest()
       const polygon = networks.find((network) => network.chainId === 137n)!
-      // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
+      // In order to test whether toBeLearned token is passed and persisted in learnedAssets correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
       // 2. retrieve the token from portfolio and check if it is found.
-      // 3. check if the token is persisted in learnedTokens with timestamp.
-      // in learnedTokens as a new token, when found with balance from toBeLearned list.
+      // 3. check if the token is persisted in learnedAssets with timestamp.
+      // in learnedAssets as a new token, when found with balance from toBeLearned list.
 
       const hints: Hints = {
         erc20s: [ZeroAddress],
         erc721s: {},
         externalApi: {
           hasHints: true,
-          skipOverrideSavedHints: false,
           lastUpdate: Date.now(),
           prices: {}
         }
@@ -826,9 +831,10 @@ describe('Portfolio Controller ', () => {
         )
       expect(toBeLearnedToken).toBeTruthy()
 
-      const previousHintsStorage = await storageCtrl.get('previousHints', {})
-      const tokenInLearnedTokens =
-        previousHintsStorage.learnedTokens?.['137'][toBeLearnedToken!.address]
+      const key = `${137}:${account2.addr}`
+
+      const previousHintsStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const tokenInLearnedTokens = previousHintsStorage.erc20s?.[key][toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeTruthy()
     })

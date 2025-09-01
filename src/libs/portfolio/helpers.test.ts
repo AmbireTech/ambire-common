@@ -5,6 +5,8 @@ import { describe } from '@jest/globals'
 import { velcroUrl } from '../../../test/config'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
+import { mergeERC721s } from './helpers'
+import { ERC721s } from './interfaces'
 import { Portfolio } from './portfolio'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -28,5 +30,22 @@ const getTokens = async () => {
 }
 
 describe('Portfolio helpers', () => {
-  // @TODO: Tests
+  it('mergeERC721s', () => {
+    const arrayOfHints: ERC721s[] = [
+      {
+        '0x026224A2940bFE258D0dbE947919B62fE321F042': [1n, 2n]
+      },
+      {
+        '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272': [5n],
+        '0x026224A2940bFE258D0dbE947919B62fE321F042': [2n, 5n]
+      }
+    ]
+    const merged = mergeERC721s(arrayOfHints)
+
+    expect(Object.keys(merged).length).toBe(2)
+    expect(merged['0x026224A2940bFE258D0dbE947919B62fE321F042']).toEqual([1n, 2n, 5n])
+    expect(merged['0x026224A2940bFE258D0dbE947919B62fE321F042'].length).toBe(3)
+    expect(merged['0x35bAc15f98Fa2F496FCb84e269d8d0a408442272']).toEqual([5n])
+    expect(merged['0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'].length).toBe(1)
+  })
 })
