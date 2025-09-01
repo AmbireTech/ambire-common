@@ -83,14 +83,12 @@ describe('Portfolio', () => {
       await Promise.all([
         // @ts-ignore
         portfolio.externalHintsAPIDiscovery({
-          previousHintsFromExternalAPI: null,
           chainId: 1n,
           accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
           baseCurrency: 'usd'
         }),
         // @ts-ignore
         portfolio.externalHintsAPIDiscovery({
-          previousHintsFromExternalAPI: null,
           chainId: 1n,
           accountAddr: '0xe750Fff1AA867DFb52c9f98596a0faB5e05d30A6',
           baseCurrency: 'usd'

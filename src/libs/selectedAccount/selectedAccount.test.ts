@@ -29,7 +29,7 @@ describe('Selected Account lib', () => {
 
     expect('tokens' in result).toBe(false)
     expect('collections' in result).toBe(false)
-    expect('hintsFromExternalAPI' in result).toBe(false)
+    expect('lastExternalApiUpdateData' in result).toBe(false)
   })
   describe('calculateTokenArray', () => {
     it('should calculate token array correctly', () => {
@@ -400,7 +400,7 @@ const PORTFOLIO_STATE: AccountState = {
     isLoading: false,
     errors: [],
     result: {
-      hintsFromExternalAPI: {
+      lastExternalApiUpdateData: {
         hasHints: true,
         lastUpdate: 1753192918712
       },
@@ -503,7 +503,7 @@ const PORTFOLIO_STATE: AccountState = {
     isLoading: false,
     errors: [],
     result: {
-      hintsFromExternalAPI: {
+      lastExternalApiUpdateData: {
         hasHints: true,
         lastUpdate: 1753192918712
       },

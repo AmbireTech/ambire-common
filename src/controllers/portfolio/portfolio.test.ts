@@ -265,26 +265,6 @@ describe('Portfolio Controller ', () => {
     }
   }
 
-  test('Previous tokens are persisted in the storage', async () => {
-    const { controller, storageCtrl } = prepareTest()
-    await controller.updateSelectedAccount(account2.addr)
-    const storagePreviousHints = await storageCtrl.get('previousHints', {
-      fromExternalAPI: {},
-      learnedTokens: {},
-      learnedNfts: {}
-    })
-    const ethereumHints = storagePreviousHints.fromExternalAPI[`1:${account2.addr}`]
-    const polygonHints = storagePreviousHints.fromExternalAPI[`137:${account2.addr}`]
-    const optimismHints = storagePreviousHints.fromExternalAPI[`137:${account2.addr}`]
-
-    // Controller persists tokens having balance for the current account.
-    // @TODO - here we can enhance the test to cover one more scenarios:
-    //  #1) Does the account really have amount for the persisted tokens.
-    expect(ethereumHints?.erc20s?.length).toBeGreaterThan(0)
-    expect(polygonHints?.erc20s?.length).toBeGreaterThan(0)
-    expect(optimismHints?.erc20s?.length).toBeGreaterThan(0)
-  })
-
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
     const { controller } = prepareTest()
     const ethereum = networks.find((network) => network.chainId === 1n)
@@ -383,7 +363,7 @@ describe('Portfolio Controller ', () => {
       expect(latestState.isReady).toEqual(true)
       expect(latestState.result?.tokens.length).toBeGreaterThan(0)
       expect(latestState.result?.collections?.length).toBeGreaterThan(0)
-      expect(latestState.result?.hintsFromExternalAPI).toBeTruthy()
+      expect(latestState.result?.lastExternalApiUpdateData).toBeTruthy()
       expect(pendingState).toBeDefined()
     })
 
@@ -437,7 +417,7 @@ describe('Portfolio Controller ', () => {
 
         expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
         expect(pendingState.result?.collections?.length).toBeGreaterThan(0)
-        expect(pendingState.result?.hintsFromExternalAPI).toBeTruthy()
+        expect(pendingState.result?.lastExternalApiUpdateData).toBeTruthy()
         expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
         // Expect amount post simulation to be calculated correctly
         expect(collection?.amountPostSimulation).toBe(0n)
@@ -658,28 +638,12 @@ describe('Portfolio Controller ', () => {
       jest.restoreAllMocks()
       jest.clearAllMocks()
     })
-    test('Zero balance token from learned tokens is filtered out', async () => {
-      const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
-      const { controller } = prepareTest()
-
-      // @ts-ignore
-      await controller.learnTokens([BANANA_TOKEN_ADDR], 1n)
-
-      await controller.updateSelectedAccount(account.addr)
-
-      const token = controller
-        .getLatestPortfolioState(account.addr)
-        ['1']?.result?.tokens.find((tk) => tk.address === BANANA_TOKEN_ADDR)
-
-      expect(token).toBeFalsy()
-    })
-
     test('Non-asset passed to addTokensToBeLearned is not learned', async () => {
-      const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
+      const ETHX_TOKEN_ADDR = '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b'
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
       const { storageCtrl, controller } = prepareTest()
 
-      controller.addTokensToBeLearned([BANANA_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
+      controller.addTokensToBeLearned([ETHX_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -687,7 +651,7 @@ describe('Portfolio Controller ', () => {
       const key = `${1}:${account.addr}`
 
       expect(learnedAssets.erc20s[key]).not.toHaveProperty(SMART_CONTRACT_ADDR)
-      expect(learnedAssets.erc20s[key]).toHaveProperty(BANANA_TOKEN_ADDR)
+      expect(learnedAssets.erc20s[key]).toHaveProperty(ETHX_TOKEN_ADDR)
     })
 
     test('Portfolio should filter out ER20 tokens that mimic native tokens (same symbol and amount)', async () => {
@@ -695,7 +659,7 @@ describe('Portfolio Controller ', () => {
       const { controller } = prepareTest()
 
       // @ts-ignore
-      await controller.learnTokens([ERC_20_MATIC_ADDR], 137n)
+      await controller.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -724,36 +688,7 @@ describe('Portfolio Controller ', () => {
 
       expect(hasErc20Matic).toBeFalsy()
     })
-
-    test("Learned token timestamp isn't updated if the token is found by the external hints api", async () => {
-      const { storageCtrl, controller } = prepareTest()
-
-      await controller.updateSelectedAccount(account.addr)
-
-      const firstTokenOnEth = controller
-        .getLatestPortfolioState(account.addr)
-        ['1']?.result?.tokens.find(
-          (token) =>
-            token.amount > 0n &&
-            token.address !== ZeroAddress &&
-            !token.flags.onGasTank &&
-            !token.flags.rewardsType
-        )
-
-      // Learn a token discovered by velcro
-      // @ts-ignore
-      await controller.learnTokens([firstTokenOnEth!.address], 1n)
-
-      await controller.updateSelectedAccount(account.addr)
-
-      const previousHintsStorage = await storageCtrl.get('previousHints', {})
-      const firstTokenOnEthInLearned =
-        previousHintsStorage.learnedTokens['1'][firstTokenOnEth!.address]
-
-      // Expect the timestamp to be null
-      expect(firstTokenOnEthInLearned).toBeNull()
-    })
-    test('To be learned token is returned from portfolio and not passed to learnedTokens (as it is without balance)', async () => {
+    test('To be learned token is returned from portfolio, but not passed to learnTokens (as it is without balance)', async () => {
       const { storageCtrl, controller } = prepareTest()
       const ethereum = networks.find((network) => network.chainId === 1n)!
       const clonedEthereum = structuredClone(ethereum)
@@ -863,13 +798,14 @@ describe('Portfolio Controller ', () => {
 
       const latestState = controller.getLatestPortfolioState(account.addr)?.['1']!
 
-      expect(latestState.result?.hintsFromExternalAPI).toBeDefined()
-      expect(latestState.result?.hintsFromExternalAPI?.erc20s.length).toBeGreaterThan(0)
+      const lastUpdatedOne = latestState.result?.lastExternalApiUpdateData?.lastUpdate
+
+      expect(lastUpdatedOne).toBeGreaterThan(0)
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
 
       const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
-      expect(latestState2.result?.hintsFromExternalAPI).toBe(null)
+      expect(latestState2.result?.lastExternalApiUpdateData?.lastUpdate).toBe(lastUpdatedOne)
 
       const originalDateNow = Date.now
       // Spy on Date.now and move time 16 minutes forward
@@ -877,9 +813,44 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
       const latestState3 = controller.getLatestPortfolioState(account.addr)?.['1']!
-      expect(latestState3.result?.hintsFromExternalAPI).not.toBe(null)
-      expect(latestState3.result?.hintsFromExternalAPI?.lastUpdate).toBeGreaterThan(
-        latestState.result?.hintsFromExternalAPI?.lastUpdate!
+
+      expect(latestState3.result?.lastExternalApiUpdateData?.lastUpdate).toBeDefined()
+      expect(latestState3.result?.lastExternalApiUpdateData?.lastUpdate).toBeGreaterThan(
+        lastUpdatedOne || 0
+      )
+    })
+    test('External API hints are persisted (cached) for 60 minutes on networks with hasHints false', async () => {
+      const { controller } = prepareTest()
+      const ethereum = networks.find((network) => network.chainId === 1n)!
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState = controller.getLatestPortfolioState(account.addr)?.['1']!
+
+      const lastUpdatedOne = latestState.result?.lastExternalApiUpdateData?.lastUpdate
+
+      expect(lastUpdatedOne).toBeGreaterThan(0)
+
+      // Mock hasHints false (e.g. static hints)
+      latestState.result!.lastExternalApiUpdateData!.hasHints = false
+
+      const originalDateNow = Date.now
+      // Spy on Date.now and move time 16 minutes forward
+      jest.spyOn(Date, 'now').mockImplementation(() => originalDateNow() + 16 * 60 * 1000)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
+      expect(latestState2.result?.lastExternalApiUpdateData?.lastUpdate).toBe(lastUpdatedOne)
+
+      // Spy on Date.now and move time 16 minutes forward
+      jest.spyOn(Date, 'now').mockImplementation(() => originalDateNow() + 61 * 60 * 1000)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+      const latestState3 = controller.getLatestPortfolioState(account.addr)?.['1']!
+      expect(latestState3.result?.lastExternalApiUpdateData?.lastUpdate).toBeDefined()
+      expect(latestState3.result?.lastExternalApiUpdateData?.lastUpdate).toBeGreaterThan(
+        lastUpdatedOne || 0
       )
     })
     test("External API hints aren't persisted (cached) on a manual update", async () => {
@@ -889,18 +860,18 @@ describe('Portfolio Controller ', () => {
       await controller.updateSelectedAccount(account.addr, [ethereum])
 
       const latestState = controller.getLatestPortfolioState(account.addr)?.['1']!
-      const firstUpdatedAt = latestState.result?.hintsFromExternalAPI?.lastUpdate
 
-      expect(latestState.result?.hintsFromExternalAPI).not.toBe(null)
-      expect(latestState.result?.hintsFromExternalAPI?.erc20s.length).toBeGreaterThan(0)
+      const lastUpdatedOne = latestState.result?.lastExternalApiUpdateData?.lastUpdate
+      expect(lastUpdatedOne).toBeGreaterThan(0)
 
       await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
         isManualUpdate: true
       })
 
       const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
-      expect(latestState2.result?.hintsFromExternalAPI).not.toBe(null)
-      expect(latestState2.result?.hintsFromExternalAPI?.lastUpdate).toBeGreaterThan(firstUpdatedAt!)
+      expect(latestState2.result?.lastExternalApiUpdateData?.lastUpdate).toBeGreaterThan(
+        lastUpdatedOne || 0
+      )
     })
   })
 

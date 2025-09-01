@@ -73,8 +73,7 @@ export interface Hints {
   erc20s: string[]
   erc721s: ERC721s
   /**
-   * Only present when the hints are coming from an external API
-   * (when they are NOT loaded from previousHintsFromExternalAPI)
+   * TODO: Comment
    */
   externalApi?: {
     /**
@@ -133,13 +132,16 @@ export interface PortfolioLibGetResult {
   priceCache: PriceCache
   tokens: TokenResult[]
   feeTokens: TokenResult[]
+  /**
+   * Assets the user owns that need to be learned by the controller.
+   */
   toBeLearned: {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
   }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  hintsFromExternalAPI: {
+  lastExternalApiUpdateData: {
     lastUpdate: number
     hasHints: boolean
   } | null
@@ -245,7 +247,7 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   priceRecencyOnFailure?: number
-  previousHintsFromExternalAPI?: {
+  lastExternalApiUpdateData?: {
     lastUpdate: number
     hasHints: boolean
   } | null
@@ -305,7 +307,12 @@ export interface PreviousHintsStorage {
   learnedTokens: { [chainId: string]: { [tokenAddress: string]: string | null } }
   learnedNfts: { [chainId: string]: { [nftAddress: string]: bigint[] } }
   fromExternalAPI: {
-    [networkAndAccountKey: string]: GetOptions['previousHintsFromExternalAPI']
+    [networkAndAccountKey: string]: {
+      lastUpdate: number
+      erc20s: Hints['erc20s']
+      erc721s: ERC721s
+      hasHints: boolean
+    }
   }
 }
 

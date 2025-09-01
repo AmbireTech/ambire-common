@@ -742,8 +742,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     // Add the tokens to toBeLearned, but only for this call if the key is not migrated.
     // After the portfolio update all tokens with balance > 0 will be learned.
     if (isKeyNotMigrated) {
-      const oldStructureLearnedNfts = this.#previousHints.learnedNfts[chainId.toString()] || {}
-      const oldStructureLearnedTokens = this.#previousHints.learnedTokens[chainId.toString()] || {}
+      const oldStructureLearnedNfts = this.#previousHints.learnedNfts?.[chainId.toString()] || {}
+      const oldStructureLearnedTokens =
+        this.#previousHints.learnedTokens?.[chainId.toString()] || {}
 
       Object.keys(oldStructureLearnedTokens).forEach((tokenAddr) => {
         specialErc20Hints.learn.push(tokenAddr)
@@ -758,8 +759,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return {
       specialErc20Hints,
       specialErc721Hints,
-      additionalErc20Hints: Object.keys(learnedTokens),
-      additionalErc721Hints: learnedNfts
+      additionalErc20Hints: Object.keys(learnedTokens || {}),
+      additionalErc721Hints: learnedNfts || {}
     }
   }
 
@@ -835,7 +836,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           const maxDataAgeMs = areAccountOpsChanged ? undefined : paramsMaxDataAgeMs
 
           const hintsResponse =
-            this.#latest[accountId][network.chainId.toString()]?.result?.hintsFromExternalAPI
+            this.#latest[accountId][network.chainId.toString()]?.result?.lastExternalApiUpdateData
 
           const canSkipExternalApiHintsUpdate =
             !!hintsResponse &&
@@ -851,6 +852,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               blockTag: 'latest',
               maxDataAgeMs,
               isManualUpdate,
+              lastExternalApiUpdateData: hintsResponse,
               ...allHints,
               disableAutoDiscovery: canSkipExternalApiHintsUpdate
             }),
@@ -858,6 +860,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               blockTag: 'pending',
               maxDataAgeMs,
               isManualUpdate,
+              lastExternalApiUpdateData: hintsResponse,
               ...(currentAccountOps &&
                 state && {
                   simulation: {

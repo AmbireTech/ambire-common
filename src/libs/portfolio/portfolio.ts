@@ -63,7 +63,7 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  previousHintsFromExternalAPI: null,
+  lastExternalApiUpdateData: null,
   fetchPinned: true,
   priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
@@ -132,7 +132,7 @@ export class Portfolio {
    * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
    */
   protected async externalHintsAPIDiscovery(options?: {
-    previousHintsFromExternalAPI: PortfolioLibGetResult['hintsFromExternalAPI'] | null
+    lastExternalApiUpdateData: PortfolioLibGetResult['lastExternalApiUpdateData'] | null
     disableAutoDiscovery?: boolean
     chainId: bigint
     accountAddr: string
@@ -143,7 +143,7 @@ export class Portfolio {
   }> {
     const {
       disableAutoDiscovery = false,
-      previousHintsFromExternalAPI,
+      lastExternalApiUpdateData,
       chainId,
       accountAddr,
       baseCurrency
@@ -172,9 +172,11 @@ export class Portfolio {
             }
           }
         }
-
-        return {
-          hints
+      } else if (lastExternalApiUpdateData) {
+        hints.externalApi = {
+          lastUpdate: lastExternalApiUpdateData.lastUpdate,
+          hasHints: lastExternalApiUpdateData.hasHints,
+          prices: {}
         }
       }
 
@@ -188,7 +190,7 @@ export class Portfolio {
       // eslint-disable-next-line no-console
       console.error(errorMesssage)
 
-      if (!previousHintsFromExternalAPI) {
+      if (!lastExternalApiUpdateData) {
         return {
           hints,
           error: {
@@ -200,7 +202,7 @@ export class Portfolio {
       }
 
       const TEN_MINUTES = 10 * 60 * 1000
-      const lastUpdate = previousHintsFromExternalAPI.lastUpdate
+      const lastUpdate = lastExternalApiUpdateData.lastUpdate
       const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
 
       return {
@@ -220,7 +222,7 @@ export class Portfolio {
     const errors: PortfolioLibGetResult['errors'] = []
     const {
       simulation,
-      previousHintsFromExternalAPI,
+      lastExternalApiUpdateData,
       disableAutoDiscovery = false,
       baseCurrency,
       fetchPinned,
@@ -244,7 +246,7 @@ export class Portfolio {
     const chainId = this.network.chainId
 
     const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
-      previousHintsFromExternalAPI: previousHintsFromExternalAPI ?? null,
+      lastExternalApiUpdateData: lastExternalApiUpdateData ?? null,
       disableAutoDiscovery,
       chainId,
       accountAddr,
@@ -255,7 +257,7 @@ export class Portfolio {
 
     hints.erc20s = [
       ...hints.erc20s,
-      ...Object.keys(specialErc20Hints || {}),
+      ...Object.values(specialErc20Hints || {}).flat(),
       ...(additionalErc20Hints || []),
       ...(fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
       // add the fee tokens
@@ -264,6 +266,7 @@ export class Portfolio {
     hints.erc721s = mergeERC721s([
       additionalErc721Hints || {},
       hints.erc721s,
+      // @TODO: Write test and check
       ...Object.values(specialErc721Hints || {})
     ])
 
@@ -480,7 +483,7 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      hintsFromExternalAPI: hints.externalApi
+      lastExternalApiUpdateData: hints.externalApi
         ? {
             lastUpdate: hints.externalApi.lastUpdate,
             hasHints: hints.externalApi.hasHints
