@@ -21,7 +21,10 @@ import {
   ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
-import { IAccountPickerController } from '../../interfaces/accountPicker'
+import {
+  AmbireRelayerIdentityCreateMultipleResponse,
+  IAccountPickerController
+} from '../../interfaces/accountPicker'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -787,7 +790,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccountForImport) => ({
+      const identityReq = accountsToAddOnRelayer.map(({ account }: SelectedAccountForImport) => ({
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.initialPrivileges,
@@ -799,39 +802,20 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       }))
 
       try {
-        const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-          accounts: body
-        })
+        const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+          accounts: identityReq
+        })) as AmbireRelayerIdentityCreateMultipleResponse
 
-        if (!res.success) {
-          throw new Error(res?.message || 'No response received from the Ambire Relayer.')
-        }
+        if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
 
-        type AccResType = {
-          identity: string
-          status: {
-            created: boolean
-            reason?: string
-          }
-        }
-
-        type BodyType = AccResType[]
-        if (res.body) {
-          newlyCreatedAccounts = (res.body as BodyType)
-            .filter((acc: AccResType) => acc.status.created)
-            .map((acc: AccResType) => acc.identity)
-        }
+        newlyCreatedAccounts = identityRes.body
+          .filter((acc) => acc.status.created)
+          .map((acc) => acc.identity)
       } catch (e: any) {
-        this.emitError({
-          level: 'major',
-          message:
-            'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.',
-          error: e
-        })
+        // TODO: Fail silently, but retry + crash report?
 
-        this.addAccountsStatus = 'INITIAL'
-        await this.forceEmitUpdate()
-        return
+        // TODO: Is treating all as newly created accounts ok?
+        newlyCreatedAccounts = identityReq.map((acc) => acc.addr)
       }
     }
 
