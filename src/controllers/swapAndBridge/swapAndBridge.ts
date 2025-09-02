@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, isAddress, parseUnits } from 'ethers'
+import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -1194,7 +1194,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return token
   }
 
-  #accountNativeBalance(): bigint {
+  #accountNativeBalance(amount: bigint): bigint {
     if (!this.#selectedAccount.account || !this.fromChainId) return 0n
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(
@@ -1205,7 +1205,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
     if (!native) return 0n
-    return native.amount
+
+    if (this.fromSelectedToken?.address !== ZeroAddress) return native.amount
+
+    // subtract the from amount from the portfolio available balance
+    if (amount > native.amount) return 0n
+    return native.amount - amount
   }
 
   /**
@@ -1431,7 +1436,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           ),
           sort: this.routePriority,
           isOG: this.#invite.isOG,
-          accountNativeBalance: this.#accountNativeBalance(),
+          accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
 
