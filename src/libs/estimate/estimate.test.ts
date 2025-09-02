@@ -6,12 +6,13 @@ import fetch from 'node-fetch'
 import { describe, expect } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
@@ -1406,5 +1407,125 @@ describe('estimate', () => {
       errorCallback
     )
     expect(responseThree instanceof Error).toBe(true)
+  })
+
+  it('[v2]:Ethereum | deployed account | should work with singletor deployer as salt is different for each contract deployment', async () => {
+    const bytecode =
+      '0x608060405234801561001057600080fd5b50610134806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c80634af63f0214602d575b600080fd5b60cf60048036036040811015604157600080fd5b810190602081018135640100000000811115605b57600080fd5b820183602082011115606c57600080fd5b80359060200191846001830284011164010000000083111715608d57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600092019190915250929550509135925060eb915050565b604080516001600160a01b039092168252519081900360200190f35b6000818351602085016000f5939250505056fea26469706673582212206b44f8a82cb6b156bfcc3dc6aadd6df4eefd204bc928a4397fd15dacf6d5320564736f6c63430006020033'
+    const salt = '0x0a0b000000000000000000000000000000000000000000000000000000000000'
+    const salt2 = '0x0a0b000000000000000000000000000000000000000000000000000000001010'
+    const singletonABI = [
+      {
+        inputs: [
+          { internalType: 'bytes', name: '_initCode', type: 'bytes' },
+          { internalType: 'bytes32', name: '_salt', type: 'bytes32' }
+        ],
+        name: 'deploy',
+        outputs: [{ internalType: 'address payable', name: 'createdContract', type: 'address' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const singletonInterface = new Interface(singletonABI)
+    const call = {
+      to: SINGLETON,
+      value: 0n,
+      data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
+    }
+    const secondCall = {
+      to: SINGLETON,
+      value: 0n,
+      data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt2])
+    }
+
+    const ambAcc = new Contract(devconSmart.addr, AmbireAccount.abi, provider)
+    const nonce = await ambAcc.nonce()
+    const opEthereum = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: devconSmart.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce,
+      signature: '0x',
+      calls: [call, secondCall]
+    }
+    const accountStates = await getAccountsInfo([devconSmart])
+    const accountState = accountStates[devconSmart.addr][ethereum.chainId.toString()]
+    const baseAcc = getBaseAccount(devconSmart, accountState, [], ethereum)
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      opEthereum,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, devconSmart),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider).toBe(null)
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(res.bundler).toBe(null)
+  })
+
+  it('[v2]:Ethereum | deployed account | should fail with singletor deployer as inner contracts have already been deployed once', async () => {
+    const bytecode = DeployHelper.bin
+    const salt = '0x0a0b00000000000000000000000000000000000000000000000000000a101010'
+    const singletonABI = [
+      {
+        inputs: [
+          { internalType: 'bytes', name: '_initCode', type: 'bytes' },
+          { internalType: 'bytes32', name: '_salt', type: 'bytes32' }
+        ],
+        name: 'deploy',
+        outputs: [{ internalType: 'address payable', name: 'createdContract', type: 'address' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const singletonInterface = new Interface(singletonABI)
+    const call = {
+      to: SINGLETON,
+      value: 0n,
+      data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
+    }
+    const ambAcc = new Contract(devconSmart.addr, AmbireAccount.abi, provider)
+    const nonce = await ambAcc.nonce()
+    const opEthereum = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: devconSmart.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce,
+      signature: '0x',
+      calls: [call]
+    }
+    const accountStates = await getAccountsInfo([devconSmart])
+    const accountState = accountStates[devconSmart.addr][ethereum.chainId.toString()]
+    const baseAcc = getBaseAccount(devconSmart, accountState, [], ethereum)
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      opEthereum,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, devconSmart),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(true)
+    const err = response as Error
+    expect(err.message).toBe('Transaction invalid: out of gas')
   })
 })
