@@ -640,7 +640,7 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  describe.only('Hints- token/nft learning, external api hints and temporary tokens', () => {
+  describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
     afterEach(() => {
       jest.restoreAllMocks()
       jest.clearAllMocks()
