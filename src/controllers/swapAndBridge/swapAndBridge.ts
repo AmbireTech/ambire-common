@@ -27,16 +27,12 @@ import {
   CachedToTokenLists,
   FromToken,
   ISwapAndBridgeController,
-  SocketApiBridgeStep,
-  SocketAPIBridgeUserTx,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeStep,
-  SwapAndBridgeToToken,
-  SwapAndBridgeUserTx
+  SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
@@ -55,7 +51,6 @@ import {
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
-  getIsBridgeTxn,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   mapBannedToValidAddr,
@@ -65,10 +60,8 @@ import {
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { LiFiAPI } from '../../services/lifi/api'
-import { normalizeIncomingSocketToken, SocketAPI } from '../../services/socket/api'
-import { ZERO_ADDRESS } from '../../services/socket/constants'
+import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
-import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
@@ -114,13 +107,6 @@ const STATUS_WRAPPED_METHODS = {
 
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
-
-const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
-  'stargate',
-  'stargate-v2',
-  'arbitrum-bridge',
-  'zksync-native'
-]
 
 /**
  * The Swap and Bridge controller is responsible for managing the state and
@@ -1454,6 +1440,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           accountNativeBalance: this.#accountNativeBalance(),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
+        // sort the routes by making the disabled ones last
+        quoteResult.routes = quoteResult.routes.sort(
+          (a, b) => Number(a.disabled === true) - Number(b.disabled === true)
+        )
+        // select the first enabled route
+        quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined
+        quoteResult.selectedRouteSteps = quoteResult.selectedRoute
+          ? quoteResult.selectedRoute.steps
+          : []
 
         if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
         // no updates if the user has commited
@@ -1466,136 +1461,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           quoteResult.toChainId === this.toChainId &&
           quoteResult.toAsset.address === this.toSelectedToken?.address
         ) {
-          let routeToSelect
-          let routeToSelectSteps: SwapAndBridgeStep[] = []
-          let routes = quoteResult.routes || []
-
-          try {
-            if (this.#serviceProviderAPI.id === 'socket') {
-              routes = routes.map((route) => {
-                if (!route.userTxs) return route
-
-                const bridgeTx = route.userTxs.find((tx) => getIsBridgeTxn(tx.userTxType)) as
-                  | SwapAndBridgeUserTx
-                  | undefined
-
-                if (!bridgeTx) return route
-
-                const bridgeStep = (bridgeTx as unknown as SocketAPIBridgeUserTx).steps.find(
-                  (s) => s.type === 'bridge'
-                ) as SocketApiBridgeStep | undefined
-
-                if (!bridgeStep) return route
-                if (bridgeStep.protocolFees.amount === '0') return route
-
-                const normalizedProtocolFeeToken = normalizeIncomingSocketToken(
-                  bridgeStep.protocolFees.asset
-                )
-
-                const doesProtocolRequireExtraContractFeeInNative =
-                  PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(bridgeStep.protocol.name) &&
-                  // When other tokens than the native ones are being bridged,
-                  // Socket API takes the fee directly from the "From" amount.
-                  normalizedProtocolFeeToken.address === ZERO_ADDRESS
-
-                if (!doesProtocolRequireExtraContractFeeInNative) return route
-
-                const protocolFeeTokenNetwork = this.#networks.networks.find(
-                  (n) => Number(n.chainId) === normalizedProtocolFeeToken.chainId
-                )!
-
-                const isTokenToPayFeeWithTheSameAsFromToken =
-                  this.fromSelectedToken?.address === normalizedProtocolFeeToken.address &&
-                  this.fromChainId === normalizedProtocolFeeToken.chainId
-
-                const tokenToPayFeeWith = this.portfolioTokenList.find((t) => {
-                  return (
-                    t.address === normalizedProtocolFeeToken.address &&
-                    t.chainId === protocolFeeTokenNetwork.chainId
-                  )
-                })
-
-                const protocolFeeTokenDecimals = bridgeStep.protocolFees.asset.decimals
-                const portfolioTokenToPayFeeWithDecimals = tokenToPayFeeWith
-                  ? tokenToPayFeeWith.decimals
-                  : protocolFeeTokenDecimals
-                const fromAmountNumber = Number(this.fromAmount)
-                const fromAmountScaledToTokenToPayFeeWithDecimals = BigInt(
-                  Math.round(fromAmountNumber * 10 ** portfolioTokenToPayFeeWithDecimals)
-                )
-
-                const tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals =
-                  tokenToPayFeeWith
-                    ? // Scale tokenToPayFeeWith to the same decimals as portfolioTokenToPayFeeWithDecimals
-                      tokenToPayFeeWith.amount *
-                      BigInt(10 ** (protocolFeeTokenDecimals - portfolioTokenToPayFeeWithDecimals))
-                    : BigInt(0)
-
-                const availableAfterSubtractionScaledToPortfolioTokenToPayFeeWithDecimals =
-                  isTokenToPayFeeWithTheSameAsFromToken
-                    ? tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals -
-                      fromAmountScaledToTokenToPayFeeWithDecimals
-                    : tokenToPayFeeWithScaledToPortfolioTokenToPayFeeWithDecimals
-
-                const protocolFeesAmountScaledToPortfolioTokenToPayFeeWithDecimals = BigInt(
-                  Math.round(
-                    Number(bridgeStep.protocolFees.amount) *
-                      10 ** (portfolioTokenToPayFeeWithDecimals - protocolFeeTokenDecimals)
-                  )
-                )
-                const hasEnoughAmountToPayFee =
-                  availableAfterSubtractionScaledToPortfolioTokenToPayFeeWithDecimals >=
-                  protocolFeesAmountScaledToPortfolioTokenToPayFeeWithDecimals
-
-                if (!hasEnoughAmountToPayFee) {
-                  const protocolName = bridgeStep.protocol.displayName
-                  const insufficientTokenSymbol = bridgeStep.protocolFees.asset.symbol
-                  const insufficientTokenNetwork = protocolFeeTokenNetwork.name
-                  const insufficientAssetAmount = formatUnits(
-                    bridgeStep.protocolFees.amount,
-                    bridgeStep.protocolFees.asset.decimals
-                  )
-                  const insufficientAssetAmountInUsd = formatDecimals(
-                    bridgeStep.protocolFees.feesInUsd,
-                    'value'
-                  )
-
-                  // Trick to show the error message on the UI, as the API doesn't handle this
-                  // eslint-disable-next-line no-param-reassign
-                  route.disabled = true
-                  // eslint-disable-next-line no-param-reassign
-                  route.disabledReason = `Insufficient ${insufficientTokenSymbol} on ${insufficientTokenNetwork}. You need ${insufficientAssetAmount} ${insufficientTokenSymbol} (${insufficientAssetAmountInUsd}) on ${insufficientTokenNetwork} to cover the ${protocolName} protocol fee for this route.`
-                }
-
-                return route
-              })
-            }
-
-            routes = routes.sort(
-              (a, b) => Number(a.disabled === true) - Number(b.disabled === true)
-            )
-          } catch (error) {
-            // if the filtration fails for some reason continue with the original routes
-            // array without interrupting the rest of the logic
-            // eslint-disable-next-line no-console
-            console.error(error)
-          }
-
-          if (!routes.length) {
+          const routes = quoteResult.routes || []
+          if (!routes.length || !quoteResult.selectedRoute) {
             this.quote = null
             return
-          }
-
-          let bestRoute = quoteResult.selectedRoute
-          if (this.#serviceProviderAPI.id === 'socket') {
-            bestRoute =
-              this.routePriority === 'output'
-                ? routes[0] // API returns highest output first
-                : routes[routes.length - 1] // API returns fastest... last
-          }
-          if (bestRoute) {
-            routeToSelect = bestRoute
-            routeToSelectSteps = bestRoute.steps
           }
 
           this.quote = {
@@ -1603,11 +1472,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             fromChainId: quoteResult.fromChainId,
             toAsset: quoteResult.toAsset,
             toChainId: quoteResult.toChainId,
-            selectedRoute: routeToSelect,
-            selectedRouteSteps: routeToSelectSteps,
+            selectedRoute: quoteResult.selectedRoute,
+            selectedRouteSteps: quoteResult.selectedRoute.steps,
             routes
           }
-          this.isAutoSelectRouteDisabled = !routeToSelect || !!routeToSelect.disabled
+          this.isAutoSelectRouteDisabled = quoteResult.selectedRoute.disabled
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
 

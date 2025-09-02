@@ -102,7 +102,7 @@ export interface SwapAndBridgeRoute {
   serviceTime: number
   rawRoute: SocketAPIRoute | LiFiRoute
   toToken: LiFiToken
-  disabled?: boolean
+  disabled: boolean
   disabledReason?: string
 }
 
@@ -227,6 +227,11 @@ export type SwapAndBridgeStep = {
     name: string
     displayName: string
     icon: string
+  }
+  protocolFees?: {
+    amount: string
+    asset: SwapAndBridgeToToken
+    feesInUsd: number
   }
   swapSlippage?: number
   toAmount: string

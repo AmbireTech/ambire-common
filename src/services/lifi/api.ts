@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -549,22 +549,17 @@ export class LiFiAPI {
       errorPrefix: 'Unable to fetch the quote.'
     })
 
-    const routes = response.routes
-      .map((r: LiFiRoute) =>
-        normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol)
-      )
-      .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
-    const selectedRoute = routes.length ? routes[0] : undefined
-    const selectedRouteSteps: SwapAndBridgeStep[] = selectedRoute ? selectedRoute.steps : []
-
     return {
       fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
       fromChainId,
       toAsset,
       toChainId,
-      selectedRoute,
-      selectedRouteSteps,
-      routes
+      routes: response.routes.map((r: LiFiRoute) =>
+        normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol)
+      ),
+      // selecting a route is a controller's responsiilibty, not the API's
+      selectedRoute: undefined,
+      selectedRouteSteps: []
     }
   }
 

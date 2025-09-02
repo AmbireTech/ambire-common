@@ -28,6 +28,7 @@ import {
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
   FEE_PERCENT,
   NULL_ADDRESS,
+  PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
 } from './constants'
 
@@ -283,7 +284,9 @@ export class SocketAPI {
     userAddress,
     isSmartAccount,
     sort,
-    isOG
+    isOG,
+    accountNativeBalance,
+    nativeSymbol
   }: {
     fromAsset: TokenResult | null
     fromChainId: number
@@ -296,6 +299,7 @@ export class SocketAPI {
     sort: 'time' | 'output'
     isOG: InviteController['isOG']
     accountNativeBalance: bigint
+    nativeSymbol: string
   }): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -334,24 +338,44 @@ export class SocketAPI {
       fromAsset: normalizeIncomingSocketToken(response.fromAsset),
       toAsset: normalizeIncomingSocketToken(response.toAsset),
       // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
-      routes: response.routes.map((route) => ({
-        ...route,
-        steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs),
-        userTxs: route.userTxs.map((userTx) => ({
-          ...userTx,
-          ...('fromAsset' in userTx && {
-            fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
-          }),
-          toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-          ...('steps' in userTx && {
-            steps: userTx.steps.map((step) => ({
-              ...step,
-              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-              toAsset: normalizeIncomingSocketToken(step.toAsset)
-            }))
-          })
-        }))
-      }))
+      routes: response.routes.map((route) => {
+        const steps = normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs)
+
+        // calculate the external fee cost
+        let feeCostAmount = null
+        steps.forEach((step) => {
+          if (PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(step.protocol.name)) {
+            feeCostAmount = step.protocolFees?.amount ?? null
+          }
+        })
+
+        // disable routes the user does not have native to pay for
+        const disabled = feeCostAmount === null ? false : accountNativeBalance < feeCostAmount
+        const disabledReason = disabled
+          ? `Insufficient ${nativeSymbol}. This bridge imposes a fee that must be paid in ${nativeSymbol}.`
+          : undefined
+
+        return {
+          ...route,
+          disabled,
+          disabledReason,
+          steps,
+          userTxs: route.userTxs.map((userTx) => ({
+            ...userTx,
+            ...('fromAsset' in userTx && {
+              fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
+            }),
+            toAsset: normalizeIncomingSocketToken(userTx.toAsset),
+            ...('steps' in userTx && {
+              steps: userTx.steps.map((step) => ({
+                ...step,
+                fromAsset: normalizeIncomingSocketToken(step.fromAsset),
+                toAsset: normalizeIncomingSocketToken(step.toAsset)
+              }))
+            })
+          }))
+        }
+      })
     }
   }
 
