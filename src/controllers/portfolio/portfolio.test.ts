@@ -1,5 +1,6 @@
 import { ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
+import { getAddress } from 'viem'
 
 import { describe, expect, jest } from '@jest/globals'
 
@@ -907,6 +908,31 @@ describe('Portfolio Controller ', () => {
       // Nfts learned by directly calling learnNfts are added to learned in storage, regardless
       // of whether the user has a collectible from the collection or not.
       expect(learnedInStorage.erc721s[key][LILPUDGIS_COLLECTION]).toEqual([1n, 2n, 3n])
+    })
+    test('Learning invalid or not checksummed ERC-721 nft', async () => {
+      const INVALID_ADDRESS = '0x524'
+      const COLLECTION_ADDRESS = '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270'
+      const { controller, storageCtrl } = await prepareTest()
+
+      const hasLearned = await controller.learnNfts([[INVALID_ADDRESS, [1n]]], account.addr, 1n)
+      const learnedAssets = await storageCtrl.get('learnedAssets', null)
+
+      expect(hasLearned).toBeFalsy()
+      expect(learnedAssets).toEqual(null)
+
+      const hasLearned2 = await controller.learnNfts(
+        [[COLLECTION_ADDRESS, [1n, 2n]]],
+        account.addr,
+        1n
+      )
+      const learnedAssets2 = await storageCtrl.get('learnedAssets', {})
+
+      expect(hasLearned2).toBeTruthy()
+      expect(learnedAssets2.erc721s).toEqual({
+        [`${1}:${account.addr}`]: {
+          [getAddress(COLLECTION_ADDRESS)]: [1n, 2n]
+        }
+      })
     })
     test('The portfolio result is exactly the same when the external API hints fetch is skipped', async () => {
       const { controller } = await prepareTest()

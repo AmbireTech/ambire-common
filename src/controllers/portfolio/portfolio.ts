@@ -765,6 +765,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return {
       specialErc20Hints,
       specialErc721Hints,
+      // @TODO: Enrich learnedTokens and learnedNfts with data from other accounts
+      // on manual updates. The user may have the token he is looking for in another account.
+      // It's VERY important to do this only for imported accounts (not view-only), as hints
+      // are now stored in storage, so learned will contain a lot of assets (performance hit).
       additionalErc20Hints: Object.keys(learnedTokens || {}),
       additionalErc721Hints: learnedNfts || {}
     }
@@ -1061,14 +1065,28 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (!this.#learnedAssets.erc721s[key]) this.#learnedAssets.erc721s[key] = {}
 
+    const formattedNftsData: [string, bigint[]][] = []
+
+    nftsData.forEach(([address, ids]) => {
+      try {
+        const checksummed = getAddress(address)
+
+        formattedNftsData.push([checksummed, ids])
+      } catch (e: any) {
+        console.error('learnNfts: Error while normalizing nft address', e)
+      }
+    })
+
     const learnedNfts: LearnedAssets['erc721s'][string] = this.#learnedAssets.erc721s[key]
 
-    const newAddrToId = nftsData.map(([addr, ids]) => ids.map((id) => `${addr}:${id}`)).flat()
+    const newAddrToId = formattedNftsData
+      .map(([addr, ids]) => ids.map((id) => `${addr}:${id}`))
+      .flat()
     const alreadyLearnedAddrToId = Object.entries(learnedNfts)
       .map(([addr, ids]) => ids.map((id) => `${addr}:${id}`))
       .flat()
     if (newAddrToId.every((i) => alreadyLearnedAddrToId.includes(i))) return false
-    nftsData.forEach(([addr, ids]) => {
+    formattedNftsData.forEach(([addr, ids]) => {
       if (addr === ZeroAddress) return
       if (!learnedNfts[addr]) learnedNfts[addr] = ids
       else learnedNfts[addr] = Array.from(new Set([...ids, ...learnedNfts[addr]]))
