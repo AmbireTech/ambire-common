@@ -35,8 +35,14 @@ contract EstimationStructs {
   }
 
   struct GasLimits {
+    // gas limit of zero means that we are running an unlimited simulation,
+    // we use this for the very first simulation
     uint256 gasLimit;
     uint256 upperBoundLimit;
-    bool shouldRevertIfConditionsMet;
+    // whether we should revert with the outcome of a successful simulation
+    // with a set gasLimit of 0, meaning it is the first simulation.
+    // The goal of this is to simulate an accountOp WITHOUT modifying the state,
+    // so we can simulate it again later
+    bool shouldRevertUponSuccessIfFirstSimulation;
   }
 }

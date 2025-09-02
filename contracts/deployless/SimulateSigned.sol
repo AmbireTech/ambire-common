@@ -14,10 +14,10 @@ contract SimulateSigned is EstimationStructs {
       return outcome;
     }
     uint gasInitial = gasleft();
-    bool isGasLimitZero = gasLimits.gasLimit == 0;
+    bool doingFirstSimulation = gasLimits.gasLimit == 0;
 
     try
-      op.account.execute{ gas: isGasLimitZero ? gasInitial : gasLimits.gasLimit }(
+      op.account.execute{ gas: doingFirstSimulation ? gasInitial : gasLimits.gasLimit }(
         op.calls,
         op.signature
       )
@@ -26,16 +26,19 @@ contract SimulateSigned is EstimationStructs {
     } catch (bytes memory err) {
       outcome.err = err;
     }
-    outcome.gasUsed = isGasLimitZero ? gasInitial - gasleft() : gasLimits.gasLimit;
+    outcome.gasUsed = doingFirstSimulation ? gasInitial - gasleft() : gasLimits.gasLimit;
 
-    bool isCaseWithNoGasLimits = isGasLimitZero && !gasLimits.shouldRevertIfConditionsMet;
-    bool isRevertingWithoutOOG = isGasLimitZero && !outcome.success;
-    bool isSuccessWithSetGas = !isGasLimitZero && outcome.success;
+    bool isCaseWithNoGasLimits = doingFirstSimulation &&
+      !gasLimits.shouldRevertUponSuccessIfFirstSimulation;
+    bool isRevertingWithoutOOG = doingFirstSimulation && !outcome.success;
+    bool isSuccessWithSetGas = !doingFirstSimulation && outcome.success;
     if (isCaseWithNoGasLimits || isRevertingWithoutOOG || isSuccessWithSetGas) {
       return outcome;
     }
 
-    if (gasLimits.shouldRevertIfConditionsMet && outcome.success && isGasLimitZero) {
+    if (
+      gasLimits.shouldRevertUponSuccessIfFirstSimulation && outcome.success && doingFirstSimulation
+    ) {
       revert RevertWithSuccess(outcome.gasUsed);
     }
 

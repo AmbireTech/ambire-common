@@ -1,3 +1,7 @@
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
@@ -20,7 +24,6 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ONE_MINUTE = 60000
@@ -47,7 +50,11 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   sessionIds: string[] = []
 
-  #positionsContinuousUpdateInterval: RecurringTimeout
+  #positionsContinuousUpdateInterval: IRecurringTimeout
+
+  get positionsContinuousUpdateInterval() {
+    return this.#positionsContinuousUpdateInterval
+  }
 
   constructor({
     fetch,
@@ -79,16 +86,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#providers = providers
     this.#ui = ui
 
-    this.#positionsContinuousUpdateInterval = createRecurringTimeout(
-      async () => {
-        if (!this.#ui.views.length) {
-          this.#positionsContinuousUpdateInterval.stop()
-          return
-        }
-
-        const FIVE_MINUTES = 1000 * 60 * 5
-        await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
-      },
+    this.#positionsContinuousUpdateInterval = new RecurringTimeout(
+      async () => this.positionsContinuousUpdate(),
       ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -552,6 +551,16 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   removeSession(sessionId: string) {
     this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
     this.emitUpdate()
+  }
+
+  async positionsContinuousUpdate() {
+    if (!this.#ui.views.length) {
+      this.#positionsContinuousUpdateInterval.stop()
+      return
+    }
+
+    const FIVE_MINUTES = 1000 * 60 * 5
+    await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
   }
 
   toJSON() {

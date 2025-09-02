@@ -44,7 +44,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   updateStatus: 'LOADING' | 'INITIAL' = 'INITIAL'
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   get lastStorageUpdate() {
     return this.#lastStorageUpdate
@@ -70,7 +70,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#ui = ui
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {

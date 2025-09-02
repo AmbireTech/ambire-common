@@ -137,7 +137,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   #reestimateAbortController: AbortController | null = null
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #activity: IActivityController
 
@@ -171,7 +171,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#providers = providers
     this.#relayerUrl = relayerUrl
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
     this.emitUpdate()
   }
 
