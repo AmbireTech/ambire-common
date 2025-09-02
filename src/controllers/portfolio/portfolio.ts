@@ -192,6 +192,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
       this.customTokens = await this.#storage.get('customTokens', [])
 
+      this.#learnedAssets = await this.#storage.get('learnedAssets', this.#learnedAssets)
       this.#previousHints = await this.#storage.get('previousHints', {})
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
@@ -713,7 +714,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
-  #getAllHints(
+  /**
+   * Gets hints from all sources and formats them as expected
+   * by the portfolio lib. These are all hints the portfolio uses,
+   * except the external hints discovery request
+   */
+  protected getAllHints(
     key: `${string}:${string}`,
     chainId: Network['chainId']
   ): Pick<
@@ -844,7 +850,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             Date.now() - hintsResponse.lastUpdate <
               EXTERNAL_API_HINTS_TTL[!hintsResponse.hasHints ? 'static' : 'dynamic']
 
-          const allHints = this.#getAllHints(key, network.chainId)
+          const allHints = this.getAllHints(key, network.chainId)
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update

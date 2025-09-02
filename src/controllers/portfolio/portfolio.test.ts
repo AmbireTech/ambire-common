@@ -23,6 +23,7 @@ import {
   PortfolioGasTankResult
 } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { BannerController } from '../banner/banner'
 import { KeystoreController } from '../keystore/keystore'
@@ -179,10 +180,12 @@ const accountWithManyAssets = {
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-const prepareTest = () => {
+const prepareTest = async (
+  initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
+) => {
   const storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
-  storageCtrl.set('accounts', [
+  await storageCtrl.set('accounts', [
     account,
     account2,
     account3,
@@ -191,6 +194,10 @@ const prepareTest = () => {
     ambireV2Account,
     accountWithManyAssets
   ])
+  console.log('D:', initialSetStorage)
+  if (initialSetStorage) await initialSetStorage(storageCtrl)
+
+  storageCtrl.get('learnedAssets').then((res) => console.log(res))
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController({
@@ -266,7 +273,7 @@ describe('Portfolio Controller ', () => {
   }
 
   test('Account updates (by account and network, updateSelectedAccount()) are queued and executed sequentially to avoid race conditions', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
     const ethereum = networks.find((network) => network.chainId === 1n)
 
     // Here's how we test if account updates are queued correctly.
@@ -354,7 +361,7 @@ describe('Portfolio Controller ', () => {
 
   describe('Latest tokens', () => {
     test('Latest tokens are fetched and kept in the controller', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(ambireV2Account.addr)
 
@@ -370,7 +377,7 @@ describe('Portfolio Controller ', () => {
     // @TODO redo this test
     test('Latest tokens are fetched only once in a short period of time (20s maxDataAgeMs)', async () => {
       const done = jest.fn(() => null)
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       let pendingState1: any
       controller.onUpdate(() => {
         if (!pendingState1?.isReady) {
@@ -397,7 +404,7 @@ describe('Portfolio Controller ', () => {
 
   describe('Pending tokens', () => {
     test('Pending tokens + simulation are fetched and kept in the controller', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -454,7 +461,7 @@ describe('Portfolio Controller ', () => {
 
     test('Pending tokens are re-fetched, if `forceUpdate` flag is set, no matter if AccountOp is the same or changer', async () => {
       const done = jest.fn(() => null)
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const accountOp = await getAccountOp()
 
       let pendingState1: any
@@ -489,7 +496,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed (omitted, i.e. undefined)', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -515,7 +522,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const accountOp = await getAccountOp()
       const accountStates = await getAccountsInfo([account])
 
@@ -547,7 +554,7 @@ describe('Portfolio Controller ', () => {
 
   describe('Pinned tokens', () => {
     test('Pinned tokens are set in an account with no tokens', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(
         emptyAccount.addr,
@@ -567,7 +574,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pinned gas tank tokens are not set in an account with tokens', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -592,7 +599,7 @@ describe('Portfolio Controller ', () => {
     )
 
     test('USDC gas tank token is set in a smart account with no tokens', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       expect(foundUsdcToken).toBeTruthy()
 
@@ -613,7 +620,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Check if smart account with existing cashback and saved greater than 0', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       expect(foundUsdcToken).toBeTruthy()
 
@@ -633,7 +640,7 @@ describe('Portfolio Controller ', () => {
     })
   })
 
-  describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
+  describe.only('Hints- token/nft learning, external api hints and temporary tokens', () => {
     afterEach(() => {
       jest.restoreAllMocks()
       jest.clearAllMocks()
@@ -641,7 +648,7 @@ describe('Portfolio Controller ', () => {
     test('Non-asset passed to addTokensToBeLearned is not learned', async () => {
       const ETHX_TOKEN_ADDR = '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b'
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
-      const { storageCtrl, controller } = prepareTest()
+      const { storageCtrl, controller } = await prepareTest()
 
       controller.addTokensToBeLearned([ETHX_TOKEN_ADDR, SMART_CONTRACT_ADDR], 1n)
 
@@ -656,7 +663,7 @@ describe('Portfolio Controller ', () => {
 
     test('Portfolio should filter out ER20 tokens that mimic native tokens (same symbol and amount)', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       // @ts-ignore
       await controller.learnTokens([ERC_20_MATIC_ADDR], `${137}:${account.addr}`, 137n)
@@ -672,7 +679,7 @@ describe('Portfolio Controller ', () => {
 
     test('Portfolio should filter out ERC20 tokens that mimic native tokens when they are added as custom tokens', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       const customToken = {
         address: ERC_20_MATIC_ADDR,
@@ -689,7 +696,7 @@ describe('Portfolio Controller ', () => {
       expect(hasErc20Matic).toBeFalsy()
     })
     test('To be learned token is returned from portfolio, but not passed to learnTokens (as it is without balance)', async () => {
-      const { storageCtrl, controller } = prepareTest()
+      const { storageCtrl, controller } = await prepareTest()
       const ethereum = networks.find((network) => network.chainId === 1n)!
       const clonedEthereum = structuredClone(ethereum)
       // In order to test whether toBeLearned token is passed and persisted in learnedTokens correctly we need to:
@@ -728,7 +735,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('To be learned token is returned from portfolio and updated with timestamp in learnedAssets', async () => {
-      const { storageCtrl, controller } = prepareTest()
+      const { storageCtrl, controller } = await prepareTest()
       const polygon = networks.find((network) => network.chainId === 137n)!
       // In order to test whether toBeLearned token is passed and persisted in learnedAssets correctly we need to:
       // 1. make sure we pass a token we know is with balance to toBeLearned list.
@@ -775,7 +782,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Native tokens are fetched for all networks', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
 
@@ -791,7 +798,7 @@ describe('Portfolio Controller ', () => {
     })
 
     test('External API hints are persisted (cached) for 15 minutes', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const ethereum = networks.find((network) => network.chainId === 1n)!
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
@@ -820,7 +827,7 @@ describe('Portfolio Controller ', () => {
       )
     })
     test('External API hints are persisted (cached) for 60 minutes on networks with hasHints false', async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const ethereum = networks.find((network) => network.chainId === 1n)!
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
@@ -854,7 +861,7 @@ describe('Portfolio Controller ', () => {
       )
     })
     test("External API hints aren't persisted (cached) on a manual update", async () => {
-      const { controller } = prepareTest()
+      const { controller } = await prepareTest()
       const ethereum = networks.find((network) => network.chainId === 1n)!
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
@@ -873,10 +880,50 @@ describe('Portfolio Controller ', () => {
         lastUpdatedOne || 0
       )
     })
+    test('Learned assets are fetched from storage', async () => {
+      const STETH = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0'
+      const CHAINLINK = '0x514910771af9ca656af840dff83e8264ecf986ca'
+      const LILPUDGIS_COLLECTION = '0x524cab2ec69124574082676e6f654a18df49a048'
+      const initialLearnedAssets: LearnedAssets = {
+        erc20s: {
+          [`${1}:${account.addr}`]: {
+            [STETH]: Date.now()
+          },
+          [`${137}:${account.addr}`]: {
+            [STETH]: Date.now()
+          },
+          [`${137}:${account2.addr}`]: {
+            [CHAINLINK]: Date.now()
+          }
+        },
+        erc721s: {
+          [`${1}:${account.addr}`]: {
+            [LILPUDGIS_COLLECTION]: [1n]
+          }
+        }
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('learnedAssets', initialLearnedAssets)
+      })
+
+      // Wait for the storage to update as initialLoadPromise is private
+      await wait(1000)
+
+      // @ts-ignore
+      const allHints = controller.getAllHints(`${1}:${account.addr}`, 1n)
+
+      expect(allHints.additionalErc20Hints).toContain(STETH)
+      expect(allHints.additionalErc20Hints).not.toContain(CHAINLINK)
+      expect(allHints.additionalErc721Hints).toHaveProperty(LILPUDGIS_COLLECTION)
+    })
+    test('Learning ERC-721 nfts works', async () => {})
+    test('ERC-721 nfts provided as special hints are fetched', async () => {})
+    test('The portfolio result is exactly the same when the external API hints fetch is skipped', async () => {})
+    test('Old learned tokens and learned NFTs (from previousHints) are migrated to the new structure', async () => {})
   })
 
   test('Check Token Validity - erc20, erc1155', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
     const token = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
       chainId: 1n
@@ -900,7 +947,7 @@ describe('Portfolio Controller ', () => {
   })
 
   test('Add and remove custom token', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
 
     const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
@@ -935,7 +982,7 @@ describe('Portfolio Controller ', () => {
   })
 
   test('Cannot add the same custom token twice', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
     const customToken = {
       address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
       chainId: 1n,
@@ -968,7 +1015,7 @@ describe('Portfolio Controller ', () => {
   })
 
   test('Update Token Preferences - hide a token and portfolio returns isHidden flag', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
 
     const preference = {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -988,7 +1035,7 @@ describe('Portfolio Controller ', () => {
     expect(hiddenToken).toBeTruthy()
   })
   test('Calling toggleHideToken a second time deletes the preference', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
 
     const preference = {
       address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
@@ -1014,7 +1061,7 @@ describe('Portfolio Controller ', () => {
   })
   test('lastSuccessfulUpdate is updated properly', async () => {
     const { restore } = suppressConsole()
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
     const ethereum = [networks.find((n) => n.chainId === 1n)!]
 
     await controller.updateSelectedAccount(account.addr, ethereum)
@@ -1057,7 +1104,7 @@ describe('Portfolio Controller ', () => {
     restore()
   })
   test('removeAccountData', async () => {
-    const { controller } = prepareTest()
+    const { controller } = await prepareTest()
     await controller.updateSelectedAccount(account.addr)
     await controller.updateSelectedAccount(account.addr)
     const hasItems = (obj: any) => !!Object.keys(obj).length
