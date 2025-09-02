@@ -16,11 +16,13 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { Portfolio } from '../../libs/portfolio'
+import { getTotal } from '../../libs/portfolio/helpers'
 import {
   CollectionResult,
   Hints,
   LearnedAssets,
-  PortfolioGasTankResult
+  PortfolioGasTankResult,
+  PreviousHintsStorage
 } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
@@ -194,10 +196,8 @@ const prepareTest = async (
     ambireV2Account,
     accountWithManyAssets
   ])
-  console.log('D:', initialSetStorage)
   if (initialSetStorage) await initialSetStorage(storageCtrl)
 
-  storageCtrl.get('learnedAssets').then((res) => console.log(res))
   const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   let providersCtrl: ProvidersController
   const networksCtrl = new NetworksController({
@@ -374,31 +374,23 @@ describe('Portfolio Controller ', () => {
       expect(pendingState).toBeDefined()
     })
 
-    // @TODO redo this test
     test('Latest tokens are fetched only once in a short period of time (20s maxDataAgeMs)', async () => {
-      const done = jest.fn(() => null)
       const { controller } = await prepareTest()
-      let pendingState1: any
-      controller.onUpdate(() => {
-        if (!pendingState1?.isReady) {
-          pendingState1 = controller.getPendingPortfolioState(
-            '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-          )?.['1']
-        }
-        if (pendingState1?.isReady) {
-          if (
-            controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.['1']
-              ?.result?.updateStarted !== pendingState1.result.updateStarted
-          )
-            done()
-        }
-      })
+
       await controller.updateSelectedAccount(account.addr)
+      const state1 = controller.getPendingPortfolioState(account.addr)?.['1']
+      const updateStarted1 = state1?.result?.updateStarted
+
+      expect(updateStarted1).toBeDefined()
+
       await controller.updateSelectedAccount(account.addr, undefined, undefined, {
         maxDataAgeMs: 20 * 1000
       })
 
-      expect(done).not.toHaveBeenCalled()
+      const state2 = controller.getPendingPortfolioState(account.addr)?.['1']
+      const updateStarted2 = state2?.result?.updateStarted
+
+      expect(updateStarted2).toBe(updateStarted1)
     })
   })
 
@@ -430,35 +422,6 @@ describe('Portfolio Controller ', () => {
         expect(collection?.amountPostSimulation).toBe(0n)
       })
     })
-
-    // TODO: currently we disable this optimizatin in portfolio controller, as in the application it doesn't work at all
-    //   Under the tests, the caching works as expected, but once ran in the extension - it doesn't fetch the pending state.
-    // test('Pending tokens are fetched only once if AccountOp is the same during the calls', async () => {
-    //   const done = jest.fn(() => null)
-    //   const accountOp = await getAccountOp()
-    //
-    //   const storage = produceMemoryStore()
-    //   const controller = new PortfolioController(storage, fetch, relayerUrl)
-    //   let pendingState1: any
-    //   let pendingState2: any
-    //   controller.onUpdate(() => {
-    //     if (!pendingState1?.isReady) {
-    //       pendingState1 = controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.['1']
-    //       return
-    //     }
-    //     if (pendingState1?.isReady) {
-    //       pendingState2 = controller.getPendingPortfolioState('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')?.['1']
-    //     }
-    //     if (pendingState1.result?.updateStarted < pendingState2.result?.updateStarted) {
-    //       done()
-    //     }
-    //   })
-    //   await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
-    //   await controller.updateSelectedAccount([account], account.addr, undefined, accountOp)
-    //
-    //   expect(done).not.toHaveBeenCalled()
-    // })
-
     test('Pending tokens are re-fetched, if `forceUpdate` flag is set, no matter if AccountOp is the same or changer', async () => {
       const done = jest.fn(() => null)
       const { controller } = await prepareTest()
@@ -916,10 +879,145 @@ describe('Portfolio Controller ', () => {
       expect(allHints.additionalErc20Hints).not.toContain(CHAINLINK)
       expect(allHints.additionalErc721Hints).toHaveProperty(LILPUDGIS_COLLECTION)
     })
-    test('Learning ERC-721 nfts works', async () => {})
-    test('ERC-721 nfts provided as special hints are fetched', async () => {})
-    test('The portfolio result is exactly the same when the external API hints fetch is skipped', async () => {})
-    test('Old learned tokens and learned NFTs (from previousHints) are migrated to the new structure', async () => {})
+    test('Learning ERC-721 nfts works', async () => {
+      const { controller, storageCtrl } = await prepareTest()
+      const LILPUDGIS_COLLECTION = '0x524cab2ec69124574082676e6f654a18df49a048'
+      const key = `${1}:${account.addr}`
+      const ethereum = networks.find(({ chainId }) => chainId === 1n)!
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState = controller.getLatestPortfolioState(account.addr)?.['1']!
+
+      expect(
+        latestState.result?.collections?.find(({ address }) => address === LILPUDGIS_COLLECTION)
+      ).not.toBeDefined()
+
+      await controller.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const latestState2 = controller.getLatestPortfolioState(account.addr)?.['1']!
+
+      expect(
+        latestState2.result?.collections?.find(({ address }) => address === LILPUDGIS_COLLECTION)
+      ).toBeDefined()
+
+      const learnedInStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+
+      // Nfts learned by directly calling learnNfts are added to learned in storage, regardless
+      // of whether the user has a collectible from the collection or not.
+      expect(learnedInStorage.erc721s[key][LILPUDGIS_COLLECTION]).toEqual([1n, 2n, 3n])
+    })
+    test('The portfolio result is exactly the same when the external API hints fetch is skipped', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.updateSelectedAccount(account.addr)
+      const resultTotal = getTotal(
+        Object.values(controller.getLatestPortfolioState(account.addr) || {}).flatMap(
+          (res) => res?.result?.tokens || []
+        )
+      )
+      const latestHintsUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
+        ?.lastExternalApiUpdateData?.lastUpdate
+
+      expect(latestHintsUpdate).toBeDefined()
+      expect(resultTotal.usd).toBeGreaterThan(0)
+
+      await controller.updateSelectedAccount(account.addr)
+
+      const resultTotal2 = getTotal(
+        Object.values(controller.getLatestPortfolioState(account.addr) || {}).flatMap(
+          (res) => res?.result?.tokens || []
+        )
+      )
+      const latestHintsUpdate2 = controller.getLatestPortfolioState(account.addr)['1']?.result
+        ?.lastExternalApiUpdateData?.lastUpdate
+
+      expect(resultTotal2.usd).toBe(resultTotal.usd)
+      expect(latestHintsUpdate2).toBe(latestHintsUpdate)
+    })
+    test('All external API hints with balance are learned', async () => {
+      const { controller, storageCtrl } = await prepareTest()
+      const ethereum = networks.find(({ chainId }) => chainId === 1n)!
+
+      await controller.updateSelectedAccount(accountWithManyAssets.addr, [ethereum])
+
+      const latestState = controller.getLatestPortfolioState(accountWithManyAssets.addr)?.['1']!
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const key = `1:${accountWithManyAssets.addr}`
+      const { tokens, collections } = latestState.result || {}
+
+      expect(tokens?.length).toBeGreaterThan(0)
+      expect(collections?.length).toBeGreaterThan(0)
+
+      tokens
+        ?.filter(({ amount }) => amount > 0)
+        .forEach(({ address }) => {
+          if (address === ZeroAddress) return
+          expect(learnedAssets.erc20s[key]).toHaveProperty(address)
+          // Has a timestamp
+          expect(learnedAssets.erc20s[key][address]).toBeDefined()
+        })
+
+      collections?.forEach(({ address, collectibles }) => {
+        // Return if the user has no collectibles from this collection as they are not learned
+        if (!collectibles.length) return
+        expect(learnedAssets.erc721s[key]).toHaveProperty(address)
+        expect(learnedAssets.erc721s[key][address]).toEqual(collectibles)
+      })
+    })
+    test('Old learned tokens and learned NFTs (from previousHints) are migrated to the new structure', async () => {
+      const ETHX_TOKEN_ADDR = '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b'
+      const CHAINLINK = '0x514910771af9ca656af840dff83e8264ecf986ca'
+      const LILPUDGIS_COLLECTION = '0x524cab2ec69124574082676e6f654a18df49a048'
+      const MOONPEPES_COLLECTION = '0x02F74badcE458387ECAef9b1F229afB5678E9AAd'
+
+      const previousHints: PreviousHintsStorage = {
+        learnedTokens: {
+          '1': {
+            [CHAINLINK]: Date.now().toString(),
+            [ETHX_TOKEN_ADDR]: null
+          }
+        },
+        learnedNfts: {
+          '1': {
+            [LILPUDGIS_COLLECTION]: [1n, 2n, 3n],
+            [MOONPEPES_COLLECTION]: []
+          }
+        },
+        fromExternalAPI: {}
+      }
+      const { controller, storageCtrl } = await prepareTest((storage) =>
+        storage.set('previousHints', previousHints)
+      )
+
+      // Simulate initialLoadPromise
+      await wait(1000)
+      const learnedAssets = await storageCtrl.get('learnedAssets', null)
+      expect(learnedAssets).toBe(null)
+
+      const key: `${string}:${string}` = `${1}:${account.addr}`
+
+      // @ts-ignore
+      const allHints = controller.getAllHints(key, 1n)
+
+      Object.keys(previousHints.learnedTokens['1']).forEach((addr) => {
+        expect(allHints.specialErc20Hints.learn.find((toBeLearned) => addr === toBeLearned))
+      })
+      Object.keys(previousHints.learnedNfts['1']).forEach((addr) => {
+        expect(allHints.specialErc721Hints.learn).toHaveProperty(addr)
+      })
+
+      // Update the portfolio so the assets with balance are learned and
+      // expect allHints to no longer return zero balance asset hints
+      await controller.updateSelectedAccount(account.addr)
+
+      // @ts-ignore
+      const allHints2 = controller.getAllHints(key, 1n)
+
+      expect(allHints2.specialErc20Hints.learn.length).toBe(0)
+      expect(Object.keys(allHints2.specialErc721Hints.learn).length).toBe(0)
+    })
   })
 
   test('Check Token Validity - erc20, erc1155', async () => {

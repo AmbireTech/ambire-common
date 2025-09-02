@@ -1,4 +1,5 @@
 import { Contract, formatUnits, ZeroAddress } from 'ethers'
+import { getAddress } from 'viem'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -82,10 +83,15 @@ export function mergeERC721s(sources: ERC721s[]): ERC721s {
   const addresses = new Set(sources.flatMap((source) => Object.keys(source)))
 
   addresses.forEach((address) => {
-    // Merge arrays and remove duplicates
-    const merged = Array.from(new Set(sources.flatMap((source) => source[address] || [])))
+    try {
+      const checksummed = getAddress(address)
+      // Merge arrays and remove duplicates
+      const merged = Array.from(new Set(sources.flatMap((source) => source[checksummed] || [])))
 
-    result[address] = merged
+      result[address] = merged
+    } catch (e: any) {
+      console.error('Error checksumming ERC-721 collection address', e)
+    }
   })
 
   return result

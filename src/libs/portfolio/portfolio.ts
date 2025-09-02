@@ -271,7 +271,6 @@ export class Portfolio {
     hints.erc721s = mergeERC721s([
       additionalErc721Hints || {},
       hints.erc721s,
-      // @TODO: Write test and check
       ...Object.values(specialErc721Hints || {})
     ])
 

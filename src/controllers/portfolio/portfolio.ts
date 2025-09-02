@@ -884,16 +884,29 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           if (isSuccessfulLatestUpdate && accountState[network.chainId.toString()]?.result) {
             const networkResult = accountState[network.chainId.toString()]!.result
             const { erc20s, erc721s } = networkResult?.toBeLearned || {}
+            let shouldUpdateLearnedInStorage = false
 
             if (erc20s?.length) {
               await this.learnTokens(erc20s, key, network.chainId)
+            } else if (!this.#learnedAssets.erc20s[key]) {
+              // Finalize the migration from #previousHints
+              this.#learnedAssets.erc20s[key] = {}
+              shouldUpdateLearnedInStorage = true
             }
-            if (erc721s) {
+            if (erc721s && Object.keys(erc721s).length) {
               await this.learnNfts(
                 Object.entries(erc721s).map(([collectionAddr, ids]) => [collectionAddr, ids]),
                 accountId,
                 network.chainId
               )
+            } else if (!this.#learnedAssets.erc721s[key]) {
+              // Finalize the migration from #previousHints
+              this.#learnedAssets.erc721s[key] = {}
+              shouldUpdateLearnedInStorage = true
+            }
+
+            if (shouldUpdateLearnedInStorage) {
+              await this.#storage.set('learnedAssets', this.#learnedAssets)
             }
           }
         }
