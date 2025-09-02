@@ -816,7 +816,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const chainId = toChainId ?? this.toChainId
     const toSelectedTokenAddr =
       chainId && props.toSelectedTokenAddr
-        ? mapBannedToValidAddr(Number(chainId), props.toSelectedTokenAddr)
+        ? mapBannedToValidAddr(Number(chainId), getAddress(props.toSelectedTokenAddr))
         : undefined
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
@@ -1982,6 +1982,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (opStatus === AccountOpStatus.Success) {
       this.updateActiveRoute(activeRoute.activeRouteId, { routeStatus: 'completed' })
+      return
     }
 
     // If the transaction fails, update the status to "ready" to allow the user to sign it again
