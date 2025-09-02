@@ -258,8 +258,15 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const { tokens, collections, tokenErrors, priceCache, lastExternalApiUpdateData, ...result } =
-      networkState.result
+    const {
+      tokens,
+      collections,
+      tokenErrors,
+      priceCache,
+      toBeLearned,
+      lastExternalApiUpdateData,
+      ...result
+    } = networkState.result
 
     strippedState[chainId] = { ...networkState, result }
   })
