@@ -15,7 +15,6 @@ import {
   SocketRouteStatus,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
-  SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
@@ -390,8 +389,10 @@ export class SocketAPI {
     toChainId: number
     fromAssetAddress: string
     toAssetAddress: string
-    route?: SwapAndBridgeQuote['selectedRoute']
+    route: SwapAndBridgeQuote['selectedRoute']
   }): Promise<SwapAndBridgeSendTxRequest> {
+    if (!route) throw new Error('route not set')
+
     const params = {
       fromChainId,
       toChainId,
@@ -430,7 +431,10 @@ export class SocketAPI {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return { ...response, activeRouteId: response.activeRouteId.toString() }
+    return {
+      ...response,
+      activeRouteId: response.activeRouteId.toString()
+    }
   }
 
   async getRouteStatus({ txHash, fromChainId }: { txHash: string; fromChainId: number }) {
@@ -450,8 +454,17 @@ export class SocketAPI {
   }
 
   async getActiveRoute(
+    quote: SwapAndBridgeQuote,
     activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-  ): Promise<SwapAndBridgeRoute> {
+  ): Promise<SwapAndBridgeActiveRoute> {
+    // if the quote contains a cache instance of the active route, use it
+    if (quote.selectedActiveRoute) {
+      const activeRoute = quote.selectedActiveRoute as SwapAndBridgeActiveRoute
+      if (activeRoute.activeRouteId.toString() === activeRouteId.toString()) {
+        return activeRoute
+      }
+    }
+
     const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
     const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
 

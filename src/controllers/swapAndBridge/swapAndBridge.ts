@@ -337,6 +337,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       apiKey: process.env.LI_FI_API_KEY!,
       fetch
     })
+    // this.#serviceProviderAPI = new LiFiAPI({
+    //   apiKey: process.env.LI_FI_API_KEY!,
+    //   fetch
+    // })
+    // this.#fallbackProviderAPI = new SocketAPI({
+    //   apiKey: process.env.SOCKET_API_KEY!,
+    //   fetch
+    // })
     this.#storage = storage
     this.#invite = invite
     this.#relayerUrl = relayerUrl
@@ -1543,13 +1551,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     )
       return null
 
+    if (!this.quote || !this.quote.selectedRoute) return null
+
     try {
       const routeResult = await this.#serviceProviderAPI.startRoute({
-        fromChainId: this.quote!.fromChainId,
-        fromAssetAddress: this.quote!.fromAsset.address,
-        toChainId: this.quote!.toChainId,
-        toAssetAddress: this.quote!.toAsset.address,
-        route: this.quote!.selectedRoute
+        fromChainId: this.quote.fromChainId,
+        fromAssetAddress: this.quote.fromAsset.address,
+        toChainId: this.quote.toChainId,
+        toAssetAddress: this.quote.toAsset.address,
+        route: this.quote.selectedRoute
       })
 
       return {
@@ -1707,12 +1717,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }) {
     await this.#initialLoadPromise
 
-    try {
-      let route = this.quote?.routes.find((r) => r.routeId === activeRouteId.toString())
-      if (this.#serviceProviderAPI.id === 'socket') {
-        route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId.toString())
-      }
+    if (!this.quote) {
+      const message = 'Unexpected swap & bridge error: no quote found. Please contact support'
+      throw new EmittableError({ error: new Error(message), level: 'major', message })
+    }
 
+    try {
+      const route = await this.#serviceProviderAPI.getActiveRoute(this.quote, activeRouteId)
       if (route) {
         this.activeRoutes.push({
           serviceProviderId: this.#serviceProviderAPI.id,
@@ -2230,6 +2241,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           this.onEstimationFailure(
             this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
           )
+        }
+
+        // upon success, cache an instance of the active route so the user doesn't
+        // need to wait after txn sign. This is valid only for socket as it requires
+        // another request to fetch the active route
+        if (
+          this.quote &&
+          this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+          this.#signAccountOpController.estimation.status === EstimationStatus.Success
+        ) {
+          this.#serviceProviderAPI
+            .getActiveRoute(
+              this.quote,
+              this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
+            )
+            .then((activeRoute) => {
+              if (!this.quote) return
+
+              this.quote.selectedActiveRoute = activeRoute
+            })
+            .catch(() => {
+              // this one is a nice to have so no need to handle the error.
+              // if the user confirms the txn, getActiveRoute will be fired
+              // one more time and if an error is received there, it will
+              // notify the user
+            })
         }
       })
     )

@@ -570,9 +570,9 @@ export class LiFiAPI {
     toChainId?: number
     fromAssetAddress?: string
     toAssetAddress?: string
-    route?: SwapAndBridgeRoute
+    route: SwapAndBridgeRoute
   }): Promise<SwapAndBridgeSendTxRequest> {
-    const body = JSON.stringify((route?.rawRoute as LiFiRoute).steps[0])
+    const body = JSON.stringify((route.rawRoute as LiFiRoute).steps[0])
 
     const response = await this.#handleResponse<LiFiStep>({
       // skipSimulation reduces the time it takes for the request to complete.
@@ -650,12 +650,14 @@ export class LiFiAPI {
   }
 
   /**
-   * NOT SUPPORTED: LiFi has no concept for retrieving active routes from the API.
-   * @deprecated
+   * The Li.Fi. active route is always in the quote
    */
   // eslint-disable-next-line class-methods-use-this
-  getActiveRoute() {
-    return Promise.resolve(null)
+  async getActiveRoute(
+    quote: SwapAndBridgeQuote,
+    activeRouteId: string
+  ): Promise<SwapAndBridgeRoute | undefined> {
+    return quote.routes.find((r) => r.routeId.toString() === activeRouteId.toString())
   }
 
   async getNextRouteUserTx({

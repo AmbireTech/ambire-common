@@ -49,6 +49,7 @@ export interface SwapAndBridgeQuote {
   toAsset: SwapAndBridgeToToken
   toChainId: number
   selectedRoute?: SwapAndBridgeRoute
+  selectedActiveRoute?: SwapAndBridgeActiveRoute | SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
 }
@@ -346,6 +347,11 @@ export type ActiveRoute = {
 
 export type SwapAndBridgeActiveRoute = {
   serviceProviderId: 'socket' | 'lifi'
+  fromAsset: SocketAPIToken
+  toAsset: SocketAPIToken
+  fromAssetAddress: string
+  toAssetAddress: string
+  steps: SwapAndBridgeStep[]
   sender: string
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
