@@ -156,14 +156,16 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   // search for a feeCost that is not included in the quote
   // if there is one, check if the user has enough to pay for it
   // if he doesn't, mark the route as disabled
-  let feeCostAmount = null
+  // let serviceFee = parentStep?.estimate?.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
+  let serviceFee: SwapAndBridgeRoute['serviceFee']
   route.steps.forEach((step) => {
     const stepFeeCosts =
       step.estimate.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
-    if (stepFeeCosts.length) feeCostAmount = stepFeeCosts[0].amount
+    if (stepFeeCosts.length) serviceFee = stepFeeCosts[0]
   })
 
-  const disabled = feeCostAmount === null ? false : accountNativeBalance < feeCostAmount
+  const disabled =
+    serviceFee === undefined ? false : accountNativeBalance < BigInt(serviceFee.amount)
   const swapOrBridgeText = route.fromChainId === route.toChainId ? 'swap' : 'bridge'
   const disabledReason = disabled
     ? `Insufficient ${nativeSymbol}. This ${swapOrBridgeText} imposes a fee that must be paid in ${nativeSymbol}.`
@@ -188,12 +190,12 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
     serviceTime: route.steps[0].estimate.executionDuration,
-    // errorMessage: undefined
     rawRoute: route,
     sender: route.fromAddress,
     toToken: route.toToken,
     disabled,
-    disabledReason
+    disabledReason,
+    serviceFee
   }
 }
 

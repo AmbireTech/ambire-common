@@ -105,6 +105,11 @@ export interface SwapAndBridgeRoute {
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
+  // put in a service fee only if it's not included in the quote
+  serviceFee?: {
+    amount: string
+    amountUSD: string
+  }
 }
 
 export interface SocketAPISwapUserTx {

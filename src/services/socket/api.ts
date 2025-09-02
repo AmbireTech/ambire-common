@@ -15,6 +15,7 @@ import {
   SocketRouteStatus,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
+  SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
@@ -341,15 +342,22 @@ export class SocketAPI {
         const steps = normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs)
 
         // calculate the external fee cost
-        let feeCostAmount = null
+        let serviceFee: SwapAndBridgeRoute['serviceFee']
         steps.forEach((step) => {
-          if (PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(step.protocol.name)) {
-            feeCostAmount = step.protocolFees?.amount ?? null
+          if (
+            PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(step.protocol.name) &&
+            step.protocolFees
+          ) {
+            serviceFee = {
+              amount: step.protocolFees.amount,
+              amountUSD: step.protocolFees.feesInUsd.toString()
+            }
           }
         })
 
         // disable routes the user does not have native to pay for
-        const disabled = feeCostAmount === null ? false : accountNativeBalance < feeCostAmount
+        const disabled =
+          serviceFee === undefined ? false : accountNativeBalance < BigInt(serviceFee.amount)
         const disabledReason = disabled
           ? `Insufficient ${nativeSymbol}. This bridge imposes a fee that must be paid in ${nativeSymbol}.`
           : undefined
@@ -359,6 +367,7 @@ export class SocketAPI {
           disabled,
           disabledReason,
           steps,
+          serviceFee,
           userTxs: route.userTxs.map((userTx) => ({
             ...userTx,
             ...('fromAsset' in userTx && {
