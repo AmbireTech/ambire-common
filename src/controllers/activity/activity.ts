@@ -223,15 +223,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async hasAccountOpsSentTo(toAddress: string, accountId: AccountId): Promise<boolean> {
     await this.#initialLoadPromise
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
-    console.log('Checking hasAccountOpsSentTo for address:', toAddress, 'and accounts:', accounts)
     return accounts.some((account) => {
       if (!this.#accountsOps[account]) return false
 
       const networks = Object.keys(this.#accountsOps[account])
-      console.log('Checking account:', account, 'networks:', networks)
       return networks.some((network) => {
         if (!this.#accountsOps[account][network]) return false
-        console.log('Checking ops for account/network:', this.#accountsOps[account][network])
         // Return true as soon as we find any operation sent to the target address
         return this.#accountsOps[account][network].some((op) =>
           op.calls.some((call) => call.to.toLowerCase() === toAddress.toLowerCase())

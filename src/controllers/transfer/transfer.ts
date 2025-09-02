@@ -652,7 +652,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Update state based on whether there are previous transactions to this address
     this.isRecipientAddressFirstTimeSend =
       !previousTransactionExists &&
-      this.isRecipientAddressUnknown &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.signAccountOpController = new SignAccountOpController(
       this.#accounts,
