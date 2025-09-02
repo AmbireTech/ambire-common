@@ -882,7 +882,7 @@ describe('Portfolio Controller ', () => {
     })
     test('Learning ERC-721 nfts works', async () => {
       const { controller, storageCtrl } = await prepareTest()
-      const LILPUDGIS_COLLECTION = '0x524cab2ec69124574082676e6f654a18df49a048'
+      const LILPUDGIS_COLLECTION = getAddress('0x524cab2ec69124574082676e6f654a18df49a048')
       const key = `${1}:${account.addr}`
       const ethereum = networks.find(({ chainId }) => chainId === 1n)!
       await controller.updateSelectedAccount(account.addr, [ethereum])
@@ -910,6 +910,7 @@ describe('Portfolio Controller ', () => {
       expect(learnedInStorage.erc721s[key][LILPUDGIS_COLLECTION]).toEqual([1n, 2n, 3n])
     })
     test('Learning invalid or not checksummed ERC-721 nft', async () => {
+      const { restore } = suppressConsole()
       const INVALID_ADDRESS = '0x524'
       const COLLECTION_ADDRESS = '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270'
       const { controller, storageCtrl } = await prepareTest()
@@ -933,6 +934,7 @@ describe('Portfolio Controller ', () => {
           [getAddress(COLLECTION_ADDRESS)]: [1n, 2n]
         }
       })
+      restore()
     })
     test('The portfolio result is exactly the same when the external API hints fetch is skipped', async () => {
       const { controller } = await prepareTest()
