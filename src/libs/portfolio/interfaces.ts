@@ -52,28 +52,46 @@ export type PriceCache = Map<string, [number, Price[]]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
 
-export interface ERC721Enumerable {
-  isKnown: boolean
-  enumerable: boolean
-}
-export interface ERC721Innumerable {
-  isKnown: boolean
-  tokens: string[]
-}
-
+/**
+ * ERC-721 hints, returned by the Velcro API
+ * Their structure is different and more complex than the structure
+ * we use in the extension
+ */
 export interface VelcroERC721Hints {
-  [address: string]: ERC721Enumerable | ERC721Innumerable
+  [collectionAddress: string]:
+    | {
+        isKnown: boolean
+        enumerable: boolean
+      }
+    | {
+        isKnown: boolean
+        tokens: string[]
+      }
 }
 
+/**
+ * ERC-721 hints, used by the portfolio
+ * [collectionAddress]: the ids of the collectibles in the collection.
+ */
 export interface ERC721s {
-  [address: string]: bigint[]
+  [collectionAddress: string]: bigint[]
 }
 
+/**
+ * The portfolio fetches tokens using deployless. We provide
+ * "hints" to deployless, so it knows where to look for assets. Hints are
+ * assets of different standards that the user is likely to have. They come from
+ * different sources, like:
+ * - Velcro - our external API for hints
+ * - Custom tokens (ERC-20 only atm)
+ * - Token preferences (ERC-20 only atm)
+ * - Learned assets - see `LearnedAssets` for more info
+ */
 export interface Hints {
   erc20s: string[]
   erc721s: ERC721s
   /**
-   * TODO: Comment
+   * Metadata and prices from the Velcro API call
    */
   externalApi?: {
     /**
@@ -88,17 +106,20 @@ export interface Hints {
     /**
      * When true, either the account is empty and static hints are returned,
      * or the hints are coming from a top X list of tokens, sorted by market cap.
-     * In both cases, the hints are not user-specific so they must be learned
-     * and saved in the extension.
+     * Used to determine how often to refetch the hints.
      */
     hasHints: boolean
     /**
-     * Attached by the application after the request response
+     * Attached by the application after the request response or, if there is an
+     * error or the request is skipped, we get it from the last call.
      */
     lastUpdate: number
   }
 }
 
+/**
+ * The raw response, returned by the Velcro API
+ */
 export type ExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
   erc721s: VelcroERC721Hints
@@ -109,6 +130,10 @@ export type ExternalHintsAPIResponse = {
   error?: string
 })
 
+/**
+ * A stripped version of `ExternalHintsAPIResponse`. Also, ERC-721 hints
+ * are formatted to be in the structure, expected by the extension.
+ */
 export type FormattedExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
   erc721s: Hints['erc721s']
@@ -134,6 +159,7 @@ export interface PortfolioLibGetResult {
   feeTokens: TokenResult[]
   /**
    * Assets the user owns that need to be learned by the controller.
+   * Basically all assets with balance, excluding custom and preferences
    */
   toBeLearned: {
     erc20s: Hints['erc20s']
@@ -141,6 +167,10 @@ export interface PortfolioLibGetResult {
   }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
+  /**
+   * Metadata from the last external api hints call. It comes from the API
+   * if the request is successful and not cached, or from cache otherwise.
+   */
   lastExternalApiUpdateData: {
     lastUpdate: number
     hasHints: boolean
@@ -279,9 +309,11 @@ export interface GetOptions {
 }
 
 /**
- * Learned assets, divided by standard. They are passed to the portfolio lib
- * on every update. Assets are learned after a successful portfolio update, by
- * relying on toBeLearned, returned by the portfolio lib.
+ * Hints, divided by standard -> chainId:account
+ * ERC-20s: Tokens that the user has had a balance of at some point. Each token holds
+ * a timestamp, updated after every portfolio update if the account has balance of the token.
+ * ERC-721s: Nfts learned from velcro and debugTraceCall. The account doesn't necessary
+ * have to own them.
  */
 export interface LearnedAssets {
   /**
