@@ -205,6 +205,11 @@ export class Portfolio {
       const lastUpdate = lastExternalApiUpdateData.lastUpdate
       const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
 
+      hints.externalApi = {
+        ...lastExternalApiUpdateData,
+        prices: {}
+      }
+
       return {
         hints,
         error: {
@@ -364,6 +369,9 @@ export class Portfolio {
         // fetch all tokens regardless of their balance or type
         if (!specialErc20Hints) return true
 
+        // To be learned tokens are never filtered out to ensure that
+        // the humanizer, simulation and etc. work even if the account doesn't have amount
+        // on either block (latest/pending)
         const isToBeLearned = specialErc20Hints.learn.includes(_tokensWithErrResult[1].address)
 
         return tokenFilter(
@@ -381,7 +389,7 @@ export class Portfolio {
           !result.flags.isHidden &&
           !toBeLearned.erc20s.includes(result.address)
         ) {
-          // Add non-zero tokens to toBeLearned
+          // Add all non-zero tokens to toBeLearned
           toBeLearned.erc20s.push(result.address)
         }
 
@@ -403,6 +411,7 @@ export class Portfolio {
     const collections = unfilteredCollections
       .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
       .map(([, collection]) => {
+        // Add all collections with collectibles to toBeLearned
         if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }

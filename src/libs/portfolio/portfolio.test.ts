@@ -17,8 +17,9 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { ERC20 } from '../humanizer/const/abis'
+import { stringify } from '../richJson/richJson'
 import { Hints } from './interfaces'
-import { Portfolio } from './portfolio'
+import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
@@ -613,29 +614,80 @@ describe('Portfolio', () => {
   })
 
   describe('Hints', () => {
-    describe.skip('With blocked Velcro discovery', () => {
+    describe('With blocked Velcro discovery', () => {
       // Done in beforeEach instead of a reusable function because
       // mocks can't be reused as functions
-      // beforeEach(() => {
-      //   // Simulate a Velcro Discovery failure
-      //   jest.mock('node-fetch', () => {
-      //     return jest.fn((url: any) => {
-      //       // @ts-ignore
-      //       const { Response } = jest.requireActual('node-fetch')
-      //       if (url.includes(`${velcroUrl}/multi-hints`)) {
-      //         const body = stringify({ message: 'API error' })
-      //         const headers = { status: 200 }
-      //         return Promise.resolve(new Response(body, headers))
-      //       }
-      //       // @ts-ignore
-      //       return jest.requireActual('node-fetch')(url)
-      //     })
-      //   })
-      // })
-      // afterEach(() => {
-      //   // Restore the original implementations
-      //   jest.restoreAllMocks()
-      // })
+      beforeEach(() => {
+        // Simulate a Velcro Discovery failure
+        jest.spyOn(global, 'fetch').mockImplementation((url: any) => {
+          // @ts-ignore
+          const { Response } = jest.requireActual('node-fetch')
+          if (url.includes(`${velcroUrl}/multi-hints`)) {
+            const body = stringify({ message: 'API error' })
+            const headers = { status: 200 }
+            return Promise.resolve(new Response(body, headers))
+          }
+          // @ts-ignore
+          return jest.requireActual('node-fetch')(url)
+        })
+      })
+      afterEach(() => {
+        // Restore the original implementations
+        jest.restoreAllMocks()
+        jest.resetAllMocks()
+      })
+      test('Api hints errors are added and are different, depending on lastExternalApiUpdateData', async () => {
+        const { restore } = suppressConsole()
+        // @ts-ignore
+        const portfolioInner = new Portfolio(global.fetch, provider, ethereum, velcroUrl)
+
+        const result1 = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {})
+
+        expect(
+          result1.errors.find(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError)
+        ).toBeDefined()
+
+        const result2 = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          lastExternalApiUpdateData: {
+            lastUpdate: Date.now() - 9 * 60 * 1000, // 9 minutes (1 minute left before the next error),
+            hasHints: true
+          }
+        })
+
+        expect(
+          result2.errors.find(
+            ({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError
+          )
+        ).toBeDefined()
+
+        const result3 = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          lastExternalApiUpdateData: {
+            lastUpdate: Date.now() - 11 * 60 * 1000,
+            hasHints: true
+          }
+        })
+
+        expect(
+          result3.errors.find(({ name }) => name === PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError)
+        ).toBeDefined()
+        restore()
+      })
+      test('lastExternalApiUpdateData is persisted on hints fetch failure', async () => {
+        const { restore } = suppressConsole()
+        // @ts-ignore
+        const portfolioInner = new Portfolio(global.fetch, provider, ethereum, velcroUrl)
+
+        const mockLastUpdate = Date.now() - 3 * 60 * 1000
+        const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+          lastExternalApiUpdateData: {
+            lastUpdate: mockLastUpdate,
+            hasHints: true
+          }
+        })
+
+        expect(result.lastExternalApiUpdateData?.lastUpdate).toBe(mockLastUpdate)
+        restore()
+      })
     })
     test('Hints are deduped', async () => {
       const additionalErc20Hints = [USDT_ADDRESS, USDT_ADDRESS.toLowerCase()]
@@ -689,6 +741,19 @@ describe('Portfolio', () => {
 
       expect(result.toBeLearned.erc20s).toContain(USDT_ADDRESS)
       expect(result.tokens.find((t) => t.address === USDT_ADDRESS)?.amount).toBeGreaterThan(0n)
+    })
+    test('lastExternalApiUpdateData from get call is persisted if disableAutoDiscovery=true', async () => {
+      const lastUpdatedAt = Date.now() - 5 * 60 * 1000
+      const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        disableAutoDiscovery: true,
+        lastExternalApiUpdateData: {
+          lastUpdate: lastUpdatedAt,
+          hasHints: true
+        }
+      })
+
+      expect(result.lastExternalApiUpdateData?.hasHints).toBe(true)
+      expect(result.lastExternalApiUpdateData?.lastUpdate).toBe(lastUpdatedAt)
     })
   })
 })
