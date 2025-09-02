@@ -361,13 +361,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const migratedPreviousHints = {
       learnedTokens: migrateKeys(previousHints.learnedTokens || {}),
       learnedNfts: migrateKeys(previousHints.learnedNfts || {}),
-      fromExternalAPI: Object.fromEntries(
-        Object.entries(previousHints.fromExternalAPI || {}).map(([networkAndAccountKey, value]) => {
-          const [networkId, accountAddr] = networkAndAccountKey.split(':')
-          const chainId = networkIdToChainId[networkId]
-          return chainId ? [`${chainId}:${accountAddr}`, value] : [networkAndAccountKey, value]
-        })
-      )
+      fromExternalAPI: {} // No longer used
     }
 
     const migratedCustomTokens = customTokens.map(({ networkId, ...rest }: any) => ({

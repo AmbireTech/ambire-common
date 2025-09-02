@@ -97,10 +97,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   } = {}
 
   /**
-   * Hints stored in storage, divided into three categories:
-   * - fromExternalAPI: Hints fetched from an external API, used when the external API response fails.
-   * - learnedTokens: Hints of learned tokens, each with a timestamp indicating the last time the token was seen with a balance and not included in fromExternalAPI hints. This helps prioritize tokens not yet found by Velcro during cleansing.
-   * - learnedNfts: Hints of learned NFTs.
    * @deprecated - see #learnedAssets
    */
   #previousHints: PreviousHintsStorage = {
@@ -194,6 +190,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
       this.#learnedAssets = await this.#storage.get('learnedAssets', this.#learnedAssets)
       this.#previousHints = await this.#storage.get('previousHints', {})
+      // Don't load fromExternalAPI hints in memory as they are no longer used
+      this.#previousHints.fromExternalAPI = {}
       const networksWithAssets = await this.#storage.get('networksWithAssetsByAccount', {})
       const isOldStructure = Object.keys(networksWithAssets).every(
         (key) =>
@@ -1107,9 +1105,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#networks.networks.forEach((network) => {
       const key = `${network.chainId}:${address}`
 
-      if (this.#previousHints.fromExternalAPI && key in this.#previousHints.fromExternalAPI) {
-        delete this.#previousHints.fromExternalAPI[key]
-      }
       if (key in this.#portfolioLibs) {
         this.#portfolioLibs.delete(key)
       }

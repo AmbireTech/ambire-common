@@ -335,6 +335,9 @@ export interface LearnedAssets {
   }
 }
 
+/**
+ * @deprecated - see `LearnedAssets`
+ */
 export interface PreviousHintsStorage {
   learnedTokens: { [chainId: string]: { [tokenAddress: string]: string | null } }
   learnedNfts: { [chainId: string]: { [nftAddress: string]: bigint[] } }
