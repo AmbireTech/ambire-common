@@ -1,13 +1,13 @@
 /* eslint-disable no-await-in-loop */
-import { RPCProviders } from 'interfaces/provider'
-/* eslint-disable prettier/prettier */
 import fetch from 'node-fetch'
 
+/* eslint-disable prettier/prettier */
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
+import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { MainController } from '../main/main'
