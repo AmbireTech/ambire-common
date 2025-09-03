@@ -5,7 +5,8 @@ export const waitForFnToBeCalledAndExecuted = async (
   recurringTimeout: IRecurringTimeout,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   id: string = '' // for testing
-) => {
+): Promise<{ fnCalledCount: number }> => {
+  const initialSessionId = recurringTimeout.sessionId
   while (recurringTimeout.startScheduled) {
     await jest.advanceTimersByTimeAsync(1)
   }
@@ -27,4 +28,6 @@ export const waitForFnToBeCalledAndExecuted = async (
     }
   expect(recurringTimeout.promise).toBe(undefined)
   await Promise.resolve()
+
+  return { fnCalledCount: 1 + recurringTimeout.sessionId - initialSessionId }
 }

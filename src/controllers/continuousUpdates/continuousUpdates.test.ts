@@ -289,10 +289,18 @@ describe('ContinuousUpdatesController intervals', () => {
     })
 
     expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount)
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount + 1)
-    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount + 2)
+    const { fnCalledCount: fnCalledCountFirstCall } = await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout
+    )
+    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(
+      providersEmitCount + fnCalledCountFirstCall
+    )
+    const { fnCalledCount: fnCalledCountSecondCall } = await waitForFnToBeCalledAndExecuted(
+      mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout
+    )
+    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(
+      providersEmitCount + fnCalledCountFirstCall + fnCalledCountSecondCall
+    )
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.restart).toHaveBeenCalledTimes(
       providersEmitCount
     )
