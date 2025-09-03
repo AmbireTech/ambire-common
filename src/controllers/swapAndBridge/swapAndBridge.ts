@@ -1569,6 +1569,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       return {
         ...routeResult,
+        activeRouteId: this.quote.selectedRoute.routeId,
         success: true
       }
     } catch (error: any) {
@@ -1713,33 +1714,42 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.emitUpdate()
   }
 
-  async addActiveRoute({
-    activeRouteId,
-    userTxIndex
-  }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
-  }) {
-    await this.#initialLoadPromise
-
-    if (!this.quote) {
+  addActiveRoute({ userTxIndex }: { userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex'] }) {
+    if (!this.quote || !this.quote.selectedRoute) {
       const message = 'Unexpected swap & bridge error: no quote found. Please contact support'
       throw new EmittableError({ error: new Error(message), level: 'major', message })
     }
 
     try {
-      const route = await this.#serviceProviderAPI.getActiveRoute(this.quote, activeRouteId)
-      if (route) {
-        this.activeRoutes.push({
-          serviceProviderId: this.#serviceProviderAPI.id,
-          activeRouteId: activeRouteId.toString(),
-          userTxIndex,
+      const route = this.quote.selectedRoute
+      this.activeRoutes.push({
+        serviceProviderId: this.#serviceProviderAPI.id,
+        activeRouteId: route.routeId.toString(),
+        userTxIndex,
+        routeStatus: 'ready',
+        userTxHash: null,
+        fromAsset: {
+          ...this.quote.fromAsset,
+          icon: this.quote.fromAsset.icon || '',
+          logoURI: this.quote.fromAsset.icon || ''
+        },
+        toAsset: {
+          ...this.quote.toAsset,
+          icon: this.quote.toAsset.icon || '',
+          logoURI: this.quote.toAsset.icon || ''
+        },
+        fromAssetAddress: this.quote.fromAsset.address,
+        toAssetAddress: this.quote.toAsset.address,
+        steps: route.steps,
+        sender: route.userAddress,
+        identifiedBy: null,
+        route: {
+          ...route,
           routeStatus: 'ready',
-          userTxHash: null,
-          // @ts-ignore TODO: types mismatch by a bit, align types better
-          route
-        })
-      }
+          transactionData: null
+        }
+      })
+
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
@@ -1759,11 +1769,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       if (forceUpdateRoute) {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
-          let route = currentActiveRoutes[activeRouteIndex].route
-          if (this.#serviceProviderAPI.id === 'socket') {
-            // @ts-ignore TODO: types mismatch by a bit, align types better
-            route = await this.#serviceProviderAPI.getActiveRoute(activeRouteId)
-          }
+          const route = currentActiveRoutes[activeRouteIndex].route
           this.updateActiveRoute(activeRouteId, { route })
         })()
       }

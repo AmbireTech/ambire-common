@@ -626,17 +626,6 @@ export class LiFiAPI {
     return statuses[response.status as LiFiRouteStatusResponse['status']]
   }
 
-  /**
-   * The Li.Fi. active route is always in the quote
-   */
-  // eslint-disable-next-line class-methods-use-this
-  async getActiveRoute(
-    quote: SwapAndBridgeQuote,
-    activeRouteId: string
-  ): Promise<SwapAndBridgeRoute | undefined> {
-    return quote.routes.find((r) => r.routeId.toString() === activeRouteId.toString())
-  }
-
   async getNextRouteUserTx({
     route
   }: {

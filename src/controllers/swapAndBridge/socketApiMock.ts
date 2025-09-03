@@ -903,10 +903,6 @@ export class SocketAPIMock {
     }
   }
 
-  getActiveRoute(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
-    return this.updateActiveRoute(activeRouteId)
-  }
-
   async getNextRouteUserTx(activeRouteId: SocketAPISendTransactionRequest['activeRouteId']) {
     return {
       userTxType: 'dex-swap',

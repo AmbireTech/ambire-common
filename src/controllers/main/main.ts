@@ -788,8 +788,7 @@ export class MainController extends EventEmitter implements IMainController {
     try {
       // if the accountOp has a swapTxn, start the route as the user is broadcasting it
       if (signAccountOp?.accountOp.meta?.swapTxn) {
-        await this.swapAndBridge.addActiveRoute({
-          activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
+        this.swapAndBridge.addActiveRoute({
           userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
         })
       }

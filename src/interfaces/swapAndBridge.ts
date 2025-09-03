@@ -49,7 +49,6 @@ export interface SwapAndBridgeQuote {
   toAsset: SwapAndBridgeToToken
   toChainId: number
   selectedRoute?: SwapAndBridgeRoute
-  selectedActiveRoute?: SwapAndBridgeActiveRoute | SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
 }
@@ -316,10 +315,8 @@ export type SwapAndBridgeActiveRoute = {
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
-  identifiedBy: AccountOpIdentifiedBy
+  identifiedBy: AccountOpIdentifiedBy | null
   route?: SwapAndBridgeRoute & {
-    createdAt: string
-    updatedAt: string
     routeStatus: string
     fromChainId: number
     toChainId: number

@@ -6,19 +6,14 @@ import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../inter
 import {
   BungeeBuildTxnResponse,
   BungeeExchangeQuoteResponse,
-  SocketAPIActiveRoutes,
   SocketAPIResponse,
   SocketAPISendTransactionRequest,
-  SocketAPIStep,
   SocketAPISupportedChain,
   SocketAPIToken,
-  SocketAPIUserTx,
   SocketRouteStatus,
-  SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
@@ -56,32 +51,6 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
     // Socket works only with all lowercased token addresses, otherwise, bad request
     address.toLocaleLowerCase()
   )
-
-const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (
-  userTxs: SocketAPIUserTx[]
-): SwapAndBridgeStep[] => {
-  // @ts-ignore TODO: Types mismatch for this legacy Socket normalization
-  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
-    if (tx.userTxType === 'fund-movr') {
-      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
-    }
-    if (tx.userTxType === 'dex-swap') {
-      stepsAcc.push({
-        chainId: tx.chainId,
-        fromAmount: tx.fromAmount,
-        fromAsset: tx.fromAsset,
-        minAmountOut: tx.minAmountOut,
-        protocol: tx.protocol,
-        swapSlippage: tx.swapSlippage,
-        toAmount: tx.toAmount,
-        toAsset: tx.toAsset,
-        type: 'swap',
-        userTxIndex: tx.userTxIndex
-      })
-    }
-    return stepsAcc
-  }, [])
-}
 
 export class SocketAPI {
   id: 'socket' = 'socket'
@@ -354,7 +323,7 @@ export class SocketAPI {
             chainId: route.output.token.chainId,
             fromAmount: fromAmount.toString(),
             fromAsset,
-            serviceTime: route.estimatedTime,
+            serviceTime: route.estimatedTime ?? 1,
             minAmountOut: route.output.minAmountOut,
             protocol: {
               name: route.routeDetails.name,
@@ -401,7 +370,12 @@ export class SocketAPI {
           disabledReason,
           steps,
           serviceFee,
-          userTxs: steps
+          userTxs: steps,
+          userAddress,
+          isOnlySwapRoute: fromChainId === route.output.token.chainId,
+          currentUserTxIndex: 0,
+          fromChainId,
+          toChainId: route.output.token.chainId
         }
       })
     }
@@ -461,49 +435,6 @@ export class SocketAPI {
     if (!response || response.destinationTxStatus === 'PENDING') return null
     // <TODO<Bobby>: there should be a refunded status>
     return 'completed'
-  }
-
-  async getActiveRoute(
-    quote: SwapAndBridgeQuote,
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-  ): Promise<SwapAndBridgeActiveRoute> {
-    // if the quote contains a cache instance of the active route, use it
-    if (quote.selectedActiveRoute) {
-      const activeRoute = quote.selectedActiveRoute as SwapAndBridgeActiveRoute
-      if (activeRoute.activeRouteId.toString() === activeRouteId.toString()) {
-        return activeRoute
-      }
-    }
-
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPIActiveRoutes>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to update the active route.'
-    })
-
-    return {
-      ...response,
-      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
-      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
-      toAsset: normalizeIncomingSocketToken(response.toAsset),
-      toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
-      steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(response.userTxs),
-      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
-      userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
-        ...userTx,
-        ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
-        toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-        ...('steps' in userTx && {
-          steps: userTx.steps.map((step) => ({
-            ...step,
-            fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-            toAsset: normalizeIncomingSocketToken(step.toAsset)
-          }))
-        })
-      }))
-    }
   }
 
   async getNextRouteUserTx({

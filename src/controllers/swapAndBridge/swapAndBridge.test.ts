@@ -386,7 +386,7 @@ describe('SwapAndBridge Controller', () => {
       toAssetAddress: swapAndBridgeController.toSelectedToken!.address,
       route: swapAndBridgeController.quote!.selectedRoute
     })
-    await swapAndBridgeController.addActiveRoute({
+    swapAndBridgeController.addActiveRoute({
       activeRouteId: userTx.activeRouteId,
       userTxIndex: userTx.userTxIndex
     })
