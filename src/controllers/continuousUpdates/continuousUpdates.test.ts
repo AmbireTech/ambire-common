@@ -239,9 +239,6 @@ describe('ContinuousUpdatesController intervals', () => {
       ) as RPCProviders
     }
     mainCtrl.providers.providers = filterProviders(mainCtrl.providers.providers)
-    // ensure that all providers are working
-    mainCtrl.providers.providers[1].isWorking = true
-    mainCtrl.providers.providers[137].isWorking = true
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
     jest.spyOn(mainCtrl.continuousUpdates, 'updateAccountStateLatest')
     jest.spyOn(mainCtrl.continuousUpdates, 'updateAccountStatePending')
@@ -251,13 +248,13 @@ describe('ContinuousUpdatesController intervals', () => {
       'fastAccountStateReFetch'
     )
 
+    // ensure there is at least one provider that is not working
+    mainCtrl.providers.providers[1].isWorking = false
+    mainCtrl.providers.providers[137].isWorking = true
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.start).toHaveBeenCalledTimes(1)
     expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(0)
-    // ensure there is at least one provider that is not working
-    mainCtrl.providers.providers[1].isWorking = false
-    mainCtrl.providers.providers[137].isWorking = true
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
     expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(1)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
