@@ -465,7 +465,7 @@ const getLink = (route: SwapAndBridgeActiveRoute) => {
 }
 
 const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
-  return txn.fromAsset.chainId === txn.toAsset.chainId
+  return txn.fromAsset.chainId !== txn.toAsset.chainId
 }
 
 export {
