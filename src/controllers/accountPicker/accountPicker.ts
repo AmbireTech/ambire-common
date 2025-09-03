@@ -183,7 +183,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl,
     fetch,
     onAddAccountsSuccessCallback,
-    enableRecurringIntervals = true
+    enableRecurringIntervals = true,
+    enableSubscribingToOtherControllers = true
   }: {
     storage: IStorageController
     accounts: IAccountsController
@@ -195,6 +196,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
     enableRecurringIntervals?: boolean
+    enableSubscribingToOtherControllers?: boolean
   }) {
     super()
     this.#storage = storage
@@ -214,25 +216,27 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (enableRecurringIntervals) this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
-    this.#accounts.onUpdate(() => {
-      this.#debounceFunctionCalls(
-        'update-accounts',
-        () => {
-          if (!this.isInitialized) return
-          if (this.addAccountsStatus !== 'INITIAL') return
+    if (enableSubscribingToOtherControllers) {
+      this.#accounts.onUpdate(() => {
+        this.#debounceFunctionCalls(
+          'update-accounts',
+          () => {
+            if (!this.isInitialized) return
+            if (this.addAccountsStatus !== 'INITIAL') return
 
-          this.#updateStateWithTheLatestFromAccounts()
-        },
-        20
-      )
-    })
+            this.#updateStateWithTheLatestFromAccounts()
+          },
+          20
+        )
+      })
 
-    this.#keystore.onUpdate(() => {
-      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
-        this.#addAccountsOnKeystoreReady = null
-      }
-    })
+      this.#keystore.onUpdate(() => {
+        if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+          this.#addAccountsOnKeystoreReady = null
+        }
+      })
+    }
   }
 
   get accountsOnPage(): AccountOnPage[] {
