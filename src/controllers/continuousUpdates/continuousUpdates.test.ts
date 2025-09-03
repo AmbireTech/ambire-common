@@ -259,18 +259,18 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'restart')
-    jest
-      .spyOn(mainCtrl.continuousUpdates.accountStateLatestInterval, 'restart')
-      .mockImplementation(() => {})
-    jest
-      .spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'start')
-      .mockImplementation(() => {})
-    jest
-      .spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'restart')
-      .mockImplementation(() => {})
-    jest
-      .spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'start')
-      .mockImplementation(() => {})
+    mainCtrl.continuousUpdates.accountStateLatestInterval.start = jest
+      .fn()
+      .mockResolvedValue(undefined)
+    mainCtrl.continuousUpdates.accountStateLatestInterval.restart = jest
+      .fn()
+      .mockResolvedValue(undefined)
+    mainCtrl.continuousUpdates.accountStatePendingInterval.start = jest
+      .fn()
+      .mockResolvedValue(undefined)
+    mainCtrl.continuousUpdates.accountStatePendingInterval.restart = jest
+      .fn()
+      .mockResolvedValue(undefined)
 
     const fastAccountStateReFetchMock = jest.spyOn(
       mainCtrl.continuousUpdates,
