@@ -338,7 +338,7 @@ export interface LearnedAssets {
       /**
        * [tokenAddress]: A timestamp of the last time the token was seen with a balance > 0
        */
-      [tokenAddress: string]: number | null
+      [tokenAddress: string]: number
     }
   }
   /**

@@ -960,7 +960,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * The tokens are removed only if they are learned, which happens if their balance is
    * more than 0.
    */
-  addTokensToBeLearned(tokenAddresses: string[], chainId: bigint) {
+  addTokensToBeLearned(tokenAddresses: string[], chainId: bigint): boolean {
     if (!tokenAddresses.length) return false
     const chainIdString = chainId.toString()
 
@@ -972,7 +972,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
 
     const tokensToLearn = tokenAddresses.filter((address) => {
-      if (address === ZeroAddress) return
+      if (address === ZeroAddress) return false
 
       let normalizedAddress: string | undefined
 
@@ -1072,7 +1072,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           // An NFT with this id is already added to toBeLearned or learnedAssets
           if (
             learnedErc721s[id] ||
-            (tokenId && toBeLearnedAssets[id] && toBeLearnedAssets[id].includes(BigInt(tokenId)))
+            (tokenId &&
+              toBeLearnedAssets[collectionAddress] &&
+              toBeLearnedAssets[collectionAddress].includes(BigInt(tokenId)))
           )
             return
 
@@ -1132,7 +1134,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const noLongerOwnedTokens = Object.entries(learnedTokens)
       .filter(([, timestamp]) => timestamp !== now)
       // Sort by newest timestamp first
-      .sort(([, timestampA], [, timestampB]) => Number(timestampB) - Number(timestampA))
+      .sort(([, timestampA], [, timestampB]) => timestampB - timestampA)
       .map(([address]) => address)
 
     // Remove the oldest no longer owned tokens
