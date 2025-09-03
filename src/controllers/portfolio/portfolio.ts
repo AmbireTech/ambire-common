@@ -1137,7 +1137,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Remove the oldest no longer owned tokens
     if (noLongerOwnedTokens.length > LEARNED_UNOWNED_LIMITS.erc20s) {
-      noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s, -1).forEach((address) => {
+      noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s).forEach((address) => {
         delete learnedTokens[address]
       })
     }
@@ -1187,7 +1187,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Remove the oldest no longer owned NFTs
     if (noLongerOwnedNfts.length > LEARNED_UNOWNED_LIMITS.erc721s) {
-      noLongerOwnedNfts.slice(LEARNED_UNOWNED_LIMITS.erc721s, -1).forEach((id) => {
+      noLongerOwnedNfts.slice(LEARNED_UNOWNED_LIMITS.erc721s).forEach((id) => {
         delete learnedNfts[id]
       })
     }

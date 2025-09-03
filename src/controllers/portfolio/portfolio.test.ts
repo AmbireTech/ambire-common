@@ -1,4 +1,4 @@
-import { ethers, ZeroAddress } from 'ethers'
+import { ethers, Wallet, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 import { getAddress } from 'viem'
 
@@ -17,6 +17,7 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { Portfolio } from '../../libs/portfolio'
+import { erc721CollectionToLearnedAssetKeys } from '../../libs/portfolio/helpers'
 import {
   CollectionResult,
   Hints,
@@ -178,6 +179,17 @@ const accountWithManyAssets = {
     label: 'Vitalik',
     pfp: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
   }
+}
+
+const generateRandomAddresses = (count: number): string[] => {
+  const addresses = []
+
+  for (let i = 0; i < count; i++) {
+    const wallet = Wallet.createRandom()
+    addresses.push(wallet.address)
+  }
+
+  return addresses
 }
 
 const { uiManager } = mockUiManager()
@@ -670,6 +682,101 @@ describe('Portfolio Controller ', () => {
         ['137']!.result!.tokens.find((token) => token.address === ERC_20_MATIC_ADDR)
 
       expect(hasErc20Matic).toBeFalsy()
+    })
+
+    test('To be learned erc20 cleanup mechanism works', async () => {
+      // A total of 80 tokens are added. 30 of them are "no longer owned"
+      // but only 10 of them should be removed as the threshold of unowned is 20
+      const firstBatchOf50 = generateRandomAddresses(50)
+      const startingLearnedAssets: LearnedAssets = {
+        erc20s: {
+          [`${1}:${account.addr}`]: firstBatchOf50.reduce((acc, addr, index) => {
+            // First 20 are still owned, last 30 are no longer owned
+            acc[addr] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+
+            return acc
+          }, {} as LearnedAssets['erc20s'][string])
+        },
+        erc721s: {}
+      }
+
+      const { controller, storageCtrl } = await prepareTest((storageC) =>
+        storageC.set('learnedAssets', startingLearnedAssets)
+      )
+
+      // Wait for the storage to update as initialLoadPromise is private
+      await wait(1000)
+
+      const nextBatchOf30 = generateRandomAddresses(30)
+      const allCurrentlyOwned = [...firstBatchOf50.slice(0, 20), ...nextBatchOf30]
+
+      // @ts-ignore
+      await controller.learnTokens(allCurrentlyOwned, `${1}:${account.addr}`, 1n)
+
+      // Expect the oldest 10 to be removed
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const learnedErc20s = learnedAssets.erc20s?.[`${1}:${account.addr}`]
+
+      expect(Object.keys(learnedErc20s).length).toBe(70)
+    })
+
+    test('To be learned erc721 cleanup mechanism works', async () => {
+      // A total of 80 collections are added. 30 of them are "no longer owned"
+      // but only 10 of them should be removed as the threshold of unowned is 20
+      const firstRandomCollections = generateRandomAddresses(50).reduce((acc, addr, index) => {
+        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+
+        return acc
+      }, [] as [string, bigint[]][])
+
+      const keys = firstRandomCollections.map((c) => erc721CollectionToLearnedAssetKeys(c)).flat()
+
+      const startingLearnedAssets: LearnedAssets = {
+        erc20s: {},
+        erc721s: {
+          [`${1}:${account.addr}`]: keys.reduce((acc, key, index) => {
+            // First 20 are still owned, last 30 are no longer owned
+            acc[key] = index <= 20 ? Date.now() : Date.now() - 24 * 60 * 60 * 1000
+
+            return acc
+          }, {} as LearnedAssets['erc721s'][string])
+        }
+      }
+
+      const { controller, storageCtrl } = await prepareTest((storageC) =>
+        storageC.set('learnedAssets', startingLearnedAssets)
+      )
+
+      // Wait for the storage to update as initialLoadPromise is private
+      await wait(1000)
+
+      const nextRandomCollections = generateRandomAddresses(30).reduce((acc, addr, index) => {
+        acc.push([addr, Math.random() < 0.2 ? [] : [BigInt(index)]] as [string, bigint[]])
+
+        return acc
+      }, [] as [string, bigint[]][])
+
+      const allCurrentlyOwnedCollections = [
+        ...firstRandomCollections.slice(0, 20),
+        ...nextRandomCollections
+      ]
+
+      // @ts-ignore
+      await controller.learnNfts(allCurrentlyOwnedCollections, account.addr, 1n)
+
+      // Expect the oldest 10 to be removed
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+
+      const learnedErc721s = learnedAssets.erc721s?.[`${1}:${account.addr}`]
+
+      Object.keys(learnedErc721s).forEach((key) => {
+        const [, id] = key.split(':')
+
+        if (id === '') throw new Error(`bad id. Should never happen: ${id}`)
+      })
+
+      const expectedCount = Object.keys(learnedErc721s).length
+      expect(expectedCount).toBe(70)
     })
 
     test('Portfolio should filter out ERC20 tokens that mimic native tokens when they are added as custom tokens', async () => {
