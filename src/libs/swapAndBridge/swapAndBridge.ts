@@ -9,7 +9,6 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
@@ -351,11 +350,8 @@ const buildSwapAndBridgeUserRequests = async (
   ]
 }
 
-export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
-  userTxType === 'fund-movr'
-
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.userTxs.some((userTx) => getIsBridgeTxn(userTx.userTxType))
+  return route.fromChainId !== route.toChainId
 }
 
 /**

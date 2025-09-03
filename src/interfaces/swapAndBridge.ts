@@ -346,9 +346,9 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   toAsset: SocketAPIToken
 }
 
-export interface SocketRouteStatus {
-  sourceTxStatus: 'COMPLETED' | 'PENDING'
-  destinationTxStatus: 'COMPLETED' | 'PENDING'
+export interface BungeeRouteStatus {
+  hash: string
+  bungeeStatusCode: number
 }
 
 export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null

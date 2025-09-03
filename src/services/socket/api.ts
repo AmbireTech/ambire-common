@@ -6,11 +6,11 @@ import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../inter
 import {
   BungeeBuildTxnResponse,
   BungeeExchangeQuoteResponse,
+  BungeeRouteStatus,
   SocketAPIResponse,
   SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken,
-  SocketRouteStatus,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
@@ -421,20 +421,25 @@ export class SocketAPI {
     }
   }
 
-  async getRouteStatus({ txHash, fromChainId }: { txHash: string; fromChainId: number }) {
+  async getRouteStatus({ txHash }: { txHash: string }) {
     const params = new URLSearchParams({
-      fromChainId: fromChainId.toString(),
-      transactionHash: txHash
+      txHash
     })
-    const url = `${this.#baseUrl}/bridge-status?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/status?${params.toString()}`
 
-    const response = await this.#handleResponse<SocketRouteStatus | null>({
+    const response = await this.#handleResponse<BungeeRouteStatus[] | null>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
-    if (!response || response.destinationTxStatus === 'PENDING') return null
-    // <TODO<Bobby>: there should be a refunded status>
-    return 'completed'
+
+    if (!response) return null
+    const res = response[0]
+    // everything below 3 is pending on our end
+    if (res.bungeeStatusCode < 3) return null
+    // 3 and 4 is completed on our end
+    if (res.bungeeStatusCode < 5) return 'completed'
+    // everything after is refunded
+    return 'refunded'
   }
 
   async getNextRouteUserTx({
