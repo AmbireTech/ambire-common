@@ -20,7 +20,9 @@ import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  SOCKET_EXPLORER_URL
+  NULL_ADDRESS,
+  SOCKET_EXPLORER_URL,
+  ZERO_ADDRESS
 } from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
@@ -468,9 +470,13 @@ const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
   return txn.fromAsset.chainId !== txn.toAsset.chainId
 }
 
+const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
+  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
+  convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,

@@ -635,7 +635,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       this.#accountsOps[selectedAccount][network.chainId.toString()][
                         accountOpIndex
                       ],
-                      isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                      AccountOpStatus.Failure,
                       receipt
                     )
                     if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)

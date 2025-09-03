@@ -47,6 +47,7 @@ import { getTokenAmount } from '../../libs/portfolio/helpers'
 import { batchCallsFromUserRequests } from '../../libs/requests/requests'
 import {
   addCustomTokensIfNeeded,
+  convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
@@ -641,6 +642,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const { preselectedFromToken, preselectedToToken, fromAmount, activeRouteIdToDelete } =
       params || {}
     await this.#initialLoadPromise
+
+    // if the provider is socket, convert the null addresses
+    if (preselectedFromToken) {
+      preselectedFromToken.address = convertNullAddressToZeroAddressIfNeeded(
+        preselectedFromToken.address
+      )
+    }
+    if (preselectedToToken) {
+      preselectedToToken.address = convertNullAddressToZeroAddressIfNeeded(
+        preselectedToToken.address
+      )
+    }
 
     if (this.sessionIds.includes(sessionId)) return
 

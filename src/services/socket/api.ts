@@ -18,7 +18,11 @@ import {
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../../libs/portfolio'
-import { addCustomTokensIfNeeded, getSlippage } from '../../libs/swapAndBridge/swapAndBridge'
+import {
+  addCustomTokensIfNeeded,
+  convertNullAddressToZeroAddressIfNeeded,
+  getSlippage
+} from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
@@ -30,9 +34,6 @@ import {
 
 const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
   addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
-
-const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
 const normalizeIncomingSocketTokenAddress = (address: string) =>
   // incoming token addresses from Socket are all lowercased
