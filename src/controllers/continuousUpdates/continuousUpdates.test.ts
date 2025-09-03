@@ -78,6 +78,12 @@ const submittedAccountOp = {
   }
 } as SubmittedAccountOp
 
+function filterProviders(providers: RPCProviders, chainIdsToFilter: string[] = []): RPCProviders {
+  return Object.fromEntries(
+    Object.entries(providers).filter(([key]) => chainIdsToFilter.includes(key))
+  ) as RPCProviders
+}
+
 const prepareTest = async () => {
   const storage = produceMemoryStore()
   await storage.set('accounts', accounts)
@@ -122,6 +128,14 @@ const waitForContinuousUpdatesCtrlReady = async (mainCtrl: MainController) => {
   }
 }
 
+const waitForAccountStatesInitialLoad = async (mainCtrl: MainController) => {
+  await jest.advanceTimersByTimeAsync(0)
+
+  while (mainCtrl.accounts.accountStatesInitialLoadPromise) {
+    await jest.advanceTimersByTimeAsync(20)
+  }
+}
+
 describe('ContinuousUpdatesController intervals', () => {
   beforeEach(() => {
     jest.useFakeTimers()
@@ -136,11 +150,15 @@ describe('ContinuousUpdatesController intervals', () => {
   test('should run updatePortfolioInterval', async () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
+    await waitForAccountStatesInitialLoad(mainCtrl)
+    const providersForTesting = ['1', '137']
+    const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
+    // ensure all providers are working
+    mockedProviders[1].isWorking = true
+    mockedProviders[137].isWorking = true
+    mainCtrl.providers.providers = mockedProviders
+
     jest.spyOn(mainCtrl.continuousUpdates.updatePortfolioInterval, 'restart')
-    // Mock `fastAccountStateReFetchTimeout.restart` so it doesn’t interfere with this test
-    const fastAccountStateReFetchTimeoutMock = jest
-      .spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'restart')
-      .mockImplementation(() => {})
     const updatePortfolioSpy = jest.spyOn(mainCtrl.continuousUpdates, 'updatePortfolio')
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
@@ -163,7 +181,6 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(updatePortfolioSpy).toHaveBeenCalledTimes(3)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(updatePortfolioSpy).toHaveBeenCalledTimes(4)
-    fastAccountStateReFetchTimeoutMock.mockRestore()
   })
 
   test('should run accountsOpsStatusesInterval', async () => {
@@ -232,16 +249,28 @@ describe('ContinuousUpdatesController intervals', () => {
   test('should run fastAccountStateReFetchTimeout', async () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
-    const providersForTesting = new Set(['1', '137'])
-    function filterProviders(providers: RPCProviders): RPCProviders {
-      return Object.fromEntries(
-        Object.entries(providers).filter(([key]) => providersForTesting.has(key))
-      ) as RPCProviders
-    }
-    mainCtrl.providers.providers = filterProviders(mainCtrl.providers.providers)
+    await waitForAccountStatesInitialLoad(mainCtrl)
+
+    const providersForTesting = ['1', '137']
+    const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
+    // ensure there is at least one provider that is not working
+    mockedProviders[1].isWorking = false
+    mockedProviders[137].isWorking = true
+    mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
-    jest.spyOn(mainCtrl.continuousUpdates, 'updateAccountStateLatest')
-    jest.spyOn(mainCtrl.continuousUpdates, 'updateAccountStatePending')
+    jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'restart')
+    jest
+      .spyOn(mainCtrl.continuousUpdates.accountStateLatestInterval, 'restart')
+      .mockImplementation(() => {})
+    jest
+      .spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'start')
+      .mockImplementation(() => {})
+    jest
+      .spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'restart')
+      .mockImplementation(() => {})
+    jest
+      .spyOn(mainCtrl.continuousUpdates.accountStatePendingInterval, 'start')
+      .mockImplementation(() => {})
 
     const fastAccountStateReFetchMock = jest.spyOn(
       mainCtrl.continuousUpdates,
@@ -254,10 +283,18 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.start).toHaveBeenCalledTimes(1)
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(0)
+    let providersEmitCount = 0
+    mainCtrl.providers.onUpdate(() => {
+      providersEmitCount += 1
+    })
+
+    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(1)
+    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount + 1)
     await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(2)
+    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount + 2)
+    expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.restart).toHaveBeenCalledTimes(
+      providersEmitCount
+    )
   })
 })
