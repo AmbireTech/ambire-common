@@ -313,7 +313,9 @@ export class SocketAPI {
       socketToAsset = { ...toAsset, icon: toAsset.icon ?? '', logoURI: '' }
     }
 
-    const allRoutes = [...response.manualRoutes, response.autoRoute].sort((r1, r2) => {
+    let allRoutes = [...response.manualRoutes]
+    if (response.autoRoute) allRoutes.push(response.autoRoute)
+    allRoutes = allRoutes.sort((r1, r2) => {
       const a = BigInt(r1.output.amount)
       const b = BigInt(r2.output.amount)
       if (a === b) return 0
