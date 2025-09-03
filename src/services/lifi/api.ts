@@ -80,17 +80,6 @@ const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBrid
           step.action.fromToken,
           step.action.fromChainId
         ),
-        gasFees: {
-          gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-          gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-          feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-          asset: step.estimate.gasCosts?.[0]?.token
-            ? normalizeLiFiTokenToSwapAndBridgeToToken(
-                step.estimate.gasCosts[0].token,
-                step.estimate.gasCosts[0].token.chainId
-              )
-            : undefined
-        },
         serviceTime: parentStep.estimate.executionDuration,
         minAmountOut: step.estimate.toAmountMin,
         protocol: {
@@ -133,18 +122,7 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
         icon: step.toolDetails.logoURI,
         name: step.toolDetails.name
       },
-      minAmountOut: step.estimate.toAmountMin,
-      gasFees: {
-        gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-        gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-        feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-        asset: step.estimate.gasCosts?.[0]?.token
-          ? normalizeLiFiTokenToSwapAndBridgeToToken(
-              step.estimate.gasCosts[0].token,
-              step.estimate.gasCosts[0].token.chainId
-            )
-          : undefined
-      }
+      minAmountOut: step.estimate.toAmountMin
     }))
 
 const normalizeLiFiRouteToSwapAndBridgeRoute = (
@@ -183,7 +161,6 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
       ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
       : { usedDexName: route.steps[0].toolDetails.name }),
-    totalGasFeesInUsd: +(route.gasCostUSD || 0),
     userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     receivedValueInUsd: +route.toAmountUSD,
@@ -231,9 +208,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
     txType: 'eth_sendTransaction',
     userTxIndex: 0,
     userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
-    value: parentStep.transactionRequest.value,
-    serviceFee:
-      parentStep?.estimate?.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
+    value: parentStep.transactionRequest.value
   }
 }
 

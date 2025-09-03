@@ -123,7 +123,6 @@ export class SocketAPIMock {
           },
           sender: userAddress,
           recipient: userAddress,
-          totalGasFeesInUsd: 0.17037701010588965,
           receivedValueInUsd: -0.15017701010588966,
           inputValueInUsd: 0.01997,
           outputValueInUsd: 0.0202,

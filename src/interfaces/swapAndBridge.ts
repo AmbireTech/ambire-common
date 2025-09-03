@@ -62,7 +62,6 @@ export interface SocketAPIRoute {
   usedBridgeNames?: string[]
   usedDexName?: string
   totalUserTx: number
-  totalGasFeesInUsd: number
   recipient: string
   sender: string
   userTxs: SocketAPIUserTx[]
@@ -92,7 +91,6 @@ export interface SwapAndBridgeRoute {
   toAmount: string
   usedBridgeNames?: string[]
   usedDexName?: string
-  totalGasFeesInUsd: number
   // TODO: Deprecate userTxs
   userTxs: SwapAndBridgeUserTx[]
   sender?: string
@@ -130,12 +128,6 @@ export interface SocketAPISwapUserTx {
     name: string
   }
   minAmountOut: string
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   approvalData: SocketAPIUserTxApprovalData | null
 }
 
@@ -150,12 +142,6 @@ export interface SocketAPIBridgeUserTx {
   serviceTime: number
   routePath: string
   maxServiceTime: number
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   chainId: number
   bridgeSlippage: number
   approvalData: SocketAPIUserTxApprovalData | null
@@ -165,12 +151,6 @@ export interface SocketApiSwapStep {
   chainId: number
   fromAmount: string
   fromAsset: SocketAPIToken
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   minAmountOut: string
   protocol: {
     name: string
@@ -189,12 +169,6 @@ export interface SocketApiBridgeStep {
   toChainId: number
   fromAmount: string
   fromAsset: SocketAPIToken
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   minAmountOut: string
   protocol: {
     name: string
@@ -221,12 +195,6 @@ export type SwapAndBridgeStep = {
   chainId?: number
   fromAmount: string
   fromAsset: SwapAndBridgeToToken
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset?: SwapAndBridgeToToken
-  }
   serviceTime?: number
   minAmountOut: string
   protocol: {
@@ -265,12 +233,6 @@ export type SwapAndBridgeUserTx = {
     name: string
   }
   minAmountOut: string
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset?: SwapAndBridgeToToken
-  }
 }
 
 export type SocketAPIUserTxApprovalData = {
@@ -323,13 +285,6 @@ export type SwapAndBridgeSendTxRequest = {
   userTxIndex: number
   userTxType: 'fund-movr' | 'dex-swap'
   value: string
-  serviceFee: {
-    included: boolean
-    amount: string
-    amountUSD: string
-    description: string
-    name: string
-  }[]
 }
 
 export type ActiveRoute = {
@@ -438,4 +393,75 @@ export type CachedToTokenLists = {
 
 export type FromToken = TokenResult & {
   isSwitchedToToken?: boolean
+}
+
+interface BungeeExchangeOutput {
+  amount: string
+  effectiveReceivedInUsd: number
+  minAmountOut: string
+  priceInUsd: number
+  token: SocketAPIToken
+  valueInUsd: number
+}
+
+interface BungeeTxData {
+  data: string
+  to: string
+  value: string
+  chainId: number
+}
+
+export interface BungeeExchangeQuoteResponse {
+  autoRoute: {
+    // this is in seconds
+    estimatedTime: number
+    requestHash: string
+    quoteId: string
+    quoteExpiry: number
+    requestType: string
+    affiliateFee: {} | null
+    slippage: number
+    suggestedClientSlippage: number
+    output: BungeeExchangeOutput
+    txData: BungeeTxData
+  }
+  destinationChainId: number
+  input: {
+    token: SocketAPIToken
+    priceInUsd: number
+    amount: string
+    valueInUsd: number
+  }
+  manualRoutes: {
+    output: BungeeExchangeOutput
+    quoteId: string
+    quoteExpiry: number
+    estimatedTime?: number
+    routeDetails: {
+      dexDetails: string | null
+      logoURI: string
+      name: string
+      routeFee: {
+        amount: string
+        feeInUsd: number
+        priceInUsd: number
+        token: SocketAPIToken
+      } | null
+    }
+    slippage: number
+  }[]
+  originChainId: number
+  receiverAddress: string
+  userAddress: string
+}
+
+export interface BungeeBuildTxnResponse {
+  userOp: string
+  approvalData: {
+    amount: string
+    tokenAddress: string
+    spenderAddress: string
+    userAddress: string
+  } | null
+  txData: BungeeTxData
 }

@@ -2248,32 +2248,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
           )
         }
-
-        // upon success, cache an instance of the active route so the user doesn't
-        // need to wait after txn sign. This is valid only for socket as it requires
-        // another request to fetch the active route
-        if (
-          this.quote &&
-          this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
-          this.#signAccountOpController.estimation.status === EstimationStatus.Success
-        ) {
-          this.#serviceProviderAPI
-            .getActiveRoute(
-              this.quote,
-              this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
-            )
-            .then((activeRoute) => {
-              if (!this.quote) return
-
-              this.quote.selectedActiveRoute = activeRoute
-            })
-            .catch(() => {
-              // this one is a nice to have so no need to handle the error.
-              // if the user confirms the txn, getActiveRoute will be fired
-              // one more time and if an error is received there, it will
-              // notify the user
-            })
-        }
       })
     )
 
