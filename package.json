@@ -1,11 +1,11 @@
 {
-  "version": "2.71.1",
+  "version": "2.72.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "humanizer:update:metamaskContactMetadata": "node scripts/updateHumanizerInfoWithMetaMaskContactMetadata.js",
     "humanizer:generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
-    "compile:contracts": "ts-node scripts/compileContracts.js",
+    "compile:contracts": "npx hardhat compile && ts-node scripts/compileContracts.js",
     "hardhat": "npx hardhat compile; npx hardhat test",
     "jest": "node runTests.js",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
@@ -56,7 +56,7 @@
     "@openzeppelin/contracts": "^4.9.6",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",
-    "@types/jest": "^26.0.14",
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.1",
     "@types/node": "^18.16.1",

@@ -1,8 +1,8 @@
 /* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
+import { JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 /* eslint-disable guard-for-in */
-
-import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { getAddress } from 'viem'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
@@ -261,8 +261,8 @@ export class Portfolio {
     const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
-        paginate(hints.erc20s, limits.erc20).map((page) =>
-          getTokens(this.network, this.deploylessTokens, localOpts, accountAddr, page)
+        paginate(hints.erc20s, limits.erc20).map((page, index) =>
+          getTokens(this.network, this.deploylessTokens, localOpts, accountAddr, page, index)
         )
       ),
       flattenResults(

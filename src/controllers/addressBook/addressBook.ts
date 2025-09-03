@@ -29,7 +29,7 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
 
   #storage: IStorageController
 
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #accounts: IAccountsController
 
@@ -46,7 +46,9 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
     this.#accounts = accounts
     this.#selectedAccount = selectedAccount
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
   }
 
   // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)

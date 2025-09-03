@@ -538,21 +538,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (
       this.#blockGasLimit &&
-      this.selectedOption &&
-      this.selectedOption.gasUsed > this.#blockGasLimit
+      this.accountOp.gasFeePayment &&
+      this.accountOp.gasFeePayment.simulatedGasLimit > this.#blockGasLimit
     ) {
       errors.push({
-        title: 'The transaction gas limit exceeds the network block gas limit.'
-      })
-    }
-
-    if (
-      this.#network.predefined &&
-      this.selectedOption &&
-      this.selectedOption.gasUsed > 500000000n
-    ) {
-      errors.push({
-        title: 'Unreasonably high estimation. This transaction will probably fail'
+        title: 'Transaction invalid: out of gas.'
       })
     }
 
@@ -562,11 +552,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'No signer available'
+        title: 'No keys available to sign this transaction.',
+        code: 'NO_KEYS_AVAILABLE'
       })
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)

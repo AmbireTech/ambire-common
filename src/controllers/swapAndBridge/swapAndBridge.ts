@@ -1,6 +1,10 @@
-import { formatUnits, getAddress, isAddress, parseUnits } from 'ethers'
+import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
@@ -68,7 +72,6 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
-import { createRecurringTimeout, RecurringTimeout } from '../../utils/timeout'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
@@ -219,7 +222,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   routePriority: 'output' | 'time' = 'output'
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
@@ -272,9 +275,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #relayerUrl: string
 
-  #updateQuoteInterval: RecurringTimeout
+  updateQuoteInterval: IRecurringTimeout
 
   #updateActiveRoutesInterval: RecurringTimeout
+
+  get updateActiveRoutesInterval() {
+    return this.#updateActiveRoutesInterval
+  }
 
   constructor({
     accounts,
@@ -331,37 +338,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#getVisibleActionsQueue = getVisibleActionsQueue
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
 
-    this.#updateQuoteInterval = createRecurringTimeout(
-      async () => {
-        if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
-          this.#updateQuoteInterval.stop()
-          return
-        }
-
-        await this.updateQuote({
-          skipPreviousQuoteRemoval: true,
-          skipQuoteUpdateOnSameValues: this.isAutoSelectRouteDisabled,
-          skipStatusUpdate: false
-        })
-      },
+    this.updateQuoteInterval = new RecurringTimeout(
+      async () => this.continuouslyUpdateQuote(),
       UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
-      this.emitError.bind(this)
+      this.emitError.bind(this),
+      'id'
     )
 
-    this.#updateActiveRoutesInterval = createRecurringTimeout(
-      async () => {
-        if (!this.activeRoutesInProgress.length) {
-          this.#updateActiveRoutesInterval.stop()
-          return
-        }
-
-        await this.checkForNextUserTxForActiveRoutes()
-
-        const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
-      },
+    this.#updateActiveRoutesInterval = new RecurringTimeout(
+      async () => this.continuouslyUpdateActiveRoutes(),
       UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -915,7 +904,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           })
         : undefined
     ])
-    this.#updateQuoteInterval.restart()
+    this.updateQuoteInterval.restart()
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -946,7 +935,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.portfolioTokenList = []
     this.#toTokenList = []
     this.errors = []
-    this.#updateQuoteInterval.stop()
+    this.updateQuoteInterval.stop()
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -1205,7 +1194,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return token
   }
 
-  #accountNativeBalance(): bigint {
+  #accountNativeBalance(amount: bigint): bigint {
     if (!this.#selectedAccount.account || !this.fromChainId) return 0n
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(
@@ -1216,7 +1205,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
     if (!native) return 0n
-    return native.amount
+
+    if (this.fromSelectedToken?.address !== ZeroAddress) return native.amount
+
+    // subtract the from amount from the portfolio available balance
+    if (amount > native.amount) return 0n
+    return native.amount - amount
   }
 
   /**
@@ -1442,7 +1436,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           ),
           sort: this.routePriority,
           isOG: this.#invite.isOG,
-          accountNativeBalance: this.#accountNativeBalance(),
+          accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
 
@@ -2408,7 +2402,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
-    this.isAutoSelectRouteDisabled = true
+    this.isAutoSelectRouteDisabled = hasProceeded
     this.emitUpdate()
   }
 
@@ -2475,6 +2469,31 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
     return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+  }
+
+  async continuouslyUpdateQuote() {
+    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+      this.updateQuoteInterval.stop()
+      return
+    }
+
+    await this.updateQuote({
+      skipPreviousQuoteRemoval: true,
+      skipQuoteUpdateOnSameValues: false,
+      skipStatusUpdate: false
+    })
+  }
+
+  async continuouslyUpdateActiveRoutes() {
+    if (!this.activeRoutesInProgress.length) {
+      this.#updateActiveRoutesInterval.stop()
+      return
+    }
+
+    await this.checkForNextUserTxForActiveRoutes()
+
+    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+    this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
   }
 
   toJSON() {

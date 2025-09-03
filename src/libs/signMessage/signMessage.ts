@@ -414,9 +414,12 @@ export async function verifyMessage({
         )
       } else {
         // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
-        finalDigest = TypedDataUtils.eip712Hash(
-          adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
-          SignTypedDataVersion.V4
+        // @TODO: Figure out if we should fix the ts error
+        finalDigest = hexlify(
+          TypedDataUtils.eip712Hash(
+            adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
+            SignTypedDataVersion.V4
+          )
         )
       }
 
@@ -445,9 +448,9 @@ export async function verifyMessage({
       finalDigest,
       signature
     ])
-    if (deploylessRes[0] === true) callResult = '0x01'
-    else if (deploylessRes[0] === false) callResult = '0x00'
-    else callResult = deploylessRes[0]
+    if (deploylessRes === true) callResult = '0x01'
+    else if (deploylessRes === false) callResult = '0x00'
+    else callResult = deploylessRes
   } catch (e: any) {
     throw new Error(
       `Validating the just signed message failed. Please try again or contact Ambire support if the issue persists. Error details: UniversalValidator call failed, more details: ${

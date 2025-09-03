@@ -55,7 +55,7 @@ export async function getSASupport(
     })
 
   return {
-    addressMatches: result[0] === smartAccount.addr,
+    addressMatches: result === smartAccount.addr,
     supportsStateOverride
   }
 }

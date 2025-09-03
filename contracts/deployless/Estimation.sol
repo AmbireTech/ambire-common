@@ -189,11 +189,11 @@ contract Estimation is FeeTokens, Spoof {
     op.signature = spoofSig;
     if (spoofSig.length > 0) {
       try this.simulateSigned(op, GasLimits(0, 0, true)) returns (
-        SimulationOutcome memory errorOutcome
+        SimulationOutcome memory callsRevertedOutcome
       ) {
-        // success case, but if simulateSigned enters here while having a gasLimit of 0,
-        // it means it has resolved with an error. Which is what we want
-        outcome = errorOutcome;
+        // if simulateSigned enters here while having a gasLimit of 0,
+        // it means it has resolved with an error (onchain failure)
+        outcome = callsRevertedOutcome;
       } catch (bytes memory revertData) {
         bytes4 selector = RevertWithSuccess.selector;
 
@@ -210,9 +210,27 @@ contract Estimation is FeeTokens, Spoof {
         assembly {
           gasLimit := mload(add(revertData, 36))
         }
-        uint256 raisedGasLimit = gasLimit + gasLimit / 20;
-        uint256 upperLimit = raisedGasLimit * 3;
-        outcome = simulateSigned(op, GasLimits(raisedGasLimit, upperLimit, false));
+
+        // if the estimated gasLimit is larger than the block gas limit,
+        // return an out of gas error as the txn is impossible to complete
+        uint256 blockGasLimit = block.gaslimit;
+        if (gasLimit > blockGasLimit) {
+          outcome.gasUsed = gasLimit;
+          outcome.success = false;
+          outcome.err = bytes('OOG');
+        } else {
+          // raise the calculated gas limit by 5% just-in-case
+          uint256 raisedGasLimit = gasLimit + gasLimit / 20;
+
+          // the upperLimit should be 3 times the raisedGasLimit unless
+          // the upperLimit becomes bigger than the blockGasLimit
+          uint256 upperLimit = raisedGasLimit * 3;
+          if (upperLimit > blockGasLimit) {
+            upperLimit = blockGasLimit;
+          }
+
+          outcome = simulateSigned(op, GasLimits(raisedGasLimit, upperLimit, false));
+        }
       }
     } else {
       outcome.err = bytes('SPOOF_ERROR');
