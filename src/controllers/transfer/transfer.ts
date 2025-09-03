@@ -643,11 +643,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.recipientAddress,
       this.#selectedAccountData.account.addr
     )
-    console.log(
-      '[TransferController] Checking recipient address',
-      'previousTransactionExists',
-      previousTransactionExists
-    )
 
     // Update state based on whether there are previous transactions to this address
     this.isRecipientAddressFirstTimeSend =

@@ -55,9 +55,9 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
 const FIRST_TIME_SEND_MESSAGE =
-  "You're trying to send to an address you've never sent funds to before. Double-check before confirming."
+  "You're trying to send to an address you've never sent funds to before (this history is stored only in your current browser). Double-check before confirming."
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE =
-  'Bear in mind you have not send to this address before, but it is in your Address Book.'
+  'Bear in mind you have not sent to this address before (this history is stored only in your current browser), but it is in your Address Book.'
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
