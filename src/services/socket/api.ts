@@ -57,9 +57,10 @@ export class SocketAPI {
 
   #fetch: Fetch
 
-  // https://public-backend.bungee.exchange/api/v1
   #baseUrl = 'https://api.socket.tech/v2'
 
+  // https://public-backend.bungee.exchange
+  // #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
   #bungeQuoteApiUrl = 'https://public-backend.bungee.exchange'
 
   #headers: RequestInitWithCustomHeaders['headers']
@@ -71,6 +72,8 @@ export class SocketAPI {
 
     this.#headers = {
       'API-KEY': apiKey,
+      // 'x-api-key': apiKey,
+      // affiliate: 'ambire',
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }
@@ -289,7 +292,7 @@ export class SocketAPI {
     const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', FEE_PERCENT.toString())
+      params.append('feeBps', (FEE_PERCENT * 100).toString())
     }
 
     const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`
