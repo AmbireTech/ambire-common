@@ -137,6 +137,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
     jest.spyOn(mainCtrl.continuousUpdates.updatePortfolioInterval, 'restart')
+    // Mock `fastAccountStateReFetchTimeout.restart` so it doesn’t interfere with this test
     const fastAccountStateReFetchTimeoutMock = jest
       .spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'restart')
       .mockImplementation(() => {})
