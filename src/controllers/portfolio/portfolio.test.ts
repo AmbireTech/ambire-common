@@ -17,7 +17,6 @@ import { RPCProviders } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { Portfolio } from '../../libs/portfolio'
-import { getTotal } from '../../libs/portfolio/helpers'
 import {
   CollectionResult,
   Hints,
@@ -624,6 +623,38 @@ describe('Portfolio Controller ', () => {
       expect(learnedAssets.erc20s[key]).not.toHaveProperty(SMART_CONTRACT_ADDR)
       expect(learnedAssets.erc20s[key]).toHaveProperty(ETHX_TOKEN_ADDR)
     })
+    test('Non-asset passed to addErc721sToBeLearned is not learned', async () => {
+      const NFT_ADDR = getAddress('0x026224a2940bfe258d0dbe947919b62fe321f042')
+      const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
+      const { storageCtrl, controller } = await prepareTest()
+
+      await controller.addErc721sToBeLearned(
+        [
+          [NFT_ADDR, [2647n]],
+          [SMART_CONTRACT_ADDR, [1n]]
+        ],
+        account2.addr,
+        1n
+      )
+      await controller.updateSelectedAccount(account2.addr)
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+      const key = `${1}:${account2.addr}`
+
+      expect(learnedAssets.erc721s[key]).not.toHaveProperty(SMART_CONTRACT_ADDR)
+      // Note: The nft must be owned in order to appear in learned
+      expect(learnedAssets.erc721s[key]).toHaveProperty(`${NFT_ADDR}:2647`)
+    })
+    test('Not owned ERC721 NFT in toBeLearned is added to specialErc721Hints.learn', async () => {
+      const NFT_ADDR = getAddress('0x026224a2940bfe258d0dbe947919b62fe321f042')
+      const { controller } = await prepareTest()
+
+      await controller.addErc721sToBeLearned([[NFT_ADDR, [1n]]], account2.addr, 1n)
+
+      // @ts-ignore
+      const allHints = controller.getAllHints(`${1}:${account2.addr}`, 1n)
+
+      expect(allHints.specialErc721Hints.learn[NFT_ADDR]).toContain(1n)
+    })
 
     test('Portfolio should filter out ER20 tokens that mimic native tokens (same symbol and amount)', async () => {
       const ERC_20_MATIC_ADDR = '0x0000000000000000000000000000000000001010'
@@ -862,7 +893,7 @@ describe('Portfolio Controller ', () => {
         },
         erc721s: {
           [`${1}:${account.addr}`]: {
-            [LILPUDGIS_COLLECTION]: [1n]
+            [`${LILPUDGIS_COLLECTION}:1`]: Date.now()
           }
         }
       }
@@ -893,6 +924,7 @@ describe('Portfolio Controller ', () => {
         latestState.result?.collections?.find(({ address }) => address === LILPUDGIS_COLLECTION)
       ).not.toBeDefined()
 
+      // @ts-ignore
       await controller.learnNfts([[LILPUDGIS_COLLECTION, [1n, 2n, 3n]]], account.addr, 1n)
 
       await controller.updateSelectedAccount(account.addr, [ethereum])
@@ -907,32 +939,43 @@ describe('Portfolio Controller ', () => {
 
       // Nfts learned by directly calling learnNfts are added to learned in storage, regardless
       // of whether the user has a collectible from the collection or not.
-      expect(learnedInStorage.erc721s[key][LILPUDGIS_COLLECTION]).toEqual([1n, 2n, 3n])
+      expect(learnedInStorage.erc721s[key][`${LILPUDGIS_COLLECTION}:1`]).toBeGreaterThan(0)
+      expect(learnedInStorage.erc721s[key][`${LILPUDGIS_COLLECTION}:2`]).toBeGreaterThan(0)
+      expect(learnedInStorage.erc721s[key][`${LILPUDGIS_COLLECTION}:3`]).toBeGreaterThan(0)
     })
-    test('Learning invalid or not checksummed ERC-721 nft', async () => {
+    test('Adding invalid or not checksummed ERC-721 nft to toBeLearned', async () => {
       const { restore } = suppressConsole()
       const INVALID_ADDRESS = '0x524'
       const COLLECTION_ADDRESS = '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270'
-      const { controller, storageCtrl } = await prepareTest()
+      const { controller } = await prepareTest()
+      const key = `${1}:${account.addr}`
 
-      const hasLearned = await controller.learnNfts([[INVALID_ADDRESS, [1n]]], account.addr, 1n)
-      const learnedAssets = await storageCtrl.get('learnedAssets', null)
+      const hasLearned = await controller.addErc721sToBeLearned(
+        [[INVALID_ADDRESS, [1n]]],
+        account.addr,
+        1n
+      )
+      // @ts-ignore
+      const { specialErc721Hints } = controller.getAllHints(key, 1n)
 
       expect(hasLearned).toBeFalsy()
-      expect(learnedAssets).toEqual(null)
+      expect(specialErc721Hints).toEqual({
+        custom: {},
+        hidden: {},
+        learn: {}
+      })
 
-      const hasLearned2 = await controller.learnNfts(
+      const hasLearned2 = await controller.addErc721sToBeLearned(
         [[COLLECTION_ADDRESS, [1n, 2n]]],
         account.addr,
         1n
       )
-      const learnedAssets2 = await storageCtrl.get('learnedAssets', {})
+      // @ts-ignore
+      const { specialErc721Hints: specialErc721Hints2 } = controller.getAllHints(key, 1n)
 
       expect(hasLearned2).toBeTruthy()
-      expect(learnedAssets2.erc721s).toEqual({
-        [`${1}:${account.addr}`]: {
-          [getAddress(COLLECTION_ADDRESS)]: [1n, 2n]
-        }
+      expect(specialErc721Hints2.learn).toEqual({
+        [getAddress(COLLECTION_ADDRESS)]: [1n, 2n]
       })
       restore()
     })
@@ -940,28 +983,29 @@ describe('Portfolio Controller ', () => {
       const { controller } = await prepareTest()
 
       await controller.updateSelectedAccount(account.addr)
-      const resultTotal = getTotal(
-        Object.values(controller.getLatestPortfolioState(account.addr) || {}).flatMap(
-          (res) => res?.result?.tokens || []
-        )
+      const tokens1 = Object.values(controller.getLatestPortfolioState(account.addr) || {}).flatMap(
+        (res) => res?.result?.tokens || []
       )
+
       const latestHintsUpdate = controller.getLatestPortfolioState(account.addr)['1']?.result
         ?.lastExternalApiUpdateData?.lastUpdate
 
       expect(latestHintsUpdate).toBeDefined()
-      expect(resultTotal.usd).toBeGreaterThan(0)
+      expect(tokens1.length).toBeGreaterThan(0)
 
       await controller.updateSelectedAccount(account.addr)
 
-      const resultTotal2 = getTotal(
-        Object.values(controller.getLatestPortfolioState(account.addr) || {}).flatMap(
-          (res) => res?.result?.tokens || []
-        )
+      const tokens2 = Object.values(controller.getLatestPortfolioState(account.addr) || {}).flatMap(
+        (res) => res?.result?.tokens || []
       )
+
       const latestHintsUpdate2 = controller.getLatestPortfolioState(account.addr)['1']?.result
         ?.lastExternalApiUpdateData?.lastUpdate
 
-      expect(resultTotal2.usd).toBe(resultTotal.usd)
+      // Filter 0 balance tokens because of pinned
+      expect(tokens2.filter(({ amount }) => amount > 0n).length).toBe(
+        tokens1.filter(({ amount }) => amount > 0).length
+      )
       expect(latestHintsUpdate2).toBe(latestHintsUpdate)
     })
     test('All external API hints with balance are learned', async () => {
@@ -990,8 +1034,13 @@ describe('Portfolio Controller ', () => {
       collections?.forEach(({ address, collectibles }) => {
         // Return if the user has no collectibles from this collection as they are not learned
         if (!collectibles.length) return
-        expect(learnedAssets.erc721s[key]).toHaveProperty(address)
-        expect(learnedAssets.erc721s[key][address]).toEqual(collectibles)
+
+        collectibles.forEach((id) => {
+          const collectibleKey = `${address}:${id.toString()}`
+
+          expect(learnedAssets.erc721s[key]).toHaveProperty(collectibleKey)
+          expect(learnedAssets.erc721s[key][collectibleKey]).toBeGreaterThan(0)
+        })
       })
     })
     test('Old learned tokens and learned NFTs (from previousHints) are migrated to the new structure', async () => {

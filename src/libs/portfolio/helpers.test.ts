@@ -1,33 +1,18 @@
-import fetch from 'node-fetch'
-
 import { describe } from '@jest/globals'
 
-import { velcroUrl } from '../../../test/config'
 import { networks } from '../../consts/networks'
-import { getRpcProvider } from '../../services/provider'
-import { formatExternalHintsAPIResponse, mergeERC721s } from './helpers'
+import {
+  erc721CollectionToLearnedAssetKeys,
+  formatExternalHintsAPIResponse,
+  learnedErc721sToHints,
+  mergeERC721s
+} from './helpers'
 import { ERC721s, ExternalHintsAPIResponse } from './interfaces'
-import { Portfolio } from './portfolio'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
-
-const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
-
-const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
-
-const TEST_ACCOUNT_ADDRESS = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
-const LEARNED_TOKEN_WITH_BALANCE_ADDRESS = '0x335F4e66B9B61CEE5CeaDE4e727FCEC20156B2F0'
-
-const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(TEST_ACCOUNT_ADDRESS, {
-    additionalErc20Hints: [LEARNED_TOKEN_WITH_BALANCE_ADDRESS]
-  })
-
-  return ethAccPortfolio.tokens
-}
 
 describe('Portfolio helpers', () => {
   it('mergeERC721s', () => {
@@ -106,5 +91,40 @@ describe('Portfolio helpers', () => {
 
     expect(formatted.erc721s['0x35bAc15f98Fa2F496FCb84e269d8d0a408442272']).toEqual([])
     expect(formatted.erc721s['0x026224A2940bFE258D0dbE947919B62fE321F042']).toEqual([2162n, 2647n])
+  })
+  it('erc721CollectionToLearnedAssetKeys', () => {
+    const collections: [string, bigint[]][] = [
+      ['0x35bAc15f98Fa2F496FCb84e269d8d0a408442272', []],
+      ['0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0', [1n, 2n, 3n]]
+    ]
+
+    const keys1 = erc721CollectionToLearnedAssetKeys(collections[0])
+
+    expect(keys1.length).toBe(1)
+    expect(keys1[0]).toBe('0x35bAc15f98Fa2F496FCb84e269d8d0a408442272:enumerable')
+
+    const keys2 = erc721CollectionToLearnedAssetKeys(collections[1])
+    expect(keys2.length).toBe(3)
+    expect(keys2).toContain('0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0:1')
+    expect(keys2).toContain('0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0:2')
+    expect(keys2).toContain('0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0:3')
+  })
+  it('learnedErc721sToHints', () => {
+    const learnedErc721s: string[] = [
+      '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272:enumerable',
+      '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272:1',
+      '0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0:1001',
+      '0x01284C3Ae295bAB7271481b7Ba18387255176f92:2',
+      '0x01284C3Ae295bAB7271481b7Ba18387255176f92:enumerable'
+    ]
+
+    const hints = learnedErc721sToHints(learnedErc721s)
+
+    expect(Object.keys(hints).length).toBe(3)
+    // Even tho some of the hints are duplicated with ids,
+    // if there is an enumerable key, we should prioritize it
+    expect(hints['0x35bAc15f98Fa2F496FCb84e269d8d0a408442272']).toEqual([])
+    expect(hints['0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0']).toEqual([1001n])
+    expect(hints['0x01284C3Ae295bAB7271481b7Ba18387255176f92']).toEqual([])
   })
 })

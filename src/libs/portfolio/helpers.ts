@@ -16,6 +16,7 @@ import {
   Hints,
   NetworkState,
   PortfolioGasTankResult,
+  ToBeLearnedAssets,
   TokenResult
 } from './interfaces'
 
@@ -86,7 +87,9 @@ export function mergeERC721s(sources: ERC721s[]): ERC721s {
     try {
       const checksummed = getAddress(address)
       // Merge arrays and remove duplicates
-      const merged = Array.from(new Set(sources.flatMap((source) => source[checksummed] || [])))
+      const merged: bigint[] = Array.from(
+        new Set(sources.flatMap((source) => source[checksummed] || []))
+      )
 
       result[address] = merged
     } catch (e: any) {
@@ -232,16 +235,22 @@ export const getSpecialHints = (
   chainId: Network['chainId'],
   customTokens: CustomToken[],
   tokenPreferences: TokenPreference[],
-  toBeLearnedTokens?: {
-    [chainId: string]: string[]
-  }
+  toBeLearnedAssets: ToBeLearnedAssets
 ) => {
   const specialErc20Hints: GetOptions['specialErc20Hints'] = {
     custom: [],
     hidden: [],
     learn: []
   }
-  const networkToBeLearned = toBeLearnedTokens?.[chainId.toString()] || []
+  const specialErc721Hints: GetOptions['specialErc721Hints'] = {
+    custom: {},
+    hidden: {},
+    learn: {}
+  }
+  const networkToBeLearnedTokens: ToBeLearnedAssets['erc20s'][string] =
+    toBeLearnedAssets.erc20s?.[chainId.toString()] || []
+  const networkToBeLearnedNfts: ToBeLearnedAssets['erc721s'][string] =
+    toBeLearnedAssets.erc721s?.[chainId.toString()] || {}
 
   customTokens.forEach((token) => {
     if (token.chainId === chainId && token.standard === 'ERC20') {
@@ -255,13 +264,65 @@ export const getSpecialHints = (
     }
   })
 
-  if (networkToBeLearned) {
-    networkToBeLearned.forEach((token) => {
+  if (networkToBeLearnedTokens) {
+    networkToBeLearnedTokens.forEach((token) => {
       specialErc20Hints.learn.push(token)
     })
   }
 
-  return specialErc20Hints
+  if (networkToBeLearnedNfts) {
+    specialErc721Hints.learn = networkToBeLearnedNfts
+  }
+
+  return {
+    specialErc20Hints,
+    specialErc721Hints
+  }
+}
+
+/**
+ * Converts ERC721 hints to keys that can be used for:
+ * - comparison of NFTs
+ * - storage
+ */
+export const erc721CollectionToLearnedAssetKeys = (collection: [string, bigint[]]): string[] => {
+  const [collectionAddress, tokenIds] = collection
+
+  if (!tokenIds.length) return [`${collectionAddress}:enumerable`]
+
+  return tokenIds.map((id) => `${collectionAddress}:${id}`)
+}
+
+/**
+ * Converts `LearnedAssets` ERC721 hint keys to
+ * `ERC721` hints. For more info, see `LearnedAssets`
+ */
+export const learnedErc721sToHints = (keys: string[]): ERC721s => {
+  const hints: ERC721s = {}
+
+  keys.forEach((key) => {
+    const [collectionAddress, tokenId] = key.split(':')
+
+    if (tokenId === 'enumerable') {
+      hints[collectionAddress] = []
+
+      return
+    }
+    // The key already exists as an enumerable hint. Example:
+    // collectionA:enumerable exists and collectionB:id is attempted to be added
+    // (it shouldn't be)
+    if (keys.includes(`${collectionAddress}:enumerable`)) {
+      return
+    }
+
+    if (!hints[collectionAddress]) {
+      hints[collectionAddress] = []
+    }
+
+    hints[collectionAddress].push(BigInt(tokenId))
+  })
+
+  return hints
 }
 
 export const tokenFilter = (

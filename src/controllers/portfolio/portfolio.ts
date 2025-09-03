@@ -25,9 +25,11 @@ import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
+  erc721CollectionToLearnedAssetKeys,
   getFlags,
   getSpecialHints,
   getTotal,
+  learnedErc721sToHints,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 import {
@@ -40,6 +42,7 @@ import {
   PortfolioControllerState,
   PreviousHintsStorage,
   TemporaryTokens,
+  ToBeLearnedAssets,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -48,7 +51,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
 
-const LEARNED_TOKENS_NETWORK_LIMIT = 50
+const LEARNED_UNOWNED_LIMITS = {
+  erc20s: 20,
+  erc721s: 20
+}
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
   static: 60 * 60 * 1000
@@ -67,8 +73,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
   // the response of the latest call to be overwritten by a slower previous call.
   #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
-
-  #toBeLearnedTokens: { [chainId: string]: string[] }
 
   customTokens: CustomToken[] = []
 
@@ -103,6 +107,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     fromExternalAPI: {},
     learnedTokens: {},
     learnedNfts: {}
+  }
+
+  /**
+   * TODO: Figure out a way to clean/reset this structure
+   */
+  #toBeLearnedAssets: ToBeLearnedAssets = {
+    erc20s: {},
+    erc721s: {}
   }
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
@@ -143,7 +155,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.#accounts = accounts
     this.#keystore = keystore
     this.temporaryTokens = {}
-    this.#toBeLearnedTokens = {}
     this.#banner = banner
     this.#batchedVelcroDiscovery = batcher(
       fetch,
@@ -718,6 +729,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * except the external hints discovery request
    */
   protected getAllHints(
+    /**
+     * Key - chainId:accountAddr
+     */
     key: `${string}:${string}`,
     chainId: Network['chainId']
   ): Pick<
@@ -731,17 +745,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     // Check if the user key exists in the new learned tokens structure
     // Fallback to the old structure if not
-    const specialErc20Hints = getSpecialHints(
+    const { specialErc20Hints, specialErc721Hints } = getSpecialHints(
       chainId,
       this.customTokens,
       this.tokenPreferences,
-      this.#toBeLearnedTokens
+      this.#toBeLearnedAssets
     )
-    const specialErc721Hints: Required<GetOptions['specialErc721Hints']> = {
-      learn: {},
-      custom: {},
-      hidden: {}
-    }
 
     // Add the tokens to toBeLearned, but only for this call if the key is not migrated.
     // After the portfolio update all tokens with balance > 0 will be learned.
@@ -756,6 +765,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       Object.keys(oldStructureLearnedNfts).forEach((collectionAddr) => {
         const nftIds = oldStructureLearnedNfts[collectionAddr]
 
+        // A hint for the collection already exists
+        if (specialErc721Hints.learn[collectionAddr]) {
+          specialErc721Hints.learn[collectionAddr].push(...nftIds)
+          return
+        }
+
         specialErc721Hints.learn[collectionAddr] = nftIds
       })
     }
@@ -768,7 +783,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       // It's VERY important to do this only for imported accounts (not view-only), as hints
       // are now stored in storage, so learned will contain a lot of assets (performance hit).
       additionalErc20Hints: Object.keys(learnedTokens || {}),
-      additionalErc721Hints: learnedNfts || {}
+      additionalErc721Hints: learnedErc721sToHints(Object.keys(learnedNfts || {}))
     }
   }
 
@@ -946,16 +961,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * more than 0.
    */
   addTokensToBeLearned(tokenAddresses: string[], chainId: bigint) {
+    if (!tokenAddresses.length) return false
     const chainIdString = chainId.toString()
 
-    if (!tokenAddresses.length) return false
-    if (!this.#toBeLearnedTokens[chainIdString]) this.#toBeLearnedTokens[chainIdString] = []
+    if (!this.#toBeLearnedAssets.erc20s[chainIdString])
+      this.#toBeLearnedAssets.erc20s[chainIdString] = []
 
-    let networkToBeLearnedTokens = this.#toBeLearnedTokens[chainIdString]
+    let networkToBeLearnedTokens = this.#toBeLearnedAssets.erc20s[chainIdString]
 
     const alreadyLearned = networkToBeLearnedTokens.map((addr) => getAddress(addr))
 
     const tokensToLearn = tokenAddresses.filter((address) => {
+      if (address === ZeroAddress) return
+
       let normalizedAddress: string | undefined
 
       try {
@@ -984,8 +1002,98 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     networkToBeLearnedTokens = [...tokensToLearn, ...networkToBeLearnedTokens]
 
-    this.#toBeLearnedTokens[chainIdString] = networkToBeLearnedTokens
+    this.#toBeLearnedAssets.erc20s[chainIdString] = networkToBeLearnedTokens
     return true
+  }
+
+  /**
+   * Adds ERC-721 NFTs to the hints of the portfolio with the intention of learning them.
+   * The nfts are removed only if they are learned, which happens if the user owns them
+   */
+  async addErc721sToBeLearned(
+    nftsData: [string, bigint[]][] | undefined,
+    accountAddr: string,
+    chainId: bigint
+  ): Promise<boolean> {
+    try {
+      if (!nftsData || !nftsData.length) return false
+
+      const formattedNftsData: [string, bigint[]][] = []
+
+      nftsData.forEach(([address, ids]) => {
+        try {
+          const checksummed = getAddress(address)
+
+          formattedNftsData.push([checksummed, ids])
+        } catch (e: any) {
+          console.error('addErc721sToBeLearned: Error while normalizing nft address', e)
+        }
+      })
+
+      if (!formattedNftsData.length) return false
+
+      const key = `${chainId}:${accountAddr}`
+
+      if (!this.#learnedAssets.erc721s[key]) {
+        this.#learnedAssets.erc721s[key] = {}
+      }
+
+      if (!this.#toBeLearnedAssets.erc721s[chainId.toString()]) {
+        this.#toBeLearnedAssets.erc721s[chainId.toString()] = {}
+      }
+
+      const toBeLearnedAssets = this.#toBeLearnedAssets.erc721s[chainId.toString()]
+      const learnedErc721s = this.#learnedAssets.erc721s[key]
+
+      let added = false
+
+      formattedNftsData.forEach(([collectionAddress, tokenIds]) => {
+        // An enumerable NFT of this type already exists in either toBeLearned or learnedAssets
+        // so we don't have to add it again
+        if (
+          (toBeLearnedAssets[collectionAddress] && !toBeLearnedAssets[collectionAddress].length) ||
+          (learnedErc721s && learnedErc721s[`${collectionAddress}:enumerable`])
+        )
+          return
+
+        // Add an enumerable NFT toToBeLearned
+        if (!tokenIds.length) {
+          toBeLearnedAssets[collectionAddress] = []
+
+          return
+        }
+
+        const ids = erc721CollectionToLearnedAssetKeys([collectionAddress, tokenIds])
+
+        ids.forEach((id) => {
+          const [, tokenIdString] = id.split(':')
+
+          const tokenId = BigInt(tokenIdString)
+          // An NFT with this id is already added to toBeLearned or learnedAssets
+          if (
+            learnedErc721s[id] ||
+            (tokenId && toBeLearnedAssets[id] && toBeLearnedAssets[id].includes(BigInt(tokenId)))
+          )
+            return
+
+          if (!added) {
+            added = true
+          }
+
+          if (!toBeLearnedAssets[collectionAddress]) {
+            toBeLearnedAssets[collectionAddress] = []
+          }
+
+          if (tokenId) toBeLearnedAssets[collectionAddress].push(tokenId)
+        })
+      })
+
+      return added
+    } catch (e: any) {
+      console.error('Error during addErc721sToBeLearned: ', e)
+
+      return false
+    }
   }
 
   /**
@@ -997,52 +1105,41 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * when the token was last seen with a balance > 0
    */
   protected async learnTokens(
-    tokensToLearnOrUpdate: string[] | undefined,
+    tokensWithBalance: string[] | undefined,
     key: `${string}:${string}`,
     chainId: bigint
   ): Promise<boolean> {
-    if (!tokensToLearnOrUpdate) return false
+    if (!tokensWithBalance) return false
 
     if (!this.#learnedAssets.erc20s[key]) this.#learnedAssets.erc20s[key] = {}
 
-    const learnedTokensObj = this.#learnedAssets.erc20s[key] || {}
-    const learnedTokens = Object.keys(learnedTokensObj)
+    const learnedTokens = this.#learnedAssets.erc20s[key]
+    const now = Date.now()
 
-    const tokensToLearn = tokensToLearnOrUpdate.reduce(
-      (acc: LearnedAssets['erc20s'][string], address) => {
-        if (address === ZeroAddress) return acc
-        if (learnedTokens.includes(getAddress(address))) return acc
+    tokensWithBalance.forEach((address) => {
+      if (address === ZeroAddress) return
+      learnedTokens[address] = now
 
-        acc[address] = Date.now()
+      if (this.#toBeLearnedAssets.erc20s[chainId.toString()]?.length) {
+        // Remove the token from toBeLearnedTokens if it will be learned
+        this.#toBeLearnedAssets.erc20s[chainId.toString()] = this.#toBeLearnedAssets.erc20s[
+          chainId.toString()
+        ].filter((addr) => addr !== address)
+      }
+    })
 
-        if (this.#toBeLearnedTokens[chainId.toString()]) {
-          // Remove the token from toBeLearnedTokens if it will be learned
-          this.#toBeLearnedTokens[chainId.toString()] = this.#toBeLearnedTokens[
-            chainId.toString()
-          ].filter((addr) => addr !== address)
-        }
+    // Keep a maximum of LEARNED_UNOWNED_LIMITS.erc20s tokens that are no longer owned by the user
+    const noLongerOwnedTokens = Object.entries(learnedTokens)
+      .filter(([, timestamp]) => timestamp !== now)
+      // Sort by newest timestamp first
+      .sort(([, timestampA], [, timestampB]) => Number(timestampB) - Number(timestampA))
+      .map(([address]) => address)
 
-        return acc
-      },
-      {}
-    )
-
-    if (!Object.keys(tokensToLearn).length) return false
-    // Add new tokens in the beginning of the list
-    this.#learnedAssets.erc20s[key] = { ...tokensToLearn, ...learnedTokensObj }
-
-    // Reached limit
-    if (LEARNED_TOKENS_NETWORK_LIMIT - Object.keys(learnedTokensObj).length < 0) {
-      // Convert learned tokens into an array of [address, timestamp] pairs and sort by timestamp in descending order.
-      // This ensures that tokens with the most recent timestamps are prioritized for retention,
-      // and tokens with the oldest timestamps are deleted last when the limit is exceeded.
-      const learnedTokensArray = Object.entries(learnedTokensObj).sort(
-        (a, b) => Number(b[1]) - Number(a[1])
-      )
-
-      this.#learnedAssets.erc20s[key] = Object.fromEntries(
-        learnedTokensArray.slice(0, LEARNED_TOKENS_NETWORK_LIMIT)
-      )
+    // Remove the oldest no longer owned tokens
+    if (noLongerOwnedTokens.length > LEARNED_UNOWNED_LIMITS.erc20s) {
+      noLongerOwnedTokens.slice(LEARNED_UNOWNED_LIMITS.erc20s, -1).forEach((address) => {
+        delete learnedTokens[address]
+      })
     }
 
     await this.#storage.set('learnedAssets', this.#learnedAssets)
@@ -1051,9 +1148,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   /**
-   * Used to learn ERC721 assets from sources like debugTraceCall and the external hints api
+   * Used to learn new ERC-721 NFTs (by adding them to `learnedAssets`) and updating
+   * the timestamps of learned collectibles.
+   *
+   * !!NOTE: This method must be called only by updateSelectedAccount with nfts
+   * that the user owns, because it updates the timestamp of collectibles, that indicates
+   * when the collectible was last seen with a balance > 0
    */
-  async learnNfts(
+  protected async learnNfts(
     nftsData: [string, bigint[]][] | undefined,
     accountAddr: string,
     chainId: bigint
@@ -1063,34 +1165,32 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (!this.#learnedAssets.erc721s[key]) this.#learnedAssets.erc721s[key] = {}
 
-    const formattedNftsData: [string, bigint[]][] = []
+    if (!nftsData.length) return false
 
-    nftsData.forEach(([address, ids]) => {
-      try {
-        const checksummed = getAddress(address)
-
-        formattedNftsData.push([checksummed, ids])
-      } catch (e: any) {
-        console.error('learnNfts: Error while normalizing nft address', e)
-      }
-    })
-
+    const now = Date.now()
     const learnedNfts: LearnedAssets['erc721s'][string] = this.#learnedAssets.erc721s[key]
 
-    const newAddrToId = formattedNftsData
-      .map(([addr, ids]) => ids.map((id) => `${addr}:${id}`))
-      .flat()
-    const alreadyLearnedAddrToId = Object.entries(learnedNfts)
-      .map(([addr, ids]) => ids.map((id) => `${addr}:${id}`))
-      .flat()
-    if (newAddrToId.every((i) => alreadyLearnedAddrToId.includes(i))) return false
-    formattedNftsData.forEach(([addr, ids]) => {
-      if (addr === ZeroAddress) return
-      if (!learnedNfts[addr]) learnedNfts[addr] = ids
-      else learnedNfts[addr] = Array.from(new Set([...ids, ...learnedNfts[addr]]))
+    nftsData.forEach((collection) => {
+      const ids = erc721CollectionToLearnedAssetKeys(collection)
+
+      ids.forEach((id) => {
+        learnedNfts[id] = now
+      })
     })
 
-    this.#learnedAssets.erc721s[key] = learnedNfts
+    // Keep a maximum of LEARNED_UNOWNED_LIMITS.erc721s NFTs that are no longer owned by the user
+    const noLongerOwnedNfts = Object.entries(learnedNfts)
+      .filter(([, timestamp]) => {
+        return timestamp !== now
+      })
+      .map(([id]) => id)
+
+    // Remove the oldest no longer owned NFTs
+    if (noLongerOwnedNfts.length > LEARNED_UNOWNED_LIMITS.erc721s) {
+      noLongerOwnedNfts.slice(LEARNED_UNOWNED_LIMITS.erc721s, -1).forEach((id) => {
+        delete learnedNfts[id]
+      })
+    }
 
     await this.#storage.set('learnedAssets', this.#learnedAssets)
 

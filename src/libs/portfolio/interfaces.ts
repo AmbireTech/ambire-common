@@ -309,6 +309,20 @@ export interface GetOptions {
 }
 
 /**
+ * Hints, divided by standard -> chainId
+ * These hints are temporary, not stored in storage and used
+ * for the simulation and humanizer. They likely don't have balance
+ */
+export interface ToBeLearnedAssets {
+  erc20s: {
+    [chainId: string]: string[]
+  }
+  erc721s: {
+    [chainId: string]: ERC721s
+  }
+}
+
+/**
  * Hints, divided by standard -> chainId:account
  * ERC-20s: Tokens that the user has had a balance of at some point. Each token holds
  * a timestamp, updated after every portfolio update if the account has balance of the token.
@@ -331,7 +345,14 @@ export interface LearnedAssets {
    * [chainId:account]: Hints
    */
   erc721s: {
-    [chainIdAndAccount: string]: { [nftAddress: string]: bigint[] }
+    [chainIdAndAccount: string]: {
+      /**
+       * There are two types of keys:
+       * [0x026224A2940bFE258D0dbE947919B62fE321F042:2647]: A timestamp of the last time the collectible was owned by the user
+       * [0x35bAc15f98Fa2F496FCb84e269d8d0a408442272:enumerable]: A timestamp of the last time the collection was owned by the user(enumerable)
+       */
+      [collectionAddressAndId: string]: number
+    }
   }
 }
 
