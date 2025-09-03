@@ -814,7 +814,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       } catch (e: any) {
         // TODO: Fail silently, but retry + crash report?
 
-        // TODO: Is treating all as newly created accounts ok?
+        // Treat all as newly create as a fallback, that's not really relevant,
+        // since as of v5.22.0 this flag is not used anywhere in the business logic
         newlyCreatedAccounts = identityReq.map((acc) => acc.addr)
       }
     }
