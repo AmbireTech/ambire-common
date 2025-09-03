@@ -91,7 +91,7 @@ export function mergeERC721s(sources: ERC721s[]): ERC721s {
         new Set(sources.flatMap((source) => source[checksummed] || []))
       )
 
-      result[address] = merged
+      result[checksummed] = merged
     } catch (e: any) {
       console.error('Error checksumming ERC-721 collection address', e)
     }
