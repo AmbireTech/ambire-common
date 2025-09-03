@@ -3,6 +3,10 @@ import { getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -10,6 +14,7 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
+import { SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL } from '../../consts/intervals'
 import {
   Account,
   AccountOnchainState,
@@ -83,6 +88,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #providers: IProvidersController
 
   #externalSignerControllers: ExternalSignerControllers
+
+  #smartAccountIdentityRetryInterval: IRecurringTimeout
 
   initParams: {
     keyIterator: KeyIterator | null
@@ -196,6 +203,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
+
+    this.#smartAccountIdentityRetryInterval = new RecurringTimeout(
+      async () => this.#continuouslyRetryFailedSmartAccountIdentityCreateRequests(),
+      SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
+      this.emitError.bind(this)
+    )
 
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
@@ -450,8 +463,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       await this.forceEmitUpdate()
     }
 
-    // Retry failed identity requests from previous sessions
-    await this.#retryFailedSmartAccountIdentityCreateRequests()
+    // Retry failed identity requests from previous sessions and start continuous retry
+    this.#startSmartAccountIdentityRetryIntervalIfNeeded()
   }
 
   get type() {
@@ -830,6 +843,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       } catch (e: any) {
         // For the retry mechanism
         await this.#storeFailedSmartAccountIdentityCreateRequests(identityRequests)
+        this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
         // TODO: Crash report?
 
@@ -1116,6 +1130,29 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
       remainingFailedRequests
     )
+
+    // Stop the retry interval if no more failed requests remain
+    if (!remainingFailedRequests.length) this.#smartAccountIdentityRetryInterval.stop()
+  }
+
+  #startSmartAccountIdentityRetryIntervalIfNeeded() {
+    if (this.#smartAccountIdentityRetryInterval.running) return
+
+    this.#smartAccountIdentityRetryInterval.start({ runImmediately: true })
+  }
+
+  async #continuouslyRetryFailedSmartAccountIdentityCreateRequests() {
+    const failedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    if (!failedRequests.length) {
+      this.#smartAccountIdentityRetryInterval.stop()
+      return
+    }
+
+    await this.#retryFailedSmartAccountIdentityCreateRequests()
   }
 
   async #deriveAccounts(): Promise<DerivedAccount[]> {
