@@ -53,6 +53,7 @@ import {
   getBannedToTokenList,
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
+  isTxnBridge,
   mapBannedToValidAddr,
   sortPortfolioTokenList,
   sortTokenListResponse
@@ -1798,7 +1799,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         if (activeRouteRoute) {
           activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.filter(
-            (tx) => tx.userTxType === 'dex-swap'
+            (tx) => !isTxnBridge(tx)
           ).length
         }
       }

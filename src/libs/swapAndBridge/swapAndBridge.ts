@@ -12,7 +12,8 @@ import {
   SwapAndBridgeActiveRoute,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeToToken
+  SwapAndBridgeToToken,
+  SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
@@ -463,6 +464,10 @@ const getLink = (route: SwapAndBridgeActiveRoute) => {
     : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }
 
+const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
+  return txn.fromAsset.chainId === txn.toAsset.chainId
+}
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
@@ -474,6 +479,7 @@ export {
   getSlippage,
   getSwapAndBridgeCalls,
   isNoFeeToken,
+  isTxnBridge,
   lifiMapNativeToAddr,
   mapBannedToValidAddr
 }

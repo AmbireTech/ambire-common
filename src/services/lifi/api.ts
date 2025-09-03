@@ -104,9 +104,7 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
     // Picks only steps that need to be visualized / displayed
     .filter(({ type }) => ['swap', 'cross'].includes(type))
     .map((step: LiFiIncludedStep, index: number) => ({
-      userTxType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
       userTxIndex: index,
-      txType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
       fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
         step.action.fromToken,
         step.action.fromChainId
@@ -163,7 +161,6 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
       : { usedDexName: route.steps[0].toolDetails.name }),
     userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
-    receivedValueInUsd: +route.toAmountUSD,
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
     serviceTime: route.steps[0].estimate.executionDuration,
@@ -205,9 +202,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
     chainId: parentStep.action.fromChainId,
     txData: parentStep.transactionRequest.data,
     txTarget: parentStep.transactionRequest.to,
-    txType: 'eth_sendTransaction',
     userTxIndex: 0,
-    userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
     value: parentStep.transactionRequest.value
   }
 }

@@ -309,20 +309,25 @@ export class SocketAPI {
       socketToAsset = { ...toAsset, icon: toAsset.icon ?? '', logoURI: '' }
     }
 
-    // todo: configure auto route
-
+    const allRoutes = [...response.manualRoutes, response.autoRoute].sort((r1, r2) => {
+      const a = BigInt(r1.output.amount)
+      const b = BigInt(r2.output.amount)
+      if (a === b) return 0
+      if (a > b) return -1
+      return 1
+    })
     return {
       fromAsset: normalizeIncomingSocketToken(response.input.token),
       toAsset: normalizeIncomingSocketToken(socketToAsset),
       fromChainId: response.input.token.chainId,
       toChainId: response.manualRoutes.length ? response.manualRoutes[0].output.token.chainId : 0,
-      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
-      routes: response.manualRoutes.map((route) => {
+      // @ts-ignore TODO: fix the typescript here
+      routes: allRoutes.map((route) => {
         const steps = [
           {
             chainId: route.output.token.chainId,
             fromAmount: fromAmount.toString(),
-            fromAsset,
+            fromAsset: { ...fromAsset, chainId: Number(fromAsset.chainId) },
             serviceTime: route.estimatedTime ?? 1,
             minAmountOut: route.output.minAmountOut,
             protocol: {
@@ -343,7 +348,8 @@ export class SocketAPI {
             swapSlippage: route.slippage,
             toAmount: route.output.amount,
             toAsset: route.output.token,
-            type: 'swap'
+            type: 'swap',
+            userTxIndex: 0
           }
         ]
 
@@ -375,7 +381,18 @@ export class SocketAPI {
           isOnlySwapRoute: fromChainId === route.output.token.chainId,
           currentUserTxIndex: 0,
           fromChainId,
-          toChainId: route.output.token.chainId
+          toChainId: route.output.token.chainId,
+          inputValueInUsd: response.input.valueInUsd,
+          toToken: {
+            priceUSD: route.output.priceInUsd,
+            symbol: route.output.token.symbol,
+            decimals: route.output.token.decimals,
+            name: route.output.token.name,
+            logoURI: route.output.token.logoURI
+          },
+          approvalData: 'approvalData' in route ? route.approvalData : undefined,
+          txData: 'txData' in route ? route.txData : undefined,
+          rawRoute: '' // not needed for socket
         }
       })
     }
@@ -387,6 +404,26 @@ export class SocketAPI {
     route: SwapAndBridgeQuote['selectedRoute']
   }): Promise<SwapAndBridgeSendTxRequest> {
     if (!route) throw new Error('route not set')
+
+    // the socket auto route return a txData object so we already have it
+    if (route.txData) {
+      return {
+        activeRouteId: route.routeId,
+        approvalData: route.approvalData
+          ? {
+              allowanceTarget: route.approvalData.spenderAddress,
+              approvalTokenAddress: route.approvalData.tokenAddress,
+              minimumApprovalAmount: route.approvalData.amount,
+              owner: route.approvalData.userAddress
+            }
+          : null,
+        chainId: route.fromChainId,
+        txData: route.txData.data,
+        txTarget: route.txData.to,
+        userTxIndex: route.steps.length ? route.steps[0].userTxIndex : 0,
+        value: route.txData.value
+      }
+    }
 
     const response = await this.#handleResponse<BungeeBuildTxnResponse>({
       fetchPromise: this.#fetch(
@@ -400,7 +437,6 @@ export class SocketAPI {
     })
 
     return {
-      // TODO<Bobby>: configure this
       activeRouteId: route.routeId,
       approvalData: response.approvalData
         ? {
@@ -413,10 +449,7 @@ export class SocketAPI {
       chainId: route.fromChainId,
       txData: response.txData.data,
       txTarget: response.txData.to,
-      txType: 'eth_sendTransaction',
       userTxIndex: 0,
-      // TODO<Bobby>: configure this
-      userTxType: route.steps[0].type === 'swap' ? 'dex-swap' : 'fund-movr',
       value: response.txData.value
     }
   }

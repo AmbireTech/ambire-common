@@ -64,7 +64,6 @@ export interface SocketAPIRoute {
   recipient: string
   sender: string
   userTxs: SocketAPIUserTx[]
-  receivedValueInUsd: number
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
@@ -77,6 +76,13 @@ export interface SocketAPIRoute {
   chainGasBalances: object
   minimumGasBalances: object
   extraData: object
+}
+
+interface BungeeApprovalData {
+  amount: string
+  tokenAddress: string
+  spenderAddress: string
+  userAddress: string
 }
 
 export interface SwapAndBridgeRoute {
@@ -94,7 +100,6 @@ export interface SwapAndBridgeRoute {
   userTxs: SwapAndBridgeUserTx[]
   sender?: string
   steps: SwapAndBridgeStep[]
-  receivedValueInUsd: number
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
@@ -107,12 +112,13 @@ export interface SwapAndBridgeRoute {
     amount: string
     amountUSD: string
   }
+  // the socket auto route comes with approvalData & txData
+  approvalData?: BungeeApprovalData
+  txData?: BungeeTxData
 }
 
 export interface SocketAPISwapUserTx {
-  userTxType: 'dex-swap'
   userTxIndex: number
-  txType: string
   fromAsset: SocketAPIToken
   toAsset: SocketAPIToken
   chainId: number
@@ -131,9 +137,7 @@ export interface SocketAPISwapUserTx {
 }
 
 export interface SocketAPIBridgeUserTx {
-  userTxType: 'fund-movr'
   userTxIndex: number
-  txType: string
   toAsset: SocketAPIToken
   toAmount: string
   steps: SocketAPIStep[]
@@ -210,15 +214,13 @@ export type SwapAndBridgeStep = {
   toAmount: string
   toAsset: SwapAndBridgeToToken
   type: 'middleware' | 'swap'
-  userTxIndex?: number
+  userTxIndex: number
 }
 
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
 
 export type SwapAndBridgeUserTx = {
-  userTxType: 'dex-swap' | 'fund-movr'
   userTxIndex: number
-  txType: string
   fromAsset: SwapAndBridgeToToken
   toAsset: SwapAndBridgeToToken
   chainId: number
@@ -261,9 +263,7 @@ export type SocketAPISendTransactionRequest = {
   totalUserTx: number
   txData: string
   txTarget: string
-  txType: 'eth_sendTransaction'
   userTxIndex: number
-  userTxType: 'fund-movr' | 'dex-swap'
   value: string
   serviceFee: {
     included: boolean
@@ -280,9 +280,7 @@ export type SwapAndBridgeSendTxRequest = {
   chainId: number
   txData: string
   txTarget: string
-  txType: 'eth_sendTransaction'
   userTxIndex: number
-  userTxType: 'fund-movr' | 'dex-swap'
   value: string
 }
 
@@ -408,18 +406,32 @@ interface BungeeTxData {
   chainId: number
 }
 
+interface BungeeRouteDetails {
+  dexDetails: string | null
+  logoURI: string
+  name: string
+  routeFee: {
+    amount: string
+    feeInUsd: number
+    priceInUsd: number
+    token: SocketAPIToken
+  } | null
+}
+
 export interface BungeeExchangeQuoteResponse {
   autoRoute: {
-    // this is in seconds
-    estimatedTime: number
-    requestHash: string
+    output: BungeeExchangeOutput
     quoteId: string
     quoteExpiry: number
+    estimatedTime?: number
+    routeDetails: BungeeRouteDetails
+    slippage: number
+
+    requestHash: string
     requestType: string
     affiliateFee: {} | null
-    slippage: number
     suggestedClientSlippage: number
-    output: BungeeExchangeOutput
+    approvalData: BungeeApprovalData
     txData: BungeeTxData
   }
   destinationChainId: number
@@ -434,17 +446,7 @@ export interface BungeeExchangeQuoteResponse {
     quoteId: string
     quoteExpiry: number
     estimatedTime?: number
-    routeDetails: {
-      dexDetails: string | null
-      logoURI: string
-      name: string
-      routeFee: {
-        amount: string
-        feeInUsd: number
-        priceInUsd: number
-        token: SocketAPIToken
-      } | null
-    }
+    routeDetails: BungeeRouteDetails
     slippage: number
   }[]
   originChainId: number
@@ -454,11 +456,6 @@ export interface BungeeExchangeQuoteResponse {
 
 export interface BungeeBuildTxnResponse {
   userOp: string
-  approvalData: {
-    amount: string
-    tokenAddress: string
-    spenderAddress: string
-    userAddress: string
-  } | null
+  approvalData: BungeeApprovalData | null
   txData: BungeeTxData
 }
