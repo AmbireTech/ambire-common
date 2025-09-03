@@ -532,7 +532,8 @@ export class MainController extends EventEmitter implements IMainController {
             externalSignerControllers: this.#externalSignerControllers,
             relayerUrl,
             fetch: this.fetch,
-            onAddAccountsSuccessCallback: async () => {}
+            onAddAccountsSuccessCallback: async () => {},
+            enableRecurringIntervals: false
           }),
           this.keystore,
           async () => {

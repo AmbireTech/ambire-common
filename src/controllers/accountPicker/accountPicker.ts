@@ -182,7 +182,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers,
     relayerUrl,
     fetch,
-    onAddAccountsSuccessCallback
+    onAddAccountsSuccessCallback,
+    enableRecurringIntervals = true
   }: {
     storage: IStorageController
     accounts: IAccountsController
@@ -193,6 +194,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl: string
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
+    enableRecurringIntervals?: boolean
   }) {
     super()
     this.#storage = storage
@@ -209,6 +211,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
       this.emitError.bind(this)
     )
+
+    if (enableRecurringIntervals) this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
@@ -462,9 +466,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     } else {
       await this.forceEmitUpdate()
     }
-
-    // Retry failed identity requests from previous sessions and start continuous retry
-    this.#startSmartAccountIdentityRetryIntervalIfNeeded()
   }
 
   get type() {
@@ -1135,8 +1136,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (!remainingFailedRequests.length) this.#smartAccountIdentityRetryInterval.stop()
   }
 
-  #startSmartAccountIdentityRetryIntervalIfNeeded() {
+  async #startSmartAccountIdentityRetryIntervalIfNeeded() {
     if (this.#smartAccountIdentityRetryInterval.running) return
+
+    const failedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    if (!failedRequests.length) return
 
     this.#smartAccountIdentityRetryInterval.start({ runImmediately: true })
   }
