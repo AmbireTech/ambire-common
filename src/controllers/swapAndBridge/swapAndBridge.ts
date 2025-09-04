@@ -1,7 +1,5 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
-import { LiFiAPI } from 'services/lifi/api'
-import { SwapProviderParallelExecutor } from 'services/swapIntegrators/swapProviderParallelExecutor'
 import EmittableError from '../../classes/EmittableError'
 import {
   IRecurringTimeout,
@@ -20,6 +18,8 @@ import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { LiFiAPI } from '../../services/lifi/api'
+import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 /* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
