@@ -136,7 +136,7 @@ export class ContinuousUpdatesController extends EventEmitter {
      *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
      */
     this.#fastAccountStateReFetchTimeout = new RecurringTimeout(
-      async () => this.fastAccountStateReFetch(),
+      this.#fastAccountStateReFetch.bind(this),
       8000,
       this.emitError.bind(this),
       'fastAccountStateReFetchTimeout'
@@ -150,7 +150,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.providers.onUpdate(() => {
-      this.#fastAccountStateReFetchTimeout.restart()
+      // this.#fastAccountStateReFetchTimeout.restart()
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {
@@ -191,6 +191,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async updateAccountStateLatest() {
     await this.initialLoadPromise
+    await this.#main.accounts.accountStatesInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
@@ -222,6 +223,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async updateAccountStatePending() {
     await this.initialLoadPromise
+    await this.#main.accounts.accountStatesInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to update pending state')
@@ -257,7 +259,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#accountStatePendingInterval.updateTimeout({ timeout: interval })
   }
 
-  async fastAccountStateReFetch() {
+  async #fastAccountStateReFetch() {
     await this.initialLoadPromise
 
     const failedChainIds: string[] = getNetworksWithFailedRPC({

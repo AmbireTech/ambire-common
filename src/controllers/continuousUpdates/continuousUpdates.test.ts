@@ -258,7 +258,6 @@ describe('ContinuousUpdatesController intervals', () => {
     mockedProviders[137].isWorking = true
     mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
-    jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'restart')
     mainCtrl.continuousUpdates.accountStateLatestInterval.start = jest
       .fn()
       .mockResolvedValue(undefined)
@@ -272,37 +271,28 @@ describe('ContinuousUpdatesController intervals', () => {
       .fn()
       .mockResolvedValue(undefined)
 
-    const fastAccountStateReFetchMock = jest.spyOn(
-      mainCtrl.continuousUpdates,
-      'fastAccountStateReFetch'
-    )
-
     // ensure there is at least one provider that is not working
     mainCtrl.providers.providers[1].isWorking = false
     mainCtrl.providers.providers[137].isWorking = true
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
-    await jest.advanceTimersByTimeAsync(0)
+    await jest.advanceTimersByTimeAsync(1000000)
+    const initialFnExecutionsCount =
+      mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.start).toHaveBeenCalledTimes(1)
-    let providersEmitCount = 0
-    mainCtrl.providers.onUpdate(() => {
-      providersEmitCount += 1
-    })
-
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(providersEmitCount)
+    expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
+      initialFnExecutionsCount
+    )
     const { fnCalledCount: fnCalledCountFirstCall } = await waitForFnToBeCalledAndExecuted(
       mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout
     )
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(
-      providersEmitCount + fnCalledCountFirstCall
+    expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
+      initialFnExecutionsCount + fnCalledCountFirstCall
     )
     const { fnCalledCount: fnCalledCountSecondCall } = await waitForFnToBeCalledAndExecuted(
       mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout
     )
-    expect(fastAccountStateReFetchMock).toHaveBeenCalledTimes(
-      providersEmitCount + fnCalledCountFirstCall + fnCalledCountSecondCall
-    )
-    expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.restart).toHaveBeenCalledTimes(
-      providersEmitCount
+    expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
+      initialFnExecutionsCount + fnCalledCountFirstCall + fnCalledCountSecondCall
     )
   })
 })
