@@ -35,15 +35,4 @@ function friendlyEmailVaultMessage(code: EmailVaultErrorCode, email: string): st
   }
 }
 
-function severityFor(code: EmailVaultErrorCode): 'minor' | 'major' {
-  switch (code) {
-    case 'INVALID_KEY':
-    case 'MISSING_PARAMS':
-    case 'TIMEOUT':
-      return 'minor'
-    default:
-      return 'major'
-  }
-}
-
-export { classifyEmailVaultError, friendlyEmailVaultMessage, severityFor }
+export { classifyEmailVaultError, friendlyEmailVaultMessage }

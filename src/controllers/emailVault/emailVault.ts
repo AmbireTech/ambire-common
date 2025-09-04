@@ -17,11 +17,7 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import {
-  classifyEmailVaultError,
-  friendlyEmailVaultMessage,
-  severityFor
-} from '../../libs/emailVault/errors'
+import { classifyEmailVaultError, friendlyEmailVaultMessage } from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
@@ -250,7 +246,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
       this.emitError({
         message,
-        level: severityFor(code),
+        level: 'major',
         error: new Error(`Error in emailVault.handleMagicLinkKey: ${ev?.error}`)
       })
     }
