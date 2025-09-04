@@ -4,14 +4,8 @@ import { LiFiAPI } from '../lifi/api'
 import { SocketAPI } from '../socket/api'
 import { SwapProviderParallelExecutor } from './swapProviderParallelExecutor'
 
-const socketApi = new SocketAPI({
-  apiKey: process.env.SOCKET_API_KEY!,
-  fetch
-})
-const lifiApi = new LiFiAPI({
-  apiKey: process.env.LI_FI_API_KEY!,
-  fetch
-})
+const socketApi = new SocketAPI({ fetch })
+const lifiApi = new LiFiAPI({ fetch })
 const swapProviderParallelExecutor = new SwapProviderParallelExecutor([socketApi, lifiApi])
 
 describe('Swap Provider Parallel execution', () => {
