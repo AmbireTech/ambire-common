@@ -61,19 +61,18 @@ export class SocketAPI implements SwapProvider {
 
   // https://public-backend.bungee.exchange
   // #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
-  #bungeQuoteApiUrl = 'https://public-backend.bungee.exchange'
+  #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
 
   #headers: RequestInitWithCustomHeaders['headers']
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
+  constructor({ fetch }: { fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
-      'API-KEY': apiKey,
-      // 'x-api-key': apiKey,
-      // affiliate: 'ambire',
+      'API-KEY': process.env.SOCKET_API_KEY!,
+      'x-api-key': process.env.BUNGEE_API_KEY!,
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }

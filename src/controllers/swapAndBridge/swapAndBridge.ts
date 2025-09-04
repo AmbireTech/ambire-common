@@ -322,14 +322,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#networks = networks
     this.#activity = activity
     this.#serviceProviderAPI = new SwapProviderParallelExecutor([
-      new LiFiAPI({
-        apiKey: process.env.LI_FI_API_KEY!,
-        fetch
-      }),
-      new SocketAPI({
-        apiKey: process.env.SOCKET_API_KEY!,
-        fetch
-      })
+      new LiFiAPI({ fetch }),
+      new SocketAPI({ fetch })
     ])
     this.#storage = storage
     this.#invite = invite

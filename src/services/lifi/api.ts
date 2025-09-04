@@ -232,7 +232,7 @@ export class LiFiAPI implements SwapProvider {
    */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ apiKey, fetch }: { apiKey: string; fetch: Fetch }) {
+  constructor({ fetch }: { fetch: Fetch }) {
     this.#fetch = fetch
 
     this.#headers = {
@@ -240,7 +240,7 @@ export class LiFiAPI implements SwapProvider {
       'Content-Type': 'application/json'
     }
 
-    this.#apiKey = apiKey
+    this.#apiKey = process.env.LI_FI_API_KEY!
   }
 
   activateApiKey() {
