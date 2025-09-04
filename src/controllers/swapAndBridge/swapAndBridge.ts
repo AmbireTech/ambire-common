@@ -331,10 +331,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
-    this.#serviceProviderAPI = new SocketAPI({
-      apiKey: process.env.SOCKET_API_KEY!,
-      fetch
-    })
+    this.#serviceProviderAPI = new SocketAPI({ fetch })
     this.#fallbackProviderAPI = new LiFiAPI({
       apiKey: process.env.LI_FI_API_KEY!,
       fetch
