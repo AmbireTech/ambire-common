@@ -461,7 +461,8 @@ const getSlippage = (
 }
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
-  return route.serviceProviderId === 'socket'
+  const providerId = route.route ? route.route.providerId : route.serviceProviderId
+  return providerId === 'socket'
     ? `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
     : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }

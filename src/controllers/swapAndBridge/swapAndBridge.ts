@@ -456,21 +456,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#selectedAccount.initialLoadPromise
 
     this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
-    // Service provider may have changed since the last time the user interacted
-    // with the Swap & Bridge. So strip out cached active routes that were NOT
-    // made by the current service provider, because they are NOT compatible.
-    //
     // also, just in case protection: filter out ready routes as we don't have
     // retry mechanism or follow up transaction handling anymore. Which means
     // ready routes in the storage are just leftover routes.
     // Same is true for completed, failed and refunded routes - they are just
     // leftover routes in storage
     const filterOutStatuses = ['ready', 'completed', 'failed', 'refunded']
-    this.activeRoutes = this.activeRoutes.filter(
-      (r) =>
-        r.serviceProviderId === this.#serviceProviderAPI.id &&
-        !filterOutStatuses.includes(r.routeStatus)
-    )
+    this.activeRoutes = this.activeRoutes.filter((r) => !filterOutStatuses.includes(r.routeStatus))
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
@@ -1693,7 +1685,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     try {
       const route = this.quote.selectedRoute
       this.activeRoutes.push({
-        serviceProviderId: this.#serviceProviderAPI.id,
+        serviceProviderId: this.quote.selectedRoute.providerId,
         activeRouteId: route.routeId.toString(),
         userTxIndex,
         routeStatus: 'ready',
