@@ -17,6 +17,11 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
+import {
+  classifyEmailVaultError,
+  friendlyEmailVaultMessage,
+  severityFor
+} from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
@@ -238,17 +243,14 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
     } else {
-      const originalErrorMessage = ev?.error?.message || ''
-      let message = `Unexpected error getting email vault for ${email}`
+      const code = classifyEmailVaultError(ev?.error)
+      const message = friendlyEmailVaultMessage(code, email)
 
-      if (originalErrorMessage.includes('timeout')) {
-        message = `Your activation key expired for ${email}. You can request a new key by resubmitting the form.`
-        this.cancelEmailConfirmation()
-      }
+      if (code === 'TIMEOUT') this.cancelEmailConfirmation()
 
       this.emitError({
         message,
-        level: 'major',
+        level: severityFor(code),
         error: new Error(`Error in emailVault.handleMagicLinkKey: ${ev?.error}`)
       })
     }
