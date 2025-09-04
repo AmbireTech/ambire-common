@@ -2403,6 +2403,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
     this.isAutoSelectRouteDisabled = hasProceeded
+
+    // this is so when the user get an error during broadcast which then leads
+    // to an estimation error - if he does back, he should see the failed route
+    // and be able to select another. if this.isAutoSelectRouteDisabled is not
+    // made to true, he will see an infinite loading
+    if (
+      hasProceeded === false &&
+      this.signAccountOpController &&
+      this.signAccountOpController.estimation.status === EstimationStatus.Error
+    ) {
+      this.isAutoSelectRouteDisabled = true
+    }
+
     this.emitUpdate()
   }
 
