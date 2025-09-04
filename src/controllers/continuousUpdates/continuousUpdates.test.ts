@@ -275,7 +275,6 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.providers.providers[1].isWorking = false
     mainCtrl.providers.providers[137].isWorking = true
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
-    await jest.advanceTimersByTimeAsync(1000000)
     const initialFnExecutionsCount =
       mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.start).toHaveBeenCalledTimes(1)
