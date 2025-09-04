@@ -303,7 +303,7 @@ export type ActiveRoute = {
 }
 
 export type SwapAndBridgeActiveRoute = {
-  serviceProviderId: 'socket' | 'lifi'
+  serviceProviderId: string
   fromAsset: SocketAPIToken
   toAsset: SocketAPIToken
   fromAssetAddress: string
@@ -458,4 +458,67 @@ export interface BungeeBuildTxnResponse {
   userOp: string
   approvalData: BungeeApprovalData | null
   txData: BungeeTxData
+}
+
+export interface SwapProvider {
+  id: string
+  isHealthy: boolean | null
+  updateHealth(): void
+  resetHealth(): void
+  getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
+  getToTokenList({
+    fromChainId,
+    toChainId
+  }: {
+    fromChainId: number
+    toChainId: number
+  }): Promise<SwapAndBridgeToToken[]>
+  getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SwapAndBridgeToToken | null>
+  startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest>
+  quote({
+    fromAsset,
+    fromChainId,
+    fromTokenAddress,
+    toAsset,
+    toChainId,
+    toTokenAddress,
+    fromAmount,
+    userAddress,
+    sort,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    isOG,
+    accountNativeBalance,
+    nativeSymbol
+  }: {
+    fromAsset: TokenResult | null
+    fromChainId: number
+    fromTokenAddress: string
+    toAsset: SwapAndBridgeToToken | null
+    toChainId: number
+    toTokenAddress: string
+    fromAmount: bigint
+    userAddress: string
+    isSmartAccount: boolean
+    sort: 'time' | 'output'
+    isOG: boolean
+    accountNativeBalance: bigint
+    nativeSymbol: string
+  }): Promise<SwapAndBridgeQuote>
+  getRouteStatus({
+    txHash,
+    fromChainId,
+    toChainId,
+    bridge
+  }: {
+    txHash: string
+    fromChainId: number
+    toChainId: number
+    bridge?: string
+  }): Promise<SwapAndBridgeRouteStatus>
 }

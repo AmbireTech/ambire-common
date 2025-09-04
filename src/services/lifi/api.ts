@@ -11,10 +11,8 @@ import {
 } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -22,7 +20,8 @@ import {
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
-  SwapAndBridgeUserTx
+  SwapAndBridgeUserTx,
+  SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../../libs/portfolio'
 import {
@@ -207,8 +206,8 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   }
 }
 
-export class LiFiAPI {
-  id: 'lifi' = 'lifi'
+export class LiFiAPI implements SwapProvider {
+  id: string = 'lifi'
 
   #fetch: Fetch
 
@@ -450,7 +449,7 @@ export class LiFiAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
-    isOG: InviteController['isOG']
+    isOG: boolean
     accountNativeBalance: bigint
     nativeSymbol: string
   }): Promise<SwapAndBridgeQuote> {
@@ -535,15 +534,7 @@ export class LiFiAPI {
     }
   }
 
-  async startRoute({
-    route
-  }: {
-    fromChainId?: number
-    toChainId?: number
-    fromAssetAddress?: string
-    toAssetAddress?: string
-    route: SwapAndBridgeRoute
-  }): Promise<SwapAndBridgeSendTxRequest> {
+  async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
     const body = JSON.stringify((route.rawRoute as LiFiRoute).steps[0])
 
     const response = await this.#handleResponse<LiFiStep>({
@@ -567,8 +558,6 @@ export class LiFiAPI {
     toChainId,
     bridge
   }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
     txHash: string
     fromChainId: number
     toChainId: number
@@ -619,16 +608,5 @@ export class LiFiAPI {
     }
 
     return statuses[response.status as LiFiRouteStatusResponse['status']]
-  }
-
-  async getNextRouteUserTx({
-    route
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-    route: SwapAndBridgeRoute
-  }) {
-    // LiFi has no concept for retrieving next route user tx from the API, since
-    // we're using their single tx flow anyways. So re-use starting route.
-    return this.startRoute({ route })
   }
 }

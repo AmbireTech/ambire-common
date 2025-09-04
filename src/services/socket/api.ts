@@ -1,21 +1,20 @@
 import { getAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   BungeeBuildTxnResponse,
   BungeeExchangeQuoteResponse,
   BungeeRouteStatus,
   SocketAPIResponse,
-  SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
-  SwapAndBridgeToToken
+  SwapAndBridgeToToken,
+  SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../../libs/portfolio'
 import {
@@ -53,8 +52,8 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
     address.toLocaleLowerCase()
   )
 
-export class SocketAPI {
-  id: 'socket' = 'socket'
+export class SocketAPI implements SwapProvider {
+  id: string = 'socket'
 
   #fetch: Fetch
 
@@ -268,7 +267,7 @@ export class SocketAPI {
     userAddress: string
     isSmartAccount: boolean
     sort: 'time' | 'output'
-    isOG: InviteController['isOG']
+    isOG: boolean
     accountNativeBalance: bigint
     nativeSymbol: string
   }): Promise<SwapAndBridgeQuote> {
@@ -404,11 +403,7 @@ export class SocketAPI {
     }
   }
 
-  async startRoute({
-    route
-  }: {
-    route: SwapAndBridgeQuote['selectedRoute']
-  }): Promise<SwapAndBridgeSendTxRequest> {
+  async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
     if (!route) throw new Error('route not set')
 
     // the socket auto route return a txData object so we already have it
@@ -479,21 +474,5 @@ export class SocketAPI {
     if (res.bungeeStatusCode < 5) return 'completed'
     // everything after is refunded
     return 'refunded'
-  }
-
-  async getNextRouteUserTx({
-    activeRouteId
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-  }) {
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to start the next step.'
-    })
-
-    return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 }

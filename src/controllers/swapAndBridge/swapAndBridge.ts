@@ -32,7 +32,8 @@ import {
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeToToken
+  SwapAndBridgeToToken,
+  SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
@@ -61,7 +62,6 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
-import { LiFiAPI } from '../../services/lifi/api'
 import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import {
@@ -131,19 +131,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #storage: IStorageController
 
-  /**
-   * TODO<Bobby>
-   * Long term, neither of the providers should exist as their own
-   * implementations in the controller. There should be a service
-   * that encapsulates them depending on the goal:
-   * - SwapProviderSwitcher, if the goal is fallback mechanism OR lottery
-   * - SwapProviderAggregator, if the goal is to call all providers and aggregate routes
-   * Each service should have a quote(), startRoute() and the other API methods
-   * and decide on its own what should be the proper handling
-   */
-  #serviceProviderAPI: SocketAPI | LiFiAPI
-  // eslint-disable-next-line @typescript-eslint/lines-between-class-members
-  #fallbackProviderAPI: SocketAPI | LiFiAPI
+  #serviceProviderAPI: SwapProvider
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
 
@@ -335,18 +323,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       apiKey: process.env.SOCKET_API_KEY!,
       fetch
     })
-    this.#fallbackProviderAPI = new LiFiAPI({
-      apiKey: process.env.LI_FI_API_KEY!,
-      fetch
-    })
-    // this.#serviceProviderAPI = new LiFiAPI({
-    //   apiKey: process.env.LI_FI_API_KEY!,
-    //   fetch
-    // })
-    // this.#fallbackProviderAPI = new SocketAPI({
-    //   apiKey: process.env.SOCKET_API_KEY!,
-    //   fetch
-    // })
     this.#storage = storage
     this.#invite = invite
     this.#relayerUrl = relayerUrl
@@ -1573,14 +1549,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!this.quote || !this.quote.selectedRoute) return null
 
     try {
-      const routeResult = await this.#serviceProviderAPI.startRoute({
-        fromChainId: this.quote.fromChainId,
-        fromAssetAddress: this.quote.fromAsset.address,
-        toChainId: this.quote.toChainId,
-        toAssetAddress: this.quote.toAsset.address,
-        route: this.quote.selectedRoute
-      })
-
+      const routeResult = await this.#serviceProviderAPI.startRoute(this.quote.selectedRoute)
       return {
         ...routeResult,
         activeRouteId: this.quote.selectedRoute.routeId,
@@ -1608,25 +1577,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
-  async getNextRouteUserTx({
-    activeRouteId,
-    activeRoute: { route }
-  }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    activeRoute: SwapAndBridgeActiveRoute
-  }) {
-    try {
-      const response = await this.#serviceProviderAPI.getNextRouteUserTx({
-        activeRouteId,
-        route: route as SwapAndBridgeRoute // TODO: type cast might not be needed?
-      })
-      return response
-    } catch (error: any) {
-      const { message } = getHumanReadableSwapAndBridgeError(error)
-      throw new EmittableError({ error, level: 'minor', message })
-    }
-  }
-
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
@@ -1647,8 +1597,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
-          activeRouteId: activeRoute.activeRouteId,
-          userTxIndex: activeRoute.userTxIndex,
           txHash: activeRoute.userTxHash!
         })
       } catch (e: any) {
