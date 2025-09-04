@@ -1608,25 +1608,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
-  async getNextRouteUserTx({
-    activeRouteId,
-    activeRoute: { route }
-  }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    activeRoute: SwapAndBridgeActiveRoute
-  }) {
-    try {
-      const response = await this.#serviceProviderAPI.getNextRouteUserTx({
-        activeRouteId,
-        route: route as SwapAndBridgeRoute // TODO: type cast might not be needed?
-      })
-      return response
-    } catch (error: any) {
-      const { message } = getHumanReadableSwapAndBridgeError(error)
-      throw new EmittableError({ error, level: 'minor', message })
-    }
-  }
-
   async checkForNextUserTxForActiveRoutes() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {

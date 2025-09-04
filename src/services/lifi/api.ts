@@ -620,15 +620,4 @@ export class LiFiAPI {
 
     return statuses[response.status as LiFiRouteStatusResponse['status']]
   }
-
-  async getNextRouteUserTx({
-    route
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-    route: SwapAndBridgeRoute
-  }) {
-    // LiFi has no concept for retrieving next route user tx from the API, since
-    // we're using their single tx flow anyways. So re-use starting route.
-    return this.startRoute({ route })
-  }
 }

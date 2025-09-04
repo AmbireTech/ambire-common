@@ -8,7 +8,6 @@ import {
   BungeeExchangeQuoteResponse,
   BungeeRouteStatus,
   SocketAPIResponse,
-  SocketAPISendTransactionRequest,
   SocketAPISupportedChain,
   SocketAPIToken,
   SwapAndBridgeQuote,
@@ -479,21 +478,5 @@ export class SocketAPI {
     if (res.bungeeStatusCode < 5) return 'completed'
     // everything after is refunded
     return 'refunded'
-  }
-
-  async getNextRouteUserTx({
-    activeRouteId
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-  }) {
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to start the next step.'
-    })
-
-    return { ...response, activeRouteId: response.activeRouteId.toString() }
   }
 }
