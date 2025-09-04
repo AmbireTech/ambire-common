@@ -86,6 +86,7 @@ interface BungeeApprovalData {
 }
 
 export interface SwapAndBridgeRoute {
+  providerId: string
   routeId: string
   currentUserTxIndex: number
   fromChainId: number
@@ -491,7 +492,6 @@ export interface SwapProvider {
     fromAmount,
     userAddress,
     sort,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isOG,
     accountNativeBalance,
     nativeSymbol
@@ -504,7 +504,6 @@ export interface SwapProvider {
     toTokenAddress: string
     fromAmount: bigint
     userAddress: string
-    isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: boolean
     accountNativeBalance: bigint
@@ -514,11 +513,13 @@ export interface SwapProvider {
     txHash,
     fromChainId,
     toChainId,
-    bridge
+    bridge,
+    providerId
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
     bridge?: string
+    providerId: string
   }): Promise<SwapAndBridgeRouteStatus>
 }

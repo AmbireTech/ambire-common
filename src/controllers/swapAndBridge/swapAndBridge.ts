@@ -1,5 +1,7 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
+import { LiFiAPI } from 'services/lifi/api'
+import { SwapProviderParallelExecutor } from 'services/swapIntegrators/swapProviderParallelExecutor'
 import EmittableError from '../../classes/EmittableError'
 import {
   IRecurringTimeout,
@@ -36,7 +38,7 @@ import {
   SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
-import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
+import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
@@ -319,10 +321,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
-    this.#serviceProviderAPI = new SocketAPI({
-      apiKey: process.env.SOCKET_API_KEY!,
-      fetch
-    })
+    this.#serviceProviderAPI = new SwapProviderParallelExecutor([
+      new LiFiAPI({
+        apiKey: process.env.LI_FI_API_KEY!,
+        fetch
+      }),
+      new SocketAPI({
+        apiKey: process.env.SOCKET_API_KEY!,
+        fetch
+      })
+    ])
     this.#storage = storage
     this.#invite = invite
     this.#relayerUrl = relayerUrl
@@ -1431,22 +1439,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           toTokenAddress: this.toSelectedToken.address,
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
-          isSmartAccount: !isBasicAccount(
-            this.#selectedAccount.account,
-            await this.#accounts.getOrFetchAccountOnChainState(
-              this.#selectedAccount.account.addr,
-              BigInt(this.toChainId!)
-            )
-          ),
           sort: this.routePriority,
           isOG: this.#invite.isOG,
           accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
-        // sort the routes by making the disabled ones last
-        quoteResult.routes = quoteResult.routes.sort(
-          (a, b) => Number(a.disabled === true) - Number(b.disabled === true)
-        )
+        // sort the routes by value and them by disabled, making disabled last
+        quoteResult.routes = quoteResult.routes
+          .sort((r1, r2) => {
+            const a = BigInt(r1.toAmount)
+            const b = BigInt(r2.toAmount)
+            if (a === b) return 0
+            if (a > b) return -1
+            return 1
+          })
+          .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined
         quoteResult.selectedRouteSteps = quoteResult.selectedRoute
@@ -1597,7 +1604,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromChainId: activeRoute.route.fromChainId,
           toChainId: activeRoute.route.toChainId,
           bridge: activeRoute.route.usedBridgeNames?.[0],
-          txHash: activeRoute.userTxHash!
+          txHash: activeRoute.userTxHash!,
+          providerId: activeRoute.route.providerId
         })
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)

@@ -147,6 +147,7 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     : undefined
 
   return {
+    providerId: 'lifi',
     routeId: route.id,
     fromChainId: route.fromChainId,
     toChainId: route.toChainId,
@@ -447,7 +448,6 @@ export class LiFiAPI implements SwapProvider {
     toTokenAddress: string
     fromAmount: bigint
     userAddress: string
-    isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: boolean
     accountNativeBalance: bigint

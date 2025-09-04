@@ -265,7 +265,6 @@ export class SocketAPI implements SwapProvider {
     toTokenAddress: string
     fromAmount: bigint
     userAddress: string
-    isSmartAccount: boolean
     sort: 'time' | 'output'
     isOG: boolean
     accountNativeBalance: bigint
@@ -375,6 +374,7 @@ export class SocketAPI implements SwapProvider {
 
         return {
           ...steps[0],
+          providerId: 'socket',
           outputValueInUsd: route.output.valueInUsd,
           routeId: route.quoteId,
           disabled,

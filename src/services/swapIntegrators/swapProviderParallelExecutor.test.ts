@@ -15,8 +15,26 @@ const lifiApi = new LiFiAPI({
 const swapProviderParallelExecutor = new SwapProviderParallelExecutor([socketApi, lifiApi])
 
 describe('Swap Provider Parallel execution', () => {
-  it('Fetch chains successfully', async () => {
+  it('Fetch chains successfully and make sure there are no duplicates', async () => {
     const chainIds = await swapProviderParallelExecutor.getSupportedChains()
-    console.log(chainIds)
+    const ids = chainIds.map((item) => item.chainId)
+    const uniqueIds = new Set(ids)
+    expect(uniqueIds.size).toBe(ids.length)
+  })
+  it('Fetch to token list successfully and make sure there are no duplicate tokens', async () => {
+    const toTokenList = await swapProviderParallelExecutor.getToTokenList({
+      fromChainId: 10,
+      toChainId: 10
+    })
+    const ids = toTokenList.map((item) => `${item.chainId}-${item.address}`)
+    const uniqueIds = new Set(ids)
+    expect(uniqueIds.size).toBe(ids.length)
+  })
+  it('Fetch to token successfully', async () => {
+    const toToken = await swapProviderParallelExecutor.getToken({
+      address: '0x4200000000000000000000000000000000000042',
+      chainId: 10
+    })
+    expect(toToken).not.toBe(null)
   })
 })
