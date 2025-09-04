@@ -380,15 +380,6 @@ export const getIsRecalculationNeeded = (
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
     defiPositionsNetworkState?.updatedAt
 
-  // @TODO: Delete
-  console.log(
-    'Debug: ',
-    pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt,
-    defiPositionsNetworkState.updatedAt,
-    areDefiPositionsUpdated,
-    hasPortfolioUpdated
-  )
-
   return hasPortfolioUpdated || areDefiPositionsUpdated
 }
 

@@ -648,7 +648,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
-      defiPositions: this.defiPositions
+      defiPositions: this.defiPositions,
+      areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }
 }
