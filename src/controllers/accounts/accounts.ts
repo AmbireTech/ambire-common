@@ -49,6 +49,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
+  // Tracks the initial load of account states. Unlike `initialLoadPromise`,
+  // this one isn’t awaited during the AccountsController initial load, so it’s the only
+  // reliable way to know when account states are fully loaded.
   accountStatesInitialLoadPromise?: Promise<void>
 
   constructor(
