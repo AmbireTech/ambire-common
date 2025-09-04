@@ -533,8 +533,7 @@ export class MainController extends EventEmitter implements IMainController {
             relayerUrl,
             fetch: this.fetch,
             onAddAccountsSuccessCallback: async () => {},
-            enableRecurringIntervals: false,
-            enableSubscribingToOtherControllers: false
+            enableRecurringIntervals: false
           }),
           this.keystore,
           async () => {

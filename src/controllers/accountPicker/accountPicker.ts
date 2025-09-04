@@ -173,6 +173,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     accounts?: SelectedAccountForImport[]
   } | null = null
 
+  #accountsUnsubscribe?: () => void
+
+  #keystoreUnsubscribe?: () => void
+
   constructor({
     storage,
     accounts,
@@ -183,8 +187,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl,
     fetch,
     onAddAccountsSuccessCallback,
-    enableRecurringIntervals = true,
-    enableSubscribingToOtherControllers = true
+    enableRecurringIntervals = true
   }: {
     storage: IStorageController
     accounts: IAccountsController
@@ -196,7 +199,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
     enableRecurringIntervals?: boolean
-    enableSubscribingToOtherControllers?: boolean
   }) {
     super()
     this.#storage = storage
@@ -216,26 +218,42 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (enableRecurringIntervals) this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
-    if (enableSubscribingToOtherControllers) {
-      this.#accounts.onUpdate(() => {
-        this.#debounceFunctionCalls(
-          'update-accounts',
-          () => {
-            if (!this.isInitialized) return
-            if (this.addAccountsStatus !== 'INITIAL') return
+    this.#setupEventSubscriptions()
+  }
 
-            this.#updateStateWithTheLatestFromAccounts()
-          },
-          20
-        )
-      })
+  #setupEventSubscriptions() {
+    this.#cleanEventSubscriptionsIfNeeded()
 
-      this.#keystore.onUpdate(() => {
-        if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
-          this.#addAccountsOnKeystoreReady = null
-        }
-      })
+    // Set up new subscriptions
+    this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
+      this.#debounceFunctionCalls(
+        'update-accounts',
+        () => {
+          if (!this.isInitialized) return
+          if (this.addAccountsStatus !== 'INITIAL') return
+
+          this.#updateStateWithTheLatestFromAccounts()
+        },
+        20
+      )
+    })
+
+    this.#keystoreUnsubscribe = this.#keystore.onUpdate(() => {
+      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+        this.#addAccountsOnKeystoreReady = null
+      }
+    })
+  }
+
+  #cleanEventSubscriptionsIfNeeded() {
+    if (this.#accountsUnsubscribe) {
+      this.#accountsUnsubscribe()
+      this.#accountsUnsubscribe = undefined
+    }
+    if (this.#keystoreUnsubscribe) {
+      this.#keystoreUnsubscribe()
+      this.#keystoreUnsubscribe = undefined
     }
   }
 
@@ -504,6 +522,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.addedAccountsFromCurrentSession = []
     this.#addAccountsOnKeystoreReady = null
 
+    this.#cleanEventSubscriptionsIfNeeded()
     await this.forceEmitUpdate()
   }
 
