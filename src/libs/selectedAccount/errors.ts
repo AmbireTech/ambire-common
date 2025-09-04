@@ -224,7 +224,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     if (
       criticalError &&
       (['gasTank', 'rewards'].includes(chainId) ||
-        typeof rpcProvider.isWorking !== 'boolean' ||
+        typeof rpcProvider?.isWorking !== 'boolean' ||
         rpcProvider.isWorking)
     ) {
       errors = addPortfolioError(errors, networkName, 'portfolio-critical')

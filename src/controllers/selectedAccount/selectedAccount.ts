@@ -200,11 +200,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.#areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
             this.updateSelectedAccountPortfolio(true)
+            // @TODO: Delete
+            console.log('Debug: after portfolio update')
+            // This fixes it
+            this.#updateDefiPositionsErrors()
           })
-          this.#updateDefiPositionsErrors()
         }
       })
     })
@@ -389,7 +392,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  get #areDefiPositionsLoading() {
+  get areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -453,12 +456,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   #updateDefiPositionsErrors(skipUpdate?: boolean) {
+    // @TODO: Delete
+    console.log('Debug: update errors')
     if (
       !this.account ||
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.#areDefiPositionsLoading
+      this.areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {

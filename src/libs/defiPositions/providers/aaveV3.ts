@@ -3,6 +3,7 @@ import { JsonRpcProvider, Provider } from 'ethers'
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
 import { generateUuid } from '../../../utils/uuid'
+import wait from '../../../utils/wait'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
@@ -16,6 +17,10 @@ export async function getAAVEPositions(
   provider: Provider | JsonRpcProvider,
   network: Network
 ): Promise<PositionsByProvider | null> {
+  // @TODO: Delete
+  console.log('Debug: before getAAVEPositions')
+  await wait(15000)
+  console.log('Debug: after getAAVEPositions')
   const { chainId } = network
   if (chainId && !AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]) return null
 
