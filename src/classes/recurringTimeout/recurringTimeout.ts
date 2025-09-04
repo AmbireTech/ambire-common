@@ -67,6 +67,7 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   stop() {
+    this.startScheduled = false
     this.#reset()
   }
 
@@ -76,8 +77,6 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   async #loop() {
-    if (this.promise) return // prevents multiple executions in one tick
-
     try {
       this.promise = this.#fn()
       this.fnExecutionsCount += 1
@@ -117,6 +116,8 @@ export class RecurringTimeout implements IRecurringTimeout {
 
       if (newTimeout) this.updateTimeout({ timeout: newTimeout })
 
+      if (this.promise) return // prevents multiple executions in one tick
+
       if (runImmediately) {
         this.#loop()
       } else {
@@ -127,8 +128,6 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #reset() {
     this.running = false
-    this.promise = undefined
-    this.startScheduled = false
     this.startedRunningAt = 0
 
     if (this.#timeoutId) {

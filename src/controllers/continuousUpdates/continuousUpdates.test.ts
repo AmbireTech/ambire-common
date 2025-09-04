@@ -10,6 +10,7 @@ import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
 import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import wait from '../../utils/wait'
 import { MainController } from '../main/main'
 
 // Public API key, shared by Socket, for testing purposes only
@@ -103,10 +104,16 @@ const prepareTest = async () => {
     velcroUrl
   })
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
-  mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockResolvedValue(undefined)
+  mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockImplementation(async () => {
+    await wait(500)
+  })
   mainCtrl.domains.reverseLookup = jest.fn().mockResolvedValue(undefined)
-  mainCtrl.accounts.updateAccountStates = jest.fn().mockResolvedValue(undefined)
-  mainCtrl.accounts.updateAccountState = jest.fn().mockResolvedValue(undefined)
+  mainCtrl.accounts.updateAccountStates = jest.fn().mockImplementation(async () => {
+    await wait(500)
+  })
+  mainCtrl.accounts.updateAccountState = jest.fn().mockImplementation(async () => {
+    await wait(500)
+  })
   mainCtrl.updateAccountsOpsStatuses = jest.fn().mockResolvedValue({ newestOpTimestamp: 0 })
 
   return { mainCtrl }
@@ -165,20 +172,16 @@ describe('ContinuousUpdatesController intervals', () => {
     const updateSelectedAccountPortfolioSpy = jest.spyOn(mainCtrl, 'updateSelectedAccountPortfolio')
     const initialFnExecutionsCount =
       mainCtrl.continuousUpdates.updatePortfolioInterval.fnExecutionsCount
-    const { fnExecutionsCount: fnExecutionsCountFirstCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.updatePortfolioInterval
-    )
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + fnExecutionsCountFirstCall
+      initialFnExecutionsCount + 1
     )
     const updateSelectedAccountCalledTimes = updateSelectedAccountPortfolioSpy.mock.calls.length
     await mainCtrl.activity.addAccountOp(submittedAccountOp)
     await jest.advanceTimersByTimeAsync(0)
-    const { fnExecutionsCount: fnExecutionsCountSecondCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.updatePortfolioInterval
-    )
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + fnExecutionsCountFirstCall + fnExecutionsCountSecondCall
+      initialFnExecutionsCount + 2
     )
     expect(updateSelectedAccountPortfolioSpy).toHaveBeenCalledTimes(
       updateSelectedAccountCalledTimes
@@ -186,24 +189,13 @@ describe('ContinuousUpdatesController intervals', () => {
     mainCtrl.ui.removeView('1')
     await jest.advanceTimersByTimeAsync(0)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.restart).toHaveBeenCalledTimes(2)
-    const { fnExecutionsCount: fnExecutionsCountThirdCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.updatePortfolioInterval
-    )
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount +
-        fnExecutionsCountFirstCall +
-        fnExecutionsCountSecondCall +
-        fnExecutionsCountThirdCall
+      initialFnExecutionsCount + 3
     )
-    const { fnExecutionsCount: fnExecutionsCountFourthCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.updatePortfolioInterval
-    )
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.updatePortfolioInterval)
     expect(mainCtrl.continuousUpdates.updatePortfolioInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount +
-        fnExecutionsCountFirstCall +
-        fnExecutionsCountSecondCall +
-        fnExecutionsCountThirdCall +
-        fnExecutionsCountFourthCall
+      initialFnExecutionsCount + 4
     )
   })
 
@@ -221,17 +213,13 @@ describe('ContinuousUpdatesController intervals', () => {
       mainCtrl.continuousUpdates.accountsOpsStatusesInterval.fnExecutionsCount
 
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.start).toHaveBeenCalled()
-    const { fnExecutionsCount: fnExecutionsCountFirstCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.accountsOpsStatusesInterval
-    )
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountsOpsStatusesInterval)
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + fnExecutionsCountFirstCall
+      initialFnExecutionsCount + 1
     )
-    const { fnExecutionsCount: fnExecutionsCountSecondCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.accountsOpsStatusesInterval
-    )
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountsOpsStatusesInterval)
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + fnExecutionsCountFirstCall + fnExecutionsCountSecondCall
+      initialFnExecutionsCount + 2
     )
     jest.spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get').mockReturnValue([])
     // @ts-ignore
@@ -257,10 +245,9 @@ describe('ContinuousUpdatesController intervals', () => {
 
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.running).toBe(true)
     expect(mainCtrl.continuousUpdates.accountStatePendingInterval.running).toBe(false)
-    const { fnExecutionsCount: accountStateLatestFnExecutionsCountFirstCall } =
-      await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStateLatestInterval)
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStateLatestInterval)
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.fnExecutionsCount).toBe(
-      initialAccountStateLatestFnExecutionsCount + accountStateLatestFnExecutionsCountFirstCall
+      initialAccountStateLatestFnExecutionsCount + 1
     )
     mainCtrl.statuses.signAndBroadcastAccountOp = 'SUCCESS'
     // @ts-ignore
@@ -273,10 +260,10 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates.accountStatePendingInterval.currentTimeout).toBe(
       ACCOUNT_STATE_PENDING_INTERVAL / 2
     )
-    const { fnExecutionsCount: accountStatePendingFnExecutionsCountFirstCall } =
-      await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStatePendingInterval)
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.accountStatePendingInterval)
     expect(mainCtrl.continuousUpdates.accountStatePendingInterval.fnExecutionsCount).toBe(
-      initialAccountStatePendingFnExecutionsCount + accountStatePendingFnExecutionsCountFirstCall
+      initialAccountStatePendingFnExecutionsCount + 1
     )
     expect(mainCtrl.continuousUpdates.accountStateLatestInterval.restart).toHaveBeenCalledTimes(2)
     expect(mainCtrl.continuousUpdates.accountStatePendingInterval.stop).toHaveBeenCalledTimes(1)
@@ -317,17 +304,32 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount
     )
-    const { fnExecutionsCount: fnExecutionsCountFirstCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout
-    )
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + fnExecutionsCountFirstCall
+      initialFnExecutionsCount + 1
     )
-    const { fnExecutionsCount: fnExecutionsCountSecondCall } = await waitForFnToBeCalledAndExecuted(
-      mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout
-    )
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+    // @ts-ignore
+    mainCtrl.providers.emitUpdate()
+
+    await waitForFnToBeCalledAndExecuted(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout)
     expect(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
-      initialFnExecutionsCount + fnExecutionsCountFirstCall + fnExecutionsCountSecondCall
+      initialFnExecutionsCount + 2
     )
   })
 })
