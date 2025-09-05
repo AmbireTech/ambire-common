@@ -1206,7 +1206,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     )
     if (!native) return 0n
 
-    if (this.fromSelectedToken?.address !== ZeroAddress) return native.amount
+    if (this.fromSelectedToken?.address !== ZeroAddress || amount === 0n) return native.amount
 
     // subtract the from amount from the portfolio available balance
     if (amount > native.amount) return 0n
@@ -2463,6 +2463,33 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       errors.push({
         title: 'Min amount for bridging to Ethereum is $10'
       })
+    }
+
+    // if the account cannot use other fee payment options than native
+    // and the account doesn't have any native,
+    // show an error
+    const accountNativeBalance = this.#accountNativeBalance(0n)
+    if (this.#selectedAccount.account && this.fromChainId && accountNativeBalance === 0n) {
+      const network = this.#networks.networks.find(
+        (net) => net.chainId === BigInt(this.fromChainId!)
+      )
+      if (network) {
+        const accountState =
+          this.#accounts.accountStates[this.#selectedAccount.account.addr][this.fromChainId]
+        if (accountState) {
+          const baseAcc = getBaseAccount(
+            this.#selectedAccount.account,
+            accountState,
+            this.#keystore.getAccountKeys(this.#selectedAccount.account),
+            network
+          )
+          if (!baseAcc.canPayWithTokens() && !baseAcc.canPayWithEOA()) {
+            errors.push({
+              title: `Insufficient ${network.nativeAssetSymbol} to cover the gas fees`
+            })
+          }
+        }
+      }
     }
 
     return errors
