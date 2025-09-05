@@ -232,11 +232,6 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         })
       ])
 
-      // @TODO: Delete
-      // Mock a provider error the second time
-      if (this.#state[selectedAccountAddr]?.[network.chainId.toString()]?.updatedAt)
-        this.#setProviderError(addr, network.chainId, 'AAVE v3', 'Unknown error')
-
       return [aave, uniV3].filter(Boolean) as PositionsByProvider[]
     }
 

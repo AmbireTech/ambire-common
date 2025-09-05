@@ -203,9 +203,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         if (!this.areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
             this.updateSelectedAccountPortfolio(true)
-            // @TODO: Delete
-            console.log('Debug: after portfolio update')
-            // This fixes it
             this.#updateDefiPositionsErrors()
           })
         }
@@ -456,8 +453,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   #updateDefiPositionsErrors(skipUpdate?: boolean) {
-    // @TODO: Delete
-    console.log('Debug: update errors')
     if (
       !this.account ||
       !this.#networks ||
