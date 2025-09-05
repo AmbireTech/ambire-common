@@ -12,6 +12,7 @@ export interface IRecurringTimeout {
   updateTimeout: (options: { timeout: number }) => void
   running: boolean
   sessionId: number
+  fnExecutionsCount: number
   startedRunningAt: number
   currentTimeout: number
   promise: Promise<void> | undefined
@@ -29,6 +30,8 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   // used mainly for testing how many times the fn was called
   sessionId: number = 0
+
+  fnExecutionsCount: number = 0
 
   running = false
 
@@ -64,6 +67,7 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   stop() {
+    this.startScheduled = false
     this.#reset()
   }
 
@@ -73,10 +77,9 @@ export class RecurringTimeout implements IRecurringTimeout {
   }
 
   async #loop() {
-    if (this.promise) return // prevents multiple executions in one tick
-
     try {
       this.promise = this.#fn()
+      this.fnExecutionsCount += 1
       await this.promise
     } catch (err: any) {
       if (!this.promise) return
@@ -113,6 +116,8 @@ export class RecurringTimeout implements IRecurringTimeout {
 
       if (newTimeout) this.updateTimeout({ timeout: newTimeout })
 
+      if (this.promise) return // prevents multiple executions in one tick
+
       if (runImmediately) {
         this.#loop()
       } else {
@@ -123,8 +128,6 @@ export class RecurringTimeout implements IRecurringTimeout {
 
   #reset() {
     this.running = false
-    this.promise = undefined
-    this.startScheduled = false
     this.startedRunningAt = 0
 
     if (this.#timeoutId) {

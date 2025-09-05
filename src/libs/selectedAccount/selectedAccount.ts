@@ -427,6 +427,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
     return {
       selectedAccountPortfolioByNetworks: {},
       isAllReady: false,
+      shouldShowPartialResult: false,
       isReadyToVisualize: false
     }
   }
