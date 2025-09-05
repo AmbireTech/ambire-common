@@ -16,21 +16,6 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-const getAccountOpsIntervalRefreshTime = (
-  constUpdateInterval: number,
-  newestOpTimestamp: number
-): number => {
-  // 5s + new Date().getTime() - timestamp of newest op / 10
-  // here are some example of what this means:
-  // 1s diff between now and newestOpTimestamp: 5.1s
-  // 10s diff between now and newestOpTimestamp: 6s
-  // 60s diff between now and newestOpTimestamp: 11s
-  // 5m diff between now and newestOpTimestamp: 35s
-  // 10m diff between now and newestOpTimestamp: 65s
-  return newestOpTimestamp === 0
-    ? constUpdateInterval
-    : constUpdateInterval + (new Date().getTime() - newestOpTimestamp) / 10
-}
 export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
@@ -181,12 +166,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
-
-    const { newestOpTimestamp } = await this.#main.updateAccountsOpsStatuses()
-    // Schedule the next update only when the previous one completes
-    const interval = getAccountOpsIntervalRefreshTime(ACTIVITY_REFRESH_INTERVAL, newestOpTimestamp)
-
-    this.#accountsOpsStatusesInterval.updateTimeout({ timeout: interval })
+    await this.#main.updateAccountsOpsStatuses()
   }
 
   async updateAccountStateLatest() {
@@ -243,18 +223,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       'pending',
       networksToUpdate
     )
-
-    const newestOpTimestamp = this.#main.activity.broadcastedButNotConfirmed.reduce(
-      (newestTimestamp, accOp) => {
-        return accOp.timestamp > newestTimestamp ? accOp.timestamp : newestTimestamp
-      },
-      0
-    )
-    const interval = getAccountOpsIntervalRefreshTime(
-      ACCOUNT_STATE_PENDING_INTERVAL,
-      newestOpTimestamp
-    )
-    this.#accountStatePendingInterval.updateTimeout({ timeout: interval })
   }
 
   async fastAccountStateReFetch() {
