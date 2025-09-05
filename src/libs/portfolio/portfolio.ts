@@ -14,7 +14,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { stripExternalHintsAPIResponse, tokenFilter } from './helpers'
+import { formatExternalHintsAPIResponse, mergeERC721s, tokenFilter } from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -55,14 +55,15 @@ export const PORTFOLIO_LIB_ERROR_NAMES = {
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
-  erc721s: {}
+  erc721s: {},
+  externalApi: undefined
 })
 
 const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  previousHintsFromExternalAPI: null,
+  lastExternalApiUpdateData: null,
   fetchPinned: true,
   priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
@@ -122,111 +123,156 @@ export class Portfolio {
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
 
-  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
-    const errors: PortfolioLibGetResult['errors'] = []
-    const localOpts = { ...defaultOptions, ...opts }
-    const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
-      erc20s: [],
-      erc721s: {}
-    }
-    const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
-    const { baseCurrency } = localOpts
-    if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
-      throw new Error('wrong account passed')
-
-    // Get hints (addresses to check on-chain) via Velcro
-    const start = Date.now()
-    const chainId = this.network.chainId
-
-    // Make sure portfolio lib still works, even in the case Velcro discovery fails.
-    // Because of this, we fall back to Velcro default response.
+  /**
+   * Fetch the hints from the external API (Velcro).
+   * Main return cases:
+   * - hints with `externalApi` property set if the hints are coming from the external API (and not from storage)
+   * - empty hints if the hints are static and were learned less than X minutes ago. The goal is to reduce
+   * unnecessary requests to deployless. Once every X minutes we make a call to Velcro, get the static hints and
+   * learn the tokens with amount. In subsequent calls, we return empty hints and the portfolio lib uses the previously learned tokens.
+   */
+  protected async externalHintsAPIDiscovery(options?: {
+    lastExternalApiUpdateData: PortfolioLibGetResult['lastExternalApiUpdateData'] | null
+    disableAutoDiscovery?: boolean
+    chainId: bigint
+    accountAddr: string
+    baseCurrency: string
+  }): Promise<{
+    hints: Hints
+    error?: PortfolioLibGetResult['errors'][number]
+  }> {
+    const {
+      disableAutoDiscovery = false,
+      lastExternalApiUpdateData,
+      chainId,
+      accountAddr,
+      baseCurrency
+    } = options || {}
     let hints: Hints = getEmptyHints()
-    let hintsFromExternalAPI: ExternalHintsAPIResponse | null = null
 
     try {
-      // if the network doesn't have a relayer, velcro will not work
-      // but we should not record an error if such is the case
+      // Fetch the latest hints from the external API (Velcro)
       if (!disableAutoDiscovery) {
-        hintsFromExternalAPI = await this.batchedVelcroDiscovery({
+        const hintsFromExternalAPI: ExternalHintsAPIResponse = await this.batchedVelcroDiscovery({
           chainId,
           accountAddr,
           baseCurrency
         })
 
-        if (
-          hintsFromExternalAPI &&
-          hintsFromExternalAPI.skipOverrideSavedHints &&
-          localOpts.previousHintsFromExternalAPI
-        ) {
-          hintsFromExternalAPI = {
-            ...hintsFromExternalAPI,
-            erc20s: localOpts.previousHintsFromExternalAPI.erc20s,
-            erc721s: localOpts.previousHintsFromExternalAPI.erc721s,
-            // Spread it just in case we have saved a false value before
-            skipOverrideSavedHints: true
+        if (hintsFromExternalAPI) {
+          const formatted = formatExternalHintsAPIResponse(hintsFromExternalAPI)
+
+          if (formatted) {
+            hints = formatted
+            // Attach the property as the hints are coming from the external API
+            hints.externalApi = {
+              lastUpdate: Date.now(),
+              prices: hintsFromExternalAPI.prices,
+              hasHints: !!hintsFromExternalAPI.hasHints
+            }
           }
         }
-
-        if (hintsFromExternalAPI) {
-          hintsFromExternalAPI.lastUpdate = Date.now()
-
-          hints = stripExternalHintsAPIResponse(hintsFromExternalAPI) as Hints
+      } else if (lastExternalApiUpdateData) {
+        hints.externalApi = {
+          lastUpdate: lastExternalApiUpdateData.lastUpdate,
+          hasHints: lastExternalApiUpdateData.hasHints,
+          prices: {}
         }
+      }
+
+      return {
+        hints
       }
     } catch (error: any) {
       const errorMesssage = `Failed to fetch hints from Velcro for chainId (${chainId}): ${error.message}`
-      if (localOpts.previousHintsFromExternalAPI) {
-        hints = { ...localOpts.previousHintsFromExternalAPI }
-        const TEN_MINUTES = 10 * 60 * 1000
-        const lastUpdate = localOpts.previousHintsFromExternalAPI.lastUpdate
-        const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
 
-        errors.push({
+      // It's important for DX to see this error
+      // eslint-disable-next-line no-console
+      console.error(errorMesssage)
+
+      if (!lastExternalApiUpdateData) {
+        return {
+          hints,
+          error: {
+            name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
+            message: errorMesssage,
+            level: 'critical'
+          }
+        }
+      }
+
+      const TEN_MINUTES = 10 * 60 * 1000
+      const lastUpdate = lastExternalApiUpdateData.lastUpdate
+      const isLastUpdateTooOld = Date.now() - lastUpdate > TEN_MINUTES
+
+      hints.externalApi = {
+        ...lastExternalApiUpdateData,
+        prices: {}
+      }
+
+      return {
+        hints,
+        error: {
           name: isLastUpdateTooOld
             ? PORTFOLIO_LIB_ERROR_NAMES.StaleApiHintsError
             : PORTFOLIO_LIB_ERROR_NAMES.NonCriticalApiHintsError,
           message: errorMesssage,
           level: isLastUpdateTooOld ? 'critical' : 'silent'
-        })
-      } else {
-        errors.push({
-          name: PORTFOLIO_LIB_ERROR_NAMES.NoApiHintsError,
-          message: errorMesssage,
-          level: 'critical'
-        })
+        }
       }
-
-      // It's important for DX to see this error
-      // eslint-disable-next-line no-console
-      console.error(errorMesssage)
     }
+  }
 
-    // Please note 2 things:
-    // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
-    // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
-    // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
-    // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
-    // However, we have chosen to keep it as simple as possible and disregard this rare case.
-    if (localOpts.additionalErc721Hints) {
-      hints.erc721s = { ...localOpts.additionalErc721Hints, ...hints.erc721s }
+  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioLibGetResult> {
+    const errors: PortfolioLibGetResult['errors'] = []
+    const {
+      simulation,
+      lastExternalApiUpdateData,
+      disableAutoDiscovery = false,
+      baseCurrency,
+      fetchPinned,
+      additionalErc20Hints,
+      additionalErc721Hints,
+      specialErc20Hints,
+      specialErc721Hints,
+      blockTag,
+      priceRecencyOnFailure,
+      priceCache: paramsPriceCache,
+      priceRecency
+    } = { ...defaultOptions, ...opts }
+    const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
+      erc20s: [],
+      erc721s: {}
     }
+    if (simulation && simulation.account.addr !== accountAddr)
+      throw new Error('wrong account passed')
 
-    if (localOpts.additionalErc20Hints) {
-      hints.erc20s = [...hints.erc20s, ...localOpts.additionalErc20Hints]
-    }
+    const start = Date.now()
+    const chainId = this.network.chainId
 
-    if (localOpts.fetchPinned) {
-      hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
-    }
+    const { hints, error: hintsError } = await this.externalHintsAPIDiscovery({
+      lastExternalApiUpdateData: lastExternalApiUpdateData ?? null,
+      disableAutoDiscovery,
+      chainId,
+      accountAddr,
+      baseCurrency
+    })
 
-    // add the fee tokens
+    if (hintsError) errors.push(hintsError)
+
     hints.erc20s = [
       ...hints.erc20s,
-      ...Object.keys(localOpts.specialErc20Hints || {}),
-      ...(localOpts.additionalErc20Hints || []),
-      ...(localOpts.fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
+      ...Object.values(specialErc20Hints || {}).flat(),
+      ...(additionalErc20Hints || []),
+      ...(fetchPinned ? PINNED_TOKENS.map((x) => x.address) : []),
+      // add the fee tokens
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
+    hints.erc721s = mergeERC721s([
+      additionalErc721Hints || {},
+      hints.erc721s,
+      ...Object.values(specialErc721Hints || {})
+    ])
 
     const checksummedErc20Hints = hints.erc20s
       .map((address) => {
@@ -244,9 +290,9 @@ export class Portfolio {
     hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
-    const priceCache: PriceCache = localOpts.priceCache || new Map()
-    for (const addr in hintsFromExternalAPI?.prices || {}) {
-      const priceHint = hintsFromExternalAPI?.prices[addr]
+    const priceCache: PriceCache = paramsPriceCache || new Map()
+    for (const addr in hints.externalApi?.prices || {}) {
+      const priceHint = hints.externalApi?.prices[addr]
       // eslint-disable-next-line no-continue
       if (!priceHint) continue
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
@@ -262,12 +308,26 @@ export class Portfolio {
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page, index) =>
-          getTokens(this.network, this.deploylessTokens, localOpts, accountAddr, page, index)
+          getTokens(
+            this.network,
+            this.deploylessTokens,
+            { simulation, blockTag, specialErc20Hints },
+            accountAddr,
+            page,
+            index
+          )
         )
       ),
       flattenResults(
         paginate(collectionsHints, limits.erc721).map((page) =>
-          getNFTs(this.network, this.deploylessNfts, localOpts, accountAddr, page, limits)
+          getNFTs(
+            this.network,
+            this.deploylessNfts,
+            { simulation, blockTag },
+            accountAddr,
+            page,
+            limits
+          )
         )
       )
     ])
@@ -281,14 +341,14 @@ export class Portfolio {
     const [collectionsWithErrResult] = collectionsWithErr
 
     // Re-map/filter into our format
-    const getPriceFromCache = (address: string, priceRecency: number = localOpts.priceRecency) => {
+    const getPriceFromCache = (address: string, _priceRecency: number = priceRecency) => {
       const cached = priceCache.get(address)
       if (!cached) return null
       const [timestamp, entry] = cached
       const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      const isStale = start - timestamp > priceRecency
+      const isStale = start - timestamp > _priceRecency
       return isStale ? null : eligible
     }
 
@@ -306,44 +366,32 @@ export class Portfolio {
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
         // The portfolio lib is used outside the controller, in which case we want to
         // fetch all tokens regardless of their balance or type
-        if (!localOpts.specialErc20Hints) return true
+        if (!specialErc20Hints) return true
 
-        const isToBeLearned =
-          localOpts.specialErc20Hints[_tokensWithErrResult[1].address] === 'learn'
+        // To be learned tokens are never filtered out to ensure that
+        // the humanizer, simulation and etc. work even if the account doesn't have amount
+        // on either block (latest/pending)
+        const isToBeLearned = specialErc20Hints.learn.includes(_tokensWithErrResult[1].address)
 
         return tokenFilter(
           _tokensWithErrResult[1],
           this.network,
           isToBeLearned,
-          !!opts.fetchPinned,
+          !!fetchPinned,
           nativeToken
         )
       })
-      .map(([, result]: [any, TokenResult]) => {
+      .map(([, result]) => {
         if (
-          !result.amount ||
-          result.flags.isCustom ||
-          result.flags.isHidden ||
-          toBeLearned.erc20s.includes(result.address)
+          result.amount &&
+          !result.flags.isCustom &&
+          !result.flags.isHidden &&
+          !toBeLearned.erc20s.includes(result.address) &&
+          // Learn assets only if they are on the latest block
+          // so they are not affected by the simulation
+          blockTag === 'latest'
         ) {
-          return result
-        }
-
-        // Add tokens proposed by the controller to toBeLearned
-        if (
-          opts.specialErc20Hints &&
-          opts.specialErc20Hints[result.address] &&
-          opts.specialErc20Hints[result.address] === 'learn'
-        ) {
-          toBeLearned.erc20s.push(result.address)
-          // Add tokens proposed by the external API to toBeLearned
-          // if the response API is static. That is because the static
-          // response may change and the user may stop seeing the token
-        } else if (
-          hintsFromExternalAPI &&
-          !hintsFromExternalAPI.hasHints &&
-          !hintsFromExternalAPI.skipOverrideSavedHints
-        ) {
+          // Add all non-zero tokens to toBeLearned
           toBeLearned.erc20s.push(result.address)
         }
 
@@ -364,7 +412,20 @@ export class Portfolio {
 
     const collections = unfilteredCollections
       .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
-      .map(([, collection]) => collection)
+      .map(([, collection]) => {
+        // Add all collections with collectibles to toBeLearned
+        if (
+          !toBeLearned.erc721s[collection.address] &&
+          collection.collectibles.length &&
+          // Learn assets only if they are on the latest block
+          // so they are not affected by the simulation
+          blockTag === 'latest'
+        ) {
+          toBeLearned.erc721s[collection.address] = collection.collectibles
+        }
+
+        return collection
+      })
 
     const oracleCallDone = Date.now()
 
@@ -408,7 +469,7 @@ export class Portfolio {
         } catch (error: any) {
           const errorMessage = error?.message || 'Unknown error'
 
-          priceIn = getPriceFromCache(token.address, localOpts.priceRecencyOnFailure) || []
+          priceIn = getPriceFromCache(token.address, priceRecencyOnFailure) || []
 
           if (
             // Avoid duplicate errors, because this.bachedGecko is called for each token and if
@@ -439,7 +500,12 @@ export class Portfolio {
 
     return {
       toBeLearned,
-      hintsFromExternalAPI: stripExternalHintsAPIResponse(hintsFromExternalAPI),
+      lastExternalApiUpdateData: hints.externalApi
+        ? {
+            lastUpdate: hints.externalApi.lastUpdate,
+            hasHints: hints.externalApi.hasHints
+          }
+        : null,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
