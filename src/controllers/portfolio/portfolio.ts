@@ -1008,11 +1008,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * Adds ERC-721 NFTs to the hints of the portfolio with the intention of learning them.
    * The nfts are removed only if they are learned, which happens if the user owns them
    */
-  async addErc721sToBeLearned(
+  addErc721sToBeLearned(
     nftsData: [string, bigint[]][] | undefined,
     accountAddr: string,
     chainId: bigint
-  ): Promise<boolean> {
+  ): boolean {
     try {
       if (!nftsData || !nftsData.length) return false
 
@@ -1103,6 +1103,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * !!NOTE: This method must be called only by updateSelectedAccount with tokens
    * that have a `balance > 0`, because it updates the timestamp of tokens, that indicates
    * when the token was last seen with a balance > 0
+   *
+   * !!NOTE2: As this method is only called after a portfolio update, we are not
+   * checksumming the passed tokens (because the lib always returns them checksummed).
+   * If this ever changes, we need to checksum the addresses
    */
   protected async learnTokens(
     tokensWithBalance: string[] | undefined,
@@ -1154,6 +1158,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
    * !!NOTE: This method must be called only by updateSelectedAccount with nfts
    * that the user owns, because it updates the timestamp of collectibles, that indicates
    * when the collectible was last seen with a balance > 0
+   * !!NOTE2: As this method is only called after a portfolio update, we are not
+   * checksumming the passed addresses (because the lib always returns them checksummed).
+   * If this ever changes, we need to checksum them
    */
   protected async learnNfts(
     nftsData: [string, bigint[]][] | undefined,

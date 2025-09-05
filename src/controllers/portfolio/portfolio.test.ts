@@ -640,7 +640,7 @@ describe('Portfolio Controller ', () => {
       const SMART_CONTRACT_ADDR = '0xa8202f888b9b2dfa5ceb2204865018133f6f179a'
       const { storageCtrl, controller } = await prepareTest()
 
-      await controller.addErc721sToBeLearned(
+      controller.addErc721sToBeLearned(
         [
           [NFT_ADDR, [2647n]],
           [SMART_CONTRACT_ADDR, [1n]]
@@ -660,7 +660,7 @@ describe('Portfolio Controller ', () => {
       const NFT_ADDR = getAddress('0x026224a2940bfe258d0dbe947919b62fe321f042')
       const { controller } = await prepareTest()
 
-      await controller.addErc721sToBeLearned([[NFT_ADDR, [1n]]], account2.addr, 1n)
+      controller.addErc721sToBeLearned([[NFT_ADDR, [1n]]], account2.addr, 1n)
 
       // @ts-ignore
       const allHints = controller.getAllHints(`${1}:${account2.addr}`, 1n)
@@ -777,6 +777,182 @@ describe('Portfolio Controller ', () => {
 
       const expectedCount = Object.keys(learnedErc721s).length
       expect(expectedCount).toBe(70)
+    })
+
+    test('Add the same to be learned asset twice (with different address case)', async () => {
+      const { controller } = await prepareTest()
+
+      const DUPLICATE_TOKEN_ADDR = getAddress('0xae7ab96520de3a18e5e111b5eaab095312d7fe84')
+
+      controller.addTokensToBeLearned([DUPLICATE_TOKEN_ADDR], 1n)
+      controller.addTokensToBeLearned(
+        [DUPLICATE_TOKEN_ADDR.toLowerCase(), '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0'],
+        1n
+      )
+
+      const DUPLICATE_COLLECTION: [string, bigint[]] = [
+        getAddress('0x059edd72cd353df5106d2b9cc5ab83a52287ac3a'),
+        [1n]
+      ]
+
+      controller.addErc721sToBeLearned(
+        [DUPLICATE_COLLECTION, ['0xbd3531da5cf5857e7cfaa92426877b022e612cf8', [1n, 2n]]],
+        account.addr,
+        1n
+      )
+      controller.addErc721sToBeLearned(
+        [[DUPLICATE_COLLECTION[0].toLowerCase(), [1n, 2n]]],
+        account.addr,
+        1n
+      )
+
+      // @ts-ignore
+      const allHints = controller.getAllHints(`${1}:${account.addr}`, 1n)
+
+      expect(
+        allHints.specialErc20Hints.learn.filter(
+          (addr) => addr.toLowerCase() === DUPLICATE_TOKEN_ADDR.toLowerCase()
+        ).length
+      ).toBe(1)
+      expect(
+        Object.keys(allHints.specialErc721Hints.learn).filter(
+          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0].toLowerCase()
+        ).length
+      ).toBe(1)
+      expect(allHints.specialErc721Hints.learn[DUPLICATE_COLLECTION[0]].length).toBe(2)
+    })
+
+    test('Add the same learned asset twice', async () => {
+      const { controller, storageCtrl } = await prepareTest()
+
+      const DUPLICATE_TOKEN_ADDR = getAddress('0xae7ab96520de3a18e5e111b5eaab095312d7fe84')
+      const DUPLICATE_COLLECTION: [string, bigint[]] = [
+        getAddress('0x059edd72cd353df5106d2b9cc5ab83a52287ac3a'),
+        [1n]
+      ]
+
+      // @ts-ignore
+      await controller.learnTokens(
+        [
+          DUPLICATE_TOKEN_ADDR,
+          '0x4c9edd5852cd905f086c759e8383e09bff1e68b3',
+          '0xcd5fe23c85820f7b72d0926fc9b05b43e359b7ee'
+        ],
+        `${1}:${account.addr}`,
+        1n
+      )
+
+      // @ts-ignore
+      await controller.learnTokens(
+        [
+          '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
+          DUPLICATE_TOKEN_ADDR,
+          '0x8d010bf9c26881788b4e6bf5fd1bdc358c8f90b8'
+        ],
+        `${1}:${account.addr}`,
+        1n
+      )
+
+      // @ts-ignore
+      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+
+      // @ts-ignore
+      await controller.learnNfts(
+        [
+          [DUPLICATE_COLLECTION[0], [1n, 2n]],
+          ['0x0a1bbd57033f57e7b6743621b79fcb9eb2ce3676', [1n, 2n]]
+        ],
+        account.addr,
+        1n
+      )
+
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+
+      expect(
+        Object.keys(learnedAssets.erc20s?.[`${1}:${account.addr}`] || {}).filter(
+          (addr) => addr === DUPLICATE_TOKEN_ADDR
+        ).length
+      ).toBe(1)
+
+      expect(
+        Object.keys(learnedAssets.erc721s?.[`${1}:${account.addr}`] || {}).filter((addr) =>
+          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0].toLowerCase())
+        ).length
+      ).toBe(2)
+    })
+
+    test('Learn a collectible, then learn the same collection as enumerable (enumerable is with priority)', async () => {
+      const { controller, storageCtrl } = await prepareTest()
+
+      const DUPLICATE_COLLECTION: [string, bigint[]] = [
+        getAddress('0x059edd72cd353df5106d2b9cc5ab83a52287ac3a'),
+        [1n]
+      ]
+
+      // @ts-ignore
+      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+
+      // @ts-ignore
+      await controller.learnNfts(
+        [
+          // Empty array makes it enumerable
+          [DUPLICATE_COLLECTION[0], []]
+        ],
+        account.addr,
+        1n
+      )
+
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+
+      expect(learnedAssets.erc721s[`${1}:${account.addr}`]).toHaveProperty(
+        `${DUPLICATE_COLLECTION[0]}:1`
+      )
+      expect(learnedAssets.erc721s[`${1}:${account.addr}`]).toHaveProperty(
+        `${DUPLICATE_COLLECTION[0]}:enumerable`
+      )
+
+      // @ts-ignore
+      const { additionalErc721Hints } = controller.getAllHints(`${1}:${account.addr}`, 1n)
+
+      // Enumerable is with priority
+      expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
+    })
+
+    test('Learn an enumerable collection, then learn a collectible from it (enumerable is with priority)', async () => {
+      const { controller, storageCtrl } = await prepareTest()
+
+      const DUPLICATE_COLLECTION: [string, bigint[]] = [
+        getAddress('0x059edd72cd353df5106d2b9cc5ab83a52287ac3a'),
+        [1n]
+      ]
+
+      // @ts-ignore
+      await controller.learnNfts(
+        [
+          // Empty array makes it enumerable
+          [DUPLICATE_COLLECTION[0], []]
+        ],
+        account.addr,
+        1n
+      )
+
+      // @ts-ignore
+      await controller.learnNfts([DUPLICATE_COLLECTION], account.addr, 1n)
+
+      const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
+
+      expect(learnedAssets.erc721s[`${1}:${account.addr}`]).toHaveProperty(
+        `${DUPLICATE_COLLECTION[0]}:1`
+      )
+      expect(learnedAssets.erc721s[`${1}:${account.addr}`]).toHaveProperty(
+        `${DUPLICATE_COLLECTION[0]}:enumerable`
+      )
+
+      // @ts-ignore
+      const { additionalErc721Hints } = controller.getAllHints(`${1}:${account.addr}`, 1n)
+
+      // Enumerable is with priority
+      expect(additionalErc721Hints[DUPLICATE_COLLECTION[0]]).toEqual([])
     })
 
     test('Portfolio should filter out ERC20 tokens that mimic native tokens when they are added as custom tokens', async () => {
@@ -1057,7 +1233,7 @@ describe('Portfolio Controller ', () => {
       const { controller } = await prepareTest()
       const key = `${1}:${account.addr}`
 
-      const hasLearned = await controller.addErc721sToBeLearned(
+      const hasLearned = controller.addErc721sToBeLearned(
         [[INVALID_ADDRESS, [1n]]],
         account.addr,
         1n
@@ -1072,7 +1248,7 @@ describe('Portfolio Controller ', () => {
         learn: {}
       })
 
-      const hasLearned2 = await controller.addErc721sToBeLearned(
+      const hasLearned2 = controller.addErc721sToBeLearned(
         [[COLLECTION_ADDRESS, [1n, 2n]]],
         account.addr,
         1n
