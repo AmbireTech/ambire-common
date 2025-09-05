@@ -569,6 +569,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
 
     await accountPicker.reset()
+    accountPicker.destroy()
 
     const updatedKeystoreKeys = Array.from(updatedKeyMap.values())
 
