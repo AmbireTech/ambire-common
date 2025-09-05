@@ -139,7 +139,6 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {
-      console.log(this.#main.activity.broadcastedButNotConfirmed.length)
       if (this.#main.activity.broadcastedButNotConfirmed.length) {
         this.#accountsOpsStatusesInterval.start()
       } else {
