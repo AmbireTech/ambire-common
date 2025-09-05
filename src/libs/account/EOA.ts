@@ -117,4 +117,12 @@ export class EOA extends BaseAccount {
     // EOAs have only an execution layer nonce
     return this.accountState.eoaNonce!.toString()
   }
+
+  canPayWithTokens(): boolean {
+    return false
+  }
+
+  canPayWithEOA(): boolean {
+    return false
+  }
 }

@@ -173,4 +173,16 @@ export class V2 extends BaseAccount {
     // v2 accounts have two nonces: ambire smart account & entry point nonce
     return `${this.accountState.nonce.toString()}-${this.accountState.erc4337Nonce.toString()}`
   }
+
+  canPayWithTokens(): boolean {
+    if (this.network.erc4337.enabled) {
+      return this.network.erc4337.hasPaymaster
+    }
+
+    return this.network.hasRelayer
+  }
+
+  canPayWithEOA(): boolean {
+    return this.accountState.hasEoaWithNative
+  }
 }

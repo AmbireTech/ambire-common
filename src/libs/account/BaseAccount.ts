@@ -86,6 +86,16 @@ export abstract class BaseAccount {
    */
   abstract getNonceId(): string
 
+  /**
+   * Can the account pay with tokens the transaction fee
+   */
+  abstract canPayWithTokens(): boolean
+
+  /**
+   * Can the account pay with tokens the transaction fee
+   */
+  abstract canPayWithEOA(): boolean
+
   // this is specific for v2 accounts, hardcoding a false for all else
   shouldIncludeActivatorCall(broadcastOption: string) {
     return false

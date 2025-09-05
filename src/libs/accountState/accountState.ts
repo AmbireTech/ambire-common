@@ -73,6 +73,7 @@ export async function getAccountState(
     getEOAsCode(eoas)
   ])
 
+  const hasEoaWithNative = !!accountStateResult.find((res: any) => res.isEOA && res.balance > 0)
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
     const associatedKeys = accResult.associatedKeyPrivileges.map(
       (privilege: string, keyIndex: number) => {
@@ -130,7 +131,8 @@ export async function getAccountState(
         account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
       isSmarterEoa,
       delegatedContract,
-      delegatedContractName
+      delegatedContractName,
+      hasEoaWithNative
     }
   })
 

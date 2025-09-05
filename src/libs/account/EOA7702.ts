@@ -3,6 +3,7 @@ import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import { Hex } from '../../interfaces/hex'
+import { has7702 } from '../7702/7702'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
@@ -196,5 +197,13 @@ export class EOA7702 extends BaseAccount {
   getNonceId(): string {
     // 7702 accounts have an execution layer nonce and an entry point nonce
     return `${this.accountState.eoaNonce!.toString()}-${this.accountState.erc4337Nonce.toString()}`
+  }
+
+  canPayWithTokens(): boolean {
+    return has7702(this.network) && this.network.erc4337.hasPaymaster
+  }
+
+  canPayWithEOA(): boolean {
+    return false
   }
 }

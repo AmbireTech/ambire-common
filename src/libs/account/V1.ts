@@ -98,4 +98,12 @@ export class V1 extends BaseAccount {
     // v1 accounts can only have an ambire smart contract nonce
     return this.accountState.nonce.toString()
   }
+
+  canPayWithTokens(): boolean {
+    return this.network.hasRelayer
+  }
+
+  canPayWithEOA(): boolean {
+    return this.accountState.hasEoaWithNative
+  }
 }
