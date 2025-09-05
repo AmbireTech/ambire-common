@@ -167,7 +167,6 @@ export class ContinuousUpdatesController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
     await this.#main.updateAccountsOpsStatuses()
-    this.#accountsOpsStatusesInterval.updateTimeout({ timeout: ACTIVITY_REFRESH_INTERVAL })
   }
 
   async updateAccountStateLatest() {
@@ -224,8 +223,6 @@ export class ContinuousUpdatesController extends EventEmitter {
       'pending',
       networksToUpdate
     )
-
-    this.#accountStatePendingInterval.updateTimeout({ timeout: ACCOUNT_STATE_PENDING_INTERVAL })
   }
 
   async fastAccountStateReFetch() {
