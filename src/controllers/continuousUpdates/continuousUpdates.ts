@@ -139,6 +139,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {
+      console.log(this.#main.activity.broadcastedButNotConfirmed.length)
       if (this.#main.activity.broadcastedButNotConfirmed.length) {
         this.#accountsOpsStatusesInterval.start()
       } else {
@@ -166,7 +167,7 @@ export class ContinuousUpdatesController extends EventEmitter {
 
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
-
+    await this.#main.updateAccountsOpsStatuses()
     this.#accountsOpsStatusesInterval.updateTimeout({ timeout: ACTIVITY_REFRESH_INTERVAL })
   }
 
@@ -225,17 +226,7 @@ export class ContinuousUpdatesController extends EventEmitter {
       networksToUpdate
     )
 
-    const newestOpTimestamp = this.#main.activity.broadcastedButNotConfirmed.reduce(
-      (newestTimestamp, accOp) => {
-        return accOp.timestamp > newestTimestamp ? accOp.timestamp : newestTimestamp
-      },
-      0
-    )
-    const interval = getAccountOpsIntervalRefreshTime(
-      ACCOUNT_STATE_PENDING_INTERVAL,
-      newestOpTimestamp
-    )
-    this.#accountStatePendingInterval.updateTimeout({ timeout: interval })
+    this.#accountStatePendingInterval.updateTimeout({ timeout: ACCOUNT_STATE_PENDING_INTERVAL })
   }
 
   async fastAccountStateReFetch() {
