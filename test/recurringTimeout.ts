@@ -5,7 +5,7 @@ export const waitForFnToBeCalledAndExecuted = async (
   recurringTimeout: IRecurringTimeout,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   id: string = '' // for testing
-) => {
+): Promise<void> => {
   while (recurringTimeout.startScheduled) {
     await jest.advanceTimersByTimeAsync(1)
   }
