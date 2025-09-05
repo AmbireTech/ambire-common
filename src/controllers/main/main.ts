@@ -330,6 +330,7 @@ export class MainController extends EventEmitter implements IMainController {
       )
     }
     this.accountPicker = new AccountPickerController({
+      storage: this.storage,
       accounts: this.accounts,
       keystore: this.keystore,
       networks: this.networks,
@@ -523,6 +524,7 @@ export class MainController extends EventEmitter implements IMainController {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           new AccountPickerController({
+            storage: this.storage,
             accounts: this.accounts,
             keystore: this.keystore,
             networks: this.networks,
@@ -530,7 +532,8 @@ export class MainController extends EventEmitter implements IMainController {
             externalSignerControllers: this.#externalSignerControllers,
             relayerUrl,
             fetch: this.fetch,
-            onAddAccountsSuccessCallback: async () => {}
+            onAddAccountsSuccessCallback: async () => {},
+            enableRecurringIntervals: false
           }),
           this.keystore,
           async () => {

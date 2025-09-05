@@ -3,6 +3,10 @@ import { getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -10,6 +14,7 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
+import { SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL } from '../../consts/intervals'
 import {
   Account,
   AccountOnchainState,
@@ -21,7 +26,10 @@ import {
   ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
-import { IAccountPickerController } from '../../interfaces/accountPicker'
+import {
+  AmbireRelayerIdentityCreateMultipleResponse,
+  IAccountPickerController
+} from '../../interfaces/accountPicker'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -34,6 +42,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { IStorageController } from '../../interfaces/storage'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -55,6 +64,9 @@ const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
 const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 
+const SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY =
+  'smartAccountIdentityCreateRequestsFailed'
+
 /**
  * Account Picker Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -65,6 +77,8 @@ const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 export class AccountPickerController extends EventEmitter implements IAccountPickerController {
   #callRelayer: Function
 
+  #storage: IStorageController
+
   #accounts: IAccountsController
 
   #keystore: IKeystoreController
@@ -74,6 +88,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #providers: IProvidersController
 
   #externalSignerControllers: ExternalSignerControllers
+
+  #smartAccountIdentityRetryInterval: IRecurringTimeout
 
   initParams: {
     keyIterator: KeyIterator | null
@@ -157,7 +173,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     accounts?: SelectedAccountForImport[]
   } | null = null
 
+  #accountsUnsubscribe?: () => void
+
+  #keystoreUnsubscribe?: () => void
+
   constructor({
+    storage,
     accounts,
     keystore,
     networks,
@@ -165,8 +186,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers,
     relayerUrl,
     fetch,
-    onAddAccountsSuccessCallback
+    onAddAccountsSuccessCallback,
+    enableRecurringIntervals = true
   }: {
+    storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
     networks: INetworksController
@@ -175,8 +198,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl: string
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
+    enableRecurringIntervals?: boolean
   }) {
     super()
+    this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks
@@ -185,7 +210,22 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
-    this.#accounts.onUpdate(() => {
+    this.#smartAccountIdentityRetryInterval = new RecurringTimeout(
+      async () => this.#continuouslyRetryFailedSmartAccountIdentityCreateRequests(),
+      SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
+      this.emitError.bind(this)
+    )
+
+    if (enableRecurringIntervals) this.#startSmartAccountIdentityRetryIntervalIfNeeded()
+
+    this.#setupEventSubscriptions()
+  }
+
+  #setupEventSubscriptions() {
+    this.#cleanEventSubscriptionsIfNeeded()
+
+    // Set up new subscriptions
+    this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
         'update-accounts',
         () => {
@@ -198,12 +238,23 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       )
     })
 
-    this.#keystore.onUpdate(() => {
+    this.#keystoreUnsubscribe = this.#keystore.onUpdate(() => {
       if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
         this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
         this.#addAccountsOnKeystoreReady = null
       }
     })
+  }
+
+  #cleanEventSubscriptionsIfNeeded() {
+    if (this.#accountsUnsubscribe) {
+      this.#accountsUnsubscribe()
+      this.#accountsUnsubscribe = undefined
+    }
+    if (this.#keystoreUnsubscribe) {
+      this.#keystoreUnsubscribe()
+      this.#keystoreUnsubscribe = undefined
+    }
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -430,6 +481,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
+
     if (shouldAddNextAccountAutomatically) {
       await this.selectNextAccount()
       await this.addAccounts()
@@ -470,6 +522,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.addedAccountsFromCurrentSession = []
     this.#addAccountsOnKeystoreReady = null
 
+    this.#cleanEventSubscriptionsIfNeeded()
     await this.forceEmitUpdate()
   }
 
@@ -502,6 +555,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
+      // TODO: Capture in crash reports
       console.error(`accountPicker: account ${account.addr} was not found in the accountsOnPage.`)
       return []
     }
@@ -787,51 +841,39 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccountForImport) => ({
-        addr: account.addr,
-        ...(account.email ? { email: account.email } : {}),
-        associatedKeys: account.initialPrivileges,
-        creation: {
-          factoryAddr: account.creation!.factoryAddr,
-          salt: account.creation!.salt,
-          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-        }
-      }))
+      const identityRequests = accountsToAddOnRelayer.map(
+        ({ account }: SelectedAccountForImport) => ({
+          addr: account.addr,
+          ...(account.email ? { email: account.email } : {}),
+          associatedKeys: account.initialPrivileges,
+          creation: {
+            factoryAddr: account.creation!.factoryAddr,
+            salt: account.creation!.salt,
+            baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+          }
+        })
+      )
 
       try {
-        const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-          accounts: body
-        })
+        const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+          accounts: identityRequests
+        })) as AmbireRelayerIdentityCreateMultipleResponse
 
-        if (!res.success) {
-          throw new Error(res?.message || 'No response received from the Ambire Relayer.')
-        }
+        if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
 
-        type AccResType = {
-          identity: string
-          status: {
-            created: boolean
-            reason?: string
-          }
-        }
-
-        type BodyType = AccResType[]
-        if (res.body) {
-          newlyCreatedAccounts = (res.body as BodyType)
-            .filter((acc: AccResType) => acc.status.created)
-            .map((acc: AccResType) => acc.identity)
-        }
+        newlyCreatedAccounts = identityRes.body
+          .filter((acc) => acc.status.created)
+          .map((acc) => acc.identity)
       } catch (e: any) {
-        this.emitError({
-          level: 'major',
-          message:
-            'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.',
-          error: e
-        })
+        // For the retry mechanism
+        await this.#storeFailedSmartAccountIdentityCreateRequests(identityRequests)
+        this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
-        this.addAccountsStatus = 'INITIAL'
-        await this.forceEmitUpdate()
-        return
+        // TODO: Crash report?
+
+        // Treat all as newly create as a fallback, that's not really relevant,
+        // since as of v5.22.0 this flag is not used anywhere in the business logic
+        newlyCreatedAccounts = identityRequests.map((acc) => acc.addr)
       }
     }
 
@@ -971,6 +1013,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     // TODO: Should never happen, but could benefit with better error handling
+    // TODO: Crash report?
     if (!nextAccount) console.error('accountPicker: no next account found')
 
     this.selectNextAccountStatus = 'SUCCESS'
@@ -1019,10 +1062,136 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.emitUpdate()
   }
 
+  /**
+   * Retries the failed smart account identity create requests from previous sessions.
+   * Ambire smart accounts v2 without identity created on the Relayer can still sign transactions
+   * and operate normally, but the lack of identity can cause side effects such as:
+   * - account not returned by the Relayer in some responses
+   * - recovery mechanisms not working on the Relayer
+   */
+  async #retryFailedSmartAccountIdentityCreateRequests() {
+    try {
+      const failedRequests = await this.#storage.get(
+        SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+        []
+      )
+
+      if (!failedRequests.length) return
+
+      // Attempt to retry the failed requests
+      const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+        accounts: failedRequests
+      })) as AmbireRelayerIdentityCreateMultipleResponse
+
+      if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
+
+      const successfulRequests = identityRes.body
+        .filter((acc) => acc.status.created)
+        .map((acc) => acc.identity)
+
+      // Remove successful requests from storage
+      await this.#clearResolvedSmartAccountIdentityCreateRequests(successfulRequests)
+    } catch (e: any) {
+      // Silently continue if retry fails - the requests remain in storage for next retry
+      // eslint-disable-next-line no-console
+      console.warn('accountPicker: Failed to retry identity requests on init:', e?.message)
+    }
+  }
+
+  async #storeFailedSmartAccountIdentityCreateRequests(
+    identityRequests: {
+      addr: string
+      email?: string
+      associatedKeys: [string, string][]
+      creation: {
+        factoryAddr: string
+        salt: string
+        baseIdentityAddr: string
+      }
+    }[]
+  ) {
+    const prevFailedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    // quick lookup by addr
+    const prevByAddr = Object.fromEntries(prevFailedRequests.map((r) => [r.addr, r]))
+    const newAddrs = new Set(identityRequests.map((r) => r.addr))
+
+    // keep old entries that aren’t in this batch
+    const keptPrev = prevFailedRequests.filter((r) => !newAddrs.has(r.addr))
+
+    // upsert batch, preserving first attempt, bumping last attempt
+    const now = Date.now()
+    const upserts = identityRequests.map((req) => {
+      const existing = prevByAddr[req.addr]
+      return {
+        ...(existing ?? {}),
+        ...req,
+        initialAttemptAt: existing?.initialAttemptAt ?? now,
+        lastAttemptAt: now
+      }
+    })
+
+    await this.#storage.set(SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY, [
+      ...keptPrev,
+      ...upserts
+    ])
+  }
+
+  async #clearResolvedSmartAccountIdentityCreateRequests(successfulAddresses: string[]) {
+    const currentFailedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+    if (!currentFailedRequests.length) return
+
+    const remainingFailedRequests = currentFailedRequests.filter(
+      (req) => !successfulAddresses.includes(req.addr)
+    )
+    await this.#storage.set(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      remainingFailedRequests
+    )
+
+    // Stop the retry interval if no more failed requests remain
+    if (!remainingFailedRequests.length) this.#smartAccountIdentityRetryInterval.stop()
+  }
+
+  async #startSmartAccountIdentityRetryIntervalIfNeeded() {
+    if (this.#smartAccountIdentityRetryInterval.running) return
+
+    const failedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    if (!failedRequests.length) return
+
+    this.#smartAccountIdentityRetryInterval.start({ runImmediately: true })
+  }
+
+  async #continuouslyRetryFailedSmartAccountIdentityCreateRequests() {
+    const failedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    if (!failedRequests.length) {
+      this.#smartAccountIdentityRetryInterval.stop()
+      return
+    }
+
+    await this.#retryFailedSmartAccountIdentityCreateRequests()
+  }
+
   async #deriveAccounts(): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
+      // TODO: Crash report?
+      // eslint-disable-next-line no-console
       console.error('accountPicker: missing keyIterator')
       return []
     }
@@ -1143,6 +1312,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
+          // TODO: Crash report?
+          // eslint-disable-next-line no-console
           console.error('accountPicker: failed to get account state on ', chainId)
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
           this.networksWithAccountStateError.push(BigInt(chainId))
