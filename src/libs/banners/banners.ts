@@ -79,8 +79,10 @@ export const getBridgeBanners = (
   let type: BannerType
   if (inProgressRoutes.length > 0) {
     type = 'info'
-    title = `Bridge${allRoutes.length > 1 ? 's' : ''} in progress`
-    text = `You have ${allRoutes.length} pending bridge${allRoutes.length > 1 ? 's' : ''}`
+    title = `Bridge${inProgressRoutes.length > 1 ? 's' : ''} in progress`
+    text = `You have ${inProgressRoutes.length} pending bridge${
+      inProgressRoutes.length > 1 ? 's' : ''
+    }`
   } else if (failedRoutes.length > 0) {
     type = 'error'
     title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`

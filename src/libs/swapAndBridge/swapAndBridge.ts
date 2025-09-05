@@ -2,6 +2,7 @@ import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Session } from '../../classes/session'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
@@ -216,7 +217,10 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
   return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]) => {
+/**
+ * Return the lowest active route service time in MILLISECONDS
+ */
+const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]): number => {
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
@@ -227,7 +231,9 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
     })
   )
 
-  return serviceTimes.sort((a, b) => a - b)[0]
+  const time = serviceTimes.sort((a, b) => a - b)[0]
+  if (!time) return UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+  return time * 1000
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
