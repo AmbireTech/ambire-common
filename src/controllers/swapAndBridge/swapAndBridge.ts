@@ -6,7 +6,10 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
+import {
+  BRIDGE_STATUS_INTERVAL,
+  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+} from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
@@ -351,7 +354,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#updateActiveRoutesInterval = new RecurringTimeout(
       async () => this.continuouslyUpdateActiveRoutes(),
-      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
+      BRIDGE_STATUS_INTERVAL,
       this.emitError.bind(this)
     )
   }
@@ -599,6 +602,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#storage.set('swapAndBridgeActiveRoutes', value)
 
     if (this.activeRoutesInProgress.length) {
+      const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+
+      // if the interval's not running, set it to start after the minServiceTime
+      if (!this.#updateActiveRoutesInterval.running) {
+        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
+      } else if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
+        // if the interval is running, check if the minServiceTime multiplied by 2
+        // is still smaller than the currentTimeout.
+        // if it is, stop it and set the new minServiceTime as the difference in
+        // this case makes it worth it
+        this.#updateActiveRoutesInterval.stop()
+        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
+        this.#updateActiveRoutesInterval.start()
+      }
+
       this.#updateActiveRoutesInterval.start()
     } else {
       this.#updateActiveRoutesInterval.stop()
@@ -2505,8 +2523,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     await this.checkForNextUserTxForActiveRoutes()
 
-    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-    this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
+    // coming here means the bridge should complete any second now
+    // so start with BRIDGE_STATUS_INTERVAL
+    // upon failure, multiply by fnExecutionsCount until the ceiling
+    // is hit
+    const executions = this.#updateActiveRoutesInterval.fnExecutionsCount ?? 1
+    const intervalTimesExecutions = BRIDGE_STATUS_INTERVAL * executions
+    const ceiling = 60000
+    this.#updateActiveRoutesInterval.updateTimeout({
+      timeout: intervalTimesExecutions < ceiling ? intervalTimesExecutions : ceiling
+    })
   }
 
   toJSON() {
