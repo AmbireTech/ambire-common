@@ -190,7 +190,7 @@ const swapAndBridgeController = new SwapAndBridgeController({
   accounts: accountsCtrl,
   activity: activityCtrl,
   storage: storageCtrl,
-  serviceProviderAPI: socketAPIMock as any,
+  fetch,
   invite: inviteCtrl,
   keystore,
   portfolio: portfolioCtrl,
@@ -386,7 +386,7 @@ describe('SwapAndBridge Controller', () => {
       toAssetAddress: swapAndBridgeController.toSelectedToken!.address,
       route: swapAndBridgeController.quote!.selectedRoute
     })
-    await swapAndBridgeController.addActiveRoute({
+    swapAndBridgeController.addActiveRoute({
       activeRouteId: userTx.activeRouteId,
       userTxIndex: userTx.userTxIndex
     })

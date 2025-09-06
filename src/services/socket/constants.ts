@@ -51,3 +51,14 @@ export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
   100: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001',
   7777777: '0xDA1c734b7843f18E9B1A25Bb997A45975315C001'
 }
+
+export const SOCKET_EXPLORER_URL = 'https://www.socketscan.io'
+
+export const PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE = [
+  'stargate',
+  'stargate-v2',
+  'arbitrum-bridge',
+  'zksync-native',
+  'Stargate V2',
+  'Stargate'
+]

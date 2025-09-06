@@ -21,6 +21,7 @@ import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getIsTokenEligibleForSwapAndBridge,
+  isTxnBridge,
   sortPortfolioTokenList,
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
@@ -53,8 +54,6 @@ const DEFAULT_ADDRESS_STATE = {
 const HARD_CODED_CURRENCY = 'usd'
 const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
 const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
-const NETWORK_MISMATCH_MESSAGE =
-  'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' // ...
@@ -699,7 +698,7 @@ export class TransactionFormState extends EventEmitter {
 
         if (activeRouteRoute) {
           activeRouteRoute.currentUserTxIndex = activeRouteRoute.userTxs.filter(
-            (tx) => tx.userTxType === 'dex-swap'
+            (tx) => !isTxnBridge(tx)
           ).length
         }
       }

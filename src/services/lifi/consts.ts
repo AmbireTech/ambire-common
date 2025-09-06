@@ -1,5 +1,7 @@
 import { ErrorHumanizerError } from '../../libs/errorHumanizer/types'
 
+export const LIFI_EXPLORER_URL = 'https://scan.li.fi'
+
 export const HUMANIZED_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['could not find token'],

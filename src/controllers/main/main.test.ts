@@ -16,9 +16,6 @@ import { RelayerError } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import { MainController } from './main'
 
-// Public API key, shared by Socket, for testing purposes only
-const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
-
 const uiManager = mockUiManager().uiManager
 
 const signAccountOp = {
@@ -77,7 +74,6 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       featureFlags: {},
-      swapApiKey,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
       uiManager,
@@ -157,7 +153,6 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       featureFlags: {},
-      swapApiKey,
       uiManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
@@ -200,7 +195,6 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       featureFlags: {},
-      swapApiKey,
       uiManager,
       keystoreSigners: { internal: KeystoreSigner },
       externalSignerControllers: {},
