@@ -214,6 +214,29 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  /**
+   * Checks if there are any account operations that were sent to a specific address
+   * @param toAddress The address to check for received transactions
+   * @param accountId The account ID to filter operations from
+   * @returns A boolean indicating whether any operations were sent to the specified address
+   */
+  async hasAccountOpsSentTo(toAddress: string, accountId: AccountId): Promise<boolean> {
+    await this.#initialLoadPromise
+    const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
+    return accounts.some((account) => {
+      if (!this.#accountsOps[account]) return false
+
+      const networks = Object.keys(this.#accountsOps[account])
+      return networks.some((network) => {
+        if (!this.#accountsOps[account][network]) return false
+        // Return true as soon as we find any operation sent to the target address
+        return this.#accountsOps[account][network].some((op) =>
+          op.calls.some((call) => call.to.toLowerCase() === toAddress.toLowerCase())
+        )
+      })
+    })
+  }
+
   async filterAccountsOps(
     sessionId: string,
     filters: Filters,
