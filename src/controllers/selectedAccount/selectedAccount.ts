@@ -200,11 +200,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.#areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
             this.updateSelectedAccountPortfolio(true)
+            this.#updateDefiPositionsErrors()
           })
-          this.#updateDefiPositionsErrors()
         }
       })
     })
@@ -389,7 +389,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  get #areDefiPositionsLoading() {
+  get areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -458,7 +458,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.#areDefiPositionsLoading
+      this.areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {
@@ -643,7 +643,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
-      defiPositions: this.defiPositions
+      defiPositions: this.defiPositions,
+      areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }
 }
