@@ -19,6 +19,7 @@ import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IBannerController } from '../../interfaces/banner'
+import { IContractNamesController } from '../../interfaces/contractNames'
 import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
@@ -85,6 +86,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { BannerController } from '../banner/banner'
 import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
+import { ContractNamesController } from '../contractNames/contractNames'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
@@ -190,6 +192,8 @@ export class MainController extends EventEmitter implements IMainController {
   addressBook: IAddressBookController
 
   domains: IDomainsController
+
+  contractNames: IContractNamesController
 
   accounts: IAccountsController
 
@@ -446,6 +450,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers.providers,
       this.networks.defaultNetworksMode
     )
+
+    this.contractNames = new ContractNamesController(this.fetch, 50)
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
