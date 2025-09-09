@@ -1130,10 +1130,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: string]: Network } = {}
-    this.#networks.networks.forEach((network) => {
-      networkLookup[network.chainId.toString()] = network
-    })
+    const networkLookup: { [key: string]: Network } = this.#networks.allNetworks.reduce(
+      (acc, network) => {
+        acc[network.chainId.toString()] = network
+        return acc
+      },
+      {} as { [key: string]: Network }
+    )
 
     const promises = Object.keys(this.#providers.providers).map(async (chainId: string) => {
       const network = networkLookup[chainId]
@@ -1157,7 +1160,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             // fail to detect that the account was used on this network.
             acc.balance > BigInt(0) ||
             (acc.isEOA
-              ? acc.nonce > BigInt(0)
+              ? [acc.nonce, acc.eoaNonce, acc.erc4337Nonce].some(
+                  (nonce) => (nonce || BigInt(0)) > BigInt(0)
+                )
               : // For smart accounts, check for 'isDeployed' instead because in
                 // the erc-4337 scenario many cases might be missed with checking
                 // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
