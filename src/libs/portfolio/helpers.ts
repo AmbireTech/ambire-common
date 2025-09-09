@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import { Contract, formatUnits, ZeroAddress } from 'ethers'
 import { getAddress } from 'viem'
 
@@ -98,6 +99,61 @@ export function mergeERC721s(sources: ERC721s[]): ERC721s {
   })
 
   return result
+}
+
+export const mapToken = (
+  token: Pick<TokenResult, 'amount' | 'decimals' | 'name' | 'symbol'>,
+  network: Network,
+  address: string,
+  opts: Pick<GetOptions, 'specialErc20Hints'>
+) => {
+  const { specialErc20Hints } = opts
+
+  let symbol = 'Unknown'
+  try {
+    symbol = overrideSymbol(address, network.chainId, token.symbol)
+  } catch (e: any) {
+    console.log(`no symbol was found for token with address ${address} on ${network.name}`)
+  }
+
+  let tokenName = symbol
+  try {
+    tokenName = token.name
+  } catch (e: any) {
+    console.log(
+      `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
+    )
+  }
+
+  const tokenFlags: TokenResult['flags'] = getFlags(
+    {},
+    network.chainId.toString(),
+    network.chainId,
+    address
+  )
+
+  if (specialErc20Hints) {
+    if (specialErc20Hints.custom.includes(address)) {
+      tokenFlags.isCustom = true
+    }
+    if (specialErc20Hints.hidden.includes(address)) {
+      tokenFlags.isHidden = true
+    }
+  }
+
+  return {
+    amount: token.amount,
+    chainId: network.chainId,
+    decimals: Number(token.decimals),
+    name:
+      address === '0x0000000000000000000000000000000000000000'
+        ? network.nativeAssetName
+        : tokenName,
+    symbol:
+      address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : symbol,
+    address,
+    flags: tokenFlags
+  } as TokenResult
 }
 
 export const validateERC20Token = async (

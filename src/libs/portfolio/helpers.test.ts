@@ -5,14 +5,29 @@ import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   learnedErc721sToHints,
+  mapToken,
   mergeERC721s
 } from './helpers'
-import { ERC721s, ExternalHintsAPIResponse } from './interfaces'
+import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
+const optimism = networks.find((x) => x.chainId === 10n)!
 const polygon = networks.find((x) => x.chainId === 137n)
 
-if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
+const USDC_ADDR = '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
+const EMPTY_SPECIAL_HINTS: GetOptions['specialErc20Hints'] = {
+  custom: [],
+  hidden: [],
+  learn: []
+}
+const USDC_DATA = {
+  amount: 0n,
+  decimals: 6,
+  name: 'USD Coin',
+  symbol: 'USDC'
+}
+
+if (!ethereum || !polygon || !optimism) throw new Error('Failed to find ethereum in networks')
 
 describe('Portfolio helpers', () => {
   it('mergeERC721s', () => {
@@ -126,5 +141,49 @@ describe('Portfolio helpers', () => {
     expect(hints['0x35bAc15f98Fa2F496FCb84e269d8d0a408442272']).toEqual([])
     expect(hints['0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0']).toEqual([1001n])
     expect(hints['0x01284C3Ae295bAB7271481b7Ba18387255176f92']).toEqual([])
+  })
+  describe('mapToken', () => {
+    it('Overrides the symbol if needed', () => {
+      const token = mapToken(USDC_DATA, optimism, USDC_ADDR, {
+        specialErc20Hints: EMPTY_SPECIAL_HINTS
+      })
+
+      expect(token).toBeDefined()
+      expect(token.symbol).toBe('USDC.E')
+    })
+    it('Flags: custom and hidden token', () => {
+      const customToken = mapToken(USDC_DATA, optimism, USDC_ADDR, {
+        specialErc20Hints: {
+          ...EMPTY_SPECIAL_HINTS,
+          custom: [USDC_ADDR]
+        }
+      })
+      const hiddenToken = mapToken(USDC_DATA, optimism, USDC_ADDR, {
+        specialErc20Hints: {
+          ...EMPTY_SPECIAL_HINTS,
+          hidden: [USDC_ADDR]
+        }
+      })
+
+      expect(customToken).toBeDefined()
+      expect(customToken?.flags.isCustom).toBe(true)
+      expect(customToken?.flags.isHidden).toBeFalsy()
+      expect(hiddenToken).toBeDefined()
+      expect(hiddenToken?.flags.isHidden).toBe(true)
+      expect(hiddenToken?.flags.isCustom).toBeFalsy()
+    })
+    it('Flags: custom token that is hidden', () => {
+      const token = mapToken(USDC_DATA, optimism, USDC_ADDR, {
+        specialErc20Hints: {
+          ...EMPTY_SPECIAL_HINTS,
+          custom: [USDC_ADDR],
+          hidden: [USDC_ADDR]
+        }
+      })
+
+      expect(token).toBeDefined()
+      expect(token?.flags.isCustom).toBe(true)
+      expect(token?.flags.isHidden).toBe(true)
+    })
   })
 })

@@ -8,7 +8,7 @@ import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverri
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
-import { getFlags, overrideSymbol } from './helpers'
+import { mapToken } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -211,60 +211,6 @@ export async function getNFTs(
     }),
     {}
   ]
-}
-
-const mapToken = (
-  token: any,
-  network: Network,
-  address: string,
-  opts: Pick<GetOptions, 'specialErc20Hints'>
-) => {
-  const { specialErc20Hints } = opts
-
-  let symbol = 'Unknown'
-  try {
-    symbol = overrideSymbol(address, network.chainId, token.symbol)
-  } catch (e: any) {
-    console.log(`no symbol was found for token with address ${address} on ${network.name}`)
-  }
-
-  let tokenName = symbol
-  try {
-    tokenName = token.name
-  } catch (e: any) {
-    console.log(
-      `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
-    )
-  }
-
-  const tokenFlags: TokenResult['flags'] = getFlags(
-    {},
-    network.chainId.toString(),
-    network.chainId,
-    address
-  )
-
-  if (specialErc20Hints) {
-    if (specialErc20Hints.custom.includes(address)) {
-      tokenFlags.isCustom = true
-    } else if (specialErc20Hints.hidden.includes(address)) {
-      tokenFlags.isHidden = true
-    }
-  }
-
-  return {
-    amount: token.amount,
-    chainId: network.chainId,
-    decimals: Number(token.decimals),
-    name:
-      address === '0x0000000000000000000000000000000000000000'
-        ? network.nativeAssetName
-        : tokenName,
-    symbol:
-      address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : symbol,
-    address,
-    flags: tokenFlags
-  } as TokenResult
 }
 
 export async function getTokens(

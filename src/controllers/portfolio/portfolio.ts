@@ -906,6 +906,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               await this.learnTokens(erc20s, key, network.chainId)
             } else if (!this.#learnedAssets.erc20s[key]) {
               // Finalize the migration from #previousHints
+              // If there are no erc20s to be learned and the key does not exist
+              // in learnedAssets, we create an empty object to signal that
+              // the migration has been finalized for this key
+              // (the user has no erc20 tokens with balance in his portfolio)
               this.#learnedAssets.erc20s[key] = {}
               shouldUpdateLearnedInStorage = true
             }
@@ -917,6 +921,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               )
             } else if (!this.#learnedAssets.erc721s[key]) {
               // Finalize the migration from #previousHints
+              // (same as erc20 hints, see the comment above)
               this.#learnedAssets.erc721s[key] = {}
               shouldUpdateLearnedInStorage = true
             }
