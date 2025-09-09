@@ -601,25 +601,22 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('swapAndBridgeActiveRoutes', value)
 
-    if (this.activeRoutesInProgress.length) {
-      const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-
-      // if the interval's not running, set it to start after the minServiceTime
-      if (!this.#updateActiveRoutesInterval.running) {
-        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
-      } else if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
-        // if the interval is running, check if the minServiceTime multiplied by 2
-        // is still smaller than the currentTimeout.
-        // if it is, stop it and set the new minServiceTime as the difference in
-        // this case makes it worth it
-        this.#updateActiveRoutesInterval.stop()
-        this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
-        this.#updateActiveRoutesInterval.start()
-      }
-
-      this.#updateActiveRoutesInterval.start()
-    } else {
+    if (!this.activeRoutesInProgress.length) {
       this.#updateActiveRoutesInterval.stop()
+      return
+    }
+
+    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+
+    if (!this.#updateActiveRoutesInterval.running) {
+      this.#updateActiveRoutesInterval.start({ timeout: minServiceTime })
+      return
+    }
+
+    // If the interval is running, check if minServiceTime * 2 is still less than currentTimeout.
+    // If it is, restart it with the new minServiceTime, as the difference makes it worth it.
+    if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
+      this.#updateActiveRoutesInterval.restart({ timeout: minServiceTime })
     }
   }
 
@@ -2523,15 +2520,23 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     await this.checkForNextUserTxForActiveRoutes()
 
+    if (!this.activeRoutesInProgress.length) {
+      this.#updateActiveRoutesInterval.stop()
+      return
+    }
+
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
-    // upon failure, multiply by fnExecutionsCount until the ceiling
-    // is hit
-    const executions = this.#updateActiveRoutesInterval.fnExecutionsCount ?? 1
-    const intervalTimesExecutions = BRIDGE_STATUS_INTERVAL * executions
+    // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
     const ceiling = 60000
+    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+    const startTimeout =
+      minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
+        ? BRIDGE_STATUS_INTERVAL
+        : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
+
     this.#updateActiveRoutesInterval.updateTimeout({
-      timeout: intervalTimesExecutions < ceiling ? intervalTimesExecutions : ceiling
+      timeout: startTimeout < ceiling ? startTimeout : ceiling
     })
   }
 
