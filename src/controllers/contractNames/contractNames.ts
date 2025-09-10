@@ -42,8 +42,6 @@ export class ContractNamesController extends EventEmitter implements IContractNa
 
   #lastTimeScheduledFetch: number = 0
 
-  #fetchPromise: Promise<void> | null
-
   contractNames: ContractNames = {}
 
   loadingAddresses: { address: string; chainId: bigint }[] = []
@@ -52,7 +50,6 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     super()
     this.#fetch = fetch
     this.#debounceTime = debounceTime
-    this.#fetchPromise = null
   }
 
   async #batchFetchNames(): Promise<void> {
@@ -153,12 +150,9 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     this.loadingAddresses.push({ address, chainId })
 
     // if we already have recent fetch, do not add new one
-    if (
-      new Date().getTime() - this.#lastTimeScheduledFetch > this.#debounceTime ||
-      !this.#fetchPromise
-    ) {
+    if (new Date().getTime() - this.#lastTimeScheduledFetch >= this.#debounceTime) {
       this.#lastTimeScheduledFetch = new Date().getTime()
-      this.#fetchPromise = wait(this.#debounceTime)
+      wait(this.#debounceTime)
         .then(() => this.#batchFetchNames())
         .catch((e) => {
           this.emitError({
