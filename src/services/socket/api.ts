@@ -19,8 +19,7 @@ import {
 import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded,
-  getSlippage
+  convertNullAddressToZeroAddressIfNeeded
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
@@ -283,7 +282,6 @@ export class SocketAPI implements SwapProvider {
       inputAmount: fromAmount.toString(),
       receiverAddress: userAddress,
       useInbox: 'true',
-      slippage: getSlippage(fromAsset, fromAmount, '1', 0.5),
       enableManual: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
