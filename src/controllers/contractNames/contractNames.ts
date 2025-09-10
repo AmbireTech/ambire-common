@@ -5,6 +5,11 @@ import { Fetch } from '../../interfaces/fetch'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// contract names, originally, are fetched from the contract code onchain
+// for a contract to have the same address on multiple chains it must also have the same code
+// and same name, thats why we do not need to store the chain on which the contract name was
+// found. Nevertheless, we send the chainId to the relayer because it need it find the chain
+// on which the contract is actually deployed to get the name
 interface ContractNames {
   [address: string]: {
     address: string
