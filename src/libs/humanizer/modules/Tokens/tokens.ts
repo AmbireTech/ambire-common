@@ -1,4 +1,5 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
+import { getNFTs } from 'libs/portfolio/getOnchainBalances'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
@@ -50,13 +51,19 @@ export const genericErc721Humanizer: HumanizerCallModule = (
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1]
         ? [
-            getAction('Grant approval'),
-            getLabel('for all nfts'),
-            getToken(call.to, args[1]),
+            getAction('Grant approval', { warning: true }),
+            getLabel('for all NFTs of'),
+            getAddressVisualization(call.to),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]
-        : [getAction('Revoke approval'), getLabel('for all nfts'), getAddressVisualization(args[0])]
+        : [
+            getAction('Revoke approval'),
+            getLabel('for all nfts from'),
+            getAddressVisualization(call.to),
+            getLabel('for'),
+            getAddressVisualization(args[0])
+          ]
     },
     // not in tests
     [iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector!]:
