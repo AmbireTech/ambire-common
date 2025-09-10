@@ -51,9 +51,9 @@ export const genericErc721Humanizer: HumanizerCallModule = (
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1]
         ? [
-            getAction('Grant approval'),
-            getLabel('for'),
-            getToken(call.to, args[1]),
+            getAction('Grant approval', { warning: true }),
+            getLabel('for all NFTs of'),
+            getAddressVisualization(call.to),
             getLabel('to'),
             getAddressVisualization(args[0])
           ]
