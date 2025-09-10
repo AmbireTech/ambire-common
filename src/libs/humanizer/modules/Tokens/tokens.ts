@@ -1,5 +1,4 @@
-import { getAddress, Interface, ZeroAddress } from 'ethers'
-import { getNFTs } from 'libs/portfolio/getOnchainBalances'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { ERC20, ERC721 } from '../../const/abis'
