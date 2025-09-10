@@ -11,23 +11,29 @@ interface ContractNames {
     name?: string
     error?: string
     updatedAt: Date
+    retryAfter: number
   }
 }
-interface ContractNamesRelayerResponse {
-  contracts: {
-    [address: string]: {
-      address: string
-      name: string
+type ContractNamesRelayerResponse =
+  | {
+      contracts: {
+        [address: string]: {
+          address: string
+          name: string
+        }
+      }
     }
-  }
-}
+  | { error: string }
 // 60 minutes
-export const PERSIST_FAILED_IN_MS = 1000 * 60 * 60
+export const PERSIST_NOT_FOUND_IN_MS = 1000 * 60 * 60
+
+// 2 minutes
+export const PERSIST_FAILED_IN_MS = 1000 * 60 * 2
 
 /**
  * Contract Names controller- responsible for handling the lookup of address names.
  * Resolved names are saved in `contractNames` permanently, unless the lookup failed, then new
- * attempt will be made only after PERSIST_FAILED_IN_MS to avoid unnecessary lookups.
+ * attempt will be made only after PERSIST_NOT_FOUND_IN_MS to avoid unnecessary lookups.
  */
 export class ContractNamesController extends EventEmitter implements IContractNamesController {
   #debounceTime: number
@@ -58,16 +64,61 @@ export class ContractNamesController extends EventEmitter implements IContractNa
       ({ address }) => address
     )}&chainIds=${addressesToFetch.map(({ chainId }) => chainId)}`
 
-    const res: ContractNamesRelayerResponse = await this.#fetch(url).then((r) => r.json())
+    let failed = false
+    const res: ContractNamesRelayerResponse = await this.#fetch(url)
+      .then((r) => r.json())
+      .catch((e: any) => {
+        failed = true
+        this.emitError({
+          message: 'Failed to get names of addresses because the request to the relayer failed.',
+          level: 'silent',
+          sendCrashReport: true,
+          error: e
+        })
+        addressesToFetch.forEach(({ address }) => {
+          this.contractNames[address] = {
+            address,
+            error: 'Request to relayer failed',
+            updatedAt: new Date(),
+            retryAfter: PERSIST_FAILED_IN_MS
+          }
+        })
+        // this is just to keep the type safety in case of changes
+        return { error: e.message }
+      })
+    if (failed) return this.emitUpdate()
+
+    if ('error' in res) {
+      this.emitError({
+        message: 'Failed to get names of addresses because the request to the relayer failed.',
+        level: 'silent',
+        sendCrashReport: true,
+        error: new Error(res.error)
+      })
+      addressesToFetch.forEach(({ address }) => {
+        this.contractNames[address] = {
+          address,
+          error: 'Request to relayer failed',
+          updatedAt: new Date(),
+          retryAfter: PERSIST_FAILED_IN_MS
+        }
+      })
+      return this.emitUpdate()
+    }
 
     addressesToFetch.forEach(({ address }) => {
       const foundData = res.contracts?.[address]
       this.contractNames[address] = foundData?.name
-        ? { address, name: foundData.name, updatedAt: new Date() }
-        : { address, error: 'Contract name not found', updatedAt: new Date() }
+        ? { address, name: foundData.name, updatedAt: new Date(), retryAfter: Infinity }
+        : {
+            address,
+            error: 'Contract name not found',
+            updatedAt: new Date(),
+            retryAfter: PERSIST_NOT_FOUND_IN_MS
+          }
     })
 
-    this.emitUpdate()
+    return this.emitUpdate()
   }
 
   getName(_address: string, chainId: bigint) {
@@ -87,7 +138,8 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     // if we have recent data, do not fetch
     if (
       this.contractNames[address]?.updatedAt &&
-      this.contractNames[address].updatedAt.getTime() + PERSIST_FAILED_IN_MS < new Date().getTime()
+      this.contractNames[address].updatedAt.getTime() + this.contractNames[address].retryAfter <
+        new Date().getTime()
     )
       return
 
