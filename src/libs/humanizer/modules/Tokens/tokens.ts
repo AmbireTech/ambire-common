@@ -52,8 +52,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
       return args[1]
         ? [
             getAction('Grant approval'),
-            getLabel('for all nfts of'),
-            getAddressVisualization(call.to),
+            getLabel('for'),
             getToken(call.to, args[1]),
             getLabel('to'),
             getAddressVisualization(args[0])
