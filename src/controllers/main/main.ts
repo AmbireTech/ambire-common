@@ -523,18 +523,18 @@ export class MainController extends EventEmitter implements IMainController {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
-          new AccountPickerController({
-            storage: this.storage,
-            accounts: this.accounts,
-            keystore: this.keystore,
-            networks: this.networks,
-            providers: this.providers,
-            externalSignerControllers: this.#externalSignerControllers,
-            relayerUrl,
-            fetch: this.fetch,
-            onAddAccountsSuccessCallback: async () => {},
-            enableRecurringIntervals: false
-          }),
+          () =>
+            new AccountPickerController({
+              storage: this.storage,
+              accounts: this.accounts,
+              keystore: this.keystore,
+              networks: this.networks,
+              providers: this.providers,
+              externalSignerControllers: this.#externalSignerControllers,
+              relayerUrl,
+              fetch: this.fetch,
+              onAddAccountsSuccessCallback: async () => {}
+            }),
           this.keystore,
           async () => {
             await this.keystore.updateKeystoreKeys()

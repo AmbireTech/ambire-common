@@ -186,8 +186,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers,
     relayerUrl,
     fetch,
-    onAddAccountsSuccessCallback,
-    enableRecurringIntervals = true
+    onAddAccountsSuccessCallback
   }: {
     storage: IStorageController
     accounts: IAccountsController
@@ -198,7 +197,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl: string
     fetch: Fetch
     onAddAccountsSuccessCallback: () => Promise<void>
-    enableRecurringIntervals?: boolean
   }) {
     super()
     this.#storage = storage
@@ -216,15 +214,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.emitError.bind(this)
     )
 
-    if (enableRecurringIntervals) this.#startSmartAccountIdentityRetryIntervalIfNeeded()
+    this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
-    this.#setupEventSubscriptions()
-  }
-
-  #setupEventSubscriptions() {
-    this.#cleanEventSubscriptionsIfNeeded()
-
-    // Set up new subscriptions
     this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
         'update-accounts',
@@ -244,17 +235,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         this.#addAccountsOnKeystoreReady = null
       }
     })
-  }
-
-  #cleanEventSubscriptionsIfNeeded() {
-    if (this.#accountsUnsubscribe) {
-      this.#accountsUnsubscribe()
-      this.#accountsUnsubscribe = undefined
-    }
-    if (this.#keystoreUnsubscribe) {
-      this.#keystoreUnsubscribe()
-      this.#keystoreUnsubscribe = undefined
-    }
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -522,8 +502,18 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.addedAccountsFromCurrentSession = []
     this.#addAccountsOnKeystoreReady = null
 
-    this.#cleanEventSubscriptionsIfNeeded()
     await this.forceEmitUpdate()
+  }
+
+  destroy() {
+    if (this.#accountsUnsubscribe) {
+      this.#accountsUnsubscribe()
+      this.#accountsUnsubscribe = undefined
+    }
+    if (this.#keystoreUnsubscribe) {
+      this.#keystoreUnsubscribe()
+      this.#keystoreUnsubscribe = undefined
+    }
   }
 
   resetAccountsSelection() {
@@ -1299,10 +1289,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: string]: Network } = {}
-    this.#networks.networks.forEach((network) => {
-      networkLookup[network.chainId.toString()] = network
-    })
+    const networkLookup: { [key: string]: Network } = this.#networks.allNetworks.reduce(
+      (acc, network) => {
+        acc[network.chainId.toString()] = network
+        return acc
+      },
+      {} as { [key: string]: Network }
+    )
 
     const promises = Object.keys(this.#providers.providers).map(async (chainId: string) => {
       const network = networkLookup[chainId]
@@ -1328,7 +1321,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             // fail to detect that the account was used on this network.
             acc.balance > BigInt(0) ||
             (acc.isEOA
-              ? acc.nonce > BigInt(0)
+              ? [acc.nonce, acc.eoaNonce, acc.erc4337Nonce].some(
+                  (nonce) => (nonce || BigInt(0)) > BigInt(0)
+                )
               : // For smart accounts, check for 'isDeployed' instead because in
                 // the erc-4337 scenario many cases might be missed with checking
                 // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user

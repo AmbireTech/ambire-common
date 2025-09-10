@@ -91,12 +91,15 @@ export class ActionsController extends EventEmitter {
       this.currentAction = null
 
       this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
+      const callsCount = this.actionsQueue.reduce((acc, action) => {
+        if (action.type !== 'accountOp') return acc
+
+        return acc + (action.accountOp.calls?.length || 0)
+      }, 0)
+
       if (this.visibleActionsQueue.length) {
         await this.#ui.notification.create({
-          title:
-            this.actionsQueue.length > 1
-              ? `${this.actionsQueue.length} transactions queued`
-              : 'Transaction queued',
+          title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
           message: 'Queued pending transactions are available on your Dashboard.'
         })
       }
