@@ -180,22 +180,7 @@ export class SocketAPIMock {
                   },
                   toAmount: '8403278157375',
                   swapSlippage: 1,
-                  minAmountOut: '8319245375801',
-                  gasFees: {
-                    gasAmount: '2297984720000',
-                    gasLimit: 283352,
-                    asset: {
-                      chainId: fromChainId,
-                      address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                      symbol: 'ETH',
-                      name: 'Ethereum',
-                      decimals: 18,
-                      icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                      logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                      chainAgnosticId: null
-                    },
-                    feesInUsd: 0.0054468902019687996
-                  }
+                  minAmountOut: '8319245375801'
                 },
                 {
                   type: 'bridge',
@@ -246,21 +231,6 @@ export class SocketAPIMock {
                     feesInUsd: 0.000011950923706808,
                     amount: '5041966893'
                   },
-                  gasFees: {
-                    gasAmount: '64850800171325',
-                    asset: {
-                      chainId: fromChainId,
-                      address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                      symbol: 'ETH',
-                      name: 'Ethereum',
-                      decimals: 18,
-                      icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                      logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                      chainAgnosticId: null
-                    },
-                    gasLimit: 1000000,
-                    feesInUsd: 0.15371520313808992
-                  },
                   serviceTime: 60,
                   maxServiceTime: 7200,
                   extraData: {
@@ -268,21 +238,6 @@ export class SocketAPIMock {
                   }
                 }
               ],
-              gasFees: {
-                gasAmount: '67148784891325',
-                feesInUsd: 0.15916209334005874,
-                asset: {
-                  chainId: fromChainId,
-                  address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                  symbol: 'ETH',
-                  name: 'Ethereum',
-                  decimals: 18,
-                  icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  chainAgnosticId: null
-                },
-                gasLimit: 1283352
-              },
               serviceTime: 60,
               recipient: userAddress,
               maxServiceTime: 7200,
@@ -322,21 +277,6 @@ export class SocketAPIMock {
               },
               toAmount: '33',
               minAmountOut: '32',
-              gasFees: {
-                gasAmount: '4731453436428',
-                gasLimit: 441774,
-                asset: {
-                  chainId: toChainId,
-                  address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                  symbol: 'ETH',
-                  name: 'Ethereum',
-                  decimals: 18,
-                  icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  chainAgnosticId: 'ETH'
-                },
-                feesInUsd: 0.011214916765830925
-              },
               sender: userAddress,
               recipient: userAddress,
               userTxIndex: 1
@@ -509,21 +449,6 @@ export class SocketAPIMock {
             {
               type: 'middleware',
               chainId: 10,
-              gasFees: {
-                asset: {
-                  icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  name: 'Ethereum',
-                  symbol: 'ETH',
-                  address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                  chainId: 10,
-                  logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  decimals: 18,
-                  chainAgnosticId: null
-                },
-                gasLimit: 285352,
-                feesInUsd: 0.0007534051663168406,
-                gasAmount: '312852513648'
-              },
               toAsset: {
                 icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
                 name: 'Ethereum',
@@ -556,21 +481,6 @@ export class SocketAPIMock {
             },
             {
               type: 'bridge',
-              gasFees: {
-                asset: {
-                  icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  name: 'Ethereum',
-                  symbol: 'ETH',
-                  address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                  chainId: 10,
-                  logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-                  decimals: 18,
-                  chainAgnosticId: null
-                },
-                gasLimit: 1000000,
-                feesInUsd: 0.13350023376256365,
-                gasAmount: '55436152514581'
-              },
               toAsset: {
                 icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
                 name: 'Ethereum',
@@ -627,21 +537,6 @@ export class SocketAPIMock {
           ],
           sender: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
           chainId: 10,
-          gasFees: {
-            asset: {
-              icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-              name: 'Ethereum',
-              symbol: 'ETH',
-              address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-              chainId: 10,
-              logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-              decimals: 18,
-              chainAgnosticId: null
-            },
-            gasLimit: 1285352,
-            feesInUsd: 0.13425363892888048,
-            gasAmount: '55749005028229'
-          },
           toAsset: {
             icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
             name: 'Ethereum',
@@ -784,21 +679,6 @@ export class SocketAPIMock {
         {
           sender: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
           chainId: 8453,
-          gasFees: {
-            asset: {
-              icon: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-              name: 'Ethereum',
-              symbol: 'ETH',
-              address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-              chainId: 8453,
-              logoURI: 'https://assets.polygon.technology/tokenAssets/eth.svg',
-              decimals: 18,
-              chainAgnosticId: 'ETH'
-            },
-            gasLimit: 566000,
-            feesInUsd: 0.00522177973754892,
-            gasAmount: '2168351094000'
-          },
           toAsset: {
             icon: null,
             name: 'Coinbase Wrapped BTC',

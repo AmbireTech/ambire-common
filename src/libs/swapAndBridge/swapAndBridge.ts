@@ -222,7 +222,10 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
   return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]) => {
+/**
+ * Return the lowest active route service time in MILLISECONDS
+ */
+const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]): number => {
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
@@ -233,9 +236,9 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
     })
   )
 
-  const min = serviceTimes.sort((a, b) => a - b)[0]
-
-  return min > UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL ? min : UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+  const time = serviceTimes.sort((a, b) => a - b)[0]
+  if (!time) return UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+  return time * 1000
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
