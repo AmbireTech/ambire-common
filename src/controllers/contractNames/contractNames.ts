@@ -1,7 +1,8 @@
 import { getAddress, isAddress } from 'ethers'
-import { Fetch } from 'interfaces/fetch'
 
 import { IContractNamesController } from '../../interfaces/contractNames'
+import { Fetch } from '../../interfaces/fetch'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface ContractNames {
@@ -23,11 +24,6 @@ interface ContractNamesRelayerResponse {
 // 60 minutes
 export const PERSIST_FAILED_IN_MS = 1000 * 60 * 60
 
-async function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
 /**
  * Contract Names controller- responsible for handling the lookup of address names.
  * Resolved names are saved in `contractNames` permanently, unless the lookup failed, then new
@@ -54,16 +50,17 @@ export class ContractNamesController extends EventEmitter implements IContractNa
   }
 
   async #batchFetchNames(): Promise<void> {
-    const filteredAddresses = this.loadingAddresses.filter(({ address }) => isAddress(address))
+    // using a second variable to avoid race conditions in `loadingAddresses`
+    const addressesToFetch = this.loadingAddresses
     this.loadingAddresses = []
 
-    const url = `https://cena.ambire.com/api/v3/contracts/multiple?addresses=${filteredAddresses.map(
+    const url = `https://cena.ambire.com/api/v3/contracts/multiple?addresses=${addressesToFetch.map(
       ({ address }) => address
-    )}&chainIds=${filteredAddresses.map(({ chainId }) => chainId)}`
+    )}&chainIds=${addressesToFetch.map(({ chainId }) => chainId)}`
 
     const res: ContractNamesRelayerResponse = await this.#fetch(url).then((r) => r.json())
 
-    filteredAddresses.forEach(({ address }) => {
+    addressesToFetch.forEach(({ address }) => {
       const foundData = res.contracts?.[address]
       this.contractNames[address] = foundData?.name
         ? { address, name: foundData.name, updatedAt: new Date() }
@@ -109,7 +106,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
       !this.#fetchPromise
     ) {
       this.#lastTimeScheduledFetch = new Date().getTime()
-      this.#fetchPromise = sleep(this.#debounceTime)
+      this.#fetchPromise = wait(this.#debounceTime)
         .then(() => this.#batchFetchNames())
         .catch((e) => {
           this.emitError({
