@@ -3,13 +3,18 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
-import { ContractNamesController, PERSIST_FAILED_IN_MS } from './contractNames'
+import {
+  ContractNamesController,
+  PERSIST_FAILED_IN_MS,
+  PERSIST_NOT_FOUND_IN_MS
+} from './contractNames'
 
 const contracts = {
   uniV3Factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
   ambireAtETHSofia: '0x3Bd57Bf93dE179d2e47e86319F144d7482503C7d'
 }
 let finishPromise
+let errorPromise
 
 describe('Contract Names', () => {
   it('Successfully find multiple and ignore random', async () => {
@@ -98,5 +103,70 @@ describe('Contract Names', () => {
     // make sure an attempt was actually made
     expect(mockedFetch).toHaveBeenCalledTimes(2)
     jest.useRealTimers()
+  })
+  it('fetch two times', async () => {
+    // init
+    jest.useFakeTimers()
+    const mockedFetch = jest.fn(fetch)
+    const contractNamesController = new ContractNamesController(mockedFetch)
+    const randomAddress1 = Wallet.createRandom().address
+    const randomAddress2 = Wallet.createRandom().address
+
+    // request a non contract address that will fail
+    contractNamesController.getName(randomAddress1, 8453n)
+
+    // The default time for debounce is 50ms
+    jest.advanceTimersByTime(50)
+
+    // make sure the function has been executed
+    finishPromise = new Promise((resolve) => {
+      contractNamesController.onUpdate(resolve)
+    })
+    await finishPromise
+
+    // asses ok result
+    expect(mockedFetch).toHaveBeenCalledTimes(1)
+    expect(contractNamesController.contractNames[randomAddress1]).toBeTruthy()
+    expect(contractNamesController.contractNames[randomAddress1].name).toBeFalsy()
+    expect(contractNamesController.contractNames[randomAddress1].retryAfter).toBe(
+      PERSIST_NOT_FOUND_IN_MS
+    )
+
+    // request second address
+    contractNamesController.getName(randomAddress2, 8453n)
+    expect(mockedFetch).toHaveBeenCalledTimes(1)
+
+    finishPromise = new Promise((resolve) => {
+      contractNamesController.onUpdate(resolve)
+    })
+    jest.advanceTimersByTime(50)
+    await finishPromise
+    expect(mockedFetch).toHaveBeenCalledTimes(2)
+
+    expect(contractNamesController.contractNames[randomAddress2]).toBeTruthy()
+    expect(contractNamesController.contractNames[randomAddress2].name).toBeFalsy()
+    expect(contractNamesController.contractNames[randomAddress2].retryAfter).toBe(
+      PERSIST_NOT_FOUND_IN_MS
+    )
+    jest.useRealTimers()
+  })
+
+  it('Test address validity handling', async () => {
+    const badCheckSum = '0x026224a2940bfe258D0dbE947919B62fE321F042'
+    const randomAddress = Wallet.createRandom().address
+    const contractNamesController = new ContractNamesController(fetch)
+    errorPromise = new Promise((resolve) => {
+      // expected error for wrong address format
+      contractNamesController.onError(resolve)
+    })
+    contractNamesController.getName(badCheckSum, 1n)
+    await errorPromise
+
+    expect(contractNamesController.loadingAddresses.length).toBe(0)
+
+    contractNamesController.getName(randomAddress, 1n)
+    contractNamesController.getName(randomAddress.toLowerCase(), 1n)
+
+    expect(contractNamesController.loadingAddresses.length).toBe(1)
   })
 })
