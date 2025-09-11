@@ -72,7 +72,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     // 6. Gotcha: If the user forcefully updates the portfolio, we will also lose the simulation.
     //    However, this is not a frequent case, and we can make a compromise here.
     this.#updatePortfolioInterval = new RecurringTimeout(
-      () => this.updatePortfolio(),
+      this.#updatePortfolio.bind(this),
       INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
       this.emitError.bind(this)
     )
@@ -98,20 +98,20 @@ export class ContinuousUpdatesController extends EventEmitter {
      * Updates the account state for the selected account. Doesn't update the state for networks with failed RPC as this is handled by a different interval.
      */
     this.#accountStateLatestInterval = new RecurringTimeout(
-      async () => this.updateAccountStateLatest(),
+      this.#updateAccountStateLatest.bind(this),
       ACCOUNT_STATE_STAND_BY_INTERVAL,
       this.emitError.bind(this)
     )
 
     this.#accountStatePendingInterval = new RecurringTimeout(
-      async () => this.updateAccountStatePending(),
+      this.#updateAccountStatePending.bind(this),
       ACCOUNT_STATE_PENDING_INTERVAL,
       this.emitError.bind(this),
       'accountStatePendingInterval'
     )
 
     this.#accountsOpsStatusesInterval = new RecurringTimeout(
-      async () => this.updateAccountsOpsStatuses(),
+      this.#updateAccountsOpsStatuses.bind(this),
       ACTIVITY_REFRESH_INTERVAL,
       this.emitError.bind(this)
     )
@@ -121,7 +121,7 @@ export class ContinuousUpdatesController extends EventEmitter {
      *  update is just now, retry in 8s. If it's a repeated failure, retry in 20s.
      */
     this.#fastAccountStateReFetchTimeout = new RecurringTimeout(
-      async () => this.fastAccountStateReFetch(),
+      this.#fastAccountStateReFetch.bind(this),
       8000,
       this.emitError.bind(this),
       'fastAccountStateReFetchTimeout'
@@ -157,20 +157,21 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#accountStateLatestInterval.start()
   }
 
-  async updatePortfolio() {
+  async #updatePortfolio() {
     await this.initialLoadPromise
 
     if (this.#main.activity.broadcastedButNotConfirmed.length) return
     await this.#main.updateSelectedAccountPortfolio()
   }
 
-  async updateAccountsOpsStatuses() {
+  async #updateAccountsOpsStatuses() {
     await this.initialLoadPromise
     await this.#main.updateAccountsOpsStatuses()
   }
 
-  async updateAccountStateLatest() {
+  async #updateAccountStateLatest() {
     await this.initialLoadPromise
+    await this.#main.accounts.accountStatesInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
@@ -200,8 +201,9 @@ export class ContinuousUpdatesController extends EventEmitter {
     )
   }
 
-  async updateAccountStatePending() {
+  async #updateAccountStatePending() {
     await this.initialLoadPromise
+    await this.#main.accounts.accountStatesInitialLoadPromise
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to update pending state')
@@ -225,7 +227,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     )
   }
 
-  async fastAccountStateReFetch() {
+  async #fastAccountStateReFetch() {
     await this.initialLoadPromise
 
     const failedChainIds: string[] = getNetworksWithFailedRPC({

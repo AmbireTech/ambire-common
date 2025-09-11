@@ -49,6 +49,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
+  // Tracks the initial load of account states. Unlike `initialLoadPromise`,
+  // this one isn’t awaited during the AccountsController initial load, so it’s the only
+  // reliable way to know when account states are fully loaded.
+  accountStatesInitialLoadPromise?: Promise<void>
+
   constructor(
     storage: IStorageController,
     providers: IProvidersController,
@@ -100,9 +105,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#updateAccountStates(
+    this.accountStatesInitialLoadPromise = this.#updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
-    )
+    ).finally(() => {
+      this.accountStatesInitialLoadPromise = undefined
+    })
   }
 
   async updateAccountStates(
