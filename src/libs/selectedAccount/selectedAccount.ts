@@ -258,8 +258,15 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
-      networkState.result
+    const {
+      tokens,
+      collections,
+      tokenErrors,
+      priceCache,
+      toBeLearned,
+      lastExternalApiUpdateData,
+      ...result
+    } = networkState.result
 
     strippedState[chainId] = { ...networkState, result }
   })
@@ -402,10 +409,11 @@ export function calculateSelectedAccountPortfolioByNetworks(
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
   isAllReady: boolean
   isReadyToVisualize: boolean
+  shouldShowPartialResult: boolean
 } {
   const now = Date.now()
   const shouldShowPartialResult =
-    portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
+    !!portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
     pastAccountPortfolioWithDefiPositions
 
@@ -419,6 +427,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
     return {
       selectedAccountPortfolioByNetworks: {},
       isAllReady: false,
+      shouldShowPartialResult: false,
       isReadyToVisualize: false
     }
   }
@@ -553,6 +562,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
   }
 
   return {
+    shouldShowPartialResult,
     isReadyToVisualize,
     isAllReady,
     selectedAccountPortfolioByNetworks: newAccountPortfolioWithDefiPositions
@@ -575,15 +585,19 @@ export function calculateSelectedAccountPortfolio(
   selectedAccountPortfolio: SelectedAccountPortfolio
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
 } {
-  const { selectedAccountPortfolioByNetworks, isAllReady, isReadyToVisualize } =
-    calculateSelectedAccountPortfolioByNetworks(
-      latestStateSelectedAccount,
-      pendingStateSelectedAccount,
-      pastAccountPortfolioWithDefiPositions,
-      portfolioStartedLoadingAtTimestamp,
-      defiPositionsAccountState,
-      isLoadingFromScratch
-    )
+  const {
+    selectedAccountPortfolioByNetworks,
+    isAllReady,
+    isReadyToVisualize,
+    shouldShowPartialResult
+  } = calculateSelectedAccountPortfolioByNetworks(
+    latestStateSelectedAccount,
+    pendingStateSelectedAccount,
+    pastAccountPortfolioWithDefiPositions,
+    portfolioStartedLoadingAtTimestamp,
+    defiPositionsAccountState,
+    isLoadingFromScratch
+  )
 
   const selectedAccountPortfolio: SelectedAccountPortfolio = {
     tokens: [],
@@ -592,6 +606,7 @@ export function calculateSelectedAccountPortfolio(
     balancePerNetwork: {},
     isReadyToVisualize,
     isAllReady,
+    shouldShowPartialResult,
     networkSimulatedAccountOp: {},
     latest: stripPortfolioState(latestStateSelectedAccount),
     pending: stripPortfolioState(pendingStateSelectedAccount)

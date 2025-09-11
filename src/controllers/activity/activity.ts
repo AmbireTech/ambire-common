@@ -663,10 +663,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     )
                     if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
 
-                    if (isSuccess && updatedOpIfAny) {
-                      chainsToUpdate.add(updatedOpIfAny.chainId)
-                    }
-
                     if (accountOp.isSingletonDeploy && receipt.status) {
                       await this.#onContractsDeployed(network)
                     }
@@ -682,6 +678,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       }
                     }
 
+                    // update the chain if a receipt has been received as otherwise, we're
+                    // left hanging with a pending portfolio balance
+                    chainsToUpdate.add(network.chainId)
                     return
                   }
 

@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -7,7 +8,7 @@ import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverri
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
-import { getFlags, overrideSymbol } from './helpers'
+import { mapToken } from './helpers'
 import {
   CollectionResult,
   GetOptions,
@@ -82,7 +83,7 @@ function handleSimulationError(
 export function getDeploylessOpts(
   accountAddr: string,
   supportsStateOverride: boolean,
-  opts: Partial<GetOptions>
+  opts: Pick<GetOptions, 'simulation' | 'blockTag'>
 ) {
   const hasEOAOverride =
     opts.simulation && shouldUseStateOverrideForEOA(opts.simulation.account, opts.simulation.state)
@@ -102,9 +103,9 @@ export function getDeploylessOpts(
 export async function getNFTs(
   network: Network,
   deployless: Deployless,
-  opts: Partial<GetOptions>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag'>,
   accountAddr: string,
-  tokenAddrs: [string, any][],
+  tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
@@ -125,9 +126,7 @@ export async function getNFTs(
       [
         accountAddr,
         tokenAddrs.map(([address]) => address),
-        tokenAddrs.map(([, x]) =>
-          x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
-        ),
+        tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
         limits.erc721Tokens
       ],
       deploylessOpts
@@ -152,7 +151,7 @@ export async function getNFTs(
       accountAddr,
       account.associatedKeys,
       tokenAddrs.map(([address]) => address),
-      tokenAddrs.map(([, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
+      tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
       limits.erc721Tokens,
       factory,
       factoryCalldata,
@@ -214,62 +213,10 @@ export async function getNFTs(
   ]
 }
 
-const mapToken = (token: any, network: Network, address: string, opts: Partial<GetOptions>) => {
-  let symbol = 'Unknown'
-  try {
-    symbol = overrideSymbol(address, network.chainId, token.symbol)
-  } catch (e: any) {
-    console.log(`no symbol was found for token with address ${address} on ${network.name}`)
-  }
-
-  let tokenName = symbol
-  try {
-    tokenName = token.name
-  } catch (e: any) {
-    console.log(
-      `no name was found for a token with a symbol of: ${symbol}, address: ${address} on ${network.name}`
-    )
-  }
-
-  const tokenFlags: TokenResult['flags'] = getFlags(
-    {},
-    network.chainId.toString(),
-    network.chainId,
-    address
-  )
-
-  if (opts.specialErc20Hints && opts.specialErc20Hints[address]) {
-    const value = opts.specialErc20Hints[address]
-
-    if (value === 'custom') {
-      tokenFlags.isCustom = true
-    } else if (value === 'hidden') {
-      tokenFlags.isHidden = true
-    } else if (value === 'hidden-custom') {
-      tokenFlags.isHidden = true
-      tokenFlags.isCustom = true
-    }
-  }
-
-  return {
-    amount: token.amount,
-    chainId: network.chainId,
-    decimals: Number(token.decimals),
-    name:
-      address === '0x0000000000000000000000000000000000000000'
-        ? network.nativeAssetName
-        : tokenName,
-    symbol:
-      address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : symbol,
-    address,
-    flags: tokenFlags
-  } as TokenResult
-}
-
 export async function getTokens(
   network: Network,
   deployless: Deployless,
-  opts: Partial<GetOptions>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints'>,
   accountAddr: string,
   tokenAddrs: string[],
   pageIndex?: number

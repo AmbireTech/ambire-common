@@ -45,6 +45,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
+  shouldShowPartialResult: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -199,11 +200,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.#areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
             this.updateSelectedAccountPortfolio(true)
+            this.#updateDefiPositionsErrors()
           })
-          this.#updateDefiPositionsErrors()
         }
       })
     })
@@ -388,7 +389,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  get #areDefiPositionsLoading() {
+  get areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -457,7 +458,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.#areDefiPositionsLoading
+      this.areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {
@@ -488,7 +489,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isReadyToVisualize
+      (!this.portfolio.isAllReady && !this.portfolio.shouldShowPartialResult)
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
@@ -642,7 +643,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
-      defiPositions: this.defiPositions
+      defiPositions: this.defiPositions,
+      areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }
 }

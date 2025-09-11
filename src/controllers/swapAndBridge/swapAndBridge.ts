@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, isAddress, parseUnits } from 'ethers'
+import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -6,7 +6,10 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
+import {
+  BRIDGE_STATUS_INTERVAL,
+  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+} from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
@@ -351,7 +354,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#updateActiveRoutesInterval = new RecurringTimeout(
       async () => this.continuouslyUpdateActiveRoutes(),
-      UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
+      BRIDGE_STATUS_INTERVAL,
       this.emitError.bind(this)
     )
   }
@@ -598,10 +601,22 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('swapAndBridgeActiveRoutes', value)
 
-    if (this.activeRoutesInProgress.length) {
-      this.#updateActiveRoutesInterval.start()
-    } else {
+    if (!this.activeRoutesInProgress.length) {
       this.#updateActiveRoutesInterval.stop()
+      return
+    }
+
+    const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
+
+    if (!this.#updateActiveRoutesInterval.running) {
+      this.#updateActiveRoutesInterval.start({ timeout: minServiceTime })
+      return
+    }
+
+    // If the interval is running, check if minServiceTime * 2 is still less than currentTimeout.
+    // If it is, restart it with the new minServiceTime, as the difference makes it worth it.
+    if (minServiceTime * 2 < this.#updateActiveRoutesInterval.currentTimeout) {
+      this.#updateActiveRoutesInterval.restart({ timeout: minServiceTime })
     }
   }
 
@@ -1194,7 +1209,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return token
   }
 
-  #accountNativeBalance(): bigint {
+  #accountNativeBalance(amount: bigint): bigint {
     if (!this.#selectedAccount.account || !this.fromChainId) return 0n
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(
@@ -1205,7 +1220,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
     if (!native) return 0n
-    return native.amount
+
+    if (this.fromSelectedToken?.address !== ZeroAddress) return native.amount
+
+    // subtract the from amount from the portfolio available balance
+    if (amount > native.amount) return 0n
+    return native.amount - amount
   }
 
   /**
@@ -1431,7 +1451,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           ),
           sort: this.routePriority,
           isOG: this.#invite.isOG,
-          accountNativeBalance: this.#accountNativeBalance(),
+          accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
         })
 
@@ -2397,7 +2417,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
-    this.isAutoSelectRouteDisabled = true
+    this.isAutoSelectRouteDisabled = hasProceeded
+
+    // this is so when the user get an error during broadcast which then leads
+    // to an estimation error - if he does back, he should see the failed route
+    // and be able to select another. if this.isAutoSelectRouteDisabled is not
+    // made to true, he will see an infinite loading
+    if (
+      hasProceeded === false &&
+      this.signAccountOpController &&
+      this.signAccountOpController.estimation.status === EstimationStatus.Error
+    ) {
+      this.isAutoSelectRouteDisabled = true
+    }
+
     this.emitUpdate()
   }
 
@@ -2487,8 +2520,24 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     await this.checkForNextUserTxForActiveRoutes()
 
+    if (!this.activeRoutesInProgress.length) {
+      this.#updateActiveRoutesInterval.stop()
+      return
+    }
+
+    // coming here means the bridge should complete any second now
+    // so start with BRIDGE_STATUS_INTERVAL
+    // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
+    const ceiling = 60000
     const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
-    this.#updateActiveRoutesInterval.updateTimeout({ timeout: minServiceTime })
+    const startTimeout =
+      minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
+        ? BRIDGE_STATUS_INTERVAL
+        : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
+
+    this.#updateActiveRoutesInterval.updateTimeout({
+      timeout: startTimeout < ceiling ? startTimeout : ceiling
+    })
   }
 
   toJSON() {
