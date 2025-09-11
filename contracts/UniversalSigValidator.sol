@@ -65,7 +65,7 @@ contract UniversalSigValidator {
       // However, if the contract reverted or it does not implement the method,
       // fallback to ecrecover as it might be an EOA that has a hacked
       // delegation but ecrecover should be working for
-      if (success && result.length >= 4) {
+      if (success && result.length == 32) {
         bool isValid = bytes4(result) == ERC1271_SUCCESS;
         if (contractCodeLen == 0 && isCounterfactual && !allowSideEffects) {
           // if the call had side effects we need to return the
