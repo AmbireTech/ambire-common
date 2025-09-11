@@ -61,19 +61,12 @@ contract UniversalSigValidator {
 
       // @no-reverts
       // if the call is a success (did not revert)
-      // and the result returned a success, return isValid back to the UI
-      //
-      // However, if the contract reverted or it did not return a success,
+      // and isValidSignature returned bytes 4, return the res to the UI
+      // However, if the contract reverted or it does not implement the method,
       // fallback to ecrecover as it might be an EOA that has a hacked
       // delegation but ecrecover should be working for
-      // The debateable point here who should have the final authority
-      // on the account: the smart contract implementation or the private key
-      // and currently, the private key can always take it back by removing
-      // the delegation. So the only argument against allowing ecrecover final
-      // authority is a future where EOAs can remove their private keys for good.
-      // For the time being, we allow ecrecover to be the final boss
-      bool isValid = success && result.length >= 4 && bytes4(result) == ERC1271_SUCCESS;
-      if (isValid) {
+      if (success && result.length == 4) {
+        bool isValid = bytes4(result) == ERC1271_SUCCESS;
         if (contractCodeLen == 0 && isCounterfactual && !allowSideEffects) {
           // if the call had side effects we need to return the
           // result using a `revert` (to undo the state changes)
@@ -86,23 +79,14 @@ contract UniversalSigValidator {
       }
     }
 
-    // @no-reverts
-    if (_signature.length != 65) {
-      return false;
-    }
-
     // ecrecover verification
-    // require(_signature.length == 65, 'SignatureValidator#recoverSigner: invalid signature length');
+    require(_signature.length == 65, 'SignatureValidator#recoverSigner: invalid signature length');
     bytes32 r = bytes32(_signature[0:32]);
     bytes32 s = bytes32(_signature[32:64]);
     uint8 v = uint8(_signature[64]);
-
-    // @no-reverts
     if (v != 27 && v != 28) {
-      return false;
-      // revert('SignatureValidator: invalid signature v value');
+      revert('SignatureValidator: invalid signature v value');
     }
-
     return ecrecover(_hash, v, r, s) == _signer;
   }
 
