@@ -61,11 +61,11 @@ contract UniversalSigValidator {
 
       // @no-reverts
       // if the call is a success (did not revert)
-      // and isValidSignature returned bytes 4, return the res to the UI
+      // and isValidSignature returned a valid result > 4 bytes, return the res to the UI
       // However, if the contract reverted or it does not implement the method,
       // fallback to ecrecover as it might be an EOA that has a hacked
       // delegation but ecrecover should be working for
-      if (success && result.length == 4) {
+      if (success && result.length >= 4) {
         bool isValid = bytes4(result) == ERC1271_SUCCESS;
         if (contractCodeLen == 0 && isCounterfactual && !allowSideEffects) {
           // if the call had side effects we need to return the
