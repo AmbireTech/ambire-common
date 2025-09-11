@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -91,6 +91,7 @@ const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBrid
               )
             : undefined
         },
+        // serviceTime comes in seconds
         serviceTime: parentStep.estimate.executionDuration,
         minAmountOut: step.estimate.toAmountMin,
         protocol: {
