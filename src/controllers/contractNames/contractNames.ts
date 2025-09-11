@@ -35,6 +35,13 @@ export const PERSIST_NOT_FOUND_IN_MS = 1000 * 60 * 60
 // 2 minutes
 export const PERSIST_FAILED_IN_MS = 1000 * 60 * 2
 
+export function isUnderstandableName(name: string): boolean {
+  const forbiddenWords = ['Ambire', 'Identity', 'Safe', 'Proxy', 'Diamond']
+  if (name.endsWith('able')) return false
+  if (forbiddenWords.some((fw) => name.toLowerCase().includes(fw.toLowerCase()))) return false
+  return true
+}
+
 /**
  * Contract Names controller- responsible for handling the lookup of address names.
  * Resolved names are saved in `contractNames` permanently, unless the lookup failed, then new
@@ -47,7 +54,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
 
   #lastTimeScheduledFetch: number = 0
 
-  contractNames: ContractNames = {}
+  #contractNames: ContractNames = {}
 
   loadingAddresses: { address: string; chainId: bigint }[] = []
 
@@ -55,6 +62,15 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     super()
     this.#fetch = fetch
     this.#debounceTime = debounceTime
+  }
+
+  get contractNames(): ContractNames {
+    const toReturn = Object.entries(this.#contractNames).map(([address, v]) => {
+      if (!v.name) return [address, v]
+      if (isUnderstandableName(v.name)) return [address, v]
+      return [address, { ...v, name: undefined }]
+    })
+    return Object.fromEntries(toReturn)
   }
 
   async #batchFetchNames(): Promise<void> {
@@ -78,7 +94,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
           error: e
         })
         addressesToFetch.forEach(({ address }) => {
-          this.contractNames[address] = {
+          this.#contractNames[address] = {
             address,
             error: 'Request to relayer failed',
             updatedAt: new Date(),
@@ -98,7 +114,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
         error: new Error(res.error)
       })
       addressesToFetch.forEach(({ address }) => {
-        this.contractNames[address] = {
+        this.#contractNames[address] = {
           address,
           error: 'Request to relayer failed',
           updatedAt: new Date(),
@@ -110,7 +126,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
 
     addressesToFetch.forEach(({ address }) => {
       const foundData = res.contracts?.[address]
-      this.contractNames[address] = foundData?.name
+      this.#contractNames[address] = foundData?.name
         ? { address, name: foundData.name, updatedAt: new Date(), retryAfter: Infinity }
         : {
             address,
@@ -135,12 +151,12 @@ export class ContractNamesController extends EventEmitter implements IContractNa
       })
     const address = getAddress(_address)
     // if we already hav have the name, do not fetch again
-    if (this.contractNames[address]?.name) return
+    if (this.#contractNames[address]?.name) return
 
     // if we have recent data, do not fetch
     if (
-      this.contractNames[address]?.updatedAt &&
-      this.contractNames[address].updatedAt.getTime() + this.contractNames[address].retryAfter <
+      this.#contractNames[address]?.updatedAt &&
+      this.#contractNames[address].updatedAt.getTime() + this.#contractNames[address].retryAfter <
         new Date().getTime()
     )
       return
