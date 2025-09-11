@@ -1478,7 +1478,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return null
     }
 
-    const chosenSpeed = this.feeSpeeds[identifier].find(
+    const chosenSpeed = this.feeSpeeds[identifier]?.find(
       (speed) => speed.type === this.selectedFeeSpeed
     )
     if (!chosenSpeed) {
@@ -1540,7 +1540,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.accountAddr,
       this.rbfAccountOps[this.selectedOption.paidBy]
     )
-    const selectedFeeSpeedData = this.feeSpeeds[identifier].find(
+    const selectedFeeSpeedData = this.feeSpeeds[identifier]?.find(
       (speed) => speed.type === this.selectedFeeSpeed
     )
     const gasPrice = selectedFeeSpeedData?.gasPrice

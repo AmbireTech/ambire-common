@@ -361,13 +361,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const migratedPreviousHints = {
       learnedTokens: migrateKeys(previousHints.learnedTokens || {}),
       learnedNfts: migrateKeys(previousHints.learnedNfts || {}),
-      fromExternalAPI: Object.fromEntries(
-        Object.entries(previousHints.fromExternalAPI || {}).map(([networkAndAccountKey, value]) => {
-          const [networkId, accountAddr] = networkAndAccountKey.split(':')
-          const chainId = networkIdToChainId[networkId]
-          return chainId ? [`${chainId}:${accountAddr}`, value] : [networkAndAccountKey, value]
-        })
-      )
+      fromExternalAPI: {} // No longer used
     }
 
     const migratedCustomTokens = customTokens.map(({ networkId, ...rest }: any) => ({
@@ -498,7 +492,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
   async #associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: IAccountPickerController,
+    accountPickerInitFn: () => IAccountPickerController,
     keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
@@ -522,6 +516,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const keystoreSavedSeed = await keystore.getSavedSeed('legacy-saved-seed')
 
     const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase)
+    const accountPicker = accountPickerInitFn()
     await accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
@@ -569,6 +564,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
 
     await accountPicker.reset()
+    accountPicker.destroy()
 
     const updatedKeystoreKeys = Array.from(updatedKeyMap.values())
 
@@ -585,14 +581,18 @@ export class StorageController extends EventEmitter implements IStorageControlle
   }
 
   async associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: IAccountPickerController,
+    accountPickerInitFn: () => IAccountPickerController,
     keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
     await this.withStatus(
       'associateAccountKeysWithLegacySavedSeedMigration',
       () =>
-        this.#associateAccountKeysWithLegacySavedSeedMigration(accountPicker, keystore, onSuccess),
+        this.#associateAccountKeysWithLegacySavedSeedMigration(
+          accountPickerInitFn,
+          keystore,
+          onSuccess
+        ),
       true
     )
   }
