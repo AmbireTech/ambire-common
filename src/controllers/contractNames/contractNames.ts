@@ -191,7 +191,8 @@ export class ContractNamesController extends EventEmitter implements IContractNa
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      contractNames: this.contractNames
     }
   }
 }
