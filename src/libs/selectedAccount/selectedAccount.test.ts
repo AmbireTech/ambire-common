@@ -1,3 +1,4 @@
+import { SelectedAccountPortfolioByNetworksNetworkState } from '../../interfaces/selectedAccount'
 import {
   AccountState as DefiAccountState,
   AssetType,
@@ -119,12 +120,12 @@ describe('Selected Account lib', () => {
         PENDING_PORTFOLIO_STATE['1']
       ) as NetworkState
 
-      const mockPastState = {
+      const mockPastState: SelectedAccountPortfolioByNetworksNetworkState = {
         totalBalance: 0,
         collections: [],
         tokens: [],
         defiPositionsUpdatedAt: DEFI_STATE['1'].updatedAt,
-        blockNumber: clonedPortfolioEthereumStatePending?.result?.blockNumber
+        portfolioUpdateStarted: clonedPortfolioEthereumStatePending?.result?.updateStarted
       }
 
       clonedPortfolioEthereumStatePending.accountOps = []
