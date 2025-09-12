@@ -109,7 +109,12 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'the input token amount is too low. Please increase the token amount and try again.'
   },
   {
-    reasons: ['INSUFFICIENT_OUTPUT_AMOUNT', 'return amount is not enough', '0x97a6f3b9'],
+    reasons: [
+      'INSUFFICIENT_OUTPUT_AMOUNT',
+      'return amount is not enough',
+      '0x97a6f3b9',
+      '0xcea9e31d'
+    ],
     message: 'the slippage tolerance was exceeded.'
   },
   {
