@@ -460,7 +460,6 @@ export class MainController extends EventEmitter implements IMainController {
         invite: this.invite,
         // TODO<Bobby>: will need help configuring this once the plan forward is clear
         serviceProviderAPI: new LiFiAPI({
-          apiKey: process.env.LI_FI_API_KEY!,
           fetch
         }),
         storage: this.storage,
