@@ -1,25 +1,41 @@
 import { getAddress, isAddress } from 'ethers'
 
 import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
+import { SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL } from '../../consts/intervals'
+import {
   Account,
   AccountOnchainState,
   AccountPreferences,
   AccountStates,
   IAccountsController
 } from '../../interfaces/account'
+import { AmbireRelayerIdentityCreateMultipleResponse } from '../../interfaces/accountPicker'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { getUniqueAccountsArray } from '../../libs/account/account'
+import {
+  getUniqueAccountsArray,
+  isAmbireV1LinkedAccount,
+  isSmartAccount
+} from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
   addAccounts: 'INITIAL'
 } as const
+
+const SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY =
+  'smartAccountIdentityCreateRequestsFailed'
 
 export class AccountsController extends EventEmitter implements IAccountsController {
   #storage: IStorageController
@@ -29,6 +45,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   #providers: IProvidersController
 
   #keystore: IKeystoreController
+
+  #callRelayer: Function
+
+  #smartAccountIdentityRetryInterval: IRecurringTimeout
 
   accounts: Account[] = []
 
@@ -61,7 +81,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     keystore: IKeystoreController,
     onAddAccounts: (accounts: Account[]) => void,
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
-    onAccountStateUpdate: () => void
+    onAccountStateUpdate: () => void,
+    relayerUrl: string,
+    fetch: Fetch
   ) {
     super()
     this.#storage = storage
@@ -71,6 +93,16 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAddAccounts = onAddAccounts
     this.#updateProviderIsWorking = updateProviderIsWorking
     this.#onAccountStateUpdate = onAccountStateUpdate
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+
+    this.#smartAccountIdentityRetryInterval = new RecurringTimeout(
+      async () => this.#continuouslyRetryFailedSmartAccountIdentityCreateRequests(),
+      SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
+      this.emitError.bind(this)
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#startSmartAccountIdentityRetryIntervalIfNeeded()
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -232,6 +264,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // update the state of new accounts. Otherwise, the user needs to restart his extension
     this.#updateAccountStates(newAccountsNotAddedYet)
 
+    // Create identity for smart accounts that need it
+    this.#createSmartAccountIdentities(newAccountsNotAddedYet)
+
     this.emitUpdate()
   }
 
@@ -325,6 +360,213 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   async forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
     await this.updateAccountState(addr, 'pending', [chainId])
     return this.accountStates[addr][chainId.toString()]
+  }
+
+  /**
+   * Creates identity for smart accounts on the Relayer and updates the accounts
+   * with the identityCreatedAt timestamp. Handles retry mechanism for failed requests.
+   */
+  async #createSmartAccountIdentities(accounts: Account[]): Promise<void> {
+    const smartAccountsNeedingIdentity = accounts.filter(
+      (account) =>
+        isSmartAccount(account) &&
+        !isAmbireV1LinkedAccount(account.creation?.factoryAddr) &&
+        !account.identityCreatedAt
+    )
+
+    if (!smartAccountsNeedingIdentity.length) return
+
+    const identityRequests = smartAccountsNeedingIdentity.map((account) => ({
+      addr: account.addr,
+      ...(account.email ? { email: account.email } : {}),
+      associatedKeys: account.initialPrivileges,
+      creation: {
+        factoryAddr: account.creation!.factoryAddr,
+        salt: account.creation!.salt,
+        // TODO: retrieve baseIdentityAddr from the bytecode instead
+        baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+      }
+    }))
+
+    try {
+      const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+        accounts: identityRequests
+      })) as AmbireRelayerIdentityCreateMultipleResponse
+
+      if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
+
+      const now = Date.now()
+      const successfulAddresses = identityRes.body
+        .filter((acc) => acc.status.created)
+        .map((acc) => acc.identity)
+
+      // Update accounts with successful identity creation timestamp
+      this.accounts = this.accounts.map((account) => {
+        if (successfulAddresses.includes(account.addr)) {
+          return { ...account, identityCreatedAt: now }
+        }
+        return account
+      })
+
+      // Store accounts that failed for retry
+      const failedRequests = identityRequests.filter(
+        (req) => !successfulAddresses.includes(req.addr)
+      )
+
+      if (failedRequests.length) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#storeFailedSmartAccountIdentityCreateRequests(failedRequests)
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#startSmartAccountIdentityRetryIntervalIfNeeded()
+      }
+
+      await this.#storage.set('accounts', this.accounts)
+    } catch (e: any) {
+      // Store all requests for retry
+      await this.#storeFailedSmartAccountIdentityCreateRequests(identityRequests)
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#startSmartAccountIdentityRetryIntervalIfNeeded()
+
+      // eslint-disable-next-line no-console
+      console.warn('Failed to create smart account identities:', e?.message)
+    }
+  }
+
+  /**
+   * Retries the failed smart account identity create requests from previous sessions.
+   * Ambire smart accounts v2 without identity created on the Relayer can still sign transactions
+   * and operate normally, but the lack of identity can cause side effects such as:
+   * - account not returned by the Relayer in some responses
+   * - recovery mechanisms not working on the Relayer
+   */
+  async #retryFailedSmartAccountIdentityCreateRequests() {
+    try {
+      const failedRequests = await this.#storage.get(
+        SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+        []
+      )
+
+      if (!failedRequests.length) return
+
+      // Attempt to retry the failed requests
+      const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+        accounts: failedRequests
+      })) as AmbireRelayerIdentityCreateMultipleResponse
+
+      if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
+
+      const now = Date.now()
+      const successfulRequests = identityRes.body
+        .filter((acc) => acc.status.created)
+        .map((acc) => acc.identity)
+
+      if (successfulRequests.length) {
+        // Update accounts with successful identity creation timestamp
+        this.accounts = this.accounts.map((account) => {
+          if (successfulRequests.includes(account.addr)) {
+            return { ...account, identityCreatedAt: now }
+          }
+          return account
+        })
+        await this.#storage.set('accounts', this.accounts)
+        this.emitUpdate()
+      }
+
+      // Remove successful requests from storage
+      await this.#clearResolvedSmartAccountIdentityCreateRequests(successfulRequests)
+    } catch (e: any) {
+      // Silently continue if retry fails - the requests remain in storage for next retry
+      // eslint-disable-next-line no-console
+      console.warn('accounts: Failed to retry identity requests:', e?.message)
+    }
+  }
+
+  async #storeFailedSmartAccountIdentityCreateRequests(
+    identityRequests: {
+      addr: string
+      email?: string
+      associatedKeys: [string, string][]
+      creation: {
+        factoryAddr: string
+        salt: string
+        baseIdentityAddr: string
+      }
+    }[]
+  ) {
+    const prevFailedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    // quick lookup by addr
+    const prevByAddr = Object.fromEntries(prevFailedRequests.map((r) => [r.addr, r]))
+    const newAddrs = new Set(identityRequests.map((r) => r.addr))
+
+    // keep old entries that aren't in this batch
+    const keptPrev = prevFailedRequests.filter((r) => !newAddrs.has(r.addr))
+
+    // upsert batch, preserving first attempt, bumping last attempt
+    const now = Date.now()
+    const upserts = identityRequests.map((req) => {
+      const existing = prevByAddr[req.addr]
+      return {
+        ...(existing ?? {}),
+        ...req,
+        initialAttemptAt: existing?.initialAttemptAt ?? now,
+        lastAttemptAt: now
+      }
+    })
+
+    await this.#storage.set(SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY, [
+      ...keptPrev,
+      ...upserts
+    ])
+  }
+
+  async #clearResolvedSmartAccountIdentityCreateRequests(successfulAddresses: string[]) {
+    const currentFailedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+    if (!currentFailedRequests.length) return
+
+    const remainingFailedRequests = currentFailedRequests.filter(
+      (req) => !successfulAddresses.includes(req.addr)
+    )
+    await this.#storage.set(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      remainingFailedRequests
+    )
+
+    // Stop the retry interval if no more failed requests remain
+    if (!remainingFailedRequests.length) this.#smartAccountIdentityRetryInterval.stop()
+  }
+
+  async #startSmartAccountIdentityRetryIntervalIfNeeded() {
+    if (this.#smartAccountIdentityRetryInterval.running) return
+
+    const failedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    if (!failedRequests.length) return
+
+    this.#smartAccountIdentityRetryInterval.start({ runImmediately: true })
+  }
+
+  async #continuouslyRetryFailedSmartAccountIdentityCreateRequests() {
+    const failedRequests = await this.#storage.get(
+      SMART_ACCOUNT_IDENTITY_CREATE_REQUESTS_FAILED_STORAGE_KEY,
+      []
+    )
+
+    if (!failedRequests.length) {
+      this.#smartAccountIdentityRetryInterval.stop()
+      return
+    }
+
+    await this.#retryFailedSmartAccountIdentityCreateRequests()
   }
 
   toJSON() {

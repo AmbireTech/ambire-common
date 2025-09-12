@@ -21,6 +21,9 @@ export interface Account {
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  // TODO: Move under `creation`
+  // Timestamp when identity was created on the Relayer, null if not created yet
+  identityCreatedAt?: number | null
   preferences: AccountPreferences
   email?: string
   newlyCreated?: boolean
