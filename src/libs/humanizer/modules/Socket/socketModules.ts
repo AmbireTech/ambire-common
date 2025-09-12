@@ -1063,8 +1063,6 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           humanizationOfBridge = [
             getAction('Bridge'),
             getToken(tokenIn, 0n),
-            getLabel('for at least'),
-            getTokenWithChain(tokenOut, outputAmount, chainId),
             getLabel('to'),
             getChain(chainId),
             ...getRecipientText(accountOp.accountAddr, receiver),
