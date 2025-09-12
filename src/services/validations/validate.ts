@@ -68,7 +68,8 @@ const validateSendTransferAddress = (
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
   isSWWarningAgreed?: boolean,
-  isRecipientAddressFirstTimeSend?: boolean
+  isRecipientAddressFirstTimeSend?: boolean,
+  lastRecipientTransactionDate?: Date | null
 ): ValidateReturnType => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -94,14 +95,22 @@ const validateSendTransferAddress = (
 
   if (isRecipientAddressFirstTimeSend) {
     if (isRecipientAddressUnknown) {
+      let message = FIRST_TIME_SEND_MESSAGE
+      if (lastRecipientTransactionDate) {
+        message = `You last sent to this address on ${lastRecipientTransactionDate.toLocaleString()}. Double-check before confirming.`
+      }
       return {
         success: false,
-        message: FIRST_TIME_SEND_MESSAGE
+        message
       }
+    }
+    let message = FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
+    if (lastRecipientTransactionDate) {
+      message = `You last sent to this address on ${lastRecipientTransactionDate.toLocaleString()}, and it is in your Address Book.`
     }
     return {
       success: false,
-      message: FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
+      message
     }
   }
 
@@ -135,6 +144,13 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: 'Please confirm that the recipient address is not an exchange.'
+    }
+  }
+
+  if (lastRecipientTransactionDate) {
+    return {
+      success: true,
+      message: `You last sent to this address on ${lastRecipientTransactionDate.toLocaleString()}.`
     }
   }
 
