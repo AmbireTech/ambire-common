@@ -1,6 +1,8 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity 0.8.19;
+// SPDX-License-Identifier: CC0-1.0
+pragma solidity ^0.8.19;
 
+// Copy-paste from https://eips.ethereum.org/EIPS/eip-6492
+// you can use `ValidateSigOffchain` for this library in exactly the same way that the other contract (DeploylessUniversalSigValidator.sol) is used
 // As per ERC-1271
 interface IERC1271Wallet {
   function isValidSignature(
@@ -21,17 +23,16 @@ contract UniversalSigValidator {
     address _signer,
     bytes32 _hash,
     bytes calldata _signature,
-    bool allowSideEffects,
-    bool tryPrepare
+    bool allowSideEffects
   ) public returns (bool) {
     uint contractCodeLen = address(_signer).code.length;
     bytes memory sigToValidate;
-    // The order here is strictly defined in https://eips.ethereum.org/EIPS/eip-6492
+    // The order here is striclty defined in https://eips.ethereum.org/EIPS/eip-6492
     // - ERC-6492 suffix check and verification first, while being permissive in case the contract is already deployed; if the contract is deployed we will check the sig against the deployed version, this allows 6492 signatures to still be validated while taking into account potential key rotation
     // - ERC-1271 verification if there's contract code
     // - finally, ecrecover
-    bool isCounterfactual = bytes32(_signature[_signature.length - 32:_signature.length]) ==
-      ERC6492_DETECTION_SUFFIX;
+    bool isCounterfactual = _signature.length >= 32 &&
+      bytes32(_signature[_signature.length - 32:_signature.length]) == ERC6492_DETECTION_SUFFIX;
     if (isCounterfactual) {
       address create2Factory;
       bytes memory factoryCalldata;
@@ -40,7 +41,7 @@ contract UniversalSigValidator {
         (address, bytes, bytes)
       );
 
-      if (contractCodeLen == 0 || tryPrepare) {
+      if (contractCodeLen == 0) {
         (bool success, bytes memory err) = create2Factory.call(factoryCalldata);
         if (!success) revert ERC6492DeployFailed(err);
       }
@@ -50,16 +51,22 @@ contract UniversalSigValidator {
 
     // Try ERC-1271 verification
     if (isCounterfactual || contractCodeLen > 0) {
-      try IERC1271Wallet(_signer).isValidSignature(_hash, sigToValidate) returns (
-        bytes4 magicValue
-      ) {
-        bool isValid = magicValue == ERC1271_SUCCESS;
+      (bool success, bytes memory result) = _signer.staticcall(
+        abi.encodeWithSelector(
+          ERC1271_SUCCESS, // function selector for isValidSignature, it's the same as success
+          _hash,
+          sigToValidate
+        )
+      );
 
-        // retry, but this time assume the prefix is a prepare call
-        if (!isValid && !tryPrepare && contractCodeLen > 0) {
-          return isValidSigImpl(_signer, _hash, _signature, allowSideEffects, true);
-        }
-
+      // @no-reverts
+      // if the call is a success (did not revert)
+      // and isValidSignature returned a valid result > 4 bytes, return the res to the UI
+      // However, if the contract reverted or it does not implement the method,
+      // fallback to ecrecover as it might be an EOA that has a hacked
+      // delegation but ecrecover should be working for
+      if (success && result.length == 32) {
+        bool isValid = bytes4(result) == ERC1271_SUCCESS;
         if (contractCodeLen == 0 && isCounterfactual && !allowSideEffects) {
           // if the call had side effects we need to return the
           // result using a `revert` (to undo the state changes)
@@ -68,15 +75,7 @@ contract UniversalSigValidator {
             revert(31, 1)
           }
         }
-
         return isValid;
-      } catch (bytes memory err) {
-        // retry, but this time assume the prefix is a prepare call
-        if (!tryPrepare && contractCodeLen > 0) {
-          return isValidSigImpl(_signer, _hash, _signature, allowSideEffects, true);
-        }
-
-        revert ERC1271Revert(err);
       }
     }
 
@@ -96,7 +95,7 @@ contract UniversalSigValidator {
     bytes32 _hash,
     bytes calldata _signature
   ) external returns (bool) {
-    return this.isValidSigImpl(_signer, _hash, _signature, true, false);
+    return this.isValidSigImpl(_signer, _hash, _signature, true);
   }
 
   function isValidSig(
@@ -104,7 +103,7 @@ contract UniversalSigValidator {
     bytes32 _hash,
     bytes calldata _signature
   ) external returns (bool) {
-    try this.isValidSigImpl(_signer, _hash, _signature, false, false) returns (bool isValid) {
+    try this.isValidSigImpl(_signer, _hash, _signature, false) returns (bool isValid) {
       return isValid;
     } catch (bytes memory error) {
       // in order to avoid side effects from the contract getting deployed, the entire call will revert with a single byte result
@@ -113,7 +112,7 @@ contract UniversalSigValidator {
       // all other errors are simply forwarded, but in custom formats so that nothing else can revert with a single byte in the call
       else
         assembly {
-          revert(error, len)
+          revert(add(error, 0x20), len)
         }
     }
   }

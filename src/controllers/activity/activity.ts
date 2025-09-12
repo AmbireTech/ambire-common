@@ -426,18 +426,18 @@ export class ActivityController extends EventEmitter implements IActivityControl
       return
     }
 
-    this.banners = accountOpsToTurnToBanners.map((accountOp) => {
-      const url = `https://explorer.ambire.com/${getBenzinUrlParams({
-        chainId: accountOp.chainId,
-        txnId: accountOp.txnId,
-        identifiedBy: accountOp.identifiedBy
-      })}`
+    const accountOp = accountOpsToTurnToBanners[0]
+    const url = `https://explorer.ambire.com/${getBenzinUrlParams({
+      chainId: accountOp.chainId,
+      txnId: accountOp.txnId,
+      identifiedBy: accountOp.identifiedBy
+    })}`
 
-      const content = BANNER_CONTENT.find((c) =>
-        c.statuses.includes(accountOp.status as AccountOpStatus)
-      )
-
-      return {
+    const content = BANNER_CONTENT.find((c) =>
+      c.statuses.includes(accountOp.status as AccountOpStatus)
+    )
+    this.banners = [
+      {
         id: accountOp.txnId || accountOp.identifiedBy.identifier,
         type: content?.type || 'success',
         category: content?.category || 'pending-to-be-confirmed-acc-op',
@@ -466,7 +466,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           }
         ] as Banner['actions']
       }
-    })
+    ]
     this.startBannerUpdateTimeout()
     if (emitUpdate) this.emitUpdate()
   }
