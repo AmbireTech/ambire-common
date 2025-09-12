@@ -437,7 +437,7 @@ export async function verifyMessage({
   try {
     const deploylessRes = await signatureValidatorVerifyMessage({
       signer,
-      message: finalDigest,
+      finalDigest,
       signature,
       provider: provider as any
     })
