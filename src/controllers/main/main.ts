@@ -19,6 +19,7 @@ import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IBannerController } from '../../interfaces/banner'
+import { IContractNamesController } from '../../interfaces/contractNames'
 import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
@@ -85,6 +86,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { BannerController } from '../banner/banner'
 import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
+import { ContractNamesController } from '../contractNames/contractNames'
 import { DappsController } from '../dapps/dapps'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import { DomainsController } from '../domains/domains'
@@ -191,6 +193,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   domains: IDomainsController
 
+  contractNames: IContractNamesController
+
   accounts: IAccountsController
 
   selectedAccount: ISelectedAccountController
@@ -270,8 +274,7 @@ export class MainController extends EventEmitter implements IMainController {
         networks.forEach((n) => n.disabled && this.removeNetworkData(n.chainId))
         networks.filter((net) => !net.disabled).forEach((n) => this.providers.setProvider(n))
         await this.reloadSelectedAccount({
-          chainIds: networks.map((n) => n.chainId),
-          forceUpdate: false
+          chainIds: networks.map((n) => n.chainId)
         })
       },
       onRemoveNetwork: (chainId: bigint) => {
@@ -410,7 +413,7 @@ export class MainController extends EventEmitter implements IMainController {
             ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
             : undefined
 
-          this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
+          this.updateSelectedAccountPortfolio({ networks })
         }
       },
       isMainSignAccountOpThrowingAnEstimationError: (
@@ -448,6 +451,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks.defaultNetworksMode
     )
 
+    this.contractNames = new ContractNamesController(this.fetch, 50)
+
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
       this.transactionManager = new TransactionManagerController({
@@ -462,9 +467,7 @@ export class MainController extends EventEmitter implements IMainController {
         invite: this.invite,
         serviceProviderAPI: lifiAPI,
         storage: this.storage,
-        portfolioUpdate: () => {
-          this.updateSelectedAccountPortfolio({ forceUpdate: true })
-        }
+        portfolioUpdate: this.updateSelectedAccountPortfolio.bind(this)
       })
     }
 
@@ -487,7 +490,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       destroySignAccountOp: this.destroySignAccOp.bind(this),
       updateSelectedAccountPortfolio: async (networks) => {
-        await this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
+        await this.updateSelectedAccountPortfolio({ networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
       guardHWSigning: this.#guardHWSigning.bind(this)
@@ -650,7 +653,10 @@ export class MainController extends EventEmitter implements IMainController {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
-    this.reloadSelectedAccount({ forceUpdate: false, resetSelectedAccountPortfolio: false })
+    this.reloadSelectedAccount({
+      maxDataAgeMs: 5 * 60 * 1000,
+      resetSelectedAccountPortfolio: false
+    })
   }
 
   async #onAccountPickerSuccess() {
@@ -999,7 +1005,11 @@ export class MainController extends EventEmitter implements IMainController {
         stateOverride
       )
       const learnedNewTokens = this.portfolio.addTokensToBeLearned(tokens, network.chainId)
-      const learnedNewNfts = await this.portfolio.learnNfts(nfts, network.chainId)
+      const learnedNewNfts = this.portfolio.addErc721sToBeLearned(
+        nfts,
+        account.addr,
+        network.chainId
+      )
       const accountOpsForSimulation = getAccountOpsForSimulation(
         account,
         this.requests.actions.visibleActionsQueue,
@@ -1017,8 +1027,7 @@ export class MainController extends EventEmitter implements IMainController {
                 accountOps: accountOpsForSimulation,
                 states: await this.accounts.getOrFetchAccountStates(account.addr)
               }
-            : undefined,
-          { forceUpdate: true }
+            : undefined
         )
       }
 
@@ -1208,7 +1217,7 @@ export class MainController extends EventEmitter implements IMainController {
           ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
           : undefined
 
-        this.updateSelectedAccountPortfolio({ forceUpdate: true, networks })
+        this.updateSelectedAccountPortfolio({ networks })
       }
     }
 
@@ -1295,17 +1304,24 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async reloadSelectedAccount(options?: {
-    forceUpdate?: boolean
     chainIds?: bigint[]
     resetSelectedAccountPortfolio?: boolean
+    maxDataAgeMs?: number
+    isManualReload?: boolean
   }) {
-    const { forceUpdate = true, chainIds, resetSelectedAccountPortfolio = true } = options || {}
+    const {
+      chainIds,
+      isManualReload = false,
+      maxDataAgeMs,
+      resetSelectedAccountPortfolio = true
+    } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
     if (resetSelectedAccountPortfolio) this.selectedAccount.resetSelectedAccountPortfolio()
+
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
@@ -1320,8 +1336,12 @@ export class MainController extends EventEmitter implements IMainController {
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
       // there won't be any error thrown, as all portfolio updates are queued and they don't use the `withStatus` helper.
-      this.updateSelectedAccountPortfolio({ networks: networksToUpdate, forceUpdate }),
-      this.defiPositions.updatePositions({ chainIds, forceUpdate })
+      this.updateSelectedAccountPortfolio({
+        networks: networksToUpdate,
+        isManualUpdate: isManualReload,
+        maxDataAgeMs
+      }),
+      this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
     ])
   }
 
@@ -1375,11 +1395,11 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async updateSelectedAccountPortfolio(opts?: {
-    forceUpdate?: boolean
     networks?: Network[]
+    isManualUpdate?: boolean
     maxDataAgeMs?: number
   }) {
-    const { networks, maxDataAgeMs, forceUpdate } = opts || {}
+    const { networks, maxDataAgeMs, isManualUpdate } = opts || {}
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1401,7 +1421,7 @@ export class MainController extends EventEmitter implements IMainController {
             states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
           }
         : undefined,
-      { forceUpdate, maxDataAgeMs }
+      { maxDataAgeMs, isManualUpdate }
     )
     this.#updateIsOffline()
   }
@@ -1626,7 +1646,6 @@ export class MainController extends EventEmitter implements IMainController {
     )
 
     this.updateSelectedAccountPortfolio({
-      forceUpdate: true,
       networks: network ? [network] : undefined
     })
     this.emitUpdate()
@@ -1647,7 +1666,6 @@ export class MainController extends EventEmitter implements IMainController {
     )
 
     this.updateSelectedAccountPortfolio({
-      forceUpdate: true,
       networks: network ? [network] : undefined
     })
     this.emitUpdate()

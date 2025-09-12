@@ -52,6 +52,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   #positionsContinuousUpdateInterval: IRecurringTimeout
 
+  #updatePositionsPromise: Promise<void> | undefined
+
   get positionsContinuousUpdateInterval() {
     return this.#positionsContinuousUpdateInterval
   }
@@ -172,6 +174,23 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }
 
   async updatePositions(opts?: {
+    chainIds?: bigint[]
+    maxDataAgeMs?: number
+    forceUpdate?: boolean
+  }) {
+    // If a previous update is still in progress, exit early to avoid
+    // running multiple overlapping executions of the func. This ensures that only
+    // one update runs at a time, preventing race conditions and inconsistent state/storage writes
+    if (this.#updatePositionsPromise) return
+
+    this.#updatePositionsPromise = this.#updatePositions(opts).finally(() => {
+      this.#updatePositionsPromise = undefined
+    })
+
+    await this.#updatePositionsPromise
+  }
+
+  async #updatePositions(opts?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
     forceUpdate?: boolean
@@ -350,10 +369,12 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) {
       // Emit a single update to trigger a calculation in the selected account portfolio
       this.emitUpdate()
+      return
     }
     if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) {
       // Emit a single update to trigger a calculation in the selected account portfolio
       this.emitUpdate()
+      return
     }
 
     let debankPositions: PositionsByProvider[] = []

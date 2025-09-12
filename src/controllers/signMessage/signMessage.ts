@@ -231,7 +231,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       const verifyMessageParams = {
-        network,
         provider: this.#providers.providers[network?.chainId.toString() || '1'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account

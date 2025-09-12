@@ -258,8 +258,15 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const { tokens, collections, tokenErrors, priceCache, hintsFromExternalAPI, ...result } =
-      networkState.result
+    const {
+      tokens,
+      collections,
+      tokenErrors,
+      priceCache,
+      toBeLearned,
+      lastExternalApiUpdateData,
+      ...result
+    } = networkState.result
 
     strippedState[chainId] = { ...networkState, result }
   })
@@ -373,8 +380,8 @@ export const getIsRecalculationNeeded = (
   if (pastAccountOp || networkDataAccountOp) return true
 
   const hasPortfolioUpdated =
-    pastAccountPortfolioWithDefiPositionsNetworkState.blockNumber !==
-    selectedNetworkData.result?.blockNumber
+    pastAccountPortfolioWithDefiPositionsNetworkState.portfolioUpdateStarted !==
+    selectedNetworkData.result?.updateStarted
 
   const areDefiPositionsUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
@@ -540,7 +547,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
         totalBalance: networkTotal,
         tokens: tokensArray,
         collections: collectionsArray,
-        blockNumber: result?.blockNumber,
+        portfolioUpdateStarted: result?.updateStarted,
         defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
         simulatedAccountOp: simulatedAccountOps[network]
       }
