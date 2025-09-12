@@ -1540,9 +1540,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.accountAddr,
       this.rbfAccountOps[this.selectedOption.paidBy]
     )
-    const selectedFeeSpeedData = this.feeSpeeds[identifier]?.find(
-      (speed) => speed.type === this.selectedFeeSpeed
-    )
+
+    const feeSpeedList = this.feeSpeeds?.[identifier]
+    if (!feeSpeedList || !feeSpeedList.length) return null
+
+    const selectedFeeSpeedData = feeSpeedList.find((speed) => speed.type === this.selectedFeeSpeed)
+
     const gasPrice = selectedFeeSpeedData?.gasPrice
     if (!gasPrice) return null
 
