@@ -336,7 +336,6 @@ export function mapSignatureV(sigRaw: string) {
 
 // Either `message` or `typedData` must be provided - never both.
 type Props = {
-  network: Network
   provider: JsonRpcProvider
   signer: string
   signature: string | Uint8Array
