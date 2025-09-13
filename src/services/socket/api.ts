@@ -56,10 +56,6 @@ export class SocketAPI implements SwapProvider {
 
   #fetch: Fetch
 
-  #baseUrl = 'https://api.socket.tech/v2'
-
-  // https://public-backend.bungee.exchange
-  // #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
   #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
 
   #headers: RequestInitWithCustomHeaders['headers']
@@ -70,23 +66,18 @@ export class SocketAPI implements SwapProvider {
     this.#fetch = fetch
 
     this.#headers = {
-      'API-KEY': process.env.SOCKET_API_KEY!,
       'x-api-key': process.env.BUNGEE_API_KEY!,
+      affiliate:
+        '609913096e183b62cecd0dfdc13382f618baedceb5fef75aad43e6cbff367039708902197e0b2b78b1d76cb0837ad0b318baedceb5fef75aad43e6cb',
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }
   }
 
+  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
-    try {
-      const response = await this.#fetch(`${this.#baseUrl}/health`, { headers: this.#headers })
-      if (!response.ok) return false
-
-      const body = await response.json()
-      return !!body.ok
-    } catch {
-      return false
-    }
+    // deprecated mechanism
+    return true
   }
 
   async updateHealth() {
@@ -164,7 +155,7 @@ export class SocketAPI implements SwapProvider {
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const url = `${this.#baseUrl}/supported/chains`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/supported-chains`
 
     const response = await this.#handleResponse<SocketAPISupportedChain[]>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
@@ -179,32 +170,27 @@ export class SocketAPI implements SwapProvider {
       }))
   }
 
-  async getToTokenList({
-    fromChainId,
-    toChainId
-  }: {
-    fromChainId: number
-    toChainId: number
-  }): Promise<SwapAndBridgeToToken[]> {
+  async getToTokenList({ toChainId }: { toChainId: number }): Promise<SwapAndBridgeToToken[]> {
     const params = new URLSearchParams({
-      fromChainId: fromChainId.toString(),
-      toChainId: toChainId.toString(),
+      chainIds: toChainId.toString(),
       // The long list for some networks is HUGE (e.g. Ethereum has 10,000+ tokens),
       // which makes serialization and deserialization of this controller computationally expensive.
-      isShortList: 'true'
+      list: 'trending'
     })
-    const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/tokens/list?${params.toString()}`
 
-    let response = await this.#handleResponse<SocketAPIToken[]>({
+    const response = await this.#handleResponse<{ [chainId: string]: SocketAPIToken[] }>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
+    let tokens = response[toChainId]
+
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
     if (toChainId === 10)
-      response = response.filter(
+      tokens = tokens.filter(
         (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
       )
 
@@ -212,11 +198,11 @@ export class SocketAPI implements SwapProvider {
     // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
     if (toChainId === 1)
-      response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+      tokens = tokens.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
-    response = response.map(normalizeIncomingSocketToken)
+    tokens = tokens.map(normalizeIncomingSocketToken)
 
-    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: response })
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens })
   }
 
   async getToken({
@@ -227,19 +213,21 @@ export class SocketAPI implements SwapProvider {
     chainId: number
   }): Promise<SwapAndBridgeToToken | null> {
     const params = new URLSearchParams({
-      address: address.toString(),
-      chainId: chainId.toString()
+      q: address.toString()
     })
-    const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/tokens/search?${params.toString()}`
 
-    const response = await this.#handleResponse<{ isSupported: boolean; token: SocketAPIToken }>({
+    const response = await this.#handleResponse<{
+      tokens: { [chainId: string]: SocketAPIToken[] }
+    }>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to retrieve token information by address.'
     })
 
-    if (!response.isSupported || !response.token) return null
+    if (!response.tokens || !response.tokens[chainId] || !response.tokens[chainId].length)
+      return null
 
-    return normalizeIncomingSocketToken(response.token)
+    return normalizeIncomingSocketToken(response.tokens[chainId][0])
   }
 
   async quote({
