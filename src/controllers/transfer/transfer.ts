@@ -116,7 +116,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   isRecipientAddressFirstTimeSend: boolean = false
 
-  lastRecipientTransactionDate: Date | null = null
+  lastSentToRecipientAt: Date | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -305,7 +305,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isSWWarningVisible,
         this.isSWWarningAgreed,
         this.isRecipientAddressFirstTimeSend,
-        this.lastRecipientTransactionDate
+        this.lastSentToRecipientAt
       )
     }
 
@@ -417,17 +417,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // Check if the address has been used previously for transactions
-    const { found: previousTransactionExists, lastTransactionDate } =
-      await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccountData.account?.addr || ''
-      )
-
-    // Update state based on whether there are previous transactions to this address
+    const { found, lastTransactionDate } = await this.#activity.hasAccountOpsSentTo(
+      this.recipientAddress,
+      this.#selectedAccountData.account?.addr || ''
+    )
     this.isRecipientAddressFirstTimeSend =
-      !previousTransactionExists &&
-      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastRecipientTransactionDate = lastTransactionDate
+      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
 
     if (typeof isTopUp === 'boolean') {
       this.isTopUp = isTopUp
@@ -667,7 +663,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.isRecipientAddressFirstTimeSend =
       !previousTransactionExists &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastRecipientTransactionDate = lastTransactionDate
+    this.lastSentToRecipientAt = lastTransactionDate
     this.signAccountOpController = new SignAccountOpController(
       this.#accounts,
       this.#networks,

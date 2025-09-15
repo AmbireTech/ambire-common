@@ -55,9 +55,19 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
 const FIRST_TIME_SEND_MESSAGE =
-  "You're trying to send to an address you've never sent funds to before (this history is stored only in your current browser). Double-check before confirming."
+  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE =
-  'Bear in mind you have not sent to this address before (this history is stored only in your current browser), but it is in your Address Book.'
+  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending, even though the recipient in your Address Book.'
+
+function getDaysAgo(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return 'today'
+  if (diffDays === 1) return 'yesterday'
+  return `${diffDays} days ago`
+}
+
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
@@ -94,22 +104,14 @@ const validateSendTransferAddress = (
   }
 
   if (isRecipientAddressFirstTimeSend) {
-    if (isRecipientAddressUnknown) {
-      let message = FIRST_TIME_SEND_MESSAGE
-      if (lastRecipientTransactionDate) {
-        message = `You last sent to this address on ${lastRecipientTransactionDate.toLocaleString()}. Double-check before confirming.`
-      }
-      return {
-        success: false,
-        message
-      }
-    }
-    let message = FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
+    let message = isRecipientAddressUnknown
+      ? FIRST_TIME_SEND_MESSAGE
+      : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
     if (lastRecipientTransactionDate) {
-      message = `You last sent to this address on ${lastRecipientTransactionDate.toLocaleString()}, and it is in your Address Book.`
+      message = `Last transaction to this address was ${getDaysAgo(lastRecipientTransactionDate)}.`
     }
     return {
-      success: false,
+      success: true,
       message
     }
   }
@@ -150,7 +152,7 @@ const validateSendTransferAddress = (
   if (lastRecipientTransactionDate) {
     return {
       success: true,
-      message: `You last sent to this address on ${lastRecipientTransactionDate.toLocaleString()}.`
+      message: `Last transaction to this address was ${getDaysAgo(lastRecipientTransactionDate)}.`
     }
   }
 
