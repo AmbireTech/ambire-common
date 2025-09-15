@@ -14,15 +14,12 @@ import { IAccountsController } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { Statuses } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { LiFiAPI } from '../../services/lifi/api'
-import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 /* eslint-disable no-await-in-loop */
 import { ISignAccountOpController, SignAccountOpError } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
@@ -67,7 +64,6 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
-import { SocketAPI } from '../../services/socket/api'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import {
   convertTokenPriceToBigInt,
@@ -286,14 +282,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     selectedAccount,
     networks,
     activity,
-    fetch,
     storage,
     invite,
     portfolioUpdate,
     relayerUrl,
     isMainSignAccountOpThrowingAnEstimationError,
     getUserRequests,
-    getVisibleActionsQueue
+    getVisibleActionsQueue,
+    swapProvider
   }: {
     accounts: IAccountsController
     keystore: IKeystoreController
@@ -303,7 +299,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     selectedAccount: ISelectedAccountController
     networks: INetworksController
     activity: IActivityController
-    fetch: Fetch
     storage: IStorageController
     invite: IInviteController
     relayerUrl: string
@@ -311,6 +306,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     isMainSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
     getVisibleActionsQueue: () => Action[]
+    swapProvider: SwapProvider
   }) {
     super()
     this.#accounts = accounts
@@ -324,10 +320,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#selectedAccount = selectedAccount
     this.#networks = networks
     this.#activity = activity
-    this.#serviceProviderAPI = new SwapProviderParallelExecutor([
-      new LiFiAPI({ fetch }),
-      new SocketAPI({ fetch })
-    ])
+    this.#serviceProviderAPI = swapProvider
     this.#storage = storage
     this.#invite = invite
     this.#relayerUrl = relayerUrl

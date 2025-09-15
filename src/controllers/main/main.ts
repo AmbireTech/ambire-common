@@ -64,6 +64,8 @@ import { getAccountOpFromAction } from '../../libs/actions/actions'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
+import { SocketAPI } from '../../services/socket/api'
+import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 /* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
@@ -398,7 +400,10 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       invite: this.invite,
       storage: this.storage,
-      fetch: this.fetch,
+      swapProvider: new SwapProviderParallelExecutor([
+        new LiFiAPI({ fetch }),
+        new SocketAPI({ fetch })
+      ]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
