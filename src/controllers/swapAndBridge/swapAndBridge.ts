@@ -2532,7 +2532,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.activeRoutesInProgress
       .map((r) => r.activeRouteId)
       .sort()
-      .join('-')
+      .join('|')
   }
 
   async continuouslyUpdateActiveRoutes() {
