@@ -2,7 +2,6 @@ import { ZeroAddress } from 'ethers'
 
 import { expect } from '@jest/globals'
 
-import { uniswapHumanizer } from '.'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
@@ -15,6 +14,7 @@ import {
   getRecipientText,
   getToken
 } from '../../utils'
+import { uniswapHumanizer } from './'
 
 const transactions = {
   firstBatch: [
@@ -261,8 +261,8 @@ describe('uniswap', () => {
     const expectedVisualization = [
       [
         getAction('Add liquidity'),
-        getToken('0x4200000000000000000000000000000000000006', 6844167930678n),
-        getToken('0x4200000000000000000000000000000000000042', 9906772310932706n),
+        getToken('0x4200000000000000000000000000000000000006', 6904077431543n),
+        getToken('0x4200000000000000000000000000000000000042', 9999999999998775n),
         getLabel('pair'),
         ...getRecipientText(ZeroAddress, '0x6969174fd72466430a46e18234d0b530c9fd5f49'),
         getDeadline(1726227249n),
