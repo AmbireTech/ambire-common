@@ -1088,12 +1088,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // Display an error only if there is no cached data
         if (!toTokenList.length) {
           toTokenList = addCustomTokensIfNeeded({ chainId: this.toChainId, tokens: toTokenList })
-          const { message } = getHumanReadableSwapAndBridgeError(error)
 
           this.addOrUpdateError({
             id: 'to-token-list-fetch-failed',
             title: 'Token list on the receiving network is temporarily unavailable.',
-            text: message,
+            text: error.message,
             level: 'error'
           })
         }
@@ -1495,8 +1494,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       } catch (error: any) {
         if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
 
-        const { message } = getHumanReadableSwapAndBridgeError(error)
-        this.emitError({ error, level: 'major', message })
+        this.emitError({ error, level: 'major', message: error.message })
 
         return false
       }

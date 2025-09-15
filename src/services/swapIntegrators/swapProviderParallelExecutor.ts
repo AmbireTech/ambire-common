@@ -32,8 +32,19 @@ export class SwapProviderParallelExecutor {
     this.isHealthy = null
   }
 
+  // eslint-disable-next-line class-methods-use-this
+  #timeout(providerId: string) {
+    return new Promise((_resolve, reject) => {
+      setTimeout(() => reject(new Error(`${providerId} swap provider timeout`)), 8000)
+    }).catch((e) => e)
+  }
+
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
-    const apiResponses = await Promise.all(this.#providers.map(fetchMethod))
+    const apiResponses = await Promise.all(
+      this.#providers.map((provider: SwapProvider) =>
+        Promise.race([fetchMethod(provider), this.#timeout(provider.id)])
+      )
+    )
     const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
     if (!resultsWithoutErrors.length) {
       throw new Error('Swap providers are currently not working. Please try again later')
