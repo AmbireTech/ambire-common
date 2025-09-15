@@ -57,7 +57,7 @@ const NOT_IN_ADDRESS_BOOK_MESSAGE =
 const FIRST_TIME_SEND_MESSAGE =
   'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE =
-  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending, even though the recipient in your Address Book.'
+  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending, even though the recipient is in your Address Book.'
 
 function getDaysAgo(date: Date): string {
   const now = new Date()
