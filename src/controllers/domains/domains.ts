@@ -32,6 +32,8 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
 
   loadingAddresses: string[] = []
 
+  #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
+
   constructor(providers: RPCProviders, defaultNetworksMode?: 'mainnet' | 'testnet') {
     super()
     this.#providers = providers
@@ -70,10 +72,24 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.emitUpdate()
   }
 
+  async reverseLookup(address: string, emitUpdate = true) {
+    if (this.#reverseLookupPromises[address]) {
+      await this.#reverseLookupPromises[address]
+
+      return
+    }
+
+    this.#reverseLookupPromises[address] = this.#reverseLookup(address, emitUpdate).finally(() => {
+      this.#reverseLookupPromises[address] = undefined
+    })
+
+    await this.#reverseLookupPromises[address]
+  }
+
   /**
    * Resolves the ENS names for an address if such exist.
    */
-  async reverseLookup(address: string, emitUpdate = true) {
+  async #reverseLookup(address: string, emitUpdate = true) {
     const ethereumProvider =
       this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
 
