@@ -37,7 +37,7 @@ export class SwapProviderParallelExecutor {
   #timeout() {
     const errMsg = 'Swap provider timeout'
     return new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new SwapAndBridgeProviderApiError(errMsg, errMsg)), 8000)
+      setTimeout(() => reject(new SwapAndBridgeProviderApiError(errMsg, errMsg)), 10000)
     })
   }
 
