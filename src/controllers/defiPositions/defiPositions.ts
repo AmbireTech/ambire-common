@@ -379,7 +379,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     let debankPositions: PositionsByProvider[] = []
 
-    let failedFetchingDebankPositions = false
+    let failedToFetchDebankPositions = false
     // Skip Debank call in testing mode — only fetch custom DeFi positions
     if (process.env.IS_TESTING !== 'true') {
       try {
@@ -401,13 +401,13 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
           chainId: BigInt(p.chainId)
         }))
       } catch (err) {
-        failedFetchingDebankPositions = true
+        failedToFetchDebankPositions = true
         console.error('Debank fetch failed:', err)
         // Proceed with empty debank positions
       }
     }
 
-    if (failedFetchingDebankPositions) return
+    if (failedToFetchDebankPositions) return
 
     await Promise.all(networksToUpdate.map((n) => updateSingleNetwork(n, debankPositions)))
     await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
