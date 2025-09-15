@@ -401,7 +401,14 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         }))
       } catch (err) {
         console.error('Debank fetch failed:', err)
-        return // return if it fails to prevent hiding/overriding already stored DeFi pos
+
+        const networksWithPositionsOnSelectedAccount =
+          this.#networksWithPositionsByAccounts[selectedAccountAddr] || {}
+
+        // return if it fails to prevent hiding/overriding already stored DeFi pos
+        if (Object.values(networksWithPositionsOnSelectedAccount).some((pos) => pos.length)) {
+          return
+        }
       }
     }
 
