@@ -278,13 +278,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #relayerUrl: string
 
-  updateQuoteInterval: IRecurringTimeout
+  #updateQuoteInterval: RecurringTimeout
+
+  get updateQuoteInterval() {
+    return this.#updateQuoteInterval
+  }
 
   #updateActiveRoutesInterval: RecurringTimeout
 
   get updateActiveRoutesInterval() {
     return this.#updateActiveRoutesInterval
   }
+
+  #continuouslyUpdateActiveRoutesPromise: Promise<void> | undefined
+
+  #continuouslyUpdateActiveRoutesSessionId: string | undefined
 
   constructor({
     accounts,
@@ -345,11 +353,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#initialLoadPromise = undefined
     })
 
-    this.updateQuoteInterval = new RecurringTimeout(
+    this.#updateQuoteInterval = new RecurringTimeout(
       async () => this.continuouslyUpdateQuote(),
       UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL,
-      this.emitError.bind(this),
-      'id'
+      this.emitError.bind(this)
     )
 
     this.#updateActiveRoutesInterval = new RecurringTimeout(
@@ -1728,7 +1735,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
-  async checkForNextUserTxForActiveRoutes() {
+  async checkForActiveRoutesStatusUpdate() {
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
@@ -1755,6 +1762,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       } catch (e: any) {
         const { message } = getHumanReadableSwapAndBridgeError(e)
         this.updateActiveRoute(activeRoute.activeRouteId, { error: message })
+        return
+      }
+
+      // prevent race condition in case there is a newer update
+      if (
+        this.#continuouslyUpdateActiveRoutesSessionId !== this.#getActiveRoutesInProgressSessionId()
+      ) {
         return
       }
 
@@ -2512,13 +2526,40 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     })
   }
 
+  #getActiveRoutesInProgressSessionId() {
+    if (!this.activeRoutesInProgress.length) return
+
+    return this.activeRoutesInProgress
+      .map((r) => r.activeRouteId)
+      .sort()
+      .join('-')
+  }
+
   async continuouslyUpdateActiveRoutes() {
+    if (
+      this.#continuouslyUpdateActiveRoutesPromise &&
+      this.#continuouslyUpdateActiveRoutesSessionId === this.#getActiveRoutesInProgressSessionId()
+    ) {
+      await this.#continuouslyUpdateActiveRoutesPromise
+      return
+    }
+
+    this.#continuouslyUpdateActiveRoutesPromise = this.#continuouslyUpdateActiveRoutes().finally(
+      () => {
+        this.#continuouslyUpdateActiveRoutesPromise = undefined
+      }
+    )
+  }
+
+  async #continuouslyUpdateActiveRoutes() {
+    this.#continuouslyUpdateActiveRoutesSessionId = this.#getActiveRoutesInProgressSessionId()
+
     if (!this.activeRoutesInProgress.length) {
       this.#updateActiveRoutesInterval.stop()
       return
     }
 
-    await this.checkForNextUserTxForActiveRoutes()
+    await this.checkForActiveRoutesStatusUpdate()
 
     if (!this.activeRoutesInProgress.length) {
       this.#updateActiveRoutesInterval.stop()

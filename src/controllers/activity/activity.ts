@@ -509,7 +509,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
-  async updateAccountsOpsStatuses() {
+  async updateAccountsOpsStatuses(): Promise<{
+    shouldEmitUpdate: boolean
+    // Which networks require a portfolio update?
+    chainsToUpdate: Network['chainId'][]
+    updatedAccountsOps: SubmittedAccountOp[]
+    newestOpTimestamp: number
+  }> {
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return {
         shouldEmitUpdate: false,
@@ -519,7 +525,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
 
     if (this.#updateAccountsOpsStatusesPromises[this.#selectedAccount.account.addr]) {
-      const res = await this.#updateAccountsOpsStatusesPromises[this.#selectedAccount.account.addr]
+      const res = await this.#updateAccountsOpsStatusesPromises[this.#selectedAccount.account.addr]!
       return res
     }
 
