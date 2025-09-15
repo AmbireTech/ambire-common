@@ -1595,6 +1595,10 @@ describe('estimate', () => {
       errorCallback
     )
 
-    console.log(response)
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(false)
+    const providerGas = res.provider as ProviderEstimation
+    expect(providerGas.gasUsed).toBe(21000n)
   })
 })
