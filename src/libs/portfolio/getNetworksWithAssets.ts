@@ -23,10 +23,9 @@ const getAccountNetworksWithAssets = (
 
     // RPC is up and we have a result
     const nonZeroTokens = result.tokens.filter(({ amount }) => Number(amount) !== 0)
-    const hasCollectibles = result.collections && result.collections.length > 0
 
     // The account has assets on this network
-    networksWithAssets[chainId] = !!nonZeroTokens.length || !!hasCollectibles
+    networksWithAssets[chainId] = !!nonZeroTokens.length
   })
 
   return networksWithAssets
