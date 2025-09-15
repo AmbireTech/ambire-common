@@ -1,3 +1,4 @@
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import {
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
@@ -33,21 +34,23 @@ export class SwapProviderParallelExecutor {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  #timeout(providerId: string) {
+  #timeout() {
+    const errMsg = 'Swap provider timeout'
     return new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new Error(`${providerId} swap provider timeout`)), 8000)
-    }).catch((e) => e)
+      setTimeout(() => reject(new SwapAndBridgeProviderApiError(errMsg, errMsg)), 8000)
+    })
   }
 
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
     const apiResponses = await Promise.all(
       this.#providers.map((provider: SwapProvider) =>
-        Promise.race([fetchMethod(provider), this.#timeout(provider.id)])
+        Promise.race([fetchMethod(provider), this.#timeout().catch((e) => e)])
       )
     )
     const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
     if (!resultsWithoutErrors.length) {
-      throw new Error('Swap providers are currently not working. Please try again later')
+      const errMsg = 'Swap providers are currently not working. Please try again later'
+      throw new SwapAndBridgeProviderApiError(errMsg, errMsg)
     }
 
     return resultsWithoutErrors.flat() as T
@@ -60,7 +63,7 @@ export class SwapProviderParallelExecutor {
   ): Promise<T> {
     const provider = this.#providers.find((p) => p.id === providerId)
     if (!provider) throw new Error('Swap provider misconfiguration')
-    return (provider[method] as any)(...args)
+    return Promise.race([(provider[method] as any)(...args), this.#timeout()])
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
