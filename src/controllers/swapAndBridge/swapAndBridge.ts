@@ -2527,7 +2527,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   #getActiveRoutesInProgressSessionId() {
-    if (!this.activeRoutesInProgress.length) return
+    if (!this.activeRoutesInProgress.length) return undefined
 
     return this.activeRoutesInProgress
       .map((r) => r.activeRouteId)
@@ -2549,6 +2549,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.#continuouslyUpdateActiveRoutesPromise = undefined
       }
     )
+
+    await this.#continuouslyUpdateActiveRoutesPromise
   }
 
   async #continuouslyUpdateActiveRoutes() {
