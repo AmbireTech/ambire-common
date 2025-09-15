@@ -3,7 +3,7 @@
 import { AbiCoder, Contract, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect } from '@jest/globals'
+import { describe } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
@@ -42,6 +42,28 @@ arbitrum.areContractsDeployed = true
 const avalanche = networks.find((x) => x.chainId === 43114n)!
 avalanche.areContractsDeployed = true
 const polygon = networks.find((x) => x.chainId === 137n)
+networks.push({
+  name: 'Cronos',
+  nativeAssetSymbol: 'CRO',
+  has7702: false,
+  nativeAssetName: 'Cronos',
+  rpcUrls: ['https://evm.cronos.org'],
+  selectedRpcUrl: 'https://evm.cronos.org',
+  rpcNoStateOverride: false,
+  chainId: 25n,
+  explorerUrl: '',
+  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+  isSAEnabled: false,
+  areContractsDeployed: false,
+  hasRelayer: false,
+  platformId: 'cronos',
+  nativeAssetId: 'crypto-com-chain',
+  hasSingleton: false,
+  features: [],
+  feeOptions: { is1559: true },
+  predefined: false,
+  disableEstimateGas: true
+})
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
@@ -135,6 +157,16 @@ const viewOnlyAcc = {
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  }
+} as Account
+const localRelayer = {
+  addr: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78',
+  creation: null,
+  initialPrivileges: [],
+  associatedKeys: ['0xD8293ad21678c6F09Da139b4B62D38e514a03B78'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
   }
 } as Account
 const nativeToCheck: Account[] = [
@@ -1527,5 +1559,42 @@ describe('estimate', () => {
     expect(response instanceof Error).toBe(true)
     const err = response as Error
     expect(err.message).toBe('Transaction invalid: out of gas')
+  })
+
+  it('[EOA]:Cronos | should estimate correctly without OOG', async () => {
+    const call = {
+      to: v1Acc.addr,
+      value: 1n,
+      data: '0x'
+    }
+    const cronosProvider = getRpcProvider(['https://evm.cronos.org'], 25n)
+    const opCronos = {
+      accountAddr: localRelayer.addr,
+      signingKeyAddr: localRelayer.addr,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 25n,
+      nonce: BigInt(await cronosProvider.getTransactionCount(localRelayer.addr)),
+      signature: '0x',
+      calls: [call]
+    }
+    const accountStates = await getAccountsInfo([localRelayer])
+    const accountState = accountStates[localRelayer.addr]['25']
+    const cronos = networks.find((n) => n.chainId === 25n)!
+    const baseAcc = getBaseAccount(localRelayer, accountState, [], cronos)
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      opCronos,
+      cronos,
+      cronosProvider,
+      [],
+      [],
+      new BundlerSwitcher(cronos, areUpdatesForbidden),
+      errorCallback
+    )
+
+    console.log(response)
   })
 })
