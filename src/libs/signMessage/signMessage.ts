@@ -17,9 +17,8 @@ import {
   TypedDataDomain
 } from 'ethers'
 
+import { verifyMessage as signatureValidatorVerifyMessage } from '@ambire/signature-validator'
 import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
-
-import UniversalSigValidator from '../../../contracts/compiled/UniversalSigValidator.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
@@ -37,7 +36,6 @@ import {
   callToTuple,
   getSignableHash
 } from '../accountOp/accountOp'
-import { fromDescriptor } from '../deployless/deployless'
 import { PackedUserOperation } from '../userOperation/types'
 import { getActivatorCall } from '../userOperation/userOperation'
 import { get7702SigV } from './utils'
@@ -338,7 +336,6 @@ export function mapSignatureV(sigRaw: string) {
 
 // Either `message` or `typedData` must be provided - never both.
 type Props = {
-  network: Network
   provider: JsonRpcProvider
   signer: string
   signature: string | Uint8Array
@@ -367,7 +364,6 @@ type Props = {
  * Note: you only need to pass one of: `message` or `typedData`
  */
 export async function verifyMessage({
-  network,
   provider,
   signer,
   signature,
@@ -438,16 +434,12 @@ export async function verifyMessage({
   const coder = new AbiCoder()
   let callResult
   try {
-    const deploylessVerify = fromDescriptor(
-      provider,
-      UniversalSigValidator,
-      !network.rpcNoStateOverride
-    )
-    const deploylessRes = await deploylessVerify.call('isValidSigWithSideEffects', [
+    const deploylessRes = await signatureValidatorVerifyMessage({
       signer,
       finalDigest,
-      signature
-    ])
+      signature,
+      provider: provider as any
+    })
     if (deploylessRes === true) callResult = '0x01'
     else if (deploylessRes === false) callResult = '0x00'
     else callResult = deploylessRes
