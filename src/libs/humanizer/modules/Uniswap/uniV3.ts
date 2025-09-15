@@ -280,17 +280,17 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
         [
           token0,
           token1,
-          ,
-          ,
-          ,
-          ,
-          ,
-          // fee,
-          // tickLower,
-          // tickUpper,
-          // amount0Desired,
-          // amount1Desired,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          fee,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          tickLower,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          tickUpper,
+          amount0Desired,
+          amount1Desired,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           amount0Min,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           amount1Min,
           recipient,
           deadline
@@ -298,8 +298,8 @@ const uniV32Mapping = (): HumanizerUniMatcher => {
       ] = ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Add liquidity'),
-        getToken(token0, amount0Min),
-        getToken(token1, amount1Min),
+        getToken(token0, amount0Desired),
+        getToken(token1, amount1Desired),
         getLabel('pair'),
         ...getRecipientText(accountOp.accountAddr, recipient),
         getDeadline(deadline)
