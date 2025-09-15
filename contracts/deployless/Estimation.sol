@@ -214,7 +214,7 @@ contract Estimation is FeeTokens, Spoof {
         // if the estimated gasLimit is larger than the block gas limit,
         // return an out of gas error as the txn is impossible to complete
         uint256 blockGasLimit = block.gaslimit;
-        if (gasLimit > blockGasLimit) {
+        if (blockGasLimit != 0 && gasLimit > blockGasLimit) {
           outcome.gasUsed = gasLimit;
           outcome.success = false;
           outcome.err = bytes('OOG');
