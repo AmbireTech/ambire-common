@@ -764,7 +764,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async #buildIntentUserRequest({
-    amount,
     recipientAddress,
     selectedToken,
     actionExecutionType = 'open-action-window'
@@ -885,63 +884,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
-        if (!this.#selectedAccount.account) return
-        let transaction: SwapAndBridgeSendTxRequest | null | undefined = null
-
-        const activeRoute = this.#swapAndBridge.activeRoutes.find(
-          (r) => r.activeRouteId === activeRouteId
-        )
-
-        // learn the receiving token
-        if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
-          this.#addTokensToBeLearned(
-            [this.#swapAndBridge.toSelectedToken.address],
-            BigInt(this.#swapAndBridge.toChainId)
-          )
-        }
-
-        if (this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn) {
-          transaction = this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
-        }
-
-        if (activeRoute) {
-          await this.removeUserRequests([activeRoute.activeRouteId], {
-            shouldRemoveSwapAndBridgeRoute: false,
-            shouldOpenNextRequest: false
-          })
-          this.#swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
-
-          transaction = await this.#swapAndBridge.getNextRouteUserTx({
-            activeRouteId: activeRoute.activeRouteId,
-            activeRoute
-          })
-
-          if (transaction) {
-            const network = this.#networks.networks.find(
-              (n) => Number(n.chainId) === transaction!.chainId
-            )!
-            if (
-              isBasicAccount(
-                this.#selectedAccount.account,
-                await this.#accounts.getOrFetchAccountOnChainState(
-                  this.#selectedAccount.account.addr,
-                  network.chainId
-                )
-              )
-            ) {
-              await this.removeUserRequests(
-                [
-                  `${activeRoute.activeRouteId}-approval`,
-                  `${activeRoute.activeRouteId}-revoke-approval`
-                ],
-                {
-                  shouldRemoveSwapAndBridgeRoute: false,
-                  shouldOpenNextRequest: false
-                }
-              )
-            }
-          }
-        }
+        const transaction: SwapAndBridgeSendTxRequest | undefined =
+          this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
 
         if (!this.#selectedAccount.account || !transaction) {
           const errorDetails = `missing ${
@@ -951,6 +895,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
           )
           throw new EmittableError({ message: error.message, level: 'major', error })
+        }
+
+        // learn the receiving token
+        if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
+          this.#addTokensToBeLearned(
+            [this.#swapAndBridge.toSelectedToken.address],
+            BigInt(this.#swapAndBridge.toChainId)
+          )
         }
 
         const network = this.#networks.networks.find(
@@ -984,8 +936,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         })
 
         if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
-          await this.#swapAndBridge.addActiveRoute({
-            activeRouteId: transaction.activeRouteId,
+          this.#swapAndBridge.addActiveRoute({
             userTxIndex: transaction.userTxIndex
           })
         }

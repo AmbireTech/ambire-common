@@ -5,7 +5,6 @@ import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { AccountState } from '../defiPositions/types'
-import { getIsBridgeTxn } from '../swapAndBridge/swapAndBridge'
 
 const getBridgeActionText = (
   routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
@@ -50,7 +49,7 @@ export const getBridgeBanners = (
   accountOpActions: AccountOpAction[]
 ): Banner[] => {
   const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
-    !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+    route.fromAsset.chainId !== route.toAsset.chainId
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
@@ -174,7 +173,9 @@ const getAccountOpBannerText = (
 
   if (networkSwapAndBridgeRoutes.length) {
     networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = !!route.route?.userTxs.some((t) => getIsBridgeTxn(t.userTxType))
+      const isBridgeTxn = !!route.route?.steps.some(
+        (s) => s.fromAsset.chainId !== s.toAsset.chainId
+      )
       const desc = getBridgeBannerText(route, isBridgeTxn, networks)
 
       swapsAndBridges.push(desc)
