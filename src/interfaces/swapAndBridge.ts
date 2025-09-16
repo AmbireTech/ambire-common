@@ -463,6 +463,7 @@ export interface BungeeBuildTxnResponse {
 
 export interface SwapProvider {
   id: string
+  name: string
   isHealthy: boolean | null
   updateHealth(): void
   resetHealth(): void
