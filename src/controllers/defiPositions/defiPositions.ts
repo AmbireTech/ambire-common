@@ -306,6 +306,11 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         }
       } catch (e) {
         console.error(`updatePositions error on ${network.name}`, e)
+
+        if (!this.#state[selectedAccountAddr]) {
+          this.#state[selectedAccountAddr] = {}
+        }
+
         this.#state[selectedAccountAddr][chain] = {
           providerErrors: this.#state[selectedAccountAddr]?.[chain]?.providerErrors || [],
           isLoading: false,
@@ -353,6 +358,10 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         }
 
         positionMap.set(key, custom)
+      }
+
+      if (!this.#state[selectedAccountAddr]) {
+        this.#state[selectedAccountAddr] = {}
       }
 
       this.#state[selectedAccountAddr][chain] = {
