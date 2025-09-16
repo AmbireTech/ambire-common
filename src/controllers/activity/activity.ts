@@ -81,19 +81,6 @@ const BANNER_CONTENT: {
   statuses: AccountOpStatus[]
 }[] = [
   {
-    category: 'pending-to-be-confirmed-acc-op',
-    type: 'success',
-    title:
-      'Transaction was successfully signed and broadcasted!\nCheck it out on the block explorer!',
-    statuses: [AccountOpStatus.Pending, AccountOpStatus.BroadcastedButNotConfirmed]
-  },
-  {
-    category: 'successful-acc-op',
-    type: 'success',
-    title: 'Transaction confirmed!\nCheck it out on the block explorer!',
-    statuses: CONFIRMED_STATUSES
-  },
-  {
     category: 'failed-acc-op',
     type: 'error',
     title: 'Transaction failed!\nCheck it out on the block explorer!',
@@ -436,6 +423,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const content = BANNER_CONTENT.find((c) =>
       c.statuses.includes(accountOp.status as AccountOpStatus)
     )
+
+    if (!content) return
+
     this.banners = [
       {
         id: accountOp.txnId || accountOp.identifiedBy.identifier,
