@@ -307,7 +307,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       } catch (e) {
         console.error(`updatePositions error on ${network.name}`, e)
         this.#state[selectedAccountAddr][chain] = {
-          providerErrors: this.#state[selectedAccountAddr][chain].providerErrors || [],
+          providerErrors: this.#state[selectedAccountAddr]?.[chain]?.providerErrors || [],
           isLoading: false,
           positionsByProvider: previousPositions || [],
           error: DeFiPositionsError.CriticalError,
@@ -356,7 +356,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       }
 
       this.#state[selectedAccountAddr][chain] = {
-        providerErrors: this.#state[selectedAccountAddr][chain].providerErrors || [],
+        providerErrors: this.#state[selectedAccountAddr]?.[chain]?.providerErrors || [],
         isLoading: false,
         positionsByProvider: Array.from(positionMap.values()),
         updatedAt: Date.now(),
