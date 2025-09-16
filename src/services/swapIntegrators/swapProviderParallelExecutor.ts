@@ -56,7 +56,7 @@ export class SwapProviderParallelExecutor {
       throw new SwapAndBridgeProviderApiError(errMsg)
     }
 
-    // Use the first error (LiFi) as base message, since the bets are that's the the most accurate
+    // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
     const baseMessage = errors[0].message || 'Unknown error'
 
     // Extract technical details from all errors (that's the content between < and >)
