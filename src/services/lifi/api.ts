@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -209,6 +209,8 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
 
 export class LiFiAPI implements SwapProvider {
   id: string = 'lifi'
+
+  name: string = 'LiFi'
 
   #fetch: Fetch
 

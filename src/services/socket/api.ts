@@ -54,6 +54,8 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
 export class SocketAPI implements SwapProvider {
   id: string = 'socket'
 
+  name = 'Socket'
+
   #fetch: Fetch
 
   #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'

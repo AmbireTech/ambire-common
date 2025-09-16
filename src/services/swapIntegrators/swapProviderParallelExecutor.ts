@@ -13,6 +13,8 @@ import { TokenResult } from '../../libs/portfolio'
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
 
+  name = 'Parallel'
+
   isHealthy: boolean | null = null
 
   #providers: SwapProvider[]
@@ -69,8 +71,9 @@ export class SwapProviderParallelExecutor {
       .filter(Boolean)
 
     // Modify the base message to indicate multiple providers
+    const providerNames = this.#providers.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
-      .replace(/\bLiFi\b/g, 'LiFi and Socket')
+      .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
 
     // Replace the technical details with combined ones
