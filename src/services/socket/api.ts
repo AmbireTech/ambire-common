@@ -64,11 +64,11 @@ export class SocketAPI implements SwapProvider {
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
     this.#headers = {
-      'x-api-key': process.env.BUNGEE_API_KEY!,
+      'x-api-key': apiKey,
       affiliate:
         '609913096e183b62cecd0dfdc13382f618baedceb5fef75aad43e6cbff367039708902197e0b2b78b1d76cb0837ad0b318baedceb5fef75aad43e6cb',
       Accept: 'application/json',
