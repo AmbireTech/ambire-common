@@ -1,6 +1,6 @@
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
-import { Banner, BannerCategory, BannerType } from '../../interfaces/banner'
+import { Banner } from '../../interfaces/banner'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -22,7 +22,6 @@ import { AccountOpStatus } from '../../libs/accountOp/types'
 /* eslint-disable import/no-extraneous-dependencies */
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
-import { getBenzinUrlParams } from '../../utils/benzin'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { InternalSignedMessages, SignedMessage } from './types'
@@ -73,20 +72,6 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
 }
 
 const CONFIRMED_STATUSES = [AccountOpStatus.Success, AccountOpStatus.UnknownButPastNonce]
-
-const BANNER_CONTENT: {
-  category: BannerCategory
-  title: string
-  type: BannerType
-  statuses: AccountOpStatus[]
-}[] = [
-  {
-    category: 'failed-acc-op',
-    type: 'error',
-    title: 'Transaction failed!\nCheck it out on the block explorer!',
-    statuses: [AccountOpStatus.Failure, AccountOpStatus.Rejected]
-  }
-]
 
 /**
  * Activity Controller
@@ -157,8 +142,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #callRelayer: Function
 
-  #bannerUpdateTimeout: NodeJS.Timeout | null = null
-
   banners: Banner[] = []
 
   #updateAccountsOpsStatusesPromises: {
@@ -216,10 +199,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async filterAccountsOps(
     sessionId: string,
     filters: Filters,
-    pagination: Pagination = {
-      fromPage: 0,
-      itemsPerPage: 10
-    }
+    pagination: Pagination = { fromPage: 0, itemsPerPage: 10 }
   ) {
     await this.#initialLoadPromise
 
@@ -237,11 +217,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
-    this.accountsOps[sessionId] = {
-      result,
-      filters,
-      pagination
-    }
+    this.resetAccountsOpsFilters(sessionId, true)
+    this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
   }
@@ -249,9 +226,22 @@ export class ActivityController extends EventEmitter implements IActivityControl
   // Reset filtered AccountsOps session.
   // Example: when a FE component is being unmounted, we don't need anymore the filtered accounts ops and we
   // free the memory calling this method.
-  resetAccountsOpsFilters(sessionId: string) {
+  resetAccountsOpsFilters(sessionId: string, skipEmit?: boolean) {
+    if (!this.accountsOps[sessionId]) return
+
+    if (sessionId.startsWith('dashboard')) {
+      this.banners = this.banners.filter(
+        (b) =>
+          !(
+            b.type === 'error' &&
+            b.meta?.accountAddr === this.accountsOps[sessionId].filters.account
+          )
+      )
+    }
+
     delete this.accountsOps[sessionId]
-    this.emitUpdate()
+
+    if (!skipEmit) this.emitUpdate()
   }
 
   // Everytime we add/remove an AccOp, we should run this method in order to keep the filtered and internal accounts ops in sync.
@@ -270,10 +260,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async filterSignedMessages(
     sessionId: string,
     filters: Filters,
-    pagination: Pagination = {
-      fromPage: 0,
-      itemsPerPage: 10
-    }
+    pagination: Pagination = { fromPage: 0, itemsPerPage: 10 }
   ) {
     await this.#initialLoadPromise
 
@@ -344,120 +331,106 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Starts a timeout to update banners ONLY if there are banners to update.
-   */
-  private startBannerUpdateTimeout() {
-    if (this.#bannerUpdateTimeout) {
-      this.stopBannerUpdateTimeout()
-    }
-
-    if (!this.banners.length) return
-
-    this.#bannerUpdateTimeout = setTimeout(() => {
-      this.updateAccountOpBanners()
-      this.startBannerUpdateTimeout()
-    }, 1000 * 60 * 1)
-  }
-
-  /**
-   * Stops the banner update timeout if it exists.
-   */
-  private stopBannerUpdateTimeout() {
-    if (this.#bannerUpdateTimeout) {
-      clearTimeout(this.#bannerUpdateTimeout)
-      this.#bannerUpdateTimeout = null
-    }
-  }
-
-  /**
    * Updates banners based on the latest accountOps.
    * A getter cannot be used, because banners have a lifetime
    * of X minutes. The UI won't know when a banner has
    * expired, until an update is emitted.
    */
-  updateAccountOpBanners(params?: { emitUpdate?: boolean }) {
-    const { emitUpdate = true } = params || {}
-
+  updateAccountOpBanners(params: { emitUpdate?: boolean } = {}) {
+    const { emitUpdate = true } = params
+    const activityBanners: Banner[] = []
     if (
       !this.#networks.isInitialized ||
       !this.#selectedAccount.account ||
       !this.#accountsOps[this.#selectedAccount.account.addr]
     ) {
       this.banners = []
-      this.stopBannerUpdateTimeout()
-
       if (emitUpdate) this.emitUpdate()
       return
     }
+
+    const pendingAccountOpsBanner = this.banners.find(
+      (b) => b.category === 'pending-to-be-confirmed-acc-ops'
+    )
+    const failedAccountOpsBanner = this.banners.find((b) => b.category === 'failed-acc-ops')
 
     const latestAccountOps = Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
       .flat()
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 10) // Performance optimization: only check the last 10 ops
 
-    const accountOpsToTurnToBanners = latestAccountOps.filter((accountOp) => {
-      const TEN_MINUTES = 1000 * 60 * 10
-      const isClosed = accountOp.flags && accountOp.flags.hideActivityBanner
-      const isRecent = accountOp.timestamp >= Date.now() - TEN_MINUTES
-      const isBroadcasted =
-        accountOp.status !== AccountOpStatus.Pending &&
-        accountOp.status !== AccountOpStatus.Rejected
-
-      return isRecent && !isClosed && isBroadcasted
-    }, [] as SubmittedAccountOp[])
-
-    if (!accountOpsToTurnToBanners.length) {
-      this.banners = []
-      this.stopBannerUpdateTimeout()
-      if (emitUpdate) this.emitUpdate()
-      return
-    }
-
-    const accountOp = accountOpsToTurnToBanners[0]
-    const url = `https://explorer.ambire.com/${getBenzinUrlParams({
-      chainId: accountOp.chainId,
-      txnId: accountOp.txnId,
-      identifiedBy: accountOp.identifiedBy
-    })}`
-
-    const content = BANNER_CONTENT.find((c) =>
-      c.statuses.includes(accountOp.status as AccountOpStatus)
+    const pendingAccountOps = latestAccountOps.filter(
+      (op) =>
+        op.status === AccountOpStatus.Pending ||
+        op.status === AccountOpStatus.BroadcastedButNotConfirmed
     )
 
-    if (!content) return
+    if (pendingAccountOps.length) {
+      let accountOpsForNextUpdate = pendingAccountOps
 
-    this.banners = [
-      {
-        id: accountOp.txnId || accountOp.identifiedBy.identifier,
-        type: content?.type || 'success',
-        category: content?.category || 'pending-to-be-confirmed-acc-op',
+      if (pendingAccountOpsBanner) {
+        accountOpsForNextUpdate = pendingAccountOpsBanner?.meta?.accountOpsForNextUpdate
+      }
+
+      if (!pendingAccountOpsBanner && failedAccountOpsBanner) {
+        accountOpsForNextUpdate = [
+          ...failedAccountOpsBanner.meta!.accountOpsForNextUpdate,
+          ...pendingAccountOps
+        ]
+      }
+      activityBanners.push({
+        id: 'pending-account-ops-banner',
+        type: 'info2',
+        category: 'pending-to-be-confirmed-acc-ops',
         title:
-          content?.title ||
-          'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
+          pendingAccountOps.length === 1
+            ? 'Transaction is pending on-chain confirmation.'
+            : 'Transactions are pending on-chain confirmation.',
         text: '',
         meta: {
-          accountAddr: accountOp.accountAddr
+          accountAddr: pendingAccountOps[0].accountAddr,
+          accountOpsForNextUpdate,
+          accountOpsCount: pendingAccountOps.length
         },
-        actions: [
-          {
-            label: 'Close',
-            actionName: 'hide-activity-banner',
-            meta: {
-              addr: accountOp.accountAddr,
-              chainId: accountOp.chainId,
-              timestamp: accountOp.timestamp,
-              isHideStyle: true
-            }
-          },
-          {
-            label: 'Check',
-            actionName: 'open-external-url' as const,
-            meta: { url }
-          }
-        ] as Banner['actions']
-      }
-    ]
-    this.startBannerUpdateTimeout()
+        actions: []
+      })
+    }
+
+    const pendingAccountOpsWithUpdatedStatus = pendingAccountOpsBanner
+      ? latestAccountOps.filter((op) =>
+          pendingAccountOpsBanner.meta!.accountOpsForNextUpdate.find(
+            (prevOp: SubmittedAccountOp) =>
+              prevOp.accountAddr === op.accountAddr &&
+              prevOp.chainId === op.chainId &&
+              prevOp.timestamp === op.timestamp
+          )
+        )
+      : []
+    const failedAccountOps = pendingAccountOpsWithUpdatedStatus.filter(
+      (op: SubmittedAccountOp) =>
+        op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
+    )
+
+    if (failedAccountOps.length) {
+      activityBanners.push({
+        id: 'failed-account-ops-banner',
+        type: 'error',
+        category: 'failed-acc-ops',
+        title: failedAccountOps.length === 1 ? 'Transaction failed.' : 'Transactions failed.',
+        text:
+          failedAccountOps.length === 1
+            ? 'Scroll down to view the failed transaction.'
+            : 'Scroll down to view the failed transactions.',
+        meta: {
+          accountAddr: failedAccountOps[0].accountAddr,
+          accountOpsForNextUpdate: failedAccountOps,
+          accountOpsCount: failedAccountOps.length
+        },
+        actions: []
+      })
+    }
+
+    this.banners = activityBanners
     if (emitUpdate) this.emitUpdate()
   }
 
@@ -662,7 +635,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                   const updatedOpIfAny = updateOpStatus(
                     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-                    isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                    AccountOpStatus.Failure,
                     receipt
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
