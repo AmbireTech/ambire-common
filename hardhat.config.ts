@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import '@nomicfoundation/hardhat-chai-matchers'
 import '@nomicfoundation/hardhat-ethers'
-import '@nomiclabs/hardhat-etherscan'
+import '@nomicfoundation/hardhat-verify'
 import 'hardhat-gas-reporter'
 
 import { HardhatUserConfig } from 'hardhat/config'
@@ -73,23 +73,29 @@ const config: HardhatUserConfig = {
     katana: {
       url: 'https://rpc.katana.network',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    celo: {
+      url: 'https://forno.celo.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
-    apiKey: {
-      base: process.env.ETHERSCAN_API_KEY,
-      optimism: process.env.ETHERSCAN_API_KEY,
-      odyssey: process.env.ETHERSCAN_API_KEY,
-      ethereum: process.env.ETHERSCAN_API_KEY,
-      sepolia: process.env.ETHERSCAN_API_KEY,
-      binance: process.env.BNB_API_KEY,
-      gnosis: process.env.GNOSIS_API_KEY,
-      unichain: process.env.BASESCAN_API_KEY,
-      berachain: process.env.BERACHAIN_API_KEY,
-      arbitrum: process.env.ARBITRUM_API_KEY,
-      berachainBepolia: process.env.ETHERSCAN_API_KEY,
-      katana: process.env.ETHERSCAN_API_KEY
-    },
+    // apiKey: {
+    //   base: process.env.ETHERSCAN_API_KEY,
+    //   optimism: process.env.ETHERSCAN_API_KEY,
+    //   odyssey: process.env.ETHERSCAN_API_KEY,
+    //   ethereum: process.env.ETHERSCAN_API_KEY,
+    //   sepolia: process.env.ETHERSCAN_API_KEY,
+    //   binance: process.env.BNB_API_KEY,
+    //   gnosis: process.env.GNOSIS_API_KEY,
+    //   unichain: process.env.BASESCAN_API_KEY,
+    //   berachain: process.env.BERACHAIN_API_KEY,
+    //   arbitrum: process.env.ARBITRUM_API_KEY,
+    //   berachainBepolia: process.env.ETHERSCAN_API_KEY,
+    //   katana: process.env.ETHERSCAN_API_KEY,
+    //   celo: process.env.MULTICHAIN_KEY
+    // },
+    apiKey: process.env.MULTICHAIN_KEY,
     customChains: [
       {
         network: 'base',
@@ -186,6 +192,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://explorer.katanarpc.com/api',
           browserURL: 'https://explorer.katanarpc.com'
+        }
+      },
+      {
+        network: 'celo',
+        chainId: 42220,
+        urls: {
+          apiURL: 'https://api.celoscan.io/api',
+          browserURL: 'https://celoscan.io'
         }
       }
     ]
