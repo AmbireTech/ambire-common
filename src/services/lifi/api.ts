@@ -305,7 +305,7 @@ export class LiFiAPI implements SwapProvider {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout'
+                'Our service provider LiFi is temporarily unavailable or your internet connection is too slow. Error details: <LiFi connection timed out>'
               )
             )
           }, this.#requestTimeoutMs)
