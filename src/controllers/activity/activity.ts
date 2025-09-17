@@ -369,14 +369,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
       let accountOpsForNextUpdate = pendingAccountOps
 
       if (pendingAccountOpsBanner) {
-        accountOpsForNextUpdate = pendingAccountOpsBanner?.meta?.accountOpsForNextUpdate
+        accountOpsForNextUpdate = [
+          ...pendingAccountOpsBanner.meta!.accountOpsForNextUpdate,
+          ...pendingAccountOps
+        ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i) // only unique values
       }
 
       if (!pendingAccountOpsBanner && failedAccountOpsBanner) {
         accountOpsForNextUpdate = [
           ...failedAccountOpsBanner.meta!.accountOpsForNextUpdate,
           ...pendingAccountOps
-        ]
+        ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i) // only unique values
       }
       activityBanners.push({
         id: 'pending-account-ops-banner',
@@ -386,7 +389,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
           pendingAccountOps.length === 1
             ? 'Transaction is pending on-chain confirmation.'
             : 'Transactions are pending on-chain confirmation.',
-        text: '',
+        text:
+          pendingAccountOps.length === 1
+            ? 'Scroll down to view the pending transaction.'
+            : 'Scroll down to view the pending transactions.',
         meta: {
           accountAddr: pendingAccountOps[0].accountAddr,
           accountOpsForNextUpdate,
@@ -635,7 +641,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                   const updatedOpIfAny = updateOpStatus(
                     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-                    AccountOpStatus.Failure,
+                    isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
                     receipt
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
