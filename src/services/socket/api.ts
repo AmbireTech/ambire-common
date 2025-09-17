@@ -119,7 +119,7 @@ export class SocketAPI implements SwapProvider {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider Socket is temporarily unavailable or your internet connection is too slow. Error details: <Socket connection timed out>'
+                'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)

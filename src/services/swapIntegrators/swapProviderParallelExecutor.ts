@@ -65,6 +65,7 @@ export class SwapProviderParallelExecutor {
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
+      .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
 
     // Replace the technical details with combined ones
     if (technicalDetails.length > 0) {
