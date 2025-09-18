@@ -636,7 +636,6 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    console.log('account changed and called updateAccountOpBanners')
     this.activity.updateAccountsOpsStatuses()
     this.swapAndBridge.reset()
     this.transfer.resetForm()

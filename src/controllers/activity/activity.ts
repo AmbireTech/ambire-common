@@ -215,17 +215,24 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
+    this.#setDashboardBannersSeenIfNeeded(sessionId, filters.account)
     this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
   }
 
-  #resetDashboardActivityFailedState(sessionId: string, accountAddr: string) {
-    if (sessionId.startsWith('dashboard')) {
-      this.banners = this.banners.filter(
-        (b) => !(b.category === 'failed-acc-ops' && b.meta?.accountAddr === accountAddr)
-      )
-    }
+  #setDashboardBannersSeenIfNeeded(sessionId: string, accountAddr: string) {
+    if (!sessionId.startsWith('dashboard')) return
+
+    this.banners = this.banners.map((b) => {
+      if (b.category === 'failed-acc-ops' && b.meta!.accountAddr === accountAddr) {
+        return {
+          ...b,
+          meta: { ...b.meta, seen: true }
+        }
+      }
+      return b
+    })
   }
 
   // Reset filtered AccountsOps session.
@@ -234,7 +241,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
   resetAccountsOpsFilters(sessionId: string, skipEmit?: boolean) {
     if (!this.accountsOps[sessionId]) return
 
-    this.#resetDashboardActivityFailedState(sessionId, this.accountsOps[sessionId].filters.account)
+    if (sessionId.startsWith('dashboard')) {
+      this.banners = this.banners.filter((b) => !(b.category === 'failed-acc-ops' && b.meta!.seen))
+    }
+
     delete this.accountsOps[sessionId]
 
     if (!skipEmit) this.emitUpdate()
@@ -312,7 +322,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
       if (emitUpdate) this.emitUpdate()
       return
     }
-    console.log('in updateAccountOpBanners', this.#selectedAccount.account.addr)
 
     const pendingAccountOpsBanner = this.banners.find(
       (b) =>
@@ -389,6 +398,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
 
     if (failedAccountOps.length) {
+      const shouldMarkSeen = Object.keys(this.accountsOps).some((k) => k.startsWith('dashboard'))
       activityBanners.push({
         id: `failed-${this.#selectedAccount.account.addr}`,
         type: 'error',
@@ -402,7 +412,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           accountAddr: this.#selectedAccount.account.addr,
           accountOpsForNextUpdate: failedAccountOps,
           accountOpsCount: failedAccountOps.length,
-          seen: false
+          seen: shouldMarkSeen
         },
         actions: []
       })
