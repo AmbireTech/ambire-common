@@ -71,8 +71,6 @@ const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
   }
 }
 
-const CONFIRMED_STATUSES = [AccountOpStatus.Success, AccountOpStatus.UnknownButPastNonce]
-
 /**
  * Activity Controller
  * Manages signed AccountsOps and Messages in controller memory and browser storage.
@@ -217,10 +215,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
-    this.resetAccountsOpsFilters(sessionId, true)
     this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
+  }
+
+  #resetDashboardActivityFailedState(sessionId: string, accountAddr: string) {
+    if (sessionId.startsWith('dashboard')) {
+      this.banners = this.banners.filter(
+        (b) => !(b.category === 'failed-acc-ops' && b.meta?.accountAddr === accountAddr)
+      )
+    }
   }
 
   // Reset filtered AccountsOps session.
@@ -229,16 +234,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   resetAccountsOpsFilters(sessionId: string, skipEmit?: boolean) {
     if (!this.accountsOps[sessionId]) return
 
-    if (sessionId.startsWith('dashboard')) {
-      this.banners = this.banners.filter(
-        (b) =>
-          !(
-            b.type === 'error' &&
-            b.meta?.accountAddr === this.accountsOps[sessionId].filters.account
-          )
-      )
-    }
-
+    this.#resetDashboardActivityFailedState(sessionId, this.accountsOps[sessionId].filters.account)
     delete this.accountsOps[sessionId]
 
     if (!skipEmit) this.emitUpdate()
@@ -299,38 +295,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Hides the banners of confirmed accountOps. The idea is to prevent
-   * displaying too many banners at once. Banners of failed transactions
-   * are not hidden, as they are useful for the user to see.
-   */
-  private hideBannersOfConfirmedAccountOps() {
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return
-
-    const latestAccountOps = Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
-      .flat()
-      .sort((a, b) => b.timestamp - a.timestamp)
-      // Performance optimization. There is a very low probability that the user will have
-      // more than 9 pending or failed account ops at the same time.
-      // Even if some user has more than 10 he can close the banner manually
-      .slice(0, 10)
-
-    latestAccountOps.forEach((accountOp) => {
-      if (
-        accountOp.status &&
-        CONFIRMED_STATUSES.includes(accountOp.status) &&
-        !accountOp.flags?.hideActivityBanner
-      ) {
-        // eslint-disable-next-line no-param-reassign
-        if (!accountOp.flags) accountOp.flags = {}
-
-        // eslint-disable-next-line no-param-reassign
-        accountOp.flags.hideActivityBanner = true
-      }
-    })
-  }
-
-  /**
    * Updates banners based on the latest accountOps.
    * A getter cannot be used, because banners have a lifetime
    * of X minutes. The UI won't know when a banner has
@@ -348,11 +312,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
       if (emitUpdate) this.emitUpdate()
       return
     }
+    console.log('in updateAccountOpBanners', this.#selectedAccount.account.addr)
 
     const pendingAccountOpsBanner = this.banners.find(
-      (b) => b.category === 'pending-to-be-confirmed-acc-ops'
+      (b) =>
+        b.category === 'pending-to-be-confirmed-acc-ops' &&
+        b.id === `pending-${this.#selectedAccount.account!.addr}`
     )
-    const failedAccountOpsBanner = this.banners.find((b) => b.category === 'failed-acc-ops')
+    const failedAccountOpsBanner = this.banners.find(
+      (b) =>
+        b.category === 'failed-acc-ops' && b.id === `failed-${this.#selectedAccount.account!.addr}`
+    )
 
     const latestAccountOps = Object.values(this.#accountsOps[this.#selectedAccount.account.addr])
       .flat()
@@ -365,6 +335,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         op.status === AccountOpStatus.BroadcastedButNotConfirmed
     )
 
+    console.log(pendingAccountOps, pendingAccountOpsBanner)
     if (pendingAccountOps.length) {
       let accountOpsForNextUpdate = pendingAccountOps
 
@@ -382,7 +353,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i) // only unique values
       }
       activityBanners.push({
-        id: 'pending-account-ops-banner',
+        id: `pending-${this.#selectedAccount.account.addr}`,
         type: 'info2',
         category: 'pending-to-be-confirmed-acc-ops',
         title:
@@ -394,7 +365,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             ? 'Scroll down to view the pending transaction.'
             : 'Scroll down to view the pending transactions.',
         meta: {
-          accountAddr: pendingAccountOps[0].accountAddr,
+          accountAddr: this.#selectedAccount.account.addr,
           accountOpsForNextUpdate,
           accountOpsCount: pendingAccountOps.length
         },
@@ -419,7 +390,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     if (failedAccountOps.length) {
       activityBanners.push({
-        id: 'failed-account-ops-banner',
+        id: `failed-${this.#selectedAccount.account.addr}`,
         type: 'error',
         category: 'failed-acc-ops',
         title: failedAccountOps.length === 1 ? 'Transaction failed.' : 'Transactions failed.',
@@ -428,15 +399,21 @@ export class ActivityController extends EventEmitter implements IActivityControl
             ? 'Scroll down to view the failed transaction.'
             : 'Scroll down to view the failed transactions.',
         meta: {
-          accountAddr: failedAccountOps[0].accountAddr,
+          accountAddr: this.#selectedAccount.account.addr,
           accountOpsForNextUpdate: failedAccountOps,
-          accountOpsCount: failedAccountOps.length
+          accountOpsCount: failedAccountOps.length,
+          seen: false
         },
         actions: []
       })
     }
 
-    this.banners = activityBanners
+    this.banners = [
+      ...this.banners.filter(
+        (b) => !(b.id as string).includes(this.#selectedAccount.account!.addr)
+      ),
+      ...activityBanners
+    ]
     if (emitUpdate) this.emitUpdate()
   }
 
@@ -463,9 +440,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!this.#accountsOps[accountAddr]) this.#accountsOps[accountAddr] = {}
     if (!this.#accountsOps[accountAddr][chainId.toString()])
       this.#accountsOps[accountAddr][chainId.toString()] = []
-
-    // Hide confirmed banners first as that will modify this.#accountsOps
-    this.hideBannersOfConfirmedAccountOps()
 
     // newest SubmittedAccountOp goes first in the list
     this.#accountsOps[accountAddr][chainId.toString()].unshift({ ...accountOp })
@@ -634,10 +608,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                   // if it's not an userOp or it is, but isSuccess was not found
                   if (isSuccess === undefined) isSuccess = !!receipt.status
-
-                  // This must be done before updateOpStatus is called
-                  // otherwise the function will hide the banner of this accountOp
-                  this.hideBannersOfConfirmedAccountOps()
 
                   const updatedOpIfAny = updateOpStatus(
                     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
