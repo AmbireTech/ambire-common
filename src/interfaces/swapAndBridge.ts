@@ -61,11 +61,9 @@ export interface SocketAPIRoute {
   usedBridgeNames?: string[]
   usedDexName?: string
   totalUserTx: number
-  totalGasFeesInUsd: number
   recipient: string
   sender: string
   userTxs: SocketAPIUserTx[]
-  receivedValueInUsd: number
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
@@ -80,7 +78,15 @@ export interface SocketAPIRoute {
   extraData: object
 }
 
+interface BungeeApprovalData {
+  amount: string
+  tokenAddress: string
+  spenderAddress: string
+  userAddress: string
+}
+
 export interface SwapAndBridgeRoute {
+  providerId: string
   routeId: string
   currentUserTxIndex: number
   fromChainId: number
@@ -91,25 +97,29 @@ export interface SwapAndBridgeRoute {
   toAmount: string
   usedBridgeNames?: string[]
   usedDexName?: string
-  totalGasFeesInUsd: number
   // TODO: Deprecate userTxs
   userTxs: SwapAndBridgeUserTx[]
   sender?: string
   steps: SwapAndBridgeStep[]
-  receivedValueInUsd: number
   inputValueInUsd: number
   outputValueInUsd: number
   serviceTime: number
   rawRoute: SocketAPIRoute | LiFiRoute
   toToken: LiFiToken
-  disabled?: boolean
+  disabled: boolean
   disabledReason?: string
+  // put in a service fee only if it's not included in the quote
+  serviceFee?: {
+    amount: string
+    amountUSD: string
+  }
+  // the socket auto route comes with approvalData & txData
+  approvalData?: BungeeApprovalData
+  txData?: BungeeTxData
 }
 
 export interface SocketAPISwapUserTx {
-  userTxType: 'dex-swap'
   userTxIndex: number
-  txType: string
   fromAsset: SocketAPIToken
   toAsset: SocketAPIToken
   chainId: number
@@ -124,19 +134,11 @@ export interface SocketAPISwapUserTx {
     name: string
   }
   minAmountOut: string
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   approvalData: SocketAPIUserTxApprovalData | null
 }
 
 export interface SocketAPIBridgeUserTx {
-  userTxType: 'fund-movr'
   userTxIndex: number
-  txType: string
   toAsset: SocketAPIToken
   toAmount: string
   steps: SocketAPIStep[]
@@ -144,12 +146,6 @@ export interface SocketAPIBridgeUserTx {
   serviceTime: number
   routePath: string
   maxServiceTime: number
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   chainId: number
   bridgeSlippage: number
   approvalData: SocketAPIUserTxApprovalData | null
@@ -159,12 +155,6 @@ export interface SocketApiSwapStep {
   chainId: number
   fromAmount: string
   fromAsset: SocketAPIToken
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   minAmountOut: string
   protocol: {
     name: string
@@ -183,12 +173,6 @@ export interface SocketApiBridgeStep {
   toChainId: number
   fromAmount: string
   fromAsset: SocketAPIToken
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset: SocketAPIToken
-  }
   minAmountOut: string
   protocol: {
     name: string
@@ -212,35 +196,32 @@ export interface SocketApiBridgeStep {
 export type SocketAPIStep = SocketApiSwapStep | SocketApiBridgeStep
 
 export type SwapAndBridgeStep = {
-  chainId: number
+  chainId?: number
   fromAmount: string
   fromAsset: SwapAndBridgeToToken
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset?: SwapAndBridgeToToken
-  }
   serviceTime?: number
   minAmountOut: string
   protocol: {
     name: string
     displayName: string
     icon: string
+  }
+  protocolFees?: {
+    amount: string
+    asset: SwapAndBridgeToToken
+    feesInUsd: number
   }
   swapSlippage?: number
   toAmount: string
   toAsset: SwapAndBridgeToToken
   type: 'middleware' | 'swap'
-  userTxIndex?: number
+  userTxIndex: number
 }
 
 export type SocketAPIUserTx = SocketAPISwapUserTx | SocketAPIBridgeUserTx
 
 export type SwapAndBridgeUserTx = {
-  userTxType: 'dex-swap' | 'fund-movr'
   userTxIndex: number
-  txType: string
   fromAsset: SwapAndBridgeToToken
   toAsset: SwapAndBridgeToToken
   chainId: number
@@ -254,12 +235,6 @@ export type SwapAndBridgeUserTx = {
     name: string
   }
   minAmountOut: string
-  gasFees: {
-    gasAmount: string
-    gasLimit: number
-    feesInUsd: number
-    asset?: SwapAndBridgeToToken
-  }
 }
 
 export type SocketAPIUserTxApprovalData = {
@@ -289,9 +264,7 @@ export type SocketAPISendTransactionRequest = {
   totalUserTx: number
   txData: string
   txTarget: string
-  txType: 'eth_sendTransaction'
   userTxIndex: number
-  userTxType: 'fund-movr' | 'dex-swap'
   value: string
   serviceFee: {
     included: boolean
@@ -308,17 +281,8 @@ export type SwapAndBridgeSendTxRequest = {
   chainId: number
   txData: string
   txTarget: string
-  txType: 'eth_sendTransaction'
   userTxIndex: number
-  userTxType: 'fund-movr' | 'dex-swap'
   value: string
-  serviceFee: {
-    included: boolean
-    amount: string
-    amountUSD: string
-    description: string
-    name: string
-  }[]
 }
 
 export type ActiveRoute = {
@@ -340,15 +304,18 @@ export type ActiveRoute = {
 }
 
 export type SwapAndBridgeActiveRoute = {
-  serviceProviderId: 'socket' | 'lifi'
+  serviceProviderId: string
+  fromAsset: SocketAPIToken
+  toAsset: SocketAPIToken
+  fromAssetAddress: string
+  toAssetAddress: string
+  steps: SwapAndBridgeStep[]
   sender: string
   activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
   userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
   userTxHash: string | null
-  identifiedBy: AccountOpIdentifiedBy
+  identifiedBy: AccountOpIdentifiedBy | null
   route?: SwapAndBridgeRoute & {
-    createdAt: string
-    updatedAt: string
     routeStatus: string
     fromChainId: number
     toChainId: number
@@ -378,7 +345,10 @@ export type SocketAPIActiveRoutes = ActiveRoute['route'] & {
   toAsset: SocketAPIToken
 }
 
-export type SocketRouteStatus = 'ready' | 'completed' | null
+export interface BungeeRouteStatus {
+  hash: string
+  bungeeStatusCode: number
+}
 
 export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
 
@@ -419,4 +389,138 @@ export type CachedToTokenLists = {
 
 export type FromToken = TokenResult & {
   isSwitchedToToken?: boolean
+}
+
+interface BungeeExchangeOutput {
+  amount: string
+  effectiveReceivedInUsd: number
+  minAmountOut: string
+  priceInUsd: number
+  token: SocketAPIToken
+  valueInUsd: number
+}
+
+interface BungeeTxData {
+  data: string
+  to: string
+  value: string
+  chainId: number
+}
+
+interface BungeeRouteDetails {
+  dexDetails: string | null
+  logoURI: string
+  name: string
+  routeFee: {
+    amount: string
+    feeInUsd: number
+    priceInUsd: number
+    token: SocketAPIToken
+  } | null
+}
+
+export interface BungeeExchangeQuoteResponse {
+  autoRoute: {
+    output: BungeeExchangeOutput
+    quoteId: string
+    quoteExpiry: number
+    estimatedTime?: number
+    routeDetails: BungeeRouteDetails
+    slippage: number
+
+    requestHash: string
+    requestType: string
+    affiliateFee: {} | null
+    suggestedClientSlippage: number
+    approvalData: BungeeApprovalData
+    txData: BungeeTxData
+  }
+  destinationChainId: number
+  input: {
+    token: SocketAPIToken
+    priceInUsd: number
+    amount: string
+    valueInUsd: number
+  }
+  manualRoutes: {
+    output: BungeeExchangeOutput
+    quoteId: string
+    quoteExpiry: number
+    estimatedTime?: number
+    routeDetails: BungeeRouteDetails
+    slippage: number
+  }[]
+  originChainId: number
+  receiverAddress: string
+  userAddress: string
+}
+
+export interface BungeeBuildTxnResponse {
+  userOp: string
+  approvalData: BungeeApprovalData | null
+  txData: BungeeTxData
+}
+
+export interface SwapProvider {
+  id: string
+  name: string
+  isHealthy: boolean | null
+  updateHealth(): void
+  resetHealth(): void
+  getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
+  getToTokenList({
+    fromChainId,
+    toChainId
+  }: {
+    fromChainId: number
+    toChainId: number
+  }): Promise<SwapAndBridgeToToken[]>
+  getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SwapAndBridgeToToken | null>
+  startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest>
+  quote({
+    fromAsset,
+    fromChainId,
+    fromTokenAddress,
+    toAsset,
+    toChainId,
+    toTokenAddress,
+    fromAmount,
+    userAddress,
+    sort,
+    isOG,
+    accountNativeBalance,
+    nativeSymbol
+  }: {
+    fromAsset: TokenResult | null
+    fromChainId: number
+    fromTokenAddress: string
+    toAsset: SwapAndBridgeToToken | null
+    toChainId: number
+    toTokenAddress: string
+    fromAmount: bigint
+    userAddress: string
+    sort: 'time' | 'output'
+    isOG: boolean
+    accountNativeBalance: bigint
+    nativeSymbol: string
+  }): Promise<SwapAndBridgeQuote>
+  getRouteStatus({
+    txHash,
+    fromChainId,
+    toChainId,
+    bridge,
+    providerId
+  }: {
+    txHash: string
+    fromChainId: number
+    toChainId: number
+    bridge?: string
+    providerId: string
+  }): Promise<SwapAndBridgeRouteStatus>
 }

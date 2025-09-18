@@ -190,7 +190,7 @@ const swapAndBridgeController = new SwapAndBridgeController({
   accounts: accountsCtrl,
   activity: activityCtrl,
   storage: storageCtrl,
-  serviceProviderAPI: socketAPIMock as any,
+  swapProvider: socketAPIMock as any,
   invite: inviteCtrl,
   keystore,
   portfolio: portfolioCtrl,
@@ -287,13 +287,12 @@ describe('SwapAndBridge Controller', () => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
       emitCounter++
-      if (emitCounter === 10) {
-        unsubscribe()
-        done()
-      }
-      if (emitCounter === 9) {
+      if (emitCounter === 4) {
         expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
         expect(swapAndBridgeController.quote).not.toBeNull()
+        expect(swapAndBridgeController.fromAmount).toBe('0.8')
+        unsubscribe()
+        done()
       }
       if (emitCounter === 2) {
         expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
@@ -306,13 +305,13 @@ describe('SwapAndBridge Controller', () => {
     const prevToChainId = swapAndBridgeController.toChainId
     const prevFromSelectedTokenAddress = swapAndBridgeController.fromSelectedToken?.address
     const prevToSelectedTokenAddress = swapAndBridgeController.toSelectedToken?.address
+    const fiatBefore = swapAndBridgeController.fromAmountInFiat
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevToChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
-    expect(swapAndBridgeController.fromAmount).toEqual('')
-    expect(swapAndBridgeController.formStatus).toEqual('empty')
+    expect(swapAndBridgeController.fromAmountInFiat).toEqual(fiatBefore)
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevToChainId)
@@ -380,14 +379,9 @@ describe('SwapAndBridge Controller', () => {
   })
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
-      fromChainId: swapAndBridgeController.fromChainId!,
-      toChainId: swapAndBridgeController.toChainId!,
-      fromAssetAddress: swapAndBridgeController.fromSelectedToken!.address,
-      toAssetAddress: swapAndBridgeController.toSelectedToken!.address,
-      route: swapAndBridgeController.quote!.selectedRoute
+      route: swapAndBridgeController.quote!.selectedRoute!
     })
-    await swapAndBridgeController.addActiveRoute({
-      activeRouteId: userTx.activeRouteId,
+    swapAndBridgeController.addActiveRoute({
       userTxIndex: userTx.userTxIndex
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
@@ -411,8 +405,8 @@ describe('SwapAndBridge Controller', () => {
     jest.useFakeTimers()
     jest.spyOn(global.console, 'error').mockImplementation(() => {})
 
-    const checkForNextUserTxForActiveRoutesSpy = jest
-      .spyOn(swapAndBridgeController, 'checkForNextUserTxForActiveRoutes')
+    const checkForActiveRoutesStatusUpdateSpy = jest
+      .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
       .mockImplementation((() => {}) as any)
     jest.spyOn(swapAndBridgeController, 'continuouslyUpdateActiveRoutes')
     const updateActiveRoutesIntervalStartSpy = jest.spyOn(
@@ -430,33 +424,30 @@ describe('SwapAndBridge Controller', () => {
 
     expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(0)
     expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(checkForNextUserTxForActiveRoutesSpy).toHaveBeenCalledTimes(0)
+    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
     expect(swapAndBridgeController.activeRoutes.length).toEqual(1)
     expect(swapAndBridgeController.activeRoutesInProgress.length).toEqual(1)
     swapAndBridgeController.activeRoutes = [...swapAndBridgeController.activeRoutes]
     expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
     expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(checkForNextUserTxForActiveRoutesSpy).toHaveBeenCalledTimes(0)
+    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
     await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
     expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
     expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
     expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(1)
-    expect(checkForNextUserTxForActiveRoutesSpy).toHaveBeenCalledTimes(1)
+    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(1)
     expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(2)
-    jest.spyOn(swapAndBridgeController, 'activeRoutesInProgress', 'get').mockReturnValueOnce([])
     await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
     expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(1)
     expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(2)
-    expect(checkForNextUserTxForActiveRoutesSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(2)
+    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(2)
+    expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
     jest.clearAllTimers()
     jest.useRealTimers()
     ;(console.error as jest.Mock).mockRestore()
   })
   test('should check for route status', async () => {
-    await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
+    await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
       swapAndBridgeController.activeRoutes[0].activeRouteId,
       {
@@ -465,7 +456,7 @@ describe('SwapAndBridge Controller', () => {
         userTxIndex: 1
       }
     )
-    await swapAndBridgeController.checkForNextUserTxForActiveRoutes()
+    await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('completed')
   })
   test('should remove an activeRoute', async () => {

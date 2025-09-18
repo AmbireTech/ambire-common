@@ -161,7 +161,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     await this.initialLoadPromise
 
     if (this.#main.activity.broadcastedButNotConfirmed.length) return
-    await this.#main.updateSelectedAccountPortfolio()
+    await this.#main.updateSelectedAccountPortfolio({ maxDataAgeMs: 60 * 1000 })
   }
 
   async #updateAccountsOpsStatuses() {
@@ -269,7 +269,8 @@ export class ContinuousUpdatesController extends EventEmitter {
         }
       })
       this.#main.updateSelectedAccountPortfolio({
-        networks: networksToUpdate.length ? networksToUpdate : undefined
+        networks: networksToUpdate.length ? networksToUpdate : undefined,
+        maxDataAgeMs: 60 * 1000
       })
     }
 

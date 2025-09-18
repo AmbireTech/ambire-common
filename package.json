@@ -1,5 +1,5 @@
 {
-  "version": "2.73.0",
+  "version": "2.74.1",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -13,6 +13,7 @@
     "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix"
   },
   "dependencies": {
+    "@ambire/signature-validator": "^1.5.0",
     "@lifi/types": "^17.7.1",
     "@metamask/eth-sig-util": "^8.2.0",
     "aes-js": "^3.1.2",
