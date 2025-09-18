@@ -3,6 +3,7 @@ import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from
 import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
+import { ProviderError } from '../../classes/ProviderError'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -130,7 +131,8 @@ export class Deployless {
         },
         'latest',
         { [arbitraryAddr]: { code: codeOfContractCode } }
-      ])
+      ]),
+      this.providerUrl
     )
     // any response bigger than 0x is sufficient to know that state override worked
     // the response would be just "0x" if state override doesn't work
@@ -216,7 +218,9 @@ export class Deployless {
       })
     ])
 
-    const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
+    const returnDataRaw = mapResponse(
+      await mapError(callPromisedWithResolveTimeout, this.providerUrl)
+    )
 
     return decodeFunctionResult({
       abi: this.abi,
@@ -239,7 +243,7 @@ export function fromDescriptor(
   )
 }
 
-async function mapError(callPromise: Promise<string>): Promise<string> {
+async function mapError(callPromise: Promise<string>, providerUrl: string): Promise<string> {
   try {
     return await callPromise
   } catch (e: any) {
@@ -249,7 +253,12 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
     if (e.code === 'CALL_EXCEPTION' && e.error) throw e.error
     // ethers v6 provider: wrapping the error in case of execution reverted
     if (e.code === 'CALL_EXCEPTION' && e.data) return e.data
-    throw e
+
+    throw new ProviderError({
+      message: e?.message || '',
+      statusCode: e?.response?.statusCode,
+      providerUrl
+    })
   }
 }
 
