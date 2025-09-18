@@ -344,7 +344,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
         op.status === AccountOpStatus.BroadcastedButNotConfirmed
     )
 
-    console.log(pendingAccountOps, pendingAccountOpsBanner)
     if (pendingAccountOps.length) {
       let accountOpsForNextUpdate = pendingAccountOps
 

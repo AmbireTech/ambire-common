@@ -636,12 +636,12 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    this.activity.updateAccountsOpsStatuses()
-    this.swapAndBridge.reset()
-    this.transfer.resetForm()
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
     this.#continuousUpdates.accountStatePendingInterval.restart()
+    this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.swapAndBridge.reset()
+    this.transfer.resetForm()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
