@@ -9,19 +9,19 @@ export class ProviderError extends Error {
   code?: string
 
   constructor({
-    message: _message,
-    statusCode,
-    code,
+    originalError,
     providerUrl
   }: {
-    message: string
-    statusCode?: number
-    code?: string
+    originalError: Error & { [key: string]: any }
     providerUrl?: string
   }) {
-    const isProviderInvictus =
-      providerUrl?.includes('invictus') || providerUrl?.includes('localhost')
-    let message = _message
+    super('')
+    // Copy all properties from the original error to this error
+    Object.assign(this, originalError)
+    const statusCode = originalError?.response?.statusCode
+
+    const isProviderInvictus = providerUrl?.includes('invictus')
+    let message = originalError.message
 
     if (
       isProviderInvictus &&
@@ -37,10 +37,9 @@ export class ProviderError extends Error {
       }: ${message}`
     }
 
-    super(message)
     this.name = 'ProviderError'
+    this.message = message
     if (isProviderInvictus !== undefined) this.isProviderInvictus = isProviderInvictus
     if (statusCode !== undefined) this.statusCode = statusCode
-    if (code !== undefined) this.code = code
   }
 }

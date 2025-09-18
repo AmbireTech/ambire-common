@@ -255,8 +255,7 @@ async function mapError(callPromise: Promise<string>, providerUrl: string): Prom
     if (e.code === 'CALL_EXCEPTION' && e.data) return e.data
 
     throw new ProviderError({
-      message: e?.message || '',
-      statusCode: e?.response?.statusCode,
+      originalError: e,
       providerUrl
     })
   }
