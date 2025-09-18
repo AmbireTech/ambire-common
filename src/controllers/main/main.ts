@@ -1511,8 +1511,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   async resolveAccountOpAction(
     submittedAccountOp: SubmittedAccountOp,
-    actionId: AccountOpAction['id'],
-    isBasicAccountBroadcastingMultiple: boolean
+    actionId: AccountOpAction['id']
   ) {
     const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
@@ -1538,18 +1537,16 @@ export class MainController extends EventEmitter implements IMainController {
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    if (!isBasicAccountBroadcastingMultiple) {
-      const benzinUserRequest: SignUserRequest = {
-        id: new Date().getTime(),
-        action: { kind: 'benzin' },
-        session: new Session(),
-        meta
-      }
-      await this.requests.addUserRequests([benzinUserRequest], {
-        actionPosition: 'first',
-        skipFocus: true
-      })
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      session: new Session(),
+      meta
     }
+    await this.requests.addUserRequests([benzinUserRequest], {
+      actionPosition: 'first',
+      skipFocus: true
+    })
 
     await this.requests.actions.removeActions([actionId])
 
@@ -1848,10 +1845,7 @@ export class MainController extends EventEmitter implements IMainController {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
           },
-          txnId:
-            txnLength === 1
-              ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-              : multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash // undefined
+          txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
         }
       } catch (error: any) {
         if (this.#signAndBroadcastCallId !== callId) return
@@ -1870,7 +1864,8 @@ export class MainController extends EventEmitter implements IMainController {
             identifiedBy: {
               type: 'MultipleTxns',
               identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-            }
+            },
+            txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
         } else {
           return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
@@ -2057,11 +2052,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // resolve dapp requests, open benzin and etc only if the main sign accountOp
     if (type === SIGN_ACCOUNT_OP_MAIN) {
-      await this.resolveAccountOpAction(
-        submittedAccountOp,
-        actionId,
-        isBasicAccountBroadcastingMultiple
-      )
+      await this.resolveAccountOpAction(submittedAccountOp, actionId)
 
       // TODO: the form should be reset in a success state in FE
       this.transactionManager?.formState.resetForm()
