@@ -459,6 +459,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
     if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
+      userRequest.meta.pendingToRemove = true
+
       setTimeout(async () => {
         await this.removeUserRequests([requestId])
         this.emitUpdate()
