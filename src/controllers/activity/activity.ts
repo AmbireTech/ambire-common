@@ -215,13 +215,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
-    this.#setDashboardBannersSeenIfNeeded(sessionId, filters.account)
+    this.setDashboardBannersSeen(sessionId, filters.account)
     this.accountsOps[sessionId] = { result, filters, pagination }
 
     this.emitUpdate()
   }
 
-  #setDashboardBannersSeenIfNeeded(sessionId: string, accountAddr: string) {
+  setDashboardBannersSeen(sessionId: string, accountAddr: string) {
     if (!sessionId.startsWith('dashboard')) return
 
     this.banners = this.banners.map((b) => {
