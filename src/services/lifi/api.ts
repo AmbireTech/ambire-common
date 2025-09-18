@@ -234,7 +234,7 @@ export class LiFiAPI implements SwapProvider {
    */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
     this.#headers = {
@@ -242,7 +242,7 @@ export class LiFiAPI implements SwapProvider {
       'Content-Type': 'application/json'
     }
 
-    this.#apiKey = process.env.LI_FI_API_KEY!
+    this.#apiKey = apiKey
   }
 
   activateApiKey() {
@@ -305,7 +305,7 @@ export class LiFiAPI implements SwapProvider {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout'
+                'Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)
