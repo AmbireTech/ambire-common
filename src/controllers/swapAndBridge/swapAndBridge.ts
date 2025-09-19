@@ -449,14 +449,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
+    // this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
     // also, just in case protection: filter out ready routes as we don't have
     // retry mechanism or follow up transaction handling anymore. Which means
     // ready routes in the storage are just leftover routes.
     // Same is true for completed, failed and refunded routes - they are just
     // leftover routes in storage
-    const filterOutStatuses = ['ready', 'completed', 'failed', 'refunded']
-    this.activeRoutes = this.activeRoutes.filter((r) => !filterOutStatuses.includes(r.routeStatus))
+    // const filterOutStatuses = ['ready', 'completed', 'failed', 'refunded']
+    // this.activeRoutes = this.activeRoutes.filter((r) => !filterOutStatuses.includes(r.routeStatus))
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
