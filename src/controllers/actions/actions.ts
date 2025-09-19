@@ -270,6 +270,14 @@ export class ActionsController extends EventEmitter {
   sendNewActionMessage(newAction: Action, type: 'queued' | 'updated') {
     if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
       if (this.actionWindow.loaded) {
+        // When the action window is loaded, we don't show messages for dappRequest actions
+        // if the current action is also a dappRequest action and is pending to be removed
+        if (
+          this.currentAction?.type === 'dappRequest' &&
+          this.currentAction?.userRequest?.meta.pendingToRemove
+        )
+          return
+
         const message = messageOnNewAction(newAction, type)
         if (message) this.#ui.message.sendToastMessage(message, { type: 'success' })
       } else {
