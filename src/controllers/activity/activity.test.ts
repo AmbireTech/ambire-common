@@ -12,7 +12,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProviders } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import * as submittedAccountOp from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
@@ -94,7 +94,7 @@ const SUBMITTED_ACCOUNT_OP = {
     type: 'Transaction',
     identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
   }
-} as SubmittedAccountOp
+} as submittedAccountOp.SubmittedAccountOp
 
 const SIGNED_MESSAGE: SignedMessage = {
   fromActionId: 1,
@@ -376,7 +376,7 @@ describe('Activity Controller ', () => {
             identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
           }
         }
-      ] as SubmittedAccountOp[]
+      ] as submittedAccountOp.SubmittedAccountOp[]
 
       // eslint-disable-next-line no-restricted-syntax
       for (const accountOp of accountsOps) {
@@ -466,7 +466,7 @@ describe('Activity Controller ', () => {
           type: 'Transaction',
           identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
         }
-      } as SubmittedAccountOp
+      } as submittedAccountOp.SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
@@ -510,7 +510,7 @@ describe('Activity Controller ', () => {
           type: 'Transaction',
           identifier: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258'
         }
-      } as SubmittedAccountOp
+      } as submittedAccountOp.SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
@@ -523,57 +523,55 @@ describe('Activity Controller ', () => {
         maxPages: 1
       })
     })
-    test('A banner is displayed for account ops not older than 10 minutes', async () => {
+    test('should display pending txns banners', async () => {
       const { controller } = await prepareTest()
 
       const accountOp = {
         ...SUBMITTED_ACCOUNT_OP,
-        status: AccountOpStatus.BroadcastedButNotConfirmed,
-        timestamp: Date.now() - 5 * 60 * 1000 // 5 minutes ago
-      }
-
-      await controller.addAccountOp(accountOp)
-
-      expect(controller.banners[0].id).toBe(accountOp.txnId)
-    })
-    test('A banner is not displayed for account ops older than 10 minutes', async () => {
-      const { controller } = await prepareTest()
-
-      const accountOp = {
-        ...SUBMITTED_ACCOUNT_OP,
-        status: AccountOpStatus.BroadcastedButNotConfirmed,
-        timestamp: Date.now() - 11 * 60 * 1000 // 11 minutes ago
-      }
-
-      await controller.addAccountOp(accountOp)
-
-      expect(controller.banners.length).toBe(0)
-    })
-    test('Confirmed banners are automatically hidden when a new account op is added or updated', async () => {
-      const { controller } = await prepareTest()
-
-      const accountOp = {
-        ...SUBMITTED_ACCOUNT_OP,
-        status: AccountOpStatus.Success,
-        timestamp: Date.now() - 5 * 60 * 1000 // 5 minutes ago
-      }
-
-      await controller.addAccountOp(accountOp)
-
-      expect(controller.banners[0].id).toBe(accountOp.txnId)
-      expect(controller.banners.length).toBe(1)
-
-      // Simulate a new account op added
-      const newAccountOp = {
-        ...SUBMITTED_ACCOUNT_OP,
-        id: 'new-account-op',
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         timestamp: Date.now()
       }
 
-      await controller.addAccountOp(newAccountOp)
+      await controller.addAccountOp(accountOp)
 
       expect(controller.banners.length).toBe(1)
+      expect(controller.banners[0].category).toBe('pending-to-be-confirmed-acc-ops')
+      expect(controller.banners[0].meta!.accountOpsCount).toBe(1)
+      await controller.addAccountOp({ ...accountOp, timestamp: Date.now() })
+      expect(controller.banners.length).toBe(1)
+      expect(controller.banners[0].category).toBe('pending-to-be-confirmed-acc-ops')
+      expect(controller.banners[0].meta!.accountOpsCount).toBe(2)
+    })
+    test('should display failed txns banners and hide them on session removal', async () => {
+      const { controller } = await prepareTest()
+
+      const accountOp = {
+        ...SUBMITTED_ACCOUNT_OP,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        timestamp: Date.now()
+      }
+
+      await controller.addAccountOp(accountOp)
+
+      expect(controller.banners.length).toBe(1)
+      expect(controller.banners[0].category).toBe('pending-to-be-confirmed-acc-ops')
+      const spy = jest.spyOn(submittedAccountOp, 'updateOpStatus')
+      spy.mockImplementationOnce((op) => {
+        // eslint-disable-next-line no-param-reassign
+        op.status = AccountOpStatus.Rejected
+        return op
+      })
+
+      await controller.updateAccountsOpsStatuses()
+      expect(controller.banners.length).toBe(1)
+      expect(controller.banners[0].category).toBe('failed-acc-ops')
+      expect(controller.banners[0].meta!.seen).toBe(false)
+      await controller.filterAccountsOps('dashboard-test-id', {
+        account: accountOp.accountAddr
+      })
+      expect(controller.banners[0].meta!.seen).toBe(true)
+      controller.resetAccountsOpsFilters('dashboard-test-id')
+      expect(controller.banners.length).toBe(0)
     })
 
     // test('`Unknown but past nonce` status is set correctly', async () => {
@@ -703,7 +701,7 @@ describe('Activity Controller ', () => {
           type: 'Transaction',
           identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
         }
-      } as SubmittedAccountOp
+      } as submittedAccountOp.SubmittedAccountOp
 
       const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
         ...accountOp,

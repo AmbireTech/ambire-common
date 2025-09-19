@@ -1,10 +1,17 @@
-import { Account } from '../../interfaces/account'
+import { AccountId } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
-import { Action, Banner, BannerType } from '../../interfaces/banner'
+import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { AccountState } from '../defiPositions/types'
+
+export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
+  banners.filter((banner) => {
+    if (!banner.meta?.accountAddr) return true
+
+    return banner.meta.accountAddr === selectedAccount
+  })
 
 const getBridgeActionText = (
   routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
