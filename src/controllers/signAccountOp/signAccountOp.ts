@@ -170,6 +170,7 @@ export type SignAccountOpUpdateProps = {
   blockGasLimit?: bigint
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
+  shouldSkipEstimation?: boolean
 }
 
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
@@ -837,7 +838,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation,
-    paidByKeyType
+    paidByKeyType,
+    shouldSkipEstimation
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -895,7 +897,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.accountOp.calls = calls
 
           if (hasNewCalls) this.learnTokensFromCalls()
-          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+          if (!shouldSkipEstimation) {
+            this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+          }
         }
       }
 

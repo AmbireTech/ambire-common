@@ -33,7 +33,7 @@ import {
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -79,6 +79,15 @@ export class TransferController extends EventEmitter implements ITransferControl
    * invalid values. Use #getSafeAmountFromFieldValue() to get a formatted value.
    */
   amount = ''
+
+  /**
+   * The final amount to send. Another property is needed so we could
+   * differentiate between the amount the user wants to send and the
+   * amount he could actually send. This is in case the user selected MAX
+   * but doesn't have anything left to pay the fee with
+   * Sanitized
+   */
+  finalAmount: bigint = 0n
 
   amountInFiat = ''
 
@@ -347,6 +356,94 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   get recipientAddress() {
     return this.addressState.ensAddress || this.addressState.fieldValue
+  }
+
+  /**
+   * Adjust the amount and fee
+   */
+  async adjustTransferAmountAndFee() {
+    if (!this.signAccountOpController) return
+
+    const op = this.signAccountOpController.accountOp
+    if (
+      !this.#selectedToken ||
+      this.signAccountOpController.accountOp.calls.length > 1 ||
+      !this.signAccountOpController.feeTokenResult ||
+      !op.gasFeePayment
+    )
+      return
+
+    this.finalAmount = BigInt(this.amount.replace('.', ''))
+    if (this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address) {
+      // check if we're sending max amount
+      // if we are, reduce it minus estimated fee and update calls
+      // also, do not re-estimate
+      const currentPortfolio = this.#portfolio.getLatestPortfolioState(op.accountAddr)
+      const currentPortfolioNetwork = currentPortfolio[op.chainId.toString()]
+      const portfolioToken = currentPortfolioNetwork?.result?.tokens.find(
+        (token) => token.address === this.#selectedToken!.address
+      )
+      // @justInCase
+      if (!portfolioToken) return
+
+      // is max?
+      if (portfolioToken.amount === this.finalAmount) {
+        this.finalAmount -= op.gasFeePayment.amount
+        const userRequest = buildTransferUserRequest({
+          selectedAccount: op.accountAddr,
+          amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
+          selectedToken: this.#selectedToken,
+          recipientAddress: this.isTopUp
+            ? FEE_COLLECTOR
+            : getAddressFromAddressState(this.addressState)
+        })
+
+        // @justInCase
+        if (!userRequest || userRequest.action.kind !== 'calls') {
+          return
+        }
+
+        this.signAccountOpController.update({
+          calls: userRequest.action.calls,
+          shouldSkipEstimation: true
+        })
+      }
+    }
+
+    const userRequest = buildTransferUserRequest({
+      selectedAccount: op.accountAddr,
+      amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
+      selectedToken: this.#selectedToken,
+      recipientAddress: this.isTopUp ? FEE_COLLECTOR : getAddressFromAddressState(this.addressState)
+    })
+
+    // @justInCase
+    if (!userRequest || userRequest.action.kind !== 'calls') {
+      return
+    }
+
+    this.signAccountOpController.update({
+      calls: userRequest.action.calls,
+      shouldSkipEstimation: true
+    })
+
+    this.emitUpdate()
+  }
+
+  /**
+   * This is for updates from the UI
+   */
+  async updateSignAccountOp(props: SignAccountOpUpdateProps) {
+    if (!this.signAccountOpController) return
+
+    this.signAccountOpController.update(props)
+
+    // do not adjust the transfer amount and fee if the feeToken or speed
+    // hasn't been changed from the UI
+    if (!props.feeToken && !props.speed) return
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.adjustTransferAmountAndFee()
   }
 
   async update({
@@ -620,7 +717,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       network
     )
 
-    const accountOp = {
+    const accountOp: AccountOp = {
       accountAddr: this.#selectedAccountData.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
@@ -631,7 +728,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       signature: null,
       calls,
       meta: {
-        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+        adjustableAccountOpMode: {
+          tokenAddress: this.#selectedToken!.address
+        }
       }
     }
 
