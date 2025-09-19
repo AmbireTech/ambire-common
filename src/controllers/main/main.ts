@@ -64,8 +64,6 @@ import { getAccountOpFromAction } from '../../libs/actions/actions'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
-import { SocketAPI } from '../../services/socket/api'
-import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 /* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
@@ -78,6 +76,8 @@ import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { SocketAPI } from '../../services/socket/api'
+import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
@@ -238,6 +238,8 @@ export class MainController extends EventEmitter implements IMainController {
     fetch,
     relayerUrl,
     velcroUrl,
+    liFiApiKey,
+    bungeeApiKey,
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
@@ -248,6 +250,8 @@ export class MainController extends EventEmitter implements IMainController {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
+    liFiApiKey: string
+    bungeeApiKey: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
@@ -389,6 +393,8 @@ export class MainController extends EventEmitter implements IMainController {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
+    const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
+    const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       accounts: this.accounts,
       keystore: this.keystore,
@@ -400,10 +406,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       invite: this.invite,
       storage: this.storage,
-      swapProvider: new SwapProviderParallelExecutor([
-        new LiFiAPI({ fetch }),
-        new SocketAPI({ fetch })
-      ]),
+      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
@@ -464,9 +467,7 @@ export class MainController extends EventEmitter implements IMainController {
         activity: this.activity,
         invite: this.invite,
         // TODO<Bobby>: will need help configuring this once the plan forward is clear
-        serviceProviderAPI: new LiFiAPI({
-          fetch
-        }),
+        serviceProviderAPI: LiFiProvider,
         storage: this.storage,
         portfolioUpdate: this.updateSelectedAccountPortfolio.bind(this)
       })
@@ -636,12 +637,12 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    this.activity.updateAccountOpBanners()
-    this.swapAndBridge.reset()
-    this.transfer.resetForm()
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
     this.#continuousUpdates.accountStatePendingInterval.restart()
+    this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.swapAndBridge.reset()
+    this.transfer.resetForm()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
@@ -1037,7 +1038,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: new Error(`Debug trace call error on ${network.name}: ${e.message}`)
+        error: e
       })
     }
 
