@@ -58,17 +58,19 @@ export class SocketAPI implements SwapProvider {
 
   #fetch: Fetch
 
+  #requestTimeoutMs = 10000
+
   #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
 
   #headers: RequestInitWithCustomHeaders['headers']
 
   isHealthy: boolean | null = null
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
     this.#headers = {
-      'x-api-key': process.env.BUNGEE_API_KEY!,
+      'x-api-key': apiKey,
       affiliate:
         '609913096e183b62cecd0dfdc13382f618baedceb5fef75aad43e6cbff367039708902197e0b2b78b1d76cb0837ad0b318baedceb5fef75aad43e6cb',
       Accept: 'application/json',
@@ -111,7 +113,18 @@ export class SocketAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
-      response = await fetchPromise
+      response = await Promise.race([
+        fetchPromise,
+        new Promise<CustomResponse>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new SwapAndBridgeProviderApiError(
+                'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
+              )
+            )
+          }, this.#requestTimeoutMs)
+        })
+      ])
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''

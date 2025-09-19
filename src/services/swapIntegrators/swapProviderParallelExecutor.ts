@@ -35,19 +35,9 @@ export class SwapProviderParallelExecutor {
     this.isHealthy = null
   }
 
-  // eslint-disable-next-line class-methods-use-this
-  #timeout() {
-    const errMsg = 'Swap provider timeout'
-    return new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new SwapAndBridgeProviderApiError(errMsg, errMsg)), 10000)
-    })
-  }
-
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
     const apiResponses = await Promise.all(
-      this.#providers.map((provider: SwapProvider) =>
-        Promise.race([fetchMethod(provider), this.#timeout().catch((e) => e)])
-      )
+      this.#providers.map((provider: SwapProvider) => fetchMethod(provider))
     )
     const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
     if (resultsWithoutErrors.length) return resultsWithoutErrors.flat() as T
@@ -75,6 +65,7 @@ export class SwapProviderParallelExecutor {
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
+      .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
 
     // Replace the technical details with combined ones
     if (technicalDetails.length > 0) {
@@ -92,7 +83,7 @@ export class SwapProviderParallelExecutor {
   ): Promise<T> {
     const provider = this.#providers.find((p) => p.id === providerId)
     if (!provider) throw new Error('Swap provider misconfiguration')
-    return Promise.race([(provider[method] as any)(...args), this.#timeout()])
+    return (provider[method] as any)(...args)
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
