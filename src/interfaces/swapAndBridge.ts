@@ -305,8 +305,8 @@ export type ActiveRoute = {
 
 export type SwapAndBridgeActiveRoute = {
   serviceProviderId: string
-  fromAsset: SocketAPIToken
-  toAsset: SocketAPIToken
+  fromAsset?: SocketAPIToken
+  toAsset?: SocketAPIToken
   fromAssetAddress: string
   toAssetAddress: string
   steps: SwapAndBridgeStep[]
