@@ -305,6 +305,8 @@ export type ActiveRoute = {
 
 export type SwapAndBridgeActiveRoute = {
   serviceProviderId: string
+  // FIXME: Temporarily set `fromAsset` and `toAsset` also as maybe missing,
+  // they could have indeed be missing for old active routes in storage.
   fromAsset?: SocketAPIToken
   toAsset?: SocketAPIToken
   fromAssetAddress: string

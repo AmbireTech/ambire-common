@@ -449,7 +449,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
+    // FIXME: Temporarily omit getting prev activeRoutes from storage, because of
+    // old records with different (unexpected) structure causing crashes.
     // this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
+
+    // FIXME: Figure out a mechanism to clean up these routes in storage,
+    // otherwise this is a potential storage leak (although we have unlimited storage permission).
     // also, just in case protection: filter out ready routes as we don't have
     // retry mechanism or follow up transaction handling anymore. Which means
     // ready routes in the storage are just leftover routes.
