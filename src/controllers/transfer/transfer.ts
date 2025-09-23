@@ -376,7 +376,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    this.finalAmount = BigInt(this.amount.replace('.', ''))
+    this.finalAmount = parseUnits(
+      getSanitizedAmount(this.amount, this.#selectedToken.decimals),
+      this.#selectedToken.decimals
+    )
     if (this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address) {
       // check if we're sending max amount
       // if we are, reduce it minus estimated fee and update the calls
