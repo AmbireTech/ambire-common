@@ -33,7 +33,7 @@ import {
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController, SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -362,16 +362,22 @@ export class TransferController extends EventEmitter implements ITransferControl
    * Adjust the amount and fee
    */
   async adjustTransferAmountAndFee() {
-    if (!this.signAccountOpController) return
+    if (!this.signAccountOpController) {
+      this.emitUpdate()
+      return
+    }
 
     const op = this.signAccountOpController.accountOp
     if (
       !this.#selectedToken ||
       this.signAccountOpController.accountOp.calls.length > 1 ||
       !this.signAccountOpController.feeTokenResult ||
-      !op.gasFeePayment
-    )
+      !op.gasFeePayment ||
+      !this.signAccountOpController.canUpdate()
+    ) {
+      this.emitUpdate()
       return
+    }
 
     this.finalAmount = BigInt(this.amount.replace('.', ''))
     if (this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address) {
@@ -384,7 +390,10 @@ export class TransferController extends EventEmitter implements ITransferControl
         (token) => token.address === this.#selectedToken!.address
       )
       // @justInCase
-      if (!portfolioToken) return
+      if (!portfolioToken) {
+        this.emitUpdate()
+        return
+      }
 
       // is max?
       if (portfolioToken.amount === this.finalAmount) {
@@ -400,13 +409,11 @@ export class TransferController extends EventEmitter implements ITransferControl
 
         // @justInCase
         if (!userRequest || userRequest.action.kind !== 'calls') {
+          this.emitUpdate()
           return
         }
 
-        this.signAccountOpController.update({
-          calls: userRequest.action.calls,
-          shouldSkipEstimation: true
-        })
+        this.signAccountOpController.setCallsSilently(userRequest.action.calls)
       }
     }
 
@@ -419,31 +426,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // @justInCase
     if (!userRequest || userRequest.action.kind !== 'calls') {
+      this.emitUpdate()
       return
     }
 
-    this.signAccountOpController.update({
-      calls: userRequest.action.calls,
-      shouldSkipEstimation: true
-    })
-
+    this.signAccountOpController.setCallsSilently(userRequest.action.calls)
     this.emitUpdate()
-  }
-
-  /**
-   * This is for updates from the UI
-   */
-  async updateSignAccountOp(props: SignAccountOpUpdateProps) {
-    if (!this.signAccountOpController) return
-
-    this.signAccountOpController.update(props)
-
-    // do not adjust the transfer amount and fee if the feeToken or speed
-    // hasn't been changed from the UI
-    if (!props.feeToken && !props.speed) return
-
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.adjustTransferAmountAndFee()
   }
 
   async update({
@@ -756,7 +744,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     // propagate updates from signAccountOp here
     this.#signAccountOpSubscriptions.push(
       this.signAccountOpController.onUpdate(() => {
-        this.emitUpdate()
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.adjustTransferAmountAndFee()
       })
     )
     this.#signAccountOpSubscriptions.push(
@@ -767,6 +756,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       })
     )
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reestimate()
   }
 
@@ -794,6 +784,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         }
 
         if (this.signAccountOpController?.estimation.errors.length) {
+          // eslint-disable-next-line no-console
           console.log(
             'Errors on Transfer re-estimate',
             this.signAccountOpController.estimation.errors
@@ -802,6 +793,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     loop()
   }
 

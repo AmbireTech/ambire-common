@@ -170,7 +170,6 @@ export type SignAccountOpUpdateProps = {
   blockGasLimit?: bigint
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
-  shouldSkipEstimation?: boolean
 }
 
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
@@ -838,8 +837,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation,
-    paidByKeyType,
-    shouldSkipEstimation
+    paidByKeyType
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -897,9 +895,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           this.accountOp.calls = calls
 
           if (hasNewCalls) this.learnTokensFromCalls()
-          if (!shouldSkipEstimation) {
-            this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
-          }
+          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
         }
       }
 
@@ -2056,6 +2052,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return null
     return this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()]
       .delegatedContract
+  }
+
+  /**
+   * Use this when you want to update the calls of the account op
+   * without triggering an update. We use this for adjusting the
+   * differences between the transfer value and the fee value
+   * and only the blockchain cares about this
+   */
+  setCallsSilently(calls: AccountOp['calls']) {
+    this.accountOp.calls = calls
   }
 
   toJSON() {
