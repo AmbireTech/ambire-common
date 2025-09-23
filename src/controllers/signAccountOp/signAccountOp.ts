@@ -2054,16 +2054,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       .delegatedContract
   }
 
-  /**
-   * Use this when you want to update the calls of the account op
-   * without triggering an update. We use this for adjusting the
-   * differences between the transfer value and the fee value
-   * and only the blockchain cares about this
-   */
-  setCallsSilently(calls: AccountOp['calls']) {
-    this.accountOp.calls = calls
-  }
-
   toJSON() {
     return {
       ...this,

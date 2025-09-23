@@ -229,8 +229,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#selectedToken = token
 
     if (
-      prevSelectedToken?.address !== token?.address ||
-      prevSelectedToken?.chainId !== token?.chainId
+      prevSelectedToken?.address !== token.address ||
+      prevSelectedToken?.chainId !== token.chainId
     ) {
       if (!token.priceIn.length) {
         this.amountFieldMode = 'token'
@@ -238,6 +238,12 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.#setSWWarningVisibleIfNeeded()
+
+      // upon an update of the selected token, update the accountOp meta
+      if (this.signAccountOpController?.accountOp.meta?.adjustableAccountOpMode) {
+        this.signAccountOpController.accountOp.meta.adjustableAccountOpMode.tokenAddress =
+          token.address
+      }
     }
   }
 
@@ -370,7 +376,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.signAccountOpController.accountOp.calls.length > 1 ||
       !this.signAccountOpController.feeTokenResult ||
       !op.gasFeePayment ||
-      !this.signAccountOpController.canUpdate()
+      !this.signAccountOpController.canUpdate() ||
+      !this.signAccountOpController.selectedOption
     ) {
       this.emitUpdate()
       return
@@ -380,7 +387,11 @@ export class TransferController extends EventEmitter implements ITransferControl
       getSanitizedAmount(this.amount, this.#selectedToken.decimals),
       this.#selectedToken.decimals
     )
-    if (this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address) {
+    if (
+      this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address &&
+      this.signAccountOpController.selectedOption.paidBy ===
+        this.signAccountOpController.accountOp.accountAddr
+    ) {
       // check if we're sending max amount
       // if we are, reduce it minus estimated fee and update the calls
       const currentPortfolio = this.#portfolio.getLatestPortfolioState(op.accountAddr)
@@ -404,7 +415,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
           // @justInCase
           if (userRequest && userRequest.action.kind === 'calls') {
-            this.signAccountOpController.setCallsSilently(userRequest.action.calls)
+            this.signAccountOpController.accountOp.calls = userRequest.action.calls
           }
         }
       }
@@ -419,7 +430,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       })
       // @justInCase
       if (userRequest && userRequest.action.kind === 'calls') {
-        this.signAccountOpController.setCallsSilently(userRequest.action.calls)
+        this.signAccountOpController.accountOp.calls = userRequest.action.calls
       }
     }
 
