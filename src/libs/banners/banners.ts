@@ -1,10 +1,18 @@
-import { Account } from '../../interfaces/account'
+import { AccountId } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
-import { Action, Banner, BannerType } from '../../interfaces/banner'
+import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { AccountState } from '../defiPositions/types'
+import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
+
+export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
+  banners.filter((banner) => {
+    if (!banner.meta?.accountAddr) return true
+
+    return banner.meta.accountAddr === selectedAccount
+  })
 
 const getBridgeActionText = (
   routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
@@ -48,8 +56,6 @@ export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
   accountOpActions: AccountOpAction[]
 ): Banner[] => {
-  const isBridgeTxn = (route: SwapAndBridgeActiveRoute) =>
-    route.fromAsset.chainId !== route.toAsset.chainId
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return accountOpActions.some((action) => {
       return action.accountOp.calls.some(
@@ -61,7 +67,8 @@ export const getBridgeBanners = (
     })
   }
 
-  const filteredRoutes = activeRoutes.filter(isBridgeTxn).filter((route) => {
+  const filteredRoutes = activeRoutes.filter((route) => {
+    if (!route.route || !getIsBridgeRoute(route.route)) return false
     if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
       return true
     return !isRouteTurnedIntoAccountOp(route)

@@ -13,9 +13,6 @@ import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import wait from '../../utils/wait'
 import { MainController } from '../main/main'
 
-// Public API key, shared by Socket, for testing purposes only
-const swapApiKey = '72a5b4b0-e727-48be-8aa1-5da9d62fe635'
-
 const accounts = [
   {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -97,7 +94,8 @@ const prepareTest = async () => {
     fetch,
     relayerUrl,
     featureFlags: {},
-    swapApiKey,
+    liFiApiKey: '',
+    bungeeApiKey: '',
     keystoreSigners: { internal: KeystoreSigner },
     externalSignerControllers: {},
     uiManager,

@@ -305,8 +305,10 @@ export type ActiveRoute = {
 
 export type SwapAndBridgeActiveRoute = {
   serviceProviderId: string
-  fromAsset: SocketAPIToken
-  toAsset: SocketAPIToken
+  // FIXME: Temporarily set `fromAsset` and `toAsset` also as maybe missing,
+  // they could have indeed be missing for old active routes in storage.
+  fromAsset?: SocketAPIToken
+  toAsset?: SocketAPIToken
   fromAssetAddress: string
   toAssetAddress: string
   steps: SwapAndBridgeStep[]
@@ -463,6 +465,7 @@ export interface BungeeBuildTxnResponse {
 
 export interface SwapProvider {
   id: string
+  name: string
   isHealthy: boolean | null
   updateHealth(): void
   resetHealth(): void

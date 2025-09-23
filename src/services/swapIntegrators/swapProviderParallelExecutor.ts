@@ -13,6 +13,8 @@ import { TokenResult } from '../../libs/portfolio'
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
 
+  name = 'Parallel'
+
   isHealthy: boolean | null = null
 
   #providers: SwapProvider[]
@@ -33,27 +35,45 @@ export class SwapProviderParallelExecutor {
     this.isHealthy = null
   }
 
-  // eslint-disable-next-line class-methods-use-this
-  #timeout() {
-    const errMsg = 'Swap provider timeout'
-    return new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new SwapAndBridgeProviderApiError(errMsg, errMsg)), 10000)
-    })
-  }
-
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
     const apiResponses = await Promise.all(
-      this.#providers.map((provider: SwapProvider) =>
-        Promise.race([fetchMethod(provider), this.#timeout().catch((e) => e)])
-      )
+      this.#providers.map((provider: SwapProvider) => fetchMethod(provider))
     )
     const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
-    if (!resultsWithoutErrors.length) {
-      const errMsg = 'Swap providers are currently not working. Please try again later'
-      throw new SwapAndBridgeProviderApiError(errMsg, errMsg)
+    if (resultsWithoutErrors.length) return resultsWithoutErrors.flat() as T
+
+    const errors = apiResponses.filter((r): r is Error => r instanceof Error)
+    if (!errors.length) {
+      const errMsg = 'Our service providers are currently unavailable. Please try again later.'
+      throw new SwapAndBridgeProviderApiError(errMsg)
     }
 
-    return resultsWithoutErrors.flat() as T
+    // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
+    const baseMessage = errors[0].message || 'Unknown error'
+
+    // Extract technical details from all errors (that's the content between < and >)
+    const technicalDetails = errors
+      .map((error) => {
+        const message = error.message || ''
+        const match = message.match(/<([^>]+)>/)
+        return match ? match[1] : null
+      })
+      .filter(Boolean)
+
+    // Modify the base message to indicate multiple providers
+    const providerNames = this.#providers.map((p) => p.name).join(' and ')
+    let combinedMessage = baseMessage
+      .replace(/\bLiFi\b/g, providerNames)
+      .replace(/\bservice provider\b/g, 'service providers')
+      .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
+
+    // Replace the technical details with combined ones
+    if (technicalDetails.length > 0) {
+      const combinedDetails = technicalDetails.join('> and <')
+      combinedMessage = combinedMessage.replace(/<[^>]+>/, `<${combinedDetails}>`)
+    }
+
+    throw new SwapAndBridgeProviderApiError(combinedMessage)
   }
 
   async #routeTo<T, M extends keyof SwapProvider>(
@@ -63,7 +83,7 @@ export class SwapProviderParallelExecutor {
   ): Promise<T> {
     const provider = this.#providers.find((p) => p.id === providerId)
     if (!provider) throw new Error('Swap provider misconfiguration')
-    return Promise.race([(provider[method] as any)(...args), this.#timeout()])
+    return (provider[method] as any)(...args)
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {

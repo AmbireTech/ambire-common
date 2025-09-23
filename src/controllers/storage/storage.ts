@@ -55,6 +55,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeIsDefaultWalletStorageIfExist() // As of version 4.57.0
       await this.#removeOnboardingStateStorageIfExist() // As of version 4.59.0
       await this.#migrateNetworkIdToChainId()
+      await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -595,6 +596,43 @@ export class StorageController extends EventEmitter implements IStorageControlle
         ),
       true
     )
+  }
+
+  /**
+   * As of version 5.24.0, due to a bug - AccountPicker controller was wrongly
+   * saving `usedOnNetworks` on the accounts, which should NOT get persisted -
+   * it was causing side effects especially when the accounts were unused and
+   * then gradually getting used on more networks.
+   */
+  async #migrateAccountsCleanupUsedOnNetworks() {
+    const [passedMigrations, accounts] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('accounts', [])
+    ])
+
+    if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
+
+    const storageUpdates = [
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateAccountsCleanupUsedOnNetworks'])
+      ])
+    ]
+
+    // @ts-ignore-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
+    const shouldCleanupUsedOnNetworks = accounts.some((a) => a.usedOnNetworks)
+    if (shouldCleanupUsedOnNetworks) {
+      storageUpdates.push(
+        this.#storage.set(
+          'accounts',
+          accounts.map((acc) =>
+            // destructure and re-build to remove the `usedOnNetworks` property
+            'usedOnNetworks' in acc ? (({ usedOnNetworks, ...rest }) => ({ ...rest }))(acc) : acc
+          )
+        )
+      )
+    }
+
+    await Promise.all(storageUpdates)
   }
 
   toJSON() {

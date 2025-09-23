@@ -261,7 +261,6 @@ const buildRevokeApprovalIfNeeded = async (
   provider: RPCProvider
 ): Promise<Call | undefined> => {
   if (!userTx.approvalData) return
-  console.log(userTx)
   const erc20Contract = new Contract(userTx.approvalData.approvalTokenAddress, ERC20.abi, provider)
   const requiredAmount = !isBasicAccount(account, state)
     ? BigInt(userTx.approvalData.minimumApprovalAmount)

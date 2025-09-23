@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -210,6 +210,8 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
 export class LiFiAPI implements SwapProvider {
   id: string = 'lifi'
 
+  name: string = 'LiFi'
+
   #fetch: Fetch
 
   #baseUrl = 'https://li.quest/v1'
@@ -232,7 +234,7 @@ export class LiFiAPI implements SwapProvider {
    */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
     this.#headers = {
@@ -240,7 +242,7 @@ export class LiFiAPI implements SwapProvider {
       'Content-Type': 'application/json'
     }
 
-    this.#apiKey = process.env.LI_FI_API_KEY!
+    this.#apiKey = apiKey
   }
 
   activateApiKey() {
@@ -303,7 +305,7 @@ export class LiFiAPI implements SwapProvider {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout'
+                'Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)
