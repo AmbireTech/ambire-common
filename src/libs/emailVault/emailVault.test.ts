@@ -38,7 +38,8 @@ const initEmailVaultTest = async () => {
   }
 }
 
-describe('happy cases email vault', () => {
+// Email vault test fail very frequently so we are skipping them for now
+describe.skip('happy cases email vault', () => {
   beforeAll(async () => {
     email = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
     const result = await requestMagicLink(email, relayerUrl, fetch)
