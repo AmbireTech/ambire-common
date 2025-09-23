@@ -362,13 +362,10 @@ export class TransferController extends EventEmitter implements ITransferControl
    * Adjust the amount and fee
    */
   async adjustTransferAmountAndFee() {
-    if (!this.signAccountOpController) {
-      this.emitUpdate()
-      return
-    }
-
-    const op = this.signAccountOpController.accountOp
+    const op = this.signAccountOpController?.accountOp
     if (
+      !this.signAccountOpController ||
+      !op ||
       !this.#selectedToken ||
       this.signAccountOpController.accountOp.calls.length > 1 ||
       !this.signAccountOpController.feeTokenResult ||
@@ -382,55 +379,47 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.finalAmount = BigInt(this.amount.replace('.', ''))
     if (this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address) {
       // check if we're sending max amount
-      // if we are, reduce it minus estimated fee and update calls
-      // also, do not re-estimate
+      // if we are, reduce it minus estimated fee and update the calls
       const currentPortfolio = this.#portfolio.getLatestPortfolioState(op.accountAddr)
       const currentPortfolioNetwork = currentPortfolio[op.chainId.toString()]
       const portfolioToken = currentPortfolioNetwork?.result?.tokens.find(
         (token) => token.address === this.#selectedToken!.address
       )
       // @justInCase
-      if (!portfolioToken) {
-        this.emitUpdate()
-        return
-      }
+      if (portfolioToken) {
+        // is max?
+        if (portfolioToken.amount === this.finalAmount) {
+          this.finalAmount -= op.gasFeePayment.amount
+          const userRequest = buildTransferUserRequest({
+            selectedAccount: op.accountAddr,
+            amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
+            selectedToken: this.#selectedToken,
+            recipientAddress: this.isTopUp
+              ? FEE_COLLECTOR
+              : getAddressFromAddressState(this.addressState)
+          })
 
-      // is max?
-      if (portfolioToken.amount === this.finalAmount) {
-        this.finalAmount -= op.gasFeePayment.amount
-        const userRequest = buildTransferUserRequest({
-          selectedAccount: op.accountAddr,
-          amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
-          selectedToken: this.#selectedToken,
-          recipientAddress: this.isTopUp
-            ? FEE_COLLECTOR
-            : getAddressFromAddressState(this.addressState)
-        })
-
-        // @justInCase
-        if (!userRequest || userRequest.action.kind !== 'calls') {
-          this.emitUpdate()
-          return
+          // @justInCase
+          if (userRequest && userRequest.action.kind === 'calls') {
+            this.signAccountOpController.setCallsSilently(userRequest.action.calls)
+          }
         }
-
+      }
+    } else {
+      const userRequest = buildTransferUserRequest({
+        selectedAccount: op.accountAddr,
+        amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
+        selectedToken: this.#selectedToken,
+        recipientAddress: this.isTopUp
+          ? FEE_COLLECTOR
+          : getAddressFromAddressState(this.addressState)
+      })
+      // @justInCase
+      if (userRequest && userRequest.action.kind === 'calls') {
         this.signAccountOpController.setCallsSilently(userRequest.action.calls)
       }
     }
 
-    const userRequest = buildTransferUserRequest({
-      selectedAccount: op.accountAddr,
-      amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
-      selectedToken: this.#selectedToken,
-      recipientAddress: this.isTopUp ? FEE_COLLECTOR : getAddressFromAddressState(this.addressState)
-    })
-
-    // @justInCase
-    if (!userRequest || userRequest.action.kind !== 'calls') {
-      this.emitUpdate()
-      return
-    }
-
-    this.signAccountOpController.setCallsSilently(userRequest.action.calls)
     this.emitUpdate()
   }
 
