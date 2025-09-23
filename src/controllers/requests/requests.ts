@@ -94,6 +94,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
+  #getStatuses: () => any
+
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
   #destroySignAccountOp: () => void
@@ -132,7 +134,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     destroySignAccountOp,
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
-    guardHWSigning
+    guardHWSigning,
+    getStatuses
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -166,6 +169,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#transactionManager = transactionManager
 
     this.#getSignAccountOp = getSignAccountOp
+    this.#getStatuses = getStatuses
     this.#updateSignAccountOp = updateSignAccountOp
     this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -246,6 +250,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const actionsToAdd: Action[] = []
     const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
 
+    const signAccountOpController = this.#getSignAccountOp()
+    const signStatus = this.#getStatuses()
+
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
       if (
@@ -255,6 +262,41 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ) {
         await this.#addSwitchAccountUserRequest(req)
         return
+      }
+
+      console.log('Debugging', {
+        req,
+        signStatus: JSON.stringify(signStatus),
+        accountOp: signAccountOpController?.accountOp
+      })
+
+      if (req.action.kind === 'calls') {
+        if (
+          signStatus.signAndBroadcastAccountOp === 'SIGNING' ||
+          (signStatus.signAndBroadcastAccountOp === 'BROADCASTING' &&
+            signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
+            signAccountOpController?.accountOp.chainId === req.meta.chainId)
+        ) {
+          this.emitError({
+            level: 'major',
+            message:
+              'Before adding a new transaction, please wait the previous transaction signing  or broadcasting to be completed',
+            error: new Error(
+              'requestsController: trying to add a new request (addUserRequests), but there is an on-going signing or broadcasting process.'
+            )
+          })
+
+          if (req.dappPromise) {
+            req.dappPromise?.reject(
+              ethErrors.provider.custom({
+                code: 1001,
+                message:
+                  'Rejected: Please please wait the previous transaction signing  or broadcasting to be completed.'
+              })
+            )
+          }
+          return
+        }
       }
 
       if (req.action.kind === 'calls') {
