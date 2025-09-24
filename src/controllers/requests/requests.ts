@@ -61,6 +61,7 @@ import { ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { StatusesWithCustom } from '../../interfaces/main'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -92,9 +93,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #transactionManager?: ITransactionManagerController
 
+  #ui: IUiController
+
   #getSignAccountOp: () => ISignAccountOpController | null
 
-  #getStatuses: () => any
+  #getStatuses: () => StatusesWithCustom
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -154,6 +157,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
+    getStatuses: () => StatusesWithCustom
   }) {
     super()
 
@@ -167,6 +171,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
+    this.#ui = ui
 
     this.#getSignAccountOp = getSignAccountOp
     this.#getStatuses = getStatuses
@@ -252,6 +257,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const signAccountOpController = this.#getSignAccountOp()
     const signStatus = this.#getStatuses()
+    let hasTxInProgressErrorShown = false
 
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
@@ -264,37 +270,52 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return
       }
 
-      console.log('Debugging', {
-        req,
-        signStatus: JSON.stringify(signStatus),
-        accountOp: signAccountOpController?.accountOp
-      })
-
       if (req.action.kind === 'calls') {
+        // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
+        //
+        // Why? When a transaction is being signed and broadcast, its action is still unresolved.
+        // If a new request is added during this time, it gets incorrectly attached to the ongoing action.
+        // Once the transaction is broadcast, the action resolves,
+        // leaving the new request "orphaned" in the background with no banner shown on the Dashboard.
+        // The next time the user starts a transaction, both requests appear in the batch, which is confusing.
+        // To avoid this, we block new requests until the current process is complete.
+        //
+        //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (
           signStatus.signAndBroadcastAccountOp === 'SIGNING' ||
           (signStatus.signAndBroadcastAccountOp === 'BROADCASTING' &&
             signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
             signAccountOpController?.accountOp.chainId === req.meta.chainId)
         ) {
-          this.emitError({
-            level: 'major',
-            message:
-              'Before adding a new transaction, please wait the previous transaction signing  or broadcasting to be completed',
-            error: new Error(
-              'requestsController: trying to add a new request (addUserRequests), but there is an on-going signing or broadcasting process.'
-            )
-          })
+          // Make sure to show the error once
+          if (!hasTxInProgressErrorShown) {
+            const errorMessage =
+              'Please wait until the previous transaction is fully processed before adding a new one.'
 
-          if (req.dappPromise) {
-            req.dappPromise?.reject(
-              ethErrors.provider.custom({
-                code: 1001,
-                message:
-                  'Rejected: Please please wait the previous transaction signing  or broadcasting to be completed.'
+            this.emitError({
+              level: 'major',
+              message: errorMessage,
+              error: new Error(
+                'requestsController: Cannot add a new request (addUserRequests) while a signing or broadcasting process is still running.'
+              )
+            })
+
+            if (req.dappPromise) {
+              req.dappPromise?.reject(
+                ethErrors.rpc.transactionRejected({
+                  message: errorMessage
+                })
+              )
+
+              await this.#ui.notification.create({
+                title: 'Rejected!',
+                message: errorMessage
               })
-            )
+            }
+
+            hasTxInProgressErrorShown = true
           }
+
           return
         }
       }

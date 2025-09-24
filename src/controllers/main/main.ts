@@ -24,7 +24,7 @@ import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -35,7 +35,7 @@ import {
   Key,
   KeystoreSignerType
 } from '../../interfaces/keystore'
-import { IMainController } from '../../interfaces/main'
+import { IMainController, STATUS_WRAPPED_METHODS, StatusesWithCustom } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
@@ -118,20 +118,6 @@ import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 
-const STATUS_WRAPPED_METHODS = {
-  removeAccount: 'INITIAL',
-  handleAccountPickerInitLedger: 'INITIAL',
-  handleAccountPickerInitTrezor: 'INITIAL',
-  handleAccountPickerInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL',
-  selectAccount: 'INITIAL',
-  signAndBroadcastAccountOp: 'INITIAL'
-} as const
-
-type CustomStatuses = {
-  signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
-}
-
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
@@ -211,7 +197,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
+  statuses: StatusesWithCustom = STATUS_WRAPPED_METHODS
 
   ui: IUiController
 
