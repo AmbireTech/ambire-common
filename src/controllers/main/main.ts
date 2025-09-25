@@ -1964,12 +1964,6 @@ export class MainController extends EventEmitter implements IMainController {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    // Allow the user to broadcast a new transaction
-    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-    await this.forceEmitUpdate()
-    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-    await this.forceEmitUpdate()
-
     // simulate the swap & bridge only after a successful broadcast
     if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
       signAccountOp?.portfolioSimulate().then(() => {
@@ -2059,6 +2053,16 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.transfer.resetForm()
     }
+
+    // Allow the user to broadcast a new transaction;
+    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
+    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
+    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
+    // leaving the new request 'orphaned' in the background without being attached to any action.
+    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+    await this.forceEmitUpdate()
+    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    await this.forceEmitUpdate()
 
     await this.ui.notification.create({
       title:
