@@ -472,7 +472,7 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
-      getStatuses: () => this.statuses,
+      getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
         if (!this.signAccountOp) return
         this.signAccountOp.update(props)

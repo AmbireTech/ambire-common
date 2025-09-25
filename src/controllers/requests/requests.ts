@@ -97,7 +97,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
-  #getStatuses: () => StatusesWithCustom
+  #getMainStatuses: () => StatusesWithCustom
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -138,7 +138,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
     guardHWSigning,
-    getStatuses
+    getMainStatuses
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -157,7 +157,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
-    getStatuses: () => StatusesWithCustom
+    getMainStatuses: () => StatusesWithCustom
   }) {
     super()
 
@@ -174,7 +174,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#ui = ui
 
     this.#getSignAccountOp = getSignAccountOp
-    this.#getStatuses = getStatuses
+    this.#getMainStatuses = getMainStatuses
     this.#updateSignAccountOp = updateSignAccountOp
     this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -256,7 +256,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
 
     const signAccountOpController = this.#getSignAccountOp()
-    const signStatus = this.#getStatuses()
+    const signStatus = this.#getMainStatuses().signAndBroadcastAccountOp
     let hasTxInProgressErrorShown = false
 
     // eslint-disable-next-line no-restricted-syntax
@@ -282,10 +282,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         //
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (
-          signStatus.signAndBroadcastAccountOp === 'SIGNING' ||
-          (signStatus.signAndBroadcastAccountOp === 'BROADCASTING' &&
-            signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
-            signAccountOpController?.accountOp.chainId === req.meta.chainId)
+          (signStatus === 'SIGNING' || signStatus === 'BROADCASTING') &&
+          signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
+          signAccountOpController?.accountOp.chainId === req.meta.chainId
         ) {
           // Make sure to show the error once
           if (!hasTxInProgressErrorShown) {
