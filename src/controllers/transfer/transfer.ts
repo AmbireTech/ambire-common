@@ -33,7 +33,7 @@ import {
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -370,14 +370,9 @@ export class TransferController extends EventEmitter implements ITransferControl
   async adjustTransferAmountAndFee() {
     const op = this.signAccountOpController?.accountOp
     if (
-      !this.signAccountOpController ||
-      !op ||
+      !op?.gasFeePayment ||
       !this.#selectedToken ||
-      this.signAccountOpController.accountOp.calls.length > 1 ||
-      !this.signAccountOpController.feeTokenResult ||
-      !op.gasFeePayment ||
-      !this.signAccountOpController.canUpdate() ||
-      !this.signAccountOpController.selectedOption
+      this.signAccountOpController?.status?.type !== SigningStatus.ReadyToSign
     ) {
       this.emitUpdate()
       return
@@ -388,8 +383,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#selectedToken.decimals
     )
     if (
-      this.signAccountOpController.feeTokenResult.address === this.#selectedToken.address &&
-      this.signAccountOpController.selectedOption.paidBy ===
+      this.signAccountOpController.feeTokenResult!.address === this.#selectedToken.address &&
+      this.signAccountOpController.selectedOption!.paidBy ===
         this.signAccountOpController.accountOp.accountAddr
     ) {
       // check if we're sending max amount
