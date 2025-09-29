@@ -105,7 +105,6 @@ describe('AccountPicker', () => {
   )
   beforeEach(() => {
     accountPicker = new AccountPickerController({
-      storage: storageCtrl,
       accounts: accountsCtrl,
       keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl),
       networks: networksCtrl,

@@ -33,7 +33,6 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import { IStorageController } from '../../interfaces/storage'
 import {
   getAccountImportStatus,
   getBasicAccount,
@@ -62,8 +61,6 @@ const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
  */
 export class AccountPickerController extends EventEmitter implements IAccountPickerController {
   #callRelayer: Function
-
-  #storage: IStorageController
 
   #accounts: IAccountsController
 
@@ -162,7 +159,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #keystoreUnsubscribe?: () => void
 
   constructor({
-    storage,
     accounts,
     keystore,
     networks,
@@ -172,7 +168,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     onAddAccountsSuccessCallback
   }: {
-    storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
     networks: INetworksController
@@ -183,7 +178,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
     super()
-    this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
     this.#networks = networks

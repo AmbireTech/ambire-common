@@ -339,7 +339,6 @@ export class MainController extends EventEmitter implements IMainController {
       )
     }
     this.accountPicker = new AccountPickerController({
-      storage: this.storage,
       accounts: this.accounts,
       keystore: this.keystore,
       networks: this.networks,
@@ -533,7 +532,6 @@ export class MainController extends EventEmitter implements IMainController {
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           () =>
             new AccountPickerController({
-              storage: this.storage,
               accounts: this.accounts,
               keystore: this.keystore,
               networks: this.networks,
