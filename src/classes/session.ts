@@ -43,8 +43,7 @@ export class Session {
 
   messenger?: Messenger
 
-  // requestIds start from 0 but the default val should not be the fist req
-  lastHandledRequestId: number = -1
+  lastHandledRequestIds: { [providerId: string]: number }
 
   isWeb3App: boolean = false
 
@@ -64,6 +63,21 @@ export class Session {
     this.origin = origin || 'internal'
     this.tabId = tabId || Date.now()
     this.windowId = windowId
+
+    // Track requestIds per providerId, since we inject an EthereumProvider into all frames for the same session
+    this.lastHandledRequestIds = new Proxy(
+      {},
+      {
+        get: (target: { [providerId: string]: number }, prop: string) => {
+          // When accessing an unknown providerId, initialize it with the default requestId = -1
+          if (!(prop in target)) {
+            // eslint-disable-next-line no-param-reassign
+            target[prop] = -1
+          }
+          return target[prop]
+        }
+      }
+    )
   }
 
   setMessenger(messenger: Messenger) {

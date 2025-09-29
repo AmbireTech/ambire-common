@@ -76,6 +76,8 @@ import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import { SocketAPI } from '../../services/socket/api'
+import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
@@ -236,8 +238,9 @@ export class MainController extends EventEmitter implements IMainController {
     fetch,
     relayerUrl,
     velcroUrl,
+    liFiApiKey,
+    bungeeApiKey,
     featureFlags,
-    swapApiKey,
     keystoreSigners,
     externalSignerControllers,
     uiManager
@@ -247,8 +250,9 @@ export class MainController extends EventEmitter implements IMainController {
     fetch: Fetch
     relayerUrl: string
     velcroUrl: string
+    liFiApiKey: string
+    bungeeApiKey: string
     featureFlags: Partial<FeatureFlags>
-    swapApiKey: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
@@ -369,8 +373,6 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       ui: this.ui
     })
-    // const socketAPI = new SocketAPI({ apiKey: swapApiKey, fetch: this.fetch })
-    const lifiAPI = new LiFiAPI({ apiKey: swapApiKey, fetch: this.fetch })
     this.dapps = new DappsController(this.storage)
 
     this.selectedAccount.initControllers({
@@ -394,6 +396,8 @@ export class MainController extends EventEmitter implements IMainController {
         await this.setContractsDeployedToTrueIfDeployed(network)
       }
     )
+    const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
+    const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       accounts: this.accounts,
       keystore: this.keystore,
@@ -404,10 +408,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       activity: this.activity,
       invite: this.invite,
-      // TODO: This doesn't work, because the invite controller is not yet loaded at this stage
-      // serviceProviderAPI: this.invite.isOG ? lifiAPI : socketAPI,
-      serviceProviderAPI: lifiAPI,
       storage: this.storage,
+      swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
         if (chainsToUpdate.length) {
@@ -467,7 +469,8 @@ export class MainController extends EventEmitter implements IMainController {
         networks: this.networks,
         activity: this.activity,
         invite: this.invite,
-        serviceProviderAPI: lifiAPI,
+        // TODO<Bobby>: will need help configuring this once the plan forward is clear
+        serviceProviderAPI: LiFiProvider,
         storage: this.storage,
         portfolioUpdate: this.updateSelectedAccountPortfolio.bind(this)
       })
@@ -638,12 +641,12 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    this.activity.updateAccountOpBanners()
-    this.swapAndBridge.reset()
-    this.transfer.resetForm()
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
     this.#continuousUpdates.accountStatePendingInterval.restart()
+    this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.swapAndBridge.reset()
+    this.transfer.resetForm()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
@@ -801,8 +804,7 @@ export class MainController extends EventEmitter implements IMainController {
     try {
       // if the accountOp has a swapTxn, start the route as the user is broadcasting it
       if (signAccountOp?.accountOp.meta?.swapTxn) {
-        await this.swapAndBridge.addActiveRoute({
-          activeRouteId: signAccountOp?.accountOp.meta?.swapTxn.activeRouteId,
+        this.swapAndBridge.addActiveRoute({
           userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
         })
       }
@@ -1040,7 +1042,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: new Error(`Debug trace call error on ${network.name}: ${e.message}`)
+        error: e
       })
     }
 
@@ -1514,8 +1516,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   async resolveAccountOpAction(
     submittedAccountOp: SubmittedAccountOp,
-    actionId: AccountOpAction['id'],
-    isBasicAccountBroadcastingMultiple: boolean
+    actionId: AccountOpAction['id']
   ) {
     const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
@@ -1541,18 +1542,16 @@ export class MainController extends EventEmitter implements IMainController {
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    if (!isBasicAccountBroadcastingMultiple) {
-      const benzinUserRequest: SignUserRequest = {
-        id: new Date().getTime(),
-        action: { kind: 'benzin' },
-        session: new Session(),
-        meta
-      }
-      await this.requests.addUserRequests([benzinUserRequest], {
-        actionPosition: 'first',
-        skipFocus: true
-      })
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      session: new Session(),
+      meta
     }
+    await this.requests.addUserRequests([benzinUserRequest], {
+      actionPosition: 'first',
+      skipFocus: true
+    })
 
     await this.requests.actions.removeActions([actionId])
 
@@ -1851,10 +1850,7 @@ export class MainController extends EventEmitter implements IMainController {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
           },
-          txnId:
-            txnLength === 1
-              ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-              : multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash // undefined
+          txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
         }
       } catch (error: any) {
         if (this.#signAndBroadcastCallId !== callId) return
@@ -1873,7 +1869,8 @@ export class MainController extends EventEmitter implements IMainController {
             identifiedBy: {
               type: 'MultipleTxns',
               identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-            }
+            },
+            txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
         } else {
           return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
@@ -2060,11 +2057,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // resolve dapp requests, open benzin and etc only if the main sign accountOp
     if (type === SIGN_ACCOUNT_OP_MAIN) {
-      await this.resolveAccountOpAction(
-        submittedAccountOp,
-        actionId,
-        isBasicAccountBroadcastingMultiple
-      )
+      await this.resolveAccountOpAction(submittedAccountOp, actionId)
 
       // TODO: the form should be reset in a success state in FE
       this.transactionManager?.formState.resetForm()

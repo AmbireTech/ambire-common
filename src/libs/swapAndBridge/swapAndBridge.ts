@@ -3,21 +3,26 @@ import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Session } from '../../classes/session'
 import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
+import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeToToken
+  SwapAndBridgeToToken,
+  SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
+import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  NULL_ADDRESS,
+  SOCKET_EXPLORER_URL,
+  ZERO_ADDRESS
 } from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
@@ -351,11 +356,8 @@ const buildSwapAndBridgeUserRequests = async (
   ]
 }
 
-export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
-  userTxType === 'fund-movr'
-
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.userTxs.some((userTx) => getIsBridgeTxn(userTx.userTxType))
+  return route.fromChainId !== route.toChainId
 }
 
 /**
@@ -444,15 +446,50 @@ const isNoFeeToken = (chainId: number, tokenAddr: string) => {
   return false
 }
 
+const getSlippage = (
+  fromAsset: TokenResult,
+  fromAmount: bigint,
+  upperBoundary: string,
+  delimeter: number
+) => {
+  // make sure the slippage doesn't exceed 100$
+  // we do so by having a base of 0.005
+  // to have a slippage of 100$, we need a fromAmountInUsd of at least 20000$,
+  // so each time the from amount makes a jump of 20000$, we lower
+  // the slippage by half
+  const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
+  return Number(fromAmountInUsd) < 400
+    ? upperBoundary
+    : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
+}
+
+const getLink = (route: SwapAndBridgeActiveRoute) => {
+  const providerId = route.route ? route.route.providerId : route.serviceProviderId
+  return providerId === 'socket'
+    ? `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+    : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
+}
+
+const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
+  return txn.fromAsset.chainId !== txn.toAsset.chainId
+}
+
+const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
+  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
+
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
+  convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
+  getLink,
+  getSlippage,
   getSwapAndBridgeCalls,
   isNoFeeToken,
+  isTxnBridge,
   lifiMapNativeToAddr,
   mapBannedToValidAddr
 }

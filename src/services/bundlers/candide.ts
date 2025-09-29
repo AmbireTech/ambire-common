@@ -12,6 +12,10 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class Candide extends Bundler {
   protected getUrl(network: Network): string {
+    if (network.chainId === 42220n) {
+      return `https://api.candide.dev/bundler/v3/celo/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
     return `https://api.candide.dev/bundler/v3/ethereum/${process.env.REACT_APP_CANDIDE_API_KEY}`
   }
 

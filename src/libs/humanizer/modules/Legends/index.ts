@@ -87,6 +87,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     },
     [iface.getFunction('claimXpFromFeedback')?.selector!]: () => {
       return [getAction('Claim XP'), getLabel('from'), getLabel('feedback form', true)]
+    },
+    [iface.getFunction('claimBitrefillCode')?.selector!]: () => {
+      return [getAction('Claim'), getLabel('cashback code for'), getLabel('Bitrefill', true)]
     }
   }
   const newCalls = calls.map((call) => {

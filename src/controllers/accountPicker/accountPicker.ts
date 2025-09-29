@@ -573,27 +573,33 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return basicAccOnEverySlotWhereThisAddrIsFound
   }
 
-  selectAccount(_account: Account) {
+  selectAccount(_account: Account | AccountWithNetworkMeta) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    const account =
+      'usedOnNetworks' in _account
+        ? // destructure and re-build to remove the `usedOnNetworks` property
+          (({ usedOnNetworks, ...rest }) => ({ ...rest }))(_account)
+        : _account
 
     // Needed, because linked accounts could have multiple keys (EOAs),
     // and therefore - same linked account could be found on different slots.
     const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
-      (accOnPage) => accOnPage.account.addr === _account.addr
+      (accOnPage) => accOnPage.account.addr === account.addr
     )
-    const accountKeys = this.#getAccountKeys(_account, accountsOnPageWithThisAcc)
+    const accountKeys = this.#getAccountKeys(account, accountsOnPageWithThisAcc)
     if (!accountKeys.length)
       return this.emitError({
         level: 'major',
-        message: `Selecting ${_account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
+        message: `Selecting ${account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
         error: new Error(
-          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`
+          `Trying to select ${account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`
         )
       })
 
     const nextSelectedAccount = {
-      account: _account,
+      account,
       // If the account has more than 1 key, it is for sure linked account,
       // since EOAs have only 1 key and smart accounts with more than
       // one key present should always be found as linked accounts anyways.

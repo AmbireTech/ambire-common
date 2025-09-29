@@ -101,9 +101,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.dappSessions[sessionId].setMessenger(messenger)
   }
 
-  setSessionLastHandledRequestsId = (sessionId: string, id: number, isWeb3AppRequest?: boolean) => {
-    if (id > this.dappSessions[sessionId].lastHandledRequestId) {
-      this.dappSessions[sessionId].lastHandledRequestId = id
+  setSessionLastHandledRequestsId = (
+    sessionId: string,
+    providerId: number,
+    id: number,
+    isWeb3AppRequest?: boolean
+  ) => {
+    if (!this.dappSessions[sessionId]) return
+
+    if (id > this.dappSessions[sessionId].lastHandledRequestIds[providerId]) {
+      this.dappSessions[sessionId].lastHandledRequestIds[providerId] = id
       if (isWeb3AppRequest && !this.dappSessions[sessionId].isWeb3App) {
         this.dappSessions[sessionId].isWeb3App = true
         this.emitUpdate()
@@ -111,8 +118,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
   }
 
-  resetSessionLastHandledRequestsId = (sessionId: string) => {
-    this.dappSessions[sessionId].lastHandledRequestId = -1
+  resetSessionLastHandledRequestsId = (sessionId: string, providerId?: number) => {
+    if (providerId) {
+      this.dappSessions[sessionId].lastHandledRequestIds[providerId] = -1
+    } else {
+      Object.keys(this.dappSessions[sessionId].lastHandledRequestIds).forEach((key) => {
+        this.dappSessions[sessionId].lastHandledRequestIds[key] = -1
+      })
+    }
   }
 
   setSessionProp = (sessionId: string, props: SessionProp) => {

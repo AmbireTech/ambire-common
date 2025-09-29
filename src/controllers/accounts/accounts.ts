@@ -213,8 +213,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             if (!this.accountStates[addr]) this.accountStates[addr] = {}
             this.accountStates[addr][network.chainId.toString()] = accountState
           })
-        } catch (err) {
-          console.error(`account state update error for ${network.name}: `, err)
+        } catch (err: any) {
+          this.emitError({
+            level: 'silent',
+            message: `Failed to update account state for ${network.name}`,
+            error: err
+          })
           this.#updateProviderIsWorking(network.chainId, false)
         } finally {
           this.accountStatesLoadingState[network.chainId.toString()] = undefined

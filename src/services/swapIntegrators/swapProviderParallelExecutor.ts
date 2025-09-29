@@ -1,0 +1,204 @@
+import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import {
+  SwapAndBridgeQuote,
+  SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatus,
+  SwapAndBridgeSendTxRequest,
+  SwapAndBridgeSupportedChain,
+  SwapAndBridgeToToken,
+  SwapProvider
+} from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../../libs/portfolio'
+
+export class SwapProviderParallelExecutor {
+  id: string = 'parallel'
+
+  name = 'Parallel'
+
+  isHealthy: boolean | null = null
+
+  #providers: SwapProvider[]
+
+  constructor(providers: SwapProvider[]) {
+    this.#providers = providers
+  }
+
+  /**
+   * In the dual setup, we're not using the health feature as
+   * we're hoping that at least one provider is going to work at all times
+   */
+  updateHealth() {
+    this.isHealthy = null
+  }
+
+  resetHealth() {
+    this.isHealthy = null
+  }
+
+  async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
+    const apiResponses = await Promise.all(
+      this.#providers.map((provider: SwapProvider) => fetchMethod(provider))
+    )
+    const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
+    if (resultsWithoutErrors.length) return resultsWithoutErrors.flat() as T
+
+    const errors = apiResponses.filter((r): r is Error => r instanceof Error)
+    if (!errors.length) {
+      const errMsg = 'Our service providers are currently unavailable. Please try again later.'
+      throw new SwapAndBridgeProviderApiError(errMsg)
+    }
+
+    // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
+    const baseMessage = errors[0].message || 'Unknown error'
+
+    // Extract technical details from all errors (that's the content between < and >)
+    const technicalDetails = errors
+      .map((error) => {
+        const message = error.message || ''
+        const match = message.match(/<([^>]+)>/)
+        return match ? match[1] : null
+      })
+      .filter(Boolean)
+
+    // Modify the base message to indicate multiple providers
+    const providerNames = this.#providers.map((p) => p.name).join(' and ')
+    let combinedMessage = baseMessage
+      .replace(/\bLiFi\b/g, providerNames)
+      .replace(/\bservice provider\b/g, 'service providers')
+      .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
+
+    // Replace the technical details with combined ones
+    if (technicalDetails.length > 0) {
+      const combinedDetails = technicalDetails.join('> and <')
+      combinedMessage = combinedMessage.replace(/<[^>]+>/, `<${combinedDetails}>`)
+    }
+
+    throw new SwapAndBridgeProviderApiError(combinedMessage)
+  }
+
+  async #routeTo<T, M extends keyof SwapProvider>(
+    providerId: string,
+    method: M,
+    ...args: any
+  ): Promise<T> {
+    const provider = this.#providers.find((p) => p.id === providerId)
+    if (!provider) throw new Error('Swap provider misconfiguration')
+    return (provider[method] as any)(...args)
+  }
+
+  async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
+    const chainIds = await this.#fetchFromAll<SwapAndBridgeSupportedChain[]>(
+      (provider: SwapProvider) => provider.getSupportedChains().catch((e) => e)
+    )
+
+    // filter duplicates
+    return [
+      ...new Map(chainIds.map((item: SwapAndBridgeSupportedChain) => [item.chainId, item])).values()
+    ]
+  }
+
+  async getToTokenList({
+    fromChainId,
+    toChainId
+  }: {
+    fromChainId: number
+    toChainId: number
+  }): Promise<SwapAndBridgeToToken[]> {
+    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>((provider: SwapProvider) =>
+      provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e)
+    )
+
+    // filter duplicates
+    return [
+      ...new Map(
+        toTokenList.map((item: SwapAndBridgeToToken) => [`${item.chainId}-${item.address}`, item])
+      ).values()
+    ]
+  }
+
+  async getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SwapAndBridgeToToken | null> {
+    const toTokens = await this.#fetchFromAll<SwapAndBridgeToToken[] | null[]>(
+      (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e)
+    )
+    return toTokens.find((t) => t) || null
+  }
+
+  async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
+    return this.#routeTo(route.providerId, 'startRoute', route)
+  }
+
+  async quote({
+    fromAsset,
+    fromChainId,
+    fromTokenAddress,
+    toAsset,
+    toChainId,
+    toTokenAddress,
+    fromAmount,
+    userAddress,
+    sort,
+    isOG,
+    accountNativeBalance,
+    nativeSymbol
+  }: {
+    fromAsset: TokenResult | null
+    fromChainId: number
+    fromTokenAddress: string
+    toAsset: SwapAndBridgeToToken | null
+    toChainId: number
+    toTokenAddress: string
+    fromAmount: bigint
+    userAddress: string
+    isSmartAccount: boolean
+    sort: 'time' | 'output'
+    isOG: boolean
+    accountNativeBalance: bigint
+    nativeSymbol: string
+  }): Promise<SwapAndBridgeQuote> {
+    const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>((provider: SwapProvider) =>
+      provider
+        .quote({
+          fromAsset,
+          fromChainId,
+          fromTokenAddress,
+          toAsset,
+          toChainId,
+          toTokenAddress,
+          fromAmount,
+          userAddress,
+          sort,
+          isOG,
+          accountNativeBalance,
+          nativeSymbol
+        })
+        .catch((e) => e)
+    )
+    const firstQuote = quotes[0]
+    return {
+      ...firstQuote,
+      routes: quotes.map((q) => q.routes.flat()).flat()
+    }
+  }
+
+  getRouteStatus({
+    txHash,
+    fromChainId,
+    toChainId,
+    bridge,
+    providerId
+  }: {
+    txHash: string
+    fromChainId: number
+    toChainId: number
+    bridge?: string
+    providerId: string
+  }): Promise<SwapAndBridgeRouteStatus> {
+    return this.#routeTo(providerId, 'getRouteStatus', { txHash, fromChainId, toChainId, bridge })
+  }
+}
