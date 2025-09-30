@@ -24,6 +24,8 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
+/* eslint-disable no-restricted-syntax */
+import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ONE_MINUTE = 60000
@@ -330,6 +332,15 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       const positionsByProvider = debankPositionsByProvider.filter(
         (p) => String(p.chainId) === String(network.chainId)
       )
+
+      for (const prov of positionsByProvider) {
+        for (const pos of prov.positions) {
+          if (pos.additionalData.name === 'Deposit') {
+            pos.additionalData.name = 'Deposit pool'
+            pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+          }
+        }
+      }
 
       const positionMap = new Map(positionsByProvider.map((p) => [lower(p.providerName), p]))
 
