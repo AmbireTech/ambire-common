@@ -51,7 +51,7 @@ const uniV2Mapping = (): HumanizerUniMatcher => {
       return [
         getAction('Swap'),
         getToken(ZeroAddress, value),
-        getLabel('for for at least'),
+        getLabel('for at least'),
         getToken(outputAsset, amountOutMin),
         ...getUniRecipientText(accountOp.accountAddr, to),
         getDeadline(deadline)
