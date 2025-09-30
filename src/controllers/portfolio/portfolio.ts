@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
+import { calculateRewardsForSeason } from 'utils/rewards'
 
 import { STK_WALLET } from '../../consts/addresses'
 import {
@@ -557,37 +558,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         symbol: t.address === STK_WALLET ? 'stkWALLET' : t.symbol,
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
-
-    // TODO: Removed when this branch has been merged and released: https://github.com/AmbireTech/ambire-common/pull/1801/files
-    function calculateRewardsForSeason(
-      level: number,
-      balanceSnapshots: number[],
-      currentBalance: number,
-      passedWeeks: number,
-      totalWeightNoUser: number,
-      walletPrice: number,
-      REWARDS_FOR_SEASON: number = 20_000_000
-    ): { walletRewards: number; apy: number } {
-      // the current balance acts as an additional week snapshot
-      // thats why we add it to the list and divide by (passedWeeks + 1)
-      const sumOfBalances = [...balanceSnapshots, currentBalance].reduce((a, b) => a + b, 0)
-      const averageBalance = sumOfBalances / (passedWeeks + 1)
-
-      // the weight is calculated with the normal formula
-      const weight = Math.sqrt(averageBalance) * level
-      // since the current user weight is not included in totalWeightNoUser
-      // we simply add it to the denominator and calculate the rewards from it
-      const fraction = weight / (weight + totalWeightNoUser)
-      const walletRewards = fraction * REWARDS_FOR_SEASON
-
-      // we want to calc the rewards in USD, simply to get the 'APY' (it's not actual APY, just
-      // ratio between rewards and currentBalance)
-      const rewardsInUsd = walletRewards * walletPrice
-      const ratioRewardsToBalance = rewardsInUsd / currentBalance
-      const apy = ratioRewardsToBalance * 100
-
-      return { apy, walletRewards }
-    }
 
     const {
       currentSeasonSnapshots,
