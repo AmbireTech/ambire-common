@@ -472,5 +472,11 @@
     "name": "AltitudeFi",
     "icon": "https://app.altitude.fi/favicon.ico",
     "description": "The best borrowing rates and smart repayment options for your peace of mind."
+  },
+  {
+    "url": "https://www.bitrefill.com",
+    "name": "Bitrefill",
+    "icon": "https://www.bitrefill.com/android-chrome-192x192.png",
+    "description": "The crypto store for digital gift cards, eSIMs, and phone refills."
   }
 ]
