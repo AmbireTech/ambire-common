@@ -9,6 +9,7 @@ import {
   SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../../libs/portfolio'
+import wait from '../../utils/wait'
 
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
@@ -36,22 +37,57 @@ export class SwapProviderParallelExecutor {
   }
 
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
-    const apiResponses = await Promise.all(
-      this.#providers.map((provider: SwapProvider) => fetchMethod(provider))
-    )
-    const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
-    if (resultsWithoutErrors.length) return resultsWithoutErrors.flat() as T
+    const MAX_WAIT_AFTER_FIRST_COMPLETED = 2000 // 2s
+    const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 10000 // 10s
 
-    const errors = apiResponses.filter((r): r is Error => r instanceof Error)
-    if (!errors.length) {
-      const errMsg = 'Our service providers are currently unavailable. Please try again later.'
-      throw new SwapAndBridgeProviderApiError(errMsg)
+    const results: { provider: SwapProvider; result: T | Error }[] = []
+
+    const tasks = this.#providers.map((provider) =>
+      fetchMethod(provider)
+        .then((result) => ({ provider, result }))
+        .catch((err) => ({ provider, result: err as Error }))
+    )
+
+    const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
+      throw new Error(
+        'Our service providers are temporarily unavailable or your internet connection is too slow.'
+      )
+    })
+
+    const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
+
+    if ('provider' in firstResult && 'result' in firstResult) {
+      results.push(firstResult)
     }
 
-    // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
-    const baseMessage = errors[0].message || 'Unknown error'
+    const remainingTasks = this.#providers
+      .filter((p) => !results.some((r) => r.provider === p))
+      .map((provider, idx) =>
+        tasks[idx].then((res) => res).catch((err) => ({ provider, result: err as Error }))
+      )
 
-    // Extract technical details from all errors (that's the content between < and >)
+    const secondResult = (await Promise.race([
+      Promise.any(remainingTasks),
+      wait(MAX_WAIT_AFTER_FIRST_COMPLETED)
+    ])) as { provider: SwapProvider; result: Error | T }
+
+    if (secondResult) {
+      if ('provider' in secondResult && 'result' in secondResult) {
+        results.push(secondResult)
+      }
+    }
+
+    const valid = results.map((r) => r.result).filter((r) => !(r instanceof Error))
+    if (valid.length > 0) return valid.flat() as T
+
+    const errors = results.map((r) => r.result).filter((r): r is Error => r instanceof Error)
+    if (!errors.length) {
+      throw new SwapAndBridgeProviderApiError(
+        'Our service providers are currently unavailable. Please try again later.'
+      )
+    }
+
+    const baseMessage = errors[0].message || 'Unknown error'
     const technicalDetails = errors
       .map((error) => {
         const message = error.message || ''
@@ -60,14 +96,12 @@ export class SwapProviderParallelExecutor {
       })
       .filter(Boolean)
 
-    // Modify the base message to indicate multiple providers
     const providerNames = this.#providers.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
       .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
 
-    // Replace the technical details with combined ones
     if (technicalDetails.length > 0) {
       const combinedDetails = technicalDetails.join('> and <')
       combinedMessage = combinedMessage.replace(/<[^>]+>/, `<${combinedDetails}>`)
