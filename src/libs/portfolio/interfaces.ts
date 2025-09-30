@@ -24,7 +24,7 @@ export type TokenResult = {
   priceIn: Price[]
   flags: {
     onGasTank: boolean
-    rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
+    rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
     canTopUpGasTank: boolean
     isFeeToken: boolean

@@ -558,6 +558,107 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
 
+    // TODO: Removed when this branch has been merged and released: https://github.com/AmbireTech/ambire-common/pull/1801/files
+    function calculateRewardsForSeason(
+      level: number,
+      balanceSnapshots: number[],
+      currentBalance: number,
+      passedWeeks: number,
+      totalWeightNoUser: number,
+      walletPrice: number,
+      REWARDS_FOR_SEASON: number = 20_000_000
+    ): { walletRewards: number; apy: number } {
+      // the current balance acts as an additional week snapshot
+      // thats why we add it to the list and divide by (passedWeeks + 1)
+      const sumOfBalances = [...balanceSnapshots, currentBalance].reduce((a, b) => a + b, 0)
+      const averageBalance = sumOfBalances / (passedWeeks + 1)
+
+      // the weight is calculated with the normal formula
+      const weight = Math.sqrt(averageBalance) * level
+      // since the current user weight is not included in totalWeightNoUser
+      // we simply add it to the denominator and calculate the rewards from it
+      const fraction = weight / (weight + totalWeightNoUser)
+      const walletRewards = fraction * REWARDS_FOR_SEASON
+
+      // we want to calc the rewards in USD, simply to get the 'APY' (it's not actual APY, just
+      // ratio between rewards and currentBalance)
+      const rewardsInUsd = walletRewards * walletPrice
+      const ratioRewardsToBalance = rewardsInUsd / currentBalance
+      const apy = ratioRewardsToBalance * 100
+
+      return { apy, walletRewards }
+    }
+
+    const {
+      currentSeasonSnapshots,
+      currentWeek, // not used, but might be useful in the future
+      supportedChainIds,
+      numberOfWeeksSinceStartOfSeason,
+      totalRewardsPool,
+      totalWeightNonUser,
+      userLevel,
+      walletPrice
+    } = res.data.rewardsProjectionData || {}
+
+    const currentTotalBalanceOnSupportedChains = supportedChainIds.map((chainId: number) => {
+      if (!accountState[chainId.toString()]?.result?.total) return 0
+      return accountState[chainId.toString()]?.result?.total.usd
+    })
+
+    const currentTotalBalance = currentTotalBalanceOnSupportedChains.reduce(
+      (a: number, b: number) => a + b,
+      0
+    )
+
+    const parsedSnapshotsBalance = currentSeasonSnapshots.map(
+      (snapshot: { week: number; balance: number }) => snapshot.balance
+    )
+
+    const projectedAmount = calculateRewardsForSeason(
+      userLevel, // level
+      parsedSnapshotsBalance, // balanceSnapshots
+      currentTotalBalance, // currentBalance
+      numberOfWeeksSinceStartOfSeason, // passedWeeks
+      totalWeightNonUser, // totalWeightNonUser
+      walletPrice, // walletPrice
+      totalRewardsPool // REWARDS_FOR_SEASON
+    )
+
+    const projectedAmountFormatted = Math.round(projectedAmount.walletRewards * 1e18)
+
+    const projectedRewards = (res.data.rewardsProjectionData = [
+      {
+        chainId: BigInt(1),
+        amount: BigInt(projectedAmountFormatted || 1),
+        latestAmount: BigInt(projectedAmountFormatted || 1),
+        pendingAmount: BigInt(projectedAmountFormatted || 1),
+        address: STK_WALLET,
+        symbol: 'stkWALLET',
+        name: 'Staked $WALLET',
+        decimals: 18,
+        priceIn: [{ baseCurrency: 'usd', price: walletPrice }],
+        flags: {
+          onGasTank: false,
+          rewardsType: 'wallet-projected-rewards',
+          canTopUpGasTank: false,
+          isFeeToken: false
+        }
+      }
+    ])
+
+    accountState.projectedRewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.projectedRewards,
+        lastSuccessfulUpdate: Date.now(),
+        updateStarted: start,
+        tokens: projectedRewards,
+        total: BigInt(projectedAmountFormatted || 0)
+      }
+    }
+
     accountState.rewards = {
       isReady: true,
       isLoading: false,
