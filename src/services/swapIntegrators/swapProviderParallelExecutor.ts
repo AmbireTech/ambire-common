@@ -87,7 +87,10 @@ export class SwapProviderParallelExecutor {
       )
     }
 
+    // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
     const baseMessage = errors[0].message || 'Unknown error'
+
+    // Extract technical details from all errors (that's the content between < and >)
     const technicalDetails = errors
       .map((error) => {
         const message = error.message || ''
@@ -96,12 +99,14 @@ export class SwapProviderParallelExecutor {
       })
       .filter(Boolean)
 
+    // Modify the base message to indicate multiple providers
     const providerNames = this.#providers.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
       .replace(/\bis temporarily unavailable\b/g, 'are temporarily unavailable')
 
+    // Replace the technical details with combined ones
     if (technicalDetails.length > 0) {
       const combinedDetails = technicalDetails.join('> and <')
       combinedMessage = combinedMessage.replace(/<[^>]+>/, `<${combinedDetails}>`)
