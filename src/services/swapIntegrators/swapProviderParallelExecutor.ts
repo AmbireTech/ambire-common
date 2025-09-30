@@ -37,8 +37,9 @@ export class SwapProviderParallelExecutor {
   }
 
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
+    const MIN_WAIT = 3000 // 3s
     const MAX_WAIT_AFTER_FIRST_COMPLETED = 2000 // 2s
-    const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 10000 // 10s
+    const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 15000 // 15s
 
     const results: { provider: SwapProvider; result: T | Error }[] = []
 
@@ -54,6 +55,7 @@ export class SwapProviderParallelExecutor {
       )
     })
 
+    const startTime = Date.now()
     const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
 
     if ('provider' in firstResult && 'result' in firstResult) {
@@ -66,9 +68,14 @@ export class SwapProviderParallelExecutor {
         tasks[idx].then((res) => res).catch((err) => ({ provider, result: err as Error }))
       )
 
+    // Figure out how long we've already waited
+    const elapsed = Date.now() - startTime
+    // If first was too quick, extend wait time so total ≥ MIN_WAIT
+    const remainingMinWait = Math.max(0, MIN_WAIT - elapsed)
+
     const secondResult = (await Promise.race([
       Promise.any(remainingTasks),
-      wait(MAX_WAIT_AFTER_FIRST_COMPLETED)
+      wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
     ])) as { provider: SwapProvider; result: Error | T }
 
     if (secondResult) {
