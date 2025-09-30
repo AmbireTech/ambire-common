@@ -1,6 +1,5 @@
 /* eslint-disable no-restricted-syntax */
 import { getAddress, ZeroAddress } from 'ethers'
-import { calculateRewardsForSeason } from 'utils/rewards'
 
 import { STK_WALLET } from '../../consts/addresses'
 import {
@@ -47,6 +46,7 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { calculateRewardsForSeason } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
