@@ -570,15 +570,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       walletPrice
     } = res.data.rewardsProjectionData || {}
 
-    const currentTotalBalanceOnSupportedChains = supportedChainIds.map((chainId: number) => {
-      if (!accountState[chainId.toString()]?.result?.total) return 0
-      return accountState[chainId.toString()]?.result?.total.usd
-    })
-
-    const currentTotalBalance = currentTotalBalanceOnSupportedChains.reduce(
-      (a: number, b: number) => a + b,
-      0
-    )
+    const currentTotalBalanceOnSupportedChains = supportedChainIds
+      .map((chainId: number) => {
+        if (!accountState[chainId.toString()]?.result?.total) return 0
+        return accountState[chainId.toString()]?.result?.total.usd
+      })
+      .reduce((a: number, b: number) => a + b, 0)
 
     const parsedSnapshotsBalance = currentSeasonSnapshots.map(
       (snapshot: { week: number; balance: number }) => snapshot.balance
@@ -587,7 +584,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const projectedAmount = calculateRewardsForSeason(
       userLevel, // level
       parsedSnapshotsBalance, // balanceSnapshots
-      currentTotalBalance, // currentBalance
+      currentTotalBalanceOnSupportedChains, // currentBalance
       numberOfWeeksSinceStartOfSeason, // passedWeeks
       totalWeightNonUser, // totalWeightNonUser
       walletPrice, // walletPrice
@@ -596,7 +593,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const projectedAmountFormatted = Math.round(projectedAmount.walletRewards * 1e18)
 
-    const projectedRewards = (res.data.rewardsProjectionData = [
+    const projectedRewards = [
       {
         chainId: BigInt(1),
         amount: BigInt(projectedAmountFormatted || 1),
@@ -614,7 +611,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           isFeeToken: false
         }
       }
-    ])
+    ]
 
     accountState.projectedRewards = {
       isReady: true,
