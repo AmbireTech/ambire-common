@@ -71,7 +71,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         favorite: userDapp?.favorite ?? false,
         ...(userDapp?.grantedPermissionId && { grantedPermissionId: userDapp.grantedPermissionId }),
         ...(userDapp?.grantedPermissionAt && { grantedPermissionAt: userDapp.grantedPermissionAt }),
-        ...(userDapp?.blacklisted && { blacklisted: userDapp.blacklisted })
+        ...(userDapp?.blacklisted !== undefined && { blacklisted: userDapp.blacklisted })
       })
     })
 
