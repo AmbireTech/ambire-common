@@ -12,9 +12,9 @@
     "description": "Trade crypto and NFTs with confidence"
   },
   {
-    "url": "https://yearn.finance",
-    "name": "Yearn Vaults",
-    "icon": "https://cloudflare-ipfs.com/ipfs/Qme9HuPPhgCtgfj1CktvaDKhTesMueGCV2Kui1Sqna3Xs9/logo.svg",
+    "url": "https://yearn.fi",
+    "name": "Yearn",
+    "icon": "https://static.debank.com/image/project/logo_url/yearn3/b0f88529a907964dbbf154337906db19.png",
     "description": "Safe App for interacting with Yearn Vaults"
   },
   {
@@ -36,7 +36,7 @@
     "description": "DeFi / DEX aggregator with the most liquidity and the best rates on Ethereum, Binance Smart Chain, Optimism, Polygon, 1inch dApp is an entry point to the 1inch Network's tech."
   },
   {
-    "url": "https://play.decentraland.org",
+    "url": "https://decentraland.org",
     "name": "Decentraland",
     "icon": "https://static.debank.com/image/project/logo_url/decentraland/449a5d002f7099af8320c9ea0e3d34c1.png",
     "description": "Create, explore and trade in the first-ever virtual world owned by its users."
@@ -66,7 +66,7 @@
     "description": "Sweep NFTs across multiple marketplaces, snipe reveals faster than others, and manage your portfolio with advanced analytics. Zero fees."
   },
   {
-    "url": "https://snapshot.org",
+    "url": "https://snapshot.box",
     "name": "Snapshot",
     "icon": "https://static.debank.com/image/project/logo_url/snapshot/bb7f73bef3353f5fa3860d1a4e1e0fcd.png",
     "description": "Snapshot is an off-chain voting platform that allows DAOs, DeFi protocols, or NFT communities to participate in the decentralized governance easily and without gas fees."
@@ -132,10 +132,10 @@
     "description": "OP Mainnet is a low-cost and lightning-fast layer 2 blockchain. Scale Ethereum and sustainably fund public goods."
   },
   {
-    "url": "https://app.paraswap.io",
-    "name": "ParaSwap",
-    "icon": "https://static.debank.com/image/project/logo_url/matic_paraswap/a9a94be854135149254438560dfa461c.png",
-    "description": "ParaSwap aggregates DeFi liquidity and offers the best market rates."
+    "url": "https://app.velora.xyz",
+    "name": "Velora",
+    "icon": "https://static.debank.com/image/project/logo_url/paraswap/22d49b2c1eeb505c148e7e067c9c7052.png",
+    "description": "Velora aggregates DeFi liquidity and offers the best market rates."
   },
   {
     "url": "https://velodrome.finance",
@@ -150,7 +150,7 @@
     "description": "Native liquid Ethereum restaking supercharged by EigenLayer."
   },
   {
-    "url": "https://curve.fi",
+    "url": "https://www.curve.finance",
     "name": "Curve",
     "icon": "https://static.debank.com/image/project/logo_url/curve/aa991be165e771cff87ae61e2a61ef68.png",
     "description": "Curve is automated market-maker optimized for stablecoins, working as an exchange on one side, and allowing liquidity providers to earn fees and lending interest on the other side."
@@ -234,7 +234,7 @@
     "description": "Maverick App"
   },
   {
-    "url": "https://app.ether.fi",
+    "url": "https://www.ether.fi",
     "name": "ether.fi",
     "icon": "https://static.debank.com/image/project/logo_url/etherfi/6c3ea6e8f02322fa9b417e0726978c41.png",
     "description": "Delegated Staking Protocol"
@@ -378,12 +378,6 @@
     "description": "Run your first security scan with Wallet Guard. In one click scan for risks from approvals, hacks, honeypots & more. Join the 50,000+ wallets protected."
   },
   {
-    "url": "https://getpass.civic.com",
-    "name": "Civic",
-    "icon": "https://static.debank.com/image/dapp/logo_url/10fa0a3f48ee721a9e7c08c1bab397e3/10fa0a3f48ee721a9e7c08c1bab397e3.png",
-    "description": "A digital ID used on apps to verify your age, location, or identity."
-  },
-  {
     "url": "https://app.hop.exchange",
     "name": "Hop Protocol",
     "icon": "https://static.debank.com/image/project/logo_url/matic_hop/ecf20a6a2798fcddb821ec410af59ac8.png",
@@ -402,12 +396,6 @@
     "description": "Hey.xyz is a decentralized, and permissionless social media app built with Lens Protocol 🌿"
   },
   {
-    "url": "https://pro.opensea.io",
-    "name": "OpenSea Pro",
-    "icon": "https://static.debank.com/image/project/logo_url/gem/9a9300daf6ebf94d920e91e7717edebd.png",
-    "description": "Buy, sell, and sweep from 170+ NFT marketplaces. With the fastest collection updates, most optimized gas fees, and advanced analytics."
-  },
-  {
     "url": "https://app.frax.finance",
     "name": "Frax",
     "icon": "https://static.debank.com/image/project/logo_url/frax/0bbd098aba20703a84601865177e6d73.png",
@@ -420,7 +408,7 @@
     "description": "Superform is the Universal Yield Marketplace. Any vault, any chain, any token. One transaction. Permissionlessly list your vaults and access users on all chains."
   },
   {
-    "url": "https://bridge.arbitrum.io",
+    "url": "https://portal.arbitrum.io/bridge",
     "name": "Arbitrum Bridge",
     "icon": "https://static.debank.com/image/project/logo_url/bridge_arbitrum/854f629937ce94bebeb2cd38fb336de7.png",
     "description": "Built to scale Ethereum, Arbitrum brings you 10x lower costs while inheriting Ethereum’s security model. Arbitrum is a Layer 2 Optimistic Rollup."
@@ -444,22 +432,10 @@
     "description": "Welcome to BaseSwap - the leading DEX on Base Chain, where advanced blockchain technology meets unparalleled user experience. Trade, stake, and farm with ease. Dive into our world of concentrated liquidity, exclusive single-stake earning, innovative farmi."
   },
   {
-    "url": "https://polygon.lido.fi/",
-    "name": "Lido Polygon Staking",
-    "icon": "https://static.debank.com/image/project/logo_url/lido/081388ebc44fa042561749bd5338d49e.png",
-    "description": "Stake your MATIC and receive stMATIC."
-  },
-  {
-    "url": "https://kwenta.io/market/",
-    "name": "Kwenta",
-    "icon": "https://static.debank.com/image/project/logo_url/kwenta/93a08105357bfcfdac86979744b61620.png",
+    "url": "https://exchange.synthetix.io",
+    "name": "Synthetix",
+    "icon": "https://static.debank.com/image/project/logo_url/synthetix/60c2a9477997428e188e6d37412c1d51.png",
     "description": "Gain exposure to cryptocurrencies, forex, indices, and commodities on Ethereum with zero slippage."
-  },
-  {
-    "url": "https://mean.finance/",
-    "name": "Mean finance",
-    "icon": "https://mean.finance/favicon.ico",
-    "description": "Mean Finance is the state-of-the-art DCA protocol. It enables you to set up actions like 'Swap 10 USDC for WBTC every day, for 30 days'."
   },
   {
     "url": "https://app.defisaver.com/",
