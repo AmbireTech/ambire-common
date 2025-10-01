@@ -23,6 +23,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('pro.opensea.io')) return acc
     // ParaSwap rebranded to Velora
     if (curr.url.includes('app.paraswap.io')) return acc
+    // snapshot.org became snapshot.box
+    if (curr.url.includes('snapshot.org')) return acc
 
     return [...acc, curr]
   }, [])
