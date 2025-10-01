@@ -43,6 +43,8 @@ export class SwapProviderParallelExecutor {
 
     const results: { provider: SwapProvider; result: T | Error }[] = []
 
+    const startTime = Date.now()
+
     const tasks = this.#providers.map((provider) =>
       fetchMethod(provider)
         .then((result) => ({ provider, result }))
@@ -55,7 +57,6 @@ export class SwapProviderParallelExecutor {
       )
     })
 
-    const startTime = Date.now()
     const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
 
     if ('provider' in firstResult && 'result' in firstResult) {

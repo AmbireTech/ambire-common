@@ -58,7 +58,7 @@ export class SocketAPI implements SwapProvider {
 
   #fetch: Fetch
 
-  #requestTimeoutMs = 10000
+  #requestTimeoutMs = 15000
 
   #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
 

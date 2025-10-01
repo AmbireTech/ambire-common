@@ -218,7 +218,7 @@ export class LiFiAPI implements SwapProvider {
 
   #headers: RequestInitWithCustomHeaders['headers']
 
-  #requestTimeoutMs = 10000
+  #requestTimeoutMs = 15000
 
   isHealthy: boolean | null = null
 
