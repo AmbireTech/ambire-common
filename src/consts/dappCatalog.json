@@ -450,12 +450,6 @@
     "description": "Gain exposure to cryptocurrencies, forex, indices, and commodities on Ethereum with zero slippage."
   },
   {
-    "url": "https://mean.finance/",
-    "name": "Mean finance",
-    "icon": "https://mean.finance/favicon.ico",
-    "description": "Mean Finance is the state-of-the-art DCA protocol. It enables you to set up actions like 'Swap 10 USDC for WBTC every day, for 30 days'."
-  },
-  {
     "url": "https://app.defisaver.com/",
     "name": "DeFi Saver",
     "icon": "https://static.debank.com/image/project/logo_url/defisaver/cf5a295bfe8c309d3d5a9d0d8849aa89.png",

@@ -13,6 +13,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('yearn.finance')) return acc
     // Civic Pass got shut down
     if (curr.url.includes('getpass.civic.com')) return acc
+    // Mean Finance became Balmy, but Balmy got shut down
+    if (curr.url.includes('mean.finance')) return acc
 
     return [...acc, curr]
   }, [])
