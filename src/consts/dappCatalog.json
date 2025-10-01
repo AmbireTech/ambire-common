@@ -36,6 +36,18 @@
     "description": "DeFi / DEX aggregator with the most liquidity and the best rates on Ethereum, Binance Smart Chain, Optimism, Polygon, 1inch dApp is an entry point to the 1inch Network's tech."
   },
   {
+    "url": "https://www.bitrefill.com",
+    "name": "Bitrefill",
+    "icon": "https://www.bitrefill.com/android-chrome-192x192.png",
+    "description": "The crypto store for digital gift cards, eSIMs, and phone refills."
+  },
+  {
+    "url": "https://altitude.fi",
+    "name": "Altitude",
+    "icon": "https://static.debank.com/image/project/logo_url/altitude/ae7fa94788baac495fa337e89caa294b.png",
+    "description": "The best borrowing rates and smart repayment options for your peace of mind."
+  },
+  {
     "url": "https://decentraland.org",
     "name": "Decentraland",
     "icon": "https://static.debank.com/image/project/logo_url/decentraland/449a5d002f7099af8320c9ea0e3d34c1.png",
@@ -442,17 +454,5 @@
     "name": "DeFi Saver",
     "icon": "https://static.debank.com/image/project/logo_url/defisaver/cf5a295bfe8c309d3d5a9d0d8849aa89.png",
     "description": "The next generation DeFi management dashboard."
-  },
-  {
-    "url": "https://altitude.fi",
-    "name": "Altitude",
-    "icon": "https://static.debank.com/image/project/logo_url/altitude/ae7fa94788baac495fa337e89caa294b.png",
-    "description": "The best borrowing rates and smart repayment options for your peace of mind."
-  },
-  {
-    "url": "https://www.bitrefill.com",
-    "name": "Bitrefill",
-    "icon": "https://www.bitrefill.com/android-chrome-192x192.png",
-    "description": "The crypto store for digital gift cards, eSIMs, and phone refills."
   }
 ]
