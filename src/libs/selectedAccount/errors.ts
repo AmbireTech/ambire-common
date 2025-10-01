@@ -188,6 +188,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
 
     if (chainId === 'gasTank') networkName = 'Gas Tank'
     else if (chainId === 'rewards') networkName = 'Rewards'
+    else if (chainId === 'projectedRewards') networkName = 'Projected Rewards'
 
     if (!networkName) {
       console.error(
@@ -223,7 +224,7 @@ export const getNetworksWithPortfolioErrorErrors = ({
     // In this case there will be no RPC error banner and no portfolio error banner.
     if (
       criticalError &&
-      (['gasTank', 'rewards'].includes(chainId) ||
+      (['gasTank', 'rewards', 'projectedRewards'].includes(chainId) ||
         typeof rpcProvider?.isWorking !== 'boolean' ||
         rpcProvider.isWorking)
     ) {
