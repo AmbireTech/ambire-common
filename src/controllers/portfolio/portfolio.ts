@@ -622,7 +622,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         lastSuccessfulUpdate: Date.now(),
         updateStarted: start,
         tokens: projectedRewards,
-        total: BigInt(projectedAmountFormatted || 0)
+        total: BigInt(projectedAmountFormatted || 0),
+        apy: projectedAmount.apy
       }
     }
 
