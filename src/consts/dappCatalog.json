@@ -408,7 +408,7 @@
     "description": "Superform is the Universal Yield Marketplace. Any vault, any chain, any token. One transaction. Permissionlessly list your vaults and access users on all chains."
   },
   {
-    "url": "https://bridge.arbitrum.io",
+    "url": "https://portal.arbitrum.io/bridge",
     "name": "Arbitrum Bridge",
     "icon": "https://static.debank.com/image/project/logo_url/bridge_arbitrum/854f629937ce94bebeb2cd38fb336de7.png",
     "description": "Built to scale Ethereum, Arbitrum brings you 10x lower costs while inheriting Ethereum’s security model. Arbitrum is a Layer 2 Optimistic Rollup."

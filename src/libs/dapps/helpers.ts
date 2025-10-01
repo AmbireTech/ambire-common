@@ -27,6 +27,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('snapshot.org')) return acc
     // play.decentraland.org redirects to decentraland.org
     if (curr.url.includes('play.decentraland.org')) return acc
+    // bridge.arbitrum.io was moved to portal.arbitrum.io
+    if (curr.url.includes('bridge.arbitrum.io')) return acc
 
     return [...acc, curr]
   }, [])
