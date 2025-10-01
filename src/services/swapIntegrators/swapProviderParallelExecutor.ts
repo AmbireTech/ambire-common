@@ -64,9 +64,10 @@ export class SwapProviderParallelExecutor {
 
     const remainingTasks = this.#providers
       .filter((p) => !results.some((r) => r.provider === p))
-      .map((provider, idx) =>
-        tasks[idx].then((res) => res).catch((err) => ({ provider, result: err as Error }))
-      )
+      .map((provider) => {
+        const originalIdx = this.#providers.indexOf(provider);
+        return tasks[originalIdx].then((res) => res).catch((err) => ({ provider, result: err as Error }));
+      })
 
     // Figure out how long we've already waited
     const elapsed = Date.now() - startTime
