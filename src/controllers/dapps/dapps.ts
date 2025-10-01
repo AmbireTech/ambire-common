@@ -191,8 +191,14 @@ export class DappsController extends EventEmitter implements IDappsController {
   updateDapp(id: string, dapp: Partial<Dapp>) {
     if (!this.isReady) return
 
+    // Override the name of a dapp that's in our predefined list
+    const predefinedDappRef = predefinedDapps.find((d) => getDappIdFromUrl(d.url) === id)
+    const shouldOverrideNameChange = dapp.name && predefinedDappRef
+    const dappPropsToUpdate = { ...dapp }
+    if (shouldOverrideNameChange) dappPropsToUpdate.name = predefinedDappRef.name
+
     this.dapps = this.dapps.map((d) => {
-      if (d.id === id) return { ...d, ...dapp }
+      if (d.id === id) return { ...d, ...dappPropsToUpdate }
       return d
     })
     this.emitUpdate()
