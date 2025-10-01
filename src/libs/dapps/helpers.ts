@@ -8,10 +8,7 @@ import { Dapp } from '../../interfaces/dapp'
 const patchStorageApps = (storageDapps: Dapp[]) => {
   return storageDapps.reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
     // Remove legends from the list as it was replaced with rewards.ambire.com
-    if (curr.url.includes('legends.ambire.com')) {
-      return acc
-    }
-
+    if (curr.url.includes('legends.ambire.com')) return acc
     // Remove the legacy Yarn Finance URL from the list
     if (curr.url.includes('yearn.finance')) return acc
     // Civic Pass got shut down
