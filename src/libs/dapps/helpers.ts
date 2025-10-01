@@ -17,6 +17,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('mean.finance')) return acc
     // Lido Polygon staking was sunset on June 16th 2025
     if (curr.url.includes('polygon.lido.fi')) return acc
+    // Synthetix acquired Kwenta
+    if (curr.url.includes('kwenta.io')) return acc
 
     return [...acc, curr]
   }, [])
