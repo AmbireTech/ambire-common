@@ -333,13 +333,17 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         (p) => String(p.chainId) === String(network.chainId)
       )
 
-      for (const prov of positionsByProvider) {
-        for (const pos of prov.positions) {
-          if (pos.additionalData.name === 'Deposit') {
-            pos.additionalData.name = 'Deposit pool'
-            pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+      try {
+        for (const prov of positionsByProvider) {
+          for (const pos of prov.positions) {
+            if (pos.additionalData.name === 'Deposit') {
+              pos.additionalData.name = 'Deposit pool'
+              pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+            }
           }
         }
+      } catch (error) {
+        console.error('DeFi error: ', error)
       }
 
       const positionMap = new Map(positionsByProvider.map((p) => [lower(p.providerName), p]))
