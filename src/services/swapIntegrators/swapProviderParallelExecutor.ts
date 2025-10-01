@@ -9,6 +9,7 @@ import {
   SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../../libs/portfolio'
+import wait from '../../utils/wait'
 
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
@@ -36,16 +37,63 @@ export class SwapProviderParallelExecutor {
   }
 
   async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
-    const apiResponses = await Promise.all(
-      this.#providers.map((provider: SwapProvider) => fetchMethod(provider))
-    )
-    const resultsWithoutErrors = apiResponses.filter((r) => !(r instanceof Error))
-    if (resultsWithoutErrors.length) return resultsWithoutErrors.flat() as T
+    const MIN_WAIT = 3000 // 3s
+    const MAX_WAIT_AFTER_FIRST_COMPLETED = 2000 // 2s
+    const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 15000 // 15s
 
-    const errors = apiResponses.filter((r): r is Error => r instanceof Error)
+    const results: { provider: SwapProvider; result: T | Error }[] = []
+
+    const startTime = Date.now()
+
+    const tasks = this.#providers.map((provider) =>
+      fetchMethod(provider)
+        .then((result) => ({ provider, result }))
+        .catch((err) => ({ provider, result: err as Error }))
+    )
+
+    const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
+      throw new Error(
+        'Our service providers are temporarily unavailable or your internet connection is too slow.'
+      )
+    })
+
+    const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
+
+    if ('provider' in firstResult && 'result' in firstResult) {
+      results.push(firstResult)
+    }
+
+    const remainingTasks = this.#providers
+      .filter((p) => !results.some((r) => r.provider === p))
+      .map((provider) => {
+        const originalIdx = this.#providers.indexOf(provider);
+        return tasks[originalIdx].then((res) => res).catch((err) => ({ provider, result: err as Error }));
+      })
+
+    // Figure out how long we've already waited
+    const elapsed = Date.now() - startTime
+    // If first was too quick, extend wait time so total ≥ MIN_WAIT
+    const remainingMinWait = Math.max(0, MIN_WAIT - elapsed)
+
+    const secondResult = (await Promise.race([
+      Promise.any(remainingTasks),
+      wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
+    ])) as { provider: SwapProvider; result: Error | T }
+
+    if (secondResult) {
+      if ('provider' in secondResult && 'result' in secondResult) {
+        results.push(secondResult)
+      }
+    }
+
+    const valid = results.map((r) => r.result).filter((r) => !(r instanceof Error))
+    if (valid.length > 0) return valid.flat() as T
+
+    const errors = results.map((r) => r.result).filter((r): r is Error => r instanceof Error)
     if (!errors.length) {
-      const errMsg = 'Our service providers are currently unavailable. Please try again later.'
-      throw new SwapAndBridgeProviderApiError(errMsg)
+      throw new SwapAndBridgeProviderApiError(
+        'Our service providers are currently unavailable. Please try again later.'
+      )
     }
 
     // Use the first error (LiFi) as base message, since the bet is that's the the most accurate
