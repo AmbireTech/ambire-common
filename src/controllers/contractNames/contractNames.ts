@@ -174,7 +174,7 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     if (isContractAlreadyAddedToPendingToBeFetched) return true
 
     return (
-      this.#contractNames[address].updatedAt + this.#contractNames[address].retryAfter < Date.now()
+      Date.now() < this.#contractNames[address].updatedAt + this.#contractNames[address].retryAfter
     )
   }
 
