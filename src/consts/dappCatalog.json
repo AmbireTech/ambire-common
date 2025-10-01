@@ -438,12 +438,6 @@
     "description": "Welcome to BaseSwap - the leading DEX on Base Chain, where advanced blockchain technology meets unparalleled user experience. Trade, stake, and farm with ease. Dive into our world of concentrated liquidity, exclusive single-stake earning, innovative farmi."
   },
   {
-    "url": "https://polygon.lido.fi/",
-    "name": "Lido Polygon Staking",
-    "icon": "https://static.debank.com/image/project/logo_url/lido/081388ebc44fa042561749bd5338d49e.png",
-    "description": "Stake your MATIC and receive stMATIC."
-  },
-  {
     "url": "https://kwenta.io/market/",
     "name": "Kwenta",
     "icon": "https://static.debank.com/image/project/logo_url/kwenta/93a08105357bfcfdac86979744b61620.png",

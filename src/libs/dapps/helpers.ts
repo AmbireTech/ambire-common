@@ -15,6 +15,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('getpass.civic.com')) return acc
     // Mean Finance became Balmy, but Balmy got shut down
     if (curr.url.includes('mean.finance')) return acc
+    // Lido Polygon staking was sunset on June 16th 2025
+    if (curr.url.includes('polygon.lido.fi')) return acc
 
     return [...acc, curr]
   }, [])
