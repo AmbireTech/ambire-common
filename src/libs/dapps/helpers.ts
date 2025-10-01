@@ -19,6 +19,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('polygon.lido.fi')) return acc
     // Synthetix acquired Kwenta
     if (curr.url.includes('kwenta.io')) return acc
+    // Open Sea Pro is no longer on e separate domain
+    if (curr.url.includes('pro.opensea.io')) return acc
 
     return [...acc, curr]
   }, [])

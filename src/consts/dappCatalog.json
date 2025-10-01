@@ -396,12 +396,6 @@
     "description": "Hey.xyz is a decentralized, and permissionless social media app built with Lens Protocol 🌿"
   },
   {
-    "url": "https://pro.opensea.io",
-    "name": "OpenSea Pro",
-    "icon": "https://static.debank.com/image/project/logo_url/gem/9a9300daf6ebf94d920e91e7717edebd.png",
-    "description": "Buy, sell, and sweep from 170+ NFT marketplaces. With the fastest collection updates, most optimized gas fees, and advanced analytics."
-  },
-  {
     "url": "https://app.frax.finance",
     "name": "Frax",
     "icon": "https://static.debank.com/image/project/logo_url/frax/0bbd098aba20703a84601865177e6d73.png",
