@@ -14,6 +14,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
 
     // Remove the legacy Yarn Finance URL from the list
     if (curr.url.includes('yearn.finance')) return acc
+    // Civic Pass got shut down
+    if (curr.url.includes('getpass.civic.com')) return acc
 
     return [...acc, curr]
   }, [])

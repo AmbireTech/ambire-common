@@ -378,12 +378,6 @@
     "description": "Run your first security scan with Wallet Guard. In one click scan for risks from approvals, hacks, honeypots & more. Join the 50,000+ wallets protected."
   },
   {
-    "url": "https://getpass.civic.com",
-    "name": "Civic",
-    "icon": "https://static.debank.com/image/dapp/logo_url/10fa0a3f48ee721a9e7c08c1bab397e3/10fa0a3f48ee721a9e7c08c1bab397e3.png",
-    "description": "A digital ID used on apps to verify your age, location, or identity."
-  },
-  {
     "url": "https://app.hop.exchange",
     "name": "Hop Protocol",
     "icon": "https://static.debank.com/image/project/logo_url/matic_hop/ecf20a6a2798fcddb821ec410af59ac8.png",
