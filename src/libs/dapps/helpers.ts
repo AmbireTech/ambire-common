@@ -12,6 +12,9 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
       return acc
     }
 
+    // Remove the legacy Yarn Finance URL from the list
+    if (curr.url.includes('yearn.finance')) return acc
+
     return [...acc, curr]
   }, [])
 }
