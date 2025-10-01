@@ -6,6 +6,60 @@
     "description": "Complete quests, earn XP and climb the leaderboard to secure Ambire rewards."
   },
   {
+    "url": "https://app.aave.com",
+    "name": "Aave",
+    "icon": "https://static.debank.com/image/project/logo_url/aave3/54df7839ab09493ba7540ab832590255.png",
+    "description": "Aave is an Open Source Protocol to create Non-Custodial Liquidity Markets to earn interest on supplying and borrowing assets with a variable or stable interest rate. The protocol is designed for easy integration into your products and services."
+  },
+  {
+    "url": "https://stake.lido.fi",
+    "name": "Lido",
+    "icon": "https://static.debank.com/image/project/logo_url/lido/081388ebc44fa042561749bd5338d49e.png",
+    "description": "Liquid staking with Lido. Stake Ether with Lido to get daily rewards while keeping full control of your staked tokens. Start receiving rewards in just a few clicks."
+  },
+  {
+    "url": "https://app.eigenlayer.xyz",
+    "name": "EigenLayer",
+    "icon": "https://static.debank.com/image/project/logo_url/eigenlayer/60961d60d58c7619cf845ff06b2236af.png",
+    "description": "Revolutionize Ethereum by restaking ETH across multiple protocols for enhanced security, rewards, and capital efficiency."
+  },
+  {
+    "url": "https://app.ethena.fi",
+    "name": "Ethena",
+    "icon": "https://static.debank.com/image/project/logo_url/ethena/bb8bd15480078225e9eca0f9b52415d4.png",
+    "description": "Enabling the Internet Bond"
+  },
+  {
+    "url": "https://www.ether.fi",
+    "name": "ether.fi",
+    "icon": "https://static.debank.com/image/project/logo_url/etherfi/6c3ea6e8f02322fa9b417e0726978c41.png",
+    "description": "Delegated Staking Protocol"
+  },
+  {
+    "url": "https://app.pendle.finance",
+    "name": "Pendle",
+    "icon": "https://static.debank.com/image/project/logo_url/pendle2/d5cfacd3b8f7e0ec161c0de9977cabbd.png",
+    "description": "Earn at your convenience."
+  },
+  {
+    "url": "https://www.bitrefill.com",
+    "name": "Bitrefill",
+    "icon": "https://www.bitrefill.com/android-chrome-192x192.png",
+    "description": "The crypto store for digital gift cards, eSIMs, and phone refills."
+  },
+  {
+    "url": "https://altitude.fi",
+    "name": "Altitude",
+    "icon": "https://static.debank.com/image/project/logo_url/altitude/ae7fa94788baac495fa337e89caa294b.png",
+    "description": "The best borrowing rates and smart repayment options for your peace of mind."
+  },
+  {
+    "url": "https://www.curve.finance",
+    "name": "Curve",
+    "icon": "https://static.debank.com/image/project/logo_url/curve/aa991be165e771cff87ae61e2a61ef68.png",
+    "description": "Curve is automated market-maker optimized for stablecoins, working as an exchange on one side, and allowing liquidity providers to earn fees and lending interest on the other side."
+  },
+  {
     "url": "https://app.uniswap.org",
     "name": "Uniswap",
     "icon": "https://static.debank.com/image/project/logo_url/uniswap3/87a541b3b83b041c8d12119e5a0d19f0.png",
@@ -72,12 +126,6 @@
     "description": "Snapshot is an off-chain voting platform that allows DAOs, DeFi protocols, or NFT communities to participate in the decentralized governance easily and without gas fees."
   },
   {
-    "url": "https://app.eigenlayer.xyz",
-    "name": "EigenLayer",
-    "icon": "https://static.debank.com/image/project/logo_url/eigenlayer/60961d60d58c7619cf845ff06b2236af.png",
-    "description": "Revolutionize Ethereum by restaking ETH across multiple protocols for enhanced security, rewards, and capital efficiency."
-  },
-  {
     "url": "https://layer3.xyz",
     "name": "Layer3",
     "icon": "https://static.debank.com/image/project/logo_url/layer3/6b1383b9d78b7f75e2deefeec407e916.png",
@@ -94,12 +142,6 @@
     "name": "DefiLlama",
     "icon": "https://static.debank.com/image/project/logo_url/arb_defillama/1be7417e6461f9851dcd2521786d41ba.png",
     "description": "Open and transparent DeDefiLlama is the largest TVL aggregator for DeFi. Includes sections on yield farming, NFT collections, marketplaces, and more."
-  },
-  {
-    "url": "https://app.aave.com",
-    "name": "Aave",
-    "icon": "https://static.debank.com/image/project/logo_url/aave3/54df7839ab09493ba7540ab832590255.png",
-    "description": "Aave is an Open Source Protocol to create Non-Custodial Liquidity Markets to earn interest on supplying and borrowing assets with a variable or stable interest rate. The protocol is designed for easy integration into your products and services."
   },
   {
     "url": "https://stargate.finance",
@@ -150,12 +192,6 @@
     "description": "Native liquid Ethereum restaking supercharged by EigenLayer."
   },
   {
-    "url": "https://www.curve.finance",
-    "name": "Curve",
-    "icon": "https://static.debank.com/image/project/logo_url/curve/aa991be165e771cff87ae61e2a61ef68.png",
-    "description": "Curve is automated market-maker optimized for stablecoins, working as an exchange on one side, and allowing liquidity providers to earn fees and lending interest on the other side."
-  },
-  {
     "url": "https://balancer.fi/pools",
     "name": "Balancer",
     "icon": "https://static.debank.com/image/project/logo_url/balancer/4318f98916b139a44996fc06531e9074.png",
@@ -204,12 +240,6 @@
     "description": "Safe (prev. Gnosis Safe) is the most trusted platform to manage digital assets on Ethereum and multiple EVMs. Over $40B secured."
   },
   {
-    "url": "https://app.ethena.fi",
-    "name": "Ethena",
-    "icon": "https://static.debank.com/image/project/logo_url/ethena/bb8bd15480078225e9eca0f9b52415d4.png",
-    "description": "Enabling the Internet Bond"
-  },
-  {
     "url": "https://kyberswap.com",
     "name": "KyberSwap",
     "icon": "https://static.debank.com/image/project/logo_url/dmm_exchange/62bd3271bf61c97fbb342203f47b2de1.png",
@@ -232,12 +262,6 @@
     "name": "Mav",
     "icon": "https://static.debank.com/image/project/logo_url/maverick/a7a186ccd39807ad670d5ead78effb4e.png",
     "description": "Maverick App"
-  },
-  {
-    "url": "https://www.ether.fi",
-    "name": "ether.fi",
-    "icon": "https://static.debank.com/image/project/logo_url/etherfi/6c3ea6e8f02322fa9b417e0726978c41.png",
-    "description": "Delegated Staking Protocol"
   },
   {
     "url": "https://portal.dymension.xyz",
@@ -268,12 +292,6 @@
     "name": "Merkly",
     "icon": "https://static.debank.com/image/project/logo_url/era_merkly/58bcc73db154cf48b5fd8f86bc319323.png",
     "description": "Merkly \nOmnichain Bridging Made Easy."
-  },
-  {
-    "url": "https://app.pendle.finance",
-    "name": "Pendle",
-    "icon": "https://static.debank.com/image/project/logo_url/pendle2/d5cfacd3b8f7e0ec161c0de9977cabbd.png",
-    "description": "Earn at your convenience."
   },
   {
     "url": "https://www.tally.xyz",
@@ -334,12 +352,6 @@
     "name": "SushiSwap",
     "icon": "https://static.debank.com/image/project/logo_url/sushiswap/248a91277aac1ac16a457b8f61957089.png",
     "description": "A Decentralised Finance (DeFi) app with features such as swap, cross chain swap, streaming, vesting, and permissionless market making for liquidity providers."
-  },
-  {
-    "url": "https://stake.lido.fi",
-    "name": "Lido",
-    "icon": "https://static.debank.com/image/project/logo_url/lido/081388ebc44fa042561749bd5338d49e.png",
-    "description": "Liquid staking with Lido. Stake Ether with Lido to get daily rewards while keeping full control of your staked tokens. Start receiving rewards in just a few clicks."
   },
   {
     "url": "https://www.mintchain.io",
@@ -442,17 +454,5 @@
     "name": "DeFi Saver",
     "icon": "https://static.debank.com/image/project/logo_url/defisaver/cf5a295bfe8c309d3d5a9d0d8849aa89.png",
     "description": "The next generation DeFi management dashboard."
-  },
-  {
-    "url": "https://altitude.fi",
-    "name": "Altitude",
-    "icon": "https://static.debank.com/image/project/logo_url/altitude/ae7fa94788baac495fa337e89caa294b.png",
-    "description": "The best borrowing rates and smart repayment options for your peace of mind."
-  },
-  {
-    "url": "https://www.bitrefill.com",
-    "name": "Bitrefill",
-    "icon": "https://www.bitrefill.com/android-chrome-192x192.png",
-    "description": "The crypto store for digital gift cards, eSIMs, and phone refills."
   }
 ]
