@@ -25,6 +25,8 @@ const patchStorageApps = (storageDapps: Dapp[]) => {
     if (curr.url.includes('app.paraswap.io')) return acc
     // snapshot.org became snapshot.box
     if (curr.url.includes('snapshot.org')) return acc
+    // play.decentraland.org redirects to decentraland.org
+    if (curr.url.includes('play.decentraland.org')) return acc
 
     return [...acc, curr]
   }, [])
