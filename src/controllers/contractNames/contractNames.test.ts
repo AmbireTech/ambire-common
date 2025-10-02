@@ -12,6 +12,8 @@ const contracts = {
 let finishPromise
 let errorPromise
 
+const DEFAULT_DEBOUNCE = 100
+
 describe('Contract Names', () => {
   it('Successfully find multiple and ignore random', async () => {
     // init
@@ -34,8 +36,7 @@ describe('Contract Names', () => {
     expect(contractNamesController.contractsPendingToBeFetched.length).toBe(4)
     expect(mockedFetch).toHaveBeenCalledTimes(0)
 
-    // The default time for debounce is 100ms
-    jest.advanceTimersByTime(100)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
@@ -73,8 +74,7 @@ describe('Contract Names', () => {
     // request a non contract address that will fail
     contractNamesController.getName(randomAddress, 8453n)
 
-    // The default time for debounce is 100ms
-    jest.advanceTimersByTime(100)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
@@ -97,7 +97,7 @@ describe('Contract Names', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(1)
     // make a second attempt after PERSIST_NOT_FOUND_IN_MS time
     contractNamesController.getName(randomAddress, 8453n)
-    jest.advanceTimersByTime(100)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
       let emitCounter = 0
@@ -123,8 +123,7 @@ describe('Contract Names', () => {
     // request a non contract address that will fail
     contractNamesController.getName(randomAddress1, 8453n)
 
-    // The default time for debounce is 100ms
-    jest.advanceTimersByTime(100)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
@@ -148,7 +147,7 @@ describe('Contract Names', () => {
     contractNamesController.getName(randomAddress2, 8453n)
     expect(mockedFetch).toHaveBeenCalledTimes(1)
 
-    jest.advanceTimersByTime(100)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
