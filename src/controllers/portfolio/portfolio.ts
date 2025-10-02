@@ -560,15 +560,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address)
       }))
 
-    accountState.projectedRewards = {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      result: {
-        ...res.data.rewardsProjectionData
-      }
-    }
-
     accountState.rewards = {
       isReady: true,
       isLoading: false,
@@ -579,6 +570,21 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         updateStarted: start,
         tokens: rewardsTokens,
         total: getTotal(rewardsTokens)
+      }
+    }
+
+    // Calculate projected rewards only if there are no rewards tokens
+    if (
+      rewardsTokens.length === 0 ||
+      (rewardsTokens.length !== 0 && rewardsTokens.every((t) => t.amount === BigInt(0)))
+    ) {
+      accountState.projectedRewards = {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          ...res.data.rewardsProjectionData
+        }
       }
     }
 
@@ -1030,6 +1036,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     // Calculates the projected rewards based on the latest portfolio state.
     // It will be called every time the user selects an account, so we don't need to call it
     // from anywhere else.
+    console.log('accountState', accountState)
+
     this.#calculateAndSetProjectedRewards(accountState, start)
 
     await this.#updateNetworksWithAssets(accountId, accountState)
