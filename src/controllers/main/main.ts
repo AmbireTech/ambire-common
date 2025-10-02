@@ -24,7 +24,7 @@ import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -35,7 +35,7 @@ import {
   Key,
   KeystoreSignerType
 } from '../../interfaces/keystore'
-import { IMainController } from '../../interfaces/main'
+import { IMainController, STATUS_WRAPPED_METHODS, StatusesWithCustom } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
@@ -118,20 +118,6 @@ import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 
-const STATUS_WRAPPED_METHODS = {
-  removeAccount: 'INITIAL',
-  handleAccountPickerInitLedger: 'INITIAL',
-  handleAccountPickerInitTrezor: 'INITIAL',
-  handleAccountPickerInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL',
-  selectAccount: 'INITIAL',
-  signAndBroadcastAccountOp: 'INITIAL'
-} as const
-
-type CustomStatuses = {
-  signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
-}
-
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
@@ -211,7 +197,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
+  statuses: StatusesWithCustom = STATUS_WRAPPED_METHODS
 
   ui: IUiController
 
@@ -452,7 +438,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks.defaultNetworksMode
     )
 
-    this.contractNames = new ContractNamesController(this.fetch, 50)
+    this.contractNames = new ContractNamesController(this.fetch)
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
@@ -486,6 +472,7 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
+      getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
         if (!this.signAccountOp) return
         this.signAccountOp.update(props)
@@ -637,12 +624,12 @@ export class MainController extends EventEmitter implements IMainController {
       await this.requests.actions.removeActions([swapAndBridgeSigningAction.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
-    this.activity.updateAccountOpBanners()
-    this.swapAndBridge.reset()
-    this.transfer.resetForm()
     this.#continuousUpdates.updatePortfolioInterval.restart()
     this.#continuousUpdates.accountStateLatestInterval.restart()
     this.#continuousUpdates.accountStatePendingInterval.restart()
+    this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
+    this.swapAndBridge.reset()
+    this.transfer.resetForm()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
@@ -1038,7 +1025,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.emitError({
         level: 'silent',
         message: 'Error in main.traceCall',
-        error: new Error(`Debug trace call error on ${network.name}: ${e.message}`)
+        error: e
       })
     }
 
@@ -1512,8 +1499,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   async resolveAccountOpAction(
     submittedAccountOp: SubmittedAccountOp,
-    actionId: AccountOpAction['id'],
-    isBasicAccountBroadcastingMultiple: boolean
+    actionId: AccountOpAction['id']
   ) {
     const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
     if (!accountOpAction) return
@@ -1539,18 +1525,16 @@ export class MainController extends EventEmitter implements IMainController {
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    if (!isBasicAccountBroadcastingMultiple) {
-      const benzinUserRequest: SignUserRequest = {
-        id: new Date().getTime(),
-        action: { kind: 'benzin' },
-        session: new Session(),
-        meta
-      }
-      await this.requests.addUserRequests([benzinUserRequest], {
-        actionPosition: 'first',
-        skipFocus: true
-      })
+    const benzinUserRequest: SignUserRequest = {
+      id: new Date().getTime(),
+      action: { kind: 'benzin' },
+      session: new Session(),
+      meta
     }
+    await this.requests.addUserRequests([benzinUserRequest], {
+      actionPosition: 'first',
+      skipFocus: true
+    })
 
     await this.requests.actions.removeActions([actionId])
 
@@ -1849,10 +1833,7 @@ export class MainController extends EventEmitter implements IMainController {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
           },
-          txnId:
-            txnLength === 1
-              ? multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-              : multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash // undefined
+          txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
         }
       } catch (error: any) {
         if (this.#signAndBroadcastCallId !== callId) return
@@ -1871,7 +1852,8 @@ export class MainController extends EventEmitter implements IMainController {
             identifiedBy: {
               type: 'MultipleTxns',
               identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-            }
+            },
+            txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
         } else {
           return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
@@ -1982,12 +1964,6 @@ export class MainController extends EventEmitter implements IMainController {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    // Allow the user to broadcast a new transaction
-    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-    await this.forceEmitUpdate()
-    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-    await this.forceEmitUpdate()
-
     // simulate the swap & bridge only after a successful broadcast
     if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
       signAccountOp?.portfolioSimulate().then(() => {
@@ -2058,11 +2034,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // resolve dapp requests, open benzin and etc only if the main sign accountOp
     if (type === SIGN_ACCOUNT_OP_MAIN) {
-      await this.resolveAccountOpAction(
-        submittedAccountOp,
-        actionId,
-        isBasicAccountBroadcastingMultiple
-      )
+      await this.resolveAccountOpAction(submittedAccountOp, actionId)
 
       // TODO: the form should be reset in a success state in FE
       this.transactionManager?.formState.resetForm()
@@ -2081,6 +2053,16 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.transfer.resetForm()
     }
+
+    // Allow the user to broadcast a new transaction;
+    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
+    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
+    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
+    // leaving the new request 'orphaned' in the background without being attached to any action.
+    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+    await this.forceEmitUpdate()
+    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    await this.forceEmitUpdate()
 
     await this.ui.notification.create({
       title:
