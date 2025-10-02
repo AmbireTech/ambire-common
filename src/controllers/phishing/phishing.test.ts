@@ -57,16 +57,16 @@ describe('PhishingController', () => {
     }
   })
   test('should load and update blacklists and correctly check for blacklisted urls', async () => {
-    expect(await phishing.getIsBlacklisted('https://createra.free-mint.net')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://lihea.build')).toBe(true)
+    expect(await phishing.getIsBlacklisted('https://unstake.it')).toBe(true)
+    expect(await phishing.getIsBlacklisted('https://blogpost-opensea.io')).toBe(true)
     expect(await phishing.getIsBlacklisted('https://safe.com')).toBe(false)
   })
   test('should send correct url status to the UI', async () => {
     const sendWindowUiMessageSpy = jest.spyOn(uiManager.message, 'sendUiMessage')
-    await phishing.sendIsBlacklistedToUi('https://createra.free-mint.net')
+    await phishing.sendIsBlacklistedToUi('https://unstake.it')
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://lihea.build')
+    await phishing.sendIsBlacklistedToUi('https://blogpost-opensea.io')
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
     await phishing.sendIsBlacklistedToUi('https://safe.com')
