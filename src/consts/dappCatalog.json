@@ -384,12 +384,6 @@
     "description": "Extra Finance is a community-driven lending & leveraged yield farming protocol built on Optimism."
   },
   {
-    "url": "https://dashboard.walletguard.app",
-    "name": "Wallet Guard",
-    "icon": "https://static.debank.com/image/project/logo_url/wallet_guard/08f82192d8beb80569eddf79491e6e84.png",
-    "description": "Run your first security scan with Wallet Guard. In one click scan for risks from approvals, hacks, honeypots & more. Join the 50,000+ wallets protected."
-  },
-  {
     "url": "https://app.hop.exchange",
     "name": "Hop Protocol",
     "icon": "https://static.debank.com/image/project/logo_url/matic_hop/ecf20a6a2798fcddb821ec410af59ac8.png",
