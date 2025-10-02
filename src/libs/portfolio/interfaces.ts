@@ -220,7 +220,17 @@ export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
   gasTankTokens: GasTankTokenResult[]
 }
 
-export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & { apy: number }
+export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
+  currentSeasonSnapshots: { week: number; balance: number }[]
+  currentWeek: number
+  supportedChainIds: number[]
+  numberOfWeeksSinceStartOfSeason: number
+  totalRewardsPool: number
+  totalWeightNonUser: number
+  userLevel: number
+  walletPrice: number
+  apy: number
+}
 
 export type NetworkState = {
   isReady: boolean
