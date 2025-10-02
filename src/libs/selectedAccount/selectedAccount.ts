@@ -614,6 +614,8 @@ export function calculateSelectedAccountPortfolio(
 
   Object.keys(selectedAccountPortfolioByNetworks).forEach((chainId) => {
     const networkData = selectedAccountPortfolioByNetworks[chainId]
+    const isProjectedRewardsChain = chainId === 'projectedRewards'
+
     if (!networkData) return
 
     if (networkData.simulatedAccountOp) {
@@ -621,7 +623,9 @@ export function calculateSelectedAccountPortfolio(
     }
     selectedAccountPortfolio.tokens.push(...networkData.tokens)
     selectedAccountPortfolio.collections.push(...networkData.collections)
-    selectedAccountPortfolio.totalBalance += networkData.totalBalance || 0
+    selectedAccountPortfolio.totalBalance += !isProjectedRewardsChain
+      ? networkData.totalBalance || 0
+      : 0
     selectedAccountPortfolio.balancePerNetwork[chainId] = networkData.totalBalance || 0
   })
 
