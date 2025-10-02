@@ -6,6 +6,8 @@
  * @param {number} currentBalance - The current balance of the user.
  * @param {number} passedWeeks - The number of weeks since the start of the season.
  * @param {number} totalWeightNoUser - The total weight of all users, excluding the weight of the
+ * @param {number} minLvl - Minimum required level to get rewards
+ * @param {number} minBalance -Minimum required balance in one snapshot o get rewards
  *  current user
  * @returns {Object} Rewards related data.
  * @returns {number} return.walletRewards - The number of $stkWALLET tokens the user will receive.
@@ -19,11 +21,18 @@ export function calculateRewardsForSeason(
   passedWeeks: number,
   totalWeightNoUser: number,
   walletPrice: number,
-  REWARDS_FOR_SEASON: number = 20_000_000
+  REWARDS_FOR_SEASON: number,
+  minLvl: number,
+  mintBalance: number
 ): { walletRewards: number; apy: number } {
+  // required minimum level
+  if (level < minLvl) return { apy: 0, walletRewards: 0 }
   // the current balance acts as an additional week snapshot
   // thats why we add it to the list and divide by (passedWeeks + 1)
-  const sumOfBalances = [...balanceSnapshots, currentBalance].reduce((a, b) => a + b, 0)
+  const snapshotsAndCur = [...balanceSnapshots, currentBalance]
+  if (!snapshotsAndCur.some((x) => x > mintBalance)) return { apy: 0, walletRewards: 0 }
+
+  const sumOfBalances = snapshotsAndCur.reduce((a, b) => a + b, 0)
   const averageBalance = sumOfBalances / (passedWeeks + 1)
 
   // the weight is calculated with the normal formula
