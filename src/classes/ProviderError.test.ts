@@ -46,4 +46,17 @@ describe('ProviderError', () => {
     expect(providerError.message).toContain('Doomsday')
     expect(providerError.isProviderInvictus).toBe(true)
   })
+  it('rpc-timeout errors are not prefixed with Invictus message', () => {
+    const error = new Error('rpc-timeout. Rpc: https://invictus.ambire.com/ethereum') as Error & {
+      [key: string]: any
+    }
+
+    const providerError = new ProviderError({
+      originalError: error,
+      providerUrl: 'https://invictus.ambire.com/ethereum'
+    })
+
+    expect(providerError.message).toBe('rpc-timeout. Rpc: https://invictus.ambire.com/ethereum')
+    expect(providerError.isProviderInvictus).toBe(true)
+  })
 })

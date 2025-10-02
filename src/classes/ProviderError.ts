@@ -26,6 +26,8 @@ export class ProviderError extends Error {
     if (
       isProviderInvictus &&
       typeof message === 'string' &&
+      !message.startsWith('rpc-timeout') &&
+      !message.startsWith('Failed to fetch') &&
       !message.startsWith(INVICTUS_ERROR_PREFIX) &&
       !message.startsWith(INVICTUS_200_ERROR_PREFIX)
     ) {
