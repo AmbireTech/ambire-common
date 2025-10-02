@@ -72,17 +72,14 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     return Object.fromEntries(toReturn)
   }
 
+  get contractsPendingToBeFetched(): { address: string; chainId: bigint }[] {
+    return this.#contractsPendingToBeFetched
+  }
+
   async #batchFetchNames(): Promise<void> {
     // using a second variable to avoid race conditions in `contractsPendingToBeFetched`
     const contractsToFetch = this.#contractsPendingToBeFetched
     this.#contractsPendingToBeFetched = []
-    contractsToFetch.forEach(({ address }) => {
-      if (this.#contractNames[address]) {
-        this.#contractNames[address].isLoading = true
-      } else {
-        this.#contractNames[address] = { address, name: null, isLoading: true }
-      }
-    })
     this.emitUpdate()
 
     const url = `https://cena.ambire.com/api/v3/contracts/multiple?addresses=${contractsToFetch.map(
@@ -161,21 +158,21 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     this.emitUpdate()
   }
 
-  #shouldSkipGetName(address: string, chainId: bigint) {
-    if (!this.#contractNames[address]) return false
-    if (this.#contractNames[address].name) return true
-    if (!this.#contractNames[address].retryAfter) return false
-    if (!this.#contractNames[address].updatedAt) return false
-    if (this.#contractNames[address].isLoading) return true
-
-    const isContractAlreadyAddedToPendingToBeFetched = this.#contractsPendingToBeFetched.some(
-      (p) => p.address === address && p.chainId === chainId
-    )
-    if (isContractAlreadyAddedToPendingToBeFetched) return true
-
-    return (
-      Date.now() < this.#contractNames[address].updatedAt + this.#contractNames[address].retryAfter
-    )
+  #shouldSkipGetName(address: string, chainId: bigint): boolean {
+    const entry = this.#contractNames[address]
+    if (!entry) return false
+    if (entry.name) return true
+    if (entry.isLoading) return true
+    if (
+      this.#contractsPendingToBeFetched.some((p) => p.address === address && p.chainId === chainId)
+    ) {
+      return true
+    }
+    if (entry.updatedAt && entry.retryAfter) {
+      const nextAllowedFetch = entry.updatedAt + entry.retryAfter
+      if (Date.now() < nextAllowedFetch) return true
+    }
+    return false
   }
 
   getName(_address: string, chainId: bigint) {
@@ -193,6 +190,11 @@ export class ContractNamesController extends EventEmitter implements IContractNa
     if (this.#shouldSkipGetName(address, chainId)) return
 
     this.#contractsPendingToBeFetched.push({ address, chainId })
+    if (this.#contractNames[address]) {
+      this.#contractNames[address].isLoading = true
+    } else {
+      this.#contractNames[address] = { address, name: null, isLoading: true }
+    }
 
     // if we already have recent fetch, do not add new one
     if (Date.now() - this.#lastTimeScheduledFetch < this.#debounceTime) return
