@@ -29,8 +29,7 @@ import { PositionsByProvider } from '../../libs/defiPositions/types'
 import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
-  getNetworksWithFailedRPCErrors,
-  getNetworksWithPortfolioErrorErrors,
+  getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
@@ -498,20 +497,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       return
     }
 
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPCErrors({
-      providers: this.#providers.providers,
+    this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
-      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
-    })
-
-    const errorBanners = getNetworksWithPortfolioErrorErrors({
-      networks: this.#networks.networks,
+      shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
       selectedAccountLatest: this.portfolio.latest,
       isAllReady: this.portfolio.isAllReady,
-      providers: this.#providers.providers
+      accountState: this.#accounts.accountStates[this.account.addr] || {},
+      providers: this.#providers.providers,
+      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
     })
-
-    this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]
 
     if (!skipUpdate) {
       this.emitUpdate()
