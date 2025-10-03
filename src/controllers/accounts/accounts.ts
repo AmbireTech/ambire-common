@@ -387,6 +387,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         salt: account.creation!.salt,
         // TODO: retrieve baseIdentityAddr from the bytecode instead
         baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+        // baseIdentityAddr: this.#providers.providers['1n'].getCode(account.addr)
       }
     }))
 
