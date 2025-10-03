@@ -1814,17 +1814,15 @@ export class MainController extends EventEmitter implements IMainController {
           }
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
-          // send the txn to the relayer if it's an EOA sending for itself
-          if (accountOp.gasFeePayment.broadcastOption !== BROADCAST_OPTIONS.byOtherEOA) {
-            this.callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-              rawTxn: signedTxn
-            }).catch((e: any) => {
-              // eslint-disable-next-line no-console
-              console.log('failed to record EOA txn to relayer', accountOp.chainId)
-              // eslint-disable-next-line no-console
-              console.log(e)
-            })
-          }
+          // record the EOA txn
+          this.callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
+            rawTxn: signedTxn
+          }).catch((e: any) => {
+            // eslint-disable-next-line no-console
+            console.log('failed to record EOA txn to relayer', accountOp.chainId)
+            // eslint-disable-next-line no-console
+            console.log(e)
+          })
         }
         if (callId !== this.#signAndBroadcastCallId) return
         transactionRes = {

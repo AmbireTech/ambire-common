@@ -3,11 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
-import {
-  ContractNamesController,
-  PERSIST_FAILED_IN_MS,
-  PERSIST_NOT_FOUND_IN_MS
-} from './contractNames'
+import { ContractNamesController, PERSIST_NOT_FOUND_IN_MS } from './contractNames'
 
 const contracts = {
   uniV3Factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
@@ -15,6 +11,8 @@ const contracts = {
 }
 let finishPromise
 let errorPromise
+
+const DEFAULT_DEBOUNCE = 100
 
 describe('Contract Names', () => {
   it('Successfully find multiple and ignore random', async () => {
@@ -35,21 +33,24 @@ describe('Contract Names', () => {
     contractNamesController.getName(randomAddress, 8453n)
 
     // asses ok state
-    expect(contractNamesController.loadingAddresses.length).toBe(4)
+    expect(contractNamesController.contractsPendingToBeFetched.length).toBe(4)
     expect(mockedFetch).toHaveBeenCalledTimes(0)
 
-    // The default time for debounce is 50ms
-    jest.advanceTimersByTime(50)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
-      contractNamesController.onUpdate(resolve)
+      let emitCounter = 0
+      contractNamesController.onUpdate(() => {
+        emitCounter++
+        if (emitCounter === 2) resolve(true)
+      })
     })
     await finishPromise
 
     // asses ok result
     expect(mockedFetch).toHaveBeenCalledTimes(1)
-    expect(contractNamesController.loadingAddresses.length).toBe(0)
+    expect(contractNamesController.contractsPendingToBeFetched.length).toBe(0)
     expect(contractNamesController.contractNames[randomAddress]).toBeTruthy()
     expect(contractNamesController.contractNames[randomAddress].name).toBeFalsy()
     expect(contractNamesController.contractNames[ZeroAddress]).toBeTruthy()
@@ -73,12 +74,15 @@ describe('Contract Names', () => {
     // request a non contract address that will fail
     contractNamesController.getName(randomAddress, 8453n)
 
-    // The default time for debounce is 50ms
-    jest.advanceTimersByTime(50)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
-      contractNamesController.onUpdate(resolve)
+      let emitCounter = 0
+      contractNamesController.onUpdate(() => {
+        emitCounter++
+        if (emitCounter === 2) resolve(true)
+      })
     })
     await finishPromise
 
@@ -86,17 +90,21 @@ describe('Contract Names', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(1)
     expect(contractNamesController.contractNames[randomAddress]).toBeTruthy()
     expect(contractNamesController.contractNames[randomAddress].name).toBeFalsy()
-
     // time for failed records and errors to be considered stale
     // after that we will refetch the data for those addresses if requested
-    jest.advanceTimersByTime(PERSIST_FAILED_IN_MS)
+    jest.advanceTimersByTime(PERSIST_NOT_FOUND_IN_MS)
 
     expect(mockedFetch).toHaveBeenCalledTimes(1)
-    // make a second attempt after PERSIST_FAILED_IN_MS time
+    // make a second attempt after PERSIST_NOT_FOUND_IN_MS time
     contractNamesController.getName(randomAddress, 8453n)
-    jest.advanceTimersByTime(50)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
-      contractNamesController.onUpdate(resolve)
+      let emitCounter = 0
+      contractNamesController.onUpdate(() => {
+        emitCounter++
+        if (emitCounter === 2) resolve(true)
+      })
     })
     await finishPromise
 
@@ -115,12 +123,15 @@ describe('Contract Names', () => {
     // request a non contract address that will fail
     contractNamesController.getName(randomAddress1, 8453n)
 
-    // The default time for debounce is 50ms
-    jest.advanceTimersByTime(50)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
     finishPromise = new Promise((resolve) => {
-      contractNamesController.onUpdate(resolve)
+      let emitCounter = 0
+      contractNamesController.onUpdate(() => {
+        emitCounter++
+        if (emitCounter === 2) resolve(true)
+      })
     })
     await finishPromise
 
@@ -136,13 +147,19 @@ describe('Contract Names', () => {
     contractNamesController.getName(randomAddress2, 8453n)
     expect(mockedFetch).toHaveBeenCalledTimes(1)
 
-    finishPromise = new Promise((resolve) => {
-      contractNamesController.onUpdate(resolve)
-    })
-    jest.advanceTimersByTime(50)
-    await finishPromise
-    expect(mockedFetch).toHaveBeenCalledTimes(2)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
+    // make sure the function has been executed
+    finishPromise = new Promise((resolve) => {
+      let emitCounter = 0
+      contractNamesController.onUpdate(() => {
+        emitCounter++
+        if (emitCounter === 2) resolve(true)
+      })
+    })
+    await finishPromise
+
+    expect(mockedFetch).toHaveBeenCalledTimes(2)
     expect(contractNamesController.contractNames[randomAddress2]).toBeTruthy()
     expect(contractNamesController.contractNames[randomAddress2].name).toBeFalsy()
     expect(contractNamesController.contractNames[randomAddress2].retryAfter).toBe(
@@ -162,11 +179,11 @@ describe('Contract Names', () => {
     contractNamesController.getName(badCheckSum, 1n)
     await errorPromise
 
-    expect(contractNamesController.loadingAddresses.length).toBe(0)
+    expect(contractNamesController.contractsPendingToBeFetched.length).toBe(0)
 
     contractNamesController.getName(randomAddress, 1n)
     contractNamesController.getName(randomAddress.toLowerCase(), 1n)
 
-    expect(contractNamesController.loadingAddresses.length).toBe(1)
+    expect(contractNamesController.contractsPendingToBeFetched.length).toBe(1)
   })
 })
