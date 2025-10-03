@@ -26,7 +26,6 @@ export interface Account {
   identityCreatedAt?: number | null
   preferences: AccountPreferences
   email?: string
-  newlyCreated?: boolean
   newlyAdded?: boolean
   disable7702Popup?: boolean
   disable7702Banner?: boolean

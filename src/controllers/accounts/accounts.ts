@@ -241,8 +241,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const nextAccounts = [
       ...this.accounts.map((acc) => ({
         ...acc,
-        // reset the `newlyCreated` state for all already added accounts
-        newlyCreated: false,
         // reset the `newlyAdded` state for all accounts added on prev sessions
         newlyAdded: false,
         // Merge the existing and new associated keys for the account (if the

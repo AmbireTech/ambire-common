@@ -40,7 +40,6 @@ describe('Debug tracecall detection for transactions', () => {
       },
       preferences: { label: 'TEST SMART', pfp: ACCOUNT_ADDRESS },
       // usedOnNetworks: [],
-      newlyCreated: false,
       newlyAdded: false
     }
     accountOp = {

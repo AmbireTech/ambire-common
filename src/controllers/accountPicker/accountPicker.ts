@@ -810,9 +810,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           // re-importing the same account via different key type(s) would reset them.
           preferences: alreadyImportedAcc
             ? alreadyImportedAcc.preferences
-            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i),
-          // TODO: Will this be a problem?
-          newlyCreated: false
+            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i)
         }
       })
     ]
