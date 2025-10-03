@@ -53,7 +53,7 @@ export interface AccountOnchainState {
   currentBlock: bigint
   isSmarterEoa: boolean
   delegatedContract: Hex | null
-  delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | nully
+  delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
   updatedAt: number
 }
 
