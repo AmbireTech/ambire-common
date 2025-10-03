@@ -82,7 +82,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    */
   #portfolioByNetworks: SelectedAccountPortfolioByNetworks = {}
 
-  portfolioStartedLoadingAtTimestamp: number | null = null
+  #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
   #isPortfolioLoadingFromScratch = true
 
@@ -248,7 +248,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
-    this.portfolioStartedLoadingAtTimestamp = null
+    if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
+    this.#portfolioLoadingTimeout = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -319,19 +320,24 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       latestStateSelectedAccount,
       pendingStateSelectedAccount,
       structuredClone(this.#portfolioByNetworks),
-      this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
+      this.portfolio.shouldShowPartialResult,
       this.#isPortfolioLoadingFromScratch
     )
 
     // Reset the loading timestamp if the portfolio is ready
-    if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
-      this.portfolioStartedLoadingAtTimestamp = null
+    if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+      clearTimeout(this.#portfolioLoadingTimeout)
+      this.#portfolioLoadingTimeout = null
     }
 
     // Set the loading timestamp when the portfolio starts loading
-    if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
-      this.portfolioStartedLoadingAtTimestamp = Date.now()
+    if (!this.#portfolioLoadingTimeout && !newSelectedAccountPortfolio.isAllReady) {
+      this.#portfolioLoadingTimeout = setTimeout(() => {
+        this.portfolio.shouldShowPartialResult = true
+        this.updateSelectedAccountPortfolio()
+        this.#portfolioLoadingTimeout = null
+      }, 5000)
     }
 
     // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
