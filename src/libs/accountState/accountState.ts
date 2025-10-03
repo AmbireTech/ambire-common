@@ -130,7 +130,8 @@ export async function getAccountState(
         account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
       isSmarterEoa,
       delegatedContract,
-      delegatedContractName
+      delegatedContractName,
+      updatedAt: Date.now()
     }
   })
 

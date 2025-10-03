@@ -314,8 +314,8 @@ describe('Selected Account lib', () => {
         clonedPortfolioLatestState,
         clonedPortfolioPendingState,
         {},
-        Date.now(),
         clonedDefiAccountState,
+        false,
         true
       )
 
@@ -330,7 +330,6 @@ describe('Selected Account lib', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
       const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
       const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
-      const portfolioStartedLoadingAtTimestamp = Date.now() - 6000
 
       clonedPortfolioLatestState['1']!.isLoading = true
       clonedPortfolioPendingState['1']!.isLoading = true
@@ -339,8 +338,8 @@ describe('Selected Account lib', () => {
         clonedPortfolioLatestState,
         clonedPortfolioPendingState,
         {},
-        portfolioStartedLoadingAtTimestamp,
         clonedDefiAccountState,
+        true,
         true
       )
 
@@ -359,8 +358,8 @@ describe('Selected Account lib', () => {
         clonedPortfolioLatestState,
         clonedPortfolioPendingState,
         {},
-        Date.now(),
         clonedDefiAccountState,
+        false,
         true
       )
 

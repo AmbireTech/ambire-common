@@ -402,8 +402,8 @@ export function calculateSelectedAccountPortfolioByNetworks(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
-  portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
+  shouldShowPartialResult: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
@@ -411,9 +411,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
   isReadyToVisualize: boolean
   shouldShowPartialResult: boolean
 } {
-  const now = Date.now()
-  const shouldShowPartialResult =
-    !!portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
     pastAccountPortfolioWithDefiPositions
 
@@ -562,7 +559,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
   }
 
   return {
-    shouldShowPartialResult,
+    shouldShowPartialResult: isAllReady ? false : shouldShowPartialResult,
     isReadyToVisualize,
     isAllReady,
     selectedAccountPortfolioByNetworks: newAccountPortfolioWithDefiPositions
@@ -578,8 +575,8 @@ export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
-  portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
+  prevShouldShowPartialResult: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolio: SelectedAccountPortfolio
@@ -594,8 +591,8 @@ export function calculateSelectedAccountPortfolio(
     latestStateSelectedAccount,
     pendingStateSelectedAccount,
     pastAccountPortfolioWithDefiPositions,
-    portfolioStartedLoadingAtTimestamp,
     defiPositionsAccountState,
+    prevShouldShowPartialResult,
     isLoadingFromScratch
   )
 
