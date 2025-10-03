@@ -208,7 +208,8 @@ export const getNetworksWithErrors = ({
 
   if (!Object.keys(selectedAccountLatest).length || areAllProvidersDown) return []
 
-  Object.keys(networks).forEach((chainId) => {
+  networks.forEach((network) => {
+    const chainId = network.chainId.toString()
     const portfolioForNetwork = selectedAccountLatest[chainId]
     const accountStateForNetwork = accountState?.[chainId]
     const criticalPortfolioError = portfolioForNetwork?.criticalError
@@ -216,7 +217,7 @@ export const getNetworksWithErrors = ({
     const lastSuccessfulPortfolioUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
     const accountStateUpdatedAt = accountStateForNetwork?.updatedAt
     const networkName = getNetworkName(networks, chainId)
-    const isLoadingFromScratch = portfolioForNetwork?.isLoading && isAllReady
+    const isLoadingFromScratch = portfolioForNetwork?.isLoading && !isAllReady
 
     if (!networkName) {
       console.error('Network name not found for network in getNetworksWithErrors', chainId)
@@ -261,8 +262,7 @@ export const getNetworksWithErrors = ({
     // the user has never had assets on a network but expects to receive some?
     // I think we should simply increase the timeout above to a higher value (30 mins?)
     // but always display the error on manual reloads.
-    if (!Object.keys(networksWithAssets).includes(chainId) || networksWithAssets[chainId] === false)
-      return
+    if (networksWithAssets?.[chainId] === false) return
 
     if (!isRpcWorking) {
       // Add an RPC error if the RPC is not working
