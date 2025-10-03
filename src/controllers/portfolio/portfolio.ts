@@ -1042,8 +1042,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     // Calculates the projected rewards based on the latest portfolio state.
     // It will be called every time the user selects an account, so we don't need to call it
     // from anywhere else.
-    console.log('accountState', accountState)
-
     this.#calculateAndSetProjectedRewards(accountState, start)
 
     await this.#updateNetworksWithAssets(accountId, accountState)
