@@ -256,15 +256,15 @@ export const getNetworksWithErrors = ({
       return
     }
 
-    // Don't display an error if the user has never had assets on this network
-    // but display one if we don't know whether the user has assets on this network
-    // Note @petromir: This logic is legacy and I no longer think it's correct. What if
-    // the user has never had assets on a network but expects to receive some?
-    // I think we should simply increase the timeout above to a higher value (30 mins?)
-    // but always display the error on manual reloads.
-    if (networksWithAssets?.[chainId] === false) return
-
     if (!isRpcWorking) {
+      // Don't display an error if the user has never had assets on this network
+      // but display one if we don't know whether the user has assets on this network
+      // Note @petromir: This logic is legacy and I no longer think it's correct. What if
+      // the user has never had assets on a network but expects to receive some?
+      // I think we should simply increase the timeout above to a higher value (30 mins?)
+      // but always display the error on manual reloads.
+      if (networksWithAssets?.[chainId] === false) return
+
       // Add an RPC error if the RPC is not working
       errors = addRPCError(errors, chainId, networks)
       return
