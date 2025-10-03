@@ -24,7 +24,7 @@ import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -35,7 +35,7 @@ import {
   Key,
   KeystoreSignerType
 } from '../../interfaces/keystore'
-import { IMainController } from '../../interfaces/main'
+import { IMainController, STATUS_WRAPPED_METHODS, StatusesWithCustom } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
@@ -118,20 +118,6 @@ import { TransactionManagerController } from '../transaction/transactionManager'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 
-const STATUS_WRAPPED_METHODS = {
-  removeAccount: 'INITIAL',
-  handleAccountPickerInitLedger: 'INITIAL',
-  handleAccountPickerInitTrezor: 'INITIAL',
-  handleAccountPickerInitLattice: 'INITIAL',
-  importSmartAccountFromDefaultSeed: 'INITIAL',
-  selectAccount: 'INITIAL',
-  signAndBroadcastAccountOp: 'INITIAL'
-} as const
-
-type CustomStatuses = {
-  signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
-}
-
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
@@ -211,7 +197,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses = STATUS_WRAPPED_METHODS
+  statuses: StatusesWithCustom = STATUS_WRAPPED_METHODS
 
   ui: IUiController
 
@@ -454,7 +440,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks.defaultNetworksMode
     )
 
-    this.contractNames = new ContractNamesController(this.fetch, 50)
+    this.contractNames = new ContractNamesController(this.fetch)
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
@@ -488,6 +474,7 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
+      getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
         if (!this.signAccountOp) return
         this.signAccountOp.update(props)
@@ -1829,17 +1816,15 @@ export class MainController extends EventEmitter implements IMainController {
           }
           if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
 
-          // send the txn to the relayer if it's an EOA sending for itself
-          if (accountOp.gasFeePayment.broadcastOption !== BROADCAST_OPTIONS.byOtherEOA) {
-            this.callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-              rawTxn: signedTxn
-            }).catch((e: any) => {
-              // eslint-disable-next-line no-console
-              console.log('failed to record EOA txn to relayer', accountOp.chainId)
-              // eslint-disable-next-line no-console
-              console.log(e)
-            })
-          }
+          // record the EOA txn
+          this.callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
+            rawTxn: signedTxn
+          }).catch((e: any) => {
+            // eslint-disable-next-line no-console
+            console.log('failed to record EOA txn to relayer', accountOp.chainId)
+            // eslint-disable-next-line no-console
+            console.log(e)
+          })
         }
         if (callId !== this.#signAndBroadcastCallId) return
         transactionRes = {
@@ -1979,12 +1964,6 @@ export class MainController extends EventEmitter implements IMainController {
         message: 'No transaction response received after being broadcasted.'
       })
 
-    // Allow the user to broadcast a new transaction
-    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-    await this.forceEmitUpdate()
-    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-    await this.forceEmitUpdate()
-
     // simulate the swap & bridge only after a successful broadcast
     if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
       signAccountOp?.portfolioSimulate().then(() => {
@@ -2074,6 +2053,16 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.transfer.resetForm()
     }
+
+    // Allow the user to broadcast a new transaction;
+    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
+    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
+    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
+    // leaving the new request 'orphaned' in the background without being attached to any action.
+    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+    await this.forceEmitUpdate()
+    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    await this.forceEmitUpdate()
 
     await this.ui.notification.create({
       title:
