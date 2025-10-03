@@ -515,9 +515,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
-      // TODO: Capture in crash reports
-      // eslint-disable-next-line no-console
-      console.error(`accountPicker: account ${account.addr} was not found in the accountsOnPage.`)
+      const message = `accountPicker: account ${account.addr} was not found in the accountsOnPage.`
+      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+
       return []
     }
 
@@ -932,10 +932,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       currentPage++
     }
 
-    // TODO: Should never happen, but could benefit with better error handling
-    // TODO: Crash report?
-    // eslint-disable-next-line no-console
-    if (!nextAccount) console.error('accountPicker: no next account found')
+    // Should never happen
+    if (!nextAccount) {
+      const message = 'accountPicker: selectNextAccount called, but no next account found.'
+      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+    }
 
     this.selectNextAccountStatus = 'SUCCESS'
     await this.forceEmitUpdate()
@@ -987,9 +988,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
-      // TODO: Crash report?
-      // eslint-disable-next-line no-console
-      console.error('accountPicker: missing keyIterator')
+      const message = 'accountPicker: #deriveAccounts called, but keyIterator was missing'
+      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+
       return []
     }
 
@@ -1112,9 +1113,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          // TODO: Crash report?
-          // eslint-disable-next-line no-console
-          console.error('accountPicker: failed to get account state on ', chainId)
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
           this.networksWithAccountStateError.push(BigInt(chainId))
         })
