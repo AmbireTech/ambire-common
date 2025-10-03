@@ -818,7 +818,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       totalRewardsPool,
       totalWeightNonUser,
       userLevel,
-      walletPrice
+      walletPrice,
+      minLvl,
+      minBalance
     } = result
 
     const currentTotalBalanceOnSupportedChains = supportedChainIds
@@ -836,7 +838,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       numberOfWeeksSinceStartOfSeason,
       totalWeightNonUser,
       walletPrice,
-      totalRewardsPool
+      totalRewardsPool,
+      minLvl,
+      minBalance
     )
 
     const projectedAmountFormatted = Math.round(projectedAmount.walletRewards * 1e18)

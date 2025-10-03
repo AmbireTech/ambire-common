@@ -230,6 +230,8 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
   userLevel: number
   walletPrice: number
   apy: number
+  minLvl: number
+  minBalance: number
 }
 
 export type NetworkState = {
