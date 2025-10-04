@@ -125,6 +125,17 @@ export async function ambireEstimateGas(
           ? token.availableAmount || token.amount
           : feeTokenOutcomes[key].amount
 
+      // if we're using the estimation in adjustable mode,
+      // the token getting actioned in the calls could be use to pay the fee
+      if (
+        !token.flags.onGasTank &&
+        op.meta &&
+        op.meta.adjustableAccountOpMode &&
+        op.meta.adjustableAccountOpMode.tokenAddress === token.address
+      ) {
+        availableAmount = token.amount
+      }
+
       // if the token is native and the account type cannot pay for the
       // transaction with the receiving amount from the estimation,
       // override the amount to the original, in-account amount.
