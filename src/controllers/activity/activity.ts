@@ -194,6 +194,43 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
+  /**
+   * Checks if there are any account operations that were sent to a specific address
+   * @param toAddress The address to check for received transactions
+   * @param accountId The account ID to filter operations from
+   * @returns An object with 'found' (boolean) and 'lastTransactionDate' (Date | null)
+   */
+  async hasAccountOpsSentTo(
+    toAddress: string,
+    accountId: AccountId
+  ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
+    await this.#initialLoadPromise
+    const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
+    let found = false
+    let lastTimestamp: number | null = null
+
+    accounts.forEach((account) => {
+      if (!this.#accountsOps[account]) return
+      const networks = Object.keys(this.#accountsOps[account])
+      networks.forEach((network) => {
+        if (!this.#accountsOps[account][network]) return
+        this.#accountsOps[account][network].forEach((op) => {
+          const sentToTarget = op.calls.some(
+            (call) => call.to.toLowerCase() === toAddress.toLowerCase()
+          )
+          if (sentToTarget) {
+            found = true
+            if (!lastTimestamp || op.timestamp > lastTimestamp) {
+              lastTimestamp = op.timestamp
+            }
+          }
+        })
+      })
+    })
+
+    return { found, lastTransactionDate: lastTimestamp ? new Date(lastTimestamp) : null }
+  }
+
   async filterAccountsOps(
     sessionId: string,
     filters: Filters,
