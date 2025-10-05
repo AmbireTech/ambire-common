@@ -11,7 +11,7 @@ type ValidateReturnType = {
   message: string
 }
 
-const validateAddress = (address: string): ValidateReturnType => {
+export const validateAddress = (address: string): ValidateReturnType => {
   if (!(address && address.length)) {
     return {
       success: false,
