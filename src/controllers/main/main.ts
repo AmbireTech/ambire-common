@@ -1579,7 +1579,7 @@ export class MainController extends EventEmitter implements IMainController {
       shouldUpdateAccount: false
     })
 
-    await this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
+    this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
     this.emitUpdate()
   }
