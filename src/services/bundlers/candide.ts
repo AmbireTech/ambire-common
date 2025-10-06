@@ -12,11 +12,39 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class Candide extends Bundler {
   protected getUrl(network: Network): string {
+    if (network.chainId === 1n) {
+      return `https://api.candide.dev/bundler/v3/ethereum/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
     if (network.chainId === 42220n) {
       return `https://api.candide.dev/bundler/v3/celo/${process.env.REACT_APP_CANDIDE_API_KEY}`
     }
 
-    return `https://api.candide.dev/bundler/v3/ethereum/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    if (network.chainId === 10n) {
+      return `https://api.candide.dev/bundler/v3/optimism/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
+    if (network.chainId === 56n) {
+      return `https://api.candide.dev/bundler/v3/bsc/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
+    if (network.chainId === 100n) {
+      return `https://api.candide.dev/bundler/v3/gnosis/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
+    if (network.chainId === 137n) {
+      return `https://api.candide.dev/bundler/v3/polygon/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
+    if (network.chainId === 480n) {
+      return `https://api.candide.dev/bundler/v3/worldchain/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
+    if (network.chainId === 8453n) {
+      return `https://api.candide.dev/bundler/v3/base/${process.env.REACT_APP_CANDIDE_API_KEY}`
+    }
+
+    return `https://api.candide.dev/bundler/v3/arbitrum/${process.env.REACT_APP_CANDIDE_API_KEY}`
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {

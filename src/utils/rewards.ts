@@ -42,11 +42,14 @@ export function calculateRewardsForSeason(
   const fraction = weight / (weight + totalWeightNoUser)
   const walletRewards = fraction * REWARDS_FOR_SEASON
 
-  // we want to calc the rewards in USD, simply to get the 'APY' (it's not actual APY, just
-  // ratio between rewards and currentBalance)
-  const rewardsInUsd = walletRewards * walletPrice
-  const ratioRewardsToBalance = rewardsInUsd / currentBalance
-  const apy = ratioRewardsToBalance * 100
+  // @TODO hardcoded for now, should be passed from the relayer later
+  const lengthOfSeasonInYears = 0.5
+  // we want to calc the rewards in USD, simply to get the 'APY'
+  const yearlyWalletRewards = walletRewards / lengthOfSeasonInYears
+  const yearlyRewardsInUsd = yearlyWalletRewards * walletPrice
+
+  const ratioYearlyRewardsToBalance = yearlyRewardsInUsd / currentBalance
+  const apy = ratioYearlyRewardsToBalance * 100
 
   return { apy, walletRewards }
 }
