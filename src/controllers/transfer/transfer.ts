@@ -571,7 +571,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       selectedAccount: this.#selectedAccountData.account.addr,
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
-      recipientAddress
+      recipientAddress,
+      amountInFiat: parseUnits(getSanitizedAmount(this.amountInFiat, 6), 6)
     })
 
     if (!userRequest || userRequest.action.kind !== 'calls') {
@@ -591,13 +592,18 @@ export class TransferController extends EventEmitter implements ITransferControl
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
       this.signAccountOpController.update({ calls })
+
+      // pass on topUpAmount
+      if (!this.signAccountOpController.accountOp.meta)
+        this.signAccountOpController.accountOp.meta = {}
+      this.signAccountOpController.accountOp.meta.topUpAmount = userRequest.meta.topUpAmount
       return
     }
 
-    await this.#initSignAccOp(calls)
+    await this.#initSignAccOp(calls, userRequest.meta.topUpAmount)
   }
 
-  async #initSignAccOp(calls: Call[]) {
+  async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
     if (!this.#selectedAccountData.account || this.signAccountOpController) return
 
     const network = this.#networks.networks.find(
@@ -631,7 +637,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       signature: null,
       calls,
       meta: {
-        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+        topUpAmount
       }
     }
 

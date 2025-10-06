@@ -125,6 +125,10 @@ export async function ambireEstimateGas(
           ? token.availableAmount || token.amount
           : feeTokenOutcomes[key].amount
 
+      if (token.flags.onGasTank && op.meta?.topUpAmount) {
+        availableAmount += op.meta.topUpAmount
+      }
+
       // if the token is native and the account type cannot pay for the
       // transaction with the receiving amount from the estimation,
       // override the amount to the original, in-account amount.
