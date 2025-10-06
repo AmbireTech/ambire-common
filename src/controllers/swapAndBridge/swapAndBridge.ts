@@ -1168,7 +1168,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!this.toChainId) return // should never happen
     if (!isAddress(address)) return // no need to attempt with invalid addresses
 
-    const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address)
+    const isAlreadyInTheList = this.#toTokenList.some(
+      // Compare lowercase, address param comes from a search term that is lowercased
+      (t) => t.address.toLowerCase() === address.toLowerCase()
+    )
     if (isAlreadyInTheList) return
 
     let token: SwapAndBridgeToToken | null
