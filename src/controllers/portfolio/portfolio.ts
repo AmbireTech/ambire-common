@@ -787,10 +787,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     // We want the second account to see the token after a manual update
     // Also, the user has a higher chance of holding similar assets in different accounts
     if (isManualUpdate) {
-      const importedAssets = this.#getImportedAccountsLearnedAssets(chainId, accountId)
+      const importedAccountsLearned = this.#getImportedAccountsLearnedAssets(chainId, accountId)
 
-      learnedTokensHints = importedAssets.learnedTokens
-      learnedNftsHints = importedAssets.learnedNfts
+      learnedTokensHints = importedAccountsLearned.learnedTokens
+      learnedNftsHints = importedAccountsLearned.learnedNfts
     }
 
     // Check if the user key exists in the new learned tokens structure
