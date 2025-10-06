@@ -31,6 +31,7 @@ import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { RequestsController } from './requests'
+import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 
 const uiManager = mockUiManager().uiManager
 
@@ -164,7 +165,7 @@ const prepareTest = async () => {
     accounts: accountsCtrl,
     activity: activityCtrl,
     storage: storageCtrl,
-    serviceProviderAPI: SocketAPIMock as any,
+    swapProvider: SocketAPIMock as any,
     invite: new InviteController({ relayerUrl: '', fetch, storage: storageCtrl }),
     keystore,
     portfolio: portfolioCtrl,
@@ -192,6 +193,7 @@ const prepareTest = async () => {
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
       getSignAccountOp: () => null,
+      getMainStatuses: () => STATUS_WRAPPED_METHODS,
       updateSignAccountOp: () => {},
       destroySignAccountOp: () => {},
       updateSelectedAccountPortfolio: () => Promise.resolve(),

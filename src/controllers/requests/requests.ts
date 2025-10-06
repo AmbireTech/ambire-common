@@ -61,6 +61,7 @@ import { ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
+import { StatusesWithCustom } from '../../interfaces/main'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -92,7 +93,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #transactionManager?: ITransactionManagerController
 
+  #ui: IUiController
+
   #getSignAccountOp: () => ISignAccountOpController | null
+
+  #getMainStatuses: () => StatusesWithCustom
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -132,7 +137,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     destroySignAccountOp,
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
-    guardHWSigning
+    guardHWSigning,
+    getMainStatuses
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -151,6 +157,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
+    getMainStatuses: () => StatusesWithCustom
   }) {
     super()
 
@@ -164,8 +171,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
+    this.#ui = ui
 
     this.#getSignAccountOp = getSignAccountOp
+    this.#getMainStatuses = getMainStatuses
     this.#updateSignAccountOp = updateSignAccountOp
     this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -246,6 +255,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const actionsToAdd: Action[] = []
     const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
 
+    const signAccountOpController = this.#getSignAccountOp()
+    const signStatus = this.#getMainStatuses().signAndBroadcastAccountOp
+    let hasTxInProgressErrorShown = false
+
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
       if (
@@ -255,6 +268,55 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ) {
         await this.#addSwitchAccountUserRequest(req)
         return
+      }
+
+      if (req.action.kind === 'calls') {
+        // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
+        //
+        // Why? When a transaction is being signed and broadcast, its action is still unresolved.
+        // If a new request is added during this time, it gets incorrectly attached to the ongoing action.
+        // Once the transaction is broadcast, the action resolves,
+        // leaving the new request "orphaned" in the background with no banner shown on the Dashboard.
+        // The next time the user starts a transaction, both requests appear in the batch, which is confusing.
+        // To avoid this, we block new requests until the current process is complete.
+        //
+        //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
+        if (
+          (signStatus === 'SIGNING' || signStatus === 'BROADCASTING') &&
+          signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
+          signAccountOpController?.accountOp.chainId === req.meta.chainId
+        ) {
+          // Make sure to show the error once
+          if (!hasTxInProgressErrorShown) {
+            const errorMessage =
+              'Please wait until the previous transaction is fully processed before adding a new one.'
+
+            this.emitError({
+              level: 'major',
+              message: errorMessage,
+              error: new Error(
+                'requestsController: Cannot add a new request (addUserRequests) while a signing or broadcasting process is still running.'
+              )
+            })
+
+            if (req.dappPromise) {
+              req.dappPromise?.reject(
+                ethErrors.rpc.transactionRejected({
+                  message: errorMessage
+                })
+              )
+
+              await this.#ui.notification.create({
+                title: 'Rejected!',
+                message: errorMessage
+              })
+            }
+
+            hasTxInProgressErrorShown = true
+          }
+
+          return
+        }
       }
 
       if (req.action.kind === 'calls') {
@@ -459,6 +521,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
     if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
+      userRequest.meta.pendingToRemove = true
+
       setTimeout(async () => {
         await this.removeUserRequests([requestId])
         this.emitUpdate()
@@ -764,7 +828,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async #buildIntentUserRequest({
-    amount,
     recipientAddress,
     selectedToken,
     actionExecutionType = 'open-action-window'
@@ -885,63 +948,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
       async () => {
-        if (!this.#selectedAccount.account) return
-        let transaction: SwapAndBridgeSendTxRequest | null | undefined = null
-
-        const activeRoute = this.#swapAndBridge.activeRoutes.find(
-          (r) => r.activeRouteId === activeRouteId
-        )
-
-        // learn the receiving token
-        if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
-          this.#addTokensToBeLearned(
-            [this.#swapAndBridge.toSelectedToken.address],
-            BigInt(this.#swapAndBridge.toChainId)
-          )
-        }
-
-        if (this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn) {
-          transaction = this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
-        }
-
-        if (activeRoute) {
-          await this.removeUserRequests([activeRoute.activeRouteId], {
-            shouldRemoveSwapAndBridgeRoute: false,
-            shouldOpenNextRequest: false
-          })
-          this.#swapAndBridge.updateActiveRoute(activeRoute.activeRouteId, { error: undefined })
-
-          transaction = await this.#swapAndBridge.getNextRouteUserTx({
-            activeRouteId: activeRoute.activeRouteId,
-            activeRoute
-          })
-
-          if (transaction) {
-            const network = this.#networks.networks.find(
-              (n) => Number(n.chainId) === transaction!.chainId
-            )!
-            if (
-              isBasicAccount(
-                this.#selectedAccount.account,
-                await this.#accounts.getOrFetchAccountOnChainState(
-                  this.#selectedAccount.account.addr,
-                  network.chainId
-                )
-              )
-            ) {
-              await this.removeUserRequests(
-                [
-                  `${activeRoute.activeRouteId}-approval`,
-                  `${activeRoute.activeRouteId}-revoke-approval`
-                ],
-                {
-                  shouldRemoveSwapAndBridgeRoute: false,
-                  shouldOpenNextRequest: false
-                }
-              )
-            }
-          }
-        }
+        const transaction: SwapAndBridgeSendTxRequest | undefined =
+          this.#swapAndBridge.signAccountOpController?.accountOp.meta?.swapTxn
 
         if (!this.#selectedAccount.account || !transaction) {
           const errorDetails = `missing ${
@@ -951,6 +959,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             `Something went wrong when preparing your request. Please try again later or contact Ambire support. Error details: <${errorDetails}>`
           )
           throw new EmittableError({ message: error.message, level: 'major', error })
+        }
+
+        // learn the receiving token
+        if (this.#swapAndBridge.toSelectedToken && this.#swapAndBridge.toChainId) {
+          this.#addTokensToBeLearned(
+            [this.#swapAndBridge.toSelectedToken.address],
+            BigInt(this.#swapAndBridge.toChainId)
+          )
         }
 
         const network = this.#networks.networks.find(
@@ -984,8 +1000,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         })
 
         if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
-          await this.#swapAndBridge.addActiveRoute({
-            activeRouteId: transaction.activeRouteId,
+          this.#swapAndBridge.addActiveRoute({
             userTxIndex: transaction.userTxIndex
           })
         }

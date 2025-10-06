@@ -24,6 +24,8 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
+/* eslint-disable no-restricted-syntax */
+import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ONE_MINUTE = 60000
@@ -240,12 +242,24 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
       const [aave, uniV3] = await Promise.all([
         getAAVEPositions(addr, provider, network).catch((e: any) => {
-          console.error('getAAVEPositions error:', e)
+          this.emitError({
+            message: `Failed to fetch AAVE v3 positions for ${addr} on ${network.name}: ${
+              e?.message || 'Unknown error'
+            }`,
+            error: e,
+            level: 'silent'
+          })
           this.#setProviderError(addr, network.chainId, 'AAVE v3', e?.message || 'Unknown error')
           return previous.find((p) => p.providerName === 'AAVE v3') || null
         }),
         getUniV3Positions(addr, provider, network).catch((e: any) => {
-          console.error('getUniV3Positions error:', e)
+          this.emitError({
+            message: `Failed to fetch AAVE v3 positions for ${addr} on ${network.name}: ${
+              e?.message || 'Unknown error'
+            }`,
+            error: e,
+            level: 'silent'
+          })
           this.#setProviderError(addr, network.chainId, 'Uniswap V3', e?.message || 'Unknown error')
           return previous.find((p) => p.providerName === 'Uniswap V3') || null
         })
@@ -318,6 +332,19 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       const positionsByProvider = debankPositionsByProvider.filter(
         (p) => String(p.chainId) === String(network.chainId)
       )
+
+      try {
+        for (const prov of positionsByProvider) {
+          for (const pos of prov.positions) {
+            if (pos.additionalData.name === 'Deposit') {
+              pos.additionalData.name = 'Deposit pool'
+              pos.additionalData.positionIndex = shortenAddress(pos.additionalData.pool.id, 11)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('DeFi error: ', error)
+      }
 
       const positionMap = new Map(positionsByProvider.map((p) => [lower(p.providerName), p]))
 

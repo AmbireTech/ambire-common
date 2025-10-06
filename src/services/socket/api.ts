@@ -1,40 +1,37 @@
 import { getAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { InviteController } from '../../controllers/invite/invite'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SocketAPIActiveRoutes,
-  SocketAPIQuote,
+  BungeeBuildTxnResponse,
+  BungeeExchangeQuoteResponse,
+  BungeeRouteStatus,
   SocketAPIResponse,
-  SocketAPISendTransactionRequest,
-  SocketAPIStep,
   SocketAPISupportedChain,
   SocketAPIToken,
-  SocketAPIUserTx,
-  SocketRouteStatus,
-  SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
-  SwapAndBridgeToToken
+  SwapAndBridgeToToken,
+  SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { addCustomTokensIfNeeded } from '../../libs/swapAndBridge/swapAndBridge'
+import { TokenResult } from '../../libs/portfolio'
+import {
+  addCustomTokensIfNeeded,
+  convertNullAddressToZeroAddressIfNeeded
+} from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
   FEE_PERCENT,
   NULL_ADDRESS,
+  PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
 } from './constants'
 
 const convertZeroAddressToNullAddressIfNeeded = (addr: string) =>
   addr === ZERO_ADDRESS ? NULL_ADDRESS : addr
-
-const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
-  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
 const normalizeIncomingSocketTokenAddress = (address: string) =>
   // incoming token addresses from Socket are all lowercased
@@ -53,44 +50,17 @@ const normalizeOutgoingSocketTokenAddress = (address: string) =>
     // Socket works only with all lowercased token addresses, otherwise, bad request
     address.toLocaleLowerCase()
   )
-const normalizeOutgoingSocketToken = (token: SocketAPIToken) => ({
-  ...token,
-  address: normalizeOutgoingSocketTokenAddress(token.address)
-})
 
-const normalizeSocketUserTxsToSwapAndBridgeRouteSteps = (
-  userTxs: SocketAPIUserTx[]
-): SwapAndBridgeStep[] => {
-  // @ts-ignore TODO: Types mismatch for this legacy Socket normalization
-  return userTxs.reduce((stepsAcc: SocketAPIStep[], tx) => {
-    if (tx.userTxType === 'fund-movr') {
-      tx.steps.forEach((s) => stepsAcc.push({ ...s, userTxIndex: tx.userTxIndex }))
-    }
-    if (tx.userTxType === 'dex-swap') {
-      stepsAcc.push({
-        chainId: tx.chainId,
-        fromAmount: tx.fromAmount,
-        fromAsset: tx.fromAsset,
-        gasFees: tx.gasFees,
-        minAmountOut: tx.minAmountOut,
-        protocol: tx.protocol,
-        swapSlippage: tx.swapSlippage,
-        toAmount: tx.toAmount,
-        toAsset: tx.toAsset,
-        type: 'swap',
-        userTxIndex: tx.userTxIndex
-      })
-    }
-    return stepsAcc
-  }, [])
-}
+export class SocketAPI implements SwapProvider {
+  id: string = 'socket'
 
-export class SocketAPI {
-  id: 'socket' = 'socket'
+  name = 'Socket'
 
   #fetch: Fetch
 
-  #baseUrl = 'https://api.socket.tech/v2'
+  #requestTimeoutMs = 15000
+
+  #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
 
   #headers: RequestInitWithCustomHeaders['headers']
 
@@ -100,22 +70,18 @@ export class SocketAPI {
     this.#fetch = fetch
 
     this.#headers = {
-      'API-KEY': apiKey,
+      'x-api-key': apiKey,
+      affiliate:
+        '609913096e183b62cecd0dfdc13382f618baedceb5fef75aad43e6cbff367039708902197e0b2b78b1d76cb0837ad0b318baedceb5fef75aad43e6cb',
       Accept: 'application/json',
       'Content-Type': 'application/json'
     }
   }
 
+  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
-    try {
-      const response = await this.#fetch(`${this.#baseUrl}/health`, { headers: this.#headers })
-      if (!response.ok) return false
-
-      const body = await response.json()
-      return !!body.ok
-    } catch {
-      return false
-    }
+    // deprecated mechanism
+    return true
   }
 
   async updateHealth() {
@@ -147,7 +113,18 @@ export class SocketAPI {
     let response: CustomResponse
 
     try {
-      response = await fetchPromise
+      response = await Promise.race([
+        fetchPromise,
+        new Promise<CustomResponse>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new SwapAndBridgeProviderApiError(
+                'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
+              )
+            )
+          }, this.#requestTimeoutMs)
+        })
+      ])
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
@@ -193,7 +170,7 @@ export class SocketAPI {
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const url = `${this.#baseUrl}/supported/chains`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/supported-chains`
 
     const response = await this.#handleResponse<SocketAPISupportedChain[]>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
@@ -208,32 +185,27 @@ export class SocketAPI {
       }))
   }
 
-  async getToTokenList({
-    fromChainId,
-    toChainId
-  }: {
-    fromChainId: number
-    toChainId: number
-  }): Promise<SwapAndBridgeToToken[]> {
+  async getToTokenList({ toChainId }: { toChainId: number }): Promise<SwapAndBridgeToToken[]> {
     const params = new URLSearchParams({
-      fromChainId: fromChainId.toString(),
-      toChainId: toChainId.toString(),
+      chainIds: toChainId.toString(),
       // The long list for some networks is HUGE (e.g. Ethereum has 10,000+ tokens),
       // which makes serialization and deserialization of this controller computationally expensive.
-      isShortList: 'true'
+      list: 'trending'
     })
-    const url = `${this.#baseUrl}/token-lists/to-token-list?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/tokens/list?${params.toString()}`
 
-    let response = await this.#handleResponse<SocketAPIToken[]>({
+    const response = await this.#handleResponse<{ [chainId: string]: SocketAPIToken[] }>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })
 
+    let tokens = response[toChainId]
+
     // Exception for Optimism, strip out the legacy ETH address
     // TODO: Remove when Socket removes the legacy ETH address from their response
     if (toChainId === 10)
-      response = response.filter(
+      tokens = tokens.filter(
         (token: SocketAPIToken) => token.address !== ETH_ON_OPTIMISM_LEGACY_ADDRESS
       )
 
@@ -241,11 +213,11 @@ export class SocketAPI {
     // One is with the `ZERO_ADDRESS` and one with `NULL_ADDRESS`, both for ETH.
     // Strip out the one with the `ZERO_ADDRESS` to be consistent with the rest.
     if (toChainId === 1)
-      response = response.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
+      tokens = tokens.filter((token: SocketAPIToken) => token.address !== ZERO_ADDRESS)
 
-    response = response.map(normalizeIncomingSocketToken)
+    tokens = tokens.map(normalizeIncomingSocketToken)
 
-    return addCustomTokensIfNeeded({ chainId: toChainId, tokens: response })
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens })
   }
 
   async getToken({
@@ -256,224 +228,251 @@ export class SocketAPI {
     chainId: number
   }): Promise<SwapAndBridgeToToken | null> {
     const params = new URLSearchParams({
-      address: address.toString(),
-      chainId: chainId.toString()
+      q: address.toString()
     })
-    const url = `${this.#baseUrl}/supported/token-support?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/tokens/search?${params.toString()}`
 
-    const response = await this.#handleResponse<{ isSupported: boolean; token: SocketAPIToken }>({
+    const response = await this.#handleResponse<{
+      tokens: { [chainId: string]: SocketAPIToken[] }
+    }>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to retrieve token information by address.'
     })
 
-    if (!response.isSupported || !response.token) return null
+    if (!response.tokens || !response.tokens[chainId] || !response.tokens[chainId].length)
+      return null
 
-    return normalizeIncomingSocketToken(response.token)
+    return normalizeIncomingSocketToken(response.tokens[chainId][0])
   }
 
   async quote({
+    fromAsset,
+    toAsset,
     fromChainId,
     fromTokenAddress,
     toChainId,
     toTokenAddress,
     fromAmount,
     userAddress,
-    isSmartAccount,
-    sort,
-    isOG
+    isOG,
+    accountNativeBalance,
+    nativeSymbol
   }: {
+    fromAsset: TokenResult | null
+    toAsset: SwapAndBridgeToToken | null
     fromChainId: number
     fromTokenAddress: string
     toChainId: number
     toTokenAddress: string
     fromAmount: bigint
     userAddress: string
-    isSmartAccount: boolean
     sort: 'time' | 'output'
-    isOG: InviteController['isOG']
+    isOG: boolean
     accountNativeBalance: bigint
+    nativeSymbol: string
   }): Promise<SwapAndBridgeQuote> {
+    if (!fromAsset || !toAsset)
+      throw new SwapAndBridgeProviderApiError(
+        'Quote requested, but missing required params. Error details: <from token details are missing>'
+      )
+
     const params = new URLSearchParams({
-      fromChainId: fromChainId.toString(),
-      fromTokenAddress: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
-      toChainId: toChainId.toString(),
-      toTokenAddress: normalizeOutgoingSocketTokenAddress(toTokenAddress),
-      fromAmount: fromAmount.toString(),
       userAddress,
-      isContractCall: isSmartAccount.toString(), // only get quotes with that are compatible with contracts
-      sort,
-      singleTxOnly: 'false',
-      defaultSwapSlippage: '1',
-      uniqueRoutesPerBridge: 'true'
+      originChainId: fromChainId.toString(),
+      destinationChainId: toChainId.toString(),
+      inputToken: normalizeOutgoingSocketTokenAddress(fromTokenAddress),
+      outputToken: normalizeOutgoingSocketTokenAddress(toTokenAddress),
+      inputAmount: fromAmount.toString(),
+      receiverAddress: userAddress,
+      useInbox: 'true',
+      enableManual: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
     const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feePercent', FEE_PERCENT.toString())
+      params.append('feeBps', (FEE_PERCENT * 100).toString())
     }
-    // TODO: Temporarily exclude Mayan bridge when fetching quotes for SA, as
-    // batching is currently not not supported by Mayan (and funds get lost).
-    if (isSmartAccount) params.append('excludeBridges', ['mayan'].join(','))
 
-    const url = `${this.#baseUrl}/quote?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`
 
-    const response = await this.#handleResponse<SocketAPIQuote>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to fetch the quote.'
+    const response: BungeeExchangeQuoteResponse =
+      await this.#handleResponse<BungeeExchangeQuoteResponse>({
+        fetchPromise: this.#fetch(url, { headers: this.#headers }),
+        errorPrefix: 'Unable to fetch the quote.'
+      })
+
+    // configure the toAsset
+    let socketToAsset = response.autoRoute ? response.autoRoute.output.token : null
+    if (!socketToAsset) {
+      socketToAsset = response.manualRoutes.length ? response.manualRoutes[0].output.token : null
+    }
+    if (!socketToAsset) {
+      socketToAsset = { ...toAsset, icon: toAsset.icon ?? '', logoURI: '' }
+    }
+
+    let allRoutes = [...response.manualRoutes]
+    if (response.autoRoute) allRoutes.push(response.autoRoute)
+    allRoutes = allRoutes.sort((r1, r2) => {
+      const a = BigInt(r1.output.amount)
+      const b = BigInt(r2.output.amount)
+      if (a === b) return 0
+      if (a > b) return -1
+      return 1
     })
-
     return {
-      ...response,
-      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
-      toAsset: normalizeIncomingSocketToken(response.toAsset),
-      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
-      routes: response.routes.map((route) => ({
-        ...route,
-        steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(route.userTxs),
-        userTxs: route.userTxs.map((userTx) => ({
-          ...userTx,
-          ...('fromAsset' in userTx && {
-            fromAsset: normalizeIncomingSocketToken(userTx.fromAsset)
-          }),
-          toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-          ...('steps' in userTx && {
-            steps: userTx.steps.map((step) => ({
-              ...step,
-              fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-              toAsset: normalizeIncomingSocketToken(step.toAsset)
-            }))
-          })
-        }))
-      }))
+      fromAsset: normalizeIncomingSocketToken(response.input.token),
+      toAsset: normalizeIncomingSocketToken(socketToAsset),
+      fromChainId: response.input.token.chainId,
+      toChainId: response.manualRoutes.length ? response.manualRoutes[0].output.token.chainId : 0,
+      // @ts-ignore TODO: fix the typescript here
+      routes: allRoutes.map((route) => {
+        const steps = [
+          {
+            chainId: route.output.token.chainId,
+            fromAmount: fromAmount.toString(),
+            fromAsset: { ...fromAsset, chainId: Number(fromAsset.chainId) },
+            serviceTime: route.estimatedTime ?? 1,
+            minAmountOut: route.output.minAmountOut,
+            protocol: {
+              name: route.routeDetails.name,
+              displayName: route.routeDetails.name,
+              icon: route.routeDetails.logoURI
+            },
+            protocolFees:
+              PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE.includes(route.routeDetails.name) &&
+              route.routeDetails.routeFee &&
+              route.routeDetails.routeFee.amount !== '0'
+                ? {
+                    amount: route.routeDetails.routeFee.amount,
+                    asset: route.routeDetails.routeFee.token,
+                    feesInUsd: route.routeDetails.routeFee.feeInUsd
+                  }
+                : undefined,
+            swapSlippage: route.slippage,
+            toAmount: route.output.amount,
+            toAsset: route.output.token,
+            type: 'swap',
+            userTxIndex: 0
+          }
+        ]
+
+        // set the service fee
+        const serviceFee: SwapAndBridgeRoute['serviceFee'] = steps[0].protocolFees
+          ? {
+              amount: steps[0].protocolFees.amount,
+              amountUSD: steps[0].protocolFees.feesInUsd.toString()
+            }
+          : undefined
+
+        // disable routes the user does not have native to pay for
+        const disabled =
+          serviceFee === undefined ? false : accountNativeBalance < BigInt(serviceFee.amount)
+        const disabledReason = disabled
+          ? `Insufficient ${nativeSymbol}. This bridge imposes a fee that must be paid in ${nativeSymbol}.`
+          : undefined
+
+        return {
+          ...steps[0],
+          providerId: 'socket',
+          outputValueInUsd: route.output.valueInUsd,
+          routeId: route.quoteId,
+          disabled,
+          disabledReason,
+          steps,
+          serviceFee,
+          userTxs: steps,
+          userAddress,
+          isOnlySwapRoute: fromChainId === route.output.token.chainId,
+          currentUserTxIndex: 0,
+          fromChainId,
+          toChainId: route.output.token.chainId,
+          inputValueInUsd: response.input.valueInUsd,
+          toToken: {
+            priceUSD: route.output.priceInUsd,
+            symbol: route.output.token.symbol,
+            decimals: route.output.token.decimals,
+            name: route.output.token.name,
+            logoURI: route.output.token.logoURI
+          },
+          approvalData: 'approvalData' in route ? route.approvalData : undefined,
+          txData: 'txData' in route ? route.txData : undefined,
+          rawRoute: '' // not needed for socket
+        }
+      })
     }
   }
 
-  async startRoute({
-    fromChainId,
-    toChainId,
-    fromAssetAddress,
-    toAssetAddress,
-    route
-  }: {
-    fromChainId: number
-    toChainId: number
-    fromAssetAddress: string
-    toAssetAddress: string
-    route?: SwapAndBridgeQuote['selectedRoute']
-  }): Promise<SwapAndBridgeSendTxRequest> {
-    const params = {
-      fromChainId,
-      toChainId,
-      fromAssetAddress: normalizeOutgoingSocketTokenAddress(fromAssetAddress),
-      toAssetAddress: normalizeOutgoingSocketTokenAddress(toAssetAddress),
-      includeFirstTxDetails: true,
-      route: {
-        ...route,
-        userTxs: route?.userTxs.map((userTx) => ({
-          ...userTx,
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          fromAsset: userTx?.fromAsset ? normalizeOutgoingSocketToken(userTx.fromAsset) : undefined,
-          toAsset: {
-            ...userTx.toAsset,
-            address: normalizeOutgoingSocketTokenAddress(userTx.toAsset.address)
-          },
-          // @ts-ignore fromAsset exists on one of the two userTx sub-types
-          steps: userTx.steps
-            ? // @ts-ignore fromAsset exists on one of the two userTx sub-types
-              userTx.steps.map((step) => ({
-                ...step,
-                fromAsset: normalizeOutgoingSocketToken(step.fromAsset),
-                toAsset: normalizeOutgoingSocketToken(step.toAsset)
-              }))
-            : undefined
-        }))
+  async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
+    if (!route) throw new Error('route not set')
+
+    // the socket auto route return a txData object so we already have it
+    if (route.txData) {
+      return {
+        activeRouteId: route.routeId,
+        approvalData: route.approvalData
+          ? {
+              allowanceTarget: route.approvalData.spenderAddress,
+              approvalTokenAddress: route.approvalData.tokenAddress,
+              minimumApprovalAmount: route.approvalData.amount,
+              owner: route.approvalData.userAddress
+            }
+          : null,
+        chainId: route.fromChainId,
+        txData: route.txData.data,
+        txTarget: route.txData.to,
+        userTxIndex: route.steps.length ? route.steps[0].userTxIndex : 0,
+        value: route.txData.value
       }
     }
 
-    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
-      fetchPromise: this.#fetch(`${this.#baseUrl}/route/start`, {
-        method: 'POST',
-        headers: this.#headers,
-        body: JSON.stringify(params)
-      }),
+    const response = await this.#handleResponse<BungeeBuildTxnResponse>({
+      fetchPromise: this.#fetch(
+        `${this.#bungeQuoteApiUrl}/api/v1/bungee/build-tx?quoteId=${route.routeId}`,
+        {
+          method: 'GET',
+          headers: this.#headers
+        }
+      ),
       errorPrefix: 'Unable to start the route.'
     })
 
-    return { ...response, activeRouteId: response.activeRouteId.toString() }
+    return {
+      activeRouteId: route.routeId,
+      approvalData: response.approvalData
+        ? {
+            allowanceTarget: response.approvalData.spenderAddress,
+            approvalTokenAddress: response.approvalData.tokenAddress,
+            minimumApprovalAmount: response.approvalData.amount,
+            owner: response.approvalData.userAddress
+          }
+        : null,
+      chainId: route.fromChainId,
+      txData: response.txData.data,
+      txTarget: response.txData.to,
+      userTxIndex: 0,
+      value: response.txData.value
+    }
   }
 
-  async getRouteStatus({
-    activeRouteId,
-    userTxIndex,
-    txHash
-  }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
-    txHash: string
-  }) {
+  async getRouteStatus({ txHash }: { txHash: string }) {
     const params = new URLSearchParams({
-      activeRouteId: activeRouteId.toString(),
-      userTxIndex: userTxIndex.toString(),
       txHash
     })
-    const url = `${this.#baseUrl}/route/prepare?${params.toString()}`
+    const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/status?${params.toString()}`
 
-    const response = await this.#handleResponse<SocketRouteStatus>({
+    const response = await this.#handleResponse<BungeeRouteStatus[] | null>({
       fetchPromise: this.#fetch(url, { headers: this.#headers }),
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
 
-    return response
-  }
-
-  async getActiveRoute(
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-  ): Promise<SwapAndBridgeRoute> {
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/active-routes?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPIActiveRoutes>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to update the active route.'
-    })
-
-    return {
-      ...response,
-      fromAsset: normalizeIncomingSocketToken(response.fromAsset),
-      fromAssetAddress: normalizeIncomingSocketTokenAddress(response.fromAssetAddress),
-      toAsset: normalizeIncomingSocketToken(response.toAsset),
-      toAssetAddress: normalizeIncomingSocketTokenAddress(response.toAssetAddress),
-      steps: normalizeSocketUserTxsToSwapAndBridgeRouteSteps(response.userTxs),
-      // @ts-ignore TODO: types mismatch, but this is legacy Socket normalization
-      userTxs: (response.userTxs as SocketAPIActiveRoutes['userTxs']).map((userTx) => ({
-        ...userTx,
-        ...('fromAsset' in userTx && { fromAsset: normalizeIncomingSocketToken(userTx.fromAsset) }),
-        toAsset: normalizeIncomingSocketToken(userTx.toAsset),
-        ...('steps' in userTx && {
-          steps: userTx.steps.map((step) => ({
-            ...step,
-            fromAsset: normalizeIncomingSocketToken(step.fromAsset),
-            toAsset: normalizeIncomingSocketToken(step.toAsset)
-          }))
-        })
-      }))
-    }
-  }
-
-  async getNextRouteUserTx({
-    activeRouteId
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-  }) {
-    const params = new URLSearchParams({ activeRouteId: activeRouteId.toString() })
-    const url = `${this.#baseUrl}/route/build-next-tx?${params.toString()}`
-
-    const response = await this.#handleResponse<SocketAPISendTransactionRequest>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
-      errorPrefix: 'Unable to start the next step.'
-    })
-
-    return { ...response, activeRouteId: response.activeRouteId.toString() }
+    if (!response) return null
+    const res = response[0]
+    // everything below 3 is pending on our end
+    if (res.bungeeStatusCode < 3) return null
+    // 3 and 4 is completed on our end
+    if (res.bungeeStatusCode < 5) return 'completed'
+    // everything after is refunded
+    return 'refunded'
   }
 }

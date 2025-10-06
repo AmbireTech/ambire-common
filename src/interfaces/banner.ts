@@ -8,9 +8,9 @@ export type IBannerController = ControllerInterface<
 export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
 export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
-  | 'pending-to-be-confirmed-acc-op'
+  | 'pending-to-be-confirmed-acc-ops'
   | 'successful-acc-op'
-  | 'failed-acc-op'
+  | 'failed-acc-ops'
   | 'bridge-in-progress'
   | 'bridge-waiting-approval-to-resolve'
   | 'bridge-ready'
@@ -30,6 +30,7 @@ export interface Banner {
     accountAddr?: string
     startTime?: number
     endTime?: number
+    [key: string]: any
   }
 }
 
