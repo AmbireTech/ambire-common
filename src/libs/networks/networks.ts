@@ -186,9 +186,9 @@ export async function getNetworkInfo(
         ).catch(() => ({
           error: 'currently, we cannot fetch the coingecko information'
         }))
-        // set the coingecko info
-        let platformId = null
-        let nativeAssetId = null
+        // Keep the old value if the request fails
+        let platformId = network?.platformId || null
+        let nativeAssetId = network?.nativeAssetId || null
         if (!('error' in coingeckoRequest)) {
           const coingeckoInfo = await coingeckoRequest.json()
           if (!coingeckoInfo.error) {
@@ -196,7 +196,9 @@ export async function getNetworkInfo(
             nativeAssetId = coingeckoInfo.nativeAssetId
           }
         }
-        networkInfo = { ...networkInfo, platformId, nativeAssetId }
+
+        if (platformId) networkInfo.platformId = platformId
+        if (nativeAssetId) networkInfo.nativeAssetId = nativeAssetId
 
         callback(networkInfo)
       })()
