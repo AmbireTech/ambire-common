@@ -4,6 +4,7 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
+import SmartAccountIdentityCreateError from '../../classes/SmartAccountIdentityCreateError'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL } from '../../consts/intervals'
 import {
@@ -11,9 +12,10 @@ import {
   AccountOnchainState,
   AccountPreferences,
   AccountStates,
+  AmbireSmartAccountIdentityCreateRequest,
+  AmbireSmartAccountIdentityCreateResponse,
   IAccountsController
 } from '../../interfaces/account'
-import { AmbireRelayerIdentityCreateMultipleResponse } from '../../interfaces/accountPicker'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -259,10 +261,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     this.#onAddAccounts(accounts)
 
+    await this.#createSmartAccountIdentitiesIfNeeded({ emitUpdate: false })
+
     // update the state of new accounts. Otherwise, the user needs to restart his extension
     this.#updateAccountStates(newAccountsNotAddedYet)
-
-    this.#createSmartAccountIdentitiesIfNeeded(newAccountsNotAddedYet)
 
     this.emitUpdate()
   }
@@ -363,7 +365,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * Creates identity for smart accounts on the Relayer and updates the accounts
    * with the identityCreatedAt timestamp. Handles retry mechanism for failed requests.
    */
-  async #createSmartAccountIdentitiesIfNeeded(): Promise<void> {
+  async #createSmartAccountIdentitiesIfNeeded({ emitUpdate = true } = {}): Promise<void> {
     const smartAccountsNeedingIdentity = this.accounts.filter(
       (account) =>
         isSmartAccount(account) &&
@@ -375,58 +377,60 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       return this.#smartAccountIdentityRetryInterval.stop()
     }
 
-    const identityRequests = smartAccountsNeedingIdentity.map((account) => ({
-      addr: account.addr,
-      ...(account.email ? { email: account.email } : {}),
-      associatedKeys: account.initialPrivileges,
-      creation: {
-        factoryAddr: account.creation!.factoryAddr,
-        salt: account.creation!.salt,
-        // TODO: retrieve baseIdentityAddr from the bytecode instead
-        baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-        // baseIdentityAddr: this.#providers.providers['1n'].getCode(account.addr)
-      }
-    }))
+    const identityRequests: AmbireSmartAccountIdentityCreateRequest[] =
+      smartAccountsNeedingIdentity.map((account) => ({
+        addr: account.addr,
+        ...(account.email ? { email: account.email } : {}),
+        associatedKeys: account.initialPrivileges,
+        creation: {
+          factoryAddr: account.creation!.factoryAddr,
+          salt: account.creation!.salt,
+          // TODO: retrieve baseIdentityAddr from the bytecode instead
+          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+          // baseIdentityAddr: this.#providers.providers['1n'].getCode(account.addr)
+        }
+      }))
 
     try {
       const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
         accounts: identityRequests
-      })) as AmbireRelayerIdentityCreateMultipleResponse
+      })) as AmbireSmartAccountIdentityCreateResponse
 
       if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
 
-      const now = Date.now()
-      const successfulAddresses = identityRes.body
+      const identitiesCreated = identityRes.body
         .filter((acc) => acc.status.created)
         .map((acc) => acc.identity)
 
-      // Update accounts with successful identity creation timestamp
+      // Update the accounts that just had their identities created
+      const now = Date.now()
       this.accounts = this.accounts.map((account) => {
-        if (successfulAddresses.includes(account.addr)) {
+        if (identitiesCreated.includes(account.addr)) {
           return { ...account, identityCreatedAt: now }
         }
         return account
       })
+      if (emitUpdate) this.emitUpdate()
+      await this.#storage.set('accounts', this.accounts)
 
-      // Store accounts that failed for retry
-      const failedRequests = identityRequests.filter(
-        (req) => !successfulAddresses.includes(req.addr)
+      const identityRequestsFailedToCreate = identityRequests.filter(
+        (req) => !identitiesCreated.includes(req.addr)
       )
-
-      if (failedRequests.length) {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.#smartAccountIdentityRetryInterval.start()
-      }
+      if (!identityRequestsFailedToCreate.length)
+        throw new SmartAccountIdentityCreateError(identityRequestsFailedToCreate)
 
       this.#smartAccountIdentityRetryInterval.stop()
-      await this.#storage.set('accounts', this.accounts)
     } catch (error: any) {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.#smartAccountIdentityRetryInterval.start()
 
-      const message = `accounts: Failed to create smart account identities for: ${identityRequests
-        .map((i) => i.addr)
-        .join(', ')}`
+      const identitiesFailedToCreate =
+        error instanceof SmartAccountIdentityCreateError
+          ? error.identityRequests.map((req) => req.addr) // only some failed
+          : identityRequests.map((req) => req.addr) // all failed
+
+      const message = `accounts: Failed to create smart account identities for: ${identitiesFailedToCreate.join(
+        ', '
+      )}`
       this.emitError({ message, level: 'silent', sendCrashReport: true, error })
     }
   }

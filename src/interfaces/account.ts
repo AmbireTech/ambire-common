@@ -39,6 +39,28 @@ export interface AccountCreation {
   // and because it can be retrieved from the bytecode
 }
 
+export interface AmbireSmartAccountIdentityCreateRequest {
+  associatedKeys: [string, string][]
+  creation: {
+    factoryAddr: string
+    salt: string
+    baseIdentityAddr: string
+  }
+  email?: string | undefined
+  addr: Account['addr']
+}
+
+export type AmbireSmartAccountIdentityCreateResponse = {
+  success: boolean
+  body: {
+    identity: string
+    status: {
+      created: boolean
+      reason?: string
+    }
+  }[]
+}
+
 export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
