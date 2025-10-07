@@ -280,6 +280,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     this.#onAddAccounts(accounts)
 
+    // TODO: Should move these two after keystore keys have been set
     await this.#setViewOnlyAccountIdentitiesIfNeeded({ emitUpdate: false })
     await this.#createSmartAccountIdentitiesIfNeeded({ emitUpdate: false })
 
@@ -440,7 +441,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       (a) =>
         isSmartAccount(a) &&
         !isAmbireV1LinkedAccount(a.creation?.factoryAddr) &&
-        !this.#keystore.getAccountKeys(a).length &&
+        this.#keystore.getAccountKeys(a).length &&
         !a.creation?.identityCreatedAt
     )
 
@@ -457,7 +458,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
           salt: account.creation!.salt,
           // TODO: retrieve baseIdentityAddr from the bytecode instead
           baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-          // baseIdentityAddr: this.#providers.providers['1n'].getCode(account.addr)
+          // baseIdentityAddr: await this.#providers.providers['1'].getCode(account.addr)
         }
       }))
 
