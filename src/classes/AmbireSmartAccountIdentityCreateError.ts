@@ -1,6 +1,6 @@
 import { AmbireSmartAccountIdentityCreateRequest } from '../interfaces/account'
 
-export default class SmartAccountIdentityCreateError extends Error {
+export default class AmbireSmartAccountIdentityCreateError extends Error {
   identityRequests: AmbireSmartAccountIdentityCreateRequest[] = []
 
   constructor(identityRequests: AmbireSmartAccountIdentityCreateRequest[]) {

@@ -1,10 +1,10 @@
 import { getAddress, isAddress } from 'ethers'
 
+import AmbireSmartAccountIdentityCreateError from '../../classes/AmbireSmartAccountIdentityCreateError'
 import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
-import SmartAccountIdentityCreateError from '../../classes/SmartAccountIdentityCreateError'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL } from '../../consts/intervals'
 import {
@@ -417,14 +417,14 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         (req) => !identitiesCreated.includes(req.addr)
       )
       if (!identityRequestsFailedToCreate.length)
-        throw new SmartAccountIdentityCreateError(identityRequestsFailedToCreate)
+        throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
 
       this.#smartAccountIdentityRetryInterval.stop()
     } catch (error: any) {
       this.#smartAccountIdentityRetryInterval.start()
 
       const identitiesFailedToCreate =
-        error instanceof SmartAccountIdentityCreateError
+        error instanceof AmbireSmartAccountIdentityCreateError
           ? error.identityRequests.map((req) => req.addr) // only some failed
           : identityRequests.map((req) => req.addr) // all failed
 
