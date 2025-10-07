@@ -26,6 +26,9 @@ export interface Account {
   newlyAdded?: boolean
   disable7702Popup?: boolean
   disable7702Banner?: boolean
+  // Timestamp when the identity was fetched from the Ambire Relayer, needed to determine
+  // if the account is EOA or Ambire smart account (and set the correct creation, associatedKeys and initialPrivileges)
+  identityFetchedAt?: number
 }
 
 export interface AccountCreation {
