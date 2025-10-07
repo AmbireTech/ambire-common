@@ -517,11 +517,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       // Convert the numbers to big int
-      const amountInFiatBigInt = parseUnits(
-        getSanitizedAmount(fieldValue, amountInFiatDecimals),
-        amountInFiatDecimals
-      )
-
+      const sanitizedFiat = getSanitizedAmount(fieldValue, amountInFiatDecimals)
+      const amountInFiatBigInt = sanitizedFiat
+        ? parseUnits(sanitizedFiat, amountInFiatDecimals)
+        : 0n
       this.amount = formatUnits(
         (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
         // Shift the decimal point by the number of decimals in the token price
@@ -584,12 +583,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     // form field validation
     if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress)) return
 
+    const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
+    const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccountData.account.addr,
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
       recipientAddress,
-      amountInFiat: parseUnits(getSanitizedAmount(this.amountInFiat, 6), 6)
+      amountInFiat: amountInFiatBigInt
     })
 
     if (!userRequest || userRequest.action.kind !== 'calls') {
