@@ -1,11 +1,11 @@
-import { SmartAccountIdentityCreateRequest } from '../interfaces/account'
+import { AmbireSmartAccountIdentityCreateRequest } from '../interfaces/account'
 
 export default class SmartAccountIdentityCreateError extends Error {
-  smartAccountIdentityRequests: SmartAccountIdentityCreateRequest[] = []
+  identityRequests: AmbireSmartAccountIdentityCreateRequest[] = []
 
-  constructor(smartAccountIdentityRequests: SmartAccountIdentityCreateRequest[]) {
+  constructor(identityRequests: AmbireSmartAccountIdentityCreateRequest[]) {
     super()
     this.name = 'SmartAccountIdentityCreateError'
-    this.smartAccountIdentityRequests = smartAccountIdentityRequests
+    this.identityRequests = identityRequests
   }
 }
