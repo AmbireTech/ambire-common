@@ -685,10 +685,8 @@ export class MainController extends EventEmitter implements IMainController {
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
 
-    // Both of these are needed, but not critical, so postpone them after the
-    // important bits. Also, allow the user to continue if any of these fail
-    // because there are retry mechanisms in the Accounts controller for these.
-    await this.accounts.setViewOnlyAccountIdentitiesIfNeeded()
+    // Needed but not critical, postponed to be last with retry mechanism if it
+    // fails, see Accounts controller - #smartAccountIdentityCreateInterval
     await this.accounts.createSmartAccountIdentitiesIfNeeded()
   }
 
