@@ -48,18 +48,6 @@ export type StorageProps = {
   selectedAccount: string | null
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
   termsState?: object
-  smartAccountIdentityCreateRequestsFailed: {
-    addr: string
-    associatedKeys: [string, string][]
-    email?: string
-    creation: {
-      factoryAddr: string
-      salt: string
-      baseIdentityAddr: string
-    }
-    initialAttemptAt: number
-    lastAttemptAt: number
-  }[]
 }
 
 export interface Storage {
