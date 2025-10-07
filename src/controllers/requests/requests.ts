@@ -34,7 +34,6 @@ import { IUiController } from '../../interfaces/ui'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -354,7 +353,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const signAccountOp = this.#getSignAccountOp()
         if (signAccountOp) {
           if (signAccountOp.fromActionId === accountOpAction.id) {
-            this.#updateSignAccountOp({ calls: accountOpAction.accountOp.calls })
+            this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
@@ -467,7 +466,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           actionsToAddOrUpdate.push(accountOpAction)
 
           if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
-            this.#updateSignAccountOp({ calls: accountOpAction.accountOp.calls })
+            this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
           }
         } else {
           if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
