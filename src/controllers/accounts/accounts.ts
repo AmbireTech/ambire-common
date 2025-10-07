@@ -104,22 +104,20 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // so schedule an interval to retry after import, allowing the user
     // to import the account even if the first Relayer identity fetch fails.
     this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
-      this.#setViewOnlyAccountIdentitiesIfNeeded.bind(this),
+      this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
       VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL,
       this.emitError.bind(this)
     )
-    this.#viewOnlyAccountGetIdentityInterval.start({ runImmediately: true })
 
     // Creating Ambire smart account identity is needed but not critical, user
     // is still able to interact and transfer funds with a smart account one.
     // So schedule an interval to retry after import, allowing the user
     // to import the account even if the first Relayer identity create call fails.
     this.#smartAccountIdentityCreateInterval = new RecurringTimeout(
-      this.#createSmartAccountIdentitiesIfNeeded.bind(this),
+      this.createSmartAccountIdentitiesIfNeeded.bind(this),
       SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
       this.emitError.bind(this)
     )
-    this.#smartAccountIdentityCreateInterval.start({ runImmediately: true })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -147,6 +145,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const accounts = await this.#storage.get('accounts', [])
     const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null)
     this.accounts = getUniqueAccountsArray(accounts)
+
+    this.#viewOnlyAccountGetIdentityInterval.start({ runImmediately: true })
+    this.#smartAccountIdentityCreateInterval.start({ runImmediately: true })
 
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
@@ -280,10 +281,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     this.#onAddAccounts(accounts)
 
-    // TODO: Should move these two after keystore keys have been set
-    await this.#setViewOnlyAccountIdentitiesIfNeeded({ emitUpdate: false })
-    await this.#createSmartAccountIdentitiesIfNeeded({ emitUpdate: false })
-
     // update the state of new accounts. Otherwise, the user needs to restart his extension
     this.#updateAccountStates(newAccountsNotAddedYet)
 
@@ -382,7 +379,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     return this.accountStates[addr][chainId.toString()]
   }
 
-  async #setViewOnlyAccountIdentitiesIfNeeded({ emitUpdate = true } = {}): Promise<void> {
+  async setViewOnlyAccountIdentitiesIfNeeded(): Promise<void> {
     const viewOnlyAccountsNeedingIdentityFetch = this.accounts.filter(
       (a) => !this.#keystore.getAccountKeys(a).length && !a.identityFetchedAt
     )
@@ -422,7 +419,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         return accountsWithIdentityRef || a
       })
 
-      if (emitUpdate) this.emitUpdate()
+      this.emitUpdate()
       await this.#storage.set('accounts', this.accounts)
 
       this.#viewOnlyAccountGetIdentityInterval.stop()
@@ -436,7 +433,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * Creates identity for smart accounts on the Relayer and updates the accounts
    * with the identityCreatedAt timestamp. Handles retry mechanism for failed requests.
    */
-  async #createSmartAccountIdentitiesIfNeeded({ emitUpdate = true } = {}): Promise<void> {
+  async createSmartAccountIdentitiesIfNeeded(): Promise<void> {
     const smartAccountsNeedingIdentityCreate = this.accounts.filter(
       (a) =>
         isSmartAccount(a) &&
@@ -469,14 +466,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
       if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
 
-      const identitiesCreated = identityRes.body
-        .filter((acc) => acc.status.created)
-        .map((acc) => acc.identity)
-
       // Update the accounts that just had their identities created
+      const identityCreateConfirmed = identityRes.body.map((r) => r.identity)
       const now = Date.now()
       this.accounts = this.accounts.map((account) => {
-        if (!identitiesCreated.includes(account.addr)) return account
+        if (!identityCreateConfirmed.includes(account.addr)) return account
 
         // should never happen
         if (!account.creation) {
@@ -489,11 +483,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
         return { ...account, creation: { ...account.creation, identityCreatedAt: now } }
       })
-      if (emitUpdate) this.emitUpdate()
+
+      this.emitUpdate()
       await this.#storage.set('accounts', this.accounts)
 
       const identityRequestsFailedToCreate = identityRequests.filter(
-        (req) => !identitiesCreated.includes(req.addr)
+        (req) => !identityCreateConfirmed.includes(req.addr)
       )
       if (!identityRequestsFailedToCreate.length)
         throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
