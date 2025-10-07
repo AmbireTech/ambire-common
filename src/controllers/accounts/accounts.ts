@@ -99,7 +99,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
       this.emitError.bind(this)
     )
-
     this.#smartAccountIdentityRetryInterval.start({ runImmediately: true })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -370,7 +369,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       (account) =>
         isSmartAccount(account) &&
         !isAmbireV1LinkedAccount(account.creation?.factoryAddr) &&
-        !account.identityCreatedAt
+        !account.creation?.identityCreatedAt
     )
 
     if (!smartAccountsNeedingIdentity.length) {
@@ -405,10 +404,18 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       // Update the accounts that just had their identities created
       const now = Date.now()
       this.accounts = this.accounts.map((account) => {
-        if (identitiesCreated.includes(account.addr)) {
-          return { ...account, identityCreatedAt: now }
+        if (!identitiesCreated.includes(account.addr)) return account
+
+        // should never happen
+        if (!account.creation) {
+          const message = `accounts: Identity created for ${account.addr} which lacks creation data.`
+          const error = new Error(message)
+          this.emitError({ message, level: 'silent', sendCrashReport: true, error })
+
+          return account
         }
-        return account
+
+        return { ...account, creation: { ...account.creation, identityCreatedAt: now } }
       })
       if (emitUpdate) this.emitUpdate()
       await this.#storage.set('accounts', this.accounts)

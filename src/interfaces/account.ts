@@ -21,9 +21,6 @@ export interface Account {
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
-  // TODO: Move under `creation`
-  // Timestamp when identity was created on the Relayer, null if not created yet
-  identityCreatedAt?: number | null
   preferences: AccountPreferences
   email?: string
   newlyAdded?: boolean
@@ -35,6 +32,8 @@ export interface AccountCreation {
   factoryAddr: string
   bytecode: string
   salt: string
+  // Timestamp when the identity was created on the Ambire Relayer
+  identityCreatedAt?: number
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
 }
