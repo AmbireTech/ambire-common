@@ -192,6 +192,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   // this is not used in the controller directly but it's being read outside
   fromActionId: AccountOpAction['id']
 
+  /**
+   * Never modify this directly, use #updateAccountOp instead.
+   * Otherwise the accountOp will be out of sync with the one stored
+   * in requests/actions.
+   */
   #accountOp: AccountOp
 
   gasPrices?: GasRecommendation[] | null
@@ -1921,15 +1926,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ) {
         // rawTxn, No SA signatures
         // or 7702, calling executeBySender(). No SA signatures
-        this.#accountOp.signature = '0x'
+        this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
-        this.#accountOp.signature = await getExecuteSignature(
-          this.#network,
-          this.accountOp,
-          accountState,
-          signer
-        )
+        this.#updateAccountOp({
+          signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+        })
       } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
         // a delegation request has been made
         if (!this.accountOp.meta) {
@@ -1952,7 +1954,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
             )
           )
-        this.#accountOp.signature = '0x'
+        this.#updateAccountOp({
+          signature: '0x'
+        })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
@@ -2054,9 +2058,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
-          this.#accountOp.signature = signature
-        }
-        if (userOperation.requestType === '7702') {
+          this.#updateAccountOp({ signature, asUserOperation: userOperation })
+        } else if (userOperation.requestType === '7702') {
           const typedData = get7702UserOpTypedData(
             this.#network.chainId,
             getSignableCalls(this.accountOp),
@@ -2065,19 +2068,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
-          this.#accountOp.signature = signature
+          this.#updateAccountOp({ signature, asUserOperation: userOperation })
+        } else {
+          this.#updateAccountOp({ asUserOperation: userOperation })
         }
-        this.#accountOp.asUserOperation = userOperation
       } else {
         // Relayer
         this.#addFeePayment()
 
-        this.#accountOp.signature = await getExecuteSignature(
-          this.#network,
-          this.accountOp,
-          accountState,
-          signer
-        )
+        this.#updateAccountOp({
+          signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+        })
       }
 
       this.status = { type: SigningStatus.Done }
