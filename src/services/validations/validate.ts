@@ -54,6 +54,27 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
 
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
+const FIRST_TIME_SEND_MESSAGE =
+  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending.'
+const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE =
+  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending, even though the recipient is in your Address Book.'
+
+function getDaysAgo(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMinutes = Math.floor(diffMs / (1000 * 60))
+
+  if (diffMinutes < 1) return 'just now'
+  if (diffMinutes < 60) return `${diffMinutes} ${diffMinutes === 1 ? 'minute' : 'minutes'} ago`
+
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`
+
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  if (diffDays === 1) return 'yesterday'
+  return `${diffDays} days ago`
+}
+
 const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
@@ -63,7 +84,9 @@ const validateSendTransferAddress = (
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean,
   isSWWarningVisible?: boolean,
-  isSWWarningAgreed?: boolean
+  isSWWarningAgreed?: boolean,
+  isRecipientAddressFirstTimeSend?: boolean,
+  lastRecipientTransactionDate?: Date | null
 ): ValidateReturnType => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -87,8 +110,22 @@ const validateSendTransferAddress = (
     }
   }
 
+  if (isRecipientAddressFirstTimeSend) {
+    let message = isRecipientAddressUnknown
+      ? FIRST_TIME_SEND_MESSAGE
+      : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
+    if (lastRecipientTransactionDate) {
+      message = `Last transaction to this address was ${getDaysAgo(lastRecipientTransactionDate)}.`
+    }
+    return {
+      success: true,
+      message
+    }
+  }
+
   if (
     isRecipientAddressUnknown &&
+    isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
     !isEnsAddress &&
     !isRecipientDomainResolving
@@ -101,6 +138,7 @@ const validateSendTransferAddress = (
 
   if (
     isRecipientAddressUnknown &&
+    isRecipientAddressFirstTimeSend &&
     !addressConfirmed &&
     isEnsAddress &&
     !isRecipientDomainResolving
@@ -115,6 +153,13 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: 'Please confirm that the recipient address is not an exchange.'
+    }
+  }
+
+  if (lastRecipientTransactionDate) {
+    return {
+      success: true,
+      message: `Last transaction to this address was ${getDaysAgo(lastRecipientTransactionDate)}.`
     }
   }
 
