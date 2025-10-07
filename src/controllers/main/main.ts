@@ -1447,7 +1447,7 @@ export class MainController extends EventEmitter implements IMainController {
           await this.requests.actions.addOrUpdateActions([accountOpAction], {
             skipFocus: true
           })
-          this.signAccountOp?.update({ calls: accountOpAction.accountOp.calls })
+          this.signAccountOp?.update({ accountOpData: { calls: accountOpAction.accountOp.calls } })
         }
       }
     } else {

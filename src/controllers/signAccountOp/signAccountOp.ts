@@ -164,12 +164,12 @@ export type SignAccountOpUpdateProps = {
   speed?: FeeSpeed
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
-  calls?: AccountOp['calls']
   rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
   bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
   blockGasLimit?: bigint
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
+  accountOpData?: Partial<AccountOp>
 }
 
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
@@ -298,7 +298,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
     shouldReestimate: boolean,
-    onAccountOpUpdate: (updatedAccountOp: AccountOp) => void,
+    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void,
     traceCall?: Function
   ) {
     super()
@@ -342,7 +342,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc
-    this.#onAccountOpUpdate = onAccountOpUpdate
+    this.#onAccountOpUpdate = onAccountOpUpdate ?? emptyFunc
     this.gasPrice = new GasPriceController(
       network,
       provider,
@@ -870,13 +870,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     speed,
     signingKeyAddr,
     signingKeyType,
-    calls,
     rbfAccountOps,
     bundlerGasPrices,
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation,
-    paidByKeyType
+    paidByKeyType,
+    accountOpData
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -911,32 +911,37 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
       }
 
-      if (Array.isArray(calls)) {
-        // we should update if the arrays are with diff length
-        let shouldUpdate = this.accountOp.calls.length !== calls.length
+      if (accountOpData) {
+        const calls = accountOpData.calls
+        this.#updateAccountOp(accountOpData)
 
-        if (!shouldUpdate) {
-          // if they are with the same length, check if some of
-          // their properties differ. If they do, we should update
-          this.accountOp.calls.forEach((call, i) => {
-            const newCall = calls[i]
-            if (
-              call.to !== newCall.to ||
-              call.data !== newCall.data ||
-              call.value !== newCall.value
-            )
-              shouldUpdate = true
-          })
-        }
+        if (Array.isArray(calls)) {
+          // we should update if the arrays are with diff length
+          let shouldUpdate = this.accountOp.calls.length !== calls.length
 
-        // update only if there are differences in the calls array
-        // we do this to prevent double estimation problems
-        if (shouldUpdate) {
-          const hasNewCalls = this.accountOp.calls.length < calls.length
-          this.#updateAccountOp({ calls })
+          if (!shouldUpdate) {
+            // if they are with the same length, check if some of
+            // their properties differ. If they do, we should update
+            this.accountOp.calls.forEach((call, i) => {
+              const newCall = calls[i]
+              if (
+                call.to !== newCall.to ||
+                call.data !== newCall.data ||
+                call.value !== newCall.value
+              )
+                shouldUpdate = true
+            })
+          }
 
-          if (hasNewCalls) this.learnTokensFromCalls()
-          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+          // update only if there are differences in the calls array
+          // we do this to prevent double estimation problems
+          if (shouldUpdate) {
+            const hasNewCalls = this.accountOp.calls.length < calls.length
+            this.#updateAccountOp({ calls })
+
+            if (hasNewCalls) this.learnTokensFromCalls()
+            this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+          }
         }
       }
 
@@ -1034,7 +1039,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // or any of properties for update is requested
       if (
         !Object.keys(this.feeSpeeds).length ||
-        Array.isArray(calls) ||
+        Array.isArray(accountOpData?.calls) ||
         gasPrices ||
         this.#paidBy ||
         this.feeTokenResult ||
