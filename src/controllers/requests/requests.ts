@@ -17,6 +17,7 @@ import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
+import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
@@ -33,6 +34,7 @@ import { IUiController } from '../../interfaces/ui'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -61,7 +63,6 @@ import { ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { StatusesWithCustom } from '../../interfaces/main'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -346,6 +347,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           userRequests: this.userRequests,
           actionsQueue: this.actions.actionsQueue
         })
+        console.log('Debug: nonce in requests ctrl', accountOpAction.accountOp.nonce)
 
         actionsToAdd.push(accountOpAction)
 

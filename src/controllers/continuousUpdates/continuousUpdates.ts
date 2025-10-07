@@ -202,6 +202,7 @@ export class ContinuousUpdatesController extends EventEmitter {
   }
 
   async #updateAccountStatePending() {
+    return
     await this.initialLoadPromise
     await this.#main.accounts.accountStatesInitialLoadPromise
 

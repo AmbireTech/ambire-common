@@ -740,6 +740,9 @@ export class MainController extends EventEmitter implements IMainController {
         },
         true,
         true,
+        (updatedAccountOp: AccountOp) => {
+          this.requests.actions.updateAccountOpAction(updatedAccountOp)
+        },
         (ctrl: ISignAccountOpController) => {
           this.traceCall(ctrl)
         }
