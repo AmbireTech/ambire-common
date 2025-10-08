@@ -45,6 +45,8 @@ function getGenericMessageFromType(
       return `${messagePrefix} of an unknown error.${messageSuffix}`
     }
     case ErrorType.InnerCallFailureError:
+      if (reason === 'OOG') return 'Transaction invalid: out of gas'
+
       return isReasonValid(reason)
         ? `${messagePrefix} it will revert onchain.${messageSuffixNoSupport}`
         : `${messagePrefix} it will revert onchain with reason unknown.${messageSuffix}`

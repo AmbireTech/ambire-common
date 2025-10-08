@@ -131,6 +131,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   linkedAccountsLoading: boolean = false
 
+  linkedAccountsError: string = ''
+
   networksWithAccountStateError: bigint[] = []
 
   #derivedAccounts: DerivedAccount[] = []
@@ -145,6 +147,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
 
+  // Used in order to expose the ongoing "find linked accounts" task, so other
+  // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
@@ -152,6 +156,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #addAccountsOnKeystoreReady: {
     accounts?: SelectedAccountForImport[]
   } | null = null
+
+  #accountsUnsubscribe?: () => void
+
+  #keystoreUnsubscribe?: () => void
 
   constructor({
     accounts,
@@ -181,7 +189,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
-    this.#accounts.onUpdate(() => {
+    this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
         'update-accounts',
         () => {
@@ -194,7 +202,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       )
     })
 
-    this.#keystore.onUpdate(() => {
+    this.#keystoreUnsubscribe = this.#keystore.onUpdate(() => {
       if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
         this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
         this.#addAccountsOnKeystoreReady = null
@@ -455,6 +463,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.pageError = null
 
     this.linkedAccountsLoading = false
+    this.linkedAccountsError = ''
     this.addAccountsStatus = 'INITIAL'
     this.#derivedAccounts = []
     this.#linkedAccounts = []
@@ -466,6 +475,17 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#addAccountsOnKeystoreReady = null
 
     await this.forceEmitUpdate()
+  }
+
+  destroy() {
+    if (this.#accountsUnsubscribe) {
+      this.#accountsUnsubscribe()
+      this.#accountsUnsubscribe = undefined
+    }
+    if (this.#keystoreUnsubscribe) {
+      this.#keystoreUnsubscribe()
+      this.#keystoreUnsubscribe = undefined
+    }
   }
 
   resetAccountsSelection() {
@@ -547,27 +567,33 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return basicAccOnEverySlotWhereThisAddrIsFound
   }
 
-  selectAccount(_account: Account) {
+  selectAccount(_account: Account | AccountWithNetworkMeta) {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.keyIterator) return this.#throwMissingKeyIterator()
+
+    const account =
+      'usedOnNetworks' in _account
+        ? // destructure and re-build to remove the `usedOnNetworks` property
+          (({ usedOnNetworks, ...rest }) => ({ ...rest }))(_account)
+        : _account
 
     // Needed, because linked accounts could have multiple keys (EOAs),
     // and therefore - same linked account could be found on different slots.
     const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
-      (accOnPage) => accOnPage.account.addr === _account.addr
+      (accOnPage) => accOnPage.account.addr === account.addr
     )
-    const accountKeys = this.#getAccountKeys(_account, accountsOnPageWithThisAcc)
+    const accountKeys = this.#getAccountKeys(account, accountsOnPageWithThisAcc)
     if (!accountKeys.length)
       return this.emitError({
         level: 'major',
-        message: `Selecting ${_account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
+        message: `Selecting ${account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
         error: new Error(
-          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`
+          `Trying to select ${account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`
         )
       })
 
     const nextSelectedAccount = {
-      account: _account,
+      account,
       // If the account has more than 1 key, it is for sure linked account,
       // since EOAs have only 1 key and smart accounts with more than
       // one key present should always be found as linked accounts anyways.
@@ -709,21 +735,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.accountsLoading = false
     this.emitUpdate()
 
-    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
-      accounts: this.#derivedAccounts
-        .filter(
-          (acc) =>
-            // Since v4.60.0, linked accounts are searched for 1) EOAs
-            // and 2) EOAs derived for Smart Account keys ONLY
-            // (workaround so that the Relayer returns information if the Smart
-            // Account with this key is used (with identity) or not).
-            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
-        )
-        .map((acc) => acc.account)
-    }).finally(() => {
-      this.findAndSetLinkedAccountsPromise = undefined
-    })
-    await this.findAndSetLinkedAccountsPromise
+    await this.findAndSetLinkedAccounts()
   }
 
   #updateStateWithTheLatestFromAccounts() {
@@ -1139,10 +1151,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: string]: Network } = {}
-    this.#networks.networks.forEach((network) => {
-      networkLookup[network.chainId.toString()] = network
-    })
+    const networkLookup: { [key: string]: Network } = this.#networks.allNetworks.reduce(
+      (acc, network) => {
+        acc[network.chainId.toString()] = network
+        return acc
+      },
+      {} as { [key: string]: Network }
+    )
 
     const promises = Object.keys(this.#providers.providers).map(async (chainId: string) => {
       const network = networkLookup[chainId]
@@ -1166,7 +1181,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             // fail to detect that the account was used on this network.
             acc.balance > BigInt(0) ||
             (acc.isEOA
-              ? acc.nonce > BigInt(0)
+              ? [acc.nonce, acc.eoaNonce, acc.erc4337Nonce].some(
+                  (nonce) => (nonce || BigInt(0)) > BigInt(0)
+                )
               : // For smart accounts, check for 'isDeployed' instead because in
                 // the erc-4337 scenario many cases might be missed with checking
                 // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
@@ -1210,19 +1227,31 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (accounts.length === 0) return
 
     this.linkedAccountsLoading = true
+    this.linkedAccountsError = ''
     this.emitUpdate()
 
     const keys = accounts.map((acc) => `keys[]=${acc.addr}`).join('&')
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
-    const { data } = await this.#callRelayer(url)
+    // Relayer linked accounts found on the keys against we're meant to check
+    let relayerLinkedAccounts = []
+    try {
+      const response = await this.#callRelayer(url)
+      relayerLinkedAccounts = response.data.accounts
+    } catch (e: any) {
+      const upstreamError = e?.message || ''
+      let errorMessage = 'The attempt to discover linked smart accounts failed.'
+      errorMessage += upstreamError ? ` Error details: <${upstreamError}>` : ''
+      this.linkedAccountsError = errorMessage
+    }
+
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
-      data.accounts
+      relayerLinkedAccounts
     ).flatMap((addr: string) => {
       // In extremely rare cases, on the Relayer, the identity data could be
       // missing in the identities table but could exist in the logs table.
       // When this happens, the account data will be `null`.
-      const isIdentityDataMissing = !data.accounts[addr]
+      const isIdentityDataMissing = !relayerLinkedAccounts[addr]
       if (isIdentityDataMissing) {
         // Same error for both cases, because most prob
         this.emitError({
@@ -1236,7 +1265,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         return []
       }
 
-      const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
+      const { factoryAddr, bytecode, salt, associatedKeys } = relayerLinkedAccounts[addr]
       // Checks whether the account.addr matches the addr generated from the
       // factory. Should never happen, but could be a possible attack vector.
       const isInvalidAddress =
@@ -1255,11 +1284,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
-            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((address: string) => [
-              address,
-              // this is a default privilege hex we add on account creation
-              '0x0000000000000000000000000000000000000000000000000000000000000001'
-            ]),
+            initialPrivileges: relayerLinkedAccounts[addr].initialPrivilegesAddrs.map(
+              (address: string) => [
+                address,
+                // this is a default privilege hex we add on account creation
+                '0x0000000000000000000000000000000000000000000000000000000000000001'
+              ]
+            ),
             creation: {
               factoryAddr,
               bytecode,
@@ -1289,6 +1320,24 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.linkedAccountsLoading = false
     this.emitUpdate()
+  }
+
+  async findAndSetLinkedAccounts() {
+    this.findAndSetLinkedAccountsPromise = this.#findAndSetLinkedAccounts({
+      accounts: this.#derivedAccounts
+        .filter(
+          (acc) =>
+            // Since v4.60.0, linked accounts are searched for 1) EOAs
+            // and 2) EOAs derived for Smart Account keys ONLY
+            // (workaround so that the Relayer returns information if the Smart
+            // Account with this key is used (with identity) or not).
+            !isSmartAccount(acc.account) || isDerivedForSmartAccountKeyOnly(acc.index)
+        )
+        .map((acc) => acc.account)
+    }).finally(() => {
+      this.findAndSetLinkedAccountsPromise = undefined
+    })
+    await this.findAndSetLinkedAccountsPromise
   }
 
   /**

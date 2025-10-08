@@ -11,7 +11,7 @@ import { expect } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -37,6 +37,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -189,14 +190,10 @@ class LedgerSigner {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-const keystoreController = new KeystoreController(
-  'default',
-  storageCtrl,
-  keystoreSigners,
-  windowManager
-)
+const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
 
 const accountsCtrl = new AccountsController(
   storageCtrl,
@@ -339,7 +336,7 @@ describe('Transfer Controller', () => {
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(true)
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
 
     // Recipient address
     await transferController.update({

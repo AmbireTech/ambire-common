@@ -17,6 +17,8 @@ import { paymasterFactory } from '../../services/paymaster'
 import wait from '../../utils/wait'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../accountOp/types'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
@@ -66,7 +68,8 @@ async function estimate(
   network: Network,
   userOp: UserOperation,
   switcher: BundlerSwitcher,
-  errorCallback: Function
+  errorCallback: Function,
+  pendingUserOp?: SubmittedAccountOp
 ): Promise<{
   gasPrice: GasSpeeds | Error
   estimation: any
@@ -83,6 +86,24 @@ async function estimate(
       // if gas prices couldn't be fetched, it means there's an internal error
       estimation: getHumanReadableEstimationError(decodedError),
       nonFatalErrors: []
+    }
+  }
+
+  // if there's a pending userOp in the activity
+  // and it has the same userOp nonce as this txn,
+  // resolve the bundler estimation with a failure
+  if (
+    pendingUserOp &&
+    pendingUserOp.asUserOperation &&
+    pendingUserOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
+    BigInt(pendingUserOp.asUserOperation.nonce) === BigInt(userOp.nonce)
+  ) {
+    const error = new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
+    return {
+      gasPrice,
+      // if gas prices couldn't be fetched, it means there's an internal error
+      estimation: error,
+      nonFatalErrors: [error]
     }
   }
 
@@ -140,7 +161,8 @@ export async function bundlerEstimate(
   provider: RPCProvider,
   switcher: BundlerSwitcher,
   errorCallback: Function,
-  eip7702Auth?: EIP7702Auth
+  eip7702Auth?: EIP7702Auth,
+  pendingUserOp?: SubmittedAccountOp
 ): Promise<Erc4337GasLimits | Error | null> {
   if (!baseAcc.supportsBundlerEstimation()) return null
 
@@ -182,7 +204,14 @@ export async function bundlerEstimate(
   const flags: EstimationFlags = {}
   while (true) {
     // estimate
-    const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback)
+    const estimations = await estimate(
+      baseAcc,
+      network,
+      userOp,
+      switcher,
+      errorCallback,
+      pendingUserOp
+    )
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -207,18 +236,19 @@ export async function bundlerEstimate(
     ) {
       flags.has4337NonceDiscrepancy = true
 
-      if (network.chainId === 1n) {
-        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
-      }
-
+      // wait a bit to allow the state to sync
+      await wait(2000)
       const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
       const accountNonce = await ep
         .getNonce(account.addr, 0, { blockTag: 'pending' })
         .catch(() => null)
       if (!accountNonce) continue
+
+      if (network.chainId === 1n && BigInt(userOp.nonce) === BigInt(accountNonce)) {
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
+
       userOp.nonce = toBeHex(accountNonce)
-      // wait a bit to allow the bundler to configure it's state correctly
-      await wait(1000)
       continue
     }
 

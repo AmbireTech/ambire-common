@@ -29,8 +29,7 @@ import { PositionsByProvider } from '../../libs/defiPositions/types'
 import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
-  getNetworksWithFailedRPCErrors,
-  getNetworksWithPortfolioErrorErrors,
+  getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
 import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
@@ -45,6 +44,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   balancePerNetwork: {},
   isReadyToVisualize: false,
   isAllReady: false,
+  shouldShowPartialResult: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -82,7 +82,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    */
   #portfolioByNetworks: SelectedAccountPortfolioByNetworks = {}
 
-  portfolioStartedLoadingAtTimestamp: number | null = null
+  #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
   #isPortfolioLoadingFromScratch = true
 
@@ -99,7 +99,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   areControllersInitialized: boolean = false
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   #cashbackStatusByAccount: CashbackStatusByAccount = {}
 
@@ -146,7 +146,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#keystore = keystore
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {
@@ -197,11 +199,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
         this.#updateSelectedAccountDefiPositions()
 
-        if (!this.#areDefiPositionsLoading) {
+        if (!this.areDefiPositionsLoading) {
           this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
             this.updateSelectedAccountPortfolio(true)
+            this.#updateDefiPositionsErrors()
           })
-          this.#updateDefiPositionsErrors()
         }
       })
     })
@@ -246,7 +248,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
     this.dashboardNetworkFilter = null
-    this.portfolioStartedLoadingAtTimestamp = null
+    if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
+    this.#portfolioLoadingTimeout = null
 
     if (!account) {
       await this.#storage.remove('selectedAccount')
@@ -317,19 +320,24 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       latestStateSelectedAccount,
       pendingStateSelectedAccount,
       structuredClone(this.#portfolioByNetworks),
-      this.portfolioStartedLoadingAtTimestamp,
       defiPositionsAccountState,
+      this.portfolio.shouldShowPartialResult,
       this.#isPortfolioLoadingFromScratch
     )
 
     // Reset the loading timestamp if the portfolio is ready
-    if (this.portfolioStartedLoadingAtTimestamp && newSelectedAccountPortfolio.isAllReady) {
-      this.portfolioStartedLoadingAtTimestamp = null
+    if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+      clearTimeout(this.#portfolioLoadingTimeout)
+      this.#portfolioLoadingTimeout = null
     }
 
     // Set the loading timestamp when the portfolio starts loading
-    if (!this.portfolioStartedLoadingAtTimestamp && !newSelectedAccountPortfolio.isAllReady) {
-      this.portfolioStartedLoadingAtTimestamp = Date.now()
+    if (!this.#portfolioLoadingTimeout && !newSelectedAccountPortfolio.isAllReady) {
+      this.#portfolioLoadingTimeout = setTimeout(() => {
+        this.portfolio.shouldShowPartialResult = true
+        this.updateSelectedAccountPortfolio()
+        this.#portfolioLoadingTimeout = null
+      }, 5000)
     }
 
     // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
@@ -386,7 +394,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  get #areDefiPositionsLoading() {
+  get areDefiPositionsLoading() {
     if (!this.account || !this.#defiPositions) return false
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
@@ -455,7 +463,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#defiPositions ||
-      this.#areDefiPositionsLoading
+      this.areDefiPositionsLoading
     ) {
       this.#defiPositionsErrors = []
       if (!skipUpdate) {
@@ -486,7 +494,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.#networks ||
       !this.#providers ||
       !this.#portfolio ||
-      !this.portfolio.isReadyToVisualize
+      (!this.portfolio.isAllReady && !this.portfolio.shouldShowPartialResult)
     ) {
       this.#portfolioErrors = []
       if (!skipUpdate) {
@@ -495,20 +503,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       return
     }
 
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPCErrors({
-      providers: this.#providers.providers,
+    this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
-      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
-    })
-
-    const errorBanners = getNetworksWithPortfolioErrorErrors({
-      networks: this.#networks.networks,
+      shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
       selectedAccountLatest: this.portfolio.latest,
       isAllReady: this.portfolio.isAllReady,
-      providers: this.#providers.providers
+      accountState: this.#accounts.accountStates[this.account.addr] || {},
+      providers: this.#providers.providers,
+      networksWithAssets: this.#portfolio.getNetworksWithAssets(this.account.addr)
     })
-
-    this.#portfolioErrors = [...networksWithFailedRPCBanners, ...errorBanners]
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -640,7 +643,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
-      defiPositions: this.defiPositions
+      defiPositions: this.defiPositions,
+      areDefiPositionsLoading: this.areDefiPositionsLoading
     }
   }
 }

@@ -1,6 +1,6 @@
 import { ErrorHumanizerError } from '../../libs/errorHumanizer/types'
 
-export const MAYAN_BRIDGE = 'mayan'
+export const LIFI_EXPLORER_URL = 'https://scan.li.fi'
 
 export const HUMANIZED_ERRORS: ErrorHumanizerError[] = [
   {

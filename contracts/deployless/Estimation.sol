@@ -25,7 +25,6 @@ contract Estimation is FeeTokens, Spoof {
 
   struct EstimationOutcome {
     SimulationOutcome deployment;
-    SimulationOutcome accountOpToExecuteBefore;
     SimulationOutcome op;
     uint nonce;
     FeeTokenOutcome[] feeTokenOutcomes;
@@ -42,14 +41,10 @@ contract Estimation is FeeTokens, Spoof {
     uint[] gasUsedPerCall;
   }
 
-  // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
-  // vs the regular accountOp for which we use simulateUnsigned
   function estimate(
     IAmbireAccount account,
     address factory,
     bytes memory factoryCalldata,
-    // @TODO is there a more elegant way than passing those in full
-    AccountOp memory preExecute,
     AccountOp memory op,
     bytes calldata probableCallData,
     address[] memory associatedKeys,
@@ -71,16 +66,9 @@ contract Estimation is FeeTokens, Spoof {
 
     // Do all the simulations
     outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
-    // NOTE: if we don't have a preExecute accountOp, .success will still be false, but
-    // the estimate lib only cares about the final success (outcome.op.success)
-    if (outcome.deployment.success && preExecute.calls.length != 0) {
-      outcome.accountOpToExecuteBefore = simulateSigned(preExecute);
-    }
+
     bytes memory spoofSig;
-    if (
-      outcome.deployment.success &&
-      (preExecute.calls.length == 0 || outcome.accountOpToExecuteBefore.success)
-    ) {
+    if (outcome.deployment.success) {
       (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(
         op,
         associatedKeys
@@ -200,7 +188,50 @@ contract Estimation is FeeTokens, Spoof {
     }
     op.signature = spoofSig;
     if (spoofSig.length > 0) {
-      outcome = simulateSigned(op);
+      try this.simulateSigned(op, GasLimits(0, 0, true)) returns (
+        SimulationOutcome memory callsRevertedOutcome
+      ) {
+        // if simulateSigned enters here while having a gasLimit of 0,
+        // it means it has resolved with an error (onchain failure)
+        outcome = callsRevertedOutcome;
+      } catch (bytes memory revertData) {
+        bytes4 selector = RevertWithSuccess.selector;
+
+        // catch should always revert with RevertWithSuccess
+        // if anything unexpected happens, return the error back
+        if (revertData.length < 4 || bytes4(revertData) != selector) {
+          assembly {
+            revert(add(revertData, 32), mload(revertData))
+          }
+        }
+
+        // decode RevertWithSuccess and try again with the calculated gasLimit + 5% buffer
+        uint256 gasLimit;
+        assembly {
+          gasLimit := mload(add(revertData, 36))
+        }
+
+        // if the estimated gasLimit is larger than the block gas limit,
+        // return an out of gas error as the txn is impossible to complete
+        uint256 blockGasLimit = block.gaslimit;
+        if (blockGasLimit != 0 && gasLimit > blockGasLimit) {
+          outcome.gasUsed = gasLimit;
+          outcome.success = false;
+          outcome.err = bytes('OOG');
+        } else {
+          // raise the calculated gas limit by 5% just-in-case
+          uint256 raisedGasLimit = gasLimit + gasLimit / 20;
+
+          // the upperLimit should be 3 times the raisedGasLimit unless
+          // the upperLimit becomes bigger than the blockGasLimit
+          uint256 upperLimit = raisedGasLimit * 3;
+          if (upperLimit > blockGasLimit) {
+            upperLimit = blockGasLimit;
+          }
+
+          outcome = simulateSigned(op, GasLimits(raisedGasLimit, upperLimit, false));
+        }
+      }
     } else {
       outcome.err = bytes('SPOOF_ERROR');
     }
@@ -221,7 +252,7 @@ contract Estimation is FeeTokens, Spoof {
     // the first time the account may not be added to the accessList which will distort the difference
     // However, if the previous simulations have been successful it will be, and if they're not, we don't care
     // about the accuracy of the baseGas
-    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
+    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp, GasLimits(0, 0, false));
     require(
       emptyOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
@@ -234,7 +265,7 @@ contract Estimation is FeeTokens, Spoof {
     twoCallOp.calls = new Transaction[](2);
     twoCallOp.calls[0].to = address(this);
     twoCallOp.calls[1].to = address(this);
-    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp);
+    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp, GasLimits(0, 0, false));
     require(
       twoCallOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()

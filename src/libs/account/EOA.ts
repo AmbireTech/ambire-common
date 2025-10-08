@@ -27,6 +27,16 @@ export class EOA extends BaseAccount {
       if (estimation.provider instanceof Error) {
         return estimation.ambire instanceof Error ? estimation.ambire : estimation.provider
       }
+
+      // case: the provider passes but ambire estimation doesn't
+      // this could either be:
+      // - a smart account not allowed error, which we should NOT return
+      // - OOG which we should return as ambire inner calls estimate is better
+      if (estimation.ambire instanceof Error) {
+        return estimation.ambire.cause === 'OOG' ? estimation.ambire : null
+      }
+
+      return null
     }
     if (numberOfCalls > 1) {
       if (estimation.ambire instanceof Error) return estimation.ambire
@@ -70,9 +80,12 @@ export class EOA extends BaseAccount {
     }
 
     const ambireGasUsed = estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed : 0n
-    return estimation.providerEstimation.gasUsed > ambireGasUsed
-      ? estimation.providerEstimation.gasUsed
-      : ambireGasUsed
+    const gasUsed =
+      estimation.providerEstimation.gasUsed > ambireGasUsed
+        ? estimation.providerEstimation.gasUsed
+        : ambireGasUsed
+    // add a 10% overhead to prevent OOG
+    return gasUsed + gasUsed / 10n
   }
 
   getBroadcastOption(

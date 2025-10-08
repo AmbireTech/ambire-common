@@ -6,9 +6,8 @@ import {
   ActionPosition,
   OpenActionWindowParams
 } from '../../interfaces/actions'
-import { NotificationManager } from '../../interfaces/notification'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { FocusWindowParams, WindowManager, WindowProps } from '../../interfaces/window'
+import { FocusWindowParams, IUiController, WindowProps } from '../../interfaces/ui'
 import { messageOnNewAction } from '../../libs/actions/actions'
 import { getDappActionRequestsBanners } from '../../libs/banners/banners'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -31,9 +30,7 @@ const SWAP_AND_BRIDGE_WINDOW_SIZE = {
 export class ActionsController extends EventEmitter {
   #selectedAccount: ISelectedAccountController
 
-  #windowManager: WindowManager
-
-  #notificationManager: NotificationManager
+  #ui: IUiController
 
   actionWindow: {
     windowProps: WindowProps
@@ -94,12 +91,15 @@ export class ActionsController extends EventEmitter {
       this.currentAction = null
 
       this.actionsQueue = this.actionsQueue.filter((a) => a.type === 'accountOp')
+      const callsCount = this.actionsQueue.reduce((acc, action) => {
+        if (action.type !== 'accountOp') return acc
+
+        return acc + (action.accountOp.calls?.length || 0)
+      }, 0)
+
       if (this.visibleActionsQueue.length) {
-        await this.#notificationManager.create({
-          title:
-            this.actionsQueue.length > 1
-              ? `${this.actionsQueue.length} transactions queued`
-              : 'Transaction queued',
+        await this.#ui.notification.create({
+          title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
           message: 'Queued pending transactions are available on your Dashboard.'
         })
       }
@@ -110,23 +110,22 @@ export class ActionsController extends EventEmitter {
 
   constructor({
     selectedAccount,
-    windowManager,
-    notificationManager,
+    ui,
+
     onActionWindowClose
   }: {
     selectedAccount: ISelectedAccountController
-    windowManager: WindowManager
-    notificationManager: NotificationManager
+    ui: IUiController
+
     onActionWindowClose: () => Promise<void>
   }) {
     super()
 
     this.#selectedAccount = selectedAccount
-    this.#windowManager = windowManager
-    this.#notificationManager = notificationManager
+    this.#ui = ui
     this.#onActionWindowClose = onActionWindowClose
 
-    this.#windowManager.event.on('windowRemoved', async (winId: number) => {
+    this.#ui.window.event.on('windowRemoved', async (winId: number) => {
       // When windowManager.focus is called, it may close and reopen the action window as part of its fallback logic.
       // To avoid prematurely running the cleanup logic during that transition, we wait for focusWindowPromise to resolve.
       await this.actionWindow.focusWindowPromise
@@ -134,7 +133,7 @@ export class ActionsController extends EventEmitter {
       await this.#handleActionWindowClose(winId)
     })
 
-    this.#windowManager.event.on('windowFocusChange', async (winId: number) => {
+    this.#ui.window.event.on('windowFocusChange', async (winId: number) => {
       if (this.actionWindow.windowProps) {
         if (this.actionWindow.windowProps.id === winId && !this.actionWindow.windowProps.focused) {
           this.actionWindow.windowProps.focused = true
@@ -271,8 +270,16 @@ export class ActionsController extends EventEmitter {
   sendNewActionMessage(newAction: Action, type: 'queued' | 'updated') {
     if (this.visibleActionsQueue.length > 1 && newAction.type !== 'benzin') {
       if (this.actionWindow.loaded) {
+        // When the action window is loaded, we don't show messages for dappRequest actions
+        // if the current action is also a dappRequest action and is pending to be removed
+        if (
+          this.currentAction?.type === 'dappRequest' &&
+          this.currentAction?.userRequest?.meta.pendingToRemove
+        )
+          return
+
         const message = messageOnNewAction(newAction, type)
-        if (message) this.#windowManager.sendWindowToastMessage(message, { type: 'success' })
+        if (message) this.#ui.message.sendToastMessage(message, { type: 'success' })
       } else {
         const message = messageOnNewAction(newAction, type)
         if (message) this.actionWindow.pendingMessage = { message, options: { type: 'success' } }
@@ -294,8 +301,8 @@ export class ActionsController extends EventEmitter {
       }
 
       try {
-        await this.#windowManager.remove('popup')
-        this.actionWindow.openWindowPromise = this.#windowManager
+        await this.#ui.window.remove('popup')
+        this.actionWindow.openWindowPromise = this.#ui.window
           .open({ customSize, baseWindowId })
           .finally(() => {
             this.actionWindow.openWindowPromise = undefined
@@ -321,8 +328,8 @@ export class ActionsController extends EventEmitter {
       return
 
     try {
-      await this.#windowManager.remove('popup')
-      this.actionWindow.focusWindowPromise = this.#windowManager
+      await this.#ui.window.remove('popup')
+      this.actionWindow.focusWindowPromise = this.#ui.window
         .focus(this.actionWindow.windowProps, params)
         .finally(() => {
           this.actionWindow.focusWindowPromise = undefined
@@ -350,7 +357,7 @@ export class ActionsController extends EventEmitter {
 
     if (!this.actionWindow.windowProps) return
 
-    this.actionWindow.closeWindowPromise = this.#windowManager
+    this.actionWindow.closeWindowPromise = this.#ui.window
       .remove(this.actionWindow.windowProps.id)
       .finally(() => {
         this.actionWindow.closeWindowPromise = undefined
@@ -368,7 +375,7 @@ export class ActionsController extends EventEmitter {
     this.actionWindow.loaded = true
 
     if (this.actionWindow.pendingMessage) {
-      this.#windowManager.sendWindowToastMessage(
+      this.#ui.message.sendToastMessage(
         this.actionWindow.pendingMessage.message,
         this.actionWindow.pendingMessage.options
       )

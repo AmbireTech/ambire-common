@@ -9,7 +9,7 @@ import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-u
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
@@ -43,6 +43,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { getFeeSpeedIdentifier } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpTesterController } from './signAccountOpTester'
@@ -95,7 +96,6 @@ const createEOAAccountOp = (account: Account) => {
     chainId: 1n,
     nonce: null, // does not matter when estimating
     calls: [{ to, value: BigInt(1), data }],
-    accountOpToExecuteBefore: null,
     signature: null
   }
 
@@ -160,7 +160,6 @@ const createAccountOp = (
     chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
-    accountOpToExecuteBefore: null,
     signature: null
   }
 
@@ -331,8 +330,8 @@ const gasTankToken: TokenResult = {
   }
 }
 
-const windowManager = mockWindowManager().windowManager
-
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
 const init = async (
   account: Account,
   accountOp: {
@@ -353,7 +352,7 @@ const init = async (
     'default',
     storageCtrl,
     { internal: KeystoreSigner },
-    windowManager
+    uiCtrl
   )
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
@@ -455,12 +454,18 @@ const init = async (
   const bundlerSwitcher = new BundlerSwitcher(network, () => {
     return false
   })
-  const callRelayer = relayerCall.bind({ url: '', fetch })
+  const baseAccount = getBaseAccount(
+    account,
+    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
+    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+    network
+  )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
     keystore
   })
+  const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
     storageCtrl,
     fetch,
@@ -472,20 +477,14 @@ const init = async (
     portfolio,
     () => Promise.resolve()
   )
-  const baseAccount = getBaseAccount(
-    account,
-    accountsCtrl.accountStates[account.addr][network.chainId.toString()],
-    keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-    network
-  )
   const estimationController = new EstimationController(
     keystore,
     accountsCtrl,
     networksCtrl,
     providers,
     portfolio,
-    activity,
-    bundlerSwitcher
+    bundlerSwitcher,
+    activity
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -510,14 +509,15 @@ const init = async (
     networksCtrl,
     keystore,
     portfolio,
-    activity,
     {},
     account,
     network,
+    activity,
     provider,
     1,
     op,
     () => {},
+    true,
     true,
     () => {},
     estimationController,
@@ -619,6 +619,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
       broadcastOption: BROADCAST_OPTIONS.bySelf,
+      paidByKeyType: 'internal',
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenChainId: 1n,

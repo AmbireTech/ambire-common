@@ -1,3 +1,4 @@
+import { SelectedAccountPortfolioByNetworksNetworkState } from '../../interfaces/selectedAccount'
 import {
   AccountState as DefiAccountState,
   AssetType,
@@ -29,7 +30,7 @@ describe('Selected Account lib', () => {
 
     expect('tokens' in result).toBe(false)
     expect('collections' in result).toBe(false)
-    expect('hintsFromExternalAPI' in result).toBe(false)
+    expect('lastExternalApiUpdateData' in result).toBe(false)
   })
   describe('calculateTokenArray', () => {
     it('should calculate token array correctly', () => {
@@ -119,12 +120,12 @@ describe('Selected Account lib', () => {
         PENDING_PORTFOLIO_STATE['1']
       ) as NetworkState
 
-      const mockPastState = {
+      const mockPastState: SelectedAccountPortfolioByNetworksNetworkState = {
         totalBalance: 0,
         collections: [],
         tokens: [],
         defiPositionsUpdatedAt: DEFI_STATE['1'].updatedAt,
-        blockNumber: clonedPortfolioEthereumStatePending?.result?.blockNumber
+        portfolioUpdateStarted: clonedPortfolioEthereumStatePending?.result?.updateStarted
       }
 
       clonedPortfolioEthereumStatePending.accountOps = []
@@ -313,8 +314,8 @@ describe('Selected Account lib', () => {
         clonedPortfolioLatestState,
         clonedPortfolioPendingState,
         {},
-        Date.now(),
         clonedDefiAccountState,
+        false,
         true
       )
 
@@ -329,7 +330,6 @@ describe('Selected Account lib', () => {
       const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
       const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
       const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
-      const portfolioStartedLoadingAtTimestamp = Date.now() - 6000
 
       clonedPortfolioLatestState['1']!.isLoading = true
       clonedPortfolioPendingState['1']!.isLoading = true
@@ -338,8 +338,8 @@ describe('Selected Account lib', () => {
         clonedPortfolioLatestState,
         clonedPortfolioPendingState,
         {},
-        portfolioStartedLoadingAtTimestamp,
         clonedDefiAccountState,
+        true,
         true
       )
 
@@ -358,8 +358,8 @@ describe('Selected Account lib', () => {
         clonedPortfolioLatestState,
         clonedPortfolioPendingState,
         {},
-        Date.now(),
         clonedDefiAccountState,
+        false,
         true
       )
 
@@ -400,11 +400,9 @@ const PORTFOLIO_STATE: AccountState = {
     isLoading: false,
     errors: [],
     result: {
-      hintsFromExternalAPI: {
-        erc20s: [],
-        erc721s: {},
-        lastUpdate: 1753192918712,
-        skipOverrideSavedHints: false
+      lastExternalApiUpdateData: {
+        hasHints: true,
+        lastUpdate: 1753192918712
       },
       errors: [],
       updateStarted: 1753192918299,
@@ -505,11 +503,9 @@ const PORTFOLIO_STATE: AccountState = {
     isLoading: false,
     errors: [],
     result: {
-      hintsFromExternalAPI: {
-        erc20s: [],
-        erc721s: {},
-        lastUpdate: 1753192918712,
-        skipOverrideSavedHints: false
+      lastExternalApiUpdateData: {
+        hasHints: true,
+        lastUpdate: 1753192918712
       },
       errors: [],
       updateStarted: 1753192918299,
@@ -776,8 +772,7 @@ PENDING_PORTFOLIO_STATE['1']!.accountOps = [
     calls: [],
     gasLimit: null,
     signature: '0x',
-    gasFeePayment: null,
-    accountOpToExecuteBefore: null
+    gasFeePayment: null
   }
 ]
 

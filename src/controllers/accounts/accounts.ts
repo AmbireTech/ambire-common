@@ -47,7 +47,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   #onAccountStateUpdate: () => void
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
+
+  // Tracks the initial load of account states. Unlike `initialLoadPromise`,
+  // this one isn’t awaited during the AccountsController initial load, so it’s the only
+  // reliable way to know when account states are fully loaded.
+  accountStatesInitialLoadPromise?: Promise<void>
 
   constructor(
     storage: IStorageController,
@@ -68,7 +73,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAccountStateUpdate = onAccountStateUpdate
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   #getAccountsToUpdateAccountStatesInBackground(selectedAccountAddr?: string | null): Account[] {
@@ -98,9 +105,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // NOTE: YOU MUST USE waitForAccountsCtrlFirstLoad IN TESTS
     // TO ENSURE ACCOUNT STATE IS LOADED
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#updateAccountStates(
+    this.accountStatesInitialLoadPromise = this.#updateAccountStates(
       this.#getAccountsToUpdateAccountStatesInBackground(initialSelectedAccountAddr)
-    )
+    ).finally(() => {
+      this.accountStatesInitialLoadPromise = undefined
+    })
   }
 
   async updateAccountStates(
@@ -172,8 +181,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             if (!this.accountStates[addr]) this.accountStates[addr] = {}
             this.accountStates[addr][network.chainId.toString()] = accountState
           })
-        } catch (err) {
-          console.error(`account state update error for ${network.name}: `, err)
+        } catch (err: any) {
+          this.emitError({
+            level: 'silent',
+            message: `Failed to update account state for ${network.name}`,
+            error: err
+          })
           this.#updateProviderIsWorking(network.chainId, false)
         } finally {
           this.accountStatesLoadingState[network.chainId.toString()] = undefined

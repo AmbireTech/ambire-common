@@ -1,7 +1,16 @@
-import { allBundlers, BICONOMY, BUNDLER, ETHERSPOT, GELATO, PIMLICO } from '../../consts/bundlers'
+import {
+  allBundlers,
+  BICONOMY,
+  BUNDLER,
+  CANDIDE,
+  ETHERSPOT,
+  GELATO,
+  PIMLICO
+} from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { Biconomy } from './biconomy'
 import { Bundler } from './bundler'
+import { Candide } from './candide'
 import { Etherspot } from './etherspot'
 import { Gelato } from './gelato'
 import { Pimlico } from './pimlico'
@@ -20,6 +29,9 @@ export function getBundlerByName(bundlerName: BUNDLER): Bundler {
     case GELATO:
       return new Gelato()
 
+    case CANDIDE:
+      return new Candide()
+
     default:
       throw new Error('Bundler settings error')
   }
@@ -29,9 +41,6 @@ export function getDefaultBundlerName(
   network: Network,
   opts: { canDelegate: boolean } = { canDelegate: false }
 ): BUNDLER {
-  // hardcode biconomy for Sonic as it's not supported by pimlico
-  if (network.chainId === 146n) return BICONOMY
-
   // use pimlico on all 7702 accounts that don't have a set delegation
   if (opts.canDelegate) return PIMLICO
 
@@ -42,6 +51,13 @@ export function getDefaultBundlerName(
   // if there are no availableBundlers declared for the network, proceed
   // to load the defaultBundler settings
   if (!availableBundlers.length || availableBundlers.length === 1) {
+    return network.erc4337.defaultBundler && allBundlers.includes(network.erc4337.defaultBundler)
+      ? network.erc4337.defaultBundler
+      : PIMLICO
+  }
+
+  // use the defaultBundler on ethereum if defined OR PIMLICO on ethereum, not loterry
+  if (network.chainId === 1n) {
     return network.erc4337.defaultBundler && allBundlers.includes(network.erc4337.defaultBundler)
       ? network.erc4337.defaultBundler
       : PIMLICO

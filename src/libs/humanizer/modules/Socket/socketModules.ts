@@ -659,6 +659,37 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
         ...getRecipientText(accountOp.accountAddr, receiver)
       ]
     },
+    [`${
+      iface.getFunction(
+        'function bridgeNativeTo(uint256 amount, (uint32 dstEid, uint256 minAmountLD, address stargatePoolAddress, bytes destinationPayload, bytes destinationExtraOptions, (uint256 nativeFee, uint256 lzTokenFee) messagingFee, bytes32 metadata, uint256 toChainId, address receiver, bytes swapData, uint32 swapId, bool isNativeSwapRequired, bool isApprovalRequired) stargateBridgeData) payable'
+      )?.selector
+    }`]: (call: IrCall) => {
+      const {
+        amount,
+        stargateBridgeData: {
+          dstEid,
+          minAmountLD,
+          stargatePoolAddress,
+          destinationPayload,
+          destinationExtraOptions,
+          messagingFee: { nativeFee, lzTokenFee },
+          metadata,
+          toChainId,
+          receiver,
+          swapData,
+          swapId,
+          isNativeSwapRequired,
+          isApprovalRequired
+        }
+      } = iface.parseTransaction(call)!.args
+      return [
+        getAction('Bridge'),
+        getToken(ZeroAddress, amount),
+        getLabel('to'),
+        getChain(toChainId),
+        ...getRecipientText(accountOp.accountAddr, receiver)
+      ]
+    },
 
     [`${
       iface.getFunction(
@@ -1063,8 +1094,6 @@ export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls:
           humanizationOfBridge = [
             getAction('Bridge'),
             getToken(tokenIn, 0n),
-            getLabel('for at least'),
-            getTokenWithChain(tokenOut, outputAmount, chainId),
             getLabel('to'),
             getChain(chainId),
             ...getRecipientText(accountOp.accountAddr, receiver),

@@ -8,7 +8,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { concat, getBytes, hexlify, keccak256, Mnemonic, toUtf8Bytes, Wallet } from 'ethers'
+import {
+  computeAddress,
+  concat,
+  getBytes,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { DERIVATION_OPTIONS, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
@@ -31,8 +40,7 @@ import {
 } from '../../interfaces/keystore'
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
-import { WindowManager } from '../../interfaces/window'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { IUiController } from '../../interfaces/ui'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -118,9 +126,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise: Promise<void>
+  initialLoadPromise?: Promise<void>
 
-  #windowManager: WindowManager
+  #ui: IUiController
 
   #scryptAdapter: ScryptAdapter
 
@@ -128,16 +136,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     platform: Platform,
     _storage: IStorageController,
     _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>,
-    windowManager: WindowManager
+    ui: IUiController
   ) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
     this.keyStoreUid = null
-    this.#windowManager = windowManager
+    this.#ui = ui
     this.#scryptAdapter = new ScryptAdapter(platform)
-    this.initialLoadPromise = this.#load()
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
+    })
   }
 
   async #load() {
@@ -272,7 +282,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       this.emitUpdate()
 
       const error = new Error(this.errorMessage)
-      throw new EmittableError({ level: 'silent', message: this.errorMessage, error })
+      throw new EmittableError({
+        level: 'silent',
+        message: this.errorMessage,
+        error,
+        sendCrashReport: false
+      })
     }
     this.errorMessage = ''
 
@@ -758,12 +773,80 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   async sendPrivateKeyToUi(keyAddress: string) {
     const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
-    this.#windowManager.sendWindowUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
+    this.#ui.message.sendUiMessage({ privateKey: `0x${decryptedPrivateKey}` })
+  }
+
+  /**
+   * Decrypt the private key encrypted with the main key,
+   * encrypt it with a new salt and entropy to not leak the
+   * main key's ones, and send it over with the salt and entropy
+   * to the UI
+   */
+  async sendPasswordEncryptedPrivateKeyToUi(keyAddress: string, secret: string, entropy: string) {
+    const decryptedPrivateKey = await this.#getPrivateKey(keyAddress)
+
+    const entropyGenerator = new EntropyGenerator()
+    const salt = entropyGenerator.generateRandomBytes(32, entropy)
+    await wait(0) // a trick to prevent UI freeze while the CPU is busy
+    const key = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), salt, {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    await wait(0)
+    const iv = entropyGenerator.generateRandomBytes(16, entropy)
+    const derivedKey = key.slice(0, 16)
+    const counter = new aes.Counter(iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const privateKey = aesCtr.encrypt(getBytes(`0x${decryptedPrivateKey}`))
+
+    this.#ui.message.sendUiMessage({
+      privateKey: hexlify(privateKey),
+      salt: hexlify(salt),
+      iv: hexlify(iv)
+    })
+  }
+
+  /**
+   * Decrypts an imported private key using the provided password (secret, salt, iv),
+   * validates the decrypted key against the associated keys,
+   * and sends the result to the UI.
+   */
+  async sendPasswordDecryptedPrivateKeyToUi(
+    secret: string,
+    key: string,
+    salt: string,
+    iv: string,
+    associatedKeys: string[]
+  ) {
+    await this.initialLoadPromise
+
+    const counter = new aes.Counter(getBytes(iv))
+    const decryptKey = await this.#scryptAdapter.scrypt(getBytesForSecret(secret), getBytes(salt), {
+      N: scryptDefaults.N,
+      r: scryptDefaults.r,
+      p: scryptDefaults.p,
+      dkLen: scryptDefaults.dkLen
+    })
+    const derivedKey = decryptKey.slice(0, 16)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const decryptedBytes = aesCtr.decrypt(getBytes(key))
+    const privateKey = `0x${aes.utils.hex.fromBytes(decryptedBytes)}`
+    const addr = computeAddress(privateKey)
+
+    if (!associatedKeys.includes(addr)) {
+      this.errorMessage = 'Incorrect password. Please try again.'
+      this.emitUpdate()
+      return
+    }
+
+    this.#ui.message.sendUiMessage({ privateKey })
   }
 
   async sendSeedToUi(id: string) {
     const decrypted = await this.getSavedSeed(id)
-    this.#windowManager.sendWindowUiMessage({
+    this.#ui.message.sendUiMessage({
       seed: decrypted.seed,
       seedPassphrase: decrypted.seedPassphrase
     })
@@ -772,7 +855,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async sendTempSeedToUi() {
     if (!this.#tempSeed) return
 
-    this.#windowManager.sendWindowUiMessage({ tempSeed: this.#tempSeed })
+    this.#ui.message.sendUiMessage({ tempSeed: this.#tempSeed })
   }
 
   async #getPrivateKey(keyAddress: string): Promise<string> {
@@ -780,15 +863,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = this.#keystoreKeys
 
-    const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress)
+    const storedKey = keys.find((x: StoredKey) => x.addr === keyAddress && x.type === 'internal')
     if (!storedKey) throw new Error('keystore: key not found')
-    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
 
     // decrypt the pk of keyAddress with the keystore's key
     const encryptedBytes = getBytes(storedKey.privKey as string)
     const counter = new aes.Counter(this.#mainKey.iv)
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-    // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
     return aes.utils.hex.fromBytes(decryptedBytes)
   }
@@ -991,16 +1072,21 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return this.keys.filter((key) => acc.associatedKeys.includes(key.addr))
   }
 
-  getFeePayerKey(op: AccountOp): Key | Error {
-    const feePayerKeys = this.keys.filter((key) => key.addr === op.gasFeePayment!.paidBy)
-    const feePayerKey =
-      // Temporarily prioritize the key with the same type as the signing key.
-      // TODO: Implement a way to choose the key type to broadcast with.
-      feePayerKeys.find((key) => key.type === op.signingKeyType) || feePayerKeys[0]
+  getFeePayerKey(
+    accountAddr: Account['addr'],
+    paidByKeyAddr: Key['addr'],
+    paidByKeyType?: Key['type']
+  ): Key | Error {
+    const feePayerKeys = this.keys.filter((key) => key.addr === paidByKeyAddr)
+    let feePayerKey = feePayerKeys[0]
+
+    if (paidByKeyType) {
+      feePayerKey = feePayerKeys.find((key) => key.type === paidByKeyType) || feePayerKey
+    }
 
     if (!feePayerKey) {
-      const missingKeyAddr = shortenAddress(op.gasFeePayment!.paidBy, 13)
-      const accAddr = shortenAddress(op.accountAddr, 13)
+      const missingKeyAddr = shortenAddress(paidByKeyAddr, 13)
+      const accAddr = shortenAddress(accountAddr, 13)
       return new Error(
         `Key with address ${missingKeyAddr} for account with address ${accAddr} not found. 'Please try again or contact support if the problem persists.'`
       )

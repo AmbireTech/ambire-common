@@ -114,6 +114,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #relayerUrl: string
 
+  isRecipientAddressFirstTimeSend: boolean = false
+
+  lastSentToRecipientAt: Date | null = null
+
   signAccountOpController: ISignAccountOpController | null = null
 
   /**
@@ -137,7 +141,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   #reestimateAbortController: AbortController | null = null
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #activity: IActivityController
 
@@ -171,7 +175,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#providers = providers
     this.#relayerUrl = relayerUrl
 
-    this.#initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
     this.emitUpdate()
   }
 
@@ -297,7 +303,9 @@ export class TransferController extends EventEmitter implements ITransferControl
         isEnsAddress,
         this.addressState.isDomainResolving,
         this.isSWWarningVisible,
-        this.isSWWarningAgreed
+        this.isSWWarningAgreed,
+        this.isRecipientAddressFirstTimeSend,
+        this.lastSentToRecipientAt
       )
     }
 
@@ -408,6 +416,15 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
+    // Check if the address has been used previously for transactions
+    const { found, lastTransactionDate } = await this.#activity.hasAccountOpsSentTo(
+      this.recipientAddress,
+      this.#selectedAccountData.account?.addr || ''
+    )
+    this.isRecipientAddressFirstTimeSend =
+      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
+
     if (typeof isTopUp === 'boolean') {
       this.isTopUp = isTopUp
       this.#setSWWarningVisibleIfNeeded()
@@ -442,6 +459,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknown = false
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
+      this.isRecipientAddressFirstTimeSend = false
+      this.lastRecipientTransactionDate = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -627,26 +646,38 @@ export class TransferController extends EventEmitter implements ITransferControl
       gasFeePayment: null,
       nonce: accountState.nonce,
       signature: null,
-      accountOpToExecuteBefore: null,
       calls,
       meta: {
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
       }
     }
 
+    // Check if the address has been used previously for transactions
+    const { found: previousTransactionExists, lastTransactionDate } =
+      await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccountData.account.addr
+      )
+
+    // Update state based on whether there are previous transactions to this address
+    this.isRecipientAddressFirstTimeSend =
+      !previousTransactionExists &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
     this.signAccountOpController = new SignAccountOpController(
       this.#accounts,
       this.#networks,
       this.#keystore,
       this.#portfolio,
-      this.#activity,
       this.#externalSignerControllers,
       this.#selectedAccountData.account,
       network,
+      this.#activity,
       provider,
       randomId(), // the account op and the action are fabricated
       accountOp,
       () => true,
+      false,
       false,
       undefined
     )

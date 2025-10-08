@@ -3,15 +3,16 @@
 import { AbiCoder, Contract, Interface, parseEther, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect } from '@jest/globals'
+import { describe } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { getNativeToCheckFromEOAs } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
@@ -33,6 +34,7 @@ import {
 } from './interfaces'
 
 const ethereum = networks.find((x) => x.chainId === 1n)!
+const bsc = networks.find((x) => x.chainId === 56n)!
 ethereum.areContractsDeployed = true
 const optimism = networks.find((x) => x.chainId === 10n)
 const arbitrum = networks.find((x) => x.chainId === 42161n)!
@@ -40,6 +42,28 @@ arbitrum.areContractsDeployed = true
 const avalanche = networks.find((x) => x.chainId === 43114n)!
 avalanche.areContractsDeployed = true
 const polygon = networks.find((x) => x.chainId === 137n)
+networks.push({
+  name: 'Cronos',
+  nativeAssetSymbol: 'CRO',
+  has7702: false,
+  nativeAssetName: 'Cronos',
+  rpcUrls: ['https://evm.cronos.org'],
+  selectedRpcUrl: 'https://evm.cronos.org',
+  rpcNoStateOverride: false,
+  chainId: 25n,
+  explorerUrl: '',
+  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
+  isSAEnabled: false,
+  areContractsDeployed: false,
+  hasRelayer: false,
+  platformId: 'cronos',
+  nativeAssetId: 'crypto-com-chain',
+  hasSingleton: false,
+  features: [],
+  feeOptions: { is1559: true },
+  predefined: false,
+  disableEstimateGas: true
+})
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
@@ -64,6 +88,27 @@ const smartAccDeployed: Account = {
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
+  }
+}
+
+const devconSmart: Account = {
+  addr: '0xae376B42699fDB0D80e9ceE068A4f75ae6d70d85',
+  initialPrivileges: [
+    [
+      '0xD5Cdb05Df16FB0f84a02ebff3405f80e441d7D57',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ],
+  creation: {
+    factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fa85abbdf4f476f0727ae1450f282935c0d57708ae82c281b3fa758db2e21c89b553d602d80604d3d3981f3363d3d373d3d3d363d730f2aa7bcda3d9d210df69a394b6965cb2566c8285af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  associatedKeys: ['0xD5Cdb05Df16FB0f84a02ebff3405f80e441d7D57'],
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b'
@@ -112,6 +157,16 @@ const viewOnlyAcc = {
   preferences: {
     label: DEFAULT_ACCOUNT_LABEL,
     pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  }
+} as Account
+const localRelayer = {
+  addr: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78',
+  creation: null,
+  initialPrivileges: [],
+  associatedKeys: ['0xD8293ad21678c6F09Da139b4B62D38e514a03B78'],
+  preferences: {
+    label: DEFAULT_ACCOUNT_LABEL,
+    pfp: '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
   }
 } as Account
 const nativeToCheck: Account[] = [
@@ -312,8 +367,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -374,8 +428,7 @@ describe('estimate', () => {
       chainId: 137n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -451,8 +504,7 @@ describe('estimate', () => {
       chainId: 137n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -510,8 +562,7 @@ describe('estimate', () => {
       chainId: 137n,
       nonce: null,
       signature: null,
-      calls: [call],
-      accountOpToExecuteBefore: null
+      calls: [call]
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
@@ -549,8 +600,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const portfolioResponse = await portfolio.get('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
@@ -611,8 +661,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: 1n, data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
@@ -652,8 +701,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: 1n,
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
@@ -716,8 +764,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce: await v1AccAbi.nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
@@ -765,8 +812,7 @@ describe('estimate', () => {
           value: 0n,
           data: ERC20Interface.encodeFunctionData('transfer', [eoaAddr, 1])
         }
-      ],
-      accountOpToExecuteBefore: null
+      ]
     }
 
     const accountStates = await getAccountsInfo([deprycatedV2])
@@ -783,8 +829,6 @@ describe('estimate', () => {
       new BundlerSwitcher(arbitrum, areUpdatesForbidden),
       errorCallback
     )
-
-    console.log(response)
 
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
@@ -808,8 +852,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce: 6n, // corrupt the nonce
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
@@ -855,7 +898,6 @@ describe('estimate', () => {
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -910,7 +952,6 @@ describe('estimate', () => {
       nonce: 0n,
       signature: '0x',
       calls: [{ to: FEE_COLLECTOR, value: parseEther('1'), data: '0x' }],
-      accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -932,9 +973,7 @@ describe('estimate', () => {
     )
 
     expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
-      "Transaction cannot be sent because you don't have enough ETH to cover the gas costs for this transaction."
-    )
+    expect((response as Error).message).toBe('Insufficient ETH')
     expect((response as Error).cause).toBe('Insufficient ETH for transaction calls')
   })
 
@@ -963,7 +1002,6 @@ describe('estimate', () => {
           data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100])
         }
       ],
-      accountOpToExecuteBefore: null,
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
@@ -1002,8 +1040,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce,
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
@@ -1048,8 +1085,7 @@ describe('estimate', () => {
       chainId: 10n,
       nonce,
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
@@ -1100,8 +1136,7 @@ describe('estimate', () => {
       chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }]
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
@@ -1118,9 +1153,7 @@ describe('estimate', () => {
       errorCallback
     )
     expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
-      "Transaction cannot be sent because you don't have enough POL to cover the gas costs for this transaction."
-    )
+    expect((response as Error).message).toBe('Insufficient POL')
     expect((response as Error).cause).toBe('Insufficient POL for transaction calls')
   })
 
@@ -1134,8 +1167,7 @@ describe('estimate', () => {
       chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
-      accountOpToExecuteBefore: null
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
@@ -1173,8 +1205,7 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to, value: BigInt(0), data: expiredData }],
-      accountOpToExecuteBefore: null
+      calls: [{ to, value: BigInt(0), data: expiredData }]
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
@@ -1196,5 +1227,378 @@ describe('estimate', () => {
     expect((response as Error).message).toBe(
       'Transaction cannot be sent because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
     )
+  })
+
+  it('[v2] bnb, GasGuard, it should estimate successfully by entering the initialGasLimitFailed case', async () => {
+    const gasGuardAbi = [
+      {
+        inputs: [
+          { internalType: 'uint256', name: 'gasLeft', type: 'uint256' },
+          { internalType: 'uint256', name: 'required', type: 'uint256' }
+        ],
+        name: 'InsufficientGas',
+        type: 'error'
+      },
+      {
+        inputs: [{ internalType: 'uint256', name: 'minGasRequired', type: 'uint256' }],
+        name: 'guardedCall',
+        outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const gasGuardInterface = new Interface(gasGuardAbi)
+    const accountStates = await getAccountsInfo([devconSmart])
+    const accountState = accountStates[devconSmart.addr][bsc.chainId.toString()]
+    const baseAcc = getBaseAccount(devconSmart, accountState, [], bsc)
+    const bscProvider = getRpcProvider(bsc.rpcUrls, bsc.chainId)
+    const switcher = new BundlerSwitcher(bsc, areUpdatesForbidden)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = false, everything normal
+     **************************************** */
+
+    const gasGuardCallPassWithInitialGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [20000])
+    }
+    const op = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithInitialGasLimit]
+    }
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      op,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas instanceof Error).toBe(false)
+    expect(ambireGas.flags.hasInitialGasLimitFailed).toBe(false)
+    const originalGas = ambireGas.gasUsed
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, pass after simulation with increased gas
+     **************************************** */
+
+    const gasGuardCallPassWithIncreasedGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [60000])
+    }
+    const opTwo = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithIncreasedGasLimit]
+    }
+    const responseTwo = await getEstimation(
+      baseAcc,
+      accountState,
+      opTwo,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseTwo instanceof Error).toBe(false)
+    const resTwo = responseTwo as FullEstimation
+    const ambireGasTwo = resTwo.ambire as AmbireEstimation
+    expect(ambireGasTwo instanceof Error).toBe(false)
+    expect(ambireGasTwo.flags.hasInitialGasLimitFailed).toBe(true)
+    expect(ambireGasTwo.gasUsed).toBe(originalGas * 2n)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, 2 iterations without touching upper limit
+     **************************************** */
+
+    const gasGuardCallPassWithMoreIncreasedGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [80000])
+    }
+    const opFour = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithMoreIncreasedGasLimit]
+    }
+    const responseFour = await getEstimation(
+      baseAcc,
+      accountState,
+      opFour,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseFour instanceof Error).toBe(false)
+    const resFour = responseFour as FullEstimation
+    const ambireGasFour = resFour.ambire as AmbireEstimation
+    expect(ambireGasFour instanceof Error).toBe(false)
+    expect(ambireGasFour.flags.hasInitialGasLimitFailed).toBe(true)
+    expect(ambireGasFour.gasUsed).toBeGreaterThan(originalGas * 2n)
+    expect(ambireGasFour.gasUsed).toBeLessThan(originalGas * 3n)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, hits upper limit
+     **************************************** */
+
+    const gasGuardCallPassWithGasLimitToTheRoof = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [90000])
+    }
+    const opFive = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithGasLimitToTheRoof]
+    }
+    const responseFive = await getEstimation(
+      baseAcc,
+      accountState,
+      opFive,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseFive instanceof Error).toBe(false)
+    const resFive = responseFive as FullEstimation
+    const ambireGasFive = resFive.ambire as AmbireEstimation
+    expect(ambireGasFive instanceof Error).toBe(false)
+    expect(ambireGasFive.flags.hasInitialGasLimitFailed).toBe(true)
+    expect(ambireGasFive.gasUsed).toBe(originalGas * 3n)
+
+    /** **************************************
+     * hasInitialGasLimitFailed = true, fail even after increased gas
+     **************************************** */
+
+    const gasGuardCallPassWithUnreasonableGasLimit = {
+      to: '0x70D8fDf010b0be407273DAB41614574E9f22A3Ae',
+      value: 0n,
+      data: gasGuardInterface.encodeFunctionData('guardedCall', [600000])
+    }
+    const opThree = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: bsc.chainId,
+      nonce: 1n,
+      signature: '0x',
+      calls: [gasGuardCallPassWithUnreasonableGasLimit]
+    }
+    const responseThree = await getEstimation(
+      baseAcc,
+      accountState,
+      opThree,
+      bsc,
+      bscProvider,
+      [],
+      [],
+      switcher,
+      errorCallback
+    )
+    expect(responseThree instanceof Error).toBe(true)
+  })
+
+  it('[v2]:Ethereum | deployed account | should work with singletor deployer as salt is different for each contract deployment', async () => {
+    const bytecode =
+      '0x608060405234801561001057600080fd5b50610134806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c80634af63f0214602d575b600080fd5b60cf60048036036040811015604157600080fd5b810190602081018135640100000000811115605b57600080fd5b820183602082011115606c57600080fd5b80359060200191846001830284011164010000000083111715608d57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600092019190915250929550509135925060eb915050565b604080516001600160a01b039092168252519081900360200190f35b6000818351602085016000f5939250505056fea26469706673582212206b44f8a82cb6b156bfcc3dc6aadd6df4eefd204bc928a4397fd15dacf6d5320564736f6c63430006020033'
+    const salt = '0x0a0b000000000000000000000000000000000000000000000000000000000000'
+    const salt2 = '0x0a0b000000000000000000000000000000000000000000000000000000001010'
+    const singletonABI = [
+      {
+        inputs: [
+          { internalType: 'bytes', name: '_initCode', type: 'bytes' },
+          { internalType: 'bytes32', name: '_salt', type: 'bytes32' }
+        ],
+        name: 'deploy',
+        outputs: [{ internalType: 'address payable', name: 'createdContract', type: 'address' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const singletonInterface = new Interface(singletonABI)
+    const call = {
+      to: SINGLETON,
+      value: 0n,
+      data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
+    }
+    const secondCall = {
+      to: SINGLETON,
+      value: 0n,
+      data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt2])
+    }
+
+    const ambAcc = new Contract(devconSmart.addr, AmbireAccount.abi, provider)
+    const nonce = await ambAcc.nonce()
+    const opEthereum = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: devconSmart.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce,
+      signature: '0x',
+      calls: [call, secondCall]
+    }
+    const accountStates = await getAccountsInfo([devconSmart])
+    const accountState = accountStates[devconSmart.addr][ethereum.chainId.toString()]
+    const baseAcc = getBaseAccount(devconSmart, accountState, [], ethereum)
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      opEthereum,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, devconSmart),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider).toBe(null)
+    expect(res.ambire instanceof Error).toBe(false)
+    const ambireGas = res.ambire as AmbireEstimation
+    expect(ambireGas.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(res.bundler).toBe(null)
+  })
+
+  it('[v2]:Ethereum | deployed account | should fail with singletor deployer as inner contracts have already been deployed once', async () => {
+    const bytecode = DeployHelper.bin
+    const salt = '0x0a0b00000000000000000000000000000000000000000000000000000a101010'
+    const singletonABI = [
+      {
+        inputs: [
+          { internalType: 'bytes', name: '_initCode', type: 'bytes' },
+          { internalType: 'bytes32', name: '_salt', type: 'bytes32' }
+        ],
+        name: 'deploy',
+        outputs: [{ internalType: 'address payable', name: 'createdContract', type: 'address' }],
+        stateMutability: 'nonpayable',
+        type: 'function'
+      }
+    ]
+    const singletonInterface = new Interface(singletonABI)
+    const call = {
+      to: SINGLETON,
+      value: 0n,
+      data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
+    }
+    const ambAcc = new Contract(devconSmart.addr, AmbireAccount.abi, provider)
+    const nonce = await ambAcc.nonce()
+    const opEthereum = {
+      accountAddr: devconSmart.addr,
+      signingKeyAddr: devconSmart.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 1n,
+      nonce,
+      signature: '0x',
+      calls: [call]
+    }
+    const accountStates = await getAccountsInfo([devconSmart])
+    const accountState = accountStates[devconSmart.addr][ethereum.chainId.toString()]
+    const baseAcc = getBaseAccount(devconSmart, accountState, [], ethereum)
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      opEthereum,
+      ethereum,
+      provider,
+      feeTokens,
+      getNativeToCheckFromEOAs(nativeToCheck, devconSmart),
+      new BundlerSwitcher(ethereum, areUpdatesForbidden),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(true)
+    const err = response as Error
+    expect(err.message).toBe('Transaction invalid: out of gas')
+  })
+
+  it('[EOA]:Cronos | should estimate correctly without OOG', async () => {
+    const call = {
+      to: v1Acc.addr,
+      value: 1n,
+      data: '0x'
+    }
+    const cronosProvider = getRpcProvider(['https://evm.cronos.org'], 25n)
+    const opCronos = {
+      accountAddr: localRelayer.addr,
+      signingKeyAddr: localRelayer.addr,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      chainId: 25n,
+      nonce: BigInt(await cronosProvider.getTransactionCount(localRelayer.addr)),
+      signature: '0x',
+      calls: [call]
+    }
+    const accountStates = await getAccountsInfo([localRelayer])
+    const accountState = accountStates[localRelayer.addr]['25']
+    const cronos = networks.find((n) => n.chainId === 25n)!
+    const baseAcc = getBaseAccount(localRelayer, accountState, [], cronos)
+    const response = await getEstimation(
+      baseAcc,
+      accountState,
+      opCronos,
+      cronos,
+      cronosProvider,
+      [],
+      [],
+      new BundlerSwitcher(cronos, areUpdatesForbidden),
+      errorCallback
+    )
+
+    expect(response instanceof Error).toBe(false)
+    const res = response as FullEstimation
+    expect(res.provider instanceof Error).toBe(false)
+    const providerGas = res.provider as ProviderEstimation
+    expect(providerGas.gasUsed).toBe(21000n)
   })
 })

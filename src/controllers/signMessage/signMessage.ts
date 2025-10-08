@@ -130,6 +130,19 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.emitUpdate()
   }
 
+  /**
+   * Checks if the signing operation is still valid after each async step, to guard
+   * against a race condition where the operation is reset before the async operation is completed.
+   */
+  #isSigningOperationValidAfterAsyncOperation() {
+    return this.isInitialized && !!this.messageToSign
+  }
+
+  /*
+   * ⚠️ IMPORTANT: If you make changes here and they involve async operations,
+   * make sure to check `isSigningOperationValidAfterAsyncOperation` afterwards
+   * to ensure you’re not acting on obsolete data.
+   */
   async #sign() {
     if (!this.isInitialized) {
       return SignMessageController.#throwNotInitialized()
@@ -145,6 +158,8 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     try {
       this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
+      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+
       if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
 
       const account = this.#accounts.accounts.find(
@@ -175,6 +190,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             this.#signer,
             this.#invite.isOG
           )
+          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
@@ -192,6 +208,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             network,
             this.#invite.isOG
           )
+          if (!this.#isSigningOperationValidAfterAsyncOperation()) return
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
@@ -214,11 +231,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       const verifyMessageParams = {
-        network,
         provider: this.#providers.providers[network?.chainId.toString() || '1'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
-        signer: this.messageToSign?.accountAddr,
+        signer: this.messageToSign.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
         ...(isPlainTextMessage(this.messageToSign.content)
@@ -235,6 +251,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           : { authorization: this.messageToSign.content.message })
       }
       const isValidSignature = await verifyMessage(verifyMessageParams)
+      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
 
       if (!isValidSignature) {
         throw new Error(

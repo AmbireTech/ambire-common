@@ -1,7 +1,10 @@
+/* eslint-disable @typescript-eslint/no-use-before-define */
 import assert from 'assert'
 import { AbiCoder, concat, getBytes, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
+import { ProviderError } from '../../classes/ProviderError'
 import { decodeError } from '../errorDecoder'
 import { BROADCAST_OR_ESTIMATION_ERRORS, ESTIMATION_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
@@ -47,7 +50,7 @@ const defaultOptions: CallOptions = {
 }
 
 export class Deployless {
-  private iface: Interface
+  private abi: any[]
 
   // the contract deploy (constructor) code: this is the code that tjhe solidity compiler outputs
   private contractBytecode: string
@@ -55,6 +58,8 @@ export class Deployless {
   private provider: JsonRpcProvider | Provider
 
   private isProviderInvictus: boolean = false
+
+  private providerUrl: string = ''
 
   // We need to detect whether the provider supports state override
   private detectionPromise?: Promise<void>
@@ -83,11 +88,12 @@ export class Deployless {
     assert.ok(!!provider, 'provider must be provided')
     this.contractBytecode = code
     this.provider = provider
-    this.iface = new Interface(abi)
+    this.abi = abi
 
     if (provider && provider instanceof JsonRpcProvider) {
       // eslint-disable-next-line no-underscore-dangle
-      this.isProviderInvictus = provider._getConnection().url.includes('invictus')
+      this.providerUrl = provider._getConnection().url
+      this.isProviderInvictus = this.providerUrl?.includes('invictus')
     }
 
     if (codeAtRuntime !== undefined) {
@@ -119,7 +125,8 @@ export class Deployless {
         },
         'latest',
         { [arbitraryAddr]: { code: codeOfContractCode } }
-      ])
+      ]),
+      this.providerUrl
     )
     // any response bigger than 0x is sufficient to know that state override worked
     // the response would be just "0x" if state override doesn't work
@@ -150,7 +157,12 @@ export class Deployless {
       throw new Error(`${methodName}: state override requested but not supported`)
     }
 
-    const callData = this.iface.encodeFunctionData(methodName, args)
+    const callData = encodeFunctionData({
+      abi: this.abi,
+      functionName: methodName,
+      args
+    })
+
     const toAddr = opts.to ?? arbitraryAddr
     const callPromise =
       !!this.stateOverrideSupported && !forceProxy
@@ -188,12 +200,27 @@ export class Deployless {
       callPromise,
       new Promise((_resolve, reject) => {
         // Custom providers may take longer to respond, so we set a longer timeout for them.
-        setTimeout(() => reject(new Error('rpc-timeout')), this.isProviderInvictus ? 15000 : 20000)
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `rpc-timeout. Rpc: ${this.isProviderInvictus ? this.providerUrl : 'custom'}`
+              )
+            ),
+          this.isProviderInvictus ? 15000 : 20000
+        )
       })
     ])
 
-    const returnDataRaw = mapResponse(await mapError(callPromisedWithResolveTimeout))
-    return this.iface.decodeFunctionResult(methodName, returnDataRaw)
+    const returnDataRaw = mapResponse(
+      await mapError(callPromisedWithResolveTimeout, this.providerUrl)
+    )
+
+    return decodeFunctionResult({
+      abi: this.abi,
+      functionName: methodName,
+      data: returnDataRaw as `0x${string}`
+    })
   }
 }
 
@@ -210,7 +237,7 @@ export function fromDescriptor(
   )
 }
 
-async function mapError(callPromise: Promise<string>): Promise<string> {
+async function mapError(callPromise: Promise<string>, providerUrl: string): Promise<string> {
   try {
     return await callPromise
   } catch (e: any) {
@@ -220,7 +247,11 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
     if (e.code === 'CALL_EXCEPTION' && e.error) throw e.error
     // ethers v6 provider: wrapping the error in case of execution reverted
     if (e.code === 'CALL_EXCEPTION' && e.data) return e.data
-    throw e
+
+    throw new ProviderError({
+      originalError: e,
+      providerUrl
+    })
   }
 }
 

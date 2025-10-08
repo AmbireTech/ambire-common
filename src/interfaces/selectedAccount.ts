@@ -30,11 +30,11 @@ export type SelectedAccountPortfolioByNetworksNetworkState = {
   tokens: SelectedAccountPortfolio['tokens']
   collections: SelectedAccountPortfolio['collections']
   /**
-   * The block number at which the portfolio was last updated.
-   * It's compared to the current block number to determine whether the
+   * When the portfolio lib was last called to update the portfolio for this network.
+   * It's compared to the current timestamp to determine whether the
    * selected account portfolio must be recalculated.
    */
-  blockNumber?: number
+  portfolioUpdateStarted?: number
   /**
    * The timestamp at which the defi positions were last updated.
    * It's compared to the current timestamp to determine whether the
@@ -64,6 +64,8 @@ export interface SelectedAccountPortfolio {
   isReadyToVisualize: boolean
   /** True after all networks have initially loaded. May be true even if a network is loading (e.g. during an interval update). */
   isAllReady: boolean
+  /** True if the portfolio is not fully ready, but a timeout has been reached and there are tokens to show. */
+  shouldShowPartialResult: boolean
   balancePerNetwork: {
     [chainId: string]: number
   }

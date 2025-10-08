@@ -10,7 +10,6 @@ import {
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
@@ -20,6 +19,8 @@ import { getAccountState } from './accountState'
 
 const polygon = networks.find((n) => n.chainId === 137n)
 if (!polygon) throw new Error('unable to find polygon network in consts')
+const ethereum = networks.find((n) => n.chainId === 1n)
+if (!ethereum) throw new Error('unable to find ethereum network in consts')
 const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 
 describe('AccountState', () => {
@@ -191,32 +192,8 @@ describe('AccountState', () => {
       }
     }
 
-    const odyssey: Network = {
-      chainId: 911867n,
-      rpcNoStateOverride: false,
-      nativeAssetName: 'Ether',
-      rpcUrls: ['https://odyssey.ithaca.xyz'],
-      selectedRpcUrl: 'https://odyssey.ithaca.xyz',
-      explorerUrl: 'https://odyssey-explorer.ithaca.xyz',
-      erc4337: {
-        enabled: false,
-        hasPaymaster: false
-      },
-      name: 'Odyssey',
-      nativeAssetId: 'eth',
-      nativeAssetSymbol: 'ETH',
-      isSAEnabled: false,
-      feeOptions: { is1559: false },
-      areContractsDeployed: false,
-      hasSingleton: false,
-      hasRelayer: false,
-      predefined: false,
-      features: [],
-      platformId: 'odyssey',
-      has7702: true
-    }
-    const odysseyProvider = getRpcProvider(odyssey.rpcUrls, odyssey.chainId)
-    const state = await getAccountState(odysseyProvider, odyssey, [account7702])
+    const ethereumProvider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+    const state = await getAccountState(ethereumProvider, ethereum, [account7702])
 
     expect(state.length).toBe(1)
 

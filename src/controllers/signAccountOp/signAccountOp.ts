@@ -32,6 +32,7 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
+/* eslint-disable no-restricted-syntax */
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -54,7 +55,6 @@ import {
 } from '../../interfaces/signAccountOp'
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
-/* eslint-disable no-restricted-syntax */
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
@@ -99,6 +99,7 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
+import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -159,6 +160,7 @@ export type SignAccountOpUpdateProps = {
   gasPrices?: GasRecommendation[] | null
   feeToken?: TokenResult
   paidBy?: string
+  paidByKeyType?: Key['type']
   speed?: FeeSpeed
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
@@ -200,7 +202,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     [identifier: string]: SpeedCalc[]
   } = {}
 
-  paidBy: string | null = null
+  #paidBy: string | null = null
 
   feeTokenResult: TokenResult | null = null
 
@@ -264,6 +266,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #shouldSimulate: boolean
 
+  /**
+   * Should this signAccountOp decide on its own terms whether
+   * to fire a new estimation or not
+   */
+  #shouldReestimate: boolean
+
+  #stopRefetching: boolean = false
+
   #activity: IActivityController
 
   constructor(
@@ -271,15 +281,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     networks: INetworksController,
     keystore: IKeystoreController,
     portfolio: IPortfolioController,
-    activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
     network: Network,
+    activity: IActivityController,
     provider: RPCProvider,
     fromActionId: AccountOpAction['id'],
     accountOp: AccountOp,
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
+    shouldReestimate: boolean,
     traceCall?: Function
   ) {
     super()
@@ -287,7 +298,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     this.baseAccount = getBaseAccount(
@@ -297,6 +307,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       network
     )
     this.#network = network
+    this.#activity = activity
     this.fromActionId = fromActionId
     this.accountOp = structuredClone(accountOp)
     this.#isSignRequestStillActive = isSignRequestStillActive
@@ -318,8 +329,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       networks,
       provider,
       portfolio,
-      activity,
-      this.bundlerSwitcher
+      this.bundlerSwitcher,
+      this.#activity
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc
@@ -335,6 +346,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     )
     this.#shouldSimulate = shouldSimulate
+    this.#shouldReestimate = shouldReestimate
 
     this.#load(shouldSimulate)
   }
@@ -391,11 +403,27 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return callError
   }
 
+  async #reestimate() {
+    if (
+      this.#stopRefetching ||
+      this.estimation.status === EstimationStatus.Initial ||
+      this.estimation.status === EstimationStatus.Loading
+    )
+      return
+
+    await wait(30000)
+
+    if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
+
+    this.#shouldSimulate ? this.simulate(true) : this.estimate()
+  }
+
   #load(shouldSimulate: boolean) {
     this.learnTokensFromCalls()
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
+      if (this.#shouldReestimate) this.#reestimate()
     })
     this.gasPrice.onUpdate(() => {
       this.update({
@@ -447,13 +475,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
-
     // we can set a default paidBy and feeToken here if they aren't any set
   }
 
-  #setGasFeePayment() {
-    if (this.isInitialized && this.paidBy && this.selectedFeeSpeed && this.feeTokenResult) {
-      this.accountOp.gasFeePayment = this.#getGasFeePayment()
+  #setGasFeePayment(paidByKeyType?: Key['type']) {
+    if (
+      this.isInitialized &&
+      this.#paidBy &&
+      this.selectedFeeSpeed &&
+      this.feeTokenResult &&
+      this.selectedOption
+    ) {
+      this.accountOp.gasFeePayment = this.#getGasFeePayment(paidByKeyType)
     }
   }
 
@@ -505,21 +538,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (
       this.#blockGasLimit &&
-      this.selectedOption &&
-      this.selectedOption.gasUsed > this.#blockGasLimit
+      this.accountOp.gasFeePayment &&
+      this.accountOp.gasFeePayment.simulatedGasLimit > this.#blockGasLimit
     ) {
       errors.push({
-        title: 'The transaction gas limit exceeds the network block gas limit.'
-      })
-    }
-
-    if (
-      this.#network.predefined &&
-      this.selectedOption &&
-      this.selectedOption.gasUsed > 500000000n
-    ) {
-      errors.push({
-        title: 'Unreasonably high estimation. This transaction will probably fail'
+        title: 'Transaction invalid: out of gas.'
       })
     }
 
@@ -529,11 +552,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
     if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push({
-        title: 'No signer available'
+        title: 'No keys available to sign this transaction.',
+        code: 'NO_KEYS_AVAILABLE'
       })
 
     const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
@@ -813,7 +836,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     bundlerGasPrices,
     blockGasLimit,
     signedTransactionsCount,
-    hasNewEstimation
+    hasNewEstimation,
+    paidByKeyType
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -880,8 +904,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       if (gasPrices) this.gasPrices = gasPrices
 
       if (feeToken && paidBy) {
-        this.paidBy = paidBy
+        this.#paidBy = paidBy
         this.feeTokenResult = feeToken
+
+        if (this.accountOp.gasFeePayment && this.accountOp.gasFeePayment.paidBy !== paidBy) {
+          // Reset paidByKeyType if the payer has changed
+          // A default value will be set in #setGasFeePayment
+          this.accountOp.gasFeePayment.paidByKeyType = null
+        }
       }
 
       if (speed && this.isInitialized) {
@@ -891,6 +921,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       if (signingKeyAddr && signingKeyType && this.isInitialized) {
         this.accountOp.signingKeyAddr = signingKeyAddr
         this.accountOp.signingKeyType = signingKeyType
+
+        // If the fee is paid by the signer, then we should set the fee payer
+        // key type to the signing key type (so the user doesn't have to select
+        // the same key type twice)
+        if (this.accountOp.gasFeePayment?.paidBy === signingKeyAddr) {
+          this.accountOp.gasFeePayment.paidByKeyType = signingKeyType
+        }
       }
 
       // set the rbf is != undefined
@@ -901,12 +938,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       if (
         this.estimation.status === EstimationStatus.Success &&
-        this.paidBy &&
+        this.#paidBy &&
         this.feeTokenResult
       ) {
         const selectedOption = this.estimation.availableFeeOptions.find(
           (option) =>
-            option.paidBy === this.paidBy &&
+            option.paidBy === this.#paidBy &&
             option.token.address === this.feeTokenResult!.address &&
             option.token.symbol.toLocaleLowerCase() ===
               this.feeTokenResult!.symbol.toLocaleLowerCase() &&
@@ -956,7 +993,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(calls) ||
         gasPrices ||
-        this.paidBy ||
+        this.#paidBy ||
         this.feeTokenResult ||
         hasNewEstimation ||
         bundlerGasPrices
@@ -965,7 +1002,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
-      this.#setGasFeePayment()
+      this.#setGasFeePayment(paidByKeyType)
       this.updateStatus()
       this.calculateWarnings()
     } catch (e: any) {
@@ -1029,10 +1066,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.reset()
     this.gasPrices = undefined
     this.selectedFeeSpeed = FeeSpeed.Fast
-    this.paidBy = null
+    this.#paidBy = null
     this.feeTokenResult = null
     this.status = null
     this.signedTransactionsCount = null
+    this.#stopRefetching = true
     this.emitUpdate()
   }
 
@@ -1355,7 +1393,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
   }
 
-  #getGasFeePayment(): GasFeePayment | null {
+  #getGasFeePayment(paidByKeyType?: Key['type']): GasFeePayment | null {
     if (!this.isInitialized) {
       this.emitError({
         level: 'major',
@@ -1368,7 +1406,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       return null
     }
-    if (!this.paidBy) {
+    if (!this.#paidBy) {
       this.emitError({
         level: 'silent',
         message: '',
@@ -1377,6 +1415,27 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
       return null
     }
+
+    let updatedPaidByKeyType = this.accountOp.gasFeePayment?.paidByKeyType || null
+
+    // Update only if it's not set or it's passed as an argument
+    if (paidByKeyType || !updatedPaidByKeyType) {
+      const key = this.#keystore.getFeePayerKey(
+        this.accountOp.accountAddr,
+        this.#paidBy,
+        paidByKeyType
+      )
+
+      // If paidBy is not an EOA then there will be an error here, because
+      // the key of SAs is not the same as the address of the account.
+      // We don't care about this here, as the validation is done during broadcast
+      if (key instanceof Error) {
+        updatedPaidByKeyType = null
+      } else {
+        updatedPaidByKeyType = key.type
+      }
+    }
+
     if (!this.feeTokenResult) {
       this.emitError({
         level: 'silent',
@@ -1419,7 +1478,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return null
     }
 
-    const chosenSpeed = this.feeSpeeds[identifier].find(
+    const chosenSpeed = this.feeSpeeds[identifier]?.find(
       (speed) => speed.type === this.selectedFeeSpeed
     )
     if (!chosenSpeed) {
@@ -1433,7 +1492,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     return {
-      paidBy: this.paidBy,
+      paidBy: this.#paidBy,
+      paidByKeyType: updatedPaidByKeyType,
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       feeTokenChainId: this.feeTokenResult.chainId,
@@ -1453,12 +1513,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return this.accountOp.gasFeePayment?.inToken || null
   }
 
-  get feePaidBy(): string | null {
-    return this.accountOp.gasFeePayment?.paidBy || null
-  }
-
   get accountKeyStoreKeys(): Key[] {
     return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
+  }
+
+  get feePayerKeyStoreKeys(): Key[] {
+    const feePayer = this.#accounts.accounts.find(
+      ({ addr }) => addr === this.accountOp.gasFeePayment?.paidBy
+    )
+
+    if (!feePayer) return []
+
+    return this.#keystore.getAccountKeys(feePayer)
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -1474,7 +1540,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.accountAddr,
       this.rbfAccountOps[this.selectedOption.paidBy]
     )
-    const selectedFeeSpeedData = this.feeSpeeds[identifier].find(
+    const selectedFeeSpeedData = this.feeSpeeds[identifier]?.find(
       (speed) => speed.type === this.selectedFeeSpeed
     )
     const gasPrice = selectedFeeSpeedData?.gasPrice
@@ -1510,8 +1576,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return Number(gasSavedInNative) * nativePrice
   }
 
-  #emitSigningErrorAndResetToReadyToSign(error: string) {
-    this.emitError({ level: 'major', message: error, error: new Error(error) })
+  #emitSigningErrorAndResetToReadyToSign(error: string, sendCrashReport?: boolean) {
+    this.emitError({ level: 'major', message: error, error: new Error(error), sendCrashReport })
     this.status = { type: SigningStatus.ReadyToSign }
 
     this.emitUpdate()
@@ -1968,7 +2034,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
-      this.#emitSigningErrorAndResetToReadyToSign(message)
+      this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
     }
   }
 
@@ -1995,8 +2061,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isInitialized: this.isInitialized,
       readyToSign: this.readyToSign,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
+      feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
-      feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,

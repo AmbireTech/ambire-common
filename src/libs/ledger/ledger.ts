@@ -25,6 +25,8 @@ export const normalizeLedgerMessage = (error?: string): string => {
   ) {
     return 'Cannot connect to your Ledger device. Please make sure it is unlocked and running the Ethereum app.'
   }
+  if (error.includes('DeviceDisconnectedWhileSendingError'))
+    return 'Ledger device got disconnected. Please reconnect and try again.'
   if (error.includes('6e00') || error.includes('6b00')) {
     return 'Your Ledger device requires a firmware and Ethereum App update.'
   }

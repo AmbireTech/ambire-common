@@ -2,27 +2,88 @@ import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Session } from '../../classes/session'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
+import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
-  SocketAPIUserTx,
   SwapAndBridgeActiveRoute,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
-  SwapAndBridgeToToken
+  SwapAndBridgeToToken,
+  SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { UserRequest } from '../../interfaces/userRequest'
+import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
-  AMBIRE_WALLET_TOKEN_ON_ETHEREUM
+  AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  NULL_ADDRESS,
+  SOCKET_EXPLORER_URL,
+  ZERO_ADDRESS
 } from '../../services/socket/constants'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
+
+/**
+ * Put a list of all the banned addresses (left side) with their
+ * corresponding valid/correct address (right side).
+ * This is fixing the case of token duplication like EURe. / CELO
+ * where if the incorrect (outdated) address is used instead of the
+ * new one in the swap, no routes will be found
+ */
+const getBannedToValidAddresses = (): {
+  [chainId: string]: { [bannedAddr: string]: string }
+} => {
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedEurePolygon = '0xE0aEa583266584DafBB3f9C3211d5588c73fEa8d'
+  const validEurePolygon = '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6'
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedEureGnosis = '0x420CA0f9B9b604cE0fd9C18EF134C705e5Fa3430'
+  const validEureGnosis = '0xcB444e90D8198415266c6a2724b7900fb12FC56E'
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedCelo = '0x471EcE3750Da237f93B8E339c536989b8978a438'
+  const validCelo = ZeroAddress
+
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedGbpeGnosis = '0x8E34bfEC4f6Eb781f9743D9b4af99CD23F9b7053'
+  const validGbpeGnosis = '0x5Cb9073902F2035222B9749F8fB0c9BFe5527108'
+
+  return {
+    '137': {
+      [bannedEurePolygon]: validEurePolygon
+    },
+    '100': {
+      [bannedEureGnosis]: validEureGnosis,
+      [bannedGbpeGnosis]: validGbpeGnosis
+    },
+    '42220': {
+      [bannedCelo]: validCelo
+    }
+  }
+}
+
+const getBannedToTokenList = (chainId: string): string[] => {
+  const list = getBannedToValidAddresses()
+  if (!list[chainId]) return []
+
+  return Object.keys(list[chainId])
+}
 
 const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
   // Pending tokens go on top
@@ -161,7 +222,10 @@ export const convertPortfolioTokenToSwapAndBridgeToToken = (
   return { address, chainId, decimals, symbol, name, icon }
 }
 
-const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]) => {
+/**
+ * Return the lowest active route service time in MILLISECONDS
+ */
+const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute[]): number => {
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) =>
@@ -172,7 +236,9 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
     })
   )
 
-  return serviceTimes.sort((a, b) => a - b)[0]
+  const time = serviceTimes.sort((a, b) => a - b)[0]
+  if (!time) return UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
+  return time * 1000
 }
 
 const getActiveRoutesUpdateInterval = (minServiceTime?: number) => {
@@ -290,11 +356,8 @@ const buildSwapAndBridgeUserRequests = async (
   ]
 }
 
-export const getIsBridgeTxn = (userTxType: SocketAPIUserTx['userTxType']) =>
-  userTxType === 'fund-movr'
-
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.userTxs.some((userTx) => getIsBridgeTxn(userTx.userTxType))
+  return route.fromChainId !== route.toChainId
 }
 
 /**
@@ -360,37 +423,73 @@ const lifiMapNativeToAddr = (chainId: number, tokenAddr: string) => {
 
   return '0x471EcE3750Da237f93B8E339c536989b8978a438'
 }
-
-const lifiTokenListFilter = (t: SwapAndBridgeToToken) => {
-  // disabled tokens, this one is CELO as an addr on CELO chain (exists as native)
-  return !(t.chainId === 42220 && t.address === '0x471EcE3750Da237f93B8E339c536989b8978a438')
-}
-
 /**
  * Map the token address back to native when needed
  */
-const mapNativeToAddr = (
-  serviceProviderId: 'lifi' | 'socket',
-  chainId: number,
-  tokenAddr: string
-) => {
-  if (serviceProviderId === 'socket') return tokenAddr
+const mapBannedToValidAddr = (chainId: number, tokenAddr: string) => {
+  const list = getBannedToValidAddresses()[chainId]
+  if (!list || !list[tokenAddr]) return tokenAddr
 
-  if (chainId !== 42220) return tokenAddr
-
-  if (tokenAddr !== '0x471EcE3750Da237f93B8E339c536989b8978a438') return tokenAddr
-
-  return ZeroAddress
+  return list[tokenAddr]
 }
+
+const isNoFeeToken = (chainId: number, tokenAddr: string) => {
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+
+  if (chainId === 1) {
+    // stETH
+    return tokenAddr === '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+  }
+
+  return false
+}
+
+const getSlippage = (
+  fromAsset: TokenResult,
+  fromAmount: bigint,
+  upperBoundary: string,
+  delimeter: number
+) => {
+  // make sure the slippage doesn't exceed 100$
+  // we do so by having a base of 0.005
+  // to have a slippage of 100$, we need a fromAmountInUsd of at least 20000$,
+  // so each time the from amount makes a jump of 20000$, we lower
+  // the slippage by half
+  const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
+  return Number(fromAmountInUsd) < 400
+    ? upperBoundary
+    : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
+}
+
+const getLink = (route: SwapAndBridgeActiveRoute) => {
+  const providerId = route.route ? route.route.providerId : route.serviceProviderId
+  return providerId === 'socket'
+    ? `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
+    : `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
+}
+
+const isTxnBridge = (txn: SwapAndBridgeUserTx): boolean => {
+  return txn.fromAsset.chainId !== txn.toAsset.chainId
+}
+
+const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
+  addr === NULL_ADDRESS ? ZERO_ADDRESS : addr
 
 export {
   addCustomTokensIfNeeded,
   buildSwapAndBridgeUserRequests,
+  convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
+  getBannedToTokenList,
+  getLink,
+  getSlippage,
   getSwapAndBridgeCalls,
+  isNoFeeToken,
+  isTxnBridge,
   lifiMapNativeToAddr,
-  lifiTokenListFilter,
-  mapNativeToAddr
+  mapBannedToValidAddr
 }

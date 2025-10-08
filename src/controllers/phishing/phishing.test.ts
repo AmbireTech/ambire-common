@@ -3,16 +3,17 @@ import fetch from 'node-fetch'
 import { expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockWindowManager } from '../../../test/helpers/window'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { PhishingController } from './phishing'
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
-
-const windowManager = mockWindowManager().windowManager
+const uiManager = mockUiManager().uiManager
+const uiCtrl = new UiController({ uiManager })
 
 let phishing: IPhishingController
 const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
@@ -33,7 +34,7 @@ describe('PhishingController', () => {
       ],
       phantomBlacklist: []
     })
-    phishing = new PhishingController({ storage: storageCtrl, fetch, windowManager })
+    phishing = new PhishingController({ storage: storageCtrl, fetch, ui: uiCtrl })
     await phishing.initialLoadPromise
   })
   test('should initialize', async () => {
@@ -56,16 +57,16 @@ describe('PhishingController', () => {
     }
   })
   test('should load and update blacklists and correctly check for blacklisted urls', async () => {
-    expect(await phishing.getIsBlacklisted('https://elisium.it')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://lihea.build')).toBe(true)
+    expect(await phishing.getIsBlacklisted('https://unstake.it')).toBe(true)
+    expect(await phishing.getIsBlacklisted('https://blogpost-opensea.io')).toBe(true)
     expect(await phishing.getIsBlacklisted('https://safe.com')).toBe(false)
   })
   test('should send correct url status to the UI', async () => {
-    const sendWindowUiMessageSpy = jest.spyOn(windowManager, 'sendWindowUiMessage')
-    await phishing.sendIsBlacklistedToUi('https://elisium.it')
+    const sendWindowUiMessageSpy = jest.spyOn(uiManager.message, 'sendUiMessage')
+    await phishing.sendIsBlacklistedToUi('https://unstake.it')
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://lihea.build')
+    await phishing.sendIsBlacklistedToUi('https://blogpost-opensea.io')
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
     await phishing.sendIsBlacklistedToUi('https://safe.com')

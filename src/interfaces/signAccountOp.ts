@@ -9,7 +9,10 @@ type Warning = {
   title: string
   text?: string
   promptBefore?: ('sign' | 'one-click-sign')[]
+  type?: Type
 }
+
+type Type = 'error' | 'warning' | 'info3'
 
 type SignAccountOpError = {
   title: string

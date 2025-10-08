@@ -17,6 +17,7 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { IStorageController } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
+import { classifyEmailVaultError, friendlyEmailVaultMessage } from '../../libs/emailVault/errors'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
@@ -73,7 +74,7 @@ const STATUS_WRAPPED_METHODS = {
 export class EmailVaultController extends EventEmitter implements IEmailVaultController {
   #storage: IStorageController
 
-  private initialLoadPromise: Promise<void>
+  #initialLoadPromise?: Promise<void>
 
   #isWaitingEmailConfirmation: boolean = false
 
@@ -124,7 +125,9 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#storage = storage
     this.#emailVault = new EmailVault(fetch, relayerUrl)
     this.#keyStore = keyStore
-    this.initialLoadPromise = this.load()
+    this.#initialLoadPromise = this.load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
     this.#autoConfirmMagicLink = options?.autoConfirmMagicLink || false
   }
 
@@ -174,7 +177,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async handleMagicLinkKey(email: string, fn?: Function, flow?: MagicLinkFlow) {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
       this.#isWaitingEmailConfirmation = false
@@ -236,13 +239,10 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
       this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
     } else {
-      const originalErrorMessage = ev?.error?.message || ''
-      let message = `Unexpected error getting email vault for ${email}`
+      const code = classifyEmailVaultError(ev?.error)
+      const message = friendlyEmailVaultMessage(code, email)
 
-      if (originalErrorMessage.includes('timeout')) {
-        message = `Your activation key expired for ${email}. You can request a new key by resubmitting the form.`
-        this.cancelEmailConfirmation()
-      }
+      if (code === 'TIMEOUT') this.cancelEmailConfirmation()
 
       this.emitError({
         message,
@@ -254,7 +254,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
   }
 
   async #getSessionKey(email: string): Promise<string | null> {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
     return this.#sessionKeys[email]
   }
 
@@ -267,7 +267,7 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
   async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
     // if we have valid magicLinkKey => returns it else null
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
 
     return this.getMagicLinkKeyByEmail(email)
   }

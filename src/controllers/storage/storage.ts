@@ -55,6 +55,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#removeIsDefaultWalletStorageIfExist() // As of version 4.57.0
       await this.#removeOnboardingStateStorageIfExist() // As of version 4.59.0
       await this.#migrateNetworkIdToChainId()
+      await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -361,13 +362,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const migratedPreviousHints = {
       learnedTokens: migrateKeys(previousHints.learnedTokens || {}),
       learnedNfts: migrateKeys(previousHints.learnedNfts || {}),
-      fromExternalAPI: Object.fromEntries(
-        Object.entries(previousHints.fromExternalAPI || {}).map(([networkAndAccountKey, value]) => {
-          const [networkId, accountAddr] = networkAndAccountKey.split(':')
-          const chainId = networkIdToChainId[networkId]
-          return chainId ? [`${chainId}:${accountAddr}`, value] : [networkAndAccountKey, value]
-        })
-      )
+      fromExternalAPI: {} // No longer used
     }
 
     const migratedCustomTokens = customTokens.map(({ networkId, ...rest }: any) => ({
@@ -498,7 +493,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   // As of version 5.1.2, migrate account keys to be associated with the legacy saved seed
   async #associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: IAccountPickerController,
+    accountPickerInitFn: () => IAccountPickerController,
     keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
@@ -522,6 +517,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const keystoreSavedSeed = await keystore.getSavedSeed('legacy-saved-seed')
 
     const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase)
+    const accountPicker = accountPickerInitFn()
     await accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
@@ -569,6 +565,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
 
     await accountPicker.reset()
+    accountPicker.destroy()
 
     const updatedKeystoreKeys = Array.from(updatedKeyMap.values())
 
@@ -585,16 +582,57 @@ export class StorageController extends EventEmitter implements IStorageControlle
   }
 
   async associateAccountKeysWithLegacySavedSeedMigration(
-    accountPicker: IAccountPickerController,
+    accountPickerInitFn: () => IAccountPickerController,
     keystore: IKeystoreController,
     onSuccess: () => Promise<void>
   ) {
     await this.withStatus(
       'associateAccountKeysWithLegacySavedSeedMigration',
       () =>
-        this.#associateAccountKeysWithLegacySavedSeedMigration(accountPicker, keystore, onSuccess),
+        this.#associateAccountKeysWithLegacySavedSeedMigration(
+          accountPickerInitFn,
+          keystore,
+          onSuccess
+        ),
       true
     )
+  }
+
+  /**
+   * As of version 5.24.0, due to a bug - AccountPicker controller was wrongly
+   * saving `usedOnNetworks` on the accounts, which should NOT get persisted -
+   * it was causing side effects especially when the accounts were unused and
+   * then gradually getting used on more networks.
+   */
+  async #migrateAccountsCleanupUsedOnNetworks() {
+    const [passedMigrations, accounts] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('accounts', [])
+    ])
+
+    if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
+
+    const storageUpdates = [
+      this.#storage.set('passedMigrations', [
+        ...new Set([...passedMigrations, 'migrateAccountsCleanupUsedOnNetworks'])
+      ])
+    ]
+
+    // @ts-ignore-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
+    const shouldCleanupUsedOnNetworks = accounts.some((a) => a.usedOnNetworks)
+    if (shouldCleanupUsedOnNetworks) {
+      storageUpdates.push(
+        this.#storage.set(
+          'accounts',
+          accounts.map((acc) =>
+            // destructure and re-build to remove the `usedOnNetworks` property
+            'usedOnNetworks' in acc ? (({ usedOnNetworks, ...rest }) => ({ ...rest }))(acc) : acc
+          )
+        )
+      )
+    }
+
+    await Promise.all(storageUpdates)
   }
 
   toJSON() {

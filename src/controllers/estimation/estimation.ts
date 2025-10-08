@@ -50,9 +50,9 @@ export class EstimationController extends EventEmitter {
 
   #bundlerSwitcher: BundlerSwitcher
 
-  #activity: IActivityController
-
   #notFatalBundlerError?: Error
+
+  #activity: IActivityController
 
   constructor(
     keystore: IKeystoreController,
@@ -60,8 +60,8 @@ export class EstimationController extends EventEmitter {
     networks: INetworksController,
     provider: RPCProvider,
     portfolio: IPortfolioController,
-    activity: IActivityController,
-    bundlerSwitcher: BundlerSwitcher
+    bundlerSwitcher: BundlerSwitcher,
+    activity: IActivityController
   ) {
     super()
     this.#keystore = keystore
@@ -69,8 +69,8 @@ export class EstimationController extends EventEmitter {
     this.#networks = networks
     this.#provider = provider
     this.#portfolio = portfolio
-    this.#activity = activity
     this.#bundlerSwitcher = bundlerSwitcher
+    this.#activity = activity
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
@@ -130,9 +130,7 @@ export class EstimationController extends EventEmitter {
     // the portfolio would not be fetched and the estimation would be fired without tokens,
     // resulting in a "nothing to pay the fee with" error which is absolutely wrong
     if (networkFeeTokens.length === 0) {
-      await this.#portfolio.updateSelectedAccount(op.accountAddr, [network], undefined, {
-        forceUpdate: true
-      })
+      await this.#portfolio.updateSelectedAccount(op.accountAddr, [network])
       networkFeeTokens =
         this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
           ?.feeTokens ?? []
@@ -180,7 +178,13 @@ export class EstimationController extends EventEmitter {
         if (!this) return
         this.estimationRetryError = e
         this.emitUpdate()
-      }
+      },
+      this.#activity.broadcastedButNotConfirmed.find(
+        (accOp) =>
+          accOp.accountAddr === account.addr &&
+          accOp.chainId === network.chainId &&
+          !!accOp.asUserOperation
+      )
     ).catch((e) => e)
 
     const isSuccess = !(estimation instanceof Error)
@@ -190,9 +194,8 @@ export class EstimationController extends EventEmitter {
       this.status = EstimationStatus.Success
       this.estimationRetryError = null
       this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
-      if (estimation.bundler instanceof Error) {
-        this.#notFatalBundlerError = estimation.bundler
-      }
+      this.#notFatalBundlerError =
+        estimation.bundler instanceof Error ? estimation.bundler : undefined
     } else {
       this.estimation = null
       this.error = estimation

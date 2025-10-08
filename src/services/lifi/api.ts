@@ -1,20 +1,18 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Token as LiFiToken,
-  TokensResponse as LiFiTokensResponse
+  TokensResponse as LiFiTokensResponse,
+  ToolError
 } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
-import { InviteController } from '../../controllers/invite/invite'
-import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
-  SwapAndBridgeActiveRoute,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -22,18 +20,20 @@ import {
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
-  SwapAndBridgeUserTx
+  SwapAndBridgeUserTx,
+  SwapProvider
 } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  getSlippage,
+  isNoFeeToken,
   lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
-import { MAYAN_BRIDGE } from './consts'
 import { getHumanReadableErrorMessage } from './helpers'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
@@ -79,17 +79,6 @@ const normalizeLiFiStepToSwapAndBridgeStep = (parentStep: LiFiStep): SwapAndBrid
           step.action.fromToken,
           step.action.fromChainId
         ),
-        gasFees: {
-          gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-          gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-          feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-          asset: step.estimate.gasCosts?.[0]?.token
-            ? normalizeLiFiTokenToSwapAndBridgeToToken(
-                step.estimate.gasCosts[0].token,
-                step.estimate.gasCosts[0].token.chainId
-              )
-            : undefined
-        },
         serviceTime: parentStep.estimate.executionDuration,
         minAmountOut: step.estimate.toAmountMin,
         protocol: {
@@ -114,9 +103,7 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
     // Picks only steps that need to be visualized / displayed
     .filter(({ type }) => ['swap', 'cross'].includes(type))
     .map((step: LiFiIncludedStep, index: number) => ({
-      userTxType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
       userTxIndex: index,
-      txType: step.type === 'swap' ? 'dex-swap' : 'fund-movr',
       fromAsset: normalizeLiFiTokenToSwapAndBridgeToToken(
         step.action.fromToken,
         step.action.fromChainId
@@ -132,47 +119,59 @@ const normalizeLiFiStepToSwapAndBridgeUserTx = (parentStep: LiFiStep): SwapAndBr
         icon: step.toolDetails.logoURI,
         name: step.toolDetails.name
       },
-      minAmountOut: step.estimate.toAmountMin,
-      gasFees: {
-        gasAmount: step.estimate.gasCosts?.[0]?.amount || '',
-        gasLimit: +(step.estimate.gasCosts?.[0]?.limit || 0),
-        feesInUsd: +(step.estimate.gasCosts?.[0]?.amountUSD || 0),
-        asset: step.estimate.gasCosts?.[0]?.token
-          ? normalizeLiFiTokenToSwapAndBridgeToToken(
-              step.estimate.gasCosts[0].token,
-              step.estimate.gasCosts[0].token.chainId
-            )
-          : undefined
-      }
+      minAmountOut: step.estimate.toAmountMin
     }))
 
 const normalizeLiFiRouteToSwapAndBridgeRoute = (
   route: LiFiRoute,
-  userAddress: string
-): SwapAndBridgeRoute => ({
-  routeId: route.id,
-  fromChainId: route.fromChainId,
-  toChainId: route.toChainId,
-  userAddress,
-  isOnlySwapRoute: !route.containsSwitchChain,
-  fromAmount: route.fromAmount,
-  toAmount: route.toAmount,
-  currentUserTxIndex: 0,
-  ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
-    ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
-    : { usedDexName: route.steps[0].toolDetails.name }),
-  totalGasFeesInUsd: +(route.gasCostUSD || 0),
-  userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
-  steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
-  receivedValueInUsd: +route.toAmountUSD,
-  inputValueInUsd: +route.fromAmountUSD,
-  outputValueInUsd: +route.toAmountUSD,
-  serviceTime: route.steps[0].estimate.executionDuration,
-  // errorMessage: undefined
-  rawRoute: route,
-  sender: route.fromAddress,
-  toToken: route.toToken
-})
+  userAddress: string,
+  accountNativeBalance: bigint,
+  nativeSymbol: string
+): SwapAndBridgeRoute => {
+  // search for a feeCost that is not included in the quote
+  // if there is one, check if the user has enough to pay for it
+  // if he doesn't, mark the route as disabled
+  // let serviceFee = parentStep?.estimate?.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
+  let serviceFee: SwapAndBridgeRoute['serviceFee']
+  route.steps.forEach((step) => {
+    const stepFeeCosts =
+      step.estimate.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
+    if (stepFeeCosts.length) serviceFee = stepFeeCosts[0]
+  })
+
+  const disabled =
+    serviceFee === undefined ? false : accountNativeBalance < BigInt(serviceFee.amount)
+  const swapOrBridgeText = route.fromChainId === route.toChainId ? 'swap' : 'bridge'
+  const disabledReason = disabled
+    ? `Insufficient ${nativeSymbol}. This ${swapOrBridgeText} imposes a fee that must be paid in ${nativeSymbol}.`
+    : undefined
+
+  return {
+    providerId: 'lifi',
+    routeId: route.id,
+    fromChainId: route.fromChainId,
+    toChainId: route.toChainId,
+    userAddress,
+    isOnlySwapRoute: !route.containsSwitchChain,
+    fromAmount: route.fromAmount,
+    toAmount: route.toAmount,
+    currentUserTxIndex: 0,
+    ...(route.steps[0].includedSteps.some((s) => s.type === 'cross')
+      ? { usedBridgeNames: [route.steps[0].toolDetails.key] }
+      : { usedDexName: route.steps[0].toolDetails.name }),
+    userTxs: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeUserTx),
+    steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
+    inputValueInUsd: +route.fromAmountUSD,
+    outputValueInUsd: +route.toAmountUSD,
+    serviceTime: route.steps[0].estimate.executionDuration,
+    rawRoute: route,
+    sender: route.fromAddress,
+    toToken: route.toToken,
+    disabled,
+    disabledReason,
+    serviceFee
+  }
+}
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   parentStep: LiFiStep
@@ -203,17 +202,15 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
     chainId: parentStep.action.fromChainId,
     txData: parentStep.transactionRequest.data,
     txTarget: parentStep.transactionRequest.to,
-    txType: 'eth_sendTransaction',
     userTxIndex: 0,
-    userTxType: parentStep.includedSteps.some((s) => s.type === 'cross') ? 'fund-movr' : 'dex-swap',
-    value: parentStep.transactionRequest.value,
-    serviceFee:
-      parentStep?.estimate?.feeCosts?.filter((cost: { included: boolean }) => !cost.included) ?? []
+    value: parentStep.transactionRequest.value
   }
 }
 
-export class LiFiAPI {
-  id: 'lifi' = 'lifi'
+export class LiFiAPI implements SwapProvider {
+  id: string = 'lifi'
+
+  name: string = 'LiFi'
 
   #fetch: Fetch
 
@@ -221,7 +218,7 @@ export class LiFiAPI {
 
   #headers: RequestInitWithCustomHeaders['headers']
 
-  #requestTimeoutMs = 10000
+  #requestTimeoutMs = 15000
 
   isHealthy: boolean | null = null
 
@@ -237,7 +234,7 @@ export class LiFiAPI {
    */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ apiKey, fetch }: { apiKey: string; fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
     this.#headers = {
@@ -308,23 +305,26 @@ export class LiFiAPI {
           setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider is temporarily unavailable or your internet connection is too slow. Error details: Request timeout'
+                'Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)
         })
       ])
     } catch (e: any) {
+      // Rethrow the same error if it's already humanized
+      if (e instanceof SwapAndBridgeProviderApiError) throw e
+
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
-      const error = `${errorPrefix} Upstream error: <${message}>${status}`
+      const error = `${errorPrefix} Our service provider LiFi could not be reached: <${message}>${status}`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
     if (response.status === 429) {
       this.activateApiKey()
       const error =
-        'Our service provider received too many requests, temporarily preventing your request from being processed.'
+        'Our service provider LiFi received too many requests, temporarily preventing your request from being processed.'
       throw new SwapAndBridgeProviderApiError(error, 'Rate limit reached, try again later.')
     }
 
@@ -332,7 +332,7 @@ export class LiFiAPI {
     try {
       responseBody = await response.json()
     } catch (e: any) {
-      const error = 'Our service provider is temporarily unavailable.'
+      const error = 'Our service provider LiFi is temporarily unavailable.'
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -343,8 +343,16 @@ export class LiFiAPI {
         throw new SwapAndBridgeProviderApiError(humanizedMessage)
       }
 
-      const fallbackMessage = JSON.stringify(responseBody)
-      const error = `${errorPrefix} Our service provider upstream error: <${fallbackMessage}>`
+      const upstreamMessage = (responseBody as ToolError)?.message
+      const upstreamCode = (responseBody as ToolError)?.code
+
+      const fallbackMessage =
+        // Upstream error coming from LiFi, that must be the most accurate
+        upstreamMessage && upstreamCode
+          ? `${upstreamMessage} Reference: ${upstreamCode}`
+          : upstreamMessage || JSON.stringify(responseBody).slice(0, 250) // up to about 5 lines of toast
+
+      const error = `${errorPrefix} Our service provider LiFi responded: <${fallbackMessage}>`
       throw new SwapAndBridgeProviderApiError(error)
     }
 
@@ -430,7 +438,9 @@ export class LiFiAPI {
     userAddress,
     sort,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    isOG
+    isOG,
+    accountNativeBalance,
+    nativeSymbol
   }: {
     fromAsset: TokenResult | null
     fromChainId: number
@@ -440,9 +450,10 @@ export class LiFiAPI {
     toTokenAddress: string
     fromAmount: bigint
     userAddress: string
-    isSmartAccount: boolean
     sort: 'time' | 'output'
-    isOG: InviteController['isOG']
+    isOG: boolean
+    accountNativeBalance: bigint
+    nativeSymbol: string
   }): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -453,8 +464,6 @@ export class LiFiAPI {
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
 
-    const fromAmountInUsd = getTokenUsdAmount(fromAsset, fromAmount)
-    const slippage = Number(fromAmountInUsd) <= 400 ? '0.010' : '0.005'
     const body = {
       fromChainId: fromChainId.toString(),
       fromAmount: fromAmount.toString(),
@@ -464,7 +473,7 @@ export class LiFiAPI {
       fromAddress: userAddress,
       toAddress: userAddress,
       options: {
-        slippage,
+        slippage: getSlippage(fromAsset, fromAmount, '0.01', 0.005),
         maxPriceImpact: '0.50',
         order: sort === 'time' ? 'FASTEST' : 'CHEAPEST',
         integrator: 'ambire-extension-prod',
@@ -472,11 +481,35 @@ export class LiFiAPI {
         allowDestinationCall: 'false',
         allowSwitchChain: 'false',
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        fee: (FEE_PERCENT / 100).toString() as string | undefined
+        fee: (FEE_PERCENT / 100).toString() as string | undefined,
+        // How this works:
+        // When this strategy is applied, we give all tool 900ms (minWaitTimeMs) to return a result.
+        // If we received 5 or more (startingExpectedResults) results during this time we return those and don’t wait for other tools.
+        // If less than 5 results are present we wait another 300ms and check if now at least (5-1=4) results are present.
+        timing: {
+          // Applied in swaps
+          swapStepTimingStrategies: [
+            {
+              strategy: 'minWaitTime',
+              minWaitTimeMs: 900,
+              startingExpectedResults: 5,
+              reduceEveryMs: 300
+            }
+          ],
+          // Applied in bridges
+          routeTimingStrategies: [
+            {
+              strategy: 'minWaitTime',
+              minWaitTimeMs: 1500,
+              startingExpectedResults: 5,
+              reduceEveryMs: 300
+            }
+          ]
+        }
       }
     }
 
-    const shouldRemoveConvenienceFee = isOG
+    const shouldRemoveConvenienceFee = isOG || isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
@@ -489,43 +522,28 @@ export class LiFiAPI {
       errorPrefix: 'Unable to fetch the quote.'
     })
 
-    const routes = response.routes
-      .map((r: LiFiRoute) => normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress))
-      .filter((r: SwapAndBridgeRoute) => {
-        return !r.usedBridgeNames || r.usedBridgeNames.indexOf(MAYAN_BRIDGE) === -1
-      })
-
-    const selectedRoute = response.routes[0]
-      ? normalizeLiFiRouteToSwapAndBridgeRoute(response.routes[0], userAddress)
-      : undefined
-    const selectedRouteSteps: SwapAndBridgeStep[] = response.routes[0]
-      ? response.routes[0].steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep)
-      : []
-
     return {
       fromAsset: convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId),
       fromChainId,
       toAsset,
       toChainId,
-      selectedRoute,
-      selectedRouteSteps,
-      routes
+      routes: response.routes.map((r: LiFiRoute) =>
+        normalizeLiFiRouteToSwapAndBridgeRoute(r, userAddress, accountNativeBalance, nativeSymbol)
+      ),
+      // selecting a route is a controller's responsiilibty, not the API's
+      selectedRoute: undefined,
+      selectedRouteSteps: []
     }
   }
 
-  async startRoute({
-    route
-  }: {
-    fromChainId?: number
-    toChainId?: number
-    fromAssetAddress?: string
-    toAssetAddress?: string
-    route?: SwapAndBridgeRoute
-  }): Promise<SwapAndBridgeSendTxRequest> {
-    const body = JSON.stringify((route?.rawRoute as LiFiRoute).steps[0])
+  async startRoute(route: SwapAndBridgeRoute): Promise<SwapAndBridgeSendTxRequest> {
+    const body = JSON.stringify((route.rawRoute as LiFiRoute).steps[0])
 
     const response = await this.#handleResponse<LiFiStep>({
-      fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction`, {
+      // skipSimulation reduces the time it takes for the request to complete.
+      // By default LiFi does additional calculations/calls to make the gasLimit more accurate
+      // This is fine for use, because we don't use it anyway
+      fetchPromise: this.#fetch(`${this.#baseUrl}/advanced/stepTransaction?skipSimulation=true`, {
         method: 'POST',
         headers: this.#headers,
         body
@@ -542,8 +560,6 @@ export class LiFiAPI {
     toChainId,
     bridge
   }: {
-    activeRouteId: SwapAndBridgeActiveRoute['activeRouteId']
-    userTxIndex: SwapAndBridgeSendTxRequest['userTxIndex']
     txHash: string
     fromChainId: number
     toChainId: number
@@ -594,25 +610,5 @@ export class LiFiAPI {
     }
 
     return statuses[response.status as LiFiRouteStatusResponse['status']]
-  }
-
-  /**
-   * NOT SUPPORTED: LiFi has no concept for retrieving active routes from the API.
-   * @deprecated
-   */
-  // eslint-disable-next-line class-methods-use-this
-  getActiveRoute() {
-    return Promise.resolve(null)
-  }
-
-  async getNextRouteUserTx({
-    route
-  }: {
-    activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
-    route: SwapAndBridgeRoute
-  }) {
-    // LiFi has no concept for retrieving next route user tx from the API, since
-    // we're using their single tx flow anyways. So re-use starting route.
-    return this.startRoute({ route })
   }
 }

@@ -65,7 +65,7 @@ export async function getAccountState(
   }
 
   const eoas = accounts.filter((account) => !isSmartAccount(account)).map((account) => account.addr)
-  const [[accountStateResult], eoaNonces, eoaCodes] = await Promise.all([
+  const [accountStateResult, eoaNonces, eoaCodes] = await Promise.all([
     deploylessAccountState.call('getAccountsState', [args], {
       blockTag
     }),
@@ -130,7 +130,8 @@ export async function getAccountState(
         account.associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0,
       isSmarterEoa,
       delegatedContract,
-      delegatedContractName
+      delegatedContractName,
+      updatedAt: Date.now()
     }
   })
 
