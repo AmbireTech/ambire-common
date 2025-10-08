@@ -76,7 +76,9 @@ const prepareTest = async () => {
     keystoreCtrl,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
 
   const selectedAccountCtrl = new SelectedAccountController({

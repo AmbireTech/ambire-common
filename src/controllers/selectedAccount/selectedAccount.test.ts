@@ -7,7 +7,6 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { UiController } from '../ui/ui'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
@@ -23,6 +22,7 @@ import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
 const providers = Object.fromEntries(
@@ -65,7 +65,9 @@ const accountsCtrl = new AccountsController(
   keystore,
   () => {},
   () => {},
-  () => {}
+  () => {},
+  relayerUrl,
+  fetch
 )
 
 const selectedAccountCtrl = new SelectedAccountController({

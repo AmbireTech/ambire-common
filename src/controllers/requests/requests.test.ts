@@ -8,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -31,7 +32,6 @@ import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { RequestsController } from './requests'
-import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 
 const uiManager = mockUiManager().uiManager
 
@@ -105,7 +105,9 @@ const prepareTest = async () => {
     keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
 
   const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)

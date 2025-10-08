@@ -101,7 +101,9 @@ describe('AccountPicker', () => {
     keystoreController,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   beforeEach(() => {
     accountPicker = new AccountPickerController({

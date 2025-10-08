@@ -218,7 +218,9 @@ describe('Activity Controller ', () => {
       keystore,
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,

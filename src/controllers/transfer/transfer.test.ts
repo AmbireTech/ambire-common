@@ -202,7 +202,9 @@ const accountsCtrl = new AccountsController(
   keystoreController,
   () => {},
   () => {},
-  () => {}
+  () => {},
+  relayerUrl,
+  fetch
 )
 
 const selectedAccountCtrl = new SelectedAccountController({
