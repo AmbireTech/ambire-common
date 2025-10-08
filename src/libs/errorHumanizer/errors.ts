@@ -153,7 +153,7 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   },
   {
     reasons: ['0xf8618030'],
-    message: 'the Swap quote has expired.'
+    message: 'Quote expired'
   },
   {
     reasons: ['TRANSFER_FROM_FAILED'],
