@@ -46,7 +46,9 @@ export function getFlags(
   networkData: any,
   chainId: string,
   tokenChainId: bigint,
-  address: string
+  address: string,
+  name: string,
+  symbol: string
 ): TokenResult['flags'] {
   const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId)
   const onGasTank = chainId === 'gasTank'
@@ -70,12 +72,15 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
+  const isKnown = isKnownToken(address, symbol, name)
+
   return {
     onGasTank,
     rewardsType,
     canTopUpGasTank,
     isFeeToken,
-    isHidden: false
+    isHidden: false,
+    isKnown
   }
 }
 
@@ -130,7 +135,9 @@ export const mapToken = (
     {},
     network.chainId.toString(),
     network.chainId,
-    address
+    address,
+    tokenName,
+    symbol
   )
 
   if (specialErc20Hints) {
@@ -430,12 +437,16 @@ export const isNative = (token: TokenResult) =>
 
 const nonLatinSymbol = (str: string) => /[^\u0000-\u007f]/.test(str)
 
-export const isKnownToken = (token: TokenResult) => {
+const isKnownToken = (
+  address: TokenResult['address'],
+  symbol: TokenResult['symbol'],
+  name: TokenResult['name']
+) => {
   return (
     Object.values(humanizerInfo.knownAddresses)
       .map(({ address }) => address.toLowerCase())
-      .includes(token.address.toLowerCase()) ||
-    !nonLatinSymbol(token.symbol) ||
-    !nonLatinSymbol(token.name)
+      .includes(address.toLowerCase()) ||
+    !nonLatinSymbol(symbol) ||
+    !nonLatinSymbol(name)
   )
 }

@@ -14,7 +14,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { formatExternalHintsAPIResponse, isKnownToken, mergeERC721s, tokenFilter } from './helpers'
+import { formatExternalHintsAPIResponse, mergeERC721s, tokenFilter } from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -489,15 +489,8 @@ export class Portfolio {
           }
         }
 
-        const tokenResult = token as TokenResult
-
-        tokenResult.flags = {
-          ...tokenResult.flags,
-          isKnown: isKnownToken(tokenResult)
-        }
-
         return {
-          ...tokenResult,
+          ...(token as TokenResult),
           priceIn
         }
       })
