@@ -544,7 +544,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                   const updatedOpIfAny = updateOpStatus(
                     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-                    AccountOpStatus.Failure,
+                    isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
                     receipt
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
