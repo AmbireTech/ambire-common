@@ -108,7 +108,8 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount
+  getTokenUsdAmount,
+  getUnknownTokenWarning
 } from './helper'
 
 export enum SigningStatus {
@@ -719,6 +720,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.traceCallDiscoveryStatus
     )
 
+    const unknownTokenWarnings = getUnknownTokenWarning(pendingState, this.accountOp.chainId)
+
     if (this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(
         this.selectedOption,
@@ -737,6 +740,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
+    if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
     // if 7702 EOA that is not ambire
     // and another delegation is there, show the warning

@@ -11,6 +11,13 @@ const WARNINGS: { [key: string]: Warning } = {
     text: 'The transaction you are about to sign will significantly decrease your account balance. Please review the transaction details carefully.',
     promptBefore: ['sign']
   },
+  // TODO: check the texts with Vankata
+  unknownToken: {
+    id: 'unknownToken',
+    title: 'Unknown Token Detected',
+    text: 'The transaction you are about to sign involves an unknown token. Please review the transaction details carefully.',
+    promptBefore: ['sign']
+  },
   possibleBalanceDecrease: {
     id: 'possibleBalanceDecrease',
     title: 'Significant Account Balance Decrease (Possibly Inaccurate)',
