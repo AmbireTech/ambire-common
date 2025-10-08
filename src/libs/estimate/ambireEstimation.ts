@@ -2,7 +2,7 @@ import { ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE, SCROLL_ORACLE } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
@@ -19,6 +19,18 @@ import { getProbableCallData } from '../gasPrice/gasPrice'
 import { GasTankTokenResult, TokenResult } from '../portfolio'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 import { AmbireEstimation, EstimationFlags, FeePaymentOption } from './interfaces'
+
+function getOracleAddr(network: Network) {
+  if (network.chainId === 534352n) {
+    return SCROLL_ORACLE
+  }
+
+  if (network.isOptimistic) {
+    return OPTIMISTIC_ORACLE
+  }
+
+  return ZeroAddress
+}
 
 export function getInnerCallFailure(
   estimationOp: { success: boolean; err: string },
@@ -74,7 +86,7 @@ export async function ambireEstimateGas(
     feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,
-    network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
+    getOracleAddr(network)
   ]
   const ambireEstimation = await deploylessEstimator
     .call('estimate', checkInnerCallsArgs, {
