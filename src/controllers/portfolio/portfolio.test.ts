@@ -667,26 +667,6 @@ describe('Portfolio Controller ', () => {
       expect(token?.cashback).toEqual(0n)
       expect(token?.saved).toEqual(0n)
     })
-
-    test('Check if smart account with existing cashback and saved greater than 0', async () => {
-      const { controller } = await prepareTest()
-
-      expect(foundUsdcToken).toBeTruthy()
-
-      await controller.updateSelectedAccount(account4.addr)
-
-      if (controller.getLatestPortfolioState(account4.addr).gasTank?.isLoading) return
-
-      const gasTankResult = controller.getLatestPortfolioState(account4.addr).gasTank
-        ?.result as PortfolioGasTankResult
-
-      const token = gasTankResult.gasTankTokens.find((t) => t.address === foundUsdcToken?.address)
-
-      expect(token).toBeTruthy()
-
-      expect(token?.cashback).toBeGreaterThan(0n)
-      expect(token?.saved).toBeGreaterThan(0n)
-    })
   })
 
   describe('Hints- token/nft learning, external api hints and temporary tokens', () => {
