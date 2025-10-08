@@ -662,36 +662,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
-  async hideBanner({
-    addr,
-    chainId,
-    timestamp
-  }: {
-    addr: string
-    chainId: bigint
-    timestamp: number
-  }) {
-    await this.#initialLoadPromise
-
-    // shouldn't happen
-    if (!this.#accountsOps[addr]) return
-    if (!this.#accountsOps[addr][chainId.toString()]) return
-
-    // find the op we want to update
-    const op = this.#accountsOps[addr][chainId.toString()].find(
-      (accOp) => accOp.timestamp === timestamp
-    )
-    if (!op) return
-
-    // update by reference
-    if (!op.flags) op.flags = {}
-    op.flags.hideActivityBanner = true
-
-    this.emitUpdate()
-
-    await this.#storage.set('accountsOps', this.#accountsOps)
-  }
-
   get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
       return []
