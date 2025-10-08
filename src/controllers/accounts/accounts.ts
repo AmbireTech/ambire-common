@@ -490,7 +490,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       const identityRequestsFailedToCreate = identityRequests.filter(
         (req) => !identityCreateConfirmed.includes(req.addr)
       )
-      if (!identityRequestsFailedToCreate.length)
+      if (identityRequestsFailedToCreate.length)
         throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
 
       this.#smartAccountIdentityCreateInterval.stop()
