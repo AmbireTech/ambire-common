@@ -804,19 +804,29 @@ export class ActivityController extends EventEmitter implements IActivityControl
         op.status === AccountOpStatus.BroadcastedButNotConfirmed
     )
 
+    // Extract only needed props from the SubmittedAccountOp
+    const mapToMetaData = (ops: SubmittedAccountOp[]) =>
+      ops.map((op) => ({
+        accountAddr: op.accountAddr,
+        chainId: op.chainId,
+        timestamp: op.timestamp
+      }))
+
     if (pendingOps.length) {
-      let opsForNextUpdate = pendingOps
+      let opsDataForNextUpdate = mapToMetaData(pendingOps)
 
       if (pendingBanner) {
-        opsForNextUpdate = [...pendingBanner.meta!.accountOpsForNextUpdate, ...pendingOps].filter(
-          (o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i
-        )
+        opsDataForNextUpdate = [
+          ...pendingBanner.meta!.accountOpsDataForNextUpdate,
+          ...opsDataForNextUpdate
+        ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
       }
 
       if (!pendingBanner && failedBanner) {
-        opsForNextUpdate = [...failedBanner.meta!.accountOpsForNextUpdate, ...pendingOps].filter(
-          (o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i
-        )
+        opsDataForNextUpdate = [
+          ...failedBanner.meta!.accountOpsDataForNextUpdate,
+          ...opsDataForNextUpdate
+        ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
       }
 
       activityBanners.push({
@@ -833,7 +843,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             : 'Scroll down to view the pending transactions.',
         meta: {
           accountAddr: addr,
-          accountOpsForNextUpdate: opsForNextUpdate,
+          accountOpsDataForNextUpdate: opsDataForNextUpdate,
           accountOpsCount: pendingOps.length
         },
         actions: []
@@ -842,11 +852,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const pendingOpsWithUpdatedStatus = pendingBanner
       ? latestOps.filter((op) =>
-          pendingBanner.meta!.accountOpsForNextUpdate.find(
-            (prevOp: SubmittedAccountOp) =>
-              prevOp.accountAddr === op.accountAddr &&
-              prevOp.chainId === op.chainId &&
-              prevOp.timestamp === op.timestamp
+          pendingBanner.meta!.accountOpsDataForNextUpdate.find(
+            (meta: any) =>
+              meta.accountAddr === op.accountAddr &&
+              meta.chainId === op.chainId &&
+              meta.timestamp === op.timestamp
           )
         )
       : []
@@ -869,7 +879,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             : 'Scroll down to view the failed transactions.',
         meta: {
           accountAddr: addr,
-          accountOpsForNextUpdate: failedOps,
+          accountOpsDataForNextUpdate: mapToMetaData(failedOps),
           accountOpsCount: failedOps.length,
           seen: shouldMarkSeen
         },
