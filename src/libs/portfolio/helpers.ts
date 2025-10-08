@@ -4,6 +4,7 @@ import { getAddress } from 'viem'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -426,3 +427,15 @@ export const isPortfolioGasTankResult = (
 
 export const isNative = (token: TokenResult) =>
   token.address === ZeroAddress && !token.flags.onGasTank
+
+const nonLatinSymbol = (str: string) => /[^\u0000-\u007f]/.test(str)
+
+export const isKnownToken = (token: TokenResult) => {
+  return (
+    Object.values(humanizerInfo.knownAddresses)
+      .map(({ address }) => address.toLowerCase())
+      .includes(token.address.toLowerCase()) ||
+    !nonLatinSymbol(token.symbol) ||
+    !nonLatinSymbol(token.name)
+  )
+}
