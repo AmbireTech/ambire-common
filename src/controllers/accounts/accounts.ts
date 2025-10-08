@@ -466,11 +466,15 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
       if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
 
+      // This treats every response entry as a successful identity creation.
+      // There is a boolean for `r.status.created`, but it indicates if the
+      // identity was just created (new account), where here we just want to
+      // make sure account identity exists, no matter if it was created now or previously
       // Update the accounts that just had their identities created
-      const identityCreateConfirmed = identityRes.body.map((r) => r.identity)
+      const identityExists = identityRes.body.map((r) => r.identity)
       const now = Date.now()
       this.accounts = this.accounts.map((account) => {
-        if (!identityCreateConfirmed.includes(account.addr)) return account
+        if (!identityExists.includes(account.addr)) return account
 
         // should never happen
         if (!account.creation) {
@@ -488,7 +492,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       await this.#storage.set('accounts', this.accounts)
 
       const identityRequestsFailedToCreate = identityRequests.filter(
-        (req) => !identityCreateConfirmed.includes(req.addr)
+        (req) => !identityExists.includes(req.addr)
       )
       if (identityRequestsFailedToCreate.length)
         throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
