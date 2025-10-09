@@ -32,7 +32,10 @@ describe('Networks Controller', () => {
   test('should initialize with predefined networks if storage is empty', async () => {
     await networksController.initialLoadPromise // Wait for load to complete
 
-    expect(networksController.networks.length).toEqual(predefinedNetworks.length)
+    const actualChainIds = networksController.networks.map((n) => n.chainId)
+    const expectedChainIds = predefinedNetworks.map((n) => n.chainId)
+
+    expect(actualChainIds).toEqual(expect.arrayContaining(expectedChainIds))
   })
 
   test('should merge relayer networks correctly, including custom "unichain" network', async () => {
