@@ -42,6 +42,26 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
+const nonLatinSymbol = (str: string) => /[^\u0000-\u007f]/.test(str)
+
+export const isSpoofToken = (tokenAddr: string, tokenName: string) => {
+  return (
+    Object.values(humanizerInfo.knownAddresses).filter((t) => {
+      if (!t.name || !t.address || !tokenAddr || !tokenName) return false
+      return (
+        tokenName.toLowerCase() === t.name.toLowerCase() &&
+        tokenAddr.toLowerCase() !== t.address.toLowerCase()
+      )
+    }).length > 0
+  )
+}
+
+const isSuspectedToken = (
+  address: TokenResult['address'],
+  symbol: TokenResult['symbol'],
+  name: TokenResult['name']
+) => isSpoofToken(address, name) || nonLatinSymbol(symbol) || nonLatinSymbol(name)
+
 export function getFlags(
   networkData: any,
   chainId: string,
@@ -72,7 +92,7 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
-  const isKnown = isKnownToken(address, symbol, name)
+  const isSuspected = isSuspectedToken(address, symbol, name)
 
   return {
     onGasTank,
@@ -80,7 +100,7 @@ export function getFlags(
     canTopUpGasTank,
     isFeeToken,
     isHidden: false,
-    isKnown
+    isSuspected
   }
 }
 
@@ -434,19 +454,3 @@ export const isPortfolioGasTankResult = (
 
 export const isNative = (token: TokenResult) =>
   token.address === ZeroAddress && !token.flags.onGasTank
-
-const nonLatinSymbol = (str: string) => /[^\u0000-\u007f]/.test(str)
-
-const isKnownToken = (
-  address: TokenResult['address'],
-  symbol: TokenResult['symbol'],
-  name: TokenResult['name']
-) => {
-  return (
-    Object.values(humanizerInfo.knownAddresses)
-      .map(({ address }) => address.toLowerCase())
-      .includes(address.toLowerCase()) ||
-    !nonLatinSymbol(symbol) ||
-    !nonLatinSymbol(name)
-  )
-}

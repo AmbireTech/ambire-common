@@ -91,7 +91,7 @@ const getUnknownTokenWarning = (pending: AccountState, chainId: bigint): Warning
   if (networkData?.isLoading) return null
 
   const tokens = Object.values(networkData?.result?.tokens ?? {})
-  const hasUnknownTokens = tokens.some((t) => !t.flags.isKnown)
+  const hasUnknownTokens = tokens.some((t) => t.flags.isSuspected)
 
   return hasUnknownTokens ? WARNINGS.unknownToken : null
 }

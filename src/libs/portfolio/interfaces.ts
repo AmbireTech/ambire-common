@@ -30,7 +30,7 @@ export type TokenResult = {
     isFeeToken: boolean
     isHidden?: boolean
     isCustom?: boolean
-    isKnown?: boolean
+    isSuspected?: boolean
   }
 }
 
