@@ -250,8 +250,18 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   }
 ]
 
+const DEPLOYLESS_ERRORS: ErrorHumanizerError[] = [
+  ...BROADCAST_OR_ESTIMATION_ERRORS,
+  ...ESTIMATION_ERRORS,
+  {
+    reasons: ['0xb4f54111'],
+    message: "the network or provider don't support our Deployless contracts."
+  }
+]
+
 export {
   BROADCAST_ERRORS,
+  DEPLOYLESS_ERRORS,
   BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds,

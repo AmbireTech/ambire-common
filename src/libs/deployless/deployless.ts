@@ -5,9 +5,6 @@ import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
 import { ProviderError } from '../../classes/ProviderError'
-import { decodeError } from '../errorDecoder'
-import { BROADCAST_OR_ESTIMATION_ERRORS, ESTIMATION_ERRORS } from '../errorHumanizer/errors'
-import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -17,10 +14,6 @@ const deploylessProxyBin = DeploylessCompiled.bin
 const codeOfContractCode =
   '0x608060405234801561001057600080fd5b506004361061002b5760003560e01c80631e05758f14610030575b600080fd5b61004a60048036038101906100459190610248565b61004c565b005b60008151602083016000f0905060008173ffffffffffffffffffffffffffffffffffffffff163b036100aa576040517fb4f5411100000000000000000000000000000000000000000000000000000000815260040160405180910390fd5b60008173ffffffffffffffffffffffffffffffffffffffff16803b806020016040519081016040528181526000908060200190933c90506000815190508060208301f35b6000604051905090565b600080fd5b600080fd5b600080fd5b600080fd5b6000601f19601f8301169050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b6101558261010c565b810181811067ffffffffffffffff821117156101745761017361011d565b5b80604052505050565b60006101876100ee565b9050610193828261014c565b919050565b600067ffffffffffffffff8211156101b3576101b261011d565b5b6101bc8261010c565b9050602081019050919050565b82818337600083830152505050565b60006101eb6101e684610198565b61017d565b90508281526020810184848401111561020757610206610107565b5b6102128482856101c9565b509392505050565b600082601f83011261022f5761022e610102565b5b813561023f8482602086016101d8565b91505092915050565b60006020828403121561025e5761025d6100f8565b5b600082013567ffffffffffffffff81111561027c5761027b6100fd565b5b6102888482850161021a565b9150509291505056fea2646970667358221220de4923c71abcedf68454c251a9becff7e8a4f8db4adee6fdb16d583f509c63bb64736f6c63430008120033'
 const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
-
-// The custom error that both these contracts will raise in case the deploy process of the contract goes wrong
-// error DeployFailed();
-const deployErrorSig = '0xb4f54111'
 
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
@@ -117,7 +110,7 @@ export class Deployless {
       )
     }
     const codeOfIface = new Interface(codeOfContractAbi)
-    const code = await mapError(
+    const code = await Deployless.handleResponse(
       (this.provider as JsonRpcProvider).send('eth_call', [
         {
           to: arbitraryAddr,
@@ -131,11 +124,30 @@ export class Deployless {
     // any response bigger than 0x is sufficient to know that state override worked
     // the response would be just "0x" if state override doesn't work
     this.stateOverrideSupported = code.startsWith('0x') && code.length > 2
-    this.contractRuntimeCode = mapResponse(code)
+    this.contractRuntimeCode = code
   }
 
-  async call(methodName: string, args: any[], opts: Partial<CallOptions> = {}): Promise<any> {
-    opts = { ...defaultOptions, ...opts }
+  private static async handleResponse(
+    callPromise: Promise<string>,
+    providerUrl: string
+  ): Promise<string> {
+    try {
+      return await callPromise
+    } catch (e: any) {
+      throw new ProviderError({ originalError: e, providerUrl })
+    }
+  }
+
+  private static checkDataSize(data: string): string {
+    if (getBytes(data).length >= 24576)
+      throw new Error(
+        'Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.'
+      )
+    return data
+  }
+
+  async call(methodName: string, args: any[], _opts: Partial<CallOptions> = {}): Promise<any> {
+    const opts = { ...defaultOptions, ..._opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
     // First, start by detecting which modes are available, unless we're forcing the proxy mode
@@ -185,7 +197,7 @@ export class Deployless {
             from: opts.from,
             gasPrice: opts?.gasPrice,
             gasLimit: opts?.gasLimit,
-            data: checkDataSize(
+            data: Deployless.checkDataSize(
               concat([
                 deploylessProxyBin,
                 abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
@@ -196,24 +208,23 @@ export class Deployless {
     // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
     // To prevent prolonged retries, we use Promise.race to set a 10-second timeout. This way, the callPromise will either resolve
     // or the timeout promise will reject after 10 seconds, whichever occurs first.
-    const callPromisedWithResolveTimeout = Promise.race([
-      callPromise,
-      new Promise((_resolve, reject) => {
-        // Custom providers may take longer to respond, so we set a longer timeout for them.
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                `rpc-timeout. Rpc: ${this.isProviderInvictus ? this.providerUrl : 'custom'}`
-              )
-            ),
-          this.isProviderInvictus ? 15000 : 20000
-        )
-      })
-    ])
-
-    const returnDataRaw = mapResponse(
-      await mapError(callPromisedWithResolveTimeout, this.providerUrl)
+    const returnDataRaw = await Deployless.handleResponse(
+      Promise.race([
+        callPromise,
+        new Promise((_resolve, reject) => {
+          // Custom providers may take longer to respond, so we set a longer timeout for them.
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `rpc-timeout. Rpc: ${this.isProviderInvictus ? this.providerUrl : 'custom'}`
+                )
+              ),
+            this.isProviderInvictus ? 15000 : 20000
+          )
+        })
+      ]),
+      this.providerUrl
     )
 
     return decodeFunctionResult({
@@ -235,56 +246,4 @@ export function fromDescriptor(
     desc.bin,
     supportStateOverride ? desc.binRuntime : undefined
   )
-}
-
-async function mapError(callPromise: Promise<string>, providerUrl: string): Promise<string> {
-  try {
-    return await callPromise
-  } catch (e: any) {
-    // ethers v5 provider: e.error.data is usually our eth_call output in case of execution reverted
-    if (e.error && e.error.data) return e.error.data
-    // ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
-    if (e.code === 'CALL_EXCEPTION' && e.error) throw e.error
-    // ethers v6 provider: wrapping the error in case of execution reverted
-    if (e.code === 'CALL_EXCEPTION' && e.data) return e.data
-
-    throw new ProviderError({
-      originalError: e,
-      providerUrl
-    })
-  }
-}
-
-export function parseErr(data: string): Error | null {
-  const error = new Error(data)
-  const decodedError = decodeError(error)
-
-  const message = getHumanReadableErrorMessage(
-    null,
-    [...BROADCAST_OR_ESTIMATION_ERRORS, ...ESTIMATION_ERRORS],
-    'The transaction cannot be sent because',
-    decodedError,
-    error
-  )
-
-  if (!message) return null
-
-  return new Error(message, {
-    cause: decodedError.reason || error.message
-  })
-}
-
-function mapResponse(data: string): string {
-  if (data === deployErrorSig) throw new Error('contract deploy failed')
-  const err = parseErr(data)
-  if (err) throw err
-  return data
-}
-
-function checkDataSize(data: string): string {
-  if (getBytes(data).length >= 24576)
-    throw new Error(
-      'Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.'
-    )
-  return data
 }

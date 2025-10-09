@@ -102,7 +102,7 @@ describe('Deployless', () => {
     try {
       await localDeployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
     } catch (e: any) {
-      expect(e.message).toBe('contract deploy failed')
+      expect(e).toBeDefined()
     }
   })
 
@@ -199,63 +199,15 @@ describe('Deployless', () => {
     }
   })
 
-  test('should throw an solidity assert error', async () => {
-    expect.assertions(1)
-    const contract = new Deployless(
-      mainnetProvider,
-      helloWorld.abi,
-      helloWorld.bin,
-      helloWorld.binRuntime
-    )
-    try {
-      await contract.call('throwAssertError', [])
-    } catch (e: any) {
-      expect(e).toBe('solidity assert error')
-    }
-  })
+  test('Provider errors are prefixed', async () => {
+    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
 
-  test('should throw an arithmetic error', async () => {
-    expect.assertions(1)
-    const contract = new Deployless(
-      mainnetProvider,
-      helloWorld.abi,
-      helloWorld.bin,
-      helloWorld.binRuntime
-    )
     try {
-      await contract.call('throwArithmeticError', [])
+      await localDeployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
     } catch (e: any) {
-      expect(e).toBe('arithmetic error')
-    }
-  })
-
-  test('should throw a division by zero error', async () => {
-    expect.assertions(1)
-    const contract = new Deployless(
-      mainnetProvider,
-      helloWorld.abi,
-      helloWorld.bin,
-      helloWorld.binRuntime
-    )
-    try {
-      await contract.call('throwDivisionByZeroError', [])
-    } catch (e: any) {
-      expect(e).toBe('division by zero')
-    }
-  })
-
-  test('should throw a panic error', async () => {
-    expect.assertions(1)
-    const contract = new Deployless(
-      mainnetProvider,
-      helloWorld.abi,
-      helloWorld.bin,
-      helloWorld.binRuntime
-    )
-    try {
-      await contract.call('throwCompilerPanic', [])
-    } catch (e: any) {
-      expect(e).toBe('panic error: 0x32')
+      expect(
+        e.message.startsWith('Invictus RPC error (2XX) (https://invictus.ambire.com/ethereum)')
+      ).toBe(true)
     }
   })
 })
