@@ -57,8 +57,8 @@ function handleSimulationError(
       decodedError,
       error
     )
-    const fallbackMessage = `Transaction cannot be simulated because of an unknown error.${
-      decodedError.reason ? `Error code: ${decodedError.reason || errorData.slice(0, 10)}` : ''
+    const fallbackMessage = `Transaction cannot be simulated because of an unknown error. Error code: ${
+      decodedError.reason || errorData.slice(0, 10)
     }`
 
     throw new SimulationError(humanizedError || fallbackMessage, beforeNonce, afterNonce)
