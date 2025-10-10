@@ -43,19 +43,14 @@ describe('Deployless', () => {
   */
 
   test('should invoke a method: proxy mode', async () => {
-    let localDeployless
-    try {
-      localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
-      const result = await localDeployless.call('helloWorld', [], {
-        mode: DeploylessMode.ProxyContract
-      })
-      expect(result).toBe('hello world')
-    } catch (e) {
-      console.error('Deployless cal failed', e)
-    }
+    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
+    const result = await localDeployless.call('helloWorld', [], {
+      mode: DeploylessMode.ProxyContract
+    })
+    expect(result).toBe('hello world')
 
     // We still haven't detected support for state override
-    expect(localDeployless?.isLimitedAt24kbData).toBe(true)
+    expect(localDeployless.isLimitedAt24kbData).toBe(true)
   })
 
   // test('should invoke a method: detect mode', async () => {
