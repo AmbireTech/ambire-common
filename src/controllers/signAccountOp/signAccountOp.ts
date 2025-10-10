@@ -365,6 +365,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
+    if (!Object.keys(accountOp).length) return
+
     this.#accountOp = { ...this.#accountOp, ...accountOp }
 
     this.#onAccountOpUpdate(this.#accountOp)
@@ -808,10 +810,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
-      console.log(
-        'Debug: signAccountOp.simulate hasNonceDiscrepancy',
-        estimation.ambireEstimation.ambireAccountNonce
-      )
       this.#updateAccountOp({
         nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
       })
@@ -904,8 +902,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (accountOpData) {
-        const calls = accountOpData.calls
-        this.#updateAccountOp(accountOpData)
+        const { calls, ...rest } = accountOpData
+
+        // update all properties except calls
+        // calls are handled separately below
+        this.#updateAccountOp(rest)
 
         if (Array.isArray(calls)) {
           // we should update if the arrays are with diff length
