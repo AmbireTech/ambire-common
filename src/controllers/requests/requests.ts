@@ -356,7 +356,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           userRequests: this.userRequests,
           actionsQueue: this.actions.actionsQueue
         })
-        console.log('Debug: nonce in requests ctrl', accountOpAction.accountOp.nonce)
 
         actionsToAdd.push(accountOpAction)
 

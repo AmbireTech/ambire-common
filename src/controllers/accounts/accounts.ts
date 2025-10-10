@@ -145,15 +145,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   ) {
     if (!accounts.length) return
 
-    console.log(
-      'Debug: #updateAccountStates called for',
-      accounts,
-      'for tag',
-      blockTag,
-      'networks',
-      updateOnlyNetworksWithIds
-    )
-
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
     const networksToUpdate = this.#networks.networks.filter((network) => {

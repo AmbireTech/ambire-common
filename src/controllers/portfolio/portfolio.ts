@@ -1298,7 +1298,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         }
       : undefined
 
-    console.log('Debug: simulating account op', op.nonce)
     return this.updateSelectedAccount(op.accountAddr, [network], simulation)
   }
 

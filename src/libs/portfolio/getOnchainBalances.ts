@@ -274,10 +274,6 @@ export async function getTokens(
       : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(toSingletonCall).map(callToTuple)
   }))
-  console.log(
-    'Debug: simulation accountOps',
-    accountOps.map((op) => op.nonce)
-  )
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] =
     await deployless.call(

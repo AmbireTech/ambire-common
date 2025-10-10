@@ -112,7 +112,6 @@ export async function ambireEstimateGas(
   const flags: EstimationFlags = {}
   flags.hasInitialGasLimitFailed = accountOp.initialGasLimitFailed
 
-  console.log('Debug: ambireEstimateGas', nonceError, op.nonce, outcomeNonce)
   if (nonceError) {
     flags.hasNonceDiscrepancy = true
   }
