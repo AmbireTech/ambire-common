@@ -609,12 +609,16 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      this.signAccountOpController.update({
+        accountOpData: {
+          calls,
+          meta: {
+            ...(this.signAccountOpController.accountOp.meta || {}),
+            topUpAmount: userRequest.meta.topUpAmount
+          }
+        }
+      })
 
-      // pass on topUpAmount
-      if (!this.signAccountOpController.accountOp.meta)
-        this.signAccountOpController.accountOp.meta = {}
-      this.signAccountOpController.accountOp.meta.topUpAmount = userRequest.meta.topUpAmount
       return
     }
 
@@ -686,8 +690,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       accountOp,
       () => true,
       false,
-      false,
-      undefined
+      false
     )
 
     // propagate updates from signAccountOp here
