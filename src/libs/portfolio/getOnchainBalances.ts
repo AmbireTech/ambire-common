@@ -29,7 +29,7 @@ class SimulationError extends Error {
   public afterNonce: bigint
 
   constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
-    super(`simulation error: ${message}`)
+    super(message)
     this.simulationErrorMsg = message
     this.beforeNonce = beforeNonce
     this.afterNonce = afterNonce
@@ -49,6 +49,7 @@ function handleSimulationError(
 ) {
   if (errorData !== '0x') {
     const error = new Error(errorData)
+    ;(error as any).data = errorData
     const decodedError = decodeError(error)
     const humanizedError = getHumanReadableErrorMessage(
       null,
@@ -70,7 +71,7 @@ function handleSimulationError(
 
   if (afterNonce < beforeNonce)
     throw new SimulationError(
-      'lower "after" nonce, should not be possible',
+      'simulation error: lower "after" nonce, should not be possible',
       beforeNonce,
       afterNonce
     )
@@ -93,7 +94,7 @@ function handleSimulationError(
     })
   if (nonces.length && afterNonce < nonces[nonces.length - 1] + 1n) {
     throw new SimulationError(
-      'Failed to increment the nonce to the final account op nonce',
+      'simulation error: Failed to increment the nonce to the final account op nonce',
       beforeNonce,
       afterNonce
     )
