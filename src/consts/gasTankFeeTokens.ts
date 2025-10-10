@@ -861,6 +861,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
+    address: '0x0bbbead62f7647ae8323d2cb243a0db74b7c2b80',
+    symbol: 'wallet',
+    chainId: 8453n,
+    decimals: 18,
+    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/Ambire_logo_250x250.png'
+  },
+  {
     address: '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452',
     symbol: 'wstETH',
     chainId: 8453n,
