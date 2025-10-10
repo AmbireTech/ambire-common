@@ -607,7 +607,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      this.signAccountOpController.update({ accountOpData: { calls } })
       return
     }
 
@@ -678,8 +678,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       accountOp,
       () => true,
       false,
-      false,
-      undefined
+      false
     )
 
     // propagate updates from signAccountOp here
