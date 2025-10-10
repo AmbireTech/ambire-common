@@ -230,6 +230,7 @@ describe('Portfolio', () => {
     }
 
     const accountStates = await getAccountsInfo([account])
+
     const postSimulation = await portfolioArbitrum.get(
       '0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA',
       {
@@ -385,7 +386,7 @@ describe('Portfolio', () => {
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'simulation error: Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
+        'Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
       )
     }
 
@@ -402,7 +403,7 @@ describe('Portfolio', () => {
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'simulation error: Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
+        'Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
       )
     }
 
@@ -410,6 +411,7 @@ describe('Portfolio', () => {
   })
 
   test('simulation should revert with SV_NO_KEYS for an account we do not posses the associated key for', async () => {
+    const { restore } = suppressConsole()
     const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
     const accountOp: any = {
       accountAddr: acc,
@@ -448,11 +450,16 @@ describe('Portfolio', () => {
         }
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: Spoof failed: no keys')
+      expect(e.message).toBe(
+        'Transaction cannot be simulated because of an unknown error. Error code: Spoof failed: no keys'
+      )
     }
+
+    restore()
   })
 
   test('simulation should revert with SV_WRONG_KEYS for an account that we pass a wrong associated key', async () => {
+    const { restore } = suppressConsole()
     const acc = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
     const accountOp: any = {
       accountAddr: acc,
@@ -487,8 +494,11 @@ describe('Portfolio', () => {
         }
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
+      expect(e.message).toBe(
+        'Transaction cannot be simulated because of an unknown error. Error code: Spoof failed: wrong keys'
+      )
     }
+    restore()
   })
 
   test('token simulation works with multiple calls in an account op', async () => {
@@ -544,6 +554,7 @@ describe('Portfolio', () => {
   })
 
   test('token simulation fails if there are two account ops but the last one has a higher nonce than expected', async () => {
+    const { restore } = suppressConsole()
     const accountOp: any = {
       accountAddr: PORTFOLIO_TESTS_V2.addr,
       signingKeyAddr: PORTFOLIO_TESTS_V2.key,
@@ -588,12 +599,10 @@ describe('Portfolio', () => {
         'simulation error: Failed to increment the nonce to the final account op nonce'
       )
     }
+    restore()
   })
   test('errors caused by a malfunctioning RPC are not swallowed', async () => {
-    const originalLog = console.log
-    // Ignore Failed to start rpc error
-    console.log = jest.fn()
-
+    const { restore } = suppressConsole()
     const failingProvider = new JsonRpcProvider('https://invictus.ambire.com/ethereum-fail')
 
     const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum, velcroUrl)
@@ -608,7 +617,7 @@ describe('Portfolio', () => {
     }
 
     expect(didThrow).toBe(true)
-    console.log = originalLog
+    restore()
     // Destroy the failing provider
     failingProvider.destroy()
   })
