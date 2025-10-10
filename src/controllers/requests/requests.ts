@@ -17,6 +17,7 @@ import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
+import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
@@ -61,7 +62,6 @@ import { ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { StatusesWithCustom } from '../../interfaces/main'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -333,10 +333,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const { id, action, meta } = req
       if (action.kind === 'calls') {
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-        const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-          meta.accountAddr,
-          meta.chainId
-        )
+        const accountStateBefore = this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId]
+
+        // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+        // otherwise wait for the fetch to complete (no matter how long it takes).
+        // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+        const accountState = (await Promise.race([
+          this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+          // Fallback to the old account state if fetch takes too long and it exists
+          accountStateBefore
+            ? new Promise((res) => {
+                setTimeout(() => res(accountStateBefore), 3000)
+              })
+            : new Promise(() => {}) // Explicitly never-resolving promise
+        ])) as any
         const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
         const accountOpAction = makeAccountOpAction({
