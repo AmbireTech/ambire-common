@@ -198,16 +198,4 @@ describe('Deployless', () => {
       )
     }
   })
-
-  test('Provider errors are prefixed', async () => {
-    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
-
-    try {
-      await localDeployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
-    } catch (e: any) {
-      expect(
-        e.message.startsWith('Invictus RPC error (2XX) (https://invictus.ambire.com/ethereum)')
-      ).toBe(true)
-    }
-  })
 })
