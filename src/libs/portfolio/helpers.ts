@@ -44,23 +44,28 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
 
 const nonLatinSymbol = (str: string) => /[^\u0000-\u007f]/.test(str)
 
-export const isSpoofToken = (tokenAddr: string, tokenName: string) => {
-  return (
-    Object.values(humanizerInfo.knownAddresses).filter((t) => {
-      if (!t.name || !t.address || !tokenAddr || !tokenName) return false
-      return (
-        tokenName.toLowerCase() === t.name.toLowerCase() &&
-        tokenAddr.toLowerCase() !== t.address.toLowerCase()
-      )
-    }).length > 0
-  )
+export const isSuspectedRegardsKnownAddresses = (tokenAddr: string, tokenName: string) => {
+  if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenName) return false
+
+  const tokenWithKnownNames = Object.values(humanizerInfo.knownAddresses).filter((t) => {
+    if (!t.name || !t.address) return false
+
+    return tokenName.toLowerCase() === t.name.toLowerCase()
+  })
+
+  const matchedAddress = tokenWithKnownNames.length
+    ? tokenWithKnownNames.find((t) => t.address.toLowerCase() === tokenAddr.toLowerCase())
+    : undefined
+
+  return tokenWithKnownNames.length && !matchedAddress
 }
 
 const isSuspectedToken = (
   address: TokenResult['address'],
   symbol: TokenResult['symbol'],
   name: TokenResult['name']
-) => isSpoofToken(address, name) || nonLatinSymbol(symbol) || nonLatinSymbol(name)
+) =>
+  isSuspectedRegardsKnownAddresses(address, name) || nonLatinSymbol(symbol) || nonLatinSymbol(name)
 
 export function getFlags(
   networkData: any,
