@@ -835,12 +835,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.accountOp.accountAddr,
         this.accountOp.chainId
       )
-      console.log(
-        'Debug: signAccountOp.simulate nonce did not increment',
-        this.accountOp.nonce,
-        pendingAccountState.erc4337Nonce,
-        pendingAccountState.nonce
-      )
       this.#updateAccountOp({
         nonce: pendingAccountState.nonce
       })
