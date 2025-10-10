@@ -108,6 +108,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
   },
   {
+    address: '0x01bFF41798a0BcF287b996046Ca68b395DbC1071',
+    symbol: 'USD₮0',
+    chainId: 10n,
+    decimals: 6,
+    currencyIcon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
+  },
+  {
     address: '0x4200000000000000000000000000000000000006',
     symbol: 'weth',
     chainId: 10n,
@@ -831,6 +838,13 @@ export default [
     symbol: 'arb',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/16547/standard/arb.jpg?1721358242'
+  },
+  {
+    chainId: 42161n,
+    address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+    symbol: 'USD₮0',
+    decimals: 6,
+    currencyIcon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
   },
   {
     address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
