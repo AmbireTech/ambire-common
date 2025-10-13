@@ -24,7 +24,7 @@ import { IDappsController } from '../../interfaces/dapp'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IDomainsController } from '../../interfaces/domains'
 import { IEmailVaultController } from '../../interfaces/emailVault'
-import { ErrorRef } from '../../interfaces/eventEmitter'
+import { ErrorRef, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
@@ -35,7 +35,7 @@ import {
   Key,
   KeystoreSignerType
 } from '../../interfaces/keystore'
-import { IMainController, STATUS_WRAPPED_METHODS, StatusesWithCustom } from '../../interfaces/main'
+import { IMainController, STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
@@ -197,7 +197,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   isOffline: boolean = false
 
-  statuses: StatusesWithCustom = STATUS_WRAPPED_METHODS
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
+
+  signAndBroadcastAccountOpStatuses: {
+    [account: string]: {
+      [chainId: string]: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
+    }
+  } = {}
 
   ui: IUiController
 
@@ -472,7 +478,7 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       transactionManager: this.transactionManager,
       getSignAccountOp: () => this.signAccountOp,
-      getMainStatuses: () => this.statuses,
+      getSignAndBroadcastAccountOpStatuses: () => this.signAndBroadcastAccountOpStatuses,
       updateSignAccountOp: (props) => {
         if (!this.signAccountOp) return
         this.signAccountOp.update(props)
@@ -749,29 +755,28 @@ export class MainController extends EventEmitter implements IMainController {
     this.forceEmitUpdate()
   }
 
-  async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
-    if (this.statuses.signAndBroadcastAccountOp !== 'INITIAL') {
-      const message =
-        this.statuses.signAndBroadcastAccountOp === 'SIGNING'
-          ? 'A transaction is already being signed. Please wait or contact support if the issue persists.'
-          : 'A transaction is already being broadcasted. Please wait a few seconds and try again or contact support if the issue persists.'
+  get isSigningOnAnyAccountOrNetwork() {
+    return Object.values(this.signAndBroadcastAccountOpStatuses).some((a) =>
+      Object.values(a).some((n) => n === 'SIGNING')
+    )
+  }
 
-      this.emitError({
-        level: 'major',
-        message,
-        error: new Error(
-          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
-        )
+  get isBroadcastingOnAnyAccountOrNetwork() {
+    return Object.values(this.signAndBroadcastAccountOpStatuses).some((a) =>
+      Object.values(a).some((n) => n === 'BROADCASTING')
+    )
+  }
+
+  #resetSignAndBroadcastAccountOpStatusesStatuses() {
+    Object.values(this.signAndBroadcastAccountOpStatuses).forEach((chains) =>
+      Object.keys(chains).forEach((cid) => {
+        // eslint-disable-next-line no-param-reassign
+        chains[cid] = 'INITIAL'
       })
-      return
-    }
+    )
+  }
 
-    const signAndBroadcastCallId = generateUuid()
-    this.#signAndBroadcastCallId = signAndBroadcastCallId
-
-    this.statuses.signAndBroadcastAccountOp = 'SIGNING'
-    this.forceEmitUpdate()
-
+  async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
     let signAccountOp: ISignAccountOpController | null
 
     if (type === SIGN_ACCOUNT_OP_MAIN) {
@@ -781,6 +786,39 @@ export class MainController extends EventEmitter implements IMainController {
     } else {
       signAccountOp = this.transfer.signAccountOpController
     }
+
+    if (!signAccountOp) return
+
+    const addr = signAccountOp.accountOp.accountAddr
+    const chainId = signAccountOp.accountOp.chainId.toString()
+
+    if (
+      this.signAndBroadcastAccountOpStatuses[addr]?.[chainId] &&
+      this.signAndBroadcastAccountOpStatuses[addr]?.[chainId] !== 'INITIAL'
+    ) {
+      const message =
+        this.signAndBroadcastAccountOpStatuses[addr]?.[chainId] === 'SIGNING'
+          ? 'A transaction is already being signed. Please wait or contact support if the issue persists.'
+          : 'A transaction is already being broadcasted. Please wait a few seconds and try again or contact support if the issue persists.'
+
+      this.emitError({
+        level: 'major',
+        message,
+        error: new Error(
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.signAndBroadcastAccountOpStatuses}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
+        )
+      })
+      return
+    }
+
+    const signAndBroadcastCallId = generateUuid()
+    this.#signAndBroadcastCallId = signAndBroadcastCallId
+
+    if (!this.signAndBroadcastAccountOpStatuses[addr]) {
+      this.signAndBroadcastAccountOpStatuses[addr] = {}
+    }
+    this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'SIGNING'
+    this.forceEmitUpdate()
 
     // It's vital that everything that can throw an error is wrapped in a try/catch block
     // to prevent signAndBroadcastAccountOp from being stuck in the SIGNING state
@@ -820,9 +858,12 @@ export class MainController extends EventEmitter implements IMainController {
         if (signAccountOp?.accountOp.meta?.swapTxn) {
           this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
         }
-        this.statuses.signAndBroadcastAccountOp = 'ERROR'
+        if (!this.signAndBroadcastAccountOpStatuses[addr]) {
+          this.signAndBroadcastAccountOpStatuses[addr] = {}
+        }
+        this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'ERROR'
         await this.forceEmitUpdate()
-        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'INITIAL'
         this.#signAndBroadcastCallId = null
         await this.forceEmitUpdate()
         return
@@ -846,9 +887,12 @@ export class MainController extends EventEmitter implements IMainController {
             error
           })
         }
-        this.statuses.signAndBroadcastAccountOp = 'ERROR'
+        if (!this.signAndBroadcastAccountOpStatuses[addr]) {
+          this.signAndBroadcastAccountOpStatuses[addr] = {}
+        }
+        this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'ERROR'
         await this.forceEmitUpdate()
-        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'INITIAL'
         await this.forceEmitUpdate()
       }
     } finally {
@@ -899,12 +943,10 @@ export class MainController extends EventEmitter implements IMainController {
     const paidByKeyType = this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType
     const isAwaitingHWSignature =
       (signAccountOp.accountOp.signingKeyType !== 'internal' &&
-        this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
+        this.isSigningOnAnyAccountOrNetwork) ||
       // paidByKeyType should be set before checking if it's type is internal
       // if it's not, we are not waiting for a hw sig
-      (paidByKeyType &&
-        paidByKeyType !== 'internal' &&
-        this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
+      (paidByKeyType && paidByKeyType !== 'internal' && this.isBroadcastingOnAnyAccountOrNetwork)
 
     // Reset these flags only if we were awaiting a HW signature
     // to broadcast a transaction.
@@ -913,7 +955,7 @@ export class MainController extends EventEmitter implements IMainController {
     // On the other hand HWs can be in 'SIGNING' or 'BROADCASTING' state
     // and be able to 'cancel' the broadcast.
     if (isAwaitingHWSignature) {
-      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+      this.#resetSignAndBroadcastAccountOpStatusesStatuses()
       this.#signAndBroadcastCallId = null
     }
 
@@ -1673,7 +1715,10 @@ export class MainController extends EventEmitter implements IMainController {
     type: SignAccountOpType,
     callId: string
   ) {
-    if (this.statuses.signAndBroadcastAccountOp !== 'SIGNING') {
+    const addr = signAccountOp.accountOp.accountAddr
+    const chainId = signAccountOp.accountOp.chainId.toString()
+    await wait(120000)
+    if (this.signAndBroadcastAccountOpStatuses[addr]?.[chainId] !== 'SIGNING') {
       this.throwBroadcastAccountOp({
         signAccountOp,
         message: 'Pending broadcast. Please try again in a bit.'
@@ -1711,8 +1756,10 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     if (!account) {
-      const addr = shortenAddress(accountOp.accountAddr, 13)
-      const message = `Account with address ${addr} not found. ${contactSupportPrompt}`
+      const message = `Account with address ${shortenAddress(
+        accountOp.accountAddr,
+        13
+      )} not found. ${contactSupportPrompt}`
       return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
@@ -1721,7 +1768,10 @@ export class MainController extends EventEmitter implements IMainController {
       return this.throwBroadcastAccountOp({ signAccountOp, message })
     }
 
-    this.statuses.signAndBroadcastAccountOp = 'BROADCASTING'
+    if (!this.signAndBroadcastAccountOpStatuses[addr]) {
+      this.signAndBroadcastAccountOpStatuses[addr] = {}
+    }
+    this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'BROADCASTING'
     await this.forceEmitUpdate()
 
     const accountState = await this.accounts.getOrFetchAccountOnChainState(
@@ -2057,9 +2107,12 @@ export class MainController extends EventEmitter implements IMainController {
     // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
     // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
     // leaving the new request 'orphaned' in the background without being attached to any action.
-    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+    if (!this.signAndBroadcastAccountOpStatuses[addr]) {
+      this.signAndBroadcastAccountOpStatuses[addr] = {}
+    }
+    this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'SUCCESS'
     await this.forceEmitUpdate()
-    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'INITIAL'
     await this.forceEmitUpdate()
 
     await this.ui.notification.create({
@@ -2101,7 +2154,12 @@ export class MainController extends EventEmitter implements IMainController {
     let message = humanReadableMessage
     let isReplacementFeeLow = false
 
-    this.statuses.signAndBroadcastAccountOp = 'ERROR'
+    const addr = signAccountOp.accountOp.accountAddr
+    const chainId = signAccountOp.accountOp.chainId.toString()
+    if (!this.signAndBroadcastAccountOpStatuses[addr]) {
+      this.signAndBroadcastAccountOpStatuses[addr] = {}
+    }
+    this.signAndBroadcastAccountOpStatuses[addr][chainId] = 'ERROR'
     this.forceEmitUpdate()
 
     if (originalMessage) {
@@ -2204,12 +2262,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (!pendingAction) return false
 
-    const isSigningOrBroadcasting =
-      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
-      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
-
     // The swap and bridge or transfer is done/forgotten so we can remove the action
-    if (!isSigningOrBroadcasting) {
+    if (!(this.isSigningOnAnyAccountOrNetwork || this.isBroadcastingOnAnyAccountOrNetwork)) {
       await this.requests.actions.removeActions([pendingAction.id])
 
       if (pendingAction.type === 'swapAndBridge') {

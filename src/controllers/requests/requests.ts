@@ -61,7 +61,6 @@ import { ActionsController } from '../actions/actions'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
-import { StatusesWithCustom } from '../../interfaces/main'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -97,7 +96,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
-  #getMainStatuses: () => StatusesWithCustom
+  #getSignAndBroadcastAccountOpStatuses: () => {
+    [account: string]: {
+      [chainId: string]: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
+    }
+  }
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -138,7 +141,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
     guardHWSigning,
-    getMainStatuses
+    getSignAndBroadcastAccountOpStatuses
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -157,7 +160,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
-    getMainStatuses: () => StatusesWithCustom
+    getSignAndBroadcastAccountOpStatuses: () => {
+      [account: string]: {
+        [chainId: string]: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
+      }
+    }
   }) {
     super()
 
@@ -174,7 +181,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#ui = ui
 
     this.#getSignAccountOp = getSignAccountOp
-    this.#getMainStatuses = getMainStatuses
+    this.#getSignAndBroadcastAccountOpStatuses = getSignAndBroadcastAccountOpStatuses
     this.#updateSignAccountOp = updateSignAccountOp
     this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -255,8 +262,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const actionsToAdd: Action[] = []
     const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
 
-    const signAccountOpController = this.#getSignAccountOp()
-    const signStatus = this.#getMainStatuses().signAndBroadcastAccountOp
+    const signAndBroadcastAccountOpStatuses = this.#getSignAndBroadcastAccountOpStatuses()
     let hasTxInProgressErrorShown = false
 
     // eslint-disable-next-line no-restricted-syntax
@@ -271,6 +277,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       if (req.action.kind === 'calls') {
+        const addr = req.meta.accountAddr
+        const chainId = req.meta.chainId.toString()
+
         // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
         //
         // Why? When a transaction is being signed and broadcast, its action is still unresolved.
@@ -282,9 +291,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         //
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (
-          (signStatus === 'SIGNING' || signStatus === 'BROADCASTING') &&
-          signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
-          signAccountOpController?.accountOp.chainId === req.meta.chainId
+          signAndBroadcastAccountOpStatuses[addr]?.[chainId] === 'SIGNING' ||
+          signAndBroadcastAccountOpStatuses[addr]?.[chainId] === 'BROADCASTING'
         ) {
           // Make sure to show the error once
           if (!hasTxInProgressErrorShown) {
