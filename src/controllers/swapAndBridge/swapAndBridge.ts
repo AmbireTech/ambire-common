@@ -70,7 +70,11 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import {
+  OnBroadcastFailed,
+  OnBroadcastSuccess,
+  SignAccountOpController
+} from '../signAccountOp/signAccountOp'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -119,6 +123,8 @@ const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
+  #callRelayer: Function
+
   #selectedAccount: ISelectedAccountController
 
   #networks: INetworksController
@@ -278,7 +284,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #continuouslyUpdateActiveRoutesSessionId: string | undefined
 
+  #onBroadcastSuccess: OnBroadcastSuccess
+
+  #onBroadcastFailed: OnBroadcastFailed
+
   constructor({
+    callRelayer,
     accounts,
     keystore,
     portfolio,
@@ -294,8 +305,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     isMainSignAccountOpThrowingAnEstimationError,
     getUserRequests,
     getVisibleActionsQueue,
-    swapProvider
+    swapProvider,
+    onBroadcastSuccess,
+    onBroadcastFailed
   }: {
+    callRelayer: Function
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController
@@ -312,8 +326,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     getUserRequests: () => UserRequest[]
     getVisibleActionsQueue: () => Action[]
     swapProvider: SwapProvider
+    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastFailed: OnBroadcastFailed
   }) {
     super()
+    this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -331,6 +348,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleActionsQueue = getVisibleActionsQueue
+    this.#onBroadcastSuccess = onBroadcastSuccess
+    this.#onBroadcastFailed = onBroadcastFailed
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
@@ -2171,19 +2190,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    this.#signAccountOpController = new SignAccountOpController(
-      this.#accounts,
-      this.#networks,
-      this.#keystore,
-      this.#portfolio,
-      this.#externalSignerControllers,
-      this.#selectedAccount.account,
+    this.#signAccountOpController = new SignAccountOpController({
+      callRelayer: this.#callRelayer,
+      accounts: this.#accounts,
+      networks: this.#networks,
+      keystore: this.#keystore,
+      portfolio: this.#portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.#activity,
+      account: this.#selectedAccount.account,
       network,
-      this.#activity,
-      provider,
-      randomId(), // the account op and the action are fabricated
+      provider: this.#providers.providers[network.chainId.toString()],
+      fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      () => {
+      isSignRequestStillActive: () => {
         // this is more for a "just-in-case"
         // stop the gas price refetch if there's no signAccountOpController
         // this could only happen if there's a major bug and more than one
@@ -2193,9 +2213,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // identifiable
         return !!this.#signAccountOpController
       },
-      false,
-      false
-    )
+      shouldSimulate: false,
+      shouldReestimate: false,
+      onBroadcastSuccess: this.#onBroadcastSuccess,
+      onBroadcastFailed: this.#onBroadcastFailed
+    })
 
     this.emitUpdate()
 

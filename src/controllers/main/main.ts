@@ -1,19 +1,17 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress } from 'ethers'
 
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
-import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Session } from '../../classes/session'
-import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { FeatureFlags } from '../../consts/featureFlags'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
+import { Account, IAccountsController } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
@@ -40,7 +38,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '../../int
 import { IPhishingController } from '../../interfaces/phishing'
 import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
-import { IProvidersController, RPCProvider } from '../../interfaces/provider'
+import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController, TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
@@ -52,22 +50,13 @@ import { ITransferController } from '../../interfaces/transfer'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import { Calls, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
-import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
-import {
-  AccountOpIdentifiedBy,
-  getDappIdentifier,
-  SubmittedAccountOp
-} from '../../libs/accountOp/submittedAccountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getAccountOpFromAction } from '../../libs/actions/actions'
-import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
-import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
-import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 /* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
-import { relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { makeAccountOpAction } from '../../libs/requests/requests'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
@@ -75,11 +64,9 @@ import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 /* eslint-disable no-underscore-dangle */
 import { LiFiAPI } from '../../services/lifi/api'
 import { paymasterFactory } from '../../services/paymaster'
-import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { SocketAPI } from '../../services/socket/api'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
-import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
@@ -107,7 +94,6 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import {
   SIGN_ACCOUNT_OP_MAIN,
   SIGN_ACCOUNT_OP_SWAP,
-  SIGN_ACCOUNT_OP_TRANSFER,
   SignAccountOpType
 } from '../signAccountOp/helper'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
@@ -382,6 +368,7 @@ export class MainController extends EventEmitter implements IMainController {
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketAPI({ fetch, apiKey: bungeeApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
+      callRelayer: this.callRelayer,
       accounts: this.accounts,
       keystore: this.keystore,
       portfolio: this.portfolio,
@@ -417,9 +404,12 @@ export class MainController extends EventEmitter implements IMainController {
         )
       },
       getUserRequests: () => this.requests.userRequests || [],
-      getVisibleActionsQueue: () => this.requests.actions.visibleActionsQueue || []
+      getVisibleActionsQueue: () => this.requests.actions.visibleActionsQueue || [],
+      onBroadcastSuccess: this.#handleBroadcastSuccess.bind(this),
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
     this.transfer = new TransferController(
+      this.callRelayer,
       this.storage,
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
@@ -431,7 +421,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.activity,
       this.#externalSignerControllers,
       this.providers,
-      relayerUrl
+      relayerUrl,
+      this.#handleBroadcastSuccess.bind(this)
     )
     this.domains = new DomainsController(
       this.providers.providers,
@@ -723,33 +714,132 @@ export class MainController extends EventEmitter implements IMainController {
     // there is but there's a new actionId requested, rebuild it
     if (!this.signAccountOp || this.signAccountOp.fromActionId !== actionId) {
       this.destroySignAccOp()
-      this.signAccountOp = new SignAccountOpController(
-        this.accounts,
-        this.networks,
-        this.keystore,
-        this.portfolio,
-        this.#externalSignerControllers,
-        this.selectedAccount.account,
+      this.signAccountOp = new SignAccountOpController({
+        callRelayer: this.callRelayer,
+        accounts: this.accounts,
+        networks: this.networks,
+        keystore: this.keystore,
+        portfolio: this.portfolio,
+        externalSignerControllers: this.#externalSignerControllers,
+        activity: this.activity,
+        account: this.selectedAccount.account,
         network,
-        this.activity,
-        this.providers.providers[network.chainId.toString()],
-        actionId,
+        provider: this.providers.providers[network.chainId.toString()],
+        fromActionId: actionId,
         accountOp,
-        () => {
+        isSignRequestStillActive: () => {
           return this.isSignRequestStillActive
         },
-        true,
-        true,
-        (updatedAccountOp: AccountOp) => {
+        shouldSimulate: true,
+        shouldReestimate: true,
+        onAccountOpUpdate: (updatedAccountOp: AccountOp) => {
           this.requests.actions.updateAccountOpAction(updatedAccountOp)
         },
-        (ctrl: ISignAccountOpController) => {
+        traceCall: (ctrl: ISignAccountOpController) => {
           this.traceCall(ctrl)
-        }
-      )
+        },
+        onBroadcastSuccess: this.#handleBroadcastSuccess.bind(this),
+        onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
+      })
     }
 
     this.forceEmitUpdate()
+  }
+
+  async #handleBroadcastSuccess(
+    submittedAccountOp: SubmittedAccountOp,
+    accountOp: AccountOp,
+    signAccountOpType: 'default' | 'swap-and-bridge' | 'transfer',
+    fromActionId: string | number
+  ) {
+    // add the txnIds from each transaction to each Call from the accountOp
+    // if identifiedBy is MultipleTxns
+    const isBasicAccountBroadcastingMultiple =
+      submittedAccountOp.identifiedBy.type === 'MultipleTxns'
+    if (isBasicAccountBroadcastingMultiple) {
+      const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
+      const calls = submittedAccountOp.calls
+        .map((oneCall, i) => {
+          const localCall = { ...oneCall }
+
+          // we're cutting off calls the user didn't sign / weren't broadcast
+          if (!(i in txnIds)) return null
+
+          localCall.txnId = txnIds[i] as Hex
+          localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+          return localCall
+        })
+        .filter((aCall) => aCall !== null) as Call[]
+      // eslint-disable-next-line no-param-reassign
+      submittedAccountOp.calls = calls
+
+      // Handle the calls that weren't signed
+      const rejectedCalls = accountOp.calls.filter((call) =>
+        submittedAccountOp.calls.every((c) => c.id !== call.id)
+      )
+      const rejectedSwapActiveRouteIds = rejectedCalls.map((call) => {
+        const userRequest = this.requests.userRequests.find((r) => r.id === call.fromUserRequestId)
+
+        return userRequest?.meta.activeRouteId
+      })
+
+      rejectedSwapActiveRouteIds.forEach((routeId) => {
+        this.removeActiveRoute(routeId)
+      })
+
+      if (rejectedCalls.length) {
+        // remove the user requests that were rejected
+        await this.requests.rejectUserRequests(
+          'Transaction rejected by the bundler',
+          rejectedCalls
+            .filter((call) => !!call.fromUserRequestId)
+            .map((call) => call.fromUserRequestId as string)
+        )
+      }
+    }
+
+    this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+    await this.activity.addAccountOp(submittedAccountOp)
+
+    // resolve dapp requests, open benzin and etc only if the main sign accountOp
+    if (signAccountOpType === 'default') {
+      await this.resolveAccountOpAction(submittedAccountOp, fromActionId)
+
+      // TODO: the form should be reset in a success state in FE
+      this.transactionManager?.formState.resetForm()
+    }
+    // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
+    // visualize the success page on the FE instead of resetting the form
+    if (signAccountOpType === 'swap-and-bridge') {
+      this.swapAndBridge.resetForm()
+    }
+
+    if (signAccountOpType === 'transfer') {
+      if (this.transfer.shouldTrackLatestBroadcastedAccountOp) {
+        this.transfer.latestBroadcastedToken = this.transfer.selectedToken
+        this.transfer.latestBroadcastedAccountOp = submittedAccountOp
+      }
+
+      this.transfer.resetForm()
+    }
+
+    await this.ui.notification.create({
+      title:
+        // different count can happen only on isBasicAccountBroadcastingMultiple
+        submittedAccountOp.calls.length === accountOp.calls.length
+          ? 'Done!'
+          : 'Partially submitted',
+      message: `${
+        isBasicAccountBroadcastingMultiple
+          ? `${submittedAccountOp.calls.length}/${accountOp.calls.length} transactions were`
+          : 'The transaction was'
+      } successfully signed and broadcast to the network.`
+    })
+  }
+
+  async #handleBroadcastFailed(op: AccountOp) {
+    // remove the active route on broadcast failure
+    if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
@@ -831,7 +921,7 @@ export class MainController extends EventEmitter implements IMainController {
         return
       }
 
-      await this.#broadcastSignedAccountOp(signAccountOp, type, signAndBroadcastCallId)
+      await signAccountOp.broadcast()
     } catch (error: any) {
       if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
         if ('message' in error && 'level' in error && 'error' in error) {
@@ -1656,531 +1746,6 @@ export class MainController extends EventEmitter implements IMainController {
       networks: network ? [network] : undefined
     })
     this.emitUpdate()
-  }
-
-  /**
-   * There are 4 ways to broadcast an AccountOp:
-   *   1. For EOAs, there is only one way to do that. After
-   *   signing the transaction, the serialized signed transaction object gets
-   *   send to the network.
-   *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
-   *   for this. The first one is the signature of the AccountOp itself. The
-   *   second one is the signature of the transaction that will be executed
-   *   by the smart account.
-   *   3. For smart accounts that broadcast the ERC-4337 way.
-   *   4. for smart accounts, when the Relayer does the broadcast.
-   *
-   */
-  async #broadcastSignedAccountOp(
-    signAccountOp: ISignAccountOpController,
-    type: SignAccountOpType,
-    callId: string
-  ) {
-    if (this.statuses.signAndBroadcastAccountOp !== 'SIGNING') {
-      this.throwBroadcastAccountOp({
-        signAccountOp,
-        message: 'Pending broadcast. Please try again in a bit.'
-      })
-      return
-    }
-    const accountOp = signAccountOp.accountOp
-    const estimation = signAccountOp.estimation.estimation
-    const actionId = signAccountOp.fromActionId
-    const bundlerSwitcher = signAccountOp.bundlerSwitcher
-    const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
-
-    if (
-      !accountOp ||
-      !estimation ||
-      !actionId ||
-      !accountOp.signingKeyAddr ||
-      !accountOp.signingKeyType ||
-      !accountOp.signature ||
-      !bundlerSwitcher ||
-      !accountOp.gasFeePayment
-    ) {
-      const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ signAccountOp, message })
-    }
-
-    const provider = this.providers.providers[accountOp.chainId.toString()]
-    const account = this.accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)
-    const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
-
-    if (!provider) {
-      const networkName = network?.name || `network with id ${accountOp.chainId}`
-      const message = `Provider for ${networkName} not found. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ signAccountOp, message })
-    }
-
-    if (!account) {
-      const addr = shortenAddress(accountOp.accountAddr, 13)
-      const message = `Account with address ${addr} not found. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ signAccountOp, message })
-    }
-
-    if (!network) {
-      const message = `Network with id ${accountOp.chainId} not found. ${contactSupportPrompt}`
-      return this.throwBroadcastAccountOp({ signAccountOp, message })
-    }
-
-    this.statuses.signAndBroadcastAccountOp = 'BROADCASTING'
-    await this.forceEmitUpdate()
-
-    const accountState = await this.accounts.getOrFetchAccountOnChainState(
-      accountOp.accountAddr,
-      accountOp.chainId
-    )
-    const baseAcc = getBaseAccount(
-      account,
-      accountState,
-      this.keystore.getAccountKeys(account),
-      network
-    )
-    let transactionRes: {
-      txnId?: string
-      nonce: number
-      identifiedBy: AccountOpIdentifiedBy
-    } | null = null
-
-    // broadcasting by EOA is quite the same:
-    // 1) build a rawTxn 2) sign 3) broadcast
-    // we have one handle, just a diff rawTxn for each case
-    const rawTxnBroadcast = [
-      BROADCAST_OPTIONS.bySelf,
-      BROADCAST_OPTIONS.bySelf7702,
-      BROADCAST_OPTIONS.byOtherEOA,
-      BROADCAST_OPTIONS.delegation
-    ]
-
-    if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
-      const multipleTxnsBroadcastRes = []
-      const senderAddr = BROADCAST_OPTIONS.byOtherEOA
-        ? accountOp.gasFeePayment.paidBy
-        : accountOp.accountAddr
-      const nonce = await provider.getTransactionCount(senderAddr).catch((e) => e)
-
-      // @precaution
-      if (nonce instanceof Error) {
-        return this.throwBroadcastAccountOp({
-          signAccountOp,
-          message: 'RPC error. Please try again',
-          accountState
-        })
-      }
-
-      try {
-        const { gasFeePayment } = accountOp
-
-        if (!gasFeePayment.paidBy || !gasFeePayment.paidByKeyType) {
-          const message = `Missing gas fee payment details. ${contactSupportPrompt}`
-          return this.throwBroadcastAccountOp({ signAccountOp, message })
-        }
-
-        const signer = await this.keystore.getSigner(
-          gasFeePayment.paidBy,
-          gasFeePayment.paidByKeyType
-        )
-        if (signer.init) {
-          signer.init(this.#externalSignerControllers[gasFeePayment.paidByKeyType])
-        }
-
-        const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
-          ? accountOp.calls.length
-          : 1
-        if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: 0 })
-        for (let i = 0; i < txnLength; i++) {
-          const currentNonce = nonce + i
-          const rawTxn = await buildRawTransaction(
-            account,
-            accountOp,
-            accountState,
-            provider,
-            network,
-            currentNonce,
-            accountOp.gasFeePayment.broadcastOption,
-            accountOp.calls[i]
-          )
-          const signedTxn =
-            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
-              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
-              : await signer.signRawTransaction(rawTxn)
-          if (callId !== this.#signAndBroadcastCallId) {
-            return
-          }
-          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
-            multipleTxnsBroadcastRes.push({
-              hash: await provider.send('eth_sendRawTransaction', [signedTxn])
-            })
-          } else {
-            multipleTxnsBroadcastRes.push(await provider.broadcastTransaction(signedTxn))
-          }
-          if (txnLength > 1) signAccountOp.update({ signedTransactionsCount: i + 1 })
-
-          // record the EOA txn
-          this.callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-            rawTxn: signedTxn
-          }).catch((e: any) => {
-            // eslint-disable-next-line no-console
-            console.log('failed to record EOA txn to relayer', accountOp.chainId)
-            // eslint-disable-next-line no-console
-            console.log(e)
-          })
-        }
-        if (callId !== this.#signAndBroadcastCallId) return
-        transactionRes = {
-          nonce,
-          identifiedBy: {
-            type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
-            identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-          },
-          txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
-        }
-      } catch (error: any) {
-        if (this.#signAndBroadcastCallId !== callId) return
-        // eslint-disable-next-line no-console
-        console.error('Error broadcasting', error)
-        // for multiple txn cases
-        // if a batch of 5 txn is sent to Ledger for sign but the user reject
-        // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
-        // to #1 and #2 and create a submittedAccountOp
-        //
-        // unless it's the build-in swap - we want to throw an error and
-        // allow the user to retry in this case
-        if (multipleTxnsBroadcastRes.length && type !== SIGN_ACCOUNT_OP_SWAP) {
-          transactionRes = {
-            nonce,
-            identifiedBy: {
-              type: 'MultipleTxns',
-              identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-            },
-            txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
-          }
-        } else {
-          return this.throwBroadcastAccountOp({ signAccountOp, error, accountState })
-        }
-      } finally {
-        if (this.#signAndBroadcastCallId === callId) {
-          signAccountOp.update({ signedTransactionsCount: null })
-        }
-      }
-    }
-    // Smart account, the ERC-4337 way
-    else if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byBundler) {
-      const userOperation = accountOp.asUserOperation
-      if (!userOperation) {
-        const accAddr = shortenAddress(accountOp.accountAddr, 13)
-        const message = `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${accAddr}`
-        return this.throwBroadcastAccountOp({ signAccountOp, message, accountState })
-      }
-
-      // broadcast through bundler's service
-      let userOperationHash
-      const bundler = bundlerSwitcher.getBundler()
-      try {
-        userOperationHash = await bundler.broadcast(userOperation, network)
-      } catch (e: any) {
-        let retryMsg
-
-        // if the signAccountOp is still active (it should be)
-        // try to switch the bundler and ask the user to try again
-        if (signAccountOp) {
-          const switcher = signAccountOp.bundlerSwitcher
-          signAccountOp.updateStatus(SigningStatus.ReadyToSign)
-
-          if (switcher.canSwitch(baseAcc)) {
-            switcher.switch()
-            signAccountOp.simulate()
-            signAccountOp.gasPrice.fetch()
-            retryMsg = 'Broadcast failed because bundler was down. Please try again'
-          }
-        }
-
-        return this.throwBroadcastAccountOp({
-          signAccountOp,
-          error: e,
-          accountState,
-          provider,
-          network,
-          message: retryMsg
-        })
-      }
-      if (!userOperationHash) {
-        return this.throwBroadcastAccountOp({
-          signAccountOp,
-          message: 'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
-        })
-      }
-
-      transactionRes = {
-        nonce: Number(userOperation.nonce),
-        identifiedBy: {
-          type: 'UserOperation',
-          identifier: userOperationHash,
-          bundler: bundler.getName()
-        }
-      }
-    }
-    // Smart account, the Relayer way
-    else {
-      try {
-        const body = {
-          gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
-          txns: getSignableCalls(accountOp),
-          signature: accountOp.signature,
-          signer: { address: accountOp.signingKeyAddr },
-          nonce: Number(accountOp.nonce)
-        }
-        const additionalRelayerNetwork = relayerAdditionalNetworks.find(
-          (net) => net.chainId === network.chainId
-        )
-        const relayerChainId = additionalRelayerNetwork
-          ? additionalRelayerNetwork.chainId
-          : accountOp.chainId
-        const response = await this.callRelayer(
-          `/identity/${accountOp.accountAddr}/${relayerChainId}/submit`,
-          'POST',
-          body
-        )
-        if (!response.success) throw new Error(response.message)
-
-        transactionRes = {
-          txnId: response.txId,
-          nonce: Number(accountOp.nonce),
-          identifiedBy: {
-            type: 'Relayer',
-            identifier: response.id
-          }
-        }
-      } catch (error: any) {
-        return this.throwBroadcastAccountOp({ signAccountOp, error, accountState, isRelayer: true })
-      }
-    }
-
-    if (this.#signAndBroadcastCallId !== callId) return
-
-    if (!transactionRes)
-      return this.throwBroadcastAccountOp({
-        signAccountOp,
-        message: 'No transaction response received after being broadcasted.'
-      })
-
-    // simulate the swap & bridge only after a successful broadcast
-    if (type === SIGN_ACCOUNT_OP_SWAP || type === SIGN_ACCOUNT_OP_TRANSFER) {
-      signAccountOp?.portfolioSimulate().then(() => {
-        this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
-      })
-    } else {
-      this.portfolio.markSimulationAsBroadcasted(account.addr, network.chainId)
-    }
-
-    const submittedAccountOp: SubmittedAccountOp = {
-      ...accountOp,
-      status: AccountOpStatus.BroadcastedButNotConfirmed,
-      txnId: transactionRes.txnId,
-      nonce: BigInt(transactionRes.nonce),
-      identifiedBy: transactionRes.identifiedBy,
-      timestamp: new Date().getTime(),
-      isSingletonDeploy: !!accountOp.calls.find(
-        (call) => call.to && getAddress(call.to) === SINGLETON
-      )
-    }
-
-    // add the txnIds from each transaction to each Call from the accountOp
-    // if identifiedBy is MultipleTxns
-    const isBasicAccountBroadcastingMultiple = transactionRes.identifiedBy.type === 'MultipleTxns'
-    if (isBasicAccountBroadcastingMultiple) {
-      const txnIds = transactionRes.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls
-        .map((oneCall, i) => {
-          const localCall = { ...oneCall }
-
-          // we're cutting off calls the user didn't sign / weren't broadcast
-          if (!(i in txnIds)) return null
-
-          localCall.txnId = txnIds[i] as Hex
-          localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
-          return localCall
-        })
-        .filter((aCall) => aCall !== null) as Call[]
-      submittedAccountOp.calls = calls
-
-      // Handle the calls that weren't signed
-      const rejectedCalls = accountOp.calls.filter((call) =>
-        submittedAccountOp.calls.every((c) => c.id !== call.id)
-      )
-      const rejectedSwapActiveRouteIds = rejectedCalls.map((call) => {
-        const userRequest = this.requests.userRequests.find((r) => r.id === call.fromUserRequestId)
-
-        return userRequest?.meta.activeRouteId
-      })
-
-      rejectedSwapActiveRouteIds.forEach((routeId) => {
-        this.removeActiveRoute(routeId)
-      })
-
-      if (rejectedCalls.length) {
-        // remove the user requests that were rejected
-        await this.requests.rejectUserRequests(
-          'Transaction rejected by the bundler',
-          rejectedCalls
-            .filter((call) => !!call.fromUserRequestId)
-            .map((call) => call.fromUserRequestId as string)
-        )
-      }
-    }
-
-    this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
-    await this.activity.addAccountOp(submittedAccountOp)
-
-    // resolve dapp requests, open benzin and etc only if the main sign accountOp
-    if (type === SIGN_ACCOUNT_OP_MAIN) {
-      await this.resolveAccountOpAction(submittedAccountOp, actionId)
-
-      // TODO: the form should be reset in a success state in FE
-      this.transactionManager?.formState.resetForm()
-    }
-    // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
-    // visualize the success page on the FE instead of resetting the form
-    if (type === SIGN_ACCOUNT_OP_SWAP) {
-      this.swapAndBridge.resetForm()
-    }
-
-    if (type === SIGN_ACCOUNT_OP_TRANSFER) {
-      if (this.transfer.shouldTrackLatestBroadcastedAccountOp) {
-        this.transfer.latestBroadcastedToken = this.transfer.selectedToken
-        this.transfer.latestBroadcastedAccountOp = submittedAccountOp
-      }
-
-      this.transfer.resetForm()
-    }
-
-    // Allow the user to broadcast a new transaction;
-    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
-    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
-    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
-    // leaving the new request 'orphaned' in the background without being attached to any action.
-    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
-    await this.forceEmitUpdate()
-    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-    await this.forceEmitUpdate()
-
-    await this.ui.notification.create({
-      title:
-        // different count can happen only on isBasicAccountBroadcastingMultiple
-        submittedAccountOp.calls.length === accountOp.calls.length
-          ? 'Done!'
-          : 'Partially submitted',
-      message: `${
-        isBasicAccountBroadcastingMultiple
-          ? `${submittedAccountOp.calls.length}/${accountOp.calls.length} transactions were`
-          : 'The transaction was'
-      } successfully signed and broadcast to the network.`
-    })
-
-    return Promise.resolve()
-  }
-
-  // Technically this is an anti-pattern, but it's the only way to
-  // test the error handling in the method.
-  protected throwBroadcastAccountOp({
-    signAccountOp,
-    message: humanReadableMessage,
-    error: _err,
-    accountState,
-    isRelayer = false,
-    provider = undefined,
-    network = undefined
-  }: {
-    signAccountOp: ISignAccountOpController
-    message?: string
-    error?: Error | EmittableError | ExternalSignerError
-    accountState?: AccountOnchainState
-    isRelayer?: boolean
-    provider?: RPCProvider
-    network?: Network
-  }) {
-    const originalMessage = _err?.message
-    let message = humanReadableMessage
-    let isReplacementFeeLow = false
-
-    this.statuses.signAndBroadcastAccountOp = 'ERROR'
-    this.forceEmitUpdate()
-
-    if (originalMessage) {
-      if (originalMessage.includes('replacement fee too low')) {
-        message =
-          'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
-        isReplacementFeeLow = true
-        if (signAccountOp) {
-          signAccountOp.simulate(false)
-        }
-      } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
-        message = accountState?.isV2
-          ? 'Broadcast failed because of a pending transaction. Please try again'
-          : 'Signer key not supported on this network'
-      } else if (
-        originalMessage.includes('underpriced') ||
-        originalMessage.includes('Fee confirmation failed')
-      ) {
-        if (originalMessage.includes('underpriced')) {
-          message =
-            'Transaction fee underpriced. Please select a higher transaction speed and try again'
-        }
-
-        if (signAccountOp) {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          signAccountOp.gasPrice.fetch()
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          signAccountOp.simulate(false)
-        }
-      } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
-        message =
-          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
-      } else if (originalMessage.includes('user nonce') && isRelayer) {
-        if (this.signAccountOp) {
-          this.accounts
-            .updateAccountState(this.signAccountOp.accountOp.accountAddr, 'pending', [
-              this.signAccountOp.accountOp.chainId
-            ])
-            .then(() => this.signAccountOp?.simulate())
-            .catch((e) => e)
-        }
-      }
-    }
-
-    if (!message) {
-      message = getHumanReadableBroadcastError(_err || new Error('')).message
-
-      // if the message states that the paymaster doesn't have sufficient amount,
-      // add it to the failedPaymasters to disable it until a top-up is made
-      if (message.includes(insufficientPaymasterFunds) && provider && network) {
-        failedPaymasters.addInsufficientFunds(provider, network).then(() => {
-          if (signAccountOp) {
-            signAccountOp.simulate(false)
-          }
-        })
-      }
-      if (message.includes('the selected fee is too low')) {
-        signAccountOp.gasPrice.fetch()
-      }
-    }
-
-    // To enable another try for signing in case of broadcast fail
-    // broadcast is called in the FE only after successful signing
-    signAccountOp?.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
-
-    // remove the active route on broadcast failure
-    if (signAccountOp?.accountOp.meta?.swapTxn) {
-      this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
-    }
-
-    throw new EmittableError({
-      level: 'major',
-      message,
-      error: _err || new Error(message),
-      sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
-    })
   }
 
   get isSignRequestStillActive(): boolean {
