@@ -14,6 +14,7 @@ const scheduledActions: {
 
 export async function executeBatchedFetch(network: Network): Promise<void> {
   const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]
+  // FIXME: Must get RPC provider from the ProvidersController
   const provider = getRpcProvider([rpcUrl], network.chainId)
   const allAddresses =
     Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||

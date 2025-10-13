@@ -57,6 +57,7 @@ export function getPaymasterStubData(
   userOp: UserOperation,
   network: Network
 ): Promise<PaymasterEstimationData> {
+  // FIXME: Must get RPC provider from the ProvidersController
   const provider = getRpcProvider([service.url], network.chainId)
   return provider.send('pm_getPaymasterStubData', [
     getCleanUserOp(userOp)[0],
@@ -71,6 +72,7 @@ export async function getPaymasterData(
   userOp: UserOperation,
   network: Network
 ): Promise<PaymasterData> {
+  // FIXME: Must get RPC provider from the ProvidersController
   const provider = getRpcProvider([service.url], network.chainId)
   // TODO<Bobby>: better way to send the bundler
   // send the whole userOp if the sponsorship is from ambire.com

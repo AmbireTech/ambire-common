@@ -45,6 +45,7 @@ export async function estimateGas(
     .catch(async (e) => {
       if (!e.message.includes('insufficient funds')) return 0n
 
+      // FIXME: Revise if this should get RPC provider from the ProvidersController or should stay as is
       const isolatedProvider = getRpcProvider(
         network.rpcUrls,
         network.chainId,

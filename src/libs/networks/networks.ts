@@ -110,6 +110,7 @@ export async function getNetworkInfo(
   }
 
   let flagged = false
+  // FIXME: Must get RPC provider from the ProvidersController, introduce a temporary provider?
   const provider = getRpcProvider([rpcUrl], chainId)
 
   const raiseFlagged = (e: Error, returnData: any): any => {

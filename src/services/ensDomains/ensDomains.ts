@@ -37,11 +37,11 @@ export function isCorrectAddress(address: string) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
-// @TODO: Get RPC provider url from settings controller
 async function resolveENSDomain(domain: string, bip44Item?: number[][]): Promise<string> {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return ''
   const ethereum = networks.find((n) => n.chainId === 1n)!
+  // FIXME: Must get RPC provider from the ProvidersController
   const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
   const resolver = await provider.getResolver(normalizedDomainName)
   if (!resolver) return ''

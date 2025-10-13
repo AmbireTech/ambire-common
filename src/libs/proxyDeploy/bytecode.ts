@@ -10,6 +10,7 @@ export async function getBytecode(priLevels: PrivLevels[]): Promise<string> {
   })
 }
 export async function get4437Bytecode(network: Network, priLevels: PrivLevels[]): Promise<string> {
+  // FIXME: Must get RPC provider from the ProvidersController if used outside unit tests
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
   const code = await provider.getCode(PROXY_AMBIRE_4337_ACCOUNT)
   if (code === '0x') throw new Error('No proxy ambire account mined for the specified network')
