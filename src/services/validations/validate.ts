@@ -58,7 +58,7 @@ const FIRST_TIME_SEND_MESSAGE =
   'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
 
-function getDaysAgo(date: Date): string {
+function getTimeAgo(date: Date): string {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMinutes = Math.floor(diffMs / (1000 * 60))
@@ -71,7 +71,13 @@ function getDaysAgo(date: Date): string {
 
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
   if (diffDays === 1) return 'yesterday'
-  return `${diffDays} days ago`
+  if (diffDays <= 31) return `${diffDays} days ago`
+
+  const diffMonths = Math.floor(diffDays / 30.44) // Average days per month
+  if (diffMonths < 12) return `${diffMonths} ${diffMonths === 1 ? 'month' : 'months'} ago`
+
+  const diffYears = Math.round(diffMonths / 12)
+  return `${diffYears} ${diffYears === 1 ? 'year' : 'years'} ago`
 }
 
 const validateSendTransferAddress = (
@@ -114,7 +120,7 @@ const validateSendTransferAddress = (
       ? FIRST_TIME_SEND_MESSAGE
       : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
     if (lastRecipientTransactionDate) {
-      message = `Last transaction to this address was ${getDaysAgo(lastRecipientTransactionDate)}.`
+      message = `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
     }
     return {
       success: true,
@@ -158,7 +164,7 @@ const validateSendTransferAddress = (
   if (lastRecipientTransactionDate) {
     return {
       success: true,
-      message: `Last transaction to this address was ${getDaysAgo(lastRecipientTransactionDate)}.`
+      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
     }
   }
 
