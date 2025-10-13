@@ -114,6 +114,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #relayerUrl: string
 
+  isRecipientAddressFirstTimeSend: boolean = false
+
+  lastSentToRecipientAt: Date | null = null
+
   signAccountOpController: ISignAccountOpController | null = null
 
   /**
@@ -299,7 +303,9 @@ export class TransferController extends EventEmitter implements ITransferControl
         isEnsAddress,
         this.addressState.isDomainResolving,
         this.isSWWarningVisible,
-        this.isSWWarningAgreed
+        this.isSWWarningAgreed,
+        this.isRecipientAddressFirstTimeSend,
+        this.lastSentToRecipientAt
       )
     }
 
@@ -410,6 +416,15 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
+    // Check if the address has been used previously for transactions
+    const { found, lastTransactionDate } = await this.#activity.hasAccountOpsSentTo(
+      this.recipientAddress,
+      this.#selectedAccountData.account?.addr || ''
+    )
+    this.isRecipientAddressFirstTimeSend =
+      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
+
     if (typeof isTopUp === 'boolean') {
       this.isTopUp = isTopUp
       this.#setSWWarningVisibleIfNeeded()
@@ -444,6 +459,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknown = false
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
+      this.isRecipientAddressFirstTimeSend = false
+      this.lastRecipientTransactionDate = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -590,7 +607,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      this.signAccountOpController.update({ accountOpData: { calls } })
       return
     }
 
@@ -635,6 +652,18 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }
 
+    // Check if the address has been used previously for transactions
+    const { found: previousTransactionExists, lastTransactionDate } =
+      await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccountData.account.addr
+      )
+
+    // Update state based on whether there are previous transactions to this address
+    this.isRecipientAddressFirstTimeSend =
+      !previousTransactionExists &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
     this.signAccountOpController = new SignAccountOpController(
       this.#accounts,
       this.#networks,
@@ -649,8 +678,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       accountOp,
       () => true,
       false,
-      false,
-      undefined
+      false
     )
 
     // propagate updates from signAccountOp here

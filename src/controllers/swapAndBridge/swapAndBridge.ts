@@ -2188,13 +2188,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       ) {
         this.destroySignAccountOp()
       } else {
-        this.#signAccountOpController.update({ calls })
-
         // add the real swapTxn
-        if (!this.#signAccountOpController.accountOp.meta)
-          this.#signAccountOpController.accountOp.meta = {}
-        this.#signAccountOpController.accountOp.meta.swapTxn = userTxn
-        this.#signAccountOpController.accountOp.meta.fromQuoteId = quoteIdGuard
+        this.#signAccountOpController.update({
+          accountOpData: {
+            calls,
+            meta: {
+              ...(this.#signAccountOpController.accountOp.meta || {}),
+              swapTxn: userTxn,
+              fromQuoteId: quoteIdGuard
+            }
+          }
+        })
         return
       }
     }
@@ -2248,8 +2252,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         return !!this.#signAccountOpController
       },
       false,
-      false,
-      undefined
+      false
     )
 
     this.emitUpdate()
