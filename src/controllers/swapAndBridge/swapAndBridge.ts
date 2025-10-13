@@ -466,7 +466,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
-        if (this.#selectedAccount.portfolio.isReadyToVisualize) {
+        if (this.#selectedAccount.portfolio.isReadyToVisualize && this.sessionIds.length) {
           this.isTokenListLoading = false
           await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
           // To token list includes selected account portfolio tokens, it should get an update too
