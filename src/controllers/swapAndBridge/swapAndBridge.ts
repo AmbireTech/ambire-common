@@ -202,18 +202,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   } = {}
 
   /**
-   * Ensures that `#toTokenList` updates for each key are executed sequentially.
-   * This prevents race conditions when multiple updates are triggered
-   * for the same (fromChainId and toChainId) combination.
-   *
-   * Example:
-   *  - If multiple updates are requested for the same key,
-   *    each new update waits for the previous one to complete.
-   *  - Updates for different keys run independently in parallel.
-   */
-  #queue: { [key: CachedTokenListKey]: Promise<void> } = {}
-
-  /**
    * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
    * calls to fetch the supported chains from our service provider.
    */
@@ -1075,77 +1063,65 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       return
     }
 
-    if (!this.#queue[toTokenListKeyAtStart]) {
-      this.#queue[toTokenListKeyAtStart] = Promise.resolve()
-    }
-
     if (shouldReset) {
       this.toSelectedToken = null
     }
 
-    const updatePromise = async () => {
-      toTokenList.status = 'LOADING'
+    toTokenList.status = 'LOADING'
 
-      // Emit an update to set the loading state in the UI
-      this.#emitUpdateIfNeeded()
+    // Emit an update to set the loading state in the UI
+    this.#emitUpdateIfNeeded()
 
-      const now = Date.now()
-      this.removeError('to-token-list-fetch-failed', false)
+    const now = Date.now()
+    this.removeError('to-token-list-fetch-failed', false)
 
-      const shouldFetchTokenList =
-        !toTokenList.apiTokens.length ||
-        now - toTokenList.lastUpdate >= TO_TOKEN_LIST_CACHE_THRESHOLD
+    const shouldFetchTokenList =
+      !toTokenList.apiTokens.length || now - toTokenList.lastUpdate >= TO_TOKEN_LIST_CACHE_THRESHOLD
 
-      if (shouldFetchTokenList) {
-        try {
-          toTokenList.apiTokens = await this.#serviceProviderAPI.getToTokenList({
-            fromChainId,
-            toChainId
+    if (shouldFetchTokenList) {
+      try {
+        toTokenList.apiTokens = await this.#serviceProviderAPI.getToTokenList({
+          fromChainId,
+          toChainId
+        })
+        toTokenList.lastUpdate = Date.now()
+      } catch (error: any) {
+        // Display an error only if there is no cached data
+        if (!toTokenList.apiTokens.length) {
+          const { message } = getHumanReadableSwapAndBridgeError(error)
+
+          this.addOrUpdateError({
+            id: 'to-token-list-fetch-failed',
+            title: 'Token list on the receiving network is temporarily unavailable.',
+            text: message,
+            level: 'error'
           })
-          toTokenList.lastUpdate = Date.now()
-        } catch (error: any) {
-          // Display an error only if there is no cached data
-          if (!toTokenList.apiTokens.length) {
-            const { message } = getHumanReadableSwapAndBridgeError(error)
-
-            this.addOrUpdateError({
-              id: 'to-token-list-fetch-failed',
-              title: 'Token list on the receiving network is temporarily unavailable.',
-              text: message,
-              level: 'error'
-            })
-          }
         }
       }
+    }
 
-      toTokenList.tokens = this.#getToTokens()
+    toTokenList.tokens = this.#getToTokens()
 
-      const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === toChainId)
-      // should never happen
-      if (!toTokenNetwork) {
-        toTokenList.status = 'INITIAL'
-        this.#emitUpdateIfNeeded()
-        throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
-      }
+    const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === toChainId)
+    // should never happen
+    if (!toTokenNetwork) {
+      toTokenList.status = 'INITIAL'
+      this.#emitUpdateIfNeeded()
+      throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
+    }
 
-      if (toTokenListKeyAtStart === this.#toTokenListKey && !this.toSelectedToken) {
-        if (addressToSelect) {
-          const token = toTokenList.tokens.find((t) => t.address === addressToSelect)
-          if (token) {
-            await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
-            this.#emitUpdateIfNeeded()
-          }
+    if (toTokenListKeyAtStart === this.#toTokenListKey && !this.toSelectedToken) {
+      if (addressToSelect) {
+        const token = toTokenList.tokens.find((t) => t.address === addressToSelect)
+        if (token) {
+          await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
+          this.#emitUpdateIfNeeded()
         }
       }
 
       toTokenList.status = 'INITIAL'
       this.#emitUpdateIfNeeded()
     }
-
-    // Chain the new updatePromise to the current queue
-    this.#queue[toTokenListKeyAtStart] = this.#queue[toTokenListKeyAtStart]
-      .then(updatePromise)
-      .catch(() => updatePromise())
   }
 
   /**
