@@ -3,6 +3,7 @@ import { SiweMessage } from 'viem/siwe'
 import {
   AutoLoginPolicy,
   AutoLoginSettings,
+  AutoLoginStatus,
   IAutoLoginController
 } from '../../interfaces/autoLogin'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -137,21 +138,18 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return policy
   }
 
-  autoLogin(
-    parsedSiwe: SiweMessage,
-    accountKeys: Key[]
-  ): 'auto-logged-in' | 'unsupported' | 'login-expired' | 'no-policy' {
+  autoLogin(parsedSiwe: SiweMessage, accountKeys: Key[]): AutoLoginStatus {
     const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys)
 
     switch (policyStatus) {
       case 'valid-policy':
-        return 'auto-logged-in'
+        return 'active'
+      case 'no-policy':
+        return 'no-policy'
       case 'unsupported':
         return 'unsupported'
       case 'expired':
-        return 'login-expired'
-      case 'no-policy':
-        return 'no-policy'
+        return 'expired'
       default:
         throw new Error('Unrecognized policy status')
     }
