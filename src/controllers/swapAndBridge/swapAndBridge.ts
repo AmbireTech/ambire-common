@@ -187,7 +187,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   errors: SwapAndBridgeErrorType[] = []
 
-  #toTokenListRefactored: {
+  #toTokenList: {
     [key in CachedTokenListKey]?: {
       status: 'INITIAL' | 'LOADING'
       // Timestamp (in ms) of the last successful `apiTokens` update.
@@ -893,7 +893,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     const toTokensKey = this.#toTokenListKey
-    const toTokenList = toTokensKey ? this.#toTokenListRefactored[toTokensKey] : undefined
+    const toTokenList = toTokensKey ? this.#toTokenList[toTokensKey] : undefined
     const nextToToken = toTokenList
       ? toTokenList.tokens.find((t) => t.address === toSelectedTokenAddr)
       : null
@@ -951,8 +951,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.resetForm()
 
     this.portfolioTokenList = []
-    if (toTokenListKey && this.#toTokenListRefactored[toTokenListKey]) {
-      this.#toTokenListRefactored[toTokenListKey].tokens = []
+    if (toTokenListKey && this.#toTokenList[toTokenListKey]) {
+      this.#toTokenList[toTokenListKey].tokens = []
     }
 
     this.fromChainId = 1
@@ -1046,8 +1046,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!toTokenListKeyAtStart || !fromChainId || !toChainId) return
 
-    if (!this.#toTokenListRefactored[toTokenListKeyAtStart]) {
-      this.#toTokenListRefactored[toTokenListKeyAtStart] = {
+    if (!this.#toTokenList[toTokenListKeyAtStart]) {
+      this.#toTokenList[toTokenListKeyAtStart] = {
         status: 'INITIAL',
         apiTokens: [],
         tokens: [],
@@ -1057,7 +1057,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#emitUpdateIfNeeded()
     }
 
-    const toTokenList = this.#toTokenListRefactored[toTokenListKeyAtStart]
+    const toTokenList = this.#toTokenList[toTokenListKeyAtStart]
 
     if (toTokenList.status === 'LOADING') {
       return
@@ -1136,7 +1136,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!toTokenListKey || !fromChainId || !toChainId) return []
 
-    const tokens = this.#toTokenListRefactored[toTokenListKey]?.tokens || []
+    const tokens = this.#toTokenList[toTokenListKey]?.tokens || []
 
     // Swaps between same "from" and "to" tokens are not feasible, filter them out
     const isSwapping = fromChainId === toChainId
@@ -1157,7 +1157,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!toTokenListKey || !fromChainId || !toChainId) return []
 
     const apiTokens =
-      this.#toTokenListRefactored[toTokenListKey]?.apiTokens ||
+      this.#toTokenList[toTokenListKey]?.apiTokens ||
       addCustomTokensIfNeeded({
         chainId: toChainId,
         tokens: []
@@ -1181,7 +1181,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!toTokenListKey) return 'INITIAL'
 
-    const toTokenList = this.#toTokenListRefactored[toTokenListKey]
+    const toTokenList = this.#toTokenList[toTokenListKey]
 
     if (!toTokenList) return 'INITIAL'
 
@@ -1194,9 +1194,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const toTokenListKey = this.#toTokenListKey
 
-    if (!toTokenListKey || !this.#toTokenListRefactored[toTokenListKey]) return
+    if (!toTokenListKey || !this.#toTokenList[toTokenListKey]) return
 
-    const tokenList = this.#toTokenListRefactored[toTokenListKey]
+    const tokenList = this.#toTokenList[toTokenListKey]
 
     const isAlreadyInTheList = tokenList.tokens.some(
       // Compare lowercase, address param comes from a search term that is lowercased
@@ -1291,12 +1291,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!searchTerm) return // should never happen
 
-    if (!this.#toTokenListKey || !this.#toTokenListRefactored[this.#toTokenListKey]) return
+    if (!this.#toTokenListKey || !this.#toTokenList[this.#toTokenListKey]) return
 
     const normalizedSearchTerm = searchTerm.trim().toLowerCase()
     this.toTokenSearchTerm = normalizedSearchTerm
 
-    const tokens = this.#toTokenListRefactored[this.#toTokenListKey]?.tokens || []
+    const tokens = this.#toTokenList[this.#toTokenListKey]?.tokens || []
 
     const { exactMatches, partialMatches } = tokens.reduce(
       (result, token) => {
@@ -2499,7 +2499,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       swapSignErrors: this.swapSignErrors,
       signAccountOpController: this.signAccountOpController,
       banners: this.banners,
-      toTokenListRefactored: this.#toTokenListRefactored
+      toTokenListRefactored: this.#toTokenList
     }
   }
 }
