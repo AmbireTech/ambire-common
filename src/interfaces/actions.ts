@@ -6,6 +6,16 @@ export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
+export type ActionType =
+  | 'switchAccount'
+  | 'accountOp'
+  | 'signMessage'
+  | 'benzin'
+  | 'dappRequest'
+  | 'swapAndBridge'
+  | 'transfer'
+  | 'app-login'
+
 export type OpenActionWindowParams = {
   skipFocus?: boolean
   baseWindowId?: number
@@ -66,6 +76,18 @@ export type TransferAction = {
   }
 }
 
+export type AppLoginAction = {
+  id: UserRequest['id']
+  type: 'app-login'
+  // @TODO
+  policy: any
+  userRequest: {
+    meta: {
+      accountAddr: Account['addr']
+    }
+  }
+}
+
 export type Action =
   | SwitchAccountAction
   | AccountOpAction
@@ -74,3 +96,4 @@ export type Action =
   | DappRequestAction
   | SwapAndBridgeAction
   | TransferAction
+  | AppLoginAction

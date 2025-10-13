@@ -1,6 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt } from 'ethers'
+import { getAddress, getBigInt, toUtf8String } from 'ethers'
+import { parseSiweMessage, verifySiweMessage } from 'viem/siwe'
 
 import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
@@ -11,7 +12,8 @@ import {
   AccountOpAction,
   Action,
   ActionExecutionType,
-  ActionPosition
+  ActionPosition,
+  ActionType
 } from '../../interfaces/actions'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
@@ -370,7 +372,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
       } else {
-        let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
+        let actionType: ActionType = 'dappRequest'
+
+        console.log('Debug: other request action:', req)
+
+        if (req.action.kind === 'message' && 'message' in req.action) {
+          const messageString = req.action.message.startsWith('0x')
+            ? toUtf8String(req.action.message)
+            : req.action.message
+          const siweMessageData = parseSiweMessage(messageString)
+
+          console.log('Debug: Parsed SIWE message data:', siweMessageData)
+        }
 
         if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
           actionType = 'signMessage'
