@@ -470,7 +470,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           this.isTokenListLoading = false
           await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
           // To token list includes selected account portfolio tokens, it should get an update too
-          await this.updateToTokenListRefactored(false)
+          await this.updateToTokenList(false)
         }
       })
     })
@@ -913,7 +913,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await Promise.all([
       shouldUpdateToTokenList
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
-          this.updateToTokenListRefactored(true, nextToToken?.address || toSelectedTokenAddr)
+          this.updateToTokenList(true, nextToToken?.address || toSelectedTokenAddr)
         : undefined,
       updateQuote
         ? this.updateQuote({
@@ -1039,7 +1039,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
   }
 
-  async updateToTokenListRefactored(shouldReset: boolean, addressToSelect?: string) {
+  async updateToTokenList(shouldReset: boolean, addressToSelect?: string) {
     const fromChainId = this.fromChainId
     const toChainId = this.toChainId
     const toTokenListKeyAtStart = this.#toTokenListKey
@@ -1403,7 +1403,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ;[this.fromChainId, this.toChainId] = [this.toChainId, this.fromChainId]
 
     // Update the to token list
-    await this.updateToTokenListRefactored(true, prevFromSelectedToken?.address)
+    await this.updateToTokenList(true, prevFromSelectedToken?.address)
 
     this.switchTokensStatus = 'INITIAL'
     this.#emitUpdateIfNeeded()
