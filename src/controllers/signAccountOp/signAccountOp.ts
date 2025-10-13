@@ -1927,6 +1927,21 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
+
+        // fetch the nonce if needed
+        const nonce = await this.baseAccount.getBroadcastNonce(
+          this.#activity,
+          this.accountOp,
+          this.provider
+        )
+        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+
+        // get broadcast nonce
+        this.#activity.broadcastedButNotConfirmed.find(
+          (accOp) =>
+            accOp.accountAddr === this.accountOp.accountAddr &&
+            accOp.chainId === this.accountOp.chainId
+        )
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
         })
@@ -2073,6 +2088,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       } else {
         // Relayer
         this.#addFeePayment()
+
+        // fetch the nonce if needed
+        const nonce = await this.baseAccount.getBroadcastNonce(
+          this.#activity,
+          this.accountOp,
+          this.provider
+        )
+        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)

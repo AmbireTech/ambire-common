@@ -1207,6 +1207,7 @@ export class MainController extends EventEmitter implements IMainController {
           ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
           : undefined
 
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.updateSelectedAccountPortfolio({ networks })
       }
     }
@@ -2137,7 +2138,10 @@ export class MainController extends EventEmitter implements IMainController {
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
-      } else if (originalMessage.includes('user nonce') && isRelayer) {
+      } else if (
+        originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
+        originalMessage.includes('user nonce')
+      ) {
         if (this.signAccountOp) {
           this.accounts
             .updateAccountState(this.signAccountOp.accountOp.accountAddr, 'pending', [

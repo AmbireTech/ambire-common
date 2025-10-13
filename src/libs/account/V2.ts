@@ -1,10 +1,12 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { Contract, Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
+import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
@@ -172,5 +174,25 @@ export class V2 extends BaseAccount {
   getNonceId(): string {
     // v2 accounts have two nonces: ambire smart account & entry point nonce
     return `${this.accountState.nonce.toString()}-${this.accountState.erc4337Nonce.toString()}`
+  }
+
+  async getBroadcastNonce(
+    activity: IActivityController,
+    op: AccountOp,
+    provider: RPCProvider
+  ): Promise<bigint> {
+    // return the account op nonce if we're not using the relayer
+    const hasRelayer = !this.network.erc4337.enabled && this.network.hasRelayer
+    if (!hasRelayer) return op.nonce as bigint
+
+    // if we don't have a pending op, we can trust account op nonce
+    const pendingOp = activity.broadcastedButNotConfirmed.find(
+      (accOp) => accOp.accountAddr === op.accountAddr && accOp.chainId === op.chainId
+    )
+    if (!pendingOp || (op.nonce && pendingOp.nonce < op.nonce)) return op.nonce as bigint
+
+    const contract = new Contract(op.accountAddr, AmbireAccount.abi, provider)
+    const accountNonce = await contract.nonce({ blockTag: 'pending' }).catch(() => null)
+    return accountNonce ? BigInt(accountNonce.toString()) : (op.nonce as bigint)
   }
 }
