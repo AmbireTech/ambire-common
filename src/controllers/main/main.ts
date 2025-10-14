@@ -837,18 +837,29 @@ export class MainController extends EventEmitter implements IMainController {
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
-  async handleSignAndBroadcastAccountOp() {
-    if (!this.signAccountOp) {
+  async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
+    let signAccountOp: ISignAccountOpController | null
+
+    if (type === 'one-click-swap-and-bridge') {
+      signAccountOp = this.swapAndBridge.signAccountOpController
+    } else if (type === 'one-click-transfer') {
+      signAccountOp = this.transfer.signAccountOpController
+    } else {
+      signAccountOp = this.signAccountOp
+    }
+
+    if (!signAccountOp) {
       return this.emitError({
         level: 'major',
-        message: 'Internal error: Could not find accountOp to sign',
+        message:
+          'Internal error: The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.',
         error: new Error(
           'Error: signAccountOp controller not initialized while trying to sign and broadcast'
         )
       })
     }
 
-    await this.signAccountOp.signAndBroadcast()
+    await signAccountOp.signAndBroadcast()
   }
 
   async resolveDappBroadcast(
