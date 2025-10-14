@@ -11,10 +11,6 @@ interface IStakingPool {
 }
 
 contract WALLETSupplyController {
-	event LogNewVesting(address indexed recipient, uint start, uint end, uint amountPerSec);
-	event LogVestingUnset(address indexed recipient, uint end, uint amountPerSec);
-	event LogMintVesting(address indexed recipient, uint amount);
-
 	// solhint-disable-next-line var-name-mixedcase
 	WALLETToken public immutable WALLET;
 	mapping (address => bool) public hasGovernance;
@@ -37,55 +33,6 @@ contract WALLETSupplyController {
 		// we can burn conrtol by transferring control over to a contract that can't mint or by ypgrading the supply controller
 		require(msg.sender != addr, "CANNOT_MODIFY_SELF");
 		hasGovernance[addr] = level;
-	}
-
-	// Vesting
-	// Some addresses (eg StakingPools) are incentivized with a certain allowance of WALLET per year
-	// Also used for linear vesting of early supporters, team, etc.
-	// mapping of (addr => end => rate) => lastMintTime;
-	mapping (address => mapping(uint => mapping(uint => uint))) public vestingLastMint;
-	function setVesting(address recipient, uint start, uint end, uint amountPerSecond) external {
-		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
-		// no more than 10 WALLET per second; theoretical emission max should be ~8 WALLET
-		require(amountPerSecond <= 10e18, "AMOUNT_TOO_LARGE");
-		require(start >= 1643695200, "START_TOO_LOW");
-		require(vestingLastMint[recipient][end][amountPerSecond] == 0, "VESTING_ALREADY_SET");
-		vestingLastMint[recipient][end][amountPerSecond] = start;
-		emit LogNewVesting(recipient, start, end, amountPerSecond);
-	}
-	function unsetVesting(address recipient, uint end, uint amountPerSecond) external {
-		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
-		// AUDIT: Pending (unclaimed) vesting is lost here - this is intentional
-		vestingLastMint[recipient][end][amountPerSecond] = 0;
-		emit LogVestingUnset(recipient, end, amountPerSecond);
-	}
-
-	// vesting mechanism
-	function mintableVesting(address addr, uint end, uint amountPerSecond) public view returns (uint) {
-		uint lastMinted = vestingLastMint[addr][end][amountPerSecond];
-		if (lastMinted == 0) return 0;
-		// solhint-disable-next-line not-rely-on-time
-		if (block.timestamp > end) {
-			require(end > lastMinted, "VESTING_OVER");
-			return (end - lastMinted) * amountPerSecond;
-		} else {
-			// this means we have not started yet
-			// solhint-disable-next-line not-rely-on-time
-			if (lastMinted > block.timestamp) return 0;
-			// solhint-disable-next-line not-rely-on-time
-			return (block.timestamp - lastMinted) * amountPerSecond;
-		}
-	}
-
-	function mintVesting(address recipient, uint end, uint amountPerSecond) external {
-		uint amount = mintableVesting(recipient, end, amountPerSecond);
-		// this check here is critical, as it ensures this user has a vesting entry
-		if (amount > 0) {
-			// solhint-disable-next-line not-rely-on-time
-			vestingLastMint[recipient][end][amountPerSecond] = block.timestamp;
-			WALLET.mint(recipient, amount);
-			emit LogMintVesting(recipient, amount);
-		}
 	}
 
 	//
