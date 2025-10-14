@@ -1756,9 +1756,10 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
-      const senderAddr = BROADCAST_OPTIONS.byOtherEOA
-        ? accountOp.gasFeePayment.paidBy
-        : accountOp.accountAddr
+      const senderAddr =
+        accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+          ? accountOp.gasFeePayment.paidBy
+          : accountOp.accountAddr
       const nonce = await provider.getTransactionCount(senderAddr).catch((e) => e)
 
       // @precaution
@@ -1830,7 +1831,10 @@ export class MainController extends EventEmitter implements IMainController {
         }
         if (callId !== this.#signAndBroadcastCallId) return
         transactionRes = {
-          nonce,
+          nonce:
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+              ? Number(accountOp.nonce)
+              : nonce,
           identifiedBy: {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
@@ -2142,6 +2146,8 @@ export class MainController extends EventEmitter implements IMainController {
         originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
         originalMessage.includes('user nonce')
       ) {
+        message = 'Pending transaction detected. Please try again in a few seconds'
+
         if (this.signAccountOp) {
           this.accounts
             .updateAccountState(this.signAccountOp.accountOp.accountAddr, 'pending', [

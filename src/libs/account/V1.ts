@@ -1,12 +1,13 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Contract, Interface } from 'ethers'
+import { Interface } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
+import { getRelayerNonce } from '../../utils/nonce'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
@@ -106,14 +107,6 @@ export class V1 extends BaseAccount {
     op: AccountOp,
     provider: RPCProvider
   ): Promise<bigint> {
-    // if we don't have a pending op, we can trust account op nonce
-    const pendingOp = activity.broadcastedButNotConfirmed.find(
-      (accOp) => accOp.accountAddr === op.accountAddr && accOp.chainId === op.chainId
-    )
-    if (!pendingOp || (op.nonce && pendingOp.nonce < op.nonce)) return op.nonce as bigint
-
-    const contract = new Contract(op.accountAddr, AmbireAccount.abi, provider)
-    const accountNonce = await contract.nonce({ blockTag: 'pending' }).catch(() => null)
-    return accountNonce ?? op.nonce
+    return getRelayerNonce(activity, op, provider)
   }
 }
