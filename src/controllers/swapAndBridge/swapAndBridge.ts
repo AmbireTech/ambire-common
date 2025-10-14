@@ -1119,10 +1119,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           this.#emitUpdateIfNeeded()
         }
       }
-
-      toTokenList.status = 'INITIAL'
-      this.#emitUpdateIfNeeded()
     }
+
+    toTokenList.status = 'INITIAL'
+    this.#emitUpdateIfNeeded()
   }
 
   /**
