@@ -1046,28 +1046,28 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!toTokenListKeyAtStart || !fromChainId || !toChainId) return
 
-    if (!this.#toTokenList[toTokenListKeyAtStart]) {
-      this.#toTokenList[toTokenListKeyAtStart] = {
+    let toTokenList = this.#toTokenList[toTokenListKeyAtStart]
+
+    // Prevent updating the same token list twice
+    if (toTokenList?.status === 'LOADING') {
+      return
+    }
+
+    // Create the list if it doesn’t exist yet, or set its status to LOADING if it does.
+    if (!toTokenList) {
+      toTokenList = {
         status: 'INITIAL',
         apiTokens: [],
         tokens: [],
         lastUpdate: 0
       }
-
-      this.#emitUpdateIfNeeded()
-    }
-
-    const toTokenList = this.#toTokenList[toTokenListKeyAtStart]
-
-    if (toTokenList.status === 'LOADING') {
-      return
+    } else {
+      toTokenList.status = 'LOADING'
     }
 
     if (shouldReset) {
       this.toSelectedToken = null
     }
-
-    toTokenList.status = 'LOADING'
 
     this.removeError('to-token-list-fetch-failed', false)
 
