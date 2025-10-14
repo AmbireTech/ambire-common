@@ -1218,7 +1218,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       throw new EmittableError({ error, level: 'minor', message })
     }
 
-    if (this.#toTokenListKey)
+    if (toTokenListKey)
       // Cache for sometime the tokens added by address
       tokenList.apiTokens.push(token)
 
