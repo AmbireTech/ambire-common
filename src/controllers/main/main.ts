@@ -862,7 +862,7 @@ export class MainController extends EventEmitter implements IMainController {
     ) {
       return this.emitError({
         level: 'major',
-        message: 'Please wait while the current transaction is being processed.',
+        message: 'Please wait while the previous transaction is being processed.',
         error: new Error(
           `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
         )
