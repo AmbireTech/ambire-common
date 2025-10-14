@@ -1069,11 +1069,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     toTokenList.status = 'LOADING'
 
+    this.removeError('to-token-list-fetch-failed', false)
+
     // Emit an update to set the loading state in the UI
     this.#emitUpdateIfNeeded()
 
     const now = Date.now()
-    this.removeError('to-token-list-fetch-failed', false)
 
     const shouldFetchTokenList =
       !toTokenList.apiTokens.length || now - toTokenList.lastUpdate >= TO_TOKEN_LIST_CACHE_THRESHOLD
