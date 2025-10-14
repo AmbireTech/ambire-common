@@ -504,25 +504,27 @@ const init = async (
     })
   )
   gasPriceController.gasPrices = gasPricesOrMock
-  const controller = new SignAccountOpTesterController(
-    accountsCtrl,
-    networksCtrl,
+  const controller = new SignAccountOpTesterController({
+    accounts: accountsCtrl,
+    networks: networksCtrl,
     keystore,
     portfolio,
-    {},
+    externalSignerControllers: {},
     account,
     network,
     activity,
     provider,
-    1,
-    op,
-    () => {},
-    true,
-    true,
-    () => {},
-    estimationController,
+    fromActionId: 1,
+    accountOp: op,
+    isSignRequestStillActive: () => {},
+    shouldReestimate: true,
+    shouldSimulate: true,
+    onAccountOpUpdate: () => {},
+    // @ts-ignore
+    onBroadcastSuccess: () => {},
+    estimateController: estimationController,
     gasPriceController
-  )
+  })
   controller.update({
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock[network.chainId.toString()]
