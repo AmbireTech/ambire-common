@@ -181,7 +181,8 @@ const prepareTest = async () => {
     getVisibleActionsQueue: () => {
       return requestsController?.actions?.visibleActionsQueue || []
     },
-    onBroadcastSuccess: () => Promise.resolve()
+    onBroadcastSuccess: () => Promise.resolve(),
+    onBroadcastFailed: () => {}
   })
 
   return {
