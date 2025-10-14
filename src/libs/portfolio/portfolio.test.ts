@@ -209,7 +209,9 @@ describe('Portfolio', () => {
       gasLimit: null,
       gasFeePayment: null,
       chainId: 42161n,
-      nonce: await getNonce('0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA'),
+      nonce: BigInt(
+        await providerArbitrum.getTransactionCount('0xf2d83373bE7dE6dEB14745F6512Df1306b6175EA')
+      ),
       signature: spoofSig,
       calls: [{ to: '0xA245fe89Af4573Bc53f4BeA5Ae4c38db431d9123', value: BigInt(0), data }]
     }
