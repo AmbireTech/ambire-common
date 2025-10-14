@@ -837,9 +837,6 @@ export class MainController extends EventEmitter implements IMainController {
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
     let signAccountOp: ISignAccountOpController | null
 
-    this.statuses.signAndBroadcastAccountOp = 'LOADING'
-    this.forceEmitUpdate()
-
     if (type === 'one-click-swap-and-bridge') {
       signAccountOp = this.swapAndBridge.signAccountOpController
     } else if (type === 'one-click-transfer') {
@@ -859,7 +856,10 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    if (signAccountOp.isSignAndBroadcastInProgress) {
+    if (
+      signAccountOp.isSignAndBroadcastInProgress ||
+      this.statuses.signAndBroadcastAccountOp !== 'INITIAL'
+    ) {
       return this.emitError({
         level: 'major',
         message: 'Please wait while the current transaction is being processed.',
@@ -868,6 +868,9 @@ export class MainController extends EventEmitter implements IMainController {
         )
       })
     }
+
+    this.statuses.signAndBroadcastAccountOp = 'LOADING'
+    this.forceEmitUpdate()
 
     await signAccountOp
       .signAndBroadcast()

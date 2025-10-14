@@ -191,7 +191,7 @@ export type OnBroadcastSuccess = (
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
-  type: SignAccountOpType
+  #type: SignAccountOpType
 
   #callRelayer: Function
 
@@ -311,6 +311,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #onBroadcastFailed?: OnBroadcastFailed
 
+  signPromise: Promise<void> | undefined
+
+  broadcastPromise: Promise<void> | undefined
+
   signAndBroadcastPromise: Promise<void> | undefined
 
   constructor({
@@ -358,7 +362,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }) {
     super()
 
-    this.type = type || 'default'
+    this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
@@ -2326,7 +2330,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         //
         // unless it's the build-in swap - we want to throw an error and
         // allow the user to retry in this case
-        if (multipleTxnsBroadcastRes.length && this.type !== 'one-click-swap-and-bridge') {
+        if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
           transactionRes = {
             nonce,
             identifiedBy: {
@@ -2436,7 +2440,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
 
     // simulate the swap & bridge only after a successful broadcast
-    if (this.type === 'one-click-swap-and-bridge' || this.type === 'one-click-transfer') {
+    if (this.#type === 'one-click-swap-and-bridge' || this.#type === 'one-click-transfer') {
       this.portfolioSimulate().then(() => {
         this.#portfolio.markSimulationAsBroadcasted(account.addr, this.#network.chainId)
       })
@@ -2457,7 +2461,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // TODO: check if the await can be skipped here
-    await this.#onBroadcastSuccess(submittedAccountOp, this.accountOp, this.type, this.fromActionId)
+    await this.#onBroadcastSuccess(
+      submittedAccountOp,
+      this.accountOp,
+      this.#type,
+      this.fromActionId
+    )
 
     // Allow the user to broadcast a new transaction;
     // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
@@ -2478,19 +2487,37 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message:
           'Please wait, the signing/broadcasting process of this transaction is already in progress.',
         error: new Error(
-          `The signing/broadcasting process is already in progress. (signAndBroadcast func). Status: ${this.status}. BroadcastStatus: ${this.broadcastStatus}. Signing key: ${this.accountOp.signingKeyType}. Fee payer key: ${this.accountOp.gasFeePayment?.paidByKeyType}. Type: ${this.type}.`
+          `The signing/broadcasting process is already in progress. (signAndBroadcast func). Status: ${
+            this.status
+          }. BroadcastStatus: ${this.broadcastStatus}. Signing key: ${
+            this.accountOp.signingKeyType
+          }. Fee payer key: ${this.accountOp.gasFeePayment?.paidByKeyType}. Type: ${this.#type}.`
         )
       })
     }
 
     this.signAndBroadcastPromise = (async () => {
-      await this.sign()
-      await this.#broadcast()
+      this.signPromise = this.sign().finally(() => {
+        this.signPromise = undefined
+      })
+      await this.signPromise
+      this.broadcastPromise = this.#broadcast().finally(() => {
+        this.broadcastPromise = undefined
+      })
+      await this.broadcastPromise
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
     })
 
     await this.signAndBroadcastPromise
+  }
+
+  get isSignInProgress() {
+    return !!this.signPromise
+  }
+
+  get isBroadcastInProgress() {
+    return !!this.broadcastPromise
   }
 
   get isSignAndBroadcastInProgress() {
@@ -2594,6 +2621,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.traceCallDiscoveryStatus = status
   }
 
+  get type() {
+    return this.#type
+  }
+
   get delegatedContract(): Hex | null {
     if (!this.#accounts.accountStates[this.account.addr]) return null
     if (!this.#accounts.accountStates[this.account.addr][this.#network.chainId.toString()])
@@ -2607,6 +2638,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ...this,
       ...super.toJSON(),
       isInitialized: this.isInitialized,
+      type: this.type,
       readyToSign: this.readyToSign,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
@@ -2618,6 +2650,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       gasSavedUSD: this.gasSavedUSD,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
+      isSignInProgress: this.isSignInProgress,
+      isBroadcastInProgress: this.isBroadcastInProgress,
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress
     }
   }
