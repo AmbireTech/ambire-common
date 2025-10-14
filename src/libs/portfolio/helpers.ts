@@ -42,7 +42,7 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
-const nonLatinSymbol = (str: string) => /[^\u0000-\u007f]/.test(str)
+const nonLatinSymbol = (str: string): boolean => /[^\x20-\x7E]/.test(str)
 
 export const isSuspectedRegardsKnownAddresses = (tokenAddr: string, tokenName: string) => {
   if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenName) return false
@@ -57,7 +57,7 @@ export const isSuspectedRegardsKnownAddresses = (tokenAddr: string, tokenName: s
     ? tokenWithKnownNames.find((t) => t.address.toLowerCase() === tokenAddr.toLowerCase())
     : undefined
 
-  return tokenWithKnownNames.length && !matchedAddress
+  return tokenWithKnownNames.length > 0 && !matchedAddress
 }
 
 const isSuspectedToken = (
@@ -65,7 +65,7 @@ const isSuspectedToken = (
   symbol: TokenResult['symbol'],
   name: TokenResult['name']
 ) =>
-  isSuspectedRegardsKnownAddresses(address, name) || nonLatinSymbol(symbol) || nonLatinSymbol(name)
+  nonLatinSymbol(symbol) || nonLatinSymbol(name) || isSuspectedRegardsKnownAddresses(address, name)
 
 export function getFlags(
   networkData: any,
