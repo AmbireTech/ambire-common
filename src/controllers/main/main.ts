@@ -188,16 +188,7 @@ export class MainController extends EventEmitter implements IMainController {
     return this.#continuousUpdates
   }
 
-  #signAccountOpSigningPromise?: Promise<AccountOp | void | null>
-
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
-
-  /**
-   * Tracks broadcast request IDs to abort stale requests.
-   * Prevents rejected hardware wallet signatures from affecting new requests
-   * when a user closes an action window and starts a new one.
-   */
-  #signAndBroadcastCallId: string | null = null
 
   constructor({
     platform,
@@ -840,6 +831,9 @@ export class MainController extends EventEmitter implements IMainController {
   async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
     let signAccountOp: ISignAccountOpController | null
 
+    this.statuses.signAndBroadcastAccountOp = 'LOADING'
+    this.forceEmitUpdate()
+
     if (type === 'one-click-swap-and-bridge') {
       signAccountOp = this.swapAndBridge.signAccountOpController
     } else if (type === 'one-click-transfer') {
@@ -859,7 +853,30 @@ export class MainController extends EventEmitter implements IMainController {
       })
     }
 
-    await signAccountOp.signAndBroadcast()
+    if (signAccountOp.isSignAndBroadcastInProgress) {
+      return this.emitError({
+        level: 'major',
+        message: 'Please wait while the current transaction is being processed.',
+        error: new Error(
+          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
+        )
+      })
+    }
+
+    await signAccountOp
+      .signAndBroadcast()
+      .then(async () => {
+        this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+        await this.forceEmitUpdate()
+      })
+      .catch(async () => {
+        this.statuses.signAndBroadcastAccountOp = 'ERROR'
+        await this.forceEmitUpdate()
+      })
+      .finally(async () => {
+        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+        await this.forceEmitUpdate()
+      })
   }
 
   async resolveDappBroadcast(
@@ -901,26 +918,6 @@ export class MainController extends EventEmitter implements IMainController {
     if (!signAccountOp) return
 
     const paidByKeyType = this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType
-    const isAwaitingHWSignature =
-      (signAccountOp.accountOp.signingKeyType !== 'internal' &&
-        this.statuses.signAndBroadcastAccountOp === 'SIGNING') ||
-      // paidByKeyType should be set before checking if it's type is internal
-      // if it's not, we are not waiting for a hw sig
-      (paidByKeyType &&
-        paidByKeyType !== 'internal' &&
-        this.statuses.signAndBroadcastAccountOp === 'BROADCASTING')
-
-    // Reset these flags only if we were awaiting a HW signature
-    // to broadcast a transaction.
-    // If the user is using a hot wallet we can sign the transaction immediately
-    // and once its signed there is no way to cancel the broadcast. Once the user
-    // On the other hand HWs can be in 'SIGNING' or 'BROADCASTING' state
-    // and be able to 'cancel' the broadcast.
-    if (isAwaitingHWSignature) {
-      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-      this.#signAndBroadcastCallId = null
-    }
-
     const uniqueSigningKeys = [...new Set([signAccountOp.accountOp.signingKeyType, paidByKeyType])]
 
     // Call the cleanup method for each unique signing key type
@@ -929,8 +926,6 @@ export class MainController extends EventEmitter implements IMainController {
 
       this.#externalSignerControllers[keyType]?.signingCleanup?.()
     })
-
-    this.#signAccountOpSigningPromise = undefined
   }
 
   destroySignAccOp() {
@@ -1683,9 +1678,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (!pendingAction) return false
 
-    const isSigningOrBroadcasting =
-      this.statuses.signAndBroadcastAccountOp === 'SIGNING' ||
-      this.statuses.signAndBroadcastAccountOp === 'BROADCASTING'
+    const isSigningOrBroadcasting = this.statuses.signAndBroadcastAccountOp === 'LOADING'
 
     // The swap and bridge or transfer is done/forgotten so we can remove the action
     if (!isSigningOrBroadcasting) {
