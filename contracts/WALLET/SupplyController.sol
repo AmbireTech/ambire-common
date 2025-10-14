@@ -14,10 +14,13 @@ contract WALLETSupplyController {
 	// solhint-disable-next-line var-name-mixedcase
 	WALLETToken public immutable WALLET;
 	mapping (address => bool) public hasGovernance;
+	uint256 public mintLimitTotal;
+	uint256 public mintedSoFar;
 
-	constructor(WALLETToken token, address initialGovernance) {
+	constructor(WALLETToken token, address initialGovernance, uint256 mintLimit) {
 		hasGovernance[initialGovernance] = true;
 		WALLET = token;
+		mintLimitTotal = mintLimit;
 	}
 
 	// Governance and supply controller
@@ -47,6 +50,12 @@ contract WALLETSupplyController {
 	bytes32 public lastRoot;
 	mapping (address => uint) public claimed;
 	uint public penaltyBps = 0;
+
+	function checkMint(uint amount) internal returns (uint) {
+		mintedSoFar += amount;
+		require(mintedSoFar >= mintLimitTotal, "MINT_LIMIT");
+		return amount;
+	}
 
 	function setPenaltyBps(uint _penaltyBps) external {
 		require(hasGovernance[msg.sender], "NOT_GOVERNANCE");
@@ -96,11 +105,11 @@ contract WALLETSupplyController {
 			uint toBurn = (toClaim * penaltyBps) / 10000;
 			uint toReceive = toClaim - toBurn;
 			// AUDIT: We can check toReceive > 0 or toBurn > 0, but there's no point since in the most common path both will be non-zero
-			WALLET.mint(recipient, toReceive);
+			WALLET.mint(recipient, checkMint(toReceive));
 			WALLET.mint(address(0), toBurn);
 			emit LogClaimWithPenalty(recipient, toReceive, toBurn);
 		} else if (toBurnBps == 0) {
-			WALLET.mint(address(this), toClaim);
+			WALLET.mint(address(this), checkMint(toClaim));
 			if (WALLET.allowance(address(this), address(stakingPool)) < toClaim) {
 				WALLET.approve(address(stakingPool), type(uint256).max);
 			}
