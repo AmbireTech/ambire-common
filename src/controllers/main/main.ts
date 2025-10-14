@@ -784,6 +784,12 @@ export class MainController extends EventEmitter implements IMainController {
       }
     }
 
+    if (accountOp.meta?.swapTxn) {
+      this.swapAndBridge.addActiveRoute({
+        userTxIndex: accountOp.meta?.swapTxn.userTxIndex
+      })
+    }
+
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
 
