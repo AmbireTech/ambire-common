@@ -14,7 +14,7 @@ const RPC_BATCH_CONFIG: Record<string, number> = {
   // 'tatum.io': 1 // batch calls are available for paid plans only (response 402)
 }
 
-// Some RPCs limit batching causing immediate failures on our end
+/** Some RPCs limit batching which causes immediate failures on our end, so configure the known ones */
 const getBatchCountFromUrl = (rpcUrl: string): number | undefined => {
   try {
     const rootDomain = getRootDomain(rpcUrl)
