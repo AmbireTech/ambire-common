@@ -734,6 +734,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return `from-${this.fromChainId}-to-${this.toChainId}`
   }
 
+  // Get the toTokenListKey from parameters instead of `this`,
+  // because during async execution, the class state may already point
+  // to a different chain pair.
+  static getToTokenListKey(
+    fromChainId: number | null,
+    toChainId: number | null
+  ): CachedTokenListKey | null {
+    if (fromChainId === null || toChainId === null) return null
+
+    return `from-${fromChainId}-to-${toChainId}`
+  }
+
   unloadScreen(sessionId: string, forceUnload?: boolean) {
     const isFormDirty = !!this.fromAmount || !!this.toSelectedToken
     const shouldPersistState = isFormDirty && sessionId === 'popup' && !forceUnload
@@ -1101,7 +1113,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    toTokenList.tokens = this.#getToTokens()
+    toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
 
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === toChainId)
     // should never happen
@@ -1150,10 +1162,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return tokens.slice(0, TO_TOKEN_LIST_LIMIT)
   }
 
-  #getToTokens() {
-    const toTokenListKey = this.#toTokenListKey
-    const fromChainId = this.fromChainId
-    const toChainId = this.toChainId
+  #getToTokens(fromChainId: number | null, toChainId: number | null) {
+    const toTokenListKey = SwapAndBridgeController.getToTokenListKey(fromChainId, toChainId)
 
     if (!toTokenListKey || !fromChainId || !toChainId) return []
 
