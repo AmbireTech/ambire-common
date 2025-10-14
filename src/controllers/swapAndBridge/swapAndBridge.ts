@@ -202,7 +202,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   } = {}
 
   /**
-   * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
+   * Similar to the `#toTokenList[key].apiTokens`, this helps in avoiding repeated API
    * calls to fetch the supported chains from our service provider.
    */
   #cachedSupportedChains: CachedSupportedChains = { lastFetched: 0, data: [] }
@@ -1138,8 +1138,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const tokens = this.#toTokenList[toTokenListKey]?.tokens || []
 
-    // Swaps between same "from" and "to" tokens are not feasible, filter them out
     const isSwapping = fromChainId === toChainId
+    // Swaps between same "from" and "to" tokens are not feasible, filter them out
     if (isSwapping) {
       return tokens
         .filter((t) => t.address !== this.fromSelectedToken?.address)
