@@ -67,7 +67,6 @@ import { paymasterFactory } from '../../services/paymaster'
 import { SocketAPI } from '../../services/socket/api'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
-import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
@@ -91,12 +90,8 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
-import {
-  SIGN_ACCOUNT_OP_MAIN,
-  SIGN_ACCOUNT_OP_SWAP,
-  SignAccountOpType
-} from '../signAccountOp/helper'
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpType } from '../signAccountOp/helper'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
@@ -749,7 +744,7 @@ export class MainController extends EventEmitter implements IMainController {
   async #handleBroadcastSuccess(
     submittedAccountOp: SubmittedAccountOp,
     accountOp: AccountOp,
-    signAccountOpType: 'default' | 'swap-and-bridge' | 'transfer',
+    signAccountOpType: SignAccountOpType,
     fromActionId: string | number
   ) {
     // add the txnIds from each transaction to each Call from the accountOp
@@ -810,11 +805,11 @@ export class MainController extends EventEmitter implements IMainController {
     }
     // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
     // visualize the success page on the FE instead of resetting the form
-    if (signAccountOpType === 'swap-and-bridge') {
+    if (signAccountOpType === 'one-click-swap-and-bridge') {
       this.swapAndBridge.resetForm()
     }
 
-    if (signAccountOpType === 'transfer') {
+    if (signAccountOpType === 'one-click-transfer') {
       if (this.transfer.shouldTrackLatestBroadcastedAccountOp) {
         this.transfer.latestBroadcastedToken = this.transfer.selectedToken
         this.transfer.latestBroadcastedAccountOp = submittedAccountOp
@@ -842,113 +837,18 @@ export class MainController extends EventEmitter implements IMainController {
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
   }
 
-  async handleSignAndBroadcastAccountOp(type: SignAccountOpType) {
-    if (this.statuses.signAndBroadcastAccountOp !== 'INITIAL') {
-      const message =
-        this.statuses.signAndBroadcastAccountOp === 'SIGNING'
-          ? 'A transaction is already being signed. Please wait or contact support if the issue persists.'
-          : 'A transaction is already being broadcasted. Please wait a few seconds and try again or contact support if the issue persists.'
-
-      this.emitError({
+  async handleSignAndBroadcastAccountOp() {
+    if (!this.signAccountOp) {
+      return this.emitError({
         level: 'major',
-        message,
+        message: 'Internal error: Could not find accountOp to sign',
         error: new Error(
-          `The signing/broadcasting process is already in progress. (handleSignAndBroadcastAccountOp). Status: ${this.statuses.signAndBroadcastAccountOp}. Signing key: ${this.signAccountOp?.accountOp.signingKeyType}. Fee payer key: ${this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType}. Type: ${type}.`
+          'Error: signAccountOp controller not initialized while trying to sign and broadcast'
         )
       })
-      return
     }
 
-    const signAndBroadcastCallId = generateUuid()
-    this.#signAndBroadcastCallId = signAndBroadcastCallId
-
-    this.statuses.signAndBroadcastAccountOp = 'SIGNING'
-    this.forceEmitUpdate()
-
-    let signAccountOp: ISignAccountOpController | null
-
-    if (type === SIGN_ACCOUNT_OP_MAIN) {
-      signAccountOp = this.signAccountOp
-    } else if (type === SIGN_ACCOUNT_OP_SWAP) {
-      signAccountOp = this.swapAndBridge.signAccountOpController
-    } else {
-      signAccountOp = this.transfer.signAccountOpController
-    }
-
-    // It's vital that everything that can throw an error is wrapped in a try/catch block
-    // to prevent signAndBroadcastAccountOp from being stuck in the SIGNING state
-    try {
-      // if the accountOp has a swapTxn, start the route as the user is broadcasting it
-      if (signAccountOp?.accountOp.meta?.swapTxn) {
-        this.swapAndBridge.addActiveRoute({
-          userTxIndex: signAccountOp?.accountOp.meta?.swapTxn.userTxIndex
-        })
-      }
-
-      const wasAlreadySigned = signAccountOp?.status?.type === SigningStatus.Done
-
-      if (!wasAlreadySigned) {
-        if (!signAccountOp) {
-          const message =
-            'The signing process was not initialized as expected. Please try again later or contact Ambire support if the issue persists.'
-
-          throw new EmittableError({ level: 'major', message })
-        }
-
-        // Reset the promise in the `finally` block to ensure it doesn't remain unresolved if an error is thrown
-        this.#signAccountOpSigningPromise = signAccountOp.sign().finally(() => {
-          if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
-
-          this.#signAccountOpSigningPromise = undefined
-        })
-
-        await this.#signAccountOpSigningPromise
-      }
-
-      if (this.#signAndBroadcastCallId !== signAndBroadcastCallId) return
-
-      // Error handling on the prev step will notify the user, it's fine to return here
-      if (signAccountOp?.status?.type !== SigningStatus.Done) {
-        // remove the active route on signing failure
-        if (signAccountOp?.accountOp.meta?.swapTxn) {
-          this.swapAndBridge.removeActiveRoute(signAccountOp.accountOp.meta.swapTxn.activeRouteId)
-        }
-        this.statuses.signAndBroadcastAccountOp = 'ERROR'
-        await this.forceEmitUpdate()
-        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-        this.#signAndBroadcastCallId = null
-        await this.forceEmitUpdate()
-        return
-      }
-
-      await signAccountOp.broadcast()
-    } catch (error: any) {
-      if (signAndBroadcastCallId === this.#signAndBroadcastCallId) {
-        if ('message' in error && 'level' in error && 'error' in error) {
-          this.emitError(error)
-        } else {
-          const hasSigned = signAccountOp?.status?.type === SigningStatus.Done
-
-          this.emitError({
-            level: 'major',
-            message:
-              error.message ||
-              `Unknown error occurred while ${
-                !hasSigned ? 'signing the transaction' : 'broadcasting the transaction'
-              }`,
-            error
-          })
-        }
-        this.statuses.signAndBroadcastAccountOp = 'ERROR'
-        await this.forceEmitUpdate()
-        this.statuses.signAndBroadcastAccountOp = 'INITIAL'
-        await this.forceEmitUpdate()
-      }
-    } finally {
-      if (this.#signAndBroadcastCallId === signAndBroadcastCallId) {
-        this.#signAndBroadcastCallId = null
-      }
-    }
+    await this.signAccountOp.signAndBroadcast()
   }
 
   async resolveDappBroadcast(

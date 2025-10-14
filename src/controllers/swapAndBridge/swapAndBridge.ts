@@ -2191,6 +2191,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     this.#signAccountOpController = new SignAccountOpController({
+      type: 'one-click-swap-and-bridge',
       callRelayer: this.#callRelayer,
       accounts: this.#accounts,
       networks: this.#networks,

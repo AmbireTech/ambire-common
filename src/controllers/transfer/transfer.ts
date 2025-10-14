@@ -673,6 +673,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
     this.signAccountOpController = new SignAccountOpController({
+      type: 'one-click-transfer',
       callRelayer: this.#callRelayer,
       accounts: this.#accounts,
       networks: this.#networks,

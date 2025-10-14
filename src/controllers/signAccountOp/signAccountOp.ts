@@ -116,7 +116,8 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount
+  getTokenUsdAmount,
+  SignAccountOpType
 } from './helper'
 
 export enum SigningStatus {
@@ -183,13 +184,15 @@ export type SignAccountOpUpdateProps = {
 export type OnBroadcastSuccess = (
   submittedAccountOp: SubmittedAccountOp,
   accountOp: AccountOp,
-  type: 'default' | 'swap-and-bridge' | 'transfer',
+  type: SignAccountOpType,
   fromActionId: string | number
 ) => Promise<void>
 
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
+  type: SignAccountOpType
+
   #callRelayer: Function
 
   #accounts: IAccountsController
@@ -236,7 +239,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   status: Status | null = null
 
-  broadcastStatus: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
+  broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
   #isSignRequestStillActive: Function
 
@@ -304,13 +307,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #activity: IActivityController
 
-  type: 'default' | 'swap-and-bridge' | 'transfer' = 'default'
-
   #onBroadcastSuccess: OnBroadcastSuccess
 
   #onBroadcastFailed?: OnBroadcastFailed
 
+  signAndBroadcastPromise: Promise<void> | undefined
+
   constructor({
+    type,
     callRelayer,
     accounts,
     networks,
@@ -331,6 +335,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     onBroadcastSuccess,
     onBroadcastFailed
   }: {
+    type?: SignAccountOpType
     callRelayer: Function
     accounts: IAccountsController
     networks: INetworksController
@@ -353,6 +358,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }) {
     super()
 
+    this.type = type || 'default'
     this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
@@ -2155,7 +2161,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcast() {
+  async #broadcast() {
     if (this.status?.type !== SigningStatus.Done) {
       this.throwBroadcastAccountOp({
         message: 'Pending broadcast. Please try again in a bit.'
@@ -2201,7 +2207,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return this.throwBroadcastAccountOp({ message })
     }
 
-    this.broadcastStatus = 'BROADCASTING'
+    this.broadcastStatus = 'LOADING'
     await this.forceEmitUpdate()
 
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
@@ -2320,7 +2326,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         //
         // unless it's the build-in swap - we want to throw an error and
         // allow the user to retry in this case
-        if (multipleTxnsBroadcastRes.length && this.type !== 'swap-and-bridge') {
+        if (multipleTxnsBroadcastRes.length && this.type !== 'one-click-swap-and-bridge') {
           transactionRes = {
             nonce,
             identifiedBy: {
@@ -2430,7 +2436,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
 
     // simulate the swap & bridge only after a successful broadcast
-    if (this.type === 'swap-and-bridge' || this.type === 'transfer') {
+    if (this.type === 'one-click-swap-and-bridge' || this.type === 'one-click-transfer') {
       this.portfolioSimulate().then(() => {
         this.#portfolio.markSimulationAsBroadcasted(account.addr, this.#network.chainId)
       })
@@ -2458,11 +2464,37 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
     // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
     // leaving the new request 'orphaned' in the background without being attached to any action.
-    this.statuses.signAndBroadcastAccountOp = 'SUCCESS'
+    this.broadcastStatus = 'SUCCESS'
     await this.forceEmitUpdate()
-    this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    this.broadcastStatus = 'INITIAL'
     await this.forceEmitUpdate()
     return Promise.resolve()
+  }
+
+  async signAndBroadcast() {
+    if (this.signAndBroadcastPromise) {
+      return this.emitError({
+        level: 'major',
+        message:
+          'Please wait, the signing/broadcasting process of this transaction is already in progress.',
+        error: new Error(
+          `The signing/broadcasting process is already in progress. (signAndBroadcast func). Status: ${this.status}. BroadcastStatus: ${this.broadcastStatus}. Signing key: ${this.accountOp.signingKeyType}. Fee payer key: ${this.accountOp.gasFeePayment?.paidByKeyType}. Type: ${this.type}.`
+        )
+      })
+    }
+
+    this.signAndBroadcastPromise = (async () => {
+      await this.sign()
+      await this.#broadcast()
+    })().finally(() => {
+      this.signAndBroadcastPromise = undefined
+    })
+
+    await this.signAndBroadcastPromise
+  }
+
+  get isSignAndBroadcastInProgress() {
+    return !!this.signAndBroadcastPromise
   }
 
   throwBroadcastAccountOp({
@@ -2484,7 +2516,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     let message = humanReadableMessage
     let isReplacementFeeLow = false
 
-    this.statuses.signAndBroadcastAccountOp = 'ERROR'
+    this.broadcastStatus = 'ERROR'
+    this.forceEmitUpdate()
+    this.broadcastStatus = 'INITIAL'
     this.forceEmitUpdate()
 
     if (originalMessage) {
@@ -2583,7 +2617,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       errors: this.errors,
       gasSavedUSD: this.gasSavedUSD,
       delegatedContract: this.delegatedContract,
-      accountOp: this.accountOp
+      accountOp: this.accountOp,
+      isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress
     }
   }
 }
