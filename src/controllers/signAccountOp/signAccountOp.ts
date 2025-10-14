@@ -1936,12 +1936,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         )
         if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
-        // get broadcast nonce
-        this.#activity.broadcastedButNotConfirmed.find(
-          (accOp) =>
-            accOp.accountAddr === this.accountOp.accountAddr &&
-            accOp.chainId === this.accountOp.chainId
-        )
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
         })
