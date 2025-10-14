@@ -14,7 +14,7 @@ export type ActionType =
   | 'dappRequest'
   | 'swapAndBridge'
   | 'transfer'
-  | 'app-login'
+  | 'siwe'
 
 export type OpenActionWindowParams = {
   skipFocus?: boolean
@@ -76,16 +76,10 @@ export type TransferAction = {
   }
 }
 
-export type AppLoginAction = {
+export type SiweAction = {
   id: UserRequest['id']
-  type: 'app-login'
-  // @TODO
-  policy: any
-  userRequest: {
-    meta: {
-      accountAddr: Account['addr']
-    }
-  }
+  type: 'siwe'
+  userRequest: SignUserRequest
 }
 
 export type Action =
@@ -96,4 +90,4 @@ export type Action =
   | DappRequestAction
   | SwapAndBridgeAction
   | TransferAction
-  | AppLoginAction
+  | SiweAction

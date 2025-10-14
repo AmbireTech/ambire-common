@@ -1,7 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, toUtf8String } from 'ethers'
-import { parseSiweMessage, verifySiweMessage } from 'viem/siwe'
+import { getAddress, getBigInt } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
@@ -15,6 +14,7 @@ import {
   ActionPosition,
   ActionType
 } from '../../interfaces/actions'
+import { IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -61,6 +61,7 @@ import {
   prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
 import { ActionsController } from '../actions/actions'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -96,6 +97,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #transactionManager?: ITransactionManagerController
 
   #ui: IUiController
+
+  #autoLogin: IAutoLoginController
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
@@ -134,6 +137,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge,
     transactionManager,
     ui,
+    autoLogin,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
@@ -153,6 +157,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
+    autoLogin: IAutoLoginController
     getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
@@ -174,6 +179,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
+    this.#autoLogin = autoLogin
 
     this.#getSignAccountOp = getSignAccountOp
     this.#getMainStatuses = getMainStatuses
@@ -374,17 +380,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } else {
         let actionType: ActionType = 'dappRequest'
 
-        console.log('Debug: other request action:', req)
-
-        if (req.action.kind === 'message' && 'message' in req.action) {
-          const messageString = req.action.message.startsWith('0x')
-            ? toUtf8String(req.action.message)
-            : req.action.message
-          const siweMessageData = parseSiweMessage(messageString)
-
-          console.log('Debug: Parsed SIWE message data:', siweMessageData)
-        }
-
         if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
           actionType = 'signMessage'
 
@@ -404,7 +399,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
         if (req.action.kind === 'benzin') actionType = 'benzin'
         if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
-        if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
+        if (req.action.kind === 'authorization-7702' || req.action.kind === 'siwe')
+          actionType = 'signMessage'
 
         actionsToAdd.push({
           id,
@@ -738,6 +734,63 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         },
         dappPromise
       } as SignUserRequest
+
+      // SIWE
+      const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
+      const parsedSiweMessage = AutoLoginController.getParsedSiweMessage(rawMessage)
+
+      // Try to login automatically if the message is valid SIWE and autologin is enabled
+      if (rawMessage && parsedSiweMessage) {
+        const autoLoginStatus = this.#autoLogin.getAutoLoginStatus(
+          parsedSiweMessage,
+          this.#keystore.getAccountKeys(this.#selectedAccount.account)
+        )
+
+        console.log(
+          'debug: siwe autologin status',
+          autoLoginStatus,
+          this.#keystore.getAccountKeys(this.#selectedAccount.account)
+        )
+
+        if (autoLoginStatus === 'active') {
+          try {
+            // Sign and respond
+            const signedMessage = await this.#autoLogin.autoLogin({
+              messageToSign: {
+                message: rawMessage as `0x${string}`,
+                chainId: network.chainId,
+                accountAddr: msgAddress
+              },
+              accountKeys: this.#keystore.getAccountKeys(this.#selectedAccount.account)
+            })
+
+            if (!signedMessage) {
+              throw new EmittableError({
+                message: 'Auto-login failed. Please sign the message manually.',
+                level: 'major',
+                error: new Error('SIWE autologin - signedMessage is null')
+              })
+            }
+
+            dappPromise.resolve({ hash: signedMessage.signature })
+            return
+          } catch (e: any) {
+            this.emitError({
+              error: e,
+              message: 'Auto-login failed. Please sign the message manually.',
+              level: 'major'
+            })
+          }
+        }
+
+        userRequest.action = {
+          kind: 'siwe',
+          message: msg[0],
+          parsedMessage: parsedSiweMessage,
+          autoLoginStatus,
+          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled
+        }
+      }
     } else if (kind === 'typedMessage') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 

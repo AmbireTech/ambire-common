@@ -36,6 +36,10 @@ type AutoLoginPolicy = {
   defaultExpiration: number
 }
 
+type AutoLoginPoliciesByAccount = {
+  [account: string]: AutoLoginPolicy[]
+}
+
 type AutoLoginSettings = {
   enabled: boolean
 }
@@ -46,4 +50,10 @@ type IAutoLoginController = ControllerInterface<
   InstanceType<typeof import('../controllers/autoLogin/autoLogin').AutoLoginController>
 >
 
-export type { IAutoLoginController, AutoLoginPolicy, AutoLoginSettings, AutoLoginStatus }
+export type {
+  IAutoLoginController,
+  AutoLoginPolicy,
+  AutoLoginPoliciesByAccount,
+  AutoLoginSettings,
+  AutoLoginStatus
+}

@@ -18,6 +18,7 @@ import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IAutoLoginController } from '../../interfaces/autoLogin'
 import { IBannerController } from '../../interfaces/banner'
 import { IContractNamesController } from '../../interfaces/contractNames'
 import { IDappsController } from '../../interfaces/dapp'
@@ -86,6 +87,7 @@ import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
 import { ContractNamesController } from '../contractNames/contractNames'
@@ -182,6 +184,8 @@ export class MainController extends EventEmitter implements IMainController {
   domains: IDomainsController
 
   contractNames: IContractNamesController
+
+  autoLogin: IAutoLoginController
 
   accounts: IAccountsController
 
@@ -440,6 +444,16 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.contractNames = new ContractNamesController(this.fetch)
 
+    this.autoLogin = new AutoLoginController(
+      this.storage,
+      this.keystore,
+      this.providers,
+      this.networks,
+      this.accounts,
+      this.#externalSignerControllers,
+      this.invite
+    )
+
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
       this.transactionManager = new TransactionManagerController({
@@ -471,6 +485,7 @@ export class MainController extends EventEmitter implements IMainController {
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
       transactionManager: this.transactionManager,
+      autoLogin: this.autoLogin,
       getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
@@ -1063,6 +1078,13 @@ export class MainController extends EventEmitter implements IMainController {
     const signedMessage = this.signMessage.signedMessage
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
+
+    if (signedMessage.content.kind === 'siwe' && signedMessage.content.parsedMessage) {
+      await this.autoLogin.onSiweMessageSigned(
+        signedMessage.content.parsedMessage,
+        signedMessage.content.isAutoLoginEnabledByUser
+      )
+    }
 
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 

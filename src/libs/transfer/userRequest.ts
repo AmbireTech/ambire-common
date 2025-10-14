@@ -309,7 +309,7 @@ function prepareIntentUserRequest({
 const isPlainTextMessage = (
   messageContent: SignUserRequest['action']
 ): messageContent is PlainTextMessage => {
-  return messageContent.kind === 'message'
+  return messageContent.kind === 'message' || messageContent.kind === 'siwe'
 }
 
 export {
