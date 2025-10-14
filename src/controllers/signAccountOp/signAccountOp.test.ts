@@ -20,11 +20,12 @@ import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   getTypedData
@@ -1515,6 +1516,350 @@ describe('Negative cases', () => {
     await controller.sign()
 
     expect(controller.signedAccountOp?.signature).toBeFalsy()
+  })
+})
+
+describe('throwBroadcastAccountOp', () => {
+  suppressConsoleBeforeEach()
+
+  it('Should prefer message to error', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+    try {
+      await controller.throwBroadcastAccountOp({
+        message: 'message',
+        error: new Error('error')
+      })
+    } catch (e: any) {
+      expect(e.message).toBe('message')
+    }
+  })
+  it('pimlico_getUserOperationGasPrice', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+    try {
+      await controller.throwBroadcastAccountOp({
+        error: new Error(
+          "pimlico_getUserOperationGasPrice some information we don't care about 0x2314214"
+        )
+      })
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'The transaction cannot be broadcast because the selected fee is too low. Please select a higher transaction speed and try again.'
+      )
+    }
+  })
+  it('Error that should be humanized by getHumanReadableBroadcastError', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+    const error = new InnerCallFailureError(
+      '   transfer amount exceeds balance   ',
+      [],
+      networks.find((n) => n.chainId === 8453n)!
+    )
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'The transaction cannot be broadcast because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
+      )
+    }
+  })
+  it('Unknown error that should be humanized by getHumanReadableBroadcastError', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+    const error = new Error("I'm a teapot")
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(
+        "We encountered an unexpected issue: I'm a teapot\nPlease try again or contact Ambire support for assistance."
+      )
+    }
+  })
+  it('replacement fee too low', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+    const error = new Error('replacement fee too low')
+
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
+      )
+    }
+  })
+  it('Relayer broadcast swap expired', async () => {
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 10000n,
+          feePaymentOptions: []
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions: [],
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        // ethereum chain id
+        '1': [
+          {
+            name: 'slow',
+            baseFeePerGas: 100n,
+            maxPriorityFeePerGas: 100n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 200n,
+            maxPriorityFeePerGas: 200n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 300n,
+            maxPriorityFeePerGas: 300n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 400n,
+            maxPriorityFeePerGas: 400n
+          }
+        ]
+      }
+    )
+
+    const error = new RelayerError(
+      '"Transaction too old" (action="estimateGas", data="0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000135472616e73616374696f6e20746f6f206f6c6400000000000000000000000000", reason="Transaction too old", transaction={ "data": "0x6171d1c9000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000004e000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000032000000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc450000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000002445ae401dc00000000000000000000000000000000000000000000000000000000673b3e25000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000c35000000000000000000000000000000000000000000000000001af5cbb4b149c38000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004449404b7c00000000000000000000000000000000000000000000000001af5cbb4b149c380000000000000000000000007544127fce3dd39a15b719abb93ca765d91ead6d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000942f9ce5d9a33a82f88d233aeb3292e6802303480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000074f0dfef4cd1f200000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000767617354616e6b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006574d4154494300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000042b1f9d3975aecfa6e646bef006f2ab88a131775543cb0321360633cef30dcce5b1c78936706c50fdb17469b8d8e546f22d68ab5c7a7d1e73649cd3ca8d9d3a1f81c01000000000000000000000000000000000000000000000000000000000000", "to": "0x7544127fCe3dd39A15b719abB93Ca765D91EAD6d" }, invocation=null, revert={ "args": [ "Transaction too old" ], "name": "Error", "signature": "Error(string)" }, code=CALL_EXCEPTION, version=6.7.1)',
+      {},
+      {}
+    )
+    try {
+      await controller.throwBroadcastAccountOp({ error })
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'The transaction cannot be broadcast because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
+      )
+    }
   })
 })
 
