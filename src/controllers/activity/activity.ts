@@ -205,6 +205,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     accountId: AccountId
   ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
     await this.#initialLoadPromise
+    if (!toAddress) return { found: false, lastTransactionDate: null }
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
