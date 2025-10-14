@@ -2498,8 +2498,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       supportedChainIds: this.supportedChainIds,
       swapSignErrors: this.swapSignErrors,
       signAccountOpController: this.signAccountOpController,
-      banners: this.banners,
-      toTokenListRefactored: this.#toTokenList
+      banners: this.banners
     }
   }
 }
