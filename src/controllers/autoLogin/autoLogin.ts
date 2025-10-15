@@ -41,6 +41,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   #policiesByAccount: AutoLoginPoliciesByAccount = {}
 
+  #accounts: IAccountsController
+
+  #keystore: IKeystoreController
+
   initialLoadPromise?: Promise<void>
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -56,6 +60,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   ) {
     super()
     this.#storage = storage
+    this.#accounts = accounts
+    this.#keystore = keystore
     this.#signMessage = new SignMessageController(
       keystore,
       providers,
@@ -76,6 +82,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   static getParsedSiweMessage(message: string | `0x${string}`): SiweMessage | null {
+    if (typeof message !== 'string' || message.trim() === '') return null
+
     const messageString = message.startsWith('0x') ? toUtf8String(message) : message
 
     const parsedSiweMessage = parseSiweMessage(messageString)
@@ -186,7 +194,10 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     // @TODO: This will always be false if the policy doesn't exist??? Maybe we should
     // store the flag somewhere else
-    if (accountKeys.find((k) => k.type !== 'internal') && !policy?.supportsEIP6492)
+    if (
+      !accountKeys.length ||
+      (accountKeys.find((k) => k.type !== 'internal') && !policy?.supportsEIP6492)
+    )
       return 'unsupported'
 
     if (!policy) return 'no-policy'
@@ -197,6 +208,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   async revokePolicy(accountAddress: string, policyDomain: string, policyUriPrefix: string) {
+    await this.initialLoadPromise
+
     await this.withStatus('revokePolicy', async () => {
       const accountPolicies = this.#policiesByAccount[accountAddress] || []
 
@@ -215,6 +228,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     isAutoLoginEnabledByUser: boolean,
     autoLoginDuration: number
   ): Promise<AutoLoginPolicy | null> {
+    await this.initialLoadPromise
+
     if (!isAutoLoginEnabledByUser) {
       console.log('Debug: Auto-login not enabled by user, skipping policy creation')
       return null
@@ -228,7 +243,13 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return policy
   }
 
-  getAutoLoginStatus(parsedSiwe: SiweMessage, accountKeys: Key[]): AutoLoginStatus {
+  getAutoLoginStatus(parsedSiwe: SiweMessage): AutoLoginStatus {
+    const accountData = this.#accounts.accounts.find((a) => a.addr === parsedSiwe.address)
+
+    if (!accountData) throw new Error('Account not found')
+
+    const accountKeys = this.#keystore.getAccountKeys(accountData)
+
     const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys)
 
     switch (policyStatus) {
@@ -245,17 +266,22 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     }
   }
 
-  async autoLogin({
-    messageToSign,
-    accountKeys
-  }: {
-    messageToSign: {
-      accountAddr: string
-      chainId: bigint
-      message: PlainTextMessage['message']
-    }
-    accountKeys: Key[]
+  async autoLogin(messageToSign: {
+    accountAddr: string
+    chainId: bigint
+    message: PlainTextMessage['message']
   }) {
+    await this.initialLoadPromise
+
+    const accountData = this.#accounts.accounts.find((a) => a.addr === messageToSign.accountAddr)
+    if (!accountData) throw new Error('Account not found')
+
+    const accountKeys = this.#keystore.getAccountKeys(accountData)
+
+    const key = accountKeys.find((k) => k.type === 'internal')
+
+    if (!key) throw new Error('No internal key available for signing')
+
     await this.#signMessage.init({
       messageToSign: {
         accountAddr: messageToSign.accountAddr,
@@ -268,10 +294,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         signature: null
       }
     })
-
-    const key = accountKeys.find((k) => k.type === 'internal')
-
-    if (!key) throw new Error('No internal key available for signing')
 
     this.#signMessage.setSigningKey(key.addr, key.type)
 
@@ -293,5 +315,9 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     })
 
     return policy || null
+  }
+
+  getAccountPolicies(accountAddr: string): AutoLoginPolicy[] {
+    return this.#policiesByAccount[accountAddr] || []
   }
 }

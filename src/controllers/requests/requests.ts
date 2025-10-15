@@ -14,7 +14,7 @@ import {
   ActionPosition,
   ActionType
 } from '../../interfaces/actions'
-import { IAutoLoginController } from '../../interfaces/autoLogin'
+import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -741,27 +741,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       // Try to login automatically if the message is valid SIWE and autologin is enabled
       if (rawMessage && parsedSiweMessage) {
-        const autoLoginStatus = this.#autoLogin.getAutoLoginStatus(
-          parsedSiweMessage,
-          this.#keystore.getAccountKeys(this.#selectedAccount.account)
-        )
+        let autoLoginStatus: AutoLoginStatus = 'no-policy'
+        try {
+          autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiweMessage)
 
-        console.log(
-          'debug: siwe autologin status',
-          autoLoginStatus,
-          this.#keystore.getAccountKeys(this.#selectedAccount.account)
-        )
+          console.log('debug: siwe autologin status', autoLoginStatus)
 
-        if (autoLoginStatus === 'active') {
-          try {
+          if (autoLoginStatus === 'active') {
             // Sign and respond
             const signedMessage = await this.#autoLogin.autoLogin({
-              messageToSign: {
-                message: rawMessage as `0x${string}`,
-                chainId: network.chainId,
-                accountAddr: msgAddress
-              },
-              accountKeys: this.#keystore.getAccountKeys(this.#selectedAccount.account)
+              message: rawMessage as `0x${string}`,
+              chainId: network.chainId,
+              accountAddr: msgAddress
             })
 
             if (!signedMessage) {
@@ -774,13 +765,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
             dappPromise.resolve({ hash: signedMessage.signature })
             return
-          } catch (e: any) {
-            this.emitError({
-              error: e,
-              message: 'Auto-login failed. Please sign the message manually.',
-              level: 'major'
-            })
           }
+        } catch (e: any) {
+          this.emitError({
+            error: e,
+            message: 'Auto-login failed. Please sign the message manually.',
+            level: 'major'
+          })
         }
 
         userRequest.action = {
