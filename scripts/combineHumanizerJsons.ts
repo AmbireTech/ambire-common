@@ -76,8 +76,8 @@ function integrateAmbireConstants(
         initialJson.knownAddresses[address].token = { symbol, decimals }
       if (!initialJson.knownAddresses[address].chainIds)
         initialJson.knownAddresses[address].chainIds = []
-
-      initialJson.knownAddresses[address].chainIds.push(chainId)
+      const arr = initialJson.knownAddresses[address].chainIds
+      initialJson.knownAddresses[address].chainIds = [...new Set([...arr, Number(chainId)])]
     })
   })
   Object.entries(ambireConstants.humanizerInfo.names).forEach(([address, name]) => {
@@ -110,8 +110,8 @@ function integrateAmbireCena(initialJson: HumanizerMeta, cenaTokens: CenaTokens)
         initialJson.knownAddresses[address].token = { symbol }
       if (!initialJson.knownAddresses[address].chainIds)
         initialJson.knownAddresses[address].chainIds = []
-
-      initialJson.knownAddresses[address].chainIds.push(Number(chainId))
+      const arr = initialJson.knownAddresses[address].chainIds
+      initialJson.knownAddresses[address].chainIds = [...new Set([...arr, Number(chainId)])]
       initialJson.knownAddresses[address].isSC = true
     })
   })
@@ -136,8 +136,8 @@ function integrateDappAddrList(
       initialJson.knownAddresses[address].name = appName
       if (!initialJson.knownAddresses[address].chainIds)
         initialJson.knownAddresses[address].chainIds = []
-
-      initialJson.knownAddresses[address].chainIds.push(Number(chainId))
+      const arr = initialJson.knownAddresses[address].chainIds
+      initialJson.knownAddresses[address].chainIds = [...new Set([...arr, Number(chainId)])]
       initialJson.knownAddresses[address].isSC = true
     })
   })

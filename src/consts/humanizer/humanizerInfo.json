@@ -24488,7 +24488,6 @@
             },
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/weth.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -25895,7 +25894,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/TUSD.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26032,7 +26030,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/yfi.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26073,7 +26070,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/bat.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26096,7 +26092,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/mana.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26146,8 +26141,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/1inch.svg",
             "chainIds": [
-                1,
-                56,
                 1,
                 56
             ]
@@ -26322,7 +26315,6 @@
             },
             "isSC": true,
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26365,7 +26357,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/wbtc.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26551,7 +26542,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/SAND.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -26696,7 +26686,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/wootrade.svg",
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -26777,7 +26766,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/chainlink.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -27027,7 +27015,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/dai.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -27248,7 +27235,6 @@
             },
             "isSC": true,
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -27511,7 +27497,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/shib.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -27642,7 +27627,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/usdc.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28013,7 +27997,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/comp.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28027,7 +28010,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/synthetix.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28051,7 +28033,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/ens.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28122,7 +28103,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/graphToken.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28244,7 +28224,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/crv.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28276,7 +28255,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/usdt.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28354,7 +28332,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/zrx.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -28713,7 +28690,6 @@
             },
             "isSC": true,
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -29380,7 +29356,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/lpt.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -30375,7 +30350,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/RNDR.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -33166,7 +33140,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/imx.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -36954,7 +36927,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/JASMY.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -37111,7 +37083,6 @@
             },
             "isSC": true,
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -37188,7 +37159,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/chz.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -37975,7 +37945,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/AXS.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -70322,7 +70291,6 @@
             "isSC": true,
             "logo": "https://raw.githubusercontent.com/MetaMask/contract-metadata/c5b611324607d87a5fc3315094087962acd45e09/images/cro.svg",
             "chainIds": [
-                1,
                 1
             ]
         },
@@ -89468,7 +89436,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89505,7 +89472,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89518,7 +89484,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89531,7 +89496,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89556,7 +89520,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89569,7 +89532,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89582,7 +89544,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89631,7 +89592,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89656,7 +89616,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89705,7 +89664,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89754,7 +89712,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89791,7 +89748,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89888,7 +89844,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -89973,7 +89928,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -90227,7 +90181,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -90300,7 +90253,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -90313,7 +90265,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -90326,7 +90277,6 @@
             },
             "isSC": true,
             "chainIds": [
-                56,
                 56
             ]
         },
@@ -93046,7 +92996,6 @@
             },
             "isSC": true,
             "chainIds": [
-                10,
                 10
             ]
         },
@@ -93060,7 +93009,6 @@
             "isSC": true,
             "chainIds": [
                 10,
-                10,
                 8453
             ]
         },
@@ -93073,7 +93021,6 @@
             },
             "isSC": true,
             "chainIds": [
-                10,
                 10
             ]
         },
@@ -93086,7 +93033,6 @@
             },
             "isSC": true,
             "chainIds": [
-                10,
                 10
             ]
         },
@@ -93100,8 +93046,7 @@
             "isSC": true,
             "chainIds": [
                 10,
-                43114,
-                10
+                43114
             ]
         },
         "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58": {
@@ -93125,7 +93070,6 @@
             },
             "isSC": true,
             "chainIds": [
-                10,
                 10
             ]
         },
@@ -93138,7 +93082,6 @@
             },
             "isSC": true,
             "chainIds": [
-                10,
                 10
             ]
         },
@@ -93151,7 +93094,6 @@
             },
             "isSC": true,
             "chainIds": [
-                10,
                 10
             ]
         },
@@ -93397,7 +93339,6 @@
             },
             "isSC": true,
             "chainIds": [
-                8453,
                 8453
             ]
         },
@@ -105805,7 +105746,6 @@
             },
             "isSC": true,
             "chainIds": [
-                534352,
                 534352
             ]
         },
@@ -105816,7 +105756,6 @@
             },
             "isSC": true,
             "chainIds": [
-                534352,
                 534352
             ]
         },
@@ -105957,7 +105896,6 @@
             },
             "isSC": true,
             "chainIds": [
-                534352,
                 534352
             ]
         },
