@@ -121,22 +121,28 @@ const prepareTest = async (
   }
 }
 
-const generateSiweMessage = (overrides: Partial<CreateSiweMessageParameters> = {}) => {
-  return hexlify(
-    toUtf8Bytes(
-      createSiweMessage({
-        domain: 'docs.fileverse.io',
-        address: EOA_ACC.addr as `0x${string}`,
-        statement: 'Sign in to docs.fileverse.io',
-        uri: 'https://docs.fileverse.io/login',
-        version: '1',
-        chainId: 1,
-        resources: ['https://privy.io'],
-        nonce: hexlify(toUtf8Bytes('100')),
-        ...overrides
-      })
-    )
-  ) as `0x${string}`
+const generateSiweMessage = (
+  // eslint-disable-next-line default-param-last
+  overrides: Partial<CreateSiweMessageParameters> = {},
+  modifyFunc?: (message: string) => string
+) => {
+  let message = createSiweMessage({
+    domain: 'docs.fileverse.io',
+    address: EOA_ACC.addr as `0x${string}`,
+    statement: 'Sign in to docs.fileverse.io',
+    uri: 'https://docs.fileverse.io/login',
+    version: '1',
+    chainId: 1,
+    resources: ['https://privy.io'],
+    nonce: hexlify(toUtf8Bytes('100')),
+    ...overrides
+  })
+
+  if (modifyFunc) {
+    message = modifyFunc(message)
+  }
+
+  return hexlify(toUtf8Bytes(message)) as `0x${string}`
 }
 
 describe('AutoLoginController', () => {
@@ -211,6 +217,47 @@ describe('AutoLoginController', () => {
         )
       ) as `0x${string}`
 
+      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
+
+      expect(message).toBeNull()
+
+      const malformedMessage2 = hexlify(
+        toUtf8Bytes(
+          `
+docs.fileverse.io wants you to sign in with your Ethereum account:
+0x6de5cD22bC8A54b028E54fC3a7D5b102C7F72109
+
+By signing, you are proving you own this wallet and logging in. This does not initiate a transaction or cost any fees.
+
+URI: https://docs.fileverse.io
+          `
+        )
+      ) as `0x${string}`
+
+      const message2 = AutoLoginController.getParsedSiweMessage(malformedMessage2)
+
+      expect(message2).toBeNull()
+    })
+    it('not before in the future - should return null', async () => {
+      const malformedMessage = generateSiweMessage({
+        notBefore: new Date(Date.now() + 60000)
+      })
+      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
+
+      expect(message).toBeNull()
+    })
+    it('invalid nonce - should return null', async () => {
+      const malformedMessage = generateSiweMessage(undefined, (message) =>
+        message.replace(/Nonce: [a-zA-Z0-9]+/, 'Nonce: invalidnonce')
+      )
+      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
+
+      expect(message).toBeNull()
+    })
+    it('invalid resource uri in resources', async () => {
+      const malformedMessage = generateSiweMessage(undefined, (message) =>
+        message.replace(/Resources:\n- https:\/\/privy.io/, 'Resources:\n- invaliduri')
+      )
       const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
 
       expect(message).toBeNull()

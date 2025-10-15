@@ -1,5 +1,6 @@
-import { toUtf8String } from 'ethers'
-import { parseSiweMessage, SiweMessage, validateSiweMessage } from 'viem/siwe'
+import { isHexString, toUtf8String } from 'ethers'
+import { SiweMessage } from 'siwe'
+import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { IAccountsController } from '../../interfaces/account'
 import {
@@ -81,25 +82,55 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return Date.now() > policy.defaultExpiration
   }
 
-  static getParsedSiweMessage(message: string | `0x${string}`): SiweMessage | null {
+  static getParsedSiweMessage(message: string | `0x${string}`): SiweMessageType | null {
     if (typeof message !== 'string' || message.trim() === '') return null
 
-    const messageString = message.startsWith('0x') ? toUtf8String(message) : message
+    try {
+      const messageString = message.startsWith('0x') ? toUtf8String(message) : message
+      const parsedSiweMessage = new SiweMessage(messageString)
 
-    const parsedSiweMessage = parseSiweMessage(messageString)
+      if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
+      if (
+        parsedSiweMessage.notBefore &&
+        new Date(parsedSiweMessage.notBefore).getTime() > Date.now()
+      )
+        return null
+      if (
+        parsedSiweMessage.expirationTime &&
+        new Date(parsedSiweMessage.expirationTime).getTime() < Date.now()
+      )
+        return null
+      if (!isHexString(parsedSiweMessage.nonce)) return null
+      if (!isHexString(parsedSiweMessage.address)) return null
 
-    if (
-      !validateSiweMessage({
-        ...parsedSiweMessage,
-        message: parsedSiweMessage
-      })
-    )
+      const { expirationTime, notBefore, issuedAt, address, ...viemFormatParsedMessage } =
+        parsedSiweMessage
+
+      const parsedSiweMessageViemFormat: SiweMessageType = {
+        ...viemFormatParsedMessage,
+        version: parsedSiweMessage.version as '1', // hack to stop viem from whining
+        address: parsedSiweMessage.address as `0x${string}`,
+        ...(parsedSiweMessage.expirationTime
+          ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
+          : {}),
+        ...(parsedSiweMessage.notBefore
+          ? { notBefore: new Date(parsedSiweMessage.notBefore) }
+          : {}),
+        ...(parsedSiweMessage.issuedAt ? { issuedAt: new Date(parsedSiweMessage.issuedAt) } : {})
+      }
+
+      return parsedSiweMessageViemFormat
+    } catch (e: any) {
+      // Don't log an error here as this function is called for non-siwe messages and we expect
+      // it to fail often
       return null
-
-    return parsedSiweMessage as SiweMessage
+    }
   }
 
-  static isPolicyMatchingDomainAndUri(parsedSiwe: SiweMessage, policy: AutoLoginPolicy): boolean {
+  static isPolicyMatchingDomainAndUri(
+    parsedSiwe: SiweMessageType,
+    policy: AutoLoginPolicy
+  ): boolean {
     return policy.domain === parsedSiwe.domain && parsedSiwe.uri.startsWith(policy.uriPrefix)
   }
 
@@ -111,7 +142,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   #createOrUpdatePolicyFromSiwe(
-    parsedSiwe: SiweMessage,
+    parsedSiwe: SiweMessageType,
     options: {
       autoLoginDuration: number
     }
@@ -166,7 +197,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   #getPolicyStatus(
-    parsedSiwe: SiweMessage,
+    parsedSiwe: SiweMessageType,
     accountKeys: Key[]
   ): 'no-policy' | 'expired' | 'valid-policy' | 'unsupported' {
     // All resources are allowed by the wallet
@@ -224,7 +255,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   async onSiweMessageSigned(
-    parsedSiwe: SiweMessage,
+    parsedSiwe: SiweMessageType,
     isAutoLoginEnabledByUser: boolean,
     autoLoginDuration: number
   ): Promise<AutoLoginPolicy | null> {
@@ -243,7 +274,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return policy
   }
 
-  getAutoLoginStatus(parsedSiwe: SiweMessage): AutoLoginStatus {
+  getAutoLoginStatus(parsedSiwe: SiweMessageType): AutoLoginStatus {
     const accountData = this.#accounts.accounts.find((a) => a.addr === parsedSiwe.address)
 
     if (!accountData) throw new Error('Account not found')
