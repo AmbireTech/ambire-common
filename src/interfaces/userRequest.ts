@@ -30,6 +30,7 @@ export interface SiweMessage {
   parsedMessage: ViemSiweMessage
   autoLoginStatus: AutoLoginStatus
   isAutoLoginEnabledByUser: boolean
+  autoLoginDuration: number
 }
 
 export interface TypedMessage {

@@ -33,7 +33,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   #storage: IStorageController
 
   settings: AutoLoginSettings = {
-    enabled: true
+    enabled: true,
+    duration: 24 * 60 * 60 * 1000
   }
 
   #signMessage: SignMessageController
@@ -101,7 +102,16 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     this.emitUpdate()
   }
 
-  #createOrUpdatePolicyFromSiwe(parsedSiwe: SiweMessage): AutoLoginPolicy {
+  #createOrUpdatePolicyFromSiwe(
+    parsedSiwe: SiweMessage,
+    options: {
+      autoLoginDuration: number
+    }
+  ): AutoLoginPolicy {
+    // autoLoginDuration is defined always, but we are fallbacking just in case
+    const autoLoginDuration = options.autoLoginDuration || this.settings.duration
+    const expirationTime = Date.now() + autoLoginDuration
+
     const accountAddress = parsedSiwe.address
     if (!this.policiesByAccount[accountAddress]) {
       this.policiesByAccount[accountAddress] = []
@@ -112,18 +122,16 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p)
     )
 
+    // Add a new policy
     if (!existingPolicy) {
       const newPolicy: AutoLoginPolicy = {
         domain: parsedSiwe.domain,
         uriPrefix: parsedSiwe.uri,
         allowedChains: parsedSiwe.chainId ? [parsedSiwe.chainId] : [],
-        allowedResources:
-          parsedSiwe.resources && parsedSiwe.resources.length > 0
-            ? parsedSiwe.resources
-            : DEFAULT_ALLOWED_RESOURCES,
+        allowedResources: parsedSiwe.resources || [],
         // @TODO: consider when to set to true
         supportsEIP6492: false,
-        defaultExpiration: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 days from now
+        defaultExpiration: expirationTime
       }
 
       this.policiesByAccount[accountAddress].push(newPolicy)
@@ -131,8 +139,17 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       return newPolicy
     }
 
-    if (existingPolicy && !existingPolicy.allowedChains.includes(parsedSiwe.chainId)) {
+    // Update existing policy
+    existingPolicy.defaultExpiration = expirationTime
+
+    if (!existingPolicy.allowedChains.includes(parsedSiwe.chainId)) {
       existingPolicy.allowedChains.push(parsedSiwe.chainId)
+    }
+
+    if (parsedSiwe.resources) {
+      existingPolicy.allowedResources = Array.from(
+        new Set([...existingPolicy.allowedResources, ...parsedSiwe.resources])
+      )
     }
 
     return existingPolicy
@@ -193,14 +210,15 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   async onSiweMessageSigned(
     parsedSiwe: SiweMessage,
-    isAutoLoginEnabledByUser: boolean
+    isAutoLoginEnabledByUser: boolean,
+    autoLoginDuration: number
   ): Promise<AutoLoginPolicy | null> {
     if (!isAutoLoginEnabledByUser) {
       console.log('Debug: Auto-login not enabled by user, skipping policy creation')
       return null
     }
 
-    const policy = this.#createOrUpdatePolicyFromSiwe(parsedSiwe)
+    const policy = this.#createOrUpdatePolicyFromSiwe(parsedSiwe, { autoLoginDuration })
     console.log('Debug: Created/updated auto-login policy', policy)
     await this.#storage.set('autoLoginPolicies', this.policiesByAccount)
     this.emitUpdate()

@@ -42,6 +42,7 @@ type AutoLoginPoliciesByAccount = {
 
 type AutoLoginSettings = {
   enabled: boolean
+  duration: number
 }
 
 type AutoLoginStatus = 'active' | 'unsupported' | 'expired' | 'no-policy'

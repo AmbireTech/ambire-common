@@ -125,7 +125,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.emitUpdate()
   }
 
-  update({ isAutoLoginEnabledByUser }: SignMessageUpdateParams) {
+  update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
     if (!this.isInitialized) {
       this.emitError({
         level: 'major',
@@ -135,15 +135,15 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       return
     }
 
-    if (
-      typeof isAutoLoginEnabledByUser === 'boolean' &&
-      this.messageToSign &&
-      this.messageToSign.content.kind === 'siwe'
-    ) {
-      this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
-
-      this.emitUpdate()
+    if (this.messageToSign && this.messageToSign.content.kind === 'siwe') {
+      if (typeof isAutoLoginEnabledByUser === 'boolean') {
+        this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
+      }
+      if (typeof autoLoginDuration === 'number') {
+        this.messageToSign.content.autoLoginDuration = autoLoginDuration
+      }
     }
+    this.emitUpdate()
   }
 
   setSigningKey(signingKeyAddr: Key['addr'], signingKeyType: Key['type']) {

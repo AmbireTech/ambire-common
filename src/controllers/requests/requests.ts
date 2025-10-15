@@ -788,7 +788,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           message: msg[0],
           parsedMessage: parsedSiweMessage,
           autoLoginStatus,
-          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled
+          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
+          autoLoginDuration: this.#autoLogin.settings.duration
         }
       }
     } else if (kind === 'typedMessage') {
