@@ -89,19 +89,30 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       const messageString = message.startsWith('0x') ? toUtf8String(message) : message
       const parsedSiweMessage = new SiweMessage(messageString)
 
-      if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
+      if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length)
+        throw new Error('Empty message')
       if (
         parsedSiweMessage.notBefore &&
         new Date(parsedSiweMessage.notBefore).getTime() > Date.now()
       )
-        return null
+        throw new Error('notBefore is in the future')
       if (
         parsedSiweMessage.expirationTime &&
         new Date(parsedSiweMessage.expirationTime).getTime() < Date.now()
       )
-        return null
-      if (!isHexString(parsedSiweMessage.nonce)) return null
-      if (!isHexString(parsedSiweMessage.address)) return null
+        throw new Error('Message is expired')
+      if (
+        !isHexString(
+          `${
+            parsedSiweMessage.nonce.startsWith('0x')
+              ? parsedSiweMessage.nonce
+              : `0x${parsedSiweMessage.nonce}`
+          }`
+        )
+      )
+        throw new Error(`Invalid nonce: ${parsedSiweMessage.nonce}`)
+      if (!isHexString(parsedSiweMessage.address))
+        throw new Error(`Invalid address: ${parsedSiweMessage.address}`)
 
       const { expirationTime, notBefore, issuedAt, address, ...viemFormatParsedMessage } =
         parsedSiweMessage
@@ -121,8 +132,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
       return parsedSiweMessageViemFormat
     } catch (e: any) {
-      // Don't log an error here as this function is called for non-siwe messages and we expect
-      // it to fail often
+      console.warn('Error parsing message (probably not a siwe one):', e)
+
       return null
     }
   }
