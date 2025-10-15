@@ -47,7 +47,7 @@ const getRpcProvider = (
   }
 
   const batchMaxCount = getBatchCountFromUrl(rpcUrl)
-  const providerOptions = batchMaxCount ? { batchMaxCount, ...options } : options
+  const providerOptions = batchMaxCount ? { ...options, batchMaxCount } : options
 
   if (chainId) {
     const staticNetwork = Network.from(Number(chainId))
