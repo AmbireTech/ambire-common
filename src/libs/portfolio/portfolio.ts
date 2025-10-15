@@ -29,6 +29,14 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
+// List of tokens to exclude from display by chainId and address
+const EXCLUDED_TOKENS: Array<{ chainId: bigint; address: string }> = [
+  { chainId: BigInt('100'), address: '0xcB444e90D8198415266c6a2724b7900fb12FC56E' }, // Gnosis
+  { chainId: BigInt('137'), address: '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' }, // Polygon
+  { chainId: BigInt('1'), address: '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' }, // Ethereum
+  { chainId: BigInt('999'), address: '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' } // Hyper EVM
+]
+
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
@@ -287,7 +295,15 @@ export class Portfolio {
       .filter(Boolean) as string[]
 
     // Remove duplicates and always add ZeroAddress
-    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
+    let filteredErc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
+    // Exclude tokens by chainId/address
+    filteredErc20s = filteredErc20s.filter(
+      (addr) =>
+        !EXCLUDED_TOKENS.some(
+          (ex) =>
+            ex.chainId === this.network.chainId && ex.address.toLowerCase() === addr.toLowerCase()
+        )
+    )
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = paramsPriceCache || new Map()
@@ -307,7 +323,7 @@ export class Portfolio {
     const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
-        paginate(hints.erc20s, limits.erc20).map((page, index) =>
+        paginate(filteredErc20s, limits.erc20).map((page, index) =>
           getTokens(
             this.network,
             this.deploylessTokens,
