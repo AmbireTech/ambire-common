@@ -34,6 +34,11 @@ type AutoLoginPolicy = {
    * @example 2592000
    */
   defaultExpiration: number
+  /**
+   * Timestamp of the last successful authentication using this policy.
+   * (the last time the wallet auto-signed a SIWE message for this policy)
+   */
+  lastAuthenticated: number
 }
 
 type AutoLoginPoliciesByAccount = {

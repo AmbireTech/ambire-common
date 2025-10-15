@@ -131,7 +131,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         allowedResources: parsedSiwe.resources || [],
         // @TODO: consider when to set to true
         supportsEIP6492: false,
-        defaultExpiration: expirationTime
+        defaultExpiration: expirationTime,
+        lastAuthenticated: Date.now()
       }
 
       this.#policiesByAccount[accountAddress].push(newPolicy)
@@ -141,6 +142,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     // Update existing policy
     existingPolicy.defaultExpiration = expirationTime
+    existingPolicy.lastAuthenticated = Date.now()
 
     if (!existingPolicy.allowedChains.includes(parsedSiwe.chainId)) {
       existingPolicy.allowedChains.push(parsedSiwe.chainId)
