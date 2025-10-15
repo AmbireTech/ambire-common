@@ -9,6 +9,7 @@ interface ProviderOptions {
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
   'drpc.org': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
+  '1rpc.io': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
   'roninchain.com': 3 // batch of more than 3 results in response 400 with "too many requests"
   // Keep tatum.io config disabled - if restricted to 1 it hits their limit of 5 requests per minute anyways
   // 'tatum.io': 1 // batch calls are available for paid plans only (response 402)
