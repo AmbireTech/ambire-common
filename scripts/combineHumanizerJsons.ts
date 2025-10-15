@@ -9,6 +9,9 @@ const path = require('path')
 const fetch = require('node-fetch')
 require('dotenv').config()
 
+const additionalSighashes: Sighashes = require('../src/consts/humanizer/dappSelectors.json')
+const dappAddressList: DappAddrList = require('../src/consts/humanizer/dappAddressList.json')
+
 const AMBIRE_CONSTANTS_URL = 'https://jason.ambire.com/result.json'
 const CENA_TOKENS_URL = 'https://cena.ambire.com/api/v3/lists/top-tokens-info?maxTokensPerChain=200'
 const humanizerV2ResultPath = path.join(
@@ -18,24 +21,6 @@ const humanizerV2ResultPath = path.join(
   'consts',
   'humanizer',
   'humanizerInfo.json'
-)
-
-// @TODO: rename dappSelectors.json file name
-const sigHashesSourcePath = path.join(
-  __dirname,
-  '..',
-  'src',
-  'consts',
-  'humanizer',
-  'dappSelectors.json'
-)
-const dappNamesSourcePath = path.join(
-  __dirname,
-  '..',
-  'src',
-  'consts',
-  'humanizer',
-  'dappAddressList.json'
 )
 
 interface AmbireConstants {
@@ -159,14 +144,14 @@ function integrateDappAddrList(
   return initialJson
 }
 
-const fetchAmbireConstants = async () => {
+const fetchAmbireConstants = async (): Promise<AmbireConstants> => {
   const fetchedAmbireConstants = await fetch(AMBIRE_CONSTANTS_URL)
     .then((res: any) => res.json())
     .catch(console.log)
 
   return fetchedAmbireConstants
 }
-const fetchAmbireCenaTokens = async () => {
+const fetchAmbireCenaTokens = async (): Promise<CenaTokens> => {
   const fetchedAmbireCenaTokens = await fetch(CENA_TOKENS_URL)
     .then((res: any) => res.json())
     .catch(console.log)
@@ -181,14 +166,7 @@ const main = async () => {
   const fetchedAmbireConstants = await fetchAmbireConstants()
   const fetchedAmbireCenaTokens = await fetchAmbireCenaTokens()
 
-  // read files
-  const additionalSighashes = await fsPromises
-    .readFile(sigHashesSourcePath, 'utf-8')
-    .then(JSON.parse)
-
-  const dappAddressList = await fsPromises.readFile(dappNamesSourcePath, 'utf-8').then(JSON.parse)
-
-  let finalV2HumanizerMeta = JSON.parse(JSON.stringify(initialV2HumanizerMeta))
+  let finalV2HumanizerMeta: HumanizerMeta = JSON.parse(JSON.stringify(initialV2HumanizerMeta))
   finalV2HumanizerMeta = integrateAmbireConstants(finalV2HumanizerMeta, fetchedAmbireConstants)
   finalV2HumanizerMeta = integrateAmbireCena(finalV2HumanizerMeta, fetchedAmbireCenaTokens)
   finalV2HumanizerMeta = integrateAdditionalSigHashes(finalV2HumanizerMeta, additionalSighashes)
