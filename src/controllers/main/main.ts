@@ -1083,7 +1083,7 @@ export class MainController extends EventEmitter implements IMainController {
       await this.autoLogin.onSiweMessageSigned(
         signedMessage.content.parsedMessage,
         signedMessage.content.isAutoLoginEnabledByUser,
-        signedMessage.content.expirationTime
+        signedMessage.content.autoLoginDuration
       )
     }
 

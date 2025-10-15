@@ -39,11 +39,11 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   #signMessage: SignMessageController
 
+  #policiesByAccount: AutoLoginPoliciesByAccount = {}
+
   initialLoadPromise?: Promise<void>
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
-
-  policiesByAccount: AutoLoginPoliciesByAccount = {}
 
   constructor(
     storage: IStorageController,
@@ -96,7 +96,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   async #load() {
-    this.policiesByAccount = await this.#storage.get('autoLoginPolicies', this.policiesByAccount)
+    this.#policiesByAccount = await this.#storage.get('autoLoginPolicies', this.#policiesByAccount)
     this.settings = await this.#storage.get('autoLoginSettings', this.settings)
 
     this.emitUpdate()
@@ -113,11 +113,11 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     const expirationTime = Date.now() + autoLoginDuration
 
     const accountAddress = parsedSiwe.address
-    if (!this.policiesByAccount[accountAddress]) {
-      this.policiesByAccount[accountAddress] = []
+    if (!this.#policiesByAccount[accountAddress]) {
+      this.#policiesByAccount[accountAddress] = []
     }
 
-    const accountPolicies = this.policiesByAccount[accountAddress]
+    const accountPolicies = this.#policiesByAccount[accountAddress]
     const existingPolicy = accountPolicies.find((p) =>
       AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p)
     )
@@ -134,7 +134,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         defaultExpiration: expirationTime
       }
 
-      this.policiesByAccount[accountAddress].push(newPolicy)
+      this.#policiesByAccount[accountAddress].push(newPolicy)
 
       return newPolicy
     }
@@ -168,7 +168,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       return 'valid-policy'
     }
 
-    const accountPolicies = this.policiesByAccount[parsedSiwe.address] || []
+    const accountPolicies = this.#policiesByAccount[parsedSiwe.address] || []
 
     const policy = accountPolicies.find((p) => {
       if (!AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p)) return false
@@ -196,15 +196,15 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   async revokePolicy(accountAddress: string, policyDomain: string, policyUriPrefix: string) {
     await this.withStatus('revokePolicy', async () => {
-      const accountPolicies = this.policiesByAccount[accountAddress] || []
+      const accountPolicies = this.#policiesByAccount[accountAddress] || []
 
       if (accountPolicies.length === 0) return
 
-      this.policiesByAccount[accountAddress] = accountPolicies.filter(
+      this.#policiesByAccount[accountAddress] = accountPolicies.filter(
         (p) => !(p.domain === policyDomain && p.uriPrefix === policyUriPrefix)
       )
 
-      await this.#storage.set('autoLoginPolicies', this.policiesByAccount)
+      await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
     })
   }
 
@@ -220,7 +220,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     const policy = this.#createOrUpdatePolicyFromSiwe(parsedSiwe, { autoLoginDuration })
     console.log('Debug: Created/updated auto-login policy', policy)
-    await this.#storage.set('autoLoginPolicies', this.policiesByAccount)
+    await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
     this.emitUpdate()
 
     return policy
@@ -276,5 +276,20 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     await this.#signMessage.sign()
 
     return this.#signMessage.signedMessage
+  }
+
+  getAccountPolicyForOrigin(accountAddr: string, origin: string): AutoLoginPolicy | null {
+    const accountPolicies = this.#policiesByAccount[accountAddr] || []
+
+    const policy = accountPolicies.find((p) => {
+      try {
+        const url = new URL(p.uriPrefix)
+        return url.origin === origin
+      } catch {
+        return false
+      }
+    })
+
+    return policy || null
   }
 }
