@@ -4,6 +4,7 @@ import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE, SCROLL_ORACLE } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
+import { SCROLL_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -21,7 +22,7 @@ import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/u
 import { AmbireEstimation, EstimationFlags, FeePaymentOption } from './interfaces'
 
 function getOracleAddr(network: Network) {
-  if (network.chainId === 534352n) {
+  if (network.chainId === SCROLL_CHAIN_ID) {
     return SCROLL_ORACLE
   }
 
