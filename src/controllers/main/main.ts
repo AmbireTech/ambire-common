@@ -927,6 +927,20 @@ export class MainController extends EventEmitter implements IMainController {
     if (!signAccountOp) return
 
     const paidByKeyType = this.signAccountOp?.accountOp.gasFeePayment?.paidByKeyType
+    const isAwaitingHWSignature =
+      signAccountOp.accountOp.signingKeyType !== 'internal' &&
+      this.statuses.signAndBroadcastAccountOp === 'LOADING'
+
+    // Reset these flags only if we were awaiting a HW signature
+    // to broadcast a transaction.
+    // If the user is using a hot wallet we can sign the transaction immediately
+    // and once its signed there is no way to cancel the broadcast. Once the user
+    // On the other hand HWs can be in 'SIGNING' or 'BROADCASTING' state
+    // and be able to 'cancel' the broadcast.
+    if (isAwaitingHWSignature) {
+      this.statuses.signAndBroadcastAccountOp = 'INITIAL'
+    }
+
     const uniqueSigningKeys = [...new Set([signAccountOp.accountOp.signingKeyType, paidByKeyType])]
 
     // Call the cleanup method for each unique signing key type
