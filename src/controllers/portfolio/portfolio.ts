@@ -854,9 +854,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const projectedRewards = [
       {
         chainId: BigInt(1),
-        amount: BigInt(projectedAmountFormatted || 1),
-        latestAmount: BigInt(projectedAmountFormatted || 1),
-        pendingAmount: BigInt(projectedAmountFormatted || 1),
+        amount: BigInt(projectedAmountFormatted || 0),
+        latestAmount: BigInt(projectedAmountFormatted || 0),
+        pendingAmount: BigInt(projectedAmountFormatted || 0),
         address: STK_WALLET,
         symbol: 'stkWALLET',
         name: 'Staked $WALLET',
