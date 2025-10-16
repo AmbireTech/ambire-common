@@ -119,11 +119,12 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     if (messageString.match(prefixRegex) === null) return null
 
     try {
+      const requestDomain = new URL(requestOrigin).host
       const parsedSiweMessage = new SiweMessage(messageString)
 
       if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
 
-      if (parsedSiweMessage.domain !== requestOrigin)
+      if (parsedSiweMessage.domain !== requestDomain)
         return {
           parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
           status: 'domain-mismatch'
@@ -163,7 +164,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         // Parse it again with viem to get as much info as possible
         // so we can display it to the user
         parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
-        status: 'invalid'
+        status: 'invalid-critical'
       }
     }
   }
