@@ -136,17 +136,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
-  #updateToTokenListThrottle: {
-    time: number
-    throttled: boolean
-    shouldReset: boolean
-    addressToSelect?: string
-  } = {
-    time: 0,
-    shouldReset: true,
-    throttled: false
-  }
-
   #updateQuoteId?: string
 
   switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
@@ -1068,7 +1057,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // Create the list if it doesn’t exist yet, or set its status to LOADING if it does.
     if (!toTokenList) {
       this.#toTokenList[toTokenListKeyAtStart] = {
-        status: 'INITIAL',
+        status: 'LOADING',
         apiTokens: [],
         tokens: [],
         lastUpdate: 0
@@ -1154,11 +1143,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const tokens = this.#toTokenList[toTokenListKey]?.tokens || []
 
     const isSwapping = fromChainId === toChainId
-    // Swaps between same "from" and "to" tokens are not feasible, filter them out
     if (isSwapping) {
-      return tokens
-        .filter((t) => t.address !== this.fromSelectedToken?.address)
-        .slice(0, TO_TOKEN_LIST_LIMIT)
+      return (
+        tokens
+          // Swaps between same "from" and "to" tokens are not feasible, filter them out
+          .filter((t) => t.address !== this.fromSelectedToken?.address)
+          .slice(0, TO_TOKEN_LIST_LIMIT)
+      )
     }
 
     return tokens.slice(0, TO_TOKEN_LIST_LIMIT)
