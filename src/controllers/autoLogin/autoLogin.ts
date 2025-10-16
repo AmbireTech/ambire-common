@@ -8,6 +8,7 @@ import {
   AutoLoginPolicy,
   AutoLoginSettings,
   AutoLoginStatus,
+  DefaultAutoLoginPolicy,
   IAutoLoginController,
   SiweValidityStatus
 } from '../../interfaces/autoLogin'
@@ -30,10 +31,9 @@ const prefixRegex =
   /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/
 
 /**
- * A list of resources allowed by default. Users will auto-login
- * without signing a message if all requested resources are in this list.
+ * A list of default policies for popular apps
  */
-const DEFAULT_ALLOWED_RESOURCES: string[] = []
+const DEFAULT_POLICIES: DefaultAutoLoginPolicy[] = []
 
 export class AutoLoginController extends EventEmitter implements IAutoLoginController {
   #storage: IStorageController
@@ -48,6 +48,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   #policiesByAccount: AutoLoginPoliciesByAccount = {}
 
   #accounts: IAccountsController
+
+  #networks: INetworksController
 
   #keystore: IKeystoreController
 
@@ -68,6 +70,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
+    this.#networks = networks
     this.#signMessage = new SignMessageController(
       keystore,
       providers,
@@ -171,7 +174,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static isPolicyMatchingDomainAndUri(
     parsedSiwe: SiweMessageType,
-    policy: AutoLoginPolicy
+    policy: Pick<AutoLoginPolicy, 'domain' | 'uriPrefix'>
   ): boolean {
     return policy.domain === parsedSiwe.domain && parsedSiwe.uri.startsWith(policy.uriPrefix)
   }
@@ -242,18 +245,9 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     parsedSiwe: SiweMessageType,
     accountKeys: Key[]
   ): 'no-policy' | 'expired' | 'valid-policy' | 'unsupported' {
-    // All resources are allowed by the wallet
-    if (
-      parsedSiwe.resources &&
-      parsedSiwe.resources.length > 0 &&
-      parsedSiwe.resources.every((r) => DEFAULT_ALLOWED_RESOURCES.includes(r))
-    ) {
-      return 'valid-policy'
-    }
+    const accountPolicies = this.getAccountPolicies(parsedSiwe.address)
 
-    const accountPolicies = this.#policiesByAccount[parsedSiwe.address] || []
-
-    const policy = accountPolicies.find((p) => {
+    let policy = accountPolicies.find((p) => {
       if (!AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p)) return false
 
       if (parsedSiwe.chainId && !p.allowedChains.includes(parsedSiwe.chainId)) return false
@@ -264,6 +258,15 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
       return parsedSiwe.resources.every((resource) => p.allowedResources.includes(resource))
     })
+
+    if (!policy) {
+      // Check default policies
+      const defaultPolicy = DEFAULT_POLICIES.find((p) =>
+        AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p)
+      )
+
+      if (defaultPolicy) policy = this.getPolicyFromDefaultPolicy(defaultPolicy)
+    }
 
     // @TODO: This will always be false if the policy doesn't exist??? Maybe we should
     // store the flag somewhere else
@@ -305,6 +308,13 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     if (!isAutoLoginEnabledByUser) {
       console.log('Debug: Auto-login not enabled by user, skipping policy creation')
+      return null
+    }
+
+    if (
+      DEFAULT_POLICIES.find((p) => AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p))
+    ) {
+      console.log('Debug: Matched a default policy, skipping custom policy creation')
       return null
     }
 
@@ -375,8 +385,16 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return this.#signMessage.signedMessage
   }
 
+  getPolicyFromDefaultPolicy(defaultPolicy: DefaultAutoLoginPolicy): AutoLoginPolicy {
+    return {
+      ...defaultPolicy,
+      allowedChains: this.#networks.networks.map((n) => Number(n.chainId)),
+      defaultExpiration: Date.now() + this.settings.duration
+    }
+  }
+
   getAccountPolicyForOrigin(accountAddr: string, origin: string): AutoLoginPolicy | null {
-    const accountPolicies = this.#policiesByAccount[accountAddr] || []
+    const accountPolicies = this.getAccountPolicies(accountAddr)
 
     const policy = accountPolicies.find((p) => {
       try {
@@ -387,7 +405,23 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       }
     })
 
-    return policy || null
+    if (!policy || AutoLoginController.isExpiredPolicy(policy)) return null
+
+    if (policy) return policy
+
+    // Check for default policies first
+    const defaultPolicy = DEFAULT_POLICIES.find((p) => {
+      try {
+        const url = new URL(p.uriPrefix)
+        return url.origin === origin
+      } catch {
+        return false
+      }
+    })
+
+    if (defaultPolicy) return this.getPolicyFromDefaultPolicy(defaultPolicy)
+
+    return null
   }
 
   getAccountPolicies(accountAddr: string): AutoLoginPolicy[] {

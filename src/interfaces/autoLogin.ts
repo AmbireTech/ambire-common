@@ -41,6 +41,12 @@ type AutoLoginPolicy = {
   lastAuthenticated: number
 }
 
+/**
+ * Excludes defaultExpiration because default policies don't expire.
+ * Excludes allowedChains because default policies apply to all chains.
+ */
+type DefaultAutoLoginPolicy = Omit<AutoLoginPolicy, 'defaultExpiration' | 'allowedChains'>
+
 type AutoLoginPoliciesByAccount = {
   [account: string]: AutoLoginPolicy[]
 }
@@ -72,5 +78,6 @@ export type {
   AutoLoginPoliciesByAccount,
   AutoLoginSettings,
   AutoLoginStatus,
-  SiweValidityStatus
+  SiweValidityStatus,
+  DefaultAutoLoginPolicy
 }
