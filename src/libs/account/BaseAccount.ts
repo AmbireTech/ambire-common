@@ -114,4 +114,18 @@ export abstract class BaseAccount {
   isSponsorable(): boolean {
     return false
   }
+
+  /**
+   * Cross chain capability
+   */
+  canEilCrossChainSign(): boolean {
+    return false
+  }
+
+  /**
+   * Cross chain capability
+   */
+  canSendRawUserOperation(): boolean {
+    return false
+  }
 }
