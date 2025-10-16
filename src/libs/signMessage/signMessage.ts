@@ -19,6 +19,7 @@ import {
 
 import { verifyMessage as signatureValidatorVerifyMessage } from '@ambire/signature-validator'
 import { MessageTypes, SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
+
 import { EIP7702Auth } from '../../consts/7702'
 import { PERMIT_2_ADDRESS, UNISWAP_UNIVERSAL_ROUTERS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../interfaces/account'
@@ -53,7 +54,9 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
   'socialscan.io',
   'tally.xyz',
   'questn.com',
-  'taskon.xyz'
+  'taskon.xyz',
+  'hyperliquid.xyz',
+  'bitrefill.com'
 ]
 
 /**
