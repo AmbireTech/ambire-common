@@ -7,7 +7,7 @@
     "noEmitOnError": true,
     "noEmitHelpers": true,
     "lib": ["ESNext", "DOM"],
-    "types": ["node", "jest", "mocha"],
+    "types": ["node", "jest", "mocha", "chrome"],
     "target": "ESNext",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
