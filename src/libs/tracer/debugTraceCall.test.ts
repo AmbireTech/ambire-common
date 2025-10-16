@@ -56,7 +56,8 @@ describe('Debug tracecall detection for transactions', () => {
         inToken: '0x0000000000000000000000000000000000000000',
         amount: 5205038755874012n,
         simulatedGasLimit: 139864n,
-        gasPrice: 33831818155n
+        gasPrice: 33831818155n,
+        paidByKeyType: 'internal'
       },
       nonce: 1n,
       signature: '0x000000000000000000000000db26aeea3b986887feaba661df6d211e725797a003',
