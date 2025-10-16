@@ -45,7 +45,7 @@ contract AmbireAccountOmni is AmbireAccount7702 {
     }
 
     (address merkleSigner, ) = SignatureValidator.recoverAddrAllowUnprotected(
-      userOpHash,
+      merkleTreeRoot,
       multichainSignature,
       true
     );
