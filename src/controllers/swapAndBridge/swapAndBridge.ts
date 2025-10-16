@@ -1155,10 +1155,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const isSwapping = fromChainId === toChainId
     if (isSwapping) {
-      return tokens
-        // Swaps between same "from" and "to" tokens are not feasible, filter them out
-        .filter((t) => t.address !== this.fromSelectedToken?.address)
-        .slice(0, TO_TOKEN_LIST_LIMIT)
+      return (
+        tokens
+          // Swaps between same "from" and "to" tokens are not feasible, filter them out
+          .filter((t) => t.address !== this.fromSelectedToken?.address)
+          .slice(0, TO_TOKEN_LIST_LIMIT)
+      )
     }
 
     return tokens.slice(0, TO_TOKEN_LIST_LIMIT)
