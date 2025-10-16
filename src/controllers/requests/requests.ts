@@ -392,6 +392,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         if (req.action.kind === 'benzin') actionType = 'benzin'
         if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
         if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
+        if (req.action.kind === 'signUserOperations') actionType = 'signMessage'
 
         actionsToAdd.push({
           id,
