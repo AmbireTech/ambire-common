@@ -57,7 +57,7 @@ library SignatureValidator {
 		return recovered;
 	}
 
-	function getSignatureMode(bytes memory sig) public pure returns (SignatureMode mode) {
+	function getSignatureMode(bytes memory sig) internal pure returns (SignatureMode mode) {
 		require(sig.length != 0, 'SV_SIGLEN');
 
 		uint8 modeRaw;
