@@ -1068,7 +1068,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // Create the list if it doesn’t exist yet, or set its status to LOADING if it does.
     if (!toTokenList) {
       this.#toTokenList[toTokenListKeyAtStart] = {
-        status: 'INITIAL',
+        status: 'LOADING',
         apiTokens: [],
         tokens: [],
         lastUpdate: 0
