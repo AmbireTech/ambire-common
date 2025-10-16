@@ -587,7 +587,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         }
       }
 
-      this.#calculateAndSetProjectedRewards(accountState, start)
+      accountState.projectedRewards = PortfolioController.#calculateAndSetProjectedRewards(
+        accountState,
+        start
+      )
     }
 
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
@@ -806,10 +809,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   // Calculates and sets the projected rewards in the account state.
-  #calculateAndSetProjectedRewards(accountState: AccountState, start: number): void {
+  static #calculateAndSetProjectedRewards(
+    accountState: AccountState,
+    start: number
+  ): AccountState['projectedRewards'] {
     const result = accountState.projectedRewards?.result as PortfolioProjectedRewardsResult
 
-    if (!result) return
+    if (!result) return accountState.projectedRewards
 
     const {
       currentSeasonSnapshots,
@@ -865,7 +871,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     ]
 
-    accountState.projectedRewards = {
+    return {
       isReady: true,
       isLoading: false,
       errors: [],
@@ -1042,7 +1048,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     // Calculates the projected rewards based on the latest portfolio state.
     // It will be called every time the user selects an account, so we don't need to call it
     // from anywhere else.
-    this.#calculateAndSetProjectedRewards(accountState, start)
+    accountState.projectedRewards = PortfolioController.#calculateAndSetProjectedRewards(
+      accountState,
+      start
+    )
 
     await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
