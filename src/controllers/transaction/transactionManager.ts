@@ -40,7 +40,8 @@ export class TransactionManagerController
   private registerControllerUpdates(): void {
     this.#controllers.forEach((controller) => {
       controller.onUpdate(async () => {
-        if (controller.toJSON().name === 'TransactionFormState') {
+        // TODO: Better type than "any"
+        if ((controller.toJSON() as any).name === 'TransactionFormState') {
           try {
             await this.handleFormUpdate()
           } catch (error: any) {

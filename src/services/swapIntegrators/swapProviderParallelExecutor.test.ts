@@ -1,11 +1,13 @@
-import { describe } from '@jest/globals'
 import fetch from 'node-fetch'
+
+import { describe } from '@jest/globals'
+
 import { LiFiAPI } from '../lifi/api'
 import { SocketAPI } from '../socket/api'
 import { SwapProviderParallelExecutor } from './swapProviderParallelExecutor'
 
-const socketApi = new SocketAPI({ fetch })
-const lifiApi = new LiFiAPI({ fetch })
+const socketApi = new SocketAPI({ fetch, apiKey: '' })
+const lifiApi = new LiFiAPI({ fetch, apiKey: '' })
 const swapProviderParallelExecutor = new SwapProviderParallelExecutor([socketApi, lifiApi])
 
 describe('Swap Provider Parallel execution', () => {
