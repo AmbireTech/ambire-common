@@ -1079,7 +1079,13 @@ export class MainController extends EventEmitter implements IMainController {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
 
-    if (signedMessage.content.kind === 'siwe' && signedMessage.content.parsedMessage) {
+    // The user may sign an invalid siwe message. We don't want to create policies
+    // for such messages
+    if (
+      signedMessage.content.kind === 'siwe' &&
+      signedMessage.content.parsedMessage &&
+      signedMessage.content.siweValidityStatus === 'valid'
+    ) {
       await this.autoLogin.onSiweMessageSigned(
         signedMessage.content.parsedMessage,
         signedMessage.content.isAutoLoginEnabledByUser,
