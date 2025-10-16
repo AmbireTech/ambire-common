@@ -26,7 +26,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
     shouldReestimate: boolean,
-    traceCall: Function,
+    traceCall: (updatedAccountOp: AccountOp) => void,
     estimateController: EstimationController,
     gasPriceController: GasPriceController
   ) {
