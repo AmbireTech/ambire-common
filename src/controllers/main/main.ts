@@ -91,7 +91,7 @@ import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { SignAccountOpType } from '../signAccountOp/helper'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { OnboardingSuccessProps, SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { StorageController } from '../storage/storage'
 import { SwapAndBridgeController } from '../swapAndBridge/swapAndBridge'
@@ -391,7 +391,7 @@ export class MainController extends EventEmitter implements IMainController {
       },
       getUserRequests: () => this.requests.userRequests || [],
       getVisibleActionsQueue: () => this.requests.actions.visibleActionsQueue || [],
-      onBroadcastSuccess: this.#handleBroadcastSuccess.bind(this),
+      onBroadcastSuccess: this.#commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
     })
     this.transfer = new TransferController(
@@ -408,7 +408,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.#externalSignerControllers,
       this.providers,
       relayerUrl,
-      this.#handleBroadcastSuccess.bind(this)
+      this.#commonHandlerForBroadcastSuccess.bind(this)
     )
     this.domains = new DomainsController(
       this.providers.providers,
@@ -724,7 +724,17 @@ export class MainController extends EventEmitter implements IMainController {
         traceCall: (ctrl: ISignAccountOpController) => {
           this.traceCall(ctrl)
         },
-        onBroadcastSuccess: this.#handleBroadcastSuccess.bind(this),
+        onBroadcastSuccess: async (props) => {
+          const { submittedAccountOp, fromActionId } = props
+          this.portfolio.markSimulationAsBroadcasted(
+            submittedAccountOp.accountAddr,
+            submittedAccountOp.chainId
+          )
+          await this.#commonHandlerForBroadcastSuccess(props)
+          // resolve dapp requests, open benzin and etc only if the main sign accountOp
+          this.resolveAccountOpAction(submittedAccountOp, fromActionId)
+          this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
+        },
         onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
       })
     }
@@ -732,12 +742,10 @@ export class MainController extends EventEmitter implements IMainController {
     this.forceEmitUpdate()
   }
 
-  async #handleBroadcastSuccess(
-    submittedAccountOp: SubmittedAccountOp,
-    accountOp: AccountOp,
-    signAccountOpType: SignAccountOpType,
-    fromActionId: string | number
-  ) {
+  async #commonHandlerForBroadcastSuccess({
+    submittedAccountOp,
+    accountOp
+  }: OnboardingSuccessProps) {
     // add the txnIds from each transaction to each Call from the accountOp
     // if identifiedBy is MultipleTxns
     const isBasicAccountBroadcastingMultiple =
@@ -792,29 +800,6 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
-
-    // resolve dapp requests, open benzin and etc only if the main sign accountOp
-    if (signAccountOpType === 'default') {
-      await this.resolveAccountOpAction(submittedAccountOp, fromActionId)
-
-      // TODO: the form should be reset in a success state in FE
-      this.transactionManager?.formState.resetForm()
-    }
-    // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
-    // visualize the success page on the FE instead of resetting the form
-    if (signAccountOpType === 'one-click-swap-and-bridge') {
-      this.swapAndBridge.resetForm()
-    }
-
-    if (signAccountOpType === 'one-click-transfer') {
-      if (this.transfer.shouldTrackLatestBroadcastedAccountOp) {
-        this.transfer.latestBroadcastedToken = this.transfer.selectedToken
-        this.transfer.latestBroadcastedAccountOp = submittedAccountOp
-      }
-
-      this.transfer.resetForm()
-    }
-
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple

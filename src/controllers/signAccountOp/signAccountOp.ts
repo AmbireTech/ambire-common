@@ -181,12 +181,14 @@ export type SignAccountOpUpdateProps = {
   accountOpData?: Partial<AccountOp>
 }
 
-export type OnBroadcastSuccess = (
-  submittedAccountOp: SubmittedAccountOp,
-  accountOp: AccountOp,
-  type: SignAccountOpType,
+export type OnboardingSuccessProps = {
+  submittedAccountOp: SubmittedAccountOp
+  accountOp: AccountOp
+  type: SignAccountOpType
   fromActionId: string | number
-) => Promise<void>
+}
+
+export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void>
 
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
@@ -911,10 +913,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   async estimate() {
     await this.estimation.estimate(this.accountOp)
-  }
-
-  async portfolioSimulate() {
-    await this.#portfolio.simulateAccountOp(this.accountOp)
   }
 
   update({
@@ -2242,9 +2240,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
-      const senderAddr = BROADCAST_OPTIONS.byOtherEOA
-        ? accountOp.gasFeePayment.paidBy
-        : accountOp.accountAddr
+      const senderAddr =
+        accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+          ? accountOp.gasFeePayment.paidBy
+          : accountOp.accountAddr
       const nonce = await this.provider.getTransactionCount(senderAddr).catch((e) => e)
 
       // @precaution
@@ -2439,15 +2438,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         message: 'No transaction response received after being broadcasted.'
       })
 
-    // simulate the swap & bridge only after a successful broadcast
-    if (this.#type === 'one-click-swap-and-bridge' || this.#type === 'one-click-transfer') {
-      this.portfolioSimulate().then(() => {
-        this.#portfolio.markSimulationAsBroadcasted(account.addr, this.#network.chainId)
-      })
-    } else {
-      this.#portfolio.markSimulationAsBroadcasted(account.addr, this.#network.chainId)
-    }
-
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
@@ -2460,13 +2450,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       )
     }
 
-    // TODO: check if the await can be skipped here
-    await this.#onBroadcastSuccess(
+    await this.#onBroadcastSuccess({
       submittedAccountOp,
-      this.accountOp,
-      this.#type,
-      this.fromActionId
-    )
+      accountOp: this.accountOp,
+      type: this.#type,
+      fromActionId: this.fromActionId
+    })
 
     // Allow the user to broadcast a new transaction;
     // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:

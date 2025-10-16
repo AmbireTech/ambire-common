@@ -468,7 +468,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
-      this.lastRecipientTransactionDate = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -689,7 +688,21 @@ export class TransferController extends EventEmitter implements ITransferControl
       isSignRequestStillActive: () => true,
       shouldSimulate: false,
       shouldReestimate: false,
-      onBroadcastSuccess: this.#onBroadcastSuccess
+      onBroadcastSuccess: async (props) => {
+        const { submittedAccountOp } = props
+        this.#portfolio.simulateAccountOp(accountOp).then(() => {
+          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+        })
+
+        await this.#onBroadcastSuccess(props)
+
+        if (this.shouldTrackLatestBroadcastedAccountOp) {
+          this.latestBroadcastedToken = this.selectedToken
+          this.latestBroadcastedAccountOp = submittedAccountOp
+        }
+
+        this.resetForm()
+      }
     })
 
     // propagate updates from signAccountOp here

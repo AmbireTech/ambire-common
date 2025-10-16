@@ -1,4 +1,5 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
+import { AccountOp } from 'libs/accountOp/accountOp'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -2053,6 +2054,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return quoteIdGuard && quoteIdGuard !== this.#updateQuoteId
   }
 
+  async portfolioSimulate(op: AccountOp) {
+    await this.#portfolio.simulateAccountOp(op)
+  }
+
   /**
    * This method might be called multiple times due to async updates (e.g., tokens, routes, etc.).
    * The `quoteIdGuard` acts as a guard to ensure we only proceed with data that matches
@@ -2216,7 +2221,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       },
       shouldSimulate: false,
       shouldReestimate: false,
-      onBroadcastSuccess: this.#onBroadcastSuccess,
+      onBroadcastSuccess: async (props) => {
+        this.#portfolio.simulateAccountOp(accountOp).then(() => {
+          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+        })
+
+        await this.#onBroadcastSuccess(props)
+        // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
+        // visualize the success page on the FE instead of resetting the form
+        this.resetForm()
+      },
       onBroadcastFailed: this.#onBroadcastFailed
     })
 
