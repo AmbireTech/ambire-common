@@ -884,10 +884,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       (snapshot: { week: number; balance: number }) => snapshot.balance
     )
 
+    // If the user never participated in Ambire Rewards, we assume they are at level 0.
+    // If they have participated, but are below the minimum level, we assume they are at the minimum level because we need to calculate the APY.
+    // For that purpose, we assume they are at the minimum level with minimum balance.
+    // This means that their projected rewards will be 0, but we will be able to calculate the APY.
+    const level = userLevel < minLvl ? minLvl : userLevel
+    const currentBalance =
+      currentTotalBalanceOnSupportedChains < minBalance
+        ? minBalance
+        : currentTotalBalanceOnSupportedChains
+
     const projectedAmount = calculateRewardsForSeason(
-      userLevel,
+      level,
       parsedSnapshotsBalance,
-      currentTotalBalanceOnSupportedChains,
+      currentBalance,
       numberOfWeeksSinceStartOfSeason,
       totalWeightNonUser,
       walletPrice,
@@ -896,7 +906,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       minBalance
     )
 
-    const projectedAmountFormatted = Math.round(projectedAmount.walletRewards * 1e18)
+    // If the user is below the minimum level, they get 0 projected rewards
+    const projectedAmountFormatted =
+      userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
 
     const projectedRewards = [
       {
