@@ -50,6 +50,8 @@ type AutoLoginSettings = {
   duration: number
 }
 
+type SiweValidityStatus = 'valid' | 'invalid' | 'domain-mismatch'
+
 type AutoLoginStatus = 'active' | 'unsupported' | 'expired' | 'no-policy'
 
 type IAutoLoginController = ControllerInterface<
@@ -61,5 +63,6 @@ export type {
   AutoLoginPolicy,
   AutoLoginPoliciesByAccount,
   AutoLoginSettings,
-  AutoLoginStatus
+  AutoLoginStatus,
+  SiweValidityStatus
 }

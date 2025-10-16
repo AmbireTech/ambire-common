@@ -5,7 +5,7 @@ import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { SignMessageAction } from './actions'
-import { AutoLoginStatus } from './autoLogin'
+import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
@@ -28,6 +28,7 @@ export interface SiweMessage {
   kind: 'siwe'
   message: PlainTextMessage['message']
   parsedMessage: ViemSiweMessage
+  siweValidityStatus: SiweValidityStatus
   autoLoginStatus: AutoLoginStatus
   isAutoLoginEnabledByUser: boolean
   autoLoginDuration: number

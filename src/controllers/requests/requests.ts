@@ -737,48 +737,59 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       // SIWE
       const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
-      const parsedSiweMessage = AutoLoginController.getParsedSiweMessage(rawMessage)
+      const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
+        rawMessage,
+        request.origin
+      )
 
-      // Try to login automatically if the message is valid SIWE and autologin is enabled
-      if (rawMessage && parsedSiweMessage) {
+      // Handle valid and invalid SIWE messages
+      // If it's valid we want to try to auto-login the user
+      // If it's not we want to flag it to the UI to inform the user
+      if (rawMessage && parsedSiweAndStatus) {
+        const { parsedSiwe, status } = parsedSiweAndStatus
         let autoLoginStatus: AutoLoginStatus = 'no-policy'
-        try {
-          autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiweMessage)
 
-          console.log('debug: siwe autologin status', autoLoginStatus)
+        // Try to auto-login
+        if (status === 'valid' && parsedSiwe) {
+          try {
+            autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
-          if (autoLoginStatus === 'active') {
-            // Sign and respond
-            const signedMessage = await this.#autoLogin.autoLogin({
-              message: rawMessage as `0x${string}`,
-              chainId: network.chainId,
-              accountAddr: msgAddress
-            })
+            console.log('debug: siwe autologin status', autoLoginStatus)
 
-            if (!signedMessage) {
-              throw new EmittableError({
-                message: 'Auto-login failed. Please sign the message manually.',
-                level: 'major',
-                error: new Error('SIWE autologin - signedMessage is null')
+            if (autoLoginStatus === 'active') {
+              // Sign and respond
+              const signedMessage = await this.#autoLogin.autoLogin({
+                message: rawMessage as `0x${string}`,
+                chainId: network.chainId,
+                accountAddr: msgAddress
               })
-            }
 
-            dappPromise.resolve({ hash: signedMessage.signature })
-            return
+              if (!signedMessage) {
+                throw new EmittableError({
+                  message: 'Auto-login failed. Please sign the message manually.',
+                  level: 'major',
+                  error: new Error('SIWE autologin - signedMessage is null')
+                })
+              }
+
+              dappPromise.resolve({ hash: signedMessage.signature })
+              return
+            }
+          } catch (e: any) {
+            this.emitError({
+              error: e,
+              message: 'Auto-login failed. Please sign the message manually.',
+              level: 'major'
+            })
           }
-        } catch (e: any) {
-          this.emitError({
-            error: e,
-            message: 'Auto-login failed. Please sign the message manually.',
-            level: 'major'
-          })
         }
 
         userRequest.action = {
           kind: 'siwe',
           message: msg[0],
-          parsedMessage: parsedSiweMessage,
+          parsedMessage: parsedSiwe,
           autoLoginStatus,
+          siweValidityStatus: status,
           isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
           autoLoginDuration: this.#autoLogin.settings.duration
         }

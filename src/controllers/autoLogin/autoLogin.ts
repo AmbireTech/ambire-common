@@ -1,6 +1,6 @@
 import { isHexString, toUtf8String } from 'ethers'
 import { SiweMessage } from 'siwe'
-import { SiweMessage as SiweMessageType } from 'viem/siwe'
+import { parseSiweMessage, SiweMessage as SiweMessageType } from 'viem/siwe'
 
 import { IAccountsController } from '../../interfaces/account'
 import {
@@ -8,7 +8,8 @@ import {
   AutoLoginPolicy,
   AutoLoginSettings,
   AutoLoginStatus,
-  IAutoLoginController
+  IAutoLoginController,
+  SiweValidityStatus
 } from '../../interfaces/autoLogin'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
@@ -23,6 +24,10 @@ import { SignMessageController } from '../signMessage/signMessage'
 export const STATUS_WRAPPED_METHODS = {
   revokePolicy: 'INITIAL'
 } as const
+
+// Taken from viem's parseSiweMessage.ts
+const prefixRegex =
+  /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/
 
 /**
  * A list of resources allowed by default. Users will auto-login
@@ -82,59 +87,84 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return Date.now() > policy.defaultExpiration
   }
 
-  static getParsedSiweMessage(message: string | `0x${string}`): SiweMessageType | null {
+  static convertSiweToViemFormat(parsedSiweMessage: SiweMessage): SiweMessageType {
+    const { expirationTime, notBefore, issuedAt, address, ...viemFormatParsedMessage } =
+      parsedSiweMessage
+
+    const parsedSiweMessageViemFormat: SiweMessageType = {
+      ...viemFormatParsedMessage,
+      version: parsedSiweMessage.version as '1', // hack to stop viem from whining
+      address: parsedSiweMessage.address as `0x${string}`,
+      ...(parsedSiweMessage.expirationTime
+        ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
+        : {}),
+      ...(parsedSiweMessage.notBefore ? { notBefore: new Date(parsedSiweMessage.notBefore) } : {}),
+      ...(parsedSiweMessage.issuedAt ? { issuedAt: new Date(parsedSiweMessage.issuedAt) } : {})
+    }
+
+    return parsedSiweMessageViemFormat
+  }
+
+  static getParsedSiweMessage(
+    message: string | `0x${string}`,
+    requestOrigin: string
+  ): null | {
+    parsedSiwe: SiweMessageType
+    status: SiweValidityStatus
+  } {
     if (typeof message !== 'string' || message.trim() === '') return null
+    const messageString = message.startsWith('0x') ? toUtf8String(message) : message
+
+    // Quick check to see if it looks like a SIWE message at all
+    if (messageString.match(prefixRegex) === null) return null
 
     try {
-      const messageString = message.startsWith('0x') ? toUtf8String(message) : message
       const parsedSiweMessage = new SiweMessage(messageString)
 
-      if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length)
-        throw new Error('Empty message')
+      if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
+
+      if (parsedSiweMessage.domain !== requestOrigin)
+        return {
+          parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
+          status: 'domain-mismatch'
+        }
+
       if (
         parsedSiweMessage.notBefore &&
         new Date(parsedSiweMessage.notBefore).getTime() > Date.now()
       )
-        throw new Error('notBefore is in the future')
+        return {
+          parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
+          status: 'invalid'
+        }
       if (
         parsedSiweMessage.expirationTime &&
         new Date(parsedSiweMessage.expirationTime).getTime() < Date.now()
       )
-        throw new Error('Message is expired')
-      if (
-        !isHexString(
-          `${
-            parsedSiweMessage.nonce.startsWith('0x')
-              ? parsedSiweMessage.nonce
-              : `0x${parsedSiweMessage.nonce}`
-          }`
-        )
-      )
-        throw new Error(`Invalid nonce: ${parsedSiweMessage.nonce}`)
+        return {
+          parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
+          status: 'invalid'
+        }
+
       if (!isHexString(parsedSiweMessage.address))
-        throw new Error(`Invalid address: ${parsedSiweMessage.address}`)
+        return {
+          parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
+          status: 'invalid'
+        }
 
-      const { expirationTime, notBefore, issuedAt, address, ...viemFormatParsedMessage } =
-        parsedSiweMessage
-
-      const parsedSiweMessageViemFormat: SiweMessageType = {
-        ...viemFormatParsedMessage,
-        version: parsedSiweMessage.version as '1', // hack to stop viem from whining
-        address: parsedSiweMessage.address as `0x${string}`,
-        ...(parsedSiweMessage.expirationTime
-          ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
-          : {}),
-        ...(parsedSiweMessage.notBefore
-          ? { notBefore: new Date(parsedSiweMessage.notBefore) }
-          : {}),
-        ...(parsedSiweMessage.issuedAt ? { issuedAt: new Date(parsedSiweMessage.issuedAt) } : {})
+      return {
+        parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
+        status: 'valid'
       }
-
-      return parsedSiweMessageViemFormat
     } catch (e: any) {
-      console.warn('Error parsing message (probably not a siwe one):', e)
+      console.error('Error parsing message:', e)
 
-      return null
+      return {
+        // Parse it again with viem to get as much info as possible
+        // so we can display it to the user
+        parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
+        status: 'invalid'
+      }
     }
   }
 

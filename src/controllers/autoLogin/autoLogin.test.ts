@@ -4,6 +4,7 @@ import { createSiweMessage, CreateSiweMessageParameters } from 'viem/siwe'
 
 import { relayerUrl } from '../../../test/config'
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
@@ -146,6 +147,7 @@ const generateSiweMessage = (
 }
 
 describe('AutoLoginController', () => {
+  suppressConsoleBeforeEach()
   /**
    * Test cases:
    * - Should load policies and settings from storage
@@ -161,7 +163,7 @@ describe('AutoLoginController', () => {
     const POLICIES: AutoLoginPolicy[] = [
       {
         domain: 'docs.fileverse.io',
-        uriPrefix: 'https://docs.fileverse.io/',
+        uriPrefix: 'https://docs.fileverse.io/login',
         allowedChains: [1, 137],
         allowedResources: ['https://privy.io'],
         supportsEIP6492: false,
@@ -196,8 +198,10 @@ describe('AutoLoginController', () => {
     expect(controller.getAccountPolicies(HW_ACC.addr)).toEqual([])
   })
   describe('getParsedSiweMessage', () => {
+    suppressConsoleBeforeEach()
+
     it('text message - should return null', async () => {
-      const message = AutoLoginController.getParsedSiweMessage('Hello world')
+      const message = AutoLoginController.getParsedSiweMessage('Hello world', '')
 
       expect(message).toBeNull()
     })
@@ -217,7 +221,10 @@ describe('AutoLoginController', () => {
         )
       ) as `0x${string}`
 
-      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
+      const message = AutoLoginController.getParsedSiweMessage(
+        malformedMessage,
+        'docs.fileverse.io'
+      )
 
       expect(message).toBeNull()
 
@@ -234,41 +241,52 @@ URI: https://docs.fileverse.io
         )
       ) as `0x${string}`
 
-      const message2 = AutoLoginController.getParsedSiweMessage(malformedMessage2)
+      const message2 = AutoLoginController.getParsedSiweMessage(
+        malformedMessage2,
+        'docs.fileverse.io'
+      )
 
       expect(message2).toBeNull()
     })
-    it('not before in the future - should return null', async () => {
+    it('check whether the request origin matches the SIWE domain to protect against phishing', async () => {
+      const siwe = generateSiweMessage()
+
+      const status = AutoLoginController.getParsedSiweMessage(
+        siwe,
+        'some-phishing-site.com'
+      )!.status
+
+      expect(status).toBe('domain-mismatch')
+    })
+    it('not before in the future - should return status invalid', async () => {
       const malformedMessage = generateSiweMessage({
         notBefore: new Date(Date.now() + 60000)
       })
-      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
-
-      expect(message).toBeNull()
-    })
-    it('invalid nonce - should return null', async () => {
-      const malformedMessage = generateSiweMessage(undefined, (message) =>
-        message.replace(/Nonce: [a-zA-Z0-9]+/, 'Nonce: invalidnonce')
+      const message = AutoLoginController.getParsedSiweMessage(
+        malformedMessage,
+        'docs.fileverse.io'
       )
-      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
 
-      expect(message).toBeNull()
+      expect(message?.status).toBe('invalid')
     })
-    it('invalid resource uri in resources', async () => {
+    it('invalid resource uri in resources - should return status invalid', async () => {
       const malformedMessage = generateSiweMessage(undefined, (message) =>
         message.replace(/Resources:\n- https:\/\/privy.io/, 'Resources:\n- invaliduri')
       )
-      const message = AutoLoginController.getParsedSiweMessage(malformedMessage)
+      const message = AutoLoginController.getParsedSiweMessage(
+        malformedMessage,
+        'docs.fileverse.io'
+      )
 
-      expect(message).toBeNull()
+      expect(message?.status).toBe('invalid')
     })
-    it('expired siwe - should return null', async () => {
+    it('expired siwe - should return status invalid', async () => {
       const expiredSiwe = generateSiweMessage({
         expirationTime: new Date(Date.now() - 1000)
       })
-      const message = AutoLoginController.getParsedSiweMessage(expiredSiwe)
+      const message = AutoLoginController.getParsedSiweMessage(expiredSiwe, 'docs.fileverse.io')
 
-      expect(message).toBeNull()
+      expect(message?.status).toBe('invalid')
     })
     it('typed message - should return null', async () => {
       const typedMessage = {
@@ -309,14 +327,19 @@ URI: https://docs.fileverse.io
         }
       }
 
-      const message = AutoLoginController.getParsedSiweMessage(typedMessage as any)
+      const message = AutoLoginController.getParsedSiweMessage(
+        typedMessage as any,
+        'docs.fileverse.io'
+      )
 
       expect(message).toBeNull()
     })
     it('valid siwe - should return parsed message', async () => {
       const siwe = generateSiweMessage()
 
-      const message = AutoLoginController.getParsedSiweMessage(siwe)
+      const resp = AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')
+
+      const message = resp?.parsedSiwe
 
       expect(message).toBeDefined()
       expect(message?.domain).toBe('docs.fileverse.io')
@@ -340,9 +363,11 @@ URI: https://docs.fileverse.io
     ).rejects.toThrow('No internal key available for signing')
   })
   describe('getAutoLoginStatus', () => {
+    suppressConsoleBeforeEach()
+
     const MOCK_POLICY: AutoLoginPolicy = {
       domain: 'docs.fileverse.io',
-      uriPrefix: 'https://docs.fileverse.io/',
+      uriPrefix: 'https://docs.fileverse.io/login',
       allowedChains: [1, 137],
       allowedResources: ['https://privy.io'],
       supportsEIP6492: false,
@@ -360,7 +385,9 @@ URI: https://docs.fileverse.io
 
       const siwe = generateSiweMessage()
 
-      const status = controller.getAutoLoginStatus(AutoLoginController.getParsedSiweMessage(siwe)!)
+      const status = controller.getAutoLoginStatus(
+        AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')!.parsedSiwe
+      )
 
       expect(status).toBe('active')
     })
@@ -378,7 +405,9 @@ URI: https://docs.fileverse.io
         uri: 'https://some-other-domain.com/login'
       })
 
-      const status = controller.getAutoLoginStatus(AutoLoginController.getParsedSiweMessage(siwe)!)
+      const status = controller.getAutoLoginStatus(
+        AutoLoginController.getParsedSiweMessage(siwe, 'some-other-domain.com')!.parsedSiwe
+      )
 
       expect(status).toBe('no-policy')
     })
@@ -398,7 +427,9 @@ URI: https://docs.fileverse.io
 
       const siwe = generateSiweMessage()
 
-      const status = controller.getAutoLoginStatus(AutoLoginController.getParsedSiweMessage(siwe)!)
+      const status = controller.getAutoLoginStatus(
+        AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')!.parsedSiwe
+      )
 
       expect(status).toBe('expired')
     })
@@ -415,7 +446,9 @@ URI: https://docs.fileverse.io
         address: HW_ACC.addr as `0x${string}`
       })
 
-      const status = controller.getAutoLoginStatus(AutoLoginController.getParsedSiweMessage(siwe)!)
+      const status = controller.getAutoLoginStatus(
+        AutoLoginController.getParsedSiweMessage(siwe, 'docs.fileverse.io')!.parsedSiwe
+      )
 
       expect(status).toBe('unsupported')
     })
@@ -423,7 +456,14 @@ URI: https://docs.fileverse.io
   it('onSiweMessageSigned creates a policy', async () => {
     const { controller } = await prepareTest()
 
-    const parsedSiwe = AutoLoginController.getParsedSiweMessage(generateSiweMessage())!
+    const { parsedSiwe } = AutoLoginController.getParsedSiweMessage(
+      generateSiweMessage({
+        domain: 'some-domain.com',
+        uri: 'https://some-domain.com/login',
+        chainId: 1
+      }),
+      'some-domain.com'
+    )!
 
     const policy = await controller.onSiweMessageSigned(
       parsedSiwe,
@@ -445,7 +485,7 @@ URI: https://docs.fileverse.io
   it('onSiweMessageSigned updates existing policies', async () => {
     const EXISTING_POLICY: AutoLoginPolicy = {
       domain: 'docs.fileverse.io',
-      uriPrefix: 'https://docs.fileverse.io/',
+      uriPrefix: 'https://docs.fileverse.io/login',
       allowedChains: [1],
       allowedResources: ['https://privy.io'],
       supportsEIP6492: false,
@@ -459,11 +499,12 @@ URI: https://docs.fileverse.io
       })
     })
 
-    const parsedSiwe = AutoLoginController.getParsedSiweMessage(
+    const { parsedSiwe } = AutoLoginController.getParsedSiweMessage(
       generateSiweMessage({
         chainId: 137,
         resources: ['https://privy.io', 'https://fileverse.io']
-      })
+      }),
+      'docs.fileverse.io'
     )!
 
     const policy = await controller.onSiweMessageSigned(
@@ -486,7 +527,10 @@ URI: https://docs.fileverse.io
   it('onSiweMessageSigned does not create a policy if autoLogin is disabled', async () => {
     const { controller } = await prepareTest()
 
-    const parsedSiwe = AutoLoginController.getParsedSiweMessage(generateSiweMessage())!
+    const { parsedSiwe } = AutoLoginController.getParsedSiweMessage(
+      generateSiweMessage(),
+      'docs.fileverse.io'
+    )!
 
     const policy = await controller.onSiweMessageSigned(
       parsedSiwe,
@@ -499,7 +543,7 @@ URI: https://docs.fileverse.io
   it('revokePolicy works', async () => {
     const EXISTING_POLICY: AutoLoginPolicy = {
       domain: 'docs.fileverse.io',
-      uriPrefix: 'https://docs.fileverse.io/',
+      uriPrefix: 'https://docs.fileverse.io/login',
       allowedChains: [1],
       allowedResources: ['https://privy.io'],
       supportsEIP6492: false,
