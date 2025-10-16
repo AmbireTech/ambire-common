@@ -24,6 +24,31 @@ const sortHexes = (hexes: string[]) => {
   })
 }
 
+const signUserOps = (validAfter: number, validUntil: number, userOpHashes: string[]) => {
+  const leafs = userOpHashes.map((userOpHash) =>
+    keccak256(solidityPacked(['uint48', 'uint48', 'bytes32'], [validUntil, validAfter, userOpHash]))
+  )
+
+  let levelItems = leafs
+
+  while (levelItems.length > 1) {
+    const nextLevelItems: string[] = []
+
+    for (let i = 0; i < levelItems.length; i += 2) {
+      const left = levelItems[i]
+      const right = i + 1 < levelItems.length ? levelItems[i + 1] : left // duplicate last if odd
+      const combined = solidityPacked(['bytes32', 'bytes32'], sortHexes([left, right]))
+      nextLevelItems.push(keccak256(combined))
+    }
+
+    levelItems = nextLevelItems
+  }
+
+  const merkleRoot = levelItems[0]
+  const ecdsa = secp256k1.ecdsaSign(getBytes(merkleRoot), getBytes(pk1))
+  return `${hexlify(ecdsa.signature)}${ecdsa.recid === 0 ? '1B' : '1C'}`
+}
+
 describe('AmbireAccountOmni tests', () => {
   before('successfully deploys the contracts', async () => {
     const [relayer] = await ethers.getSigners()
@@ -101,8 +126,11 @@ describe('AmbireAccountOmni tests', () => {
     const merkleRoot = keccak256(
       solidityPacked(['bytes32', 'bytes32'], sortHexes([levelOneLeft, levelOneRight]))
     )
-    const ecdsa = secp256k1.ecdsaSign(getBytes(merkleRoot), getBytes(pk1))
-    const merkleTreeSig = `${hexlify(ecdsa.signature)}${ecdsa.recid === 0 ? '1B' : '1C'}`
+    const merkleTreeSig = signUserOps(validAfter, validUntil, [
+      userOpHashOne,
+      userOpHashTwo,
+      userOpHashThree
+    ])
 
     // broadcast first txn
     const fullSigWithoutWrapping = coder.encode(
