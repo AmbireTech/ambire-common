@@ -1,6 +1,7 @@
 import EmittableError from '../../classes/EmittableError'
 import { Account } from '../../interfaces/account'
 import {
+  AccountOpAction,
   Action,
   ActionExecutionType,
   ActionPosition,
@@ -211,6 +212,18 @@ export class ActionsController extends EventEmitter {
     } else {
       this.emitUpdate()
     }
+  }
+
+  updateAccountOpAction(updatedAccountOp: AccountOpAction['accountOp']) {
+    const { accountAddr, chainId } = updatedAccountOp
+    const accountOpAction = this.actionsQueue.find(
+      (a) => a.type === 'accountOp' && a.id === `${accountAddr}-${chainId}`
+    )
+
+    if (!accountOpAction || accountOpAction.type !== 'accountOp') return
+
+    accountOpAction.accountOp = updatedAccountOp
+    this.emitUpdate()
   }
 
   async removeActions(actionIds: Action['id'][], shouldOpenNextAction: boolean = true) {

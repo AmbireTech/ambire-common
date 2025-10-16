@@ -58,7 +58,7 @@ export class SocketAPI implements SwapProvider {
 
   #fetch: Fetch
 
-  #requestTimeoutMs = 10000
+  #requestTimeoutMs = 15000
 
   #bungeQuoteApiUrl = 'https://dedicated-backend.bungee.exchange'
 
@@ -323,8 +323,8 @@ export class SocketAPI implements SwapProvider {
     return {
       fromAsset: normalizeIncomingSocketToken(response.input.token),
       toAsset: normalizeIncomingSocketToken(socketToAsset),
-      fromChainId: response.input.token.chainId,
-      toChainId: response.manualRoutes.length ? response.manualRoutes[0].output.token.chainId : 0,
+      fromChainId,
+      toChainId,
       // @ts-ignore TODO: fix the typescript here
       routes: allRoutes.map((route) => {
         const steps = [

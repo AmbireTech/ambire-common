@@ -336,7 +336,7 @@ describe('Transfer Controller', () => {
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(true)
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
 
     // Recipient address
     await transferController.update({

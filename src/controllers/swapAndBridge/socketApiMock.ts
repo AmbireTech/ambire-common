@@ -106,6 +106,8 @@ export class SocketAPIMock {
           isOnlySwapRoute: false,
           fromAmount,
           toAmount: '33',
+          fromChainId: 10,
+          toChainId: 8453,
           usedBridgeNames: ['stargate'],
           minimumGasBalances: {
             '10': '1800000000000000',

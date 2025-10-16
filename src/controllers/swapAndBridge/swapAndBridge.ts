@@ -1168,7 +1168,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!this.toChainId) return // should never happen
     if (!isAddress(address)) return // no need to attempt with invalid addresses
 
-    const isAlreadyInTheList = this.#toTokenList.some((t) => t.address === address)
+    const isAlreadyInTheList = this.#toTokenList.some(
+      // Compare lowercase, address param comes from a search term that is lowercased
+      (t) => t.address.toLowerCase() === address.toLowerCase()
+    )
     if (isAlreadyInTheList) return
 
     let token: SwapAndBridgeToToken | null
@@ -2127,13 +2130,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       ) {
         this.destroySignAccountOp()
       } else {
-        this.#signAccountOpController.update({ calls })
-
         // add the real swapTxn
-        if (!this.#signAccountOpController.accountOp.meta)
-          this.#signAccountOpController.accountOp.meta = {}
-        this.#signAccountOpController.accountOp.meta.swapTxn = userTxn
-        this.#signAccountOpController.accountOp.meta.fromQuoteId = quoteIdGuard
+        this.#signAccountOpController.update({
+          accountOpData: {
+            calls,
+            meta: {
+              ...(this.#signAccountOpController.accountOp.meta || {}),
+              swapTxn: userTxn,
+              fromQuoteId: quoteIdGuard
+            }
+          }
+        })
         return
       }
     }
@@ -2187,8 +2194,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         return !!this.#signAccountOpController
       },
       false,
-      false,
-      undefined
+      false
     )
 
     this.emitUpdate()
