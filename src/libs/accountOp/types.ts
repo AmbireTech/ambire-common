@@ -1,6 +1,7 @@
-import { Dapp } from 'interfaces/dapp'
-
+import { Dapp } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
+// TODO: Rework in a way to avoid a dependency cycle
+// eslint-disable-next-line import/no-cycle
 import { Calls, UserRequest } from '../../interfaces/userRequest'
 
 export enum AccountOpStatus {

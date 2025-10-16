@@ -160,6 +160,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message: 'Insufficient token amount'
   },
   {
+    reasons: ['0x4feac00c'],
+    message:
+      'the Swap path is invalid. Return to the app and reinitiate the swap if you wish to proceed.'
+  },
+  {
     reasons: ['0x6679996d'],
     message: 'your health factor will drop below the liquidation threshold.'
   }
@@ -245,8 +250,18 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   }
 ]
 
+const DEPLOYLESS_ERRORS: ErrorHumanizerError[] = [
+  ...BROADCAST_OR_ESTIMATION_ERRORS,
+  ...ESTIMATION_ERRORS,
+  {
+    reasons: ['0xb4f54111'],
+    message: "the network or provider don't support our Deployless contracts."
+  }
+]
+
 export {
   BROADCAST_ERRORS,
+  DEPLOYLESS_ERRORS,
   BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds,

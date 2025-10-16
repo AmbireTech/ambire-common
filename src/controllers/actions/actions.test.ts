@@ -101,7 +101,8 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
       maxPriorityFeePerGas: 1100000n,
       paidBy: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
       simulatedGasLimit: 2580640n,
-      broadcastOption: BROADCAST_OPTIONS.byBundler
+      broadcastOption: BROADCAST_OPTIONS.byBundler,
+      paidByKeyType: 'internal'
     },
     gasLimit: null,
     meta: {},

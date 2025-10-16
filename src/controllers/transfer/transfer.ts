@@ -460,7 +460,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
-      this.lastRecipientTransactionDate = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 

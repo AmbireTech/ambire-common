@@ -170,10 +170,8 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#sessionKeys[email] = await this.#emailVault.getSessionKey(email, key)
 
     // store magicLinkKey and sessionKey
-    await Promise.all([
-      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
-    ])
+    await this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
+    await this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
   }
 
   async handleMagicLinkKey(email: string, fn?: Function, flow?: MagicLinkFlow) {
@@ -589,10 +587,8 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#magicLinkKeys = {}
     this.#sessionKeys = {}
 
-    await Promise.all([
-      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
-    ])
+    await this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
+    await this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
 
     this.emitUpdate()
   }

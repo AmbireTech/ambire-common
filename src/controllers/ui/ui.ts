@@ -24,8 +24,19 @@ export class UiController extends EventEmitter implements IUiController {
   }
 
   addView(view: View) {
-    this.views.push(view)
+    const existingPopup = this.views.find((v) => v.type === 'popup')
 
+    // if a popup already exists, just update its id and stop here
+    if (view.type === 'popup' && existingPopup) {
+      existingPopup.id = view.id
+      this.emitUpdate()
+      return
+    }
+
+    // if the same view already exists, skip adding
+    if (this.views.some((v) => v.id === view.id)) return
+
+    this.views.push(view)
     this.uiEvent.emit('addView', view)
     this.emitUpdate()
   }

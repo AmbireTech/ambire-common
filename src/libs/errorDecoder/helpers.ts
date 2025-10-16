@@ -93,7 +93,8 @@ const getErrorCodeStringFromReason = (reason?: string, withSpace = true): string
 
 function getDataFromError(error: Error): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const errorData = (error as any).data ?? (error as any).error?.data
+  const errorData =
+    (error as any).data ?? (error as any).error?.data ?? (error as any)?.info?.error?.data
 
   if (errorData === undefined) {
     return ''

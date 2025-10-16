@@ -1,4 +1,3 @@
-/* eslint-disable import/no-cycle */
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
@@ -7,7 +6,11 @@ import { yieldToMain } from '../../utils/scheduler'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams, shouldUseStateOverrideForEOA } from '../account/account'
 import { callToTuple, toSingletonCall } from '../accountOp/accountOp'
-import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
+import { Deployless, DeploylessMode } from '../deployless/deployless'
+/* eslint-disable import/no-cycle */
+import { decodeError } from '../errorDecoder'
+import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
+import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
 import { mapToken } from './helpers'
 import {
   CollectionResult,
@@ -26,23 +29,41 @@ class SimulationError extends Error {
   public afterNonce: bigint
 
   constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
-    super(`simulation error: ${message}`)
+    super(message)
     this.simulationErrorMsg = message
     this.beforeNonce = beforeNonce
     this.afterNonce = afterNonce
-    console.error('simulation error: ', message)
-    console.log('before nonce: ', beforeNonce)
-    console.log('after nonce: ', afterNonce)
+    console.error('simulation error: ', {
+      beforeNonce,
+      afterNonce,
+      message
+    })
   }
 }
 
 function handleSimulationError(
-  error: string,
+  errorData: string,
   beforeNonce: bigint,
   afterNonce: bigint,
   simulationOps: { nonce: bigint | null; calls: [string, string, string][] }[]
 ) {
-  if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
+  if (errorData !== '0x') {
+    const error = new Error(errorData)
+    ;(error as any).data = errorData
+    const decodedError = decodeError(error)
+    const humanizedError = getHumanReadableErrorMessage(
+      null,
+      DEPLOYLESS_ERRORS,
+      'Transaction cannot be simulated because',
+      decodedError,
+      error
+    )
+    const fallbackMessage = `Transaction cannot be simulated because of an unknown error. Error code: ${
+      decodedError.reason || errorData.slice(0, 10)
+    }`
+
+    throw new SimulationError(humanizedError || fallbackMessage, beforeNonce, afterNonce)
+  }
 
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
@@ -50,7 +71,7 @@ function handleSimulationError(
 
   if (afterNonce < beforeNonce)
     throw new SimulationError(
-      'lower "after" nonce, should not be possible',
+      'simulation error: lower "after" nonce, should not be possible',
       beforeNonce,
       afterNonce
     )
@@ -73,7 +94,7 @@ function handleSimulationError(
     })
   if (nonces.length && afterNonce < nonces[nonces.length - 1] + 1n) {
     throw new SimulationError(
-      'Failed to increment the nonce to the final account op nonce',
+      'simulation error: Failed to increment the nonce to the final account op nonce',
       beforeNonce,
       afterNonce
     )

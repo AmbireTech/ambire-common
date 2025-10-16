@@ -14,4 +14,3 @@ export async function getWalletDappCatalog(
 }
 
 export * from './types'
-export * from './dappCatalogUtils'
