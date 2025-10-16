@@ -1,7 +1,8 @@
 import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import EventEmitter, { ErrorRef } from './eventEmitter'
+import { ErrorRef } from '../../interfaces/eventEmitter'
+import EventEmitter from './eventEmitter'
 
 describe('EventEmitter', () => {
   let eventEmitter: EventEmitter
