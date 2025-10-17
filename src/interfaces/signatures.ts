@@ -5,3 +5,15 @@ export interface EIP7702Signature {
   r: Hex
   s: Hex
 }
+
+export interface PlainSignature {
+  yParity: Hex
+  r: Hex
+  s: Hex
+}
+
+export interface EILSignature {
+  initCode?: string
+  eip7702Auth?: string
+  signature: string
+}

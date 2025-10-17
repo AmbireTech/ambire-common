@@ -26,8 +26,8 @@ import { Account, AccountCreation, AccountId, AccountOnchainState } from '../../
 import { Hex } from '../../interfaces/hex'
 import { KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { EIP7702Signature } from '../../interfaces/signatures'
-import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
+import { EILSignature, EIP7702Signature, PlainSignature } from '../../interfaces/signatures'
+import { MessageKind, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -697,7 +697,7 @@ export function getVerifyMessageSignature(
 ): Hex {
   if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
 
-  const sig = signature as EIP7702Signature
+  const sig = signature as PlainSignature
   // ethereum v is 27 or 28
   const v = get7702SigV(sig)
   return concat([sig.r, sig.s, v]) as Hex
@@ -709,10 +709,19 @@ export function getVerifyMessageSignature(
 // and we return directly an EIP7702Signature if it's that type
 export function getAppFormatted(
   signature: EIP7702Signature | string,
+  kind: MessageKind,
   account: Account,
   accountState: AccountOnchainState
-): EIP7702Signature | Hex {
+): EIP7702Signature | EILSignature | Hex {
   if (isHexString(signature)) return getHexStringSignature(signature, account, accountState)
+
+  if (kind === 'signUserOperations') {
+    const plainSig = signature as PlainSignature
+    const v = get7702SigV(plainSig)
+    return {
+      signature: concat([plainSig.r, plainSig.s, v]) as Hex
+    }
+  }
 
   return signature as EIP7702Signature
 }

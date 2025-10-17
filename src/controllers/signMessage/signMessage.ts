@@ -21,6 +21,8 @@ import {
   verifyMessage
 } from '../../libs/signMessage/signMessage'
 import { isPlainTextMessage } from '../../libs/transfer/userRequest'
+import { getMerkleRoot } from '../../libs/userOperation/merkleProofs'
+import { getUserOpHash } from '../../libs/userOperation/userOperation'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -93,7 +95,11 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     await this.#accounts.initialLoadPromise
 
-    if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
+    if (
+      ['message', 'typedMessage', 'authorization-7702', 'signUserOperations'].includes(
+        messageToSign.content.kind
+      )
+    ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.isInitialized = true
@@ -213,6 +219,16 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         if (this.messageToSign.content.kind === 'authorization-7702') {
           signature = this.#signer.sign7702(this.messageToSign.content.message)
         }
+        if (this.messageToSign.content.kind === 'signUserOperations') {
+          if (!this.#signer.plainSign)
+            throw new Error('signer does not support signing multiple user operations')
+
+          const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
+            (chainIdWithUserOp) =>
+              getUserOpHash(chainIdWithUserOp.userOperation, BigInt(chainIdWithUserOp.chainId))
+          )
+          signature = this.#signer.plainSign(getMerkleRoot(0, 0, userOpHashes))
+        }
       } catch (error: any) {
         throw new ExternalSignerError(
           error?.message ||
@@ -249,13 +265,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
           : { authorization: this.messageToSign.content.message })
       }
-      const isValidSignature = await verifyMessage(verifyMessageParams)
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
 
-      if (!isValidSignature) {
-        throw new Error(
-          'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
-        )
+      // TODO<eil>:
+      // do not validate the signUserOperations for the time being
+      if (this.messageToSign.content.kind !== 'signUserOperations') {
+        const isValidSignature = await verifyMessage(verifyMessageParams)
+        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+
+        if (!isValidSignature) {
+          throw new Error(
+            'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
+          )
+        }
       }
 
       this.signedMessage = {
@@ -264,7 +285,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         chainId: this.messageToSign.chainId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
-        signature: getAppFormatted(signature, account, accountState),
+        signature: getAppFormatted(
+          signature,
+          this.messageToSign.content.kind,
+          account,
+          accountState
+        ),
         dapp: this.dapp
       }
 

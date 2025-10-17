@@ -13,12 +13,15 @@ function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
   )
 }
 
-async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
+async function deployAmbireAccountHardhatNetwork(
+  priLevels: PrivLevels[],
+  ambireAccountName: string = 'AmbireAccount'
+) {
   assertion.expectExpects(1 + priLevels.length)
   const [signer] = await ethers.getSigners()
 
   const factory = await ethers.deployContract('AmbireFactory', [signer.address])
-  const contract: any = await ethers.deployContract('AmbireAccount')
+  const contract: any = await ethers.deployContract(ambireAccountName)
   const addr = await contract.getAddress()
   expect(addr).not.to.be.null
 
