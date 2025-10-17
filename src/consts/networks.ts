@@ -276,3 +276,4 @@ const networks: Network[] = [
 export { networks }
 
 export const ARBITRUM_CHAIN_ID = 42161n
+export const SCROLL_CHAIN_ID = 534352n

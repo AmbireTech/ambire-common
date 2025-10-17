@@ -2,8 +2,9 @@ import { ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE, SCROLL_ORACLE } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
+import { SCROLL_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -19,6 +20,18 @@ import { getProbableCallData } from '../gasPrice/gasPrice'
 import { GasTankTokenResult, TokenResult } from '../portfolio'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 import { AmbireEstimation, EstimationFlags, FeePaymentOption } from './interfaces'
+
+function getOracleAddr(network: Network) {
+  if (network.chainId === SCROLL_CHAIN_ID) {
+    return SCROLL_ORACLE
+  }
+
+  if (network.isOptimistic) {
+    return OPTIMISTIC_ORACLE
+  }
+
+  return ZeroAddress
+}
 
 export function getInnerCallFailure(
   estimationOp: { success: boolean; err: string },
@@ -74,7 +87,7 @@ export async function ambireEstimateGas(
     feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,
-    network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
+    getOracleAddr(network)
   ]
   const ambireEstimation = await deploylessEstimator
     .call('estimate', checkInnerCallsArgs, {
@@ -125,6 +138,10 @@ export async function ambireEstimateGas(
         token.flags.onGasTank && 'availableAmount' in token
           ? token.availableAmount || token.amount
           : feeTokenOutcomes[key].amount
+
+      if (token.flags.onGasTank && op.meta?.topUpAmount) {
+        availableAmount += op.meta.topUpAmount
+      }
 
       // if the token is native and the account type cannot pay for the
       // transaction with the receiving amount from the estimation,

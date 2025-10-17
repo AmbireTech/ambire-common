@@ -7,7 +7,6 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
@@ -135,8 +134,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
   #portfolio: IPortfolioController
 
   #onContractsDeployed: (network: Network) => Promise<void>
-
-  #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
 
   #callRelayer: Function
 
@@ -584,35 +581,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   )
                 })
               }
-
-              // if there are more than 1 txns with the same nonce and payer,
-              // we can conclude this one is replaced by fee
-              //
-              // Comment out this code as it's doing more bad than good.
-              // In order to track rbf transactions, we need a per account unique nonce
-              // in submitted account op first
-              // const sameNonceTxns = this.#accountsOps[selectedAccount][
-              //   network.chainId.toString()
-              // ].filter(
-              //   (accOp) =>
-              //     accOp.gasFeePayment &&
-              //     accountOp.gasFeePayment &&
-              //     accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
-              //     accOp.nonce.toString() === accountOp.nonce.toString()
-              // )
-              // const confirmedSameNonceTxns = sameNonceTxns.find(
-              //   (accOp) =>
-              //     accOp.status === AccountOpStatus.Success ||
-              //     accOp.status === AccountOpStatus.Failure
-              // )
-              // if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-              //   const updatedOpIfAny = updateOpStatus(
-              //     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-              //     AccountOpStatus.UnknownButPastNonce
-              //   )
-              //   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              //   shouldUpdatePortfolio = true
-              // }
             }
           )
         )
@@ -671,46 +639,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
-  /**
-   * A not confirmed account op can actually be with a status of BroadcastButNotConfirmed
-   * and BroadcastButStuck. Typically, it becomes BroadcastButStuck if not confirmed
-   * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
-   * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
-   */
-  getNotConfirmedOpIfAny(accId: AccountId, chainId: bigint): SubmittedAccountOp | null {
-    const acc = this.#accounts.accounts.find((oneA) => oneA.addr === accId)
-    if (!acc) return null
+  getLastFive(): SubmittedAccountOp[] {
+    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
+      return []
 
-    // if the broadcasting account is a smart account, it means relayer
-    // broadcast => it's in this.#accountsOps[acc.addr][chainId]
-    // disregard erc-4337 txns as they shouldn't have an RBF
-    const isSA = isSmartAccount(acc)
-    if (isSA) {
-      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][chainId.toString(0)])
-        return null
-      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][chainId.toString(0)][0].status!))
-        return null
-
-      return this.#accountsOps[acc.addr][chainId.toString(0)][0]
-    }
-
-    // if the account is an EOA, we have to go through all the smart accounts
-    // to check whether the EOA has made a broadcast for them
-    const theEOAandSAaccounts = this.#accounts.accounts.filter(
-      (oneA) => isSmartAccount(oneA) || oneA.addr === accId
-    )
-    const ops: SubmittedAccountOp[] = []
-    theEOAandSAaccounts.forEach((oneA) => {
-      if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][chainId.toString()]) return
-      const op = this.#accountsOps[oneA.addr][chainId.toString()].find(
-        (oneOp) =>
-          this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][chainId.toString()][0].status!) &&
-          oneOp.gasFeePayment?.paidBy === oneA.addr
-      )
-      if (!op) return
-      ops.push(op)
-    })
-    return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
+    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
+      .flat()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 5)
   }
 
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {

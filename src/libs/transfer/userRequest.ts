@@ -22,6 +22,7 @@ interface BuildUserRequestParams {
   recipientAddress: string
   paymasterService?: PaymasterService
   windowId?: number
+  amountInFiat?: bigint
 }
 
 function buildMintVestingRequest({
@@ -103,6 +104,7 @@ function buildClaimWalletRequest({
 
 function buildTransferUserRequest({
   amount,
+  amountInFiat,
   selectedToken,
   selectedAccount,
   recipientAddress: _recipientAddress,
@@ -113,6 +115,7 @@ function buildTransferUserRequest({
 
   // if the request is a top up, the recipient is the relayer
   const recipientAddress = _recipientAddress?.toLowerCase()
+  const isTopUp = recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
   const sanitizedAmount = getSanitizedAmount(amount, selectedToken.decimals)
 
   const bigNumberHexAmount = `0x${parseUnits(
@@ -123,9 +126,7 @@ function buildTransferUserRequest({
   // if the top up is a native one, we should wrap the native before sending it
   // as otherwise a Transfer event is not emitted and the top up will not be
   // recorded
-  const isNativeTopUp =
-    Number(selectedToken.address) === 0 &&
-    recipientAddress.toLowerCase() === FEE_COLLECTOR.toLowerCase()
+  const isNativeTopUp = Number(selectedToken.address) === 0 && isTopUp
 
   if (isNativeTopUp) {
     // if not predefined network, we cannot make a native top up
@@ -162,7 +163,8 @@ function buildTransferUserRequest({
         isSignAction: true,
         chainId: selectedToken.chainId,
         accountAddr: selectedAccount,
-        paymasterService
+        paymasterService,
+        topUpAmount: isTopUp && amountInFiat ? amountInFiat : undefined
       }
     }
   }
@@ -196,7 +198,8 @@ function buildTransferUserRequest({
       isSignAction: true,
       chainId: selectedToken.chainId,
       accountAddr: selectedAccount,
-      paymasterService
+      paymasterService,
+      topUpAmount: isTopUp && amountInFiat ? amountInFiat : undefined
     }
   }
 }
@@ -316,6 +319,6 @@ export {
   buildClaimWalletRequest,
   buildMintVestingRequest,
   buildTransferUserRequest,
-  prepareIntentUserRequest,
-  isPlainTextMessage
+  isPlainTextMessage,
+  prepareIntentUserRequest
 }
