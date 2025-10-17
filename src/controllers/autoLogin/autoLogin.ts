@@ -106,6 +106,9 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   }
 
   static isExpiredPolicy(policy: AutoLoginPolicy): boolean {
+    // Policies with 0 expiration never expire
+    if (policy.defaultExpiration === 0) return false
+
     return Date.now() > policy.defaultExpiration
   }
 
@@ -404,8 +407,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   getPolicyFromDefaultPolicy(defaultPolicy: DefaultAutoLoginPolicy): AutoLoginPolicy {
     return {
       ...defaultPolicy,
-      allowedChains: this.#networks.networks.map((n) => Number(n.chainId)),
-      defaultExpiration: Date.now() + this.settings.duration
+      allowedChains: this.#networks.networks.map((n) => Number(n.chainId))
     }
   }
 
@@ -440,7 +442,13 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     return null
   }
 
-  getAccountPolicies(accountAddr: string): AutoLoginPolicy[] {
-    return this.#policiesByAccount[accountAddr] || []
+  getAccountPolicies(accountAddr: string, withDefaultPolicies: boolean = false): AutoLoginPolicy[] {
+    const accountPolicies = this.#policiesByAccount[accountAddr] || []
+
+    if (!withDefaultPolicies) return accountPolicies
+
+    const defaultPoliciesConverted = DEFAULT_POLICIES.map((p) => this.getPolicyFromDefaultPolicy(p))
+
+    return [...accountPolicies, ...defaultPoliciesConverted]
   }
 }

@@ -42,10 +42,9 @@ type AutoLoginPolicy = {
 }
 
 /**
- * Excludes defaultExpiration because default policies don't expire.
- * Excludes allowedChains because default policies apply to all chains.
+ * Same as AutoLoginPolicy but excludes allowedChains because default policies apply to all chains.
  */
-type DefaultAutoLoginPolicy = Omit<AutoLoginPolicy, 'defaultExpiration' | 'allowedChains'>
+type DefaultAutoLoginPolicy = Omit<AutoLoginPolicy, 'allowedChains'>
 
 type AutoLoginPoliciesByAccount = {
   [account: string]: AutoLoginPolicy[]

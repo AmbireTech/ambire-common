@@ -291,10 +291,20 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers.updateProviderIsWorking.bind(this.providers),
       this.#updateIsOffline.bind(this)
     )
+    this.autoLogin = new AutoLoginController(
+      this.storage,
+      this.keystore,
+      this.providers,
+      this.networks,
+      this.accounts,
+      this.#externalSignerControllers,
+      this.invite
+    )
     this.selectedAccount = new SelectedAccountController({
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore
+      keystore: this.keystore,
+      autoLogin: this.autoLogin
     })
     this.banner = new BannerController(this.storage)
     this.portfolio = new PortfolioController(
@@ -443,16 +453,6 @@ export class MainController extends EventEmitter implements IMainController {
     )
 
     this.contractNames = new ContractNamesController(this.fetch)
-
-    this.autoLogin = new AutoLoginController(
-      this.storage,
-      this.keystore,
-      this.providers,
-      this.networks,
-      this.accounts,
-      this.#externalSignerControllers,
-      this.invite
-    )
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
       // TODO: [WIP] - The manager should be initialized with transfer and swap and bridge controller dependencies.
