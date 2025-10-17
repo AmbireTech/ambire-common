@@ -66,7 +66,9 @@ function integrateAmbireConstants(
       optimism: 10,
       'binance-smart-chain': 56,
       scroll: 534352,
-      arbitrum: 43114
+      arbitrum: 42161,
+      avalanche: 43114,
+      gnosis: 100
     }
     const chainId = networksChainIdMapping[networkId]
     if (!chainId) return
