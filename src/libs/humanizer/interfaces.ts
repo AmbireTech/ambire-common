@@ -72,9 +72,10 @@ export interface AbiFragment {
 export interface HumanizerMetaAddress {
   name?: string
   // undefined means it is not a token
-  token?: { symbol: string; decimals: number; networks?: string[] }
+  token?: { symbol: string; decimals?: number }
   // undefined means not a SC, {} means it is SC but we have no more info
-  isSC?: { abiName?: string }
+  isSC?: boolean
+  chainIds?: number[]
 }
 
 // more infor here https://github.com/AmbireTech/ambire-app/issues/1662
