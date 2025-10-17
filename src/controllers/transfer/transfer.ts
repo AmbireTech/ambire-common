@@ -460,7 +460,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
-      this.lastRecipientTransactionDate = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -470,7 +469,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
     this.checkIsRecipientAddressUnknown()
@@ -607,7 +606,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ calls })
+      this.signAccountOpController.update({ accountOpData: { calls } })
       return
     }
 
@@ -678,8 +677,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       accountOp,
       () => true,
       false,
-      false,
-      undefined
+      false
     )
 
     // propagate updates from signAccountOp here

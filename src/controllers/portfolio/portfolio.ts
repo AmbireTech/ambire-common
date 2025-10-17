@@ -1297,6 +1297,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
         }
       : undefined
+
     return this.updateSelectedAccount(op.accountAddr, [network], simulation)
   }
 

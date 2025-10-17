@@ -165,12 +165,12 @@ export type SignAccountOpUpdateProps = {
   speed?: FeeSpeed
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
-  calls?: AccountOp['calls']
   rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
   bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
   blockGasLimit?: bigint
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
+  accountOpData?: Partial<AccountOp>
 }
 
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
@@ -193,7 +193,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   // this is not used in the controller directly but it's being read outside
   fromActionId: AccountOpAction['id']
 
-  accountOp: AccountOp
+  /**
+   * Never modify this directly, use #updateAccountOp instead.
+   * Otherwise the accountOp will be out of sync with the one stored
+   * in requests/actions.
+   */
+  #accountOp: AccountOp
 
   gasPrices?: GasRecommendation[] | null
 
@@ -253,6 +258,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   gasPrice: GasPriceController
 
+  #onAccountOpUpdate: (updatedAccountOp: AccountOp) => void
+
   #traceCall: Function
 
   shouldSignAuth: {
@@ -292,6 +299,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     isSignRequestStillActive: Function,
     shouldSimulate: boolean,
     shouldReestimate: boolean,
+    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void,
     traceCall?: Function
   ) {
     super()
@@ -310,7 +318,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#network = network
     this.#activity = activity
     this.fromActionId = fromActionId
-    this.accountOp = structuredClone(accountOp)
+    this.#accountOp = structuredClone(accountOp)
     this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.rbfAccountOps = {}
@@ -335,6 +343,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc
+    this.#onAccountOpUpdate = onAccountOpUpdate ?? emptyFunc
     this.gasPrice = new GasPriceController(
       network,
       provider,
@@ -350,6 +359,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#shouldReestimate = shouldReestimate
 
     this.#load(shouldSimulate)
+  }
+
+  get accountOp(): Readonly<AccountOp> {
+    return this.#accountOp
+  }
+
+  #updateAccountOp(accountOp: Partial<AccountOp>) {
+    if (!Object.keys(accountOp).length) return
+
+    this.#accountOp = { ...this.#accountOp, ...accountOp }
+
+    this.#onAccountOpUpdate(this.#accountOp)
   }
 
   #validateAccountOp(): SignAccountOpError | null {
@@ -473,8 +494,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
-      this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
-      this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
+      this.#updateAccountOp({
+        signingKeyAddr: this.accountKeyStoreKeys[0].addr,
+        signingKeyType: this.accountKeyStoreKeys[0].type
+      })
     }
     // we can set a default paidBy and feeToken here if they aren't any set
   }
@@ -487,7 +510,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.feeTokenResult &&
       this.selectedOption
     ) {
-      this.accountOp.gasFeePayment = this.#getGasFeePayment(paidByKeyType)
+      this.#updateAccountOp({
+        gasFeePayment: this.#getGasFeePayment(paidByKeyType)
+      })
     }
   }
 
@@ -789,7 +814,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
-      this.accountOp.nonce = BigInt(estimation.ambireEstimation.ambireAccountNonce)
+      this.#updateAccountOp({
+        nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
+      })
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -810,7 +837,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.accountOp.accountAddr,
         this.accountOp.chainId
       )
-      this.accountOp.nonce = pendingAccountState.nonce
+      this.#updateAccountOp({
+        nonce: pendingAccountState.nonce
+      })
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -835,13 +864,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     speed,
     signingKeyAddr,
     signingKeyType,
-    calls,
     rbfAccountOps,
     bundlerGasPrices,
     blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation,
-    paidByKeyType
+    paidByKeyType,
+    accountOpData
   }: SignAccountOpUpdateProps) {
     try {
       // This must be at the top, otherwise it won't be updated because
@@ -867,39 +896,49 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       if (this.estimation.status === EstimationStatus.Success) {
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation) {
-          this.accountOp.nonce = BigInt(estimation.ambireEstimation.ambireAccountNonce)
+          this.#updateAccountOp({
+            nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
+          })
         }
         if (estimation.bundlerEstimation) {
           this.bundlerGasPrices = estimation.bundlerEstimation.gasPrice
         }
       }
 
-      if (Array.isArray(calls)) {
-        // we should update if the arrays are with diff length
-        let shouldUpdate = this.accountOp.calls.length !== calls.length
+      if (accountOpData) {
+        const { calls, ...rest } = accountOpData
 
-        if (!shouldUpdate) {
-          // if they are with the same length, check if some of
-          // their properties differ. If they do, we should update
-          this.accountOp.calls.forEach((call, i) => {
-            const newCall = calls[i]
-            if (
-              call.to !== newCall.to ||
-              call.data !== newCall.data ||
-              call.value !== newCall.value
-            )
-              shouldUpdate = true
-          })
-        }
+        // update all properties except calls
+        // calls are handled separately below
+        this.#updateAccountOp(rest)
 
-        // update only if there are differences in the calls array
-        // we do this to prevent double estimation problems
-        if (shouldUpdate) {
-          const hasNewCalls = this.accountOp.calls.length < calls.length
-          this.accountOp.calls = calls
+        if (Array.isArray(calls)) {
+          // we should update if the arrays are with diff length
+          let shouldUpdate = this.accountOp.calls.length !== calls.length
 
-          if (hasNewCalls) this.learnTokensFromCalls()
-          this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+          if (!shouldUpdate) {
+            // if they are with the same length, check if some of
+            // their properties differ. If they do, we should update
+            this.accountOp.calls.forEach((call, i) => {
+              const newCall = calls[i]
+              if (
+                call.to !== newCall.to ||
+                call.data !== newCall.data ||
+                call.value !== newCall.value
+              )
+                shouldUpdate = true
+            })
+          }
+
+          // update only if there are differences in the calls array
+          // we do this to prevent double estimation problems
+          if (shouldUpdate) {
+            const hasNewCalls = this.accountOp.calls.length < calls.length
+            this.#updateAccountOp({ calls })
+
+            if (hasNewCalls) this.learnTokensFromCalls()
+            this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+          }
         }
       }
 
@@ -923,8 +962,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       if (signingKeyAddr && signingKeyType && this.isInitialized) {
-        this.accountOp.signingKeyAddr = signingKeyAddr
-        this.accountOp.signingKeyType = signingKeyType
+        this.#updateAccountOp({
+          signingKeyAddr,
+          signingKeyType
+        })
 
         // If the fee is paid by the signer, then we should set the fee payer
         // key type to the signing key type (so the user doesn't have to select
@@ -995,7 +1036,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       // or any of properties for update is requested
       if (
         !Object.keys(this.feeSpeeds).length ||
-        Array.isArray(calls) ||
+        Array.isArray(accountOpData?.calls) ||
         gasPrices ||
         this.#paidBy ||
         this.feeTokenResult ||
@@ -1592,46 +1633,54 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const abiCoder = new AbiCoder()
 
     if (this.isSponsored) {
-      this.accountOp.feeCall = {
-        to: FEE_COLLECTOR,
-        value: 0n,
-        data: abiCoder.encode(['string', 'uint256', 'string'], ['gasTank', 0n, 'USDC'])
-      }
+      this.#updateAccountOp({
+        feeCall: {
+          to: FEE_COLLECTOR,
+          value: 0n,
+          data: abiCoder.encode(['string', 'uint256', 'string'], ['gasTank', 0n, 'USDC'])
+        }
+      })
 
       return
     }
 
     if (this.accountOp.gasFeePayment!.isGasTank) {
-      this.accountOp.feeCall = {
-        to: FEE_COLLECTOR,
-        value: 0n,
-        data: abiCoder.encode(
-          ['string', 'uint256', 'string'],
-          ['gasTank', this.accountOp.gasFeePayment!.amount, this.feeTokenResult?.symbol]
-        )
-      }
+      this.#updateAccountOp({
+        feeCall: {
+          to: FEE_COLLECTOR,
+          value: 0n,
+          data: abiCoder.encode(
+            ['string', 'uint256', 'string'],
+            ['gasTank', this.accountOp.gasFeePayment!.amount, this.feeTokenResult?.symbol]
+          )
+        }
+      })
 
       return
     }
 
     if (this.accountOp.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
-      this.accountOp.feeCall = {
-        to: FEE_COLLECTOR,
-        value: this.accountOp.gasFeePayment!.amount,
-        data: '0x'
-      }
+      this.#updateAccountOp({
+        feeCall: {
+          to: FEE_COLLECTOR,
+          value: this.accountOp.gasFeePayment!.amount,
+          data: '0x'
+        }
+      })
     } else {
       // token payment
       const ERC20Interface = new Interface(ERC20.abi)
-      this.accountOp.feeCall = {
-        to: this.accountOp.gasFeePayment!.inToken,
-        value: 0n,
-        data: ERC20Interface.encodeFunctionData('transfer', [
-          FEE_COLLECTOR,
-          this.accountOp.gasFeePayment!.amount
-        ])
-      }
+      this.#updateAccountOp({
+        feeCall: {
+          to: this.accountOp.gasFeePayment!.inToken,
+          value: 0n,
+          data: ERC20Interface.encodeFunctionData('transfer', [
+            FEE_COLLECTOR,
+            this.accountOp.gasFeePayment!.amount
+          ])
+        }
+      })
     }
   }
 
@@ -1855,15 +1904,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     // - the relayer broadcast fails
     // - the user does another broadcast, this time with EOA pays for SA
     // - the fee call stays, causing a low gas limit revert
-    delete this.accountOp.feeCall
+    delete this.#accountOp.feeCall
 
     // delete the activatorCall as a precaution that it won't be added twice
-    delete this.accountOp.activatorCall
+    delete this.#accountOp.activatorCall
 
     // @EntryPoint activation for SA
     if (this.baseAccount.shouldIncludeActivatorCall(broadcastOption)) {
-      this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
+      this.#accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
+    this.#updateAccountOp(this.#accountOp)
 
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       this.accountOp.accountAddr,
@@ -1878,35 +1928,37 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ) {
         // rawTxn, No SA signatures
         // or 7702, calling executeBySender(). No SA signatures
-        this.accountOp.signature = '0x'
+        this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
-        this.accountOp.signature = await getExecuteSignature(
-          this.#network,
-          this.accountOp,
-          accountState,
-          signer
-        )
+        this.#updateAccountOp({
+          signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+        })
       } else if (broadcastOption === BROADCAST_OPTIONS.delegation) {
         // a delegation request has been made
-        if (!this.accountOp.meta) this.accountOp.meta = {}
+        if (!this.accountOp.meta) {
+          this.#updateAccountOp({ meta: {} })
+        }
 
         const contract =
-          this.accountOp.meta.setDelegation || this.accountOp.calls.length > 1
+          this.accountOp.meta?.setDelegation || this.accountOp.calls.length > 1
             ? getContractImplementation(this.#network.chainId)
             : (ZeroAddress as Hex)
-        this.accountOp.meta.delegation = get7702Sig(
-          this.#network.chainId,
-          // because we're broadcasting by ourselves, we need to add 1 to the nonce
-          // as the sender nonce (the curr acc) gets incremented before the
-          // authrorization validation
-          accountState.eoaNonce! + 1n,
-          contract,
-          signer.sign7702(
-            getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
+        if (this.accountOp.meta)
+          this.accountOp.meta.delegation = get7702Sig(
+            this.#network.chainId,
+            // because we're broadcasting by ourselves, we need to add 1 to the nonce
+            // as the sender nonce (the curr acc) gets incremented before the
+            // authrorization validation
+            accountState.eoaNonce! + 1n,
+            contract,
+            signer.sign7702(
+              getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
+            )
           )
-        )
-        this.accountOp.signature = '0x'
+        this.#updateAccountOp({
+          signature: '0x'
+        })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
@@ -1954,8 +2006,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             signer,
             this.#network
           )
-          if (!this.accountOp.meta) this.accountOp.meta = {}
-          this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
+          if (!this.accountOp.meta) {
+            this.#updateAccountOp({ meta: {} })
+          }
+          if (this.accountOp.meta)
+            this.accountOp.meta.entryPointAuthorization = adjustEntryPointAuthorization(epSignature)
 
           // after signing is complete, go to paymaster mode
           if (isUsingPaymaster) {
@@ -2005,9 +2060,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
-          this.accountOp.signature = signature
-        }
-        if (userOperation.requestType === '7702') {
+          this.#updateAccountOp({ signature, asUserOperation: userOperation })
+        } else if (userOperation.requestType === '7702') {
           const typedData = get7702UserOpTypedData(
             this.#network.chainId,
             getSignableCalls(this.accountOp),
@@ -2016,19 +2070,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
-          this.accountOp.signature = signature
+          this.#updateAccountOp({ signature, asUserOperation: userOperation })
+        } else {
+          this.#updateAccountOp({ asUserOperation: userOperation })
         }
-        this.accountOp.asUserOperation = userOperation
       } else {
         // Relayer
         this.#addFeePayment()
 
-        this.accountOp.signature = await getExecuteSignature(
-          this.#network,
-          this.accountOp,
-          accountState,
-          signer
-        )
+        this.#updateAccountOp({
+          signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+        })
       }
 
       this.status = { type: SigningStatus.Done }
@@ -2072,7 +2124,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       account: this.account,
       errors: this.errors,
       gasSavedUSD: this.gasSavedUSD,
-      delegatedContract: this.delegatedContract
+      delegatedContract: this.delegatedContract,
+      accountOp: this.accountOp
     }
   }
 }
