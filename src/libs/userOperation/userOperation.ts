@@ -1,9 +1,8 @@
-import { EIP7702Auth } from 'consts/7702'
 import { AbiCoder, concat, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
-import { Network } from '../../interfaces/network'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
 import {
   AMBIRE_ACCOUNT_FACTORY,
@@ -15,7 +14,12 @@ import {
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
+import { Network } from '../../interfaces/network'
+//  TODO: dependency cycle
+// eslint-disable-next-line import/no-cycle
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
+//  TODO: dependency cycle
+// eslint-disable-next-line import/no-cycle
 import {
   PackedUserOperation,
   UserOperation,
