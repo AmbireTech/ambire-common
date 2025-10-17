@@ -6,6 +6,16 @@ export type ActionPosition = 'first' | 'last'
 
 export type ActionExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
 
+export type ActionType =
+  | 'switchAccount'
+  | 'accountOp'
+  | 'signMessage'
+  | 'benzin'
+  | 'dappRequest'
+  | 'swapAndBridge'
+  | 'transfer'
+  | 'siwe'
+
 export type OpenActionWindowParams = {
   skipFocus?: boolean
   baseWindowId?: number
@@ -66,6 +76,12 @@ export type TransferAction = {
   }
 }
 
+export type SiweAction = {
+  id: UserRequest['id']
+  type: 'siwe'
+  userRequest: SignUserRequest
+}
+
 export type Action =
   | SwitchAccountAction
   | AccountOpAction
@@ -74,3 +90,4 @@ export type Action =
   | DappRequestAction
   | SwapAndBridgeAction
   | TransferAction
+  | SiweAction

@@ -33,10 +33,12 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -460,10 +462,20 @@ const init = async (
     keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
     network
   )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystore,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore
+    keystore,
+    autoLogin: autoLoginCtrl
   })
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
