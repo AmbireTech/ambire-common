@@ -6,7 +6,7 @@ import { AccountId } from './account'
 import { SignMessageAction } from './actions'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
-import { EIP7702Signature } from './signatures'
+import { EILSignature, EIP7702Signature } from './signatures'
 import { ChainIdWithUserOp } from './userOperation'
 
 export interface Calls {
@@ -45,6 +45,12 @@ export interface SignUserOperations {
   message: Hex
 }
 
+export type MessageKind =
+  | PlainTextMessage['kind']
+  | TypedMessage['kind']
+  | Authorization['kind']
+  | SignUserOperations['kind']
+
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
@@ -52,7 +58,7 @@ export interface Message {
   accountAddr: AccountId
   chainId: bigint
   content: PlainTextMessage | TypedMessage | Authorization | SignUserOperations
-  signature: EIP7702Signature | string | null
+  signature: EIP7702Signature | EILSignature | string | null
 }
 
 export interface SignUserRequest {

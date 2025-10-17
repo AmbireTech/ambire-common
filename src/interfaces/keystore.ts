@@ -9,7 +9,7 @@ import { Account } from './account'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
-import { EIP7702Signature } from './signatures'
+import { EIP7702Signature, PlainSignature } from './signatures'
 import { TypedMessage } from './userRequest'
 
 export type IKeystoreController = ControllerInterface<
@@ -74,6 +74,7 @@ export interface KeystoreSignerInterface {
   sign7702: (hex: string) => EIP7702Signature
   signTransactionTypeFour: (txnRequest: TxnRequest, eip7702Auth: EIP7702Auth) => Hex
   signingCleanup?: () => Promise<void>
+  plainSign?: (hex: string) => PlainSignature
 }
 
 export type ScryptParams = {

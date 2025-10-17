@@ -15,6 +15,7 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
+import { SignUserOperation } from '../../interfaces/userOperation'
 //  TODO: dependency cycle
 // eslint-disable-next-line import/no-cycle
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
@@ -186,7 +187,7 @@ export function shouldIncludeActivatorCall(
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
 
-export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
+export function getPackedUserOp(userOp: SignUserOperation): PackedUserOperation {
   const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
   const accountGasLimits = concat([
     toBeHex(userOp.verificationGasLimit.toString(), 16),
@@ -217,7 +218,7 @@ export function getPackedUserOp(userOp: UserOperation): PackedUserOperation {
   }
 }
 
-export function getUserOpHash(userOp: UserOperation, chainId: bigint) {
+export function getUserOpHash(userOp: SignUserOperation, chainId: bigint) {
   const abiCoder = new AbiCoder()
   const packedUserOp = getPackedUserOp(userOp)
   const hashInitCode = keccak256(packedUserOp.initCode)

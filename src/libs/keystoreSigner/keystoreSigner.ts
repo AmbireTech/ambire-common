@@ -20,7 +20,7 @@ import {
 import { EIP7702Auth } from '../../consts/7702'
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
-import { EIP7702Signature } from '../../interfaces/signatures'
+import { EIP7702Signature, PlainSignature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 
@@ -87,7 +87,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  sign7702(hex: string): EIP7702Signature {
+  plainSign(hex: string): PlainSignature {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))
@@ -97,6 +97,11 @@ export class KeystoreSigner implements KeystoreSignerInterface {
       r: signature.substring(0, 66) as Hex,
       s: `0x${signature.substring(66)}`
     }
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  sign7702(hex: string): EIP7702Signature {
+    return this.plainSign(hex)
   }
 
   signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
