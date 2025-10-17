@@ -7,7 +7,6 @@ import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { EIP7702Auth } from '../../consts/7702'
-import { UiController } from '../ui/ui'
 import { Hex } from '../../interfaces/hex'
 import {
   IKeystoreController,
@@ -21,6 +20,7 @@ import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { KeystoreController } from '../keystore/keystore'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { EmailVaultController, EmailVaultState } from './emailVault'
 
 class InternalSigner implements KeystoreSignerInterface {
@@ -46,7 +46,7 @@ class InternalSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702(hex: string): EIP7702Signature {
+  async sign7702(hex: string): Promise<EIP7702Signature> {
     throw new Error('not supported')
   }
 
