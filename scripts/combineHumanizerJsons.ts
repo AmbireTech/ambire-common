@@ -13,7 +13,7 @@ const additionalSighashes: Sighashes = require('../src/consts/humanizer/dappSele
 const dappAddressList: DappAddrList = require('../src/consts/humanizer/dappAddressList.json')
 
 const AMBIRE_CONSTANTS_URL = 'https://jason.ambire.com/result.json'
-const CENA_TOKENS_URL = 'https://cena.ambire.com/api/v3/lists/top-tokens-info?maxTokensPerChain=200'
+const CENA_TOKENS_URL = 'https://cena.ambire.com/api/v3/lists/top-tokens-info'
 const humanizerV2ResultPath = path.join(
   __dirname,
   '..',
