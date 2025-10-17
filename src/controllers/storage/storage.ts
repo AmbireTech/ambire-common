@@ -77,20 +77,16 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateNetworkPreferencesToNetworks')) return
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateNetworkPreferencesToNetworks'])
-      ])
-    ]
-
     if (!Object.keys(networks).length && networkPreferences) {
       const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences)
 
-      storageUpdates.push(this.#storage.set('networks', migratedNetworks))
-      storageUpdates.push(this.#storage.remove('networkPreferences'))
+      await this.#storage.set('networks', migratedNetworks)
+      await this.#storage.remove('networkPreferences')
     }
 
-    await Promise.all(storageUpdates)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateNetworkPreferencesToNetworks'])
+    ])
   }
 
   // As of version 4.25.0, a new Account interface has been introduced,
@@ -106,11 +102,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateAccountPreferencesToAccounts')) return
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateAccountPreferencesToAccounts'])
-      ])
-    ]
     if (accountPreferences) {
       const migratedAccounts = getUniqueAccountsArray(
         accounts.map((a: any) => {
@@ -124,11 +115,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
           }
         })
       )
-      storageUpdates.push(this.#storage.set('accounts', migratedAccounts))
-      storageUpdates.push(this.#storage.remove('accountPreferences'))
+      await this.#storage.set('accounts', migratedAccounts)
+      await this.#storage.remove('accountPreferences')
     }
 
-    await Promise.all(storageUpdates)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateAccountPreferencesToAccounts'])
+    ])
   }
 
   // As of version v4.33.0, user can change the HD path when importing a seed.
@@ -142,22 +135,18 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateKeystoreSeedsWithoutHdPathTemplate')) return
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateKeystoreSeedsWithoutHdPathTemplate'])
-      ])
-    ]
-
     if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
       const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
         seed,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       }))
 
-      storageUpdates.push(this.#storage.set('keystoreSeeds', migratedKeystoreSeeds))
+      await this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
     }
 
-    await Promise.all(storageUpdates)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateKeystoreSeedsWithoutHdPathTemplate'])
+    ])
   }
 
   // As of version 4.33.0, we no longer store the key preferences in a separate object called keyPreferences in the storage.
@@ -172,13 +161,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateKeyPreferencesToKeystoreKeys')) return
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateKeyPreferencesToKeystoreKeys'])
-      ])
-    ]
     const shouldMigrateKeyPreferencesToKeystoreKeys = keyPreferences.length > 0
-
     if (shouldMigrateKeyPreferencesToKeystoreKeys) {
       const migratedKeystoreKeys = keystoreKeys.map((key) => {
         if (key.label) return key
@@ -190,11 +173,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
         return key
       })
 
-      storageUpdates.push(this.#storage.set('keystoreKeys', migratedKeystoreKeys))
-      storageUpdates.push(this.#storage.remove('keyPreferences'))
+      await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
+      await this.#storage.remove('keyPreferences')
     }
 
-    await Promise.all(storageUpdates)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateKeyPreferencesToKeystoreKeys'])
+    ])
   }
 
   // As of version 4.33.0, we introduced createdAt prop to the Key interface to help with sorting and add more details for the Keys.
@@ -213,11 +198,9 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
       return key
     })
-    await Promise.all([
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateKeyMetaNullToKeyMetaCreatedAt'])
-      ]),
-      this.#storage.set('keystoreKeys', migratedKeystoreKeys)
+    await this.#storage.set('keystoreKeys', migratedKeystoreKeys)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateKeyMetaNullToKeyMetaCreatedAt'])
     ])
   }
 
@@ -273,11 +256,10 @@ export class StorageController extends EventEmitter implements IStorageControlle
         return [accountId, 'seen-cashback']
       })
     )
-    await Promise.all([
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateCashbackStatusToNewFormat'])
-      ]),
-      this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
+
+    await this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateCashbackStatusToNewFormat'])
     ])
   }
 
@@ -290,31 +272,24 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateTokenPreferences')) return
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateTokenPreferences'])
-      ])
-    ]
-
     if (
       (tokenPreferences as LegacyTokenPreference[]).some(
         ({ symbol, decimals }) => !!symbol || !!decimals
       )
     ) {
-      storageUpdates.push(
-        this.#storage.set(
-          'tokenPreferences',
-          migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
-        )
+      await this.#storage.set(
+        'tokenPreferences',
+        migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
       )
-      storageUpdates.push(
-        this.#storage.set(
-          'customTokens',
-          migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
-        )
+      await this.#storage.set(
+        'customTokens',
+        migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
       )
     }
-    await Promise.all(storageUpdates)
+
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateTokenPreferences'])
+    ])
   }
 
   async #migrateNetworkIdToChainId() {
@@ -424,18 +399,19 @@ export class StorageController extends EventEmitter implements IStorageControlle
       Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
     )
 
-    await Promise.all([
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
-      ]),
-      this.#storage.set('networks', migratedNetworks),
-      this.#storage.set('previousHints', migratedPreviousHints),
-      this.#storage.set('customTokens', migratedCustomTokens),
-      this.#storage.set('tokenPreferences', migratedTokenPreferences),
-      this.#storage.set('networksWithAssetsByAccount', migratedNetworksWithAssetsByAccount),
-      this.#storage.set('networksWithPositionsByAccounts', migratedNetworksWithPositionsByAccounts),
-      this.#storage.set('accountsOps', migratedAccountsOps),
-      this.#storage.set('signedMessages', migratedSignedMessages)
+    await this.#storage.set('networks', migratedNetworks)
+    await this.#storage.set('previousHints', migratedPreviousHints)
+    await this.#storage.set('customTokens', migratedCustomTokens)
+    await this.#storage.set('tokenPreferences', migratedTokenPreferences)
+    await this.#storage.set('networksWithAssetsByAccount', migratedNetworksWithAssetsByAccount)
+    await this.#storage.set(
+      'networksWithPositionsByAccounts',
+      migratedNetworksWithPositionsByAccounts
+    )
+    await this.#storage.set('accountsOps', migratedAccountsOps)
+    await this.#storage.set('signedMessages', migratedSignedMessages)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateNetworkIdToChainId'])
     ])
   }
 
@@ -569,14 +545,10 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     const updatedKeystoreKeys = Array.from(updatedKeyMap.values())
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'associateAccountKeysWithLegacySavedSeedMigration'])
-      ]),
-      this.#storage.set('keystoreKeys', updatedKeystoreKeys)
-    ]
-
-    await Promise.all(storageUpdates)
+    await this.#storage.set('keystoreKeys', updatedKeystoreKeys)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'associateAccountKeysWithLegacySavedSeedMigration'])
+    ])
     this.#associateAccountKeysWithLegacySavedSeedMigrationPassed = true
     await onSuccess()
   }
@@ -612,27 +584,21 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     if (passedMigrations.includes('migrateAccountsCleanupUsedOnNetworks')) return
 
-    const storageUpdates = [
-      this.#storage.set('passedMigrations', [
-        ...new Set([...passedMigrations, 'migrateAccountsCleanupUsedOnNetworks'])
-      ])
-    ]
-
     // @ts-ignore-next-line yes, `usedOnNetworks` should NOT exist, but it was, because of a bug
     const shouldCleanupUsedOnNetworks = accounts.some((a) => a.usedOnNetworks)
     if (shouldCleanupUsedOnNetworks) {
-      storageUpdates.push(
-        this.#storage.set(
-          'accounts',
-          accounts.map((acc) =>
-            // destructure and re-build to remove the `usedOnNetworks` property
-            'usedOnNetworks' in acc ? (({ usedOnNetworks, ...rest }) => ({ ...rest }))(acc) : acc
-          )
+      await this.#storage.set(
+        'accounts',
+        accounts.map((acc) =>
+          // destructure and re-build to remove the `usedOnNetworks` property
+          'usedOnNetworks' in acc ? (({ usedOnNetworks, ...rest }) => ({ ...rest }))(acc) : acc
         )
       )
     }
 
-    await Promise.all(storageUpdates)
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateAccountsCleanupUsedOnNetworks'])
+    ])
   }
 
   toJSON() {
