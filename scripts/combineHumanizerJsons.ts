@@ -1,6 +1,6 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-param-reassign */
-import { id, Interface } from 'ethers'
+import { getAddress, id, Interface } from 'ethers'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
 const fsPromises = require('fs').promises
@@ -51,7 +51,8 @@ function integrateAmbireConstants(
   initialJson: HumanizerMeta,
   ambireConstants: AmbireConstants
 ): HumanizerMeta {
-  Object.entries(ambireConstants.humanizerInfo.tokens).forEach(([address, [symbol, decimals]]) => {
+  Object.entries(ambireConstants.humanizerInfo.tokens).forEach(([_address, [symbol, decimals]]) => {
+    const address = getAddress(_address)
     let addrInfo = initialJson.knownAddresses[address]
     if (!addrInfo) addrInfo = {}
     if (!addrInfo.token) addrInfo.token = { symbol, decimals }
@@ -71,7 +72,9 @@ function integrateAmbireConstants(
     }
     const chainId = networksChainIdMapping[networkId]
     if (!chainId) return
-    tokens.forEach(({ address, symbol, decimals }) => {
+    tokens.forEach(({ address: _address, symbol, decimals }) => {
+      const address = getAddress(_address)
+
       let addrInfo = initialJson.knownAddresses[address]
       if (!addrInfo) addrInfo = {}
       if (!addrInfo.token) addrInfo.token = { symbol, decimals }
@@ -81,7 +84,9 @@ function integrateAmbireConstants(
       initialJson.knownAddresses[address] = addrInfo
     })
   })
-  Object.entries(ambireConstants.humanizerInfo.names).forEach(([address, name]) => {
+  Object.entries(ambireConstants.humanizerInfo.names).forEach(([_address, name]) => {
+    const address = getAddress(_address)
+
     if (!initialJson.knownAddresses[address]) initialJson.knownAddresses[address] = {}
     initialJson.knownAddresses[address].name = name
   })
@@ -105,7 +110,9 @@ function integrateAmbireConstants(
 
 function integrateAmbireCena(initialJson: HumanizerMeta, cenaTokens: CenaTokens): HumanizerMeta {
   Object.entries(cenaTokens).forEach(([chainId, tokens]) => {
-    Object.entries(tokens).forEach(([address, symbol]) => {
+    Object.entries(tokens).forEach(([_address, symbol]) => {
+      const address = getAddress(_address)
+
       let addrInfo = initialJson.knownAddresses[address]
       if (!addrInfo) addrInfo = {}
       if (!addrInfo.token) addrInfo.token = { symbol }
@@ -133,7 +140,8 @@ function integrateDappAddrList(
   dappAddrList: DappAddrList
 ): HumanizerMeta {
   Object.entries(dappAddrList).forEach(([chainId, contracts]) => {
-    Object.entries(contracts).forEach(([address, { appName }]) => {
+    Object.entries(contracts).forEach(([_address, { appName }]) => {
+      const address = getAddress(_address)
       let addrInfo = initialJson.knownAddresses[address]
       if (!addrInfo) addrInfo = {}
       addrInfo.name = appName
