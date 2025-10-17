@@ -4,6 +4,7 @@ import { getAddress } from 'viem'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -41,11 +42,38 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
+const nonLatinSymbol = (str: string): boolean => /[^\x20-\x7E]/.test(str)
+
+export const isSuspectedRegardsKnownAddresses = (tokenAddr: string, tokenName: string) => {
+  if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenName) return false
+
+  const tokenWithKnownNames = Object.values(humanizerInfo.knownAddresses).filter((t) => {
+    if (!t.name || !t.address) return false
+
+    return tokenName.toLowerCase() === t.name.toLowerCase()
+  })
+
+  const matchedAddress = tokenWithKnownNames.length
+    ? tokenWithKnownNames.find((t) => t.address.toLowerCase() === tokenAddr.toLowerCase())
+    : undefined
+
+  return tokenWithKnownNames.length > 0 && !matchedAddress
+}
+
+const isSuspectedToken = (
+  address: TokenResult['address'],
+  symbol: TokenResult['symbol'],
+  name: TokenResult['name']
+) =>
+  nonLatinSymbol(symbol) || nonLatinSymbol(name) || isSuspectedRegardsKnownAddresses(address, name)
+
 export function getFlags(
   networkData: any,
   chainId: string,
   tokenChainId: bigint,
-  address: string
+  address: string,
+  name: string,
+  symbol: string
 ): TokenResult['flags'] {
   const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId)
   const onGasTank = chainId === 'gasTank'
@@ -69,12 +97,15 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
+  const isSuspected = isSuspectedToken(address, symbol, name)
+
   return {
     onGasTank,
     rewardsType,
     canTopUpGasTank,
     isFeeToken,
-    isHidden: false
+    isHidden: false,
+    isSuspected
   }
 }
 
@@ -129,7 +160,9 @@ export const mapToken = (
     {},
     network.chainId.toString(),
     network.chainId,
-    address
+    address,
+    tokenName,
+    symbol
   )
 
   if (specialErc20Hints) {
