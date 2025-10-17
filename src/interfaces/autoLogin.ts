@@ -30,8 +30,8 @@ type AutoLoginPolicy = {
    */
   supportsEIP6492: boolean
   /**
-   * Default policy expiration time in seconds.
-   * @example 2592000
+   * A timestamp of when the policy expires (UNIX epoch in milliseconds).
+   * If the current time exceeds this value, the policy is considered expired.
    */
   defaultExpiration: number
   /**

@@ -35,12 +35,31 @@ const prefixRegex =
  */
 const DEFAULT_POLICIES: DefaultAutoLoginPolicy[] = []
 
+const DEFAULT_AUTO_LOGIN_DURATION_OPTION = {
+  label: '7 days',
+  value: 7 * 24 * 60 * 60 * 1000
+}
+
+// Implemented here to ensure consistency between the controller and the UI
+// Also, in the future when the duration setting becomes exposed to the UI we
+// will need to validate the input from the UI, so these will be useful
+export const AUTO_LOGIN_DURATION_OPTIONS = [
+  { label: '4 hours', value: 4 * 60 * 60 * 1000 },
+  { label: '8 hours', value: 8 * 60 * 60 * 1000 },
+  { label: '24 hours', value: 24 * 60 * 60 * 1000 },
+  DEFAULT_AUTO_LOGIN_DURATION_OPTION,
+  {
+    label: '30 days',
+    value: 30 * 24 * 60 * 60 * 1000
+  }
+]
+
 export class AutoLoginController extends EventEmitter implements IAutoLoginController {
   #storage: IStorageController
 
   settings: AutoLoginSettings = {
     enabled: true,
-    duration: 24 * 60 * 60 * 1000
+    duration: DEFAULT_AUTO_LOGIN_DURATION_OPTION.value
   }
 
   #signMessage: SignMessageController
@@ -306,20 +325,17 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
   ): Promise<AutoLoginPolicy | null> {
     await this.initialLoadPromise
 
-    if (!isAutoLoginEnabledByUser) {
-      console.log('Debug: Auto-login not enabled by user, skipping policy creation')
-      return null
-    }
+    if (!isAutoLoginEnabledByUser) return null
 
+    // If there is a default policy skip creating a new one
+    // The only downside is that we don't save the lastAuthenticated time
     if (
       DEFAULT_POLICIES.find((p) => AutoLoginController.isPolicyMatchingDomainAndUri(parsedSiwe, p))
     ) {
-      console.log('Debug: Matched a default policy, skipping custom policy creation')
       return null
     }
 
     const policy = this.#createOrUpdatePolicyFromSiwe(parsedSiwe, { autoLoginDuration })
-    console.log('Debug: Created/updated auto-login policy', policy)
     await this.#storage.set('autoLoginPolicies', this.#policiesByAccount)
     this.emitUpdate()
 

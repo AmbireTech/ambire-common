@@ -754,8 +754,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           try {
             autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
-            console.log('debug: siwe autologin status', autoLoginStatus)
-
             if (autoLoginStatus === 'active') {
               // Sign and respond
               const signedMessage = await this.#autoLogin.autoLogin({
@@ -771,6 +769,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                   error: new Error('SIWE autologin - signedMessage is null')
                 })
               }
+
+              console.log(
+                `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
+              )
 
               dappPromise.resolve({ hash: signedMessage.signature })
               return
