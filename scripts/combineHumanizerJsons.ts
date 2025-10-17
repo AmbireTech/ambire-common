@@ -92,7 +92,7 @@ function integrateAmbireConstants(
   })
 
   // eslint-disable-next-line no-restricted-syntax
-  for (const abi of Object.values(ambireConstants.humanizerInfo.abis)) {
+  for (const [name, abi] of Object.entries(ambireConstants.humanizerInfo.abis)) {
     const iface = new Interface(abi)
     // eslint-disable-next-line no-restricted-syntax
     for (const f of iface.fragments) {
@@ -102,7 +102,8 @@ function integrateAmbireConstants(
       if (type === 'struct') continue
       const selector = id(f.format('sighash')).slice(0, 10)
       const signature = f.format('minimal')
-      initialJson.abis.NO_ABI[selector] = { selector, signature, type }
+      if (!initialJson.abis[name]) initialJson.abis[name] = {}
+      initialJson.abis[name][selector] = { selector, signature, type }
     }
   }
   return initialJson
