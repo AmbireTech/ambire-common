@@ -93,7 +93,11 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     await this.#accounts.initialLoadPromise
 
-    if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
+    if (
+      ['message', 'typedMessage', 'authorization-7702', 'signUserOperations'].includes(
+        messageToSign.content.kind
+      )
+    ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.isInitialized = true
@@ -249,13 +253,18 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
           : { authorization: this.messageToSign.content.message })
       }
-      const isValidSignature = await verifyMessage(verifyMessageParams)
-      if (!this.#isSigningOperationValidAfterAsyncOperation()) return
 
-      if (!isValidSignature) {
-        throw new Error(
-          'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
-        )
+      // TODO<eil>:
+      // do not validate the signUserOperations for the time being
+      if (this.messageToSign.content.kind !== 'signUserOperations') {
+        const isValidSignature = await verifyMessage(verifyMessageParams)
+        if (!this.#isSigningOperationValidAfterAsyncOperation()) return
+
+        if (!isValidSignature) {
+          throw new Error(
+            'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
+          )
+        }
       }
 
       this.signedMessage = {

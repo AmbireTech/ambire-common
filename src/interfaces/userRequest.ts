@@ -7,6 +7,7 @@ import { SignMessageAction } from './actions'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
+import { ChainIdWithUserOp } from './userOperation'
 
 export interface Calls {
   kind: 'calls'
@@ -38,19 +39,31 @@ export interface Authorization {
   message: Hex
 }
 
+export interface SignUserOperations {
+  kind: 'signUserOperations'
+  chainIdWithUserOps: ChainIdWithUserOp[]
+  message: Hex
+}
+
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
   fromActionId: SignMessageAction['id']
   accountAddr: AccountId
   chainId: bigint
-  content: PlainTextMessage | TypedMessage | Authorization
+  content: PlainTextMessage | TypedMessage | Authorization | SignUserOperations
   signature: EIP7702Signature | string | null
 }
 
 export interface SignUserRequest {
   id: string | number
-  action: Calls | PlainTextMessage | TypedMessage | Authorization | { kind: 'benzin' }
+  action:
+    | Calls
+    | PlainTextMessage
+    | TypedMessage
+    | Authorization
+    | SignUserOperations
+    | { kind: 'benzin' }
   session: Session
   meta: {
     isSignAction: true

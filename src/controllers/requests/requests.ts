@@ -16,6 +16,7 @@ import {
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -31,6 +32,7 @@ import {
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
 import { IUiController } from '../../interfaces/ui'
+import { SignUserOperation } from '../../interfaces/userOperation'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -372,7 +374,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } else {
         let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
 
-        if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
+        if (
+          req.action.kind === 'typedMessage' ||
+          req.action.kind === 'message' ||
+          req.action.kind === 'signUserOperations'
+        ) {
           actionType = 'signMessage'
 
           if (this.actions.visibleActionsQueue.find((a) => a.type === 'signMessage')) {
@@ -392,7 +398,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         if (req.action.kind === 'benzin') actionType = 'benzin'
         if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
         if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
-        if (req.action.kind === 'signUserOperations') actionType = 'signMessage'
 
         actionsToAdd.push({
           id,
@@ -783,6 +788,69 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           isSignAction: true,
           accountAddr: msgAddress,
           chainId: network.chainId
+        },
+        dappPromise
+      } as SignUserRequest
+    } else if (kind === 'signUserOperations') {
+      if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
+
+      const chainIdWithUserOps: { chainId: Hex; userOperation: SignUserOperation }[] =
+        request.params
+      if (!chainIdWithUserOps.length)
+        throw ethErrors.rpc.invalidRequest('Invalid format, params is not an array')
+
+      for (let i = 0; i < chainIdWithUserOps.length; i++) {
+        const chainIdWithUserOp = chainIdWithUserOps[i]
+        if (!chainIdWithUserOp.chainId || !chainIdWithUserOp.userOperation) {
+          throw ethErrors.rpc.invalidRequest('No user operations provided to sign')
+        }
+      }
+
+      const userOperations: SignUserOperation[] = chainIdWithUserOps.map(
+        (chainIdWithUserOp) => chainIdWithUserOp.userOperation
+      )
+      const requiredProperties = [
+        'sender',
+        'nonce',
+        'callData',
+        'callGasLimit',
+        'verificationGasLimit',
+        'preVerificationGas',
+        'maxFeePerGas',
+        'maxPriorityFeePerGas'
+      ]
+
+      // validate
+      for (let i = 0; i < userOperations.length; i++) {
+        const userOp: SignUserOperation = userOperations[i]
+        for (let k = 0; k < requiredProperties.length; k++) {
+          const prop = requiredProperties[k]
+          if (!(userOp as any)[prop])
+            throw ethErrors.rpc.invalidRequest(`Invalid user operation property ${prop}`)
+        }
+      }
+
+      // only one sender, the selected account
+      const senders = [...new Set(userOperations.map((userOp) => userOp.sender))]
+      if (
+        senders.length > 1 ||
+        getAddress(senders[0]) !== getAddress(this.#selectedAccount.account.addr)
+      ) {
+        throw ethErrors.rpc.invalidRequest('Sender not unique or not selected account')
+      }
+
+      userRequest = {
+        id: new Date().getTime(),
+        action: {
+          kind: 'signUserOperations',
+          chainIdWithUserOps
+        },
+        session: request.session,
+        meta: {
+          dapp,
+          isSignAction: true,
+          accountAddr: this.#selectedAccount.account.addr,
+          chainId: BigInt(chainIdWithUserOps[0].chainId)
         },
         dappPromise
       } as SignUserRequest

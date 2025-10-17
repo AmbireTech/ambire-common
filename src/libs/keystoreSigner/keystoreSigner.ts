@@ -7,15 +7,14 @@ import {
   isHexString,
   keccak256,
   toBeHex,
-  toNumber,
   TransactionRequest,
   Wallet
 } from 'ethers'
 import { ecdsaSign } from 'secp256k1'
 
 import {
-  signTypedData as signTypedDataWithMetaMaskSigUtil,
-  SignTypedDataVersion
+  SignTypedDataVersion,
+  signTypedData as signTypedDataWithMetaMaskSigUtil
 } from '@metamask/eth-sig-util'
 
 import { EIP7702Auth } from '../../consts/7702'
