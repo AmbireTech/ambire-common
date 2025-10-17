@@ -30,7 +30,7 @@ export function calculateRewardsForSeason(
   // the current balance acts as an additional week snapshot
   // thats why we add it to the list and divide by (passedWeeks + 1)
   const snapshotsAndCur = [...balanceSnapshots, currentBalance]
-  if (!snapshotsAndCur.some((x) => x > mintBalance)) return { apy: 0, walletRewards: 0 }
+  if (!snapshotsAndCur.some((x) => x >= mintBalance)) return { apy: 0, walletRewards: 0 }
 
   const sumOfBalances = snapshotsAndCur.reduce((a, b) => a + b, 0)
   const averageBalance = sumOfBalances / (passedWeeks + 1)
