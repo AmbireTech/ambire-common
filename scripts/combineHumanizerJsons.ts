@@ -51,14 +51,13 @@ function integrateAmbireConstants(
   initialJson: HumanizerMeta,
   ambireConstants: AmbireConstants
 ): HumanizerMeta {
-  Object.entries(ambireConstants.humanizerInfo.tokens).forEach(
-    ([tokenAddr, [symbol, decimals]]) => {
-      if (!initialJson.knownAddresses[tokenAddr]) initialJson.knownAddresses[tokenAddr] = {}
-      if (!initialJson.knownAddresses[tokenAddr].token)
-        initialJson.knownAddresses[tokenAddr].token = { symbol, decimals }
-      initialJson.knownAddresses[tokenAddr].isSC = true
-    }
-  )
+  Object.entries(ambireConstants.humanizerInfo.tokens).forEach(([address, [symbol, decimals]]) => {
+    let addrInfo = initialJson.knownAddresses[address]
+    if (!addrInfo) addrInfo = {}
+    if (!addrInfo.token) addrInfo.token = { symbol, decimals }
+    addrInfo.isSC = true
+    initialJson.knownAddresses[address] = addrInfo
+  })
   Object.entries(ambireConstants.tokenList).forEach(([networkId, tokens]) => {
     const networksChainIdMapping: { [n: string]: number } = {
       ethereum: 1,
@@ -73,13 +72,13 @@ function integrateAmbireConstants(
     const chainId = networksChainIdMapping[networkId]
     if (!chainId) return
     tokens.forEach(({ address, symbol, decimals }) => {
-      if (!initialJson.knownAddresses[address]) initialJson.knownAddresses[address] = {}
-      if (!initialJson.knownAddresses[address].token)
-        initialJson.knownAddresses[address].token = { symbol, decimals }
-      if (!initialJson.knownAddresses[address].chainIds)
-        initialJson.knownAddresses[address].chainIds = []
-      const arr = initialJson.knownAddresses[address].chainIds
-      initialJson.knownAddresses[address].chainIds = [...new Set([...arr, Number(chainId)])]
+      let addrInfo = initialJson.knownAddresses[address]
+      if (!addrInfo) addrInfo = {}
+      if (!addrInfo.token) addrInfo.token = { symbol, decimals }
+      if (!addrInfo.chainIds) addrInfo.chainIds = []
+      const arr = addrInfo.chainIds
+      addrInfo.chainIds = [...new Set([...arr, Number(chainId)])]
+      initialJson.knownAddresses[address] = addrInfo
     })
   })
   Object.entries(ambireConstants.humanizerInfo.names).forEach(([address, name]) => {
@@ -107,14 +106,15 @@ function integrateAmbireConstants(
 function integrateAmbireCena(initialJson: HumanizerMeta, cenaTokens: CenaTokens): HumanizerMeta {
   Object.entries(cenaTokens).forEach(([chainId, tokens]) => {
     Object.entries(tokens).forEach(([address, symbol]) => {
-      if (!initialJson.knownAddresses[address]) initialJson.knownAddresses[address] = {}
-      if (!initialJson.knownAddresses[address].token)
-        initialJson.knownAddresses[address].token = { symbol }
-      if (!initialJson.knownAddresses[address].chainIds)
-        initialJson.knownAddresses[address].chainIds = []
-      const arr = initialJson.knownAddresses[address].chainIds
-      initialJson.knownAddresses[address].chainIds = [...new Set([...arr, Number(chainId)])]
-      initialJson.knownAddresses[address].isSC = true
+      let addrInfo = initialJson.knownAddresses[address]
+      if (!addrInfo) addrInfo = {}
+      if (!addrInfo.token) addrInfo.token = { symbol }
+      if (!addrInfo.chainIds) addrInfo.chainIds = []
+      const arr = addrInfo.chainIds
+      addrInfo.chainIds = [...new Set([...arr, Number(chainId)])]
+      addrInfo.isSC = true
+
+      initialJson.knownAddresses[address] = addrInfo
     })
   })
   return initialJson
@@ -134,13 +134,14 @@ function integrateDappAddrList(
 ): HumanizerMeta {
   Object.entries(dappAddrList).forEach(([chainId, contracts]) => {
     Object.entries(contracts).forEach(([address, { appName }]) => {
-      if (!initialJson.knownAddresses[address]) initialJson.knownAddresses[address] = {}
-      initialJson.knownAddresses[address].name = appName
-      if (!initialJson.knownAddresses[address].chainIds)
-        initialJson.knownAddresses[address].chainIds = []
-      const arr = initialJson.knownAddresses[address].chainIds
-      initialJson.knownAddresses[address].chainIds = [...new Set([...arr, Number(chainId)])]
-      initialJson.knownAddresses[address].isSC = true
+      let addrInfo = initialJson.knownAddresses[address]
+      if (!addrInfo) addrInfo = {}
+      addrInfo.name = appName
+      if (!addrInfo.chainIds) addrInfo.chainIds = []
+      const arr = addrInfo.chainIds
+      addrInfo.chainIds = [...new Set([...arr, Number(chainId)])]
+      addrInfo.isSC = true
+      initialJson.knownAddresses[address] = addrInfo
     })
   })
   return initialJson
@@ -161,9 +162,14 @@ const fetchAmbireCenaTokens = async (): Promise<CenaTokens> => {
   return fetchedAmbireCenaTokens
 }
 const main = async () => {
-  const initialV2HumanizerMeta = await fsPromises
+  let initialV2HumanizerMeta: HumanizerMeta = await fsPromises
     .readFile(humanizerV2ResultPath, 'utf-8')
-    .then(JSON.parse)
+    .then((r: string) => JSON.parse(r || '{}'))
+
+  if (!initialV2HumanizerMeta) initialV2HumanizerMeta = { abis: { NO_ABI: {} }, knownAddresses: {} }
+  if (!initialV2HumanizerMeta.abis) initialV2HumanizerMeta.abis = { NO_ABI: {} }
+  if (!initialV2HumanizerMeta.abis.NO_ABI) initialV2HumanizerMeta.abis.NO_ABI = {}
+  if (!initialV2HumanizerMeta.knownAddresses) initialV2HumanizerMeta.knownAddresses = {}
 
   const fetchedAmbireConstants = await fetchAmbireConstants()
   const fetchedAmbireCenaTokens = await fetchAmbireCenaTokens()
