@@ -18,7 +18,7 @@ import {
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 /* eslint-disable import/no-extraneous-dependencies */
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
@@ -224,7 +224,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             if (directMatch) return true
 
             // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
-            const data = (call as any).data as string | undefined
+            const data = (call as Call).data as string | undefined
             if (!data || typeof data !== 'string' || data.length < 10) return false
 
             // Function selector for transfer(address,uint256)
