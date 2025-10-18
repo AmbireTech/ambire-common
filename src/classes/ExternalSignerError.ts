@@ -1,4 +1,4 @@
-import { ErrorRef } from '../controllers/eventEmitter/eventEmitter'
+import { ErrorRef } from '../interfaces/eventEmitter'
 
 export default class ExternalSignerError extends Error {
   sendCrashReport?: ErrorRef['sendCrashReport']

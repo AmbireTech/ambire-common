@@ -1,5 +1,5 @@
 {
-  "version": "2.76.0",
+  "version": "2.77.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -10,7 +10,8 @@
     "jest": "node runTests.js",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
     "prettier": "prettier --write 'contracts/**/*.sol'",
-    "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix"
+    "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix",
+    "type:check": "tsc --noEmit"
   },
   "dependencies": {
     "@ambire/signature-validator": "^1.5.0",
@@ -50,6 +51,7 @@
     "@borislav.itskov/schnorrkel.js": "2.0.85",
     "@ensdomains/dnsprovejs": "^0.4.1",
     "@jest/globals": "^29.6.1",
+    "@types/chrome": "0.0.212",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.11",
