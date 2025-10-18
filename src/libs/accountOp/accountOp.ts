@@ -75,6 +75,9 @@ export interface AccountOp {
     setDelegation?: boolean
     /** Used to determine if the account op is up-to-date with the latest quote */
     fromQuoteId?: string
+    adjustableAccountOpMode?: {
+      tokenAddress: string
+    }
   }
   flags?: {
     hideActivityBanner?: boolean
