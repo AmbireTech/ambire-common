@@ -60,6 +60,7 @@ export abstract class Bundler {
    * @param network
    */
   protected getProvider(network: Network): RPCProvider {
+    // FIXME: Must get RPC provider from the ProvidersController
     return getRpcProvider([this.getUrl(network)], network.chainId)
   }
 
