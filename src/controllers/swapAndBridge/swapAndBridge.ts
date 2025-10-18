@@ -1,5 +1,4 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -2052,10 +2051,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard: string) {
     return quoteIdGuard && quoteIdGuard !== this.#updateQuoteId
-  }
-
-  async portfolioSimulate(op: AccountOp) {
-    await this.#portfolio.simulateAccountOp(op)
   }
 
   /**
