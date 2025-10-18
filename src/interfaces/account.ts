@@ -23,18 +23,44 @@ export interface Account {
   creation: AccountCreation | null
   preferences: AccountPreferences
   email?: string
-  newlyCreated?: boolean
   newlyAdded?: boolean
   disable7702Popup?: boolean
   disable7702Banner?: boolean
+  // Timestamp when the identity was fetched from the Ambire Relayer, needed to determine
+  // if the account is EOA or Ambire smart account (and set the correct creation, associatedKeys and initialPrivileges)
+  identityFetchedAt?: number
 }
 
 export interface AccountCreation {
   factoryAddr: string
   bytecode: string
   salt: string
+  // Timestamp when the identity was created on the Ambire Relayer
+  identityCreatedAt?: number
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
+}
+
+export interface AmbireSmartAccountIdentityCreateRequest {
+  associatedKeys: [string, string][]
+  creation: {
+    factoryAddr: string
+    salt: string
+    baseIdentityAddr: string
+  }
+  email?: string | undefined
+  addr: Account['addr']
+}
+
+export type AmbireSmartAccountIdentityCreateResponse = {
+  success: boolean
+  body: {
+    identity: string
+    status: {
+      created: boolean
+      reason?: string
+    }
+  }[]
 }
 
 export interface AccountOnchainState {

@@ -1,19 +1,38 @@
 import { getAddress, isAddress } from 'ethers'
 
+import AmbireSmartAccountIdentityCreateError from '../../classes/AmbireSmartAccountIdentityCreateError'
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
+import {
+  SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
+  VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL
+} from '../../consts/intervals'
 import {
   Account,
   AccountOnchainState,
   AccountPreferences,
   AccountStates,
+  AmbireSmartAccountIdentityCreateRequest,
+  AmbireSmartAccountIdentityCreateResponse,
   IAccountsController
 } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { getUniqueAccountsArray } from '../../libs/account/account'
+import {
+  getUniqueAccountsArray,
+  isAmbireV1LinkedAccount,
+  isSmartAccount
+} from '../../libs/account/account'
+import { getIdentity } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
@@ -29,6 +48,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   #providers: IProvidersController
 
   #keystore: IKeystoreController
+
+  #callRelayer: Function
+
+  #smartAccountIdentityCreateInterval: IRecurringTimeout
+
+  #viewOnlyAccountGetIdentityInterval: IRecurringTimeout
 
   accounts: Account[] = []
 
@@ -61,7 +86,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     keystore: IKeystoreController,
     onAddAccounts: (accounts: Account[]) => void,
     updateProviderIsWorking: (chainId: bigint, isWorking: boolean) => void,
-    onAccountStateUpdate: () => void
+    onAccountStateUpdate: () => void,
+    relayerUrl: string,
+    fetch: Fetch
   ) {
     super()
     this.#storage = storage
@@ -71,6 +98,26 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAddAccounts = onAddAccounts
     this.#updateProviderIsWorking = updateProviderIsWorking
     this.#onAccountStateUpdate = onAccountStateUpdate
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+
+    // Getting view-only accounts’ identity is needed but not critical,
+    // so schedule an interval to retry after import, allowing the user
+    // to import the account even if the first Relayer identity fetch fails.
+    this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
+      this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
+      VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL,
+      this.emitError.bind(this)
+    )
+
+    // Creating Ambire smart account identity is needed but not critical, user
+    // is still able to interact and transfer funds with a smart account one.
+    // So schedule an interval to retry after import, allowing the user
+    // to import the account even if the first Relayer identity create call fails.
+    this.#smartAccountIdentityCreateInterval = new RecurringTimeout(
+      this.createSmartAccountIdentitiesIfNeeded.bind(this),
+      SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
+      this.emitError.bind(this)
+    )
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -98,6 +145,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const accounts = await this.#storage.get('accounts', [])
     const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null)
     this.accounts = getUniqueAccountsArray(accounts)
+
+    this.#viewOnlyAccountGetIdentityInterval.start({ runImmediately: true })
+    this.#smartAccountIdentityCreateInterval.start({ runImmediately: true })
 
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
@@ -209,8 +259,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const nextAccounts = [
       ...this.accounts.map((acc) => ({
         ...acc,
-        // reset the `newlyCreated` state for all already added accounts
-        newlyCreated: false,
         // reset the `newlyAdded` state for all accounts added on prev sessions
         newlyAdded: false,
         // Merge the existing and new associated keys for the account (if the
@@ -329,6 +377,140 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   async forceFetchPendingState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
     await this.updateAccountState(addr, 'pending', [chainId])
     return this.accountStates[addr][chainId.toString()]
+  }
+
+  async setViewOnlyAccountIdentitiesIfNeeded(): Promise<void> {
+    const viewOnlyAccountsNeedingIdentityFetch = this.accounts.filter(
+      (a) => !this.#keystore.getAccountKeys(a).length && !a.identityFetchedAt
+    )
+
+    if (!viewOnlyAccountsNeedingIdentityFetch.length)
+      return this.#viewOnlyAccountGetIdentityInterval.stop()
+
+    const accountsToFetchIdentity: Promise<Account>[] = viewOnlyAccountsNeedingIdentityFetch.map(
+      async (a) => {
+        const identityRes = await this.#callRelayer(`/v2/identity/${a.addr}`).catch((err: any) => {
+          // 404 response (if the account is not found) is a valid response, do not throw
+          if (err?.output?.res?.status === 404) return null
+
+          throw err
+        })
+        const { creation, initialPrivileges, associatedKeys } = await getIdentity(
+          a.addr,
+          identityRes
+        )
+
+        const now = Date.now()
+        return {
+          ...a,
+          identityFetchedAt: now,
+          associatedKeys,
+          initialPrivileges,
+          creation
+        }
+      }
+    )
+
+    try {
+      const accountsWithIdentities = await Promise.all(accountsToFetchIdentity)
+
+      this.accounts = this.accounts.map((a) => {
+        const accountsWithIdentityRef = accountsWithIdentities.find((f) => f.addr === a.addr)
+        return accountsWithIdentityRef || a
+      })
+
+      this.emitUpdate()
+      await this.#storage.set('accounts', this.accounts)
+
+      this.#viewOnlyAccountGetIdentityInterval.stop()
+    } catch {
+      // Fail silently, it's not a fatal error and the retry mechanism kicks-in anyways
+      this.#viewOnlyAccountGetIdentityInterval.start()
+    }
+  }
+
+  /**
+   * Creates identity for smart accounts on the Relayer and updates the accounts
+   * with the identityCreatedAt timestamp. Handles retry mechanism for failed requests.
+   */
+  async createSmartAccountIdentitiesIfNeeded(): Promise<void> {
+    const smartAccountsNeedingIdentityCreate = this.accounts.filter(
+      (a) =>
+        isSmartAccount(a) &&
+        !isAmbireV1LinkedAccount(a.creation?.factoryAddr) &&
+        this.#keystore.getAccountKeys(a).length &&
+        !a.creation?.identityCreatedAt
+    )
+
+    if (!smartAccountsNeedingIdentityCreate.length)
+      return this.#smartAccountIdentityCreateInterval.stop()
+
+    const identityRequests: AmbireSmartAccountIdentityCreateRequest[] =
+      smartAccountsNeedingIdentityCreate.map((account) => ({
+        addr: account.addr,
+        ...(account.email ? { email: account.email } : {}),
+        associatedKeys: account.initialPrivileges,
+        creation: {
+          factoryAddr: account.creation!.factoryAddr,
+          salt: account.creation!.salt,
+          // TODO: retrieve baseIdentityAddr from the bytecode instead
+          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+          // baseIdentityAddr: await this.#providers.providers['1'].getCode(account.addr)
+        }
+      }))
+
+    try {
+      const identityRes = (await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+        accounts: identityRequests
+      })) as AmbireSmartAccountIdentityCreateResponse
+
+      if (!identityRes.success || !identityRes.body) throw new Error(JSON.stringify(identityRes))
+
+      // This treats every response entry as a successful identity creation.
+      // There is a boolean for `r.status.created`, but it indicates if the
+      // identity was just created (new account), where here we just want to
+      // make sure account identity exists, no matter if it was created now or previously
+      // Update the accounts that just had their identities created
+      const identityExists = identityRes.body.map((r) => r.identity)
+      const now = Date.now()
+      this.accounts = this.accounts.map((account) => {
+        if (!identityExists.includes(account.addr)) return account
+
+        // should never happen
+        if (!account.creation) {
+          const message = `accounts: Identity created for ${account.addr} which lacks creation data.`
+          const error = new Error(message)
+          this.emitError({ message, level: 'silent', sendCrashReport: true, error })
+
+          return account
+        }
+
+        return { ...account, creation: { ...account.creation, identityCreatedAt: now } }
+      })
+
+      this.emitUpdate()
+      await this.#storage.set('accounts', this.accounts)
+
+      const identityRequestsFailedToCreate = identityRequests.filter(
+        (req) => !identityExists.includes(req.addr)
+      )
+      if (identityRequestsFailedToCreate.length)
+        throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
+
+      this.#smartAccountIdentityCreateInterval.stop()
+    } catch (error: any) {
+      this.#smartAccountIdentityCreateInterval.start()
+
+      const identitiesFailedToCreate =
+        error instanceof AmbireSmartAccountIdentityCreateError
+          ? error.identityRequests.map((req) => req.addr) // only some failed
+          : identityRequests.map((req) => req.addr) // all failed
+
+      const message = `accounts: Failed to create smart account identities for: ${identitiesFailedToCreate.join(
+        ', '
+      )}`
+      this.emitError({ message, level: 'silent', sendCrashReport: true, error })
+    }
   }
 
   toJSON() {

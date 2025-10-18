@@ -175,7 +175,9 @@ describe('Actions Controller', () => {
       new KeystoreController('default', storageCtrl, {}, uiCtrl),
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,

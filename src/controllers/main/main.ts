@@ -285,7 +285,9 @@ export class MainController extends EventEmitter implements IMainController {
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers),
-      this.#updateIsOffline.bind(this)
+      this.#updateIsOffline.bind(this),
+      relayerUrl,
+      this.fetch
     )
     this.selectedAccount = new SelectedAccountController({
       storage: this.storage,
@@ -682,6 +684,10 @@ export class MainController extends EventEmitter implements IMainController {
     // skips the parallel one, if one is requested).
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+
+    // Needed but not critical, postponed to be last with retry mechanism if it
+    // fails, see Accounts controller - #smartAccountIdentityCreateInterval
+    await this.accounts.createSmartAccountIdentitiesIfNeeded()
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {

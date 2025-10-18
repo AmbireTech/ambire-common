@@ -16,7 +16,6 @@ import {
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
-import { UiController } from '../ui/ui'
 import { Account } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { IProvidersController } from '../../interfaces/provider'
@@ -29,6 +28,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { AccountPickerController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountPicker'
 
 const providers = Object.fromEntries(
@@ -101,7 +101,9 @@ describe('AccountPicker', () => {
     keystoreController,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   beforeEach(() => {
     accountPicker = new AccountPickerController({

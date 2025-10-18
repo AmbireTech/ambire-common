@@ -93,7 +93,9 @@ describe('AddressBookController', () => {
     new KeystoreController('default', storageCtrl, {}, uiCtrl),
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,

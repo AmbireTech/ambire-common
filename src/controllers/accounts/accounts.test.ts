@@ -85,7 +85,9 @@ describe('AccountsController', () => {
       new KeystoreController('default', storageCtrl, {}, uiCtrl),
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
 
     expect(accountsCtrl).toBeDefined()
