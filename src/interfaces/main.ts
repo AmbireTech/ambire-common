@@ -16,7 +16,7 @@ export const STATUS_WRAPPED_METHODS = {
 } as const
 
 type CustomStatuses = {
-  signAndBroadcastAccountOp: 'INITIAL' | 'SIGNING' | 'BROADCASTING' | 'SUCCESS' | 'ERROR'
+  signAndBroadcastAccountOp: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR'
 }
 
 export type StatusesWithCustom = Statuses<keyof typeof STATUS_WRAPPED_METHODS> & CustomStatuses
