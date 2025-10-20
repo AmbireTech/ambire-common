@@ -70,9 +70,10 @@ export const isSuspectedRegardsKnownAddresses = (
   if (knownTokensWithSameSymbol.length === 0) return false
 
   const matchedAddress = knownTokensWithSameSymbol.find((t: any) => {
+    const checksumKnownAddr = getAddress(t.address)
     const hasChainIds = Array.isArray(t.chainIds) && t.chainIds.length > 0
     const chainIdMatch = hasChainIds ? t.chainIds.includes(numericChainId) : false
-    const addressMatch = t.address === checksumTokenAddr
+    const addressMatch = checksumKnownAddr === checksumTokenAddr
 
     // A known token is considered a match if:
     //    - the address matches, and
