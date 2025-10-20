@@ -218,6 +218,11 @@ describe('swapAndBridge lib', () => {
       const result = calculateAmountWarnings(selectedRoute, '100', '0.05', 18)
 
       expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.possibleSlippage).toBeGreaterThan(81.8)
+        expect(result.minInUsd).toBe(20)
+      }
     })
 
     test('should not return slippage warning when difference between quote and min amount is <= $50', () => {
