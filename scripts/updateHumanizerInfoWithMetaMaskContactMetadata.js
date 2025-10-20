@@ -34,6 +34,7 @@ fetch(`${githubSourceBaseUrl}/contract-map.json`)
         (info.logo && typeof info.logo !== 'string')
       )
         throw new Error('obj keys is not addresses')
+      // @TODO addresses should be checksummed, when rewriting this script change that
       const alreadyPresentData = humanizerInfo.knownAddresses[address.toLowerCase()]
       humanizerInfo.knownAddresses[address.toLowerCase()] = {
         ...alreadyPresentData,

@@ -469,7 +469,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
     this.checkIsRecipientAddressUnknown()
