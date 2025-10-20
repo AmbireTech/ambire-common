@@ -13,6 +13,7 @@ import {
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
+  ProviderQuoteParams,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -23,7 +24,6 @@ import {
   SwapAndBridgeUserTx,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
   attemptToSortTokensByMarketCap,
@@ -437,24 +437,12 @@ export class LiFiAPI implements SwapProvider {
     fromAmount,
     userAddress,
     sort,
+    isWrapOrUnwrap,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isOG,
     accountNativeBalance,
     nativeSymbol
-  }: {
-    fromAsset: TokenResult | null
-    fromChainId: number
-    fromTokenAddress: string
-    toAsset: SwapAndBridgeToToken | null
-    toChainId: number
-    toTokenAddress: string
-    fromAmount: bigint
-    userAddress: string
-    sort: 'time' | 'output'
-    isOG: boolean
-    accountNativeBalance: bigint
-    nativeSymbol: string
-  }): Promise<SwapAndBridgeQuote> {
+  }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
         'Quote requested, but missing required params. Error details: <from token details are missing>'
@@ -509,7 +497,8 @@ export class LiFiAPI implements SwapProvider {
       }
     }
 
-    const shouldRemoveConvenienceFee = isOG || isNoFeeToken(fromChainId, fromTokenAddress)
+    const shouldRemoveConvenienceFee =
+      isOG || isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
