@@ -356,7 +356,11 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       ui: this.ui
     })
-    this.dapps = new DappsController(this.storage)
+    this.dapps = new DappsController({
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks
+    })
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,

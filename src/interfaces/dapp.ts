@@ -11,12 +11,37 @@ export interface Dapp {
   description: string
   url: string
   icon: string | null
+  category: string | null
+  tvl: number | null
+  twitter: string | null
+  geckoId: string | null
+  networkNames: string[]
   isConnected: boolean
+  isFeatured: boolean
   chainId: number
   favorite: boolean
   blacklisted?: boolean
   grantedPermissionId?: string
   grantedPermissionAt?: number
+}
+
+export interface DefiLlamaProtocol {
+  id: string
+  name: string
+  symbol: string
+  description: string
+  logo: string
+  gecko_id: string | null
+  url: string
+  address: string | null
+  twitter: string
+  category: string
+  chains: string[]
+  tvl: number | null
+  chainTvls: { [key: string]: number }
+  change_1d: number | null
+  change_1h: number | null
+  change_7d: number | null
 }
 
 export interface DappProviderRequest {
