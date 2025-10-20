@@ -58,7 +58,7 @@ export interface Message {
   accountAddr: AccountId
   chainId: bigint
   content: PlainTextMessage | TypedMessage | Authorization | SignUserOperations
-  signature: EIP7702Signature | EILSignature | string | null
+  signature: EIP7702Signature | EILSignature[] | string | null
 }
 
 export interface SignUserRequest {

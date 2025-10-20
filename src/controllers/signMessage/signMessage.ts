@@ -1,7 +1,10 @@
+import { AbiCoder, concat } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
+import { AMBIRE_ACCOUNT_OMNI } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import {
   ExternalSignerControllers,
@@ -14,14 +17,17 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import {
+  get7702Sig,
   getAppFormatted,
+  getAuthorizationHash,
   getEIP712Signature,
   getPlainTextSignature,
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
+import { get7702SigV } from '../../libs/signMessage/utils'
 import { isPlainTextMessage } from '../../libs/transfer/userRequest'
-import { getMerkleRoot } from '../../libs/userOperation/merkleProofs'
+import { getMerkleProof, getMerkleRoot } from '../../libs/userOperation/merkleProofs'
 import { getUserOpHash } from '../../libs/userOperation/userOperation'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
@@ -223,11 +229,50 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           if (!this.#signer.plainSign)
             throw new Error('signer does not support signing multiple user operations')
 
+          const userOps = []
           const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
             (chainIdWithUserOp) =>
               getUserOpHash(chainIdWithUserOp.userOperation, BigInt(chainIdWithUserOp.chainId))
           )
-          signature = this.#signer.plainSign(getMerkleRoot(0, 0, userOpHashes))
+          const merkleRoot = getMerkleRoot(0, 0, userOpHashes)
+          const merkleSig = this.#signer.plainSign(merkleRoot)
+          const merkleSignature = concat([merkleSig.r, merkleSig.s, get7702SigV(merkleSig)]) as Hex
+          const coder = new AbiCoder()
+          for (let i = 0; i < this.messageToSign.content.chainIdWithUserOps.length; i++) {
+            const chainIdWithUserOp = this.messageToSign.content.chainIdWithUserOps[i]
+            const chainId = BigInt(chainIdWithUserOp.chainId)
+            // <TODO<eil>: if account state missing, we dead
+            const accountState = this.#accounts.accountStates[account.addr][chainId.toString()]
+
+            // check eip stuff
+            let eip712Sig
+            // <TODO<eil>: if signed in a prev userOp, don't do again
+            const hasDelegatedToOmni =
+              accountState.isEOA &&
+              accountState.delegatedContract &&
+              accountState.delegatedContract.toLowerCase() === AMBIRE_ACCOUNT_OMNI.toLowerCase()
+            if (!hasDelegatedToOmni) {
+              eip712Sig = this.#signer.sign7702(
+                getAuthorizationHash(network.chainId, AMBIRE_ACCOUNT_OMNI, accountState.eoaNonce!)
+              )
+            }
+
+            const userOp = chainIdWithUserOp.userOperation
+            const userOpHash = getUserOpHash(userOp, chainId)
+            const fullSigWithoutWrapping = coder.encode(
+              ['uint48', 'uint48', 'bytes32', 'bytes32[]', 'bytes'],
+              [0, 0, merkleRoot, getMerkleProof(0, 0, userOpHash, userOpHashes), merkleSignature]
+            ) as Hex
+            userOp.signature = `${fullSigWithoutWrapping}06`
+            userOp.eip7702Auth = eip712Sig
+              ? get7702Sig(chainId, accountState.eoaNonce!, AMBIRE_ACCOUNT_OMNI, eip712Sig)
+              : undefined
+            userOps.push({
+              chainId: BigInt(chainIdWithUserOp.chainId),
+              userOp
+            })
+          }
+          signature = userOps
         }
       } catch (error: any) {
         throw new ExternalSignerError(
@@ -245,30 +290,28 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
 
-      const verifyMessageParams = {
-        provider: this.#providers.providers[network?.chainId.toString() || '1'],
-        // the signer is always the account even if the actual
-        // signature is from a key that has privs to the account
-        signer: this.messageToSign.accountAddr,
-        signature: getVerifyMessageSignature(signature, account, accountState),
-        // eslint-disable-next-line no-nested-ternary
-        ...(isPlainTextMessage(this.messageToSign.content)
-          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
-          : this.messageToSign.content.kind === 'typedMessage'
-          ? {
-              typedData: {
-                domain: this.messageToSign.content.domain,
-                types: this.messageToSign.content.types,
-                message: this.messageToSign.content.message,
-                primaryType: this.messageToSign.content.primaryType
-              }
-            }
-          : { authorization: this.messageToSign.content.message })
-      }
-
-      // TODO<eil>:
-      // do not validate the signUserOperations for the time being
       if (this.messageToSign.content.kind !== 'signUserOperations') {
+        const verifyMessageParams = {
+          provider: this.#providers.providers[network?.chainId.toString() || '1'],
+          // the signer is always the account even if the actual
+          // signature is from a key that has privs to the account
+          signer: this.messageToSign.accountAddr,
+          signature: getVerifyMessageSignature(signature, account, accountState),
+          // eslint-disable-next-line no-nested-ternary
+          ...(isPlainTextMessage(this.messageToSign.content)
+            ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
+            : this.messageToSign.content.kind === 'typedMessage'
+            ? {
+                typedData: {
+                  domain: this.messageToSign.content.domain,
+                  types: this.messageToSign.content.types,
+                  message: this.messageToSign.content.message,
+                  primaryType: this.messageToSign.content.primaryType
+                }
+              }
+            : { authorization: this.messageToSign.content.message })
+        }
+
         const isValidSignature = await verifyMessage(verifyMessageParams)
         if (!this.#isSigningOperationValidAfterAsyncOperation()) return
 
@@ -285,12 +328,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         chainId: this.messageToSign.chainId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
-        signature: getAppFormatted(
-          signature,
-          this.messageToSign.content.kind,
-          account,
-          accountState
-        ),
+        signature: getAppFormatted(signature, account, accountState),
         dapp: this.dapp
       }
 

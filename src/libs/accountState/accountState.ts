@@ -2,7 +2,7 @@ import { concat, Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import {
-  EIP_7702_AMBIRE_ACCOUNT,
+  AMBIRE_ACCOUNT_OMNI,
   EIP_7702_METAMASK,
   ENTRY_POINT_MARKER,
   ERC_4337_ENTRYPOINT,
@@ -90,13 +90,14 @@ export async function getAccountState(
         ? `0x${eoaCodes[account.addr].substring(8)}`
         : null
     const hasAmbireDelegation =
-      eoaCodes[account.addr] === concat(['0xef0100', getContractImplementation(network.chainId)])
+      eoaCodes[account.addr] === concat(['0xef0100', getContractImplementation(network.chainId)]) ||
+      eoaCodes[account.addr] === concat(['0xef0100', AMBIRE_ACCOUNT_OMNI])
     const isSmarterEoa = accResult.isEOA && hasAmbireDelegation
 
     let delegatedContractName = null
 
     if (delegatedContract) {
-      if (delegatedContract.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()) {
+      if (hasAmbireDelegation) {
         delegatedContractName = 'AMBIRE'
       } else if (delegatedContract.toLowerCase() === EIP_7702_METAMASK.toLowerCase()) {
         delegatedContractName = 'METAMASK'

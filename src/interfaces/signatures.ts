@@ -1,4 +1,5 @@
 import { Hex } from './hex'
+import { SignUserOperation } from './userOperation'
 
 export interface EIP7702Signature {
   yParity: Hex
@@ -13,7 +14,6 @@ export interface PlainSignature {
 }
 
 export interface EILSignature {
-  initCode?: string
-  eip7702Auth?: string
-  signature: string
+  chainId: bigint
+  userOp: SignUserOperation
 }

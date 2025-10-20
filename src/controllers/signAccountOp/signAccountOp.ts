@@ -17,7 +17,7 @@ import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_OMNI, EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 /* eslint-disable no-restricted-syntax */
 import {
@@ -777,6 +777,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.delegatedContract &&
       this.delegatedContract !== ZeroAddress &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== AMBIRE_ACCOUNT_OMNI.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
       (broadcastOption === BROADCAST_OPTIONS.byBundler ||
         broadcastOption === BROADCAST_OPTIONS.delegation)
