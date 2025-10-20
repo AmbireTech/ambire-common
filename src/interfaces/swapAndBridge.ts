@@ -463,6 +463,22 @@ export interface BungeeBuildTxnResponse {
   txData: BungeeTxData
 }
 
+export interface ProviderQuoteParams {
+  fromAsset: TokenResult | null
+  fromChainId: number
+  fromTokenAddress: string
+  toAsset: SwapAndBridgeToToken | null
+  toChainId: number
+  toTokenAddress: string
+  fromAmount: bigint
+  userAddress: string
+  sort: 'time' | 'output'
+  isOG: boolean
+  isWrapOrUnwrap: boolean
+  accountNativeBalance: bigint
+  nativeSymbol: string
+}
+
 export interface SwapProvider {
   id: string
   name: string
@@ -498,20 +514,7 @@ export interface SwapProvider {
     isOG,
     accountNativeBalance,
     nativeSymbol
-  }: {
-    fromAsset: TokenResult | null
-    fromChainId: number
-    fromTokenAddress: string
-    toAsset: SwapAndBridgeToToken | null
-    toChainId: number
-    toTokenAddress: string
-    fromAmount: bigint
-    userAddress: string
-    sort: 'time' | 'output'
-    isOG: boolean
-    accountNativeBalance: bigint
-    nativeSymbol: string
-  }): Promise<SwapAndBridgeQuote>
+  }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>
   getRouteStatus({
     txHash,
     fromChainId,
