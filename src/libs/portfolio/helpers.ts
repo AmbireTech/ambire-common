@@ -44,28 +44,55 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
 
 const nonLatinSymbol = (str: string): boolean => /[^\x20-\x7E]/.test(str)
 
-export const isSuspectedRegardsKnownAddresses = (tokenAddr: string, tokenName: string) => {
-  if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenName) return false
+export const isSuspectedRegardsKnownAddresses = (
+  tokenAddr: string,
+  tokenSymbol: string,
+  chainId: bigint
+): boolean => {
+  if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenSymbol) return false
 
-  const tokenWithKnownNames = Object.values(humanizerInfo.knownAddresses).filter((t) => {
-    if (!t.name || !t.address) return false
+  const normalizedSymbol = tokenSymbol.toLowerCase()
+  const numericChainId = Number(chainId)
 
-    return tokenName.toLowerCase() === t.name.toLowerCase()
+  let checksumTokenAddr: string
+
+  try {
+    checksumTokenAddr = getAddress(tokenAddr)
+  } catch {
+    // Invalid address format → treat as suspicious
+    return true
+  }
+
+  const knownTokensWithSameSymbol = Object.values(humanizerInfo.knownAddresses).filter(
+    (t: any) => t.token?.symbol && t.address && t.token.symbol.toLowerCase() === normalizedSymbol
+  )
+
+  if (knownTokensWithSameSymbol.length === 0) return false
+
+  const matchedAddress = knownTokensWithSameSymbol.find((t: any) => {
+    const hasChainIds = Array.isArray(t.chainIds) && t.chainIds.length > 0
+    const chainIdMatch = hasChainIds ? t.chainIds.includes(numericChainId) : false
+    const addressMatch = t.address === checksumTokenAddr
+
+    // A known token is considered a match if:
+    //    - the address matches, and
+    //    - either there’s no chain restriction or the chain ID matches
+    return addressMatch && (!hasChainIds || chainIdMatch)
   })
 
-  const matchedAddress = tokenWithKnownNames.length
-    ? tokenWithKnownNames.find((t) => t.address.toLowerCase() === tokenAddr.toLowerCase())
-    : undefined
-
-  return tokenWithKnownNames.length > 0 && !matchedAddress
+  // Suspicious if: same symbol exists, but no known entry matches this address (and chain)
+  return knownTokensWithSameSymbol.length > 0 && !matchedAddress
 }
 
 const isSuspectedToken = (
   address: TokenResult['address'],
   symbol: TokenResult['symbol'],
-  name: TokenResult['name']
+  name: TokenResult['name'],
+  chainId: TokenResult['chainId']
 ) =>
-  nonLatinSymbol(symbol) || nonLatinSymbol(name) || isSuspectedRegardsKnownAddresses(address, name)
+  nonLatinSymbol(symbol) ||
+  nonLatinSymbol(name) ||
+  isSuspectedRegardsKnownAddresses(address, symbol, chainId)
 
 export function getFlags(
   networkData: any,
@@ -97,7 +124,9 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
-  const isSuspected = isSuspectedToken(address, symbol, name)
+  const isSuspected = !isRewardsOrGasTank
+    ? isSuspectedToken(address, symbol, name, BigInt(chainId))
+    : undefined
 
   return {
     onGasTank,
