@@ -1,5 +1,6 @@
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
 import {
+  ProviderQuoteParams,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
@@ -8,7 +9,6 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { TokenResult } from '../../libs/portfolio'
 import wait from '../../utils/wait'
 
 export class SwapProviderParallelExecutor {
@@ -66,8 +66,10 @@ export class SwapProviderParallelExecutor {
     const remainingTasks = this.#providers
       .filter((p) => !results.some((r) => r.provider === p))
       .map((provider) => {
-        const originalIdx = this.#providers.indexOf(provider);
-        return tasks[originalIdx].then((res) => res).catch((err) => ({ provider, result: err as Error }));
+        const originalIdx = this.#providers.indexOf(provider)
+        return tasks[originalIdx]
+          .then((res) => res)
+          .catch((err) => ({ provider, result: err as Error }))
       })
 
     // Figure out how long we've already waited
@@ -193,22 +195,9 @@ export class SwapProviderParallelExecutor {
     sort,
     isOG,
     accountNativeBalance,
-    nativeSymbol
-  }: {
-    fromAsset: TokenResult | null
-    fromChainId: number
-    fromTokenAddress: string
-    toAsset: SwapAndBridgeToToken | null
-    toChainId: number
-    toTokenAddress: string
-    fromAmount: bigint
-    userAddress: string
-    isSmartAccount: boolean
-    sort: 'time' | 'output'
-    isOG: boolean
-    accountNativeBalance: bigint
-    nativeSymbol: string
-  }): Promise<SwapAndBridgeQuote> {
+    nativeSymbol,
+    isWrapOrUnwrap
+  }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>((provider: SwapProvider) =>
       provider
         .quote({
@@ -223,7 +212,8 @@ export class SwapProviderParallelExecutor {
           sort,
           isOG,
           accountNativeBalance,
-          nativeSymbol
+          nativeSymbol,
+          isWrapOrUnwrap
         })
         .catch((e) => e)
     )
