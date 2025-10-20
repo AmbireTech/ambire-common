@@ -1265,6 +1265,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return token
   }
 
+  #getIsWrapOrUnwrap(): boolean {
+    const fromSelectedToken = this.fromSelectedToken
+    const toSelectedToken = this.toSelectedToken
+
+    if (!toSelectedToken || !fromSelectedToken) return false
+
+    const isSameChain = this.fromChainId === this.toChainId
+
+    if (!isSameChain) return false
+
+    const fromAddr = fromSelectedToken.address.toLowerCase()
+    const toAddr = toSelectedToken.address.toLowerCase()
+
+    if (fromAddr !== ZeroAddress && toAddr !== ZeroAddress) return false
+
+    const networkData = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
+
+    if (!networkData) return false
+
+    const nativeWrappedAddress = networkData.wrappedAddr?.toLowerCase()
+    const isWrap = fromAddr === ZeroAddress && toAddr === nativeWrappedAddress
+    const isUnwrap = fromAddr === nativeWrappedAddress && toAddr === ZeroAddress
+
+    return isWrap || isUnwrap
+  }
+
   #accountNativeBalance(amount: bigint): bigint {
     if (!this.#selectedAccount.account || !this.fromChainId) return 0n
 
@@ -1493,6 +1519,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       try {
         const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
+        const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
+
         const quoteResult = await this.#serviceProviderAPI.quote({
           fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
@@ -1503,6 +1531,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
           sort: this.routePriority,
+          isWrapOrUnwrap,
           isOG: this.#invite.isOG,
           accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
