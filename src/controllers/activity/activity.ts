@@ -215,9 +215,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
       networks.forEach((network) => {
         if (!this.#accountsOps[account][network]) return
         this.#accountsOps[account][network].forEach((op) => {
-            const sentToTarget = op.calls.some(
+          const sentToTarget = op.calls.some(
             (call) => call.to?.toLowerCase() === toAddress.toLowerCase()
-            )
+          )
           if (sentToTarget) {
             found = true
             if (!lastTimestamp || op.timestamp > lastTimestamp) {
