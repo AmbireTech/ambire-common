@@ -32,7 +32,10 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import {
+  calculateAndSetProjectedRewards,
+  calculateSelectedAccountPortfolio
+} from '../../libs/selectedAccount/selectedAccount'
 import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -324,6 +327,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult,
       this.#isPortfolioLoadingFromScratch
     )
+
+    // Calculate and add projected rewards token
+    const projectedRewardsToken = calculateAndSetProjectedRewards(
+      latestStateSelectedAccount?.projectedRewards,
+      newSelectedAccountPortfolio.balancePerNetwork
+    )
+
+    if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {

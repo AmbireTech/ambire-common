@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import { STK_WALLET } from '../../consts/addresses'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks,
@@ -8,6 +9,7 @@ import {
   SelectedAccountPortfolioTokenResult
 } from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
+import { calculateRewardsForSeason } from '../../utils/rewards'
 import {
   AccountState as DefiPositionsAccountState,
   AssetType,
@@ -19,6 +21,7 @@ import {
   CollectionResult,
   NetworkSimulatedAccountOp,
   NetworkState,
+  PortfolioProjectedRewardsResult,
   TokenResult
 } from '../portfolio/interfaces'
 
@@ -629,5 +632,77 @@ export function calculateSelectedAccountPortfolio(
   return {
     selectedAccountPortfolio,
     selectedAccountPortfolioByNetworks
+  }
+}
+
+export const calculateAndSetProjectedRewards = (
+  projectedRewards: NetworkState | undefined,
+  latestBalances: { [chainId: string]: number }
+): TokenResult | undefined => {
+  if (!projectedRewards) return
+
+  const result = projectedRewards?.result as PortfolioProjectedRewardsResult
+  const {
+    currentSeasonSnapshots,
+    supportedChainIds,
+    numberOfWeeksSinceStartOfSeason,
+    totalRewardsPool,
+    totalWeightNonUser,
+    userLevel,
+    walletPrice,
+    minLvl,
+    minBalance
+  } = result
+
+  const currentTotalBalanceOnSupportedChains = supportedChainIds
+    .map((chainId: number) => latestBalances[chainId] || 0)
+    .reduce((a: number, b: number) => a + b, 0)
+
+  const parsedSnapshotsBalance = currentSeasonSnapshots.map(
+    (snapshot: { week: number; balance: number }) => snapshot.balance
+  )
+
+  // If the user never participated in Ambire Rewards, we assume they are at level 0.
+  // If they have participated, but are below the minimum level, we assume they are at the minimum level because we need to calculate the APY.
+  // For that purpose, we assume they are at the minimum level with minimum balance.
+  // This means that their projected rewards will be 0, but we will be able to calculate the APY.
+  const level = userLevel < minLvl ? minLvl : userLevel
+  const currentBalance =
+    currentTotalBalanceOnSupportedChains < minBalance
+      ? minBalance
+      : currentTotalBalanceOnSupportedChains
+
+  const projectedAmount = calculateRewardsForSeason(
+    level,
+    parsedSnapshotsBalance,
+    currentBalance,
+    numberOfWeeksSinceStartOfSeason,
+    totalWeightNonUser,
+    walletPrice,
+    totalRewardsPool,
+    minLvl,
+    minBalance
+  )
+
+  // If the user is below the minimum level, they get 0 projected rewards
+  const projectedAmountFormatted =
+    userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+
+  // TODO: return APY as well [projectedAmount.apy]
+
+  return {
+    chainId: BigInt(1),
+    amount: BigInt(projectedAmountFormatted || 0),
+    address: STK_WALLET,
+    symbol: 'stkWALLET',
+    name: 'Staked $WALLET',
+    decimals: 18,
+    priceIn: [{ baseCurrency: 'usd', price: walletPrice }],
+    flags: {
+      onGasTank: false,
+      rewardsType: 'wallet-projected-rewards' as const,
+      canTopUpGasTank: false,
+      isFeeToken: false
+    }
   }
 }

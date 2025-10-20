@@ -581,18 +581,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       (rewardsTokens.length !== 0 && rewardsTokens.every((t) => t.amount === BigInt(0)))
     ) {
       accountState.projectedRewards = {
-        isReady: false,
-        isLoading: true,
+        isReady: true,
+        isLoading: false,
         errors: [],
         result: {
           ...res.data.rewardsProjectionData
         }
       }
-
-      accountState.projectedRewards = PortfolioController.#calculateAndSetProjectedRewards(
-        accountState,
-        start
-      )
     }
 
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
@@ -855,96 +850,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
-  // Calculates and sets the projected rewards in the account state.
-  static #calculateAndSetProjectedRewards(
-    accountState: AccountState,
-    start: number
-  ): AccountState['projectedRewards'] {
-    const result = accountState.projectedRewards?.result as PortfolioProjectedRewardsResult
-
-    if (!result) return accountState.projectedRewards
-
-    const {
-      currentSeasonSnapshots,
-      supportedChainIds,
-      numberOfWeeksSinceStartOfSeason,
-      totalRewardsPool,
-      totalWeightNonUser,
-      userLevel,
-      walletPrice,
-      minLvl,
-      minBalance
-    } = result
-
-    const currentTotalBalanceOnSupportedChains = supportedChainIds
-      .map((chainId: number) => accountState[chainId]?.result?.total.usd || 0)
-      .reduce((a: number, b: number) => a + b, 0)
-
-    const parsedSnapshotsBalance = currentSeasonSnapshots.map(
-      (snapshot: { week: number; balance: number }) => snapshot.balance
-    )
-
-    // If the user never participated in Ambire Rewards, we assume they are at level 0.
-    // If they have participated, but are below the minimum level, we assume they are at the minimum level because we need to calculate the APY.
-    // For that purpose, we assume they are at the minimum level with minimum balance.
-    // This means that their projected rewards will be 0, but we will be able to calculate the APY.
-    const level = userLevel < minLvl ? minLvl : userLevel
-    const currentBalance =
-      currentTotalBalanceOnSupportedChains < minBalance
-        ? minBalance
-        : currentTotalBalanceOnSupportedChains
-
-    const projectedAmount = calculateRewardsForSeason(
-      level,
-      parsedSnapshotsBalance,
-      currentBalance,
-      numberOfWeeksSinceStartOfSeason,
-      totalWeightNonUser,
-      walletPrice,
-      totalRewardsPool,
-      minLvl,
-      minBalance
-    )
-
-    // If the user is below the minimum level, they get 0 projected rewards
-    const projectedAmountFormatted =
-      userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
-
-    const projectedRewards = [
-      {
-        chainId: BigInt(1),
-        amount: BigInt(projectedAmountFormatted || 0),
-        latestAmount: BigInt(projectedAmountFormatted || 0),
-        pendingAmount: BigInt(projectedAmountFormatted || 0),
-        address: STK_WALLET,
-        symbol: 'stkWALLET',
-        name: 'Staked $WALLET',
-        decimals: 18,
-        priceIn: [{ baseCurrency: 'usd', price: walletPrice }],
-        flags: {
-          onGasTank: false,
-          rewardsType: 'wallet-projected-rewards' as const,
-          canTopUpGasTank: false,
-          isFeeToken: false
-        }
-      }
-    ]
-
-    return {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      result: {
-        ...result,
-        lastSuccessfulUpdate: Date.now(),
-        updateStarted: start,
-        tokens: projectedRewards,
-        total: getTotal(projectedRewards),
-        apy: projectedAmount.apy
-      }
-    }
-  }
-
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
@@ -965,7 +870,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     },
     opts?: { maxDataAgeMs?: number; isManualUpdate?: boolean }
   ) {
-    const start = Date.now()
     const { maxDataAgeMs: paramsMaxDataAgeMs = 0, isManualUpdate } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1103,14 +1007,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         await this.#queue[accountId][network.chainId.toString()]
       })
     ])
-
-    // Calculates the projected rewards based on the latest portfolio state.
-    // It will be called every time the user selects an account, so we don't need to call it
-    // from anywhere else.
-    accountState.projectedRewards = PortfolioController.#calculateAndSetProjectedRewards(
-      accountState,
-      start
-    )
 
     await this.#updateNetworksWithAssets(accountId, accountState)
     this.emitUpdate()
