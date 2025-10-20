@@ -6,6 +6,7 @@ import {
   BungeeBuildTxnResponse,
   BungeeExchangeQuoteResponse,
   BungeeRouteStatus,
+  ProviderQuoteParams,
   SocketAPIResponse,
   SocketAPISupportedChain,
   SocketAPIToken,
@@ -16,10 +17,10 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { TokenResult } from '../../libs/portfolio'
 import {
   addCustomTokensIfNeeded,
-  convertNullAddressToZeroAddressIfNeeded
+  convertNullAddressToZeroAddressIfNeeded,
+  isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
@@ -255,22 +256,10 @@ export class SocketAPI implements SwapProvider {
     fromAmount,
     userAddress,
     isOG,
+    isWrapOrUnwrap,
     accountNativeBalance,
     nativeSymbol
-  }: {
-    fromAsset: TokenResult | null
-    toAsset: SwapAndBridgeToToken | null
-    fromChainId: number
-    fromTokenAddress: string
-    toChainId: number
-    toTokenAddress: string
-    fromAmount: bigint
-    userAddress: string
-    sort: 'time' | 'output'
-    isOG: boolean
-    accountNativeBalance: bigint
-    nativeSymbol: string
-  }): Promise<SwapAndBridgeQuote> {
+  }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
         'Quote requested, but missing required params. Error details: <from token details are missing>'
@@ -288,7 +277,8 @@ export class SocketAPI implements SwapProvider {
       enableManual: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    const shouldIncludeConvenienceFee = !!feeTakerAddress && !isOG
+    const shouldIncludeConvenienceFee =
+      !!feeTakerAddress && !isOG && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feeBps', (FEE_PERCENT * 100).toString())
