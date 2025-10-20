@@ -1,3 +1,5 @@
+import { Interface, isAddress } from 'ethers'
+
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -206,6 +208,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
     await this.#initialLoadPromise
     if (!toAddress) return { found: false, lastTransactionDate: null }
+    const transferIface = new Interface(['function transfer(address,uint256)'])
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
@@ -219,23 +222,22 @@ export class ActivityController extends EventEmitter implements IActivityControl
           const toAddrLower = toAddress.toLowerCase()
           const sentToTarget = op.calls.some((call) => {
             // 1) Direct call.to match
-            const directMatch =
-              call.to && typeof call.to === 'string' && call.to.toLowerCase() === toAddrLower
-            if (directMatch) return true
+            if (isAddress(call.to)) {
+              if (call.to?.toLowerCase() === toAddrLower) return true
+            }
 
             // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
             const data = (call as Call).data as string | undefined
             if (!data || typeof data !== 'string' || data.length < 10) return false
 
-            // Function selector for transfer(address,uint256)
-            if (data.startsWith('0xa9059cbb')) {
-              // After the 4-byte selector (8 hex chars), the next 32 bytes are the `to` address, left-padded.
-              // Take the first argument (64 hex chars), then the last 40 hex chars of it.
-              // data layout: 0x [8 selector] [64 arg1] [64 arg2]
-              const arg1Padded = data.slice(10, 74) // first 32 bytes (64 hex chars)
-              if (arg1Padded && arg1Padded.length === 64) {
-                const recipient = `0x${arg1Padded.slice(24)}`.toLowerCase()
+            const selector = transferIface.getFunction('transfer')?.selector
+            if (selector && data.startsWith(selector)) {
+              try {
+                const decoded = transferIface.decodeFunctionData('transfer', data)
+                const recipient = (decoded[0] as string).toLowerCase()
                 if (recipient === toAddrLower) return true
+              } catch {
+                // ignore decode errors and continue
               }
             }
 
