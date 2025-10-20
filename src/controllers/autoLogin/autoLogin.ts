@@ -56,6 +56,14 @@ export const AUTO_LOGIN_DURATION_OPTIONS = [
   DEFAULT_AUTO_LOGIN_DURATION_OPTION
 ]
 
+/**
+ * The controller handles SIWE-like messages and provides auto-login functionality.
+ * It creates and manages auto-login policies based on signed SIWE messages, and
+ * automatically signs messages when auto-login is applicable.
+ * In essence, it implements:
+ * - ERC-4361: Sign-In with Ethereum (https://github.com/ethereum/ERCs/blob/aa5a30ab9b23c317c8a3206b70ee4ff7fbe8dc33/ERCS/erc-4361.md)
+ * - ERC-8019: Auto-Login for SIWE (https://github.com/ethereum/ERCs/blob/aa5a30ab9b23c317c8a3206b70ee4ff7fbe8dc33/ERCS/erc-8019.md)
+ */
 export class AutoLoginController extends EventEmitter implements IAutoLoginController {
   #storage: IStorageController
 
