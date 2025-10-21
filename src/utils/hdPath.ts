@@ -41,3 +41,11 @@ export const getHDPathIndices = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, insertId
   if (indices.length > 5) throw new Error('Only HD paths with up to 5 indices are allowed.')
   return indices
 }
+
+export const DEFAULT_ETH_DERIVATION = [
+  HARDENED_OFFSET + 44,
+  HARDENED_OFFSET + 60,
+  HARDENED_OFFSET,
+  0,
+  0
+]
