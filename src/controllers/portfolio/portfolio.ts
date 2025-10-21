@@ -42,14 +42,12 @@ import {
   LearnedAssets,
   NetworkState,
   PortfolioControllerState,
-  PortfolioProjectedRewardsResult,
   PreviousHintsStorage,
   TemporaryTokens,
   ToBeLearnedAssets,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { calculateRewardsForSeason } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */

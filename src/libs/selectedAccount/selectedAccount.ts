@@ -22,6 +22,7 @@ import {
   NetworkSimulatedAccountOp,
   NetworkState,
   PortfolioProjectedRewardsResult,
+  ProjectedRewardsTokenResult,
   TokenResult
 } from '../portfolio/interfaces'
 
@@ -638,7 +639,7 @@ export function calculateSelectedAccountPortfolio(
 export const calculateAndSetProjectedRewards = (
   projectedRewards: NetworkState | undefined,
   latestBalances: { [chainId: string]: number }
-): TokenResult | undefined => {
+): ProjectedRewardsTokenResult | undefined => {
   if (!projectedRewards) return
 
   const result = projectedRewards?.result as PortfolioProjectedRewardsResult
@@ -688,8 +689,6 @@ export const calculateAndSetProjectedRewards = (
   const projectedAmountFormatted =
     userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
 
-  // TODO: return APY as well [projectedAmount.apy]
-
   return {
     chainId: BigInt(1),
     amount: BigInt(projectedAmountFormatted || 0),
@@ -697,6 +696,7 @@ export const calculateAndSetProjectedRewards = (
     symbol: 'stkWALLET',
     name: 'Staked $WALLET',
     decimals: 18,
+    apy: projectedAmount.apy,
     priceIn: [{ baseCurrency: 'usd', price: walletPrice }],
     flags: {
       onGasTank: false,
