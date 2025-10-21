@@ -196,6 +196,7 @@ const PORTFOLIO_TOKENS = [
 ]
 
 const swapAndBridgeController = new SwapAndBridgeController({
+  callRelayer: () => {},
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   accounts: accountsCtrl,
@@ -209,7 +210,9 @@ const swapAndBridgeController = new SwapAndBridgeController({
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
-  getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
+  getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue,
+  onBroadcastSuccess: () => Promise.resolve(),
+  onBroadcastFailed: () => {}
 })
 
 describe('SwapAndBridge Controller', () => {

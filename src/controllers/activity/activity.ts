@@ -219,8 +219,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
           const toAddrLower = toAddress.toLowerCase()
           const sentToTarget = op.calls.some((call) => {
             // 1) Direct call.to match
-            const directMatch =
-              call.to && typeof call.to === 'string' && call.to.toLowerCase() === toAddrLower
+            const directMatch = call.to?.toLowerCase() === toAddrLower
             if (directMatch) return true
 
             // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data

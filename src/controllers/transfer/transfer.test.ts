@@ -264,6 +264,7 @@ const getTokens = async () => {
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
     transferController = new TransferController(
+      () => {},
       storageCtrl,
       humanizerInfo as HumanizerMeta,
       selectedAccountCtrl,
@@ -275,7 +276,8 @@ describe('Transfer Controller', () => {
       activity,
       {},
       providersCtrl,
-      relayerUrl
+      relayerUrl,
+      () => Promise.resolve()
     )
 
     await selectedAccountCtrl.initialLoadPromise

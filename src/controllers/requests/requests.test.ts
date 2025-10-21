@@ -155,6 +155,7 @@ const prepareTest = async () => {
     () => Promise.resolve()
   )
   const transferCtrl = new TransferController(
+    () => {},
     storageCtrl,
     humanizerInfo as HumanizerMeta,
     selectedAccountCtrl,
@@ -166,12 +167,14 @@ const prepareTest = async () => {
     activityCtrl,
     {},
     providersCtrl,
-    relayerUrl
+    relayerUrl,
+    () => Promise.resolve()
   )
 
   const requestsController: IRequestsController = {} as IRequestsController
 
   const swapAndBridgeCtrl = new SwapAndBridgeController({
+    callRelayer: () => {},
     selectedAccount: selectedAccountCtrl,
     networks: networksCtrl,
     accounts: accountsCtrl,
@@ -189,7 +192,9 @@ const prepareTest = async () => {
     },
     getVisibleActionsQueue: () => {
       return requestsController?.actions?.visibleActionsQueue || []
-    }
+    },
+    onBroadcastSuccess: () => Promise.resolve(),
+    onBroadcastFailed: () => {}
   })
 
   return {
