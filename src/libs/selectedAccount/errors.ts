@@ -152,6 +152,8 @@ export const addPortfolioError = (
 
     if (!title) return newErrors
 
+    title = `${title} on ${networkName}`
+
     newErrors.push({
       id: newError,
       networkNames: [networkName],
