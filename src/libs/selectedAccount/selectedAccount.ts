@@ -639,7 +639,7 @@ export function calculateSelectedAccountPortfolio(
 export const calculateAndSetProjectedRewards = (
   projectedRewards: NetworkState | undefined,
   latestBalances: { [chainId: string]: number },
-  walletOrStkWalletToken: number | undefined
+  walletOrStkWalletTokenPrice: number | undefined
 ): ProjectedRewardsTokenResult | undefined => {
   if (!projectedRewards) return
 
@@ -675,7 +675,7 @@ export const calculateAndSetProjectedRewards = (
       : currentTotalBalanceOnSupportedChains
 
   // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
-  const walletTokenPrice = walletOrStkWalletToken || walletPrice
+  const walletTokenPrice = walletOrStkWalletTokenPrice || walletPrice
 
   const projectedAmount = calculateRewardsForSeason(
     level,
