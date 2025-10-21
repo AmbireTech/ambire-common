@@ -417,10 +417,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // Check if the address has been used previously for transactions
-    const { found, lastTransactionDate } = await this.#activity.hasAccountOpsSentTo(
-      this.recipientAddress,
-      this.#selectedAccountData.account?.addr || ''
-    )
+    let found = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccountData.account?.addr || ''
+      )
+      found = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
     this.isRecipientAddressFirstTimeSend =
       !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
@@ -460,6 +466,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
+      this.lastSentToRecipientAt = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -652,11 +659,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // Check if the address has been used previously for transactions
-    const { found: previousTransactionExists, lastTransactionDate } =
-      await this.#activity.hasAccountOpsSentTo(
+    let previousTransactionExists = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
         this.#selectedAccountData.account.addr
       )
+      previousTransactionExists = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
 
     // Update state based on whether there are previous transactions to this address
     this.isRecipientAddressFirstTimeSend =

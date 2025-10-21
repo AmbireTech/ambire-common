@@ -389,7 +389,8 @@ export class SocketAPI implements SwapProvider {
           txData: 'txData' in route ? route.txData : undefined,
           rawRoute: '' // not needed for socket
         }
-      })
+      }),
+      withConvenienceFee: shouldIncludeConvenienceFee
     }
   }
 

@@ -521,7 +521,8 @@ export class LiFiAPI implements SwapProvider {
       ),
       // selecting a route is a controller's responsiilibty, not the API's
       selectedRoute: undefined,
-      selectedRouteSteps: []
+      selectedRouteSteps: [],
+      withConvenienceFee: !shouldRemoveConvenienceFee
     }
   }
 

@@ -51,6 +51,11 @@ export interface SwapAndBridgeQuote {
   selectedRoute?: SwapAndBridgeRoute
   selectedRouteSteps: SwapAndBridgeStep[]
   routes: SwapAndBridgeRoute[]
+  /**
+   * We don't charge a convenience fee for some operations
+   * @example - Wrapping and unwrapping natives
+   */
+  withConvenienceFee: boolean
 }
 
 export interface SocketAPIRoute {

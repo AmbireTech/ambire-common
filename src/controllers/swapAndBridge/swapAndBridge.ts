@@ -1557,7 +1557,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             toChainId: quoteResult.toChainId,
             selectedRoute: quoteResult.selectedRoute,
             selectedRouteSteps: quoteResult.selectedRoute.steps,
-            routes
+            routes,
+            withConvenienceFee: quoteResult.withConvenienceFee
           }
           this.isAutoSelectRouteDisabled = quoteResult.selectedRoute.disabled
         }
