@@ -233,6 +233,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           // 2. make sure only 1 eip712Sig exists per userOp from the same chain
 
           const userOps = []
+          const hasSigned7702: string[] = []
           const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
             (chainIdWithUserOp) =>
               getUserOpHash(chainIdWithUserOp.userOperation, BigInt(chainIdWithUserOp.chainId))
@@ -251,8 +252,11 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             const hasDelegatedToOmni =
               curAccountState.isEOA &&
               curAccountState.delegatedContract &&
-              curAccountState.delegatedContract.toLowerCase() === AMBIRE_ACCOUNT_OMNI.toLowerCase()
+              curAccountState.delegatedContract.toLowerCase() ===
+                AMBIRE_ACCOUNT_OMNI.toLowerCase() &&
+              hasSigned7702.indexOf(chainIdWithUserOp.chainId) === -1
             if (!hasDelegatedToOmni) {
+              hasSigned7702.push(chainIdWithUserOp.chainId)
               eip712Sig = this.#signer.sign7702(
                 getAuthorizationHash(
                   network.chainId,
