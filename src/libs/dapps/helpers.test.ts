@@ -1,4 +1,4 @@
-import predefinedDapps from '../../consts/dappCatalog.json'
+import predefinedDapps from '../../consts/legacyDappCatalog.json'
 import { getDappIdFromUrl, patchStorageApps } from './helpers'
 
 describe('Test dapp helpers', () => {

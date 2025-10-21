@@ -14,9 +14,21 @@ export const dappIdsToBeRemoved = new Set([
   'app.ether.fi' // app.ether.fi was moved to ether.fi
 ])
 
-export const featuredDapps = new Set([
-  'rewards.ambire.com',
-  'bitrefill.com',
-  'app.aave.com',
-  'stake.lido.fi'
-])
+export const featuredDapps = new Set(['rewards.ambire.com', 'bitrefill.com'])
+
+export const predefinedDapps = [
+  {
+    url: 'https://rewards.ambire.com',
+    name: 'Ambire Rewards',
+    icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
+    description: 'Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.',
+    networkNames: ['Ethereum', 'Base', 'Optimism', 'Arbitrum', 'Scroll', 'BNB']
+  },
+  {
+    url: 'https://www.bitrefill.com',
+    name: 'Bitrefill',
+    icon: 'https://www.bitrefill.com/android-chrome-192x192.png',
+    description: 'The crypto store for digital gift cards, eSIMs, and phone refills.',
+    networkNames: ['Ethereum', 'Polygon']
+  }
+]
