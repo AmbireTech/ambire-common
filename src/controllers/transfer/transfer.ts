@@ -702,7 +702,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       shouldReestimate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
-        this.#portfolio.simulateAccountOp(accountOp).then(() => {
+        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
           this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
         })
 
