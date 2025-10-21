@@ -316,6 +316,6 @@ export {
   buildClaimWalletRequest,
   buildMintVestingRequest,
   buildTransferUserRequest,
-  prepareIntentUserRequest,
-  isPlainTextMessage
+  isPlainTextMessage,
+  prepareIntentUserRequest
 }

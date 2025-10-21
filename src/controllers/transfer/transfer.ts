@@ -33,7 +33,7 @@ import {
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -79,6 +79,15 @@ export class TransferController extends EventEmitter implements ITransferControl
    * invalid values. Use #getSafeAmountFromFieldValue() to get a formatted value.
    */
   amount = ''
+
+  /**
+   * The final amount to send. Another property is needed so we could
+   * differentiate between the amount the user wants to send and the
+   * amount he could actually send. This is in case the user selected MAX
+   * but doesn't have anything left to pay the fee with
+   * Sanitized
+   */
+  finalAmount: bigint = 0n
 
   amountInFiat = ''
 
@@ -224,8 +233,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#selectedToken = token
 
     if (
-      prevSelectedToken?.address !== token?.address ||
-      prevSelectedToken?.chainId !== token?.chainId
+      prevSelectedToken?.address !== token.address ||
+      prevSelectedToken?.chainId !== token.chainId
     ) {
       if (!token.priceIn.length) {
         this.amountFieldMode = 'token'
@@ -233,6 +242,12 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.#setSWWarningVisibleIfNeeded()
+
+      // upon an update of the selected token, update the accountOp meta
+      if (this.signAccountOpController?.accountOp.meta?.adjustableAccountOpMode) {
+        this.signAccountOpController.accountOp.meta.adjustableAccountOpMode.tokenAddress =
+          token.address
+      }
     }
   }
 
@@ -353,6 +368,74 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   get recipientAddress() {
     return this.addressState.ensAddress || this.addressState.fieldValue
+  }
+
+  /**
+   * Adjust the amount and fee
+   */
+  async adjustTransferAmountAndFee() {
+    const op = this.signAccountOpController?.accountOp
+    if (
+      !op?.gasFeePayment ||
+      !this.#selectedToken ||
+      this.signAccountOpController?.status?.type !== SigningStatus.ReadyToSign
+    ) {
+      this.emitUpdate()
+      return
+    }
+
+    this.finalAmount = parseUnits(
+      getSanitizedAmount(this.amount, this.#selectedToken.decimals),
+      this.#selectedToken.decimals
+    )
+    if (
+      this.signAccountOpController.feeTokenResult!.address === this.#selectedToken.address &&
+      this.signAccountOpController.selectedOption!.paidBy ===
+        this.signAccountOpController.accountOp.accountAddr
+    ) {
+      // check if we're sending max amount
+      // if we are, reduce it minus estimated fee and update the calls
+      const currentPortfolio = this.#portfolio.getLatestPortfolioState(op.accountAddr)
+      const currentPortfolioNetwork = currentPortfolio[op.chainId.toString()]
+      const portfolioToken = currentPortfolioNetwork?.result?.tokens.find(
+        (token) => token.address === this.#selectedToken!.address
+      )
+      // @justInCase
+      if (portfolioToken) {
+        // is max?
+        if (portfolioToken.amount === this.finalAmount) {
+          this.finalAmount -= op.gasFeePayment.amount
+          const userRequest = buildTransferUserRequest({
+            selectedAccount: op.accountAddr,
+            amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
+            selectedToken: this.#selectedToken,
+            recipientAddress: this.isTopUp
+              ? FEE_COLLECTOR
+              : getAddressFromAddressState(this.addressState)
+          })
+
+          // @justInCase
+          if (userRequest && userRequest.action.kind === 'calls') {
+            this.signAccountOpController.accountOp.calls = userRequest.action.calls
+          }
+        }
+      }
+    } else {
+      const userRequest = buildTransferUserRequest({
+        selectedAccount: op.accountAddr,
+        amount: formatUnits(this.finalAmount, this.#selectedToken.decimals),
+        selectedToken: this.#selectedToken,
+        recipientAddress: this.isTopUp
+          ? FEE_COLLECTOR
+          : getAddressFromAddressState(this.addressState)
+      })
+      // @justInCase
+      if (userRequest && userRequest.action.kind === 'calls') {
+        this.signAccountOpController.accountOp.calls = userRequest.action.calls
+      }
+    }
+
+    this.emitUpdate()
   }
 
   async update({
@@ -643,7 +726,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       network
     )
 
-    const accountOp = {
+    const accountOp: AccountOp = {
       accountAddr: this.#selectedAccountData.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
@@ -654,7 +737,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       signature: null,
       calls,
       meta: {
-        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+        adjustableAccountOpMode: {
+          tokenAddress: this.#selectedToken!.address
+        }
       }
     }
 
@@ -695,7 +781,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     // propagate updates from signAccountOp here
     this.#signAccountOpSubscriptions.push(
       this.signAccountOpController.onUpdate(() => {
-        this.emitUpdate()
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.adjustTransferAmountAndFee()
       })
     )
     this.#signAccountOpSubscriptions.push(
@@ -706,6 +793,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       })
     )
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reestimate()
   }
 
@@ -733,6 +821,7 @@ export class TransferController extends EventEmitter implements ITransferControl
         }
 
         if (this.signAccountOpController?.estimation.errors.length) {
+          // eslint-disable-next-line no-console
           console.log(
             'Errors on Transfer re-estimate',
             this.signAccountOpController.estimation.errors
@@ -741,6 +830,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     loop()
   }
 
