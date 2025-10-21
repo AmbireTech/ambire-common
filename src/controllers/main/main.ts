@@ -1803,7 +1803,8 @@ export class MainController extends EventEmitter implements IMainController {
           )
           const signedTxn =
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
-              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              ? // TODO: Sync change across all places
+                await signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
               : await signer.signRawTransaction(rawTxn)
           if (callId !== this.#signAndBroadcastCallId) {
             return

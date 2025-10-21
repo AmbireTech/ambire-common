@@ -1948,9 +1948,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             // authrorization validation
             accountState.eoaNonce! + 1n,
             contract,
-            signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
-            )
+            // TODO: Sync change across all places
+            await signer.sign7702(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
           )
         this.#updateAccountOp({
           signature: '0x'
@@ -1981,7 +1980,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.#network.chainId,
             accountState.nonce,
             contract,
-            signer.sign7702(
+            // TODO: Sync change across all places
+            await signer.sign7702(
               getAuthorizationHash(this.#network.chainId, contract, accountState.nonce)
             )
           )
