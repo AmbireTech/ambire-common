@@ -14,6 +14,6 @@ export interface PlainSignature {
 }
 
 export interface EILSignature {
-  chainId: bigint
+  chainId: Hex
   userOp: SignUserOperation
 }

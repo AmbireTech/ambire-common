@@ -229,6 +229,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           if (!this.#signer.plainSign)
             throw new Error('signer does not support signing multiple user operations')
 
+          // 1. check if user ops are sorted by nonce and if they are not, sort them
+          // 2. make sure only 1 eip712Sig exists per userOp from the same chain
+
           const userOps = []
           const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
             (chainIdWithUserOp) =>
@@ -242,18 +245,20 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             const chainIdWithUserOp = this.messageToSign.content.chainIdWithUserOps[i]
             const chainId = BigInt(chainIdWithUserOp.chainId)
             // <TODO<eil>: if account state missing, we dead
-            const accountState = this.#accounts.accountStates[account.addr][chainId.toString()]
+            const curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
 
-            // check eip stuff
             let eip712Sig
-            // <TODO<eil>: if signed in a prev userOp, don't do again
             const hasDelegatedToOmni =
-              accountState.isEOA &&
-              accountState.delegatedContract &&
-              accountState.delegatedContract.toLowerCase() === AMBIRE_ACCOUNT_OMNI.toLowerCase()
+              curAccountState.isEOA &&
+              curAccountState.delegatedContract &&
+              curAccountState.delegatedContract.toLowerCase() === AMBIRE_ACCOUNT_OMNI.toLowerCase()
             if (!hasDelegatedToOmni) {
               eip712Sig = this.#signer.sign7702(
-                getAuthorizationHash(network.chainId, AMBIRE_ACCOUNT_OMNI, accountState.eoaNonce!)
+                getAuthorizationHash(
+                  network.chainId,
+                  AMBIRE_ACCOUNT_OMNI,
+                  curAccountState.eoaNonce!
+                )
               )
             }
 
@@ -265,10 +270,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             ) as Hex
             userOp.signature = `${fullSigWithoutWrapping}06`
             userOp.eip7702Auth = eip712Sig
-              ? get7702Sig(chainId, accountState.eoaNonce!, AMBIRE_ACCOUNT_OMNI, eip712Sig)
+              ? get7702Sig(chainId, curAccountState.eoaNonce!, AMBIRE_ACCOUNT_OMNI, eip712Sig)
               : undefined
             userOps.push({
-              chainId: BigInt(chainIdWithUserOp.chainId),
+              chainId: chainIdWithUserOp.chainId,
               userOp
             })
           }
