@@ -1,6 +1,7 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
 
+import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -328,10 +329,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#isPortfolioLoadingFromScratch
     )
 
+    // Find stkWALLET or WALLET token in the latest portfolio state
+    const walletORStkWalletToken = latestStateSelectedAccount['1']?.result?.tokens.find(
+      ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
+    )
+
     // Calculate and add projected rewards token
     const projectedRewardsToken = calculateAndSetProjectedRewards(
       latestStateSelectedAccount?.projectedRewards,
-      newSelectedAccountPortfolio.balancePerNetwork
+      newSelectedAccountPortfolio.balancePerNetwork,
+      walletORStkWalletToken && walletORStkWalletToken.priceIn[0].price
     )
 
     if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)

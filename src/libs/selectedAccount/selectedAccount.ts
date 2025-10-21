@@ -638,7 +638,8 @@ export function calculateSelectedAccountPortfolio(
 
 export const calculateAndSetProjectedRewards = (
   projectedRewards: NetworkState | undefined,
-  latestBalances: { [chainId: string]: number }
+  latestBalances: { [chainId: string]: number },
+  walletOrStkWalletToken: number | undefined
 ): ProjectedRewardsTokenResult | undefined => {
   if (!projectedRewards) return
 
@@ -673,13 +674,16 @@ export const calculateAndSetProjectedRewards = (
       ? minBalance
       : currentTotalBalanceOnSupportedChains
 
+  // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
+  const walletTokenPrice = walletOrStkWalletToken || walletPrice
+
   const projectedAmount = calculateRewardsForSeason(
     level,
     parsedSnapshotsBalance,
     currentBalance,
     numberOfWeeksSinceStartOfSeason,
     totalWeightNonUser,
-    walletPrice,
+    walletTokenPrice,
     totalRewardsPool,
     minLvl,
     minBalance
@@ -697,7 +701,7 @@ export const calculateAndSetProjectedRewards = (
     name: 'Staked $WALLET',
     decimals: 18,
     apy: projectedAmount.apy,
-    priceIn: [{ baseCurrency: 'usd', price: walletPrice }],
+    priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
     flags: {
       onGasTank: false,
       rewardsType: 'wallet-projected-rewards' as const,
