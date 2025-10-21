@@ -15,7 +15,7 @@ export enum AccountOpStatus {
 }
 
 export interface Call {
-  to: string
+  to?: string
   value: bigint
   data: string
   // if this call is associated with a particular user request

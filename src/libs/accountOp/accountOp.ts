@@ -114,7 +114,8 @@ export function toSingletonCall(call: Call): Call {
 }
 
 export function callToTuple(call: Call): [string, string, string] {
-  return [call.to, call.value.toString(), call.data]
+  const normalized = toSingletonCall(call)
+  return [normalized.to as string, normalized.value.toString(), normalized.data]
 }
 
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {

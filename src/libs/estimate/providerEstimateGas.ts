@@ -7,7 +7,7 @@ import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { isSmartAccount } from '../account/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls, toSingletonCall } from '../accountOp/accountOp'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { ProviderEstimation } from './interfaces'
@@ -29,7 +29,8 @@ export function getEstimateGasProps(
   }
 
   // normal EOA: a single call
-  const call = op.calls[0]
+  // ensure deploy calls (no `to`) are converted to singleton calls for RPC simulation
+  const call = toSingletonCall(op.calls[0])
   return {
     from: account.addr as Hex,
     to: call.to as Hex,

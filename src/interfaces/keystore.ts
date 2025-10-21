@@ -53,7 +53,7 @@ export interface ExternalSignerController {
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
 export interface TxnRequest {
-  to: Call['to']
+  to: Hex
   value?: Call['value']
   data: Call['data']
   chainId: Network['chainId']

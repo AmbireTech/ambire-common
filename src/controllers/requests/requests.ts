@@ -34,6 +34,7 @@ import { IUiController } from '../../interfaces/ui'
 import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { toSingletonCall } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -676,11 +677,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         id: new Date().getTime(),
         action: {
           kind,
-          calls: calls.map((call) => ({
-            to: call.to,
-            data: call.data || '0x',
-            value: call.value ? getBigInt(call.value) : 0n
-          }))
+          calls: calls.map((call) => {
+            const normalized = toSingletonCall(call as Call)
+            return {
+              to: normalized.to,
+              data: call.data || '0x',
+              value: call.value ? getBigInt(call.value) : 0n
+            }
+          })
         },
         session: new Session({ windowId: request.session.windowId }),
         meta: {

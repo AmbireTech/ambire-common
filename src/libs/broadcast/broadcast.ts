@@ -9,7 +9,7 @@ import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import wait from '../../utils/wait'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, GasFeePayment, getSignableCalls, toSingletonCall } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
 
@@ -69,13 +69,16 @@ async function estimateGas(
     )
   }
 
+  // normalize call: if call.to is undefined (deploy), transform it to a singleton call
+  const normalizedCall = toSingletonCall(call)
+
   const callEstimateGas = provider
     .send('eth_estimateGas', [
       {
         from,
-        to: call.to,
+        to: normalizedCall.to,
         value: toQuantity(call.value),
-        data: call.data,
+        data: normalizedCall.data,
         nonce: toQuantity(nonce)
       },
       'pending'
@@ -96,7 +99,8 @@ async function estimateGas(
   if (hasNonceDiscrepancyOnApproval) {
     try {
       hasNonceDiscrepancyOnApproval =
-        call.data !== '0x' && !!erc20interface.decodeFunctionData('approve', call.data)
+        normalizedCall.data !== '0x' &&
+        !!erc20interface.decodeFunctionData('approve', normalizedCall.data)
     } catch (e) {
       hasNonceDiscrepancyOnApproval = false
     }
@@ -134,10 +138,12 @@ export async function getTxnData(
     }
 
     if (!call) throw new Error('single txn broadcast misconfig')
+    // normalize possible deploy call
+    const normalized = toSingletonCall(call)
     return {
-      to: call.to as Hex,
-      value: call.value,
-      data: call.data as Hex,
+      to: normalized.to as Hex,
+      value: normalized.value,
+      data: normalized.data as Hex,
       gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
     }
   }
@@ -148,14 +154,16 @@ export async function getTxnData(
     // if the accountOp has more than 1 calls, we have to calculate the gas
     // for each one seperately
     let gasLimit: bigint | undefined = (op.gasFeePayment as GasFeePayment).simulatedGasLimit
+    // normalize call for estimation and txn building
+    const normalizedCall = toSingletonCall(call)
     if (op.calls.length > 1) {
-      gasLimit = await estimateGas(provider, account.addr, call, nonce)
+      gasLimit = await estimateGas(provider, account.addr, normalizedCall, nonce)
     }
 
     const singleCallTxn = {
-      to: call.to as Hex,
-      value: call.value,
-      data: call.data as Hex,
+      to: normalizedCall.to as Hex,
+      value: normalizedCall.value,
+      data: normalizedCall.data as Hex,
       gasLimit
     }
 
@@ -167,7 +175,8 @@ export async function getTxnData(
     const gasLimit = await estimateGas(
       provider,
       (op.gasFeePayment as GasFeePayment).paidBy,
-      otherEOACall,
+      // otherEOACall always has to defined `to`
+      otherEOACall as unknown as Call,
       nonce
     )
     return { ...otherEOACall, gasLimit }
