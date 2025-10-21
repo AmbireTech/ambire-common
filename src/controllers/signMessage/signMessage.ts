@@ -248,13 +248,13 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             // <TODO<eil>: if account state missing, we dead
             const curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
 
-            let eip712Sig
+            let eip712Sig = null
             const hasDelegatedToOmni =
               curAccountState.isEOA &&
               curAccountState.delegatedContract &&
               curAccountState.delegatedContract.toLowerCase() ===
                 AMBIRE_ACCOUNT_OMNI.toLowerCase() &&
-              hasSigned7702.indexOf(chainIdWithUserOp.chainId) === -1
+              hasSigned7702.indexOf(chainIdWithUserOp.chainId) !== -1
             if (!hasDelegatedToOmni) {
               hasSigned7702.push(chainIdWithUserOp.chainId)
               eip712Sig = this.#signer.sign7702(
