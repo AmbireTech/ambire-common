@@ -73,6 +73,7 @@ export interface SignUserRequest {
     submittedAccountOp?: any
     activeRouteId?: string
     dapp?: Dapp
+    topUpAmount?: bigint
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest

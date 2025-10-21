@@ -964,12 +964,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #buildTransferUserRequest({
     amount,
+    amountInFiat,
     recipientAddress,
     selectedToken,
     actionExecutionType = 'open-action-window',
     windowId
   }: {
     amount: string
+    amountInFiat: bigint
     recipientAddress: string
     selectedToken: TokenResult
     // eslint-disable-next-line default-param-last
@@ -991,6 +993,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccount.account.addr,
       amount,
+      amountInFiat,
       selectedToken,
       recipientAddress,
       paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),

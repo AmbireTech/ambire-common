@@ -75,6 +75,8 @@ export interface AccountOp {
     setDelegation?: boolean
     /** Used to determine if the account op is up-to-date with the latest quote */
     fromQuoteId?: string
+    /** Used to enable the gas tank if the user is topping up */
+    topUpAmount?: bigint
   }
   flags?: {
     hideActivityBanner?: boolean

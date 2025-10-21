@@ -21,8 +21,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
-  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
-  getFirstCashbackBanners
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
 } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
@@ -565,15 +564,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     ]
   }
 
-  get firstCashbackBanner(): Banner[] {
-    if (!this.account || !isSmartAccount(this.account) || !this.#portfolio) return []
-
-    return getFirstCashbackBanners({
-      selectedAccountAddr: this.account.addr,
-      cashbackStatusByAccount: this.#cashbackStatusByAccount
-    })
-  }
-
   get cashbackStatus(): CashbackStatus | undefined {
     if (!this.account) return undefined
 
@@ -657,7 +647,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ...this,
       ...super.toJSON(),
       banners: this.banners,
-      firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
