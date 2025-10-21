@@ -1460,7 +1460,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           isToNetworkSame &&
           isToAddressSame
         ) {
-          return
+          // We consider reusing the same quote a success (hence we return true).
+          // Otherwise, at the end of `updateQuote`, if we treat it as a falsy value,
+          // the quote will be reset and the signAccountOp will be destroyed,
+          // which is incorrect behavior, given that we already have a valid quote.
+          return true
         }
       }
       if (!skipPreviousQuoteRemoval) {
@@ -1547,12 +1551,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!this.#getIsFormValidToFetchQuote()) {
       if (this.quote || this.quoteRoutesStatuses) {
-        this.quote = null
-        this.quoteRoutesStatuses = {}
-        this.updateQuoteStatus = 'INITIAL'
-        this.removeError('no-routes')
-        this.removeError('all-routes-failed')
-        this.#emitUpdateIfNeeded()
+        this.#resetQuote()
       }
       return
     }
@@ -1578,10 +1577,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (isSuccessful) {
       await this.initSignAccountOpIfNeeded(quoteId)
     } else {
-      // @TODO: This is correct, right?
+      // When destroying the signAccountOp, we must also reset the quote and its status;
+      // otherwise, the toToken state remains stuck in a loading state.
+      // This ensures the user can retry fetching the quote.
       this.destroySignAccountOp()
-      this.emitUpdate()
+      this.#resetQuote()
     }
+  }
+
+  #resetQuote() {
+    this.quote = null
+    this.quoteRoutesStatuses = {}
+    this.updateQuoteStatus = 'INITIAL'
+    this.removeError('no-routes')
+    this.removeError('all-routes-failed')
+    this.#emitUpdateIfNeeded()
   }
 
   async getRouteStartUserTx(): Promise<
