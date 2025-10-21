@@ -117,9 +117,9 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static isExpiredPolicy(policy: AutoLoginPolicy): boolean {
     // Policies with 0 expiration never expire
-    if (policy.defaultExpiration === 0) return false
+    if (policy.expiresAt === 0) return false
 
-    return Date.now() > policy.defaultExpiration
+    return Date.now() > policy.expiresAt
   }
 
   static convertSiweToViemFormat(parsedSiweMessage: SiweMessage): SiweMessageType {
@@ -247,7 +247,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
         allowedResources: parsedSiwe.resources || [],
         // @TODO: consider when to set to true
         supportsEIP6492: false,
-        defaultExpiration: expirationTime,
+        expiresAt: expirationTime,
         lastAuthenticated: Date.now()
       }
 
@@ -257,7 +257,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     }
 
     // Update existing policy
-    existingPolicy.defaultExpiration = expirationTime
+    existingPolicy.expiresAt = expirationTime
     existingPolicy.lastAuthenticated = Date.now()
 
     if (!existingPolicy.allowedChains.includes(parsedSiwe.chainId)) {
@@ -421,7 +421,11 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     }
   }
 
-  getAccountPolicyForOrigin(accountAddr: string, origin: string): AutoLoginPolicy | null {
+  getAccountPolicyForOrigin(
+    accountAddr: string,
+    origin: string,
+    chainId?: number
+  ): AutoLoginPolicy | null {
     const accountPolicies = this.getAccountPolicies(accountAddr)
 
     const policy = accountPolicies.find((p) => {
@@ -433,7 +437,12 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       }
     })
 
-    if (!policy || AutoLoginController.isExpiredPolicy(policy)) return null
+    if (
+      !policy ||
+      AutoLoginController.isExpiredPolicy(policy) ||
+      (chainId && !policy.allowedChains.includes(chainId))
+    )
+      return null
 
     if (policy) return policy
 

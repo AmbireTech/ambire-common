@@ -33,7 +33,7 @@ type AutoLoginPolicy = {
    * A timestamp of when the policy expires (UNIX epoch in milliseconds).
    * If the current time exceeds this value, the policy is considered expired.
    */
-  defaultExpiration: number
+  expiresAt: number
   /**
    * Timestamp of the last successful authentication using this policy.
    * (the last time the wallet auto-signed a SIWE message for this policy)

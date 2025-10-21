@@ -167,7 +167,7 @@ describe('AutoLoginController', () => {
         allowedChains: [1, 137],
         allowedResources: ['https://privy.io'],
         supportsEIP6492: false,
-        defaultExpiration: Date.now() + 60000,
+        expiresAt: Date.now() + 60000,
         lastAuthenticated: Date.now()
       },
       {
@@ -176,7 +176,7 @@ describe('AutoLoginController', () => {
         allowedChains: [1, 10, 137, 42161],
         allowedResources: [],
         supportsEIP6492: false,
-        defaultExpiration: Date.now() + 60000,
+        expiresAt: Date.now() + 60000,
         lastAuthenticated: Date.now() - 30000
       }
     ]
@@ -374,7 +374,7 @@ URI: https://docs.fileverse.io
       allowedChains: [1, 137],
       allowedResources: ['https://privy.io'],
       supportsEIP6492: false,
-      defaultExpiration: Date.now() + 60000,
+      expiresAt: Date.now() + 60000,
       lastAuthenticated: Date.now()
     }
     it('returns "active" for valid policy', async () => {
@@ -417,7 +417,7 @@ URI: https://docs.fileverse.io
     it('returns "expired" for expired policy', async () => {
       const expiredPolicy = {
         ...MOCK_POLICY,
-        defaultExpiration: Date.now() - 1000
+        expiresAt: Date.now() - 1000
       }
 
       const { controller } = await prepareTest((s) => {
@@ -482,7 +482,7 @@ URI: https://docs.fileverse.io
     expect(policy.allowedChains).toEqual([Number(parsedSiwe.chainId)])
     expect(policy.allowedResources).toEqual(parsedSiwe.resources)
     expect(policy.supportsEIP6492).toBe(false)
-    expect(policy.defaultExpiration).toBeGreaterThan(Date.now())
+    expect(policy.expiresAt).toBeGreaterThan(Date.now())
     expect(policy.lastAuthenticated).toBeLessThanOrEqual(Date.now())
   })
   it('onSiweMessageSigned updates existing policies', async () => {
@@ -492,7 +492,7 @@ URI: https://docs.fileverse.io
       allowedChains: [1],
       allowedResources: ['https://privy.io'],
       supportsEIP6492: false,
-      defaultExpiration: Date.now() + 60000,
+      expiresAt: Date.now() + 60000,
       lastAuthenticated: Date.now()
     }
 
@@ -524,7 +524,7 @@ URI: https://docs.fileverse.io
     expect(policy.allowedChains).toEqual([1, 137])
     expect(policy.allowedResources).toEqual(['https://privy.io', 'https://fileverse.io'])
     expect(policy.supportsEIP6492).toBe(false)
-    expect(policy.defaultExpiration).toBeGreaterThan(EXISTING_POLICY.defaultExpiration)
+    expect(policy.expiresAt).toBeGreaterThan(EXISTING_POLICY.expiresAt)
     expect(policy.lastAuthenticated).toBeGreaterThan(EXISTING_POLICY.lastAuthenticated)
   })
   it('onSiweMessageSigned does not create a policy if autoLogin is disabled', async () => {
@@ -550,7 +550,7 @@ URI: https://docs.fileverse.io
       allowedChains: [1],
       allowedResources: ['https://privy.io'],
       supportsEIP6492: false,
-      defaultExpiration: Date.now() + 60000,
+      expiresAt: Date.now() + 60000,
       lastAuthenticated: Date.now()
     }
 
