@@ -2285,7 +2285,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       shouldSimulate: false,
       shouldReestimate: false,
       onBroadcastSuccess: async (props) => {
-        this.#portfolio.simulateAccountOp(accountOp).then(() => {
+        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
           this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
         })
 
