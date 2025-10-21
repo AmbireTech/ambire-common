@@ -33,7 +33,7 @@ import {
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -58,6 +58,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const HARD_CODED_CURRENCY = 'usd'
 
 export class TransferController extends EventEmitter implements ITransferController {
+  #callRelayer: Function
+
   #storage: IStorageController
 
   #networks: INetworksController
@@ -145,7 +147,10 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #activity: IActivityController
 
+  #onBroadcastSuccess: OnBroadcastSuccess
+
   constructor(
+    callRelayer: Function,
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: ISelectedAccountController,
@@ -157,10 +162,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
-    relayerUrl: string
+    relayerUrl: string,
+    onBroadcastSuccess: OnBroadcastSuccess
   ) {
     super()
 
+    this.#callRelayer = callRelayer
     this.#storage = storage
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccountData = selectedAccountData
@@ -174,6 +181,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#relayerUrl = relayerUrl
+    this.#onBroadcastSuccess = onBroadcastSuccess
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -417,10 +425,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // Check if the address has been used previously for transactions
-    const { found, lastTransactionDate } = await this.#activity.hasAccountOpsSentTo(
-      this.recipientAddress,
-      this.#selectedAccountData.account?.addr || ''
-    )
+    let found = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccountData.account?.addr || ''
+      )
+      found = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
     this.isRecipientAddressFirstTimeSend =
       !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
@@ -460,7 +474,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
-      this.lastRecipientTransactionDate = null
+      this.lastSentToRecipientAt = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -470,7 +484,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
     this.checkIsRecipientAddressUnknown()
@@ -665,33 +679,55 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // Check if the address has been used previously for transactions
-    const { found: previousTransactionExists, lastTransactionDate } =
-      await this.#activity.hasAccountOpsSentTo(
+    let previousTransactionExists = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
         this.#selectedAccountData.account.addr
       )
+      previousTransactionExists = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
 
     // Update state based on whether there are previous transactions to this address
     this.isRecipientAddressFirstTimeSend =
       !previousTransactionExists &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
-    this.signAccountOpController = new SignAccountOpController(
-      this.#accounts,
-      this.#networks,
-      this.#keystore,
-      this.#portfolio,
-      this.#externalSignerControllers,
-      this.#selectedAccountData.account,
+    this.signAccountOpController = new SignAccountOpController({
+      type: 'one-click-transfer',
+      callRelayer: this.#callRelayer,
+      accounts: this.#accounts,
+      networks: this.#networks,
+      keystore: this.#keystore,
+      portfolio: this.#portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.#activity,
+      account: this.#selectedAccountData.account,
       network,
-      this.#activity,
       provider,
-      randomId(), // the account op and the action are fabricated
+      fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      () => true,
-      false,
-      false
-    )
+      isSignRequestStillActive: () => true,
+      shouldSimulate: false,
+      shouldReestimate: false,
+      onBroadcastSuccess: async (props) => {
+        const { submittedAccountOp } = props
+        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+        })
+
+        await this.#onBroadcastSuccess(props)
+
+        if (this.shouldTrackLatestBroadcastedAccountOp) {
+          this.latestBroadcastedToken = this.selectedToken
+          this.latestBroadcastedAccountOp = submittedAccountOp
+        }
+
+        this.resetForm()
+      }
+    })
 
     // propagate updates from signAccountOp here
     this.#signAccountOpSubscriptions.push(
