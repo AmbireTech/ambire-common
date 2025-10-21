@@ -284,7 +284,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         //
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (
-          (signStatus === 'SIGNING' || signStatus === 'BROADCASTING') &&
+          signStatus === 'LOADING' &&
           signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
           signAccountOpController?.accountOp.chainId === req.meta.chainId
         ) {
