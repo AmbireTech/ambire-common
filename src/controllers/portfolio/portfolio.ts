@@ -573,18 +573,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
 
-    // Calculate projected rewards only if there are no rewards tokens
-    if (
-      rewardsTokens.length === 0 ||
-      (rewardsTokens.length !== 0 && rewardsTokens.every((t) => t.amount === BigInt(0)))
-    ) {
-      accountState.projectedRewards = {
-        isReady: true,
-        isLoading: false,
-        errors: [],
-        result: {
-          ...res.data.rewardsProjectionData
-        }
+    accountState.projectedRewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewardsProjectionData
       }
     }
 
