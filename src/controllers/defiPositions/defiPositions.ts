@@ -24,6 +24,7 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
+import { fetchWithTimeout } from '../../utils/fetch'
 /* eslint-disable no-restricted-syntax */
 import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -273,11 +274,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       debankPositionsByProvider: PositionsByProvider[]
     ) => {
       const chain = network.chainId.toString()
-      initNetworkState(selectedAccountAddr, chain)
-
       const state = this.#state[selectedAccountAddr][chain]
-      Object.assign(state, { isLoading: true, providerErrors: [], error: undefined })
-      this.emitUpdate()
 
       const previousPositions = state.positionsByProvider
       let customPositions: PositionsByProvider[] = []
@@ -404,6 +401,14 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       return
     }
 
+    // Set all networks to loading
+    networksToUpdate.forEach((n) => {
+      const state = this.#state[selectedAccountAddr][n.chainId.toString()]
+      Object.assign(state, { isLoading: true, providerErrors: [], error: undefined })
+    })
+
+    this.emitUpdate()
+
     let debankPositions: PositionsByProvider[] = []
 
     // Skip Debank call in testing mode — only fetch custom DeFi positions
@@ -416,9 +421,13 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         )
         const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
 
-        const resp = await this.#fetch(
-          shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl
+        const resp = await fetchWithTimeout(
+          this.#fetch,
+          shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl,
+          {},
+          3000
         )
+
         const body = await resp.json()
         if (resp.status !== 200 || body?.message || body?.error) throw body
 
@@ -472,7 +481,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       addresses
     ).join('%2C')}&vs_currencies=usd`
 
-    const resp = await this.#fetch(cenaUrl)
+    const resp = await fetchWithTimeout(this.#fetch, cenaUrl, {}, 3000)
     const body = await resp.json()
     if (resp.status !== 200) throw body
     // eslint-disable-next-line no-prototype-builtins
