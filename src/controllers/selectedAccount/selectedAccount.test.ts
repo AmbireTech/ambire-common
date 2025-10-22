@@ -7,7 +7,6 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { UiController } from '../ui/ui'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
@@ -15,14 +14,17 @@ import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DefiPositionsController } from '../defiPositions/defiPositions'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { StorageController } from '../storage/storage'
+import { UiController } from '../ui/ui'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO, SelectedAccountController } from './selectedAccount'
 
 const providers = Object.fromEntries(
@@ -68,10 +70,21 @@ const accountsCtrl = new AccountsController(
   () => {}
 )
 
+const autoLoginCtrl = new AutoLoginController(
+  storageCtrl,
+  keystore,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  {},
+  new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+)
+
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore
+  keystore,
+  autoLogin: autoLoginCtrl
 })
 
 const portfolioCtrl = new PortfolioController(

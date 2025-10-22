@@ -16,6 +16,7 @@ import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IAutoLoginController } from '../../interfaces/autoLogin'
 import { IBannerController } from '../../interfaces/banner'
 import { IContractNamesController } from '../../interfaces/contractNames'
 import { IDappsController } from '../../interfaces/dapp'
@@ -72,6 +73,7 @@ import { AccountPickerController } from '../accountPicker/accountPicker'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { ContinuousUpdatesController } from '../continuousUpdates/continuousUpdates'
 import { ContractNamesController } from '../contractNames/contractNames'
@@ -163,6 +165,8 @@ export class MainController extends EventEmitter implements IMainController {
   domains: IDomainsController
 
   contractNames: IContractNamesController
+
+  autoLogin: IAutoLoginController
 
   accounts: IAccountsController
 
@@ -259,10 +263,20 @@ export class MainController extends EventEmitter implements IMainController {
       this.providers.updateProviderIsWorking.bind(this.providers),
       this.#updateIsOffline.bind(this)
     )
+    this.autoLogin = new AutoLoginController(
+      this.storage,
+      this.keystore,
+      this.providers,
+      this.networks,
+      this.accounts,
+      this.#externalSignerControllers,
+      this.invite
+    )
     this.selectedAccount = new SelectedAccountController({
       storage: this.storage,
       accounts: this.accounts,
-      keystore: this.keystore
+      keystore: this.keystore,
+      autoLogin: this.autoLogin
     })
     this.banner = new BannerController(this.storage)
     this.portfolio = new PortfolioController(
@@ -448,6 +462,7 @@ export class MainController extends EventEmitter implements IMainController {
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
       transactionManager: this.transactionManager,
+      autoLogin: this.autoLogin,
       getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
@@ -1068,6 +1083,20 @@ export class MainController extends EventEmitter implements IMainController {
     // Error handling on the prev step will notify the user, it's fine to return here
     if (!signedMessage) return
 
+    // The user may sign an invalid siwe message. We don't want to create policies
+    // for such messages
+    if (
+      signedMessage.content.kind === 'siwe' &&
+      signedMessage.content.parsedMessage &&
+      signedMessage.content.siweValidityStatus === 'valid'
+    ) {
+      await this.autoLogin.onSiweMessageSigned(
+        signedMessage.content.parsedMessage,
+        signedMessage.content.isAutoLoginEnabledByUser,
+        signedMessage.content.autoLoginDuration
+      )
+    }
+
     await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     await this.requests.resolveUserRequest(
@@ -1211,6 +1240,7 @@ export class MainController extends EventEmitter implements IMainController {
           ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
           : undefined
 
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.updateSelectedAccountPortfolio({ networks })
       }
     }
