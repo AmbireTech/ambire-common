@@ -1,6 +1,7 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
 
+import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
@@ -32,7 +33,10 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import {
+  calculateAndSetProjectedRewards,
+  calculateSelectedAccountPortfolio
+} from '../../libs/selectedAccount/selectedAccount'
 import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -335,6 +339,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult,
       this.#isPortfolioLoadingFromScratch
     )
+
+    // Find stkWALLET or WALLET token in the latest portfolio state
+    const walletORStkWalletToken = latestStateSelectedAccount['1']?.result?.tokens.find(
+      ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
+    )
+
+    // Calculate and add projected rewards token
+    const projectedRewardsToken = calculateAndSetProjectedRewards(
+      latestStateSelectedAccount?.projectedRewards,
+      newSelectedAccountPortfolio.balancePerNetwork,
+      walletORStkWalletToken && walletORStkWalletToken.priceIn[0].price
+    )
+
+    if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {

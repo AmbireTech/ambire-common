@@ -52,7 +52,11 @@ function getSignificantBalanceDecreaseWarning(
     !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotalInUSD = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
+    const latestTotalInUSD = getAccountPortfolioTotal(
+      latest,
+      ['rewards', 'gasTank', 'projectedRewards'],
+      false
+    )
     const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
     const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
     const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
