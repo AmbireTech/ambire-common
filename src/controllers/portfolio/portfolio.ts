@@ -47,7 +47,7 @@ import {
   ToBeLearnedAssets,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -91,7 +91,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #fetch: Fetch
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #velcroUrl: string
 
@@ -509,7 +509,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     let res: any
     try {
-      res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
+      res = await this.#callRelayer(
+        `/v2/identity/${accountId}/portfolio-additional`,
+        'GET',
+        undefined,
+        undefined,
+        5000
+      )
     } catch (e: any) {
       console.error('relayer error for portfolio additional')
       this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
