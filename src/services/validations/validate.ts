@@ -54,8 +54,7 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
 
 const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
-const FIRST_TIME_SEND_MESSAGE =
-  'First time sending to this address - no prior transactions in this browser’s history. Please double-check before sending.'
+const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
 
 function getTimeAgo(date: Date): string {
