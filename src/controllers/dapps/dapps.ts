@@ -10,13 +10,8 @@ import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // Create a static map for predefined dapps for efficient lookups
-<<<<<<< HEAD
 const legacyPredefinedDappsMap = new Map<string, typeof legacyPredefinedDapps[0]>()
 legacyPredefinedDapps.forEach((dapp) => {
-=======
-const predefinedDappsMap = new Map<string, typeof predefinedDapps[0]>()
-predefinedDapps.forEach((dapp) => {
->>>>>>> v2
   const id = getDappIdFromUrl(dapp.url)
   legacyPredefinedDappsMap.set(id, dapp)
 })
