@@ -1,4 +1,4 @@
-import { formatUnits, ZeroAddress } from 'ethers'
+import { ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
@@ -10,10 +10,7 @@ import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
-export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
-export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
-export const SIGN_ACCOUNT_OP_TRANSFER = 'signAccountOpTransfer'
-export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap' | 'signAccountOpTransfer'
+export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -55,7 +52,11 @@ function getSignificantBalanceDecreaseWarning(
     !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotalInUSD = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
+    const latestTotalInUSD = getAccountPortfolioTotal(
+      latest,
+      ['rewards', 'gasTank', 'projectedRewards'],
+      false
+    )
     const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
     const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
     const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD

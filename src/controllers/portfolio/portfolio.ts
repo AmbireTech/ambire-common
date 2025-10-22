@@ -573,6 +573,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
 
+    accountState.projectedRewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewardsProjectionData
+      }
+    }
+
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount || 0),
