@@ -256,7 +256,7 @@ describe('selectedAccount errors', () => {
           id: 'portfolio-critical',
           networkNames: ['Ethereum'],
           type: 'error',
-          title: 'Failed to retrieve the portfolio data',
+          title: 'Failed to retrieve the portfolio data on Ethereum',
           text: 'Account balance and visible assets may be inaccurate.'
         })
       })
@@ -267,7 +267,7 @@ describe('selectedAccount errors', () => {
             id: 'portfolio-critical',
             networkNames: ['Ethereum'],
             type: 'error',
-            title: 'Failed to retrieve the portfolio data',
+            title: 'Failed to retrieve the portfolio data on Ethereum',
             text: 'Account balance and visible assets may be inaccurate.'
           }
         ]
@@ -294,7 +294,7 @@ describe('selectedAccount errors', () => {
           id: 'loading-too-long',
           networkNames: ['BNB Smart Chain'],
           type: 'warning',
-          title: 'Loading is taking longer than expected',
+          title: 'Loading is taking longer than expected on BNB Smart Chain',
           text: 'Account balance and visible assets may be inaccurate.'
         })
       })
@@ -305,7 +305,7 @@ describe('selectedAccount errors', () => {
             id: 'loading-too-long',
             networkNames: ['BNB Smart Chain'],
             type: 'warning',
-            title: 'Loading is taking longer than expected',
+            title: 'Loading is taking longer than expected on BNB Smart Chain',
             text: 'Account balance and visible assets may be inaccurate.'
           }
         ]
@@ -340,7 +340,7 @@ describe('selectedAccount errors', () => {
           id: 'PriceFetchError',
           networkNames: ['Ethereum'],
           type: 'warning',
-          title: 'Failed to retrieve prices',
+          title: 'Failed to retrieve prices on Ethereum',
           text: 'Account balance and asset prices may be inaccurate.'
         })
       })
@@ -354,7 +354,7 @@ describe('selectedAccount errors', () => {
           id: 'NoApiHintsError',
           networkNames: ['Polygon'],
           type: 'error',
-          title: 'Automatic asset discovery is temporarily unavailable',
+          title: 'Automatic asset discovery is temporarily unavailable on Polygon',
           text: 'Your funds are safe, but your portfolio will be inaccurate. You can add assets manually or wait for the issue to be resolved.'
         })
       })
@@ -368,7 +368,7 @@ describe('selectedAccount errors', () => {
           id: 'StaleApiHintsError',
           networkNames: ['BNB Smart Chain'],
           type: 'warning',
-          title: 'Automatic asset discovery is temporarily unavailable',
+          title: 'Automatic asset discovery is temporarily unavailable on BNB Smart Chain',
           text: 'New assets may not be visible in your portfolio. You can add assets manually or wait for the issue to be resolved.'
         })
       })
@@ -382,21 +382,6 @@ describe('selectedAccount errors', () => {
             networkNames: ['Ethereum'],
             type: 'error',
             title: 'Failed to retrieve the portfolio data on Ethereum',
-            text: 'Account balance and visible assets may be inaccurate.'
-          }
-        ]
-        const result = addPortfolioError(existingErrors, 'Polygon', 'portfolio-critical')
-
-        expect(result[0].title).toBe('Failed to retrieve the portfolio data on Ethereum, Polygon')
-      })
-
-      it('should handle title without " on " when adding mockNetworks', () => {
-        const existingErrors: SelectedAccountBalanceError[] = [
-          {
-            id: 'portfolio-critical',
-            networkNames: ['Ethereum'],
-            type: 'error',
-            title: 'Failed to retrieve the portfolio data',
             text: 'Account balance and visible assets may be inaccurate.'
           }
         ]

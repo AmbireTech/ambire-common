@@ -47,6 +47,8 @@ export class Session {
 
   isWeb3App: boolean = false
 
+  isAmbireNext: boolean = false
+
   sendMessage(event: any, data: any) {
     if (!this.messenger) {
       console.error(
@@ -55,7 +57,11 @@ export class Session {
       return
     }
 
-    this.messenger.send('broadcast', { event, data }, { tabId: this.tabId })
+    this.messenger.send(
+      this.isAmbireNext ? 'broadcast-next' : 'broadcast',
+      { event, data },
+      { tabId: this.tabId }
+    )
   }
 
   constructor({ tabId, windowId, origin }: SessionInitProps = {}) {
@@ -80,8 +86,9 @@ export class Session {
     )
   }
 
-  setMessenger(messenger: Messenger) {
+  setMessenger(messenger: Messenger, isAmbireNext: boolean) {
     this.messenger = messenger
+    this.isAmbireNext = isAmbireNext
   }
 
   setProp({ icon, name }: SessionProp) {

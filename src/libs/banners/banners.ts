@@ -2,7 +2,6 @@ import { AccountId } from '../../interfaces/account'
 import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
-import { CashbackStatusByAccount } from '../../interfaces/selectedAccount'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { AccountState } from '../defiPositions/types'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
@@ -284,35 +283,6 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     ]
   }
   return banner
-}
-
-export const getFirstCashbackBanners = ({
-  selectedAccountAddr,
-  cashbackStatusByAccount
-}: {
-  selectedAccountAddr: string
-  cashbackStatusByAccount: CashbackStatusByAccount
-}): Banner[] => {
-  const banners: Banner[] = []
-
-  const shouldShowBanner = cashbackStatusByAccount[selectedAccountAddr] === 'unseen-cashback'
-
-  if (shouldShowBanner) {
-    banners.push({
-      id: `${selectedAccountAddr}-first-cashback-banner-banner`,
-      type: 'info',
-      title: "You've got cashback!",
-      text: 'You just received your first cashback from paying gas with Smart Account.',
-      actions: [
-        {
-          label: 'Open',
-          actionName: 'open-first-cashback-modal'
-        }
-      ]
-    })
-  }
-
-  return banners
 }
 
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'

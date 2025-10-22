@@ -67,6 +67,15 @@ export const buildSwitchAccountUserRequest = ({
   } as any
 }
 
+const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
+  return (
+    userRequests
+      .filter((req) => req.meta.topUpAmount)
+      .map((req) => req.meta.topUpAmount)
+      .reduce((a, b) => a + b, 0n) ?? undefined
+  )
+}
+
 export const makeAccountOpAction = ({
   account,
   chainId,
@@ -90,6 +99,11 @@ export const makeAccountOpAction = ({
       chainId,
       userRequests
     })
+
+    // add top ups
+    if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
+    accountOpAction.accountOp.meta.topUpAmount = sumTopUps(userRequests)
+
     // the nonce might have changed during estimation because of
     // a nonce discrepancy issue. This makes sure we're with the
     // latest nonce should the user decide to batch
@@ -145,7 +159,8 @@ export const makeAccountOpAction = ({
     meta: {
       paymasterService,
       walletSendCallsVersion,
-      setDelegation
+      setDelegation,
+      topUpAmount: sumTopUps(userRequests)
     }
   }
 
