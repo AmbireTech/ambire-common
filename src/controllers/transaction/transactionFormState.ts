@@ -1,5 +1,4 @@
 import { formatUnits, isAddress } from 'ethers'
-import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { testnetNetworks } from '../../consts/testnetNetworks'
@@ -15,6 +14,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {

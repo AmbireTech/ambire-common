@@ -18,7 +18,7 @@ import {
   SubmittedAccountOp,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 /* eslint-disable import/no-extraneous-dependencies */
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { parseLogs } from '../../libs/userOperation/userOperation'
@@ -205,6 +205,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     accountId: AccountId
   ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
     await this.#initialLoadPromise
+    if (!toAddress) return { found: false, lastTransactionDate: null }
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
@@ -215,9 +216,30 @@ export class ActivityController extends EventEmitter implements IActivityControl
       networks.forEach((network) => {
         if (!this.#accountsOps[account][network]) return
         this.#accountsOps[account][network].forEach((op) => {
-          const sentToTarget = op.calls.some(
-            (call) => call.to?.toLowerCase() === toAddress.toLowerCase()
-          )
+          const toAddrLower = toAddress.toLowerCase()
+          const sentToTarget = op.calls.some((call) => {
+            // 1) Direct call.to match
+            const directMatch = call.to?.toLowerCase() === toAddrLower
+            if (directMatch) return true
+
+            // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
+            const data = (call as Call).data as string | undefined
+            if (!data || typeof data !== 'string' || data.length < 10) return false
+
+            // Function selector for transfer(address,uint256)
+            if (data.startsWith('0xa9059cbb')) {
+              // After the 4-byte selector (8 hex chars), the next 32 bytes are the `to` address, left-padded.
+              // Take the first argument (64 hex chars), then the last 40 hex chars of it.
+              // data layout: 0x [8 selector] [64 arg1] [64 arg2]
+              const arg1Padded = data.slice(10, 74) // first 32 bytes (64 hex chars)
+              if (arg1Padded && arg1Padded.length === 64) {
+                const recipient = `0x${arg1Padded.slice(24)}`.toLowerCase()
+                if (recipient === toAddrLower) return true
+              }
+            }
+
+            return false
+          })
           if (sentToTarget) {
             found = true
             if (!lastTimestamp || op.timestamp > lastTimestamp) {
