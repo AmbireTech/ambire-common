@@ -8,52 +8,42 @@ import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
-import { SignAccountOpController } from './signAccountOp'
+import { SignAccountOpType } from './helper'
+import { OnBroadcastFailed, OnBroadcastSuccess, SignAccountOpController } from './signAccountOp'
 
 export class SignAccountOpTesterController extends SignAccountOpController {
-  constructor(
-    accounts: IAccountsController,
-    networks: INetworksController,
-    keystore: IKeystoreController,
-    portfolio: IPortfolioController,
-    externalSignerControllers: ExternalSignerControllers,
-    account: Account,
-    network: Network,
-    activity: IActivityController,
-    provider: RPCProvider,
-    fromActionId: AccountOpAction['id'],
-    accountOp: AccountOp,
-    isSignRequestStillActive: Function,
-    shouldSimulate: boolean,
-    shouldReestimate: boolean,
-    traceCall: (updatedAccountOp: AccountOp) => void,
-    estimateController: EstimationController,
+  constructor(props: {
+    type?: SignAccountOpType
+    callRelayer: Function
+    accounts: IAccountsController
+    networks: INetworksController
+    keystore: IKeystoreController
+    portfolio: IPortfolioController
+    externalSignerControllers: ExternalSignerControllers
+    account: Account
+    network: Network
+    activity: IActivityController
+    provider: RPCProvider
+    fromActionId: AccountOpAction['id']
+    accountOp: AccountOp
+    isSignRequestStillActive: Function
+    shouldSimulate: boolean
+    shouldReestimate: boolean
+    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void
+    traceCall?: Function
+    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastFailed?: OnBroadcastFailed
+    estimateController: EstimationController
     gasPriceController: GasPriceController
-  ) {
-    super(
-      accounts,
-      networks,
-      keystore,
-      portfolio,
-      externalSignerControllers,
-      account,
-      network,
-      activity,
-      provider,
-      fromActionId,
-      accountOp,
-      isSignRequestStillActive,
-      shouldSimulate,
-      shouldReestimate,
-      traceCall
-    )
+  }) {
+    super(props)
 
     // remove main handlers
     this.estimation.onUpdate(() => {})
     this.gasPrice.onUpdate(() => {})
 
     // assign easy to mock controllers
-    this.estimation = estimateController
-    this.gasPrice = gasPriceController
+    this.estimation = props.estimateController
+    this.gasPrice = props.gasPriceController
   }
 }
