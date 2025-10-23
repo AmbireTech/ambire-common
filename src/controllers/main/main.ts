@@ -351,7 +351,8 @@ export class MainController extends EventEmitter implements IMainController {
       appVersion: this.#appVersion,
       fetch: this.fetch,
       storage: this.storage,
-      networks: this.networks
+      networks: this.networks,
+      phishing: this.phishing
     })
 
     this.selectedAccount.initControllers({

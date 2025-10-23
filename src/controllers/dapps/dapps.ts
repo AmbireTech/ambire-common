@@ -1,5 +1,8 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-restricted-syntax */
+import { IPhishingController } from 'interfaces/phishing'
+import { networkChainIdToHex } from 'libs/networks/networks'
+
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
   categoriesToNeverExclude,
@@ -44,6 +47,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #networks: INetworksController
 
+  #phishing: IPhishingController
+
   #dapps = new Map<string, Dapp>()
 
   dappSessions: { [sessionId: string]: Session } = {}
@@ -57,12 +62,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     appVersion,
     fetch,
     storage,
-    networks
+    networks,
+    phishing
   }: {
     appVersion: string
     fetch: Fetch
     storage: IStorageController
     networks: INetworksController
+    phishing: IPhishingController
   }) {
     super()
 
@@ -70,6 +77,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#fetch = fetch
     this.#storage = storage
     this.#networks = networks
+    this.#phishing = phishing
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -412,28 +420,59 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
-  addDapp(dapp: Dapp) {
+  async addDapp(dapp: {
+    id: Dapp['id']
+    name: Dapp['name']
+    url: Dapp['url']
+    icon: Dapp['icon']
+    chainId?: Dapp['chainId']
+    isConnected: Dapp['isConnected']
+  }) {
     if (!this.isReady) return
 
     const existing = this.#dapps.get(dapp.id)
 
+    const network = this.#networks.allNetworks.find(
+      (n) => n.chainId.toString() === dapp.chainId?.toString()
+    )
+
+    const DEFAULT_CHAIN_ID = 1
+
     if (existing) {
       this.updateDapp(dapp.id, {
-        chainId: dapp.chainId,
-        isConnected: dapp.isConnected,
-        isCustom: dapp.isCustom ?? true,
-        favorite: dapp.favorite,
-        grantedPermissionId: dapp.grantedPermissionId,
-        grantedPermissionAt: dapp.grantedPermissionAt
+        chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+        isConnected: dapp.isConnected
       })
-      return
+    } else {
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+        description: '',
+        category: null,
+        favorite: false,
+        chainIds: [],
+        isFeatured: false,
+        isCustom: true,
+        tvl: null,
+        blacklisted: await this.#phishing.getIsBlacklisted(dapp.url),
+        geckoId: null,
+        twitter: null
+      } as Dapp)
+
+      await this.#storage.set('dapps', Array.from(this.#dapps.values()))
+      this.emitUpdate()
+
+      if (dapp.isConnected) {
+        await this.broadcastDappSessionEvent(
+          'chainChanged',
+          {
+            chain: networkChainIdToHex(dapp.chainId || DEFAULT_CHAIN_ID),
+            networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
+          },
+          dapp.id
+        )
+      }
     }
-
-    this.#dapps.set(dapp.id, dapp)
-
-    this.#storage.set('dapps', Array.from(this.#dapps.values()))
-
-    this.emitUpdate()
   }
 
   updateDapp(id: string, dapp: Partial<Dapp>) {

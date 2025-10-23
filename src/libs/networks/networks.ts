@@ -1,5 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
+import { toBeHex } from 'ethers'
+
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -505,5 +507,15 @@ export const getNetworksUpdatedWithRelayerNetworks = (
   return {
     mergedNetworks: networks,
     updatedNetworkChainIds
+  }
+}
+
+export const networkChainIdToHex = (chainId: number | bigint) => {
+  try {
+    // Remove leading zero in hex representation
+    // to match the format expected by dApps (e.g., "0xa" instead of "0x0a")
+    return toBeHex(chainId).replace(/^0x0/, '0x')
+  } catch (error) {
+    return `0x${chainId.toString(16)}`
   }
 }
