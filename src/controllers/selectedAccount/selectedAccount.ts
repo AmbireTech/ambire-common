@@ -49,6 +49,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isReadyToVisualize: false,
   isAllReady: false,
   shouldShowPartialResult: false,
+  isReloading: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -90,7 +91,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
-  #isPortfolioLoadingFromScratch = true
+  #isManualUpdate = true
 
   dashboardNetworkFilter: bigint | string | null = null
 
@@ -262,6 +263,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.defiPositions = []
     this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
+    this.updateSelectedAccountPortfolio(true)
+    this.#updateSelectedAccountDefiPositions(true)
     this.dashboardNetworkFilter = null
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
     this.#portfolioLoadingTimeout = null
@@ -288,8 +291,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   resetSelectedAccountPortfolio({
     maxDataAgeMs,
+    isManualUpdate,
     skipUpdate
-  }: { maxDataAgeMs?: number; skipUpdate?: boolean } = {}) {
+  }: { maxDataAgeMs?: number; isManualUpdate?: boolean; skipUpdate?: boolean } = {}) {
     if (!this.#portfolio || !this.account) return
 
     if (maxDataAgeMs) {
@@ -305,10 +309,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
       if (!networksThatAreAboutToBeUpdated.length) return
     }
+    if (isManualUpdate) {
+      this.#isManualUpdate = true
+    }
 
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
-    this.#isPortfolioLoadingFromScratch = true
     this.#portfolioByNetworks = {}
 
     if (!skipUpdate) {
@@ -337,7 +343,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       structuredClone(this.#portfolioByNetworks),
       defiPositionsAccountState,
       this.portfolio.shouldShowPartialResult,
-      this.#isPortfolioLoadingFromScratch
+      this.#isManualUpdate
     )
 
     // Find stkWALLET or WALLET token in the latest portfolio state
@@ -369,9 +375,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       }, 5000)
     }
 
-    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
-    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
-      this.#isPortfolioLoadingFromScratch = false
+    // Reset isManualUpdate flag when the portfolio has finished the initial load
+    if (this.#isManualUpdate && newSelectedAccountPortfolio.isAllReady) {
+      this.#isManualUpdate = false
     }
 
     this.portfolio = newSelectedAccountPortfolio

@@ -632,9 +632,9 @@ export class MainController extends EventEmitter implements IMainController {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      resetSelectedAccountPortfolio: false
+      maxDataAgeMs: 5 * 60 * 1000
     })
   }
 
@@ -1328,22 +1328,17 @@ export class MainController extends EventEmitter implements IMainController {
 
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
-    resetSelectedAccountPortfolio?: boolean
     maxDataAgeMs?: number
     isManualReload?: boolean
   }) {
-    const {
-      chainIds,
-      isManualReload = false,
-      maxDataAgeMs,
-      resetSelectedAccountPortfolio = true
-    } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
-    if (resetSelectedAccountPortfolio) this.selectedAccount.resetSelectedAccountPortfolio()
+    if (isManualReload)
+      this.selectedAccount.resetSelectedAccountPortfolio({ isManualUpdate: isManualReload })
 
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),

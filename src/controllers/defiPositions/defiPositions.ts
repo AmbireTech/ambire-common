@@ -390,16 +390,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     prepareNetworks()
 
-    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) {
-      // Emit a single update to trigger a calculation in the selected account portfolio
-      this.emitUpdate()
-      return
-    }
-    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) {
-      // Emit a single update to trigger a calculation in the selected account portfolio
-      this.emitUpdate()
-      return
-    }
+    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
+    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) return
 
     // Set all networks to loading
     networksToUpdate.forEach((n) => {
