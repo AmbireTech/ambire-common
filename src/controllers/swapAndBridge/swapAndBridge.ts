@@ -793,10 +793,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       routePriority
     } = props
 
-    // set the correct fromSelectedToken as the user might have selected
-    // a duplicate from his portfolio instead
     let fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
+      // if the provider is socket, convert the null addresses
+      fromSelectedToken.address = convertNullAddressToZeroAddressIfNeeded(fromSelectedToken.address)
+
+      // set the correct fromSelectedToken as the user might have selected
+      // a duplicate from his portfolio instead
       const validAddr = mapBannedToValidAddr(
         Number(fromSelectedToken.chainId),
         fromSelectedToken.address
@@ -815,12 +818,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       shouldIncrementFromAmountUpdateCounter = false
     } = updateProps || {}
 
-    // map the token back
     const chainId = toChainId ?? this.toChainId
-    const toSelectedTokenAddr =
-      chainId && props.toSelectedTokenAddr
-        ? mapBannedToValidAddr(Number(chainId), getAddress(props.toSelectedTokenAddr))
-        : undefined
+    let toSelectedTokenAddr: string | undefined
+
+    if (props.toSelectedTokenAddr && chainId) {
+      // if the provider is socket, convert the null addresses
+      toSelectedTokenAddr = convertNullAddressToZeroAddressIfNeeded(props.toSelectedTokenAddr)
+
+      // map the token back
+      toSelectedTokenAddr = mapBannedToValidAddr(Number(chainId), getAddress(toSelectedTokenAddr))
+    }
+
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
       fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
@@ -998,6 +1006,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         t.chainId === this.fromSelectedToken?.chainId
       )
     })
+
 
     const shouldUpdateFromSelectedToken =
       !this.fromSelectedToken || // initial (default) state
