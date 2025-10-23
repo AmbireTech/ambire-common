@@ -16,6 +16,7 @@ import {
   FormattedExternalHintsAPIResponse,
   GetOptions,
   Hints,
+  IsSuspectedType,
   NetworkState,
   PortfolioGasTankResult,
   ToBeLearnedAssets,
@@ -67,10 +68,11 @@ const isSuspectedToken = (
   symbol: TokenResult['symbol'],
   name: TokenResult['name'],
   chainId: TokenResult['chainId']
-): boolean =>
-  nonLatinSymbol(symbol) ||
-  nonLatinSymbol(name) ||
-  isSuspectedRegardsKnownAddresses(address, symbol, chainId)
+): IsSuspectedType => {
+  if (nonLatinSymbol(symbol)) return 'no-latin-symbol'
+  if (nonLatinSymbol(name)) return 'no-latin-name'
+  return isSuspectedRegardsKnownAddresses(address, symbol, chainId) ? 'suspected' : undefined
+}
 
 export function getFlags(
   networkData: any,
@@ -103,7 +105,7 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
-  let isSuspected
+  let isSuspected: IsSuspectedType
 
   if (blockTag && blockTag === 'pending' && !isRewardsOrGasTank) {
     isSuspected = isSuspectedToken(address, symbol, name, BigInt(chainId))
