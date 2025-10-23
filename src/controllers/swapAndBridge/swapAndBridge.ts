@@ -482,7 +482,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }
       })
     })
-    this.#emitUpdateIfNeeded()
+    // Fetch the supported networks in the beginning so we can disable the
+    // swap and bridge button of unsupported tokens on the dashboard, even if
+    // the user hasn't yet opened the swap and bridge screen
+    // (forceEmit true is crucial here)
+    this.#fetchSupportedChainsIfNeeded(true)
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -702,7 +706,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#serviceProviderAPI.isHealthy
   }
 
-  #fetchSupportedChainsIfNeeded = async () => {
+  #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
     const shouldNotReFetchSupportedChains =
       this.#cachedSupportedChains.data.length &&
       Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
@@ -712,7 +716,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
 
       this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
-      this.#emitUpdateIfNeeded()
+      this.#emitUpdateIfNeeded(forceUpdate)
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
@@ -1037,7 +1041,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const nextFromSelectedToken =
         fromSelectedTokenInNextPortfolio ||
         // Select the first token in the portfolio that is not the same as the "to" token
-        this.portfolioTokenList.find((t) => t.address !== this.toSelectedToken?.address) ||
+        this.portfolioTokenList.find(
+          (t) =>
+            t.address !== this.toSelectedToken?.address &&
+            this.supportedChainIds.includes(t.chainId)
+        ) ||
         null
 
       await this.updateForm(

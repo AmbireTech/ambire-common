@@ -1990,6 +1990,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
+
+        // fetch the nonce if needed
+        const nonce = await this.baseAccount.getBroadcastNonce(
+          this.#activity,
+          this.accountOp,
+          this.provider
+        )
+        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
         })
@@ -2136,6 +2145,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       } else {
         // Relayer
         this.#addFeePayment()
+
+        // fetch the nonce if needed
+        const nonce = await this.baseAccount.getBroadcastNonce(
+          this.#activity,
+          this.accountOp,
+          this.provider
+        )
+        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
@@ -2313,7 +2330,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
 
         transactionRes = {
-          nonce,
+          nonce:
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+              ? Number(accountOp.nonce)
+              : nonce,
           identifiedBy: {
             type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
             identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
@@ -2564,7 +2584,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
         message =
           'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
-      } else if (originalMessage.includes('user nonce') && isRelayer) {
+      } else if (
+        originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
+        originalMessage.includes('user nonce')
+      ) {
+        message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
           .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
           .then(() => this.simulate())
@@ -2595,7 +2619,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#onBroadcastFailed(this.#accountOp)
     }
 
-    throw new EmittableError({
+    this.emitError({
       level: 'major',
       message,
       error: _err || new Error(message),

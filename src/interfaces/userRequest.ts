@@ -1,9 +1,11 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
+import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
 import { Session } from '../classes/session'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { SignMessageAction } from './actions'
+import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EILSignature, EIP7702Signature } from './signatures'
@@ -21,6 +23,16 @@ export interface Calls {
 export interface PlainTextMessage {
   kind: 'message'
   message: Hex
+}
+
+export interface SiweMessage {
+  kind: 'siwe'
+  message: PlainTextMessage['message']
+  parsedMessage: ViemSiweMessage
+  siweValidityStatus: SiweValidityStatus
+  autoLoginStatus: AutoLoginStatus
+  isAutoLoginEnabledByUser: boolean
+  autoLoginDuration: number
 }
 
 export interface TypedMessage {
@@ -57,7 +69,7 @@ export interface Message {
   fromActionId: SignMessageAction['id']
   accountAddr: AccountId
   chainId: bigint
-  content: PlainTextMessage | TypedMessage | Authorization | SignUserOperations
+  content: PlainTextMessage | TypedMessage | Authorization | SiweMessage | SignUserOperations
   signature: EIP7702Signature | EILSignature[] | string | null
 }
 
@@ -67,6 +79,7 @@ export interface SignUserRequest {
     | Calls
     | PlainTextMessage
     | TypedMessage
+    | SiweMessage
     | Authorization
     | SignUserOperations
     | { kind: 'benzin' }
@@ -80,6 +93,7 @@ export interface SignUserRequest {
     submittedAccountOp?: any
     activeRouteId?: string
     dapp?: Dapp
+    topUpAmount?: bigint
     [key: string]: any
   }
   // defined only when SignUserRequest is built from a DappRequest
@@ -93,7 +107,10 @@ export interface SignUserRequest {
 export interface DappUserRequest {
   id: string | number
   action: {
-    kind: Exclude<string, 'calls' | 'message' | 'typedMessage' | 'benzin' | 'switchAccount'>
+    kind: Exclude<
+      string,
+      'calls' | 'message' | 'siwe' | 'typedMessage' | 'benzin' | 'switchAccount'
+    >
     params: any
   }
   session: Session

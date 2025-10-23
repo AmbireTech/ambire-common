@@ -14,7 +14,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import { ISignMessageController } from '../../interfaces/signMessage'
+import { ISignMessageController, SignMessageUpdateParams } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import {
   get7702Sig,
@@ -102,7 +102,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     await this.#accounts.initialLoadPromise
 
     if (
-      ['message', 'typedMessage', 'authorization-7702', 'signUserOperations'].includes(
+      ['message', 'typedMessage', 'authorization-7702', 'siwe', 'signUserOperations'].includes(
         messageToSign.content.kind
       )
     ) {
@@ -132,6 +132,27 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signedMessage = null
     this.signingKeyAddr = null
     this.signingKeyType = null
+    this.emitUpdate()
+  }
+
+  update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
+    if (!this.isInitialized) {
+      this.emitError({
+        level: 'major',
+        message: 'There was an error while updating the sign message request. Please try again.',
+        error: new Error('signMessage: controller not initialized')
+      })
+      return
+    }
+
+    if (this.messageToSign && this.messageToSign.content.kind === 'siwe') {
+      if (typeof isAutoLoginEnabledByUser === 'boolean') {
+        this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
+      }
+      if (typeof autoLoginDuration === 'number') {
+        this.messageToSign.content.autoLoginDuration = autoLoginDuration
+      }
+    }
     this.emitUpdate()
   }
 

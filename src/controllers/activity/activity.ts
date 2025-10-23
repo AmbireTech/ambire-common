@@ -1,3 +1,5 @@
+import { Interface, isAddress } from 'ethers'
+
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -7,7 +9,6 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOpIdentifiedBy,
   fetchFrontRanTxnId,
@@ -136,8 +137,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #onContractsDeployed: (network: Network) => Promise<void>
 
-  #rbfStatuses = [AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck]
-
   #callRelayer: Function
 
   #bannersByAccount: Map<string, Banner[]> = new Map()
@@ -206,6 +205,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ): Promise<{ found: boolean; lastTransactionDate: Date | null }> {
     await this.#initialLoadPromise
     if (!toAddress) return { found: false, lastTransactionDate: null }
+    const transferIface = new Interface(['function transfer(address,uint256)'])
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
     let found = false
     let lastTimestamp: number | null = null
@@ -220,21 +220,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
           const sentToTarget = op.calls.some((call) => {
             // 1) Direct call.to match
             const directMatch = call.to?.toLowerCase() === toAddrLower
-            if (directMatch) return true
+            if (directMatch && isAddress(call.to)) return true
 
             // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
             const data = (call as Call).data as string | undefined
             if (!data || typeof data !== 'string' || data.length < 10) return false
 
-            // Function selector for transfer(address,uint256)
-            if (data.startsWith('0xa9059cbb')) {
-              // After the 4-byte selector (8 hex chars), the next 32 bytes are the `to` address, left-padded.
-              // Take the first argument (64 hex chars), then the last 40 hex chars of it.
-              // data layout: 0x [8 selector] [64 arg1] [64 arg2]
-              const arg1Padded = data.slice(10, 74) // first 32 bytes (64 hex chars)
-              if (arg1Padded && arg1Padded.length === 64) {
-                const recipient = `0x${arg1Padded.slice(24)}`.toLowerCase()
+            const selector = transferIface.getFunction('transfer')?.selector
+            if (selector && data.startsWith(selector)) {
+              try {
+                const decoded = transferIface.decodeFunctionData('transfer', data)
+                const recipient = (decoded[0] as string).toLowerCase()
                 if (recipient === toAddrLower) return true
+              } catch {
+                // ignore decode errors and continue
               }
             }
 
@@ -606,35 +605,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   )
                 })
               }
-
-              // if there are more than 1 txns with the same nonce and payer,
-              // we can conclude this one is replaced by fee
-              //
-              // Comment out this code as it's doing more bad than good.
-              // In order to track rbf transactions, we need a per account unique nonce
-              // in submitted account op first
-              // const sameNonceTxns = this.#accountsOps[selectedAccount][
-              //   network.chainId.toString()
-              // ].filter(
-              //   (accOp) =>
-              //     accOp.gasFeePayment &&
-              //     accountOp.gasFeePayment &&
-              //     accOp.gasFeePayment.paidBy === accountOp.gasFeePayment.paidBy &&
-              //     accOp.nonce.toString() === accountOp.nonce.toString()
-              // )
-              // const confirmedSameNonceTxns = sameNonceTxns.find(
-              //   (accOp) =>
-              //     accOp.status === AccountOpStatus.Success ||
-              //     accOp.status === AccountOpStatus.Failure
-              // )
-              // if (sameNonceTxns.length > 1 && !!confirmedSameNonceTxns) {
-              //   const updatedOpIfAny = updateOpStatus(
-              //     this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
-              //     AccountOpStatus.UnknownButPastNonce
-              //   )
-              //   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              //   shouldUpdatePortfolio = true
-              // }
             }
           )
         )
@@ -693,46 +663,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
-  /**
-   * A not confirmed account op can actually be with a status of BroadcastButNotConfirmed
-   * and BroadcastButStuck. Typically, it becomes BroadcastButStuck if not confirmed
-   * in a 15 minutes interval after becoming BroadcastButNotConfirmed. We need two
-   * statuses to hide the banner of BroadcastButNotConfirmed from the dashboard.
-   */
-  getNotConfirmedOpIfAny(accId: AccountId, chainId: bigint): SubmittedAccountOp | null {
-    const acc = this.#accounts.accounts.find((oneA) => oneA.addr === accId)
-    if (!acc) return null
+  getLastFive(): SubmittedAccountOp[] {
+    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
+      return []
 
-    // if the broadcasting account is a smart account, it means relayer
-    // broadcast => it's in this.#accountsOps[acc.addr][chainId]
-    // disregard erc-4337 txns as they shouldn't have an RBF
-    const isSA = isSmartAccount(acc)
-    if (isSA) {
-      if (!this.#accountsOps[acc.addr] || !this.#accountsOps[acc.addr][chainId.toString(0)])
-        return null
-      if (!this.#rbfStatuses.includes(this.#accountsOps[acc.addr][chainId.toString(0)][0].status!))
-        return null
-
-      return this.#accountsOps[acc.addr][chainId.toString(0)][0]
-    }
-
-    // if the account is an EOA, we have to go through all the smart accounts
-    // to check whether the EOA has made a broadcast for them
-    const theEOAandSAaccounts = this.#accounts.accounts.filter(
-      (oneA) => isSmartAccount(oneA) || oneA.addr === accId
-    )
-    const ops: SubmittedAccountOp[] = []
-    theEOAandSAaccounts.forEach((oneA) => {
-      if (!this.#accountsOps[oneA.addr] || !this.#accountsOps[oneA.addr][chainId.toString()]) return
-      const op = this.#accountsOps[oneA.addr][chainId.toString()].find(
-        (oneOp) =>
-          this.#rbfStatuses.includes(this.#accountsOps[oneA.addr][chainId.toString()][0].status!) &&
-          oneOp.gasFeePayment?.paidBy === oneA.addr
-      )
-      if (!op) return
-      ops.push(op)
-    })
-    return !ops.length ? null : ops.reduce((m, e) => (e.nonce > m.nonce ? e : m))
+    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
+      .flat()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 5)
   }
 
   async findMessage(account: string, filter: (item: SignedMessage) => boolean) {

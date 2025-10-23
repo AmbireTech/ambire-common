@@ -11,8 +11,10 @@ import {
   AccountOpAction,
   Action,
   ActionExecutionType,
-  ActionPosition
+  ActionPosition,
+  ActionType
 } from '../../interfaces/actions'
+import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
@@ -61,6 +63,7 @@ import {
   prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
 import { ActionsController } from '../actions/actions'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -96,6 +99,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #transactionManager?: ITransactionManagerController
 
   #ui: IUiController
+
+  #autoLogin: IAutoLoginController
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
@@ -134,6 +139,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge,
     transactionManager,
     ui,
+    autoLogin,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
@@ -153,6 +159,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
+    autoLogin: IAutoLoginController
     getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
@@ -174,6 +181,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
+    this.#autoLogin = autoLogin
 
     this.#getSignAccountOp = getSignAccountOp
     this.#getMainStatuses = getMainStatuses
@@ -372,7 +380,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
       } else {
-        let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
+        let actionType: ActionType = 'dappRequest'
 
         if (
           req.action.kind === 'typedMessage' ||
@@ -397,7 +405,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
         if (req.action.kind === 'benzin') actionType = 'benzin'
         if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
-        if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
+        if (req.action.kind === 'authorization-7702' || req.action.kind === 'siwe')
+          actionType = 'signMessage'
 
         actionsToAdd.push({
           id,
@@ -731,6 +740,68 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         },
         dappPromise
       } as SignUserRequest
+
+      // SIWE
+      const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
+      const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
+        rawMessage,
+        request.origin
+      )
+
+      // Handle valid and invalid SIWE messages
+      // If it's valid we want to try to auto-login the user
+      // If it's not we want to flag it to the UI to inform the user
+      if (rawMessage && parsedSiweAndStatus) {
+        const { parsedSiwe, status } = parsedSiweAndStatus
+        let autoLoginStatus: AutoLoginStatus = 'no-policy'
+
+        // Try to auto-login
+        if (status === 'valid' && parsedSiwe) {
+          try {
+            autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
+
+            if (autoLoginStatus === 'active') {
+              // Sign and respond
+              const signedMessage = await this.#autoLogin.autoLogin({
+                message: rawMessage as `0x${string}`,
+                chainId: network.chainId,
+                accountAddr: msgAddress
+              })
+
+              if (!signedMessage) {
+                throw new EmittableError({
+                  message: 'Auto-login failed. Please sign the message manually.',
+                  level: 'major',
+                  error: new Error('SIWE autologin - signedMessage is null')
+                })
+              }
+
+              console.log(
+                `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
+              )
+
+              dappPromise.resolve({ hash: signedMessage.signature })
+              return
+            }
+          } catch (e: any) {
+            this.emitError({
+              error: e,
+              message: 'Auto-login failed. Please sign the message manually.',
+              level: 'major'
+            })
+          }
+        }
+
+        userRequest.action = {
+          kind: 'siwe',
+          message: msg[0],
+          parsedMessage: parsedSiwe,
+          autoLoginStatus,
+          siweValidityStatus: status,
+          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
+          autoLoginDuration: this.#autoLogin.settings.duration
+        }
+      }
     } else if (kind === 'typedMessage') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -962,12 +1033,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #buildTransferUserRequest({
     amount,
+    amountInFiat,
     recipientAddress,
     selectedToken,
     actionExecutionType = 'open-action-window',
     windowId
   }: {
     amount: string
+    amountInFiat: bigint
     recipientAddress: string
     selectedToken: TokenResult
     // eslint-disable-next-line default-param-last
@@ -989,6 +1062,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccount.account.addr,
       amount,
+      amountInFiat,
       selectedToken,
       recipientAddress,
       paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),

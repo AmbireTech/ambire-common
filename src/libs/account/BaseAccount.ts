@@ -1,8 +1,10 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   BundlerStateOverride,
@@ -127,5 +129,17 @@ export abstract class BaseAccount {
    */
   canSendRawUserOperation(): boolean {
     return false
+  }
+
+  /**
+   * Get the broadcast nonce for each account if special conditions
+   * for its fetch should apply
+   */
+  async getBroadcastNonce(
+    activity: IActivityController,
+    op: AccountOp,
+    provider: RPCProvider
+  ): Promise<bigint> {
+    return op.nonce as bigint
   }
 }
