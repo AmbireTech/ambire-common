@@ -496,7 +496,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
       pendingStateSelectedAccount,
       hasPending
     )
-  let isAllReady = !!hasLatest
+  let isAllReady = !!hasLatest || !!hasPending
   let isReadyToVisualize = false
   let hasTokensWithAmount = false
   let isReloading = false
@@ -513,10 +513,12 @@ export function calculateSelectedAccountPortfolioByNetworks(
       networkData,
       defiPositionsNetworkState
     )
+    const isDefiOrPortfolioLoading = networkData?.isLoading || defiPositionsNetworkState?.isLoading
     const result = networkData?.result
-    const isLoadingFromScratch = (!networkData?.isReady || isManualUpdate) && networkData?.isLoading
+    const isLoadingFromScratch =
+      (!networkData?.isReady || isManualUpdate) && isDefiOrPortfolioLoading
 
-    if (!isReloading && networkData?.isLoading) {
+    if (!isReloading && isDefiOrPortfolioLoading) {
       isReloading =
         !!networkData?.result?.lastSuccessfulUpdate &&
         networkData.result.lastSuccessfulUpdate - Date.now() > 60 * 60 * 1000
@@ -524,6 +526,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
     if (isLoadingFromScratch) isAllReady = false
 
     if (!shouldRecalculateState) {
+      // If a recalculation is not needed, we just copy the previous state
       newAccountPortfolioWithDefiPositions[network] =
         pastAccountPortfolioWithDefiPositionsNetworkState
 
@@ -540,10 +543,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
     let collectionsArray: CollectionResult[] = []
     let networkTotal = 0
 
-    if (
-      // The network must be ready
-      isNetworkReady(networkData)
-    ) {
+    if (isNetworkReady(networkData)) {
       networkTotal = networkData?.result?.total?.usd || 0
 
       const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
@@ -562,6 +562,9 @@ export function calculateSelectedAccountPortfolioByNetworks(
         hasTokensWithAmount = true
       }
 
+      // In case defi positions haven't loaded at this point we will still calculate the portfolio
+      // and add the defi positions when they are ready. This is done to not block the user from seeing
+      // their portfolio because of a loading issue with defi positions
       const defiPositions = calculateDefiPositions(network, tokensArray, defiPositionsAccountState)
 
       // Replace the token list with the token list that has the defi tokens
