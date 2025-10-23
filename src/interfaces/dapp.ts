@@ -18,6 +18,7 @@ export interface Dapp {
   networkNames: string[]
   isConnected: boolean
   isFeatured: boolean
+  isCustom: boolean
   chainId: number
   favorite: boolean
   blacklisted?: boolean

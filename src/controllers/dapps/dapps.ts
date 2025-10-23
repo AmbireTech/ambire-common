@@ -1,12 +1,19 @@
+/* eslint-disable no-continue */
+/* eslint-disable no-restricted-syntax */
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
-import { dappIdsToBeRemoved, featuredDapps, predefinedDapps } from '../../consts/dapps'
+import {
+  dappIdsToBeRemoved,
+  defiLlamaProtocolIdsToExclude,
+  featuredDapps,
+  predefinedDapps
+} from '../../consts/dapps'
 import legacyPredefinedDapps from '../../consts/legacyDappCatalog.json'
 import { Dapp, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { IStorageController } from '../../interfaces/storage'
-import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
+import { formatDappName, getDappIdFromUrl } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // Create a static map for predefined dapps for efficient lookups
@@ -24,9 +31,7 @@ legacyPredefinedDapps.forEach((dapp) => {
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
 
 export class DappsController extends EventEmitter implements IDappsController {
-  #dapps: Dapp[] = []
-
-  #lastDappsUpdateVersion: string | null = null
+  #appVersion: string
 
   #fetch: Fetch
 
@@ -34,7 +39,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #networks: INetworksController
 
-  #isLegacyStructure: boolean = false
+  #dapps = new Map<string, Dapp>()
 
   dappSessions: { [sessionId: string]: Session } = {}
 
@@ -44,16 +49,19 @@ export class DappsController extends EventEmitter implements IDappsController {
   isUpdatingDapps: boolean = false
 
   constructor({
+    appVersion,
     fetch,
     storage,
     networks
   }: {
+    appVersion: string
     fetch: Fetch
     storage: IStorageController
     networks: INetworksController
   }) {
     super()
 
+    this.#appVersion = appVersion
     this.#fetch = fetch
     this.#storage = storage
     this.#networks = networks
@@ -69,27 +77,39 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   get dapps(): Dapp[] {
-    // Create a map for faster lookups of user dapps
-    const userDappsMap = new Map<string, Dapp>()
-    this.#dapps.forEach((dapp) => {
-      userDappsMap.set(dapp.id, dapp)
-    })
+    let isLegacyStructure = false
 
-    if (this.#isLegacyStructure) {
-      // Start with predefined dapps first (maintaining order)
+    // Detect legacy structure during map iteration (no need for Array.from)
+    for (const d of this.#dapps.values()) {
+      if (!d.networkNames && !d.tvl && !d.category) {
+        isLegacyStructure = true
+        break
+      }
+    }
+
+    const sortDapps = (a: Dapp, b: Dapp) => {
+      // 1. rewards.ambire.com always first
+      if (a.id === 'rewards.ambire.com') return -1
+      if (b.id === 'rewards.ambire.com') return 1
+
+      // 2. Featured first, then by TVL
+      return Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl)
+    }
+
+    if (isLegacyStructure) {
       const result: Dapp[] = []
-      legacyPredefinedDapps.forEach((predefinedDapp) => {
+      const userDappsMap = this.#dapps
+
+      for (const predefinedDapp of legacyPredefinedDapps) {
         const id = getDappIdFromUrl(predefinedDapp.url)
         const userDapp = userDappsMap.get(id)
 
         result.push({
           id,
-          // Take metadata from predefined dapp
           name: predefinedDapp.name,
           description: predefinedDapp.description,
           icon: predefinedDapp.icon,
           url: predefinedDapp.url,
-          // Take user data if available, otherwise use defaults
           category: userDapp?.category ?? null,
           networkNames: userDapp?.networkNames ?? [],
           tvl: userDapp?.tvl ?? null,
@@ -97,6 +117,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           geckoId: userDapp?.geckoId ?? null,
           isConnected: userDapp?.isConnected ?? false,
           isFeatured: featuredDapps.has(id),
+          isCustom: userDapp?.isCustom ?? false,
           chainId: userDapp?.chainId ?? 1,
           favorite: userDapp?.favorite ?? false,
           ...(userDapp?.grantedPermissionId && {
@@ -107,30 +128,34 @@ export class DappsController extends EventEmitter implements IDappsController {
           }),
           ...(userDapp?.blacklisted !== undefined && { blacklisted: userDapp.blacklisted })
         })
-      })
+      }
 
-      // Add user-only dapps (not in predefined list)
-      this.#dapps.forEach((userDapp) => {
-        if (!legacyPredefinedDappsMap.has(userDapp.id)) result.push(userDapp)
-      })
+      // Add user-only dapps not in predefined list
+      for (const [id, userDapp] of this.#dapps) {
+        if (!legacyPredefinedDappsMap.has(id)) result.push(userDapp)
+      }
 
+      result.sort(sortDapps)
       return result
     }
 
-    return this.#dapps
-      .filter((d) => {
-        if (!d.isFeatured && !d.networkNames.length) return false
-        if (d.isFeatured) return true
-        if (d.tvl && d.tvl > 10000000) return true
-        return false
-      })
-      .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl))
-  }
+    // Non-legacy flow: filter & sort directly using map iteration
+    const filtered: Dapp[] = []
+    for (const d of this.#dapps.values()) {
+      if (d.isFeatured || d.isConnected || d.isCustom) {
+        filtered.push(d)
+        continue
+      }
 
-  set dapps(updatedDapps: Dapp[]) {
-    this.#dapps = updatedDapps
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#storage.set('dapps', updatedDapps)
+      // For non-featured dapps: exclude only those with no networks and low/no tvl
+      if (!d.networkNames.length || !(d.tvl && d.tvl > 10_000_000)) continue
+
+      filtered.push(d)
+    }
+
+    filtered.sort(sortDapps)
+
+    return filtered
   }
 
   async #load() {
@@ -140,119 +165,131 @@ export class DappsController extends EventEmitter implements IDappsController {
     // Keeping this here as a reminder to handle future use of the `dappSessions` key with caution.
     this.#storage.remove('dappSessions')
 
-    const [storedDapps, lastDappsUpdateVersion] = await Promise.all([
-      this.#storage.get('dapps', []),
-      this.#storage.get('lastDappsUpdateVersion', null)
-    ])
-    this.fetchAndUpdateDapps(storedDapps, lastDappsUpdateVersion)
-    this.#dapps = storedDapps
+    const storedDapps = await this.#storage.get('dapps', [])
+    this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
+    this.fetchAndUpdateDapps(this.#dapps)
   }
 
-  async fetchAndUpdateDapps(prevDapps: Dapp[], lastDappsUpdateVersion: string | null) {
+  async fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
     this.isUpdatingDapps = true
-    await this.#fetchAndUpdateDapps(prevDapps, lastDappsUpdateVersion)
+    this.emitUpdate()
+    await this.#fetchAndUpdateDapps(prevDapps)
     this.isUpdatingDapps = false
+    this.emitUpdate()
   }
 
-  async #fetchAndUpdateDapps(prevDapps: Dapp[], lastDappsUpdateVersion: string | null) {
-    let updatedDapps = []
+  async #fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
+    const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
+    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    const prevDappsArray = Array.from(prevDapps.values())
+
+    const isLegacyStructure = prevDappsArray.some((d) => !d.networkNames && !d.tvl && !d.category)
+    const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
+    const prevCustomDapps = prevDappsArray.filter(
+      (d) => d.isCustom || d.description.startsWith('Custom app automatically added')
+    )
+
+    const dappsMap = new Map()
+
     let fetchedDappsList: DefiLlamaProtocol[] = []
-
     try {
-      const dappsUrl = 'https://api.llama.fi/protocols'
-
-      const resp = await this.#fetch(dappsUrl)
-      fetchedDappsList = await resp.json()
+      const res = await this.#fetch('https://api.llama.fi/protocols')
+      if (!res.ok) throw new Error(`Status -' ${res.status}`)
+      fetchedDappsList = await res.json()
     } catch (err) {
       console.error('Dapps fetch failed:', err)
     }
 
-    if (!fetchedDappsList.length) {
-      const isLegacyStructure = prevDapps.every((d) => !d.networkNames && !d.tvl && !d.category)
-      updatedDapps = patchStorageApps(
-        isLegacyStructure
-          ? prevDapps.map((p) => ({
-              ...p,
-              category: 'unknown',
-              networkNames: [],
-              tvl: null,
-              twitter: null,
-              geckoId: null
-            }))
-          : prevDapps
-      )
-      this.#isLegacyStructure = true
+    if (fetchedDappsList.length) {
+      for (const dapp of fetchedDappsList) {
+        if (['CEX', 'Developer Tools'].includes(dapp.category)) continue
+
+        if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) continue
+
+        const id = getDappIdFromUrl(dapp.url)
+
+        const prevStoredDapp = prevDapps.get(id)
+
+        const updatedDapp: Dapp = {
+          id,
+          name: formatDappName(dapp.name),
+          description: dapp.description,
+          url: dapp.url,
+          icon: dapp.logo,
+          category: dapp.category,
+          tvl: dapp.tvl,
+          networkNames: dapp.chains.filter((c) =>
+            this.#networks.networks.some((n) => n.name.toLowerCase() === c.toLowerCase())
+          ),
+          isConnected: prevStoredDapp?.isConnected || false,
+          isFeatured: featuredDapps.has(id),
+          isCustom:
+            !!prevStoredDapp?.isCustom ||
+            !!prevStoredDapp?.description?.startsWith('Custom app automatically added'),
+          chainId: prevStoredDapp?.chainId || 1,
+          favorite: !!prevStoredDapp?.favorite,
+          blacklisted: !!prevStoredDapp?.blacklisted,
+          twitter: dapp.twitter,
+          geckoId: dapp.gecko_id,
+          grantedPermissionId: prevStoredDapp?.grantedPermissionId,
+          grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
+        }
+
+        if (!dappsMap.has(id)) dappsMap.set(id, updatedDapp)
+      }
+    } else {
+      // fallback if fetch fails
+      for (const p of isLegacyStructure
+        ? prevDappsArray.map((d) => ({
+            ...d,
+            category: 'unknown',
+            networkNames: [],
+            isCustom: d?.description?.startsWith('Custom app automatically added'),
+            tvl: null,
+            twitter: null,
+            geckoId: null
+          }))
+        : prevDappsArray)
+        dappsMap.set(p.id, p)
     }
 
-    updatedDapps = fetchedDappsList.reduce((acc: Dapp[], dapp: DefiLlamaProtocol) => {
-      if (dapp.category === 'CEX') return acc
-
-      const prevStoredDapp = prevDapps.find(
-        (d) => getDappIdFromUrl(d.url) === getDappIdFromUrl(dapp.url)
-      )
-
-      const id = prevStoredDapp?.id || getDappIdFromUrl(dapp.url)
-
-      if (dappIdsToBeRemoved.has(id)) return acc
-
-      const updatedDapp: Dapp = {
-        id,
-        name: dapp.name,
-        description: dapp.description,
-        url: dapp.url,
-        icon: dapp.logo,
-        category: dapp.category,
-        tvl: dapp.tvl,
-        networkNames: dapp.chains.filter((c) =>
-          this.#networks.networks.some((n) => n.name.toLowerCase() === c.toLowerCase())
-        ),
-        isConnected: prevStoredDapp?.isConnected || false,
-        isFeatured: featuredDapps.has(id),
-        chainId: prevStoredDapp?.chainId || 1,
-        favorite: prevStoredDapp?.favorite || false,
-        blacklisted: prevStoredDapp?.blacklisted || false,
-        twitter: dapp.twitter,
-        geckoId: dapp.gecko_id,
-        grantedPermissionId: prevStoredDapp?.grantedPermissionId,
-        grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
-      }
-
-      acc.push(updatedDapp)
-      return acc
-    }, [])
-
-    const extendedPredefined = predefinedDapps.map((pd) => {
+    // Add predefined
+    for (const pd of predefinedDapps) {
       const id = getDappIdFromUrl(pd.url)
-      const prevStoredDapp = prevDapps.find((d) => d.id === id)
-      return {
-        id,
-        name: pd.name,
-        description: pd.description,
-        url: pd.url,
-        icon: pd.icon,
-        category: null,
-        tvl: null,
-        networkNames: pd.networkNames || [],
-        isConnected: prevStoredDapp?.isConnected || false,
-        isFeatured: featuredDapps.has(id),
-        chainId: prevStoredDapp?.chainId || 1,
-        favorite: prevStoredDapp?.favorite || false,
-        blacklisted: prevStoredDapp?.blacklisted || false,
-        twitter: null,
-        geckoId: null,
-        grantedPermissionId: prevStoredDapp?.grantedPermissionId,
-        grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
+
+      if (!dappsMap.has(id)) {
+        dappsMap.set(id, {
+          id,
+          name: formatDappName(pd.name),
+          description: pd.description,
+          url: pd.url,
+          icon: pd.icon,
+          category: null,
+          tvl: null,
+          networkNames: pd.networkNames || [],
+          isConnected: false,
+          isFeatured: featuredDapps.has(id),
+          isCustom: false,
+          chainId: 1,
+          favorite: false,
+          blacklisted: false,
+          twitter: null,
+          geckoId: null
+        })
       }
-    })
+    }
 
-    const existingIds = new Set(updatedDapps.map((d) => d.id))
-    // eslint-disable-next-line no-restricted-syntax
-    for (const d of extendedPredefined) if (!existingIds.has(d.id)) updatedDapps.push(d)
+    // Add connected + custom
+    for (const d of [...prevConnectedDapps, ...prevCustomDapps]) {
+      if (!dappsMap.has(d.id)) dappsMap.set(d.id, d)
+    }
 
-    this.#dapps = updatedDapps
-    // this.#lastDappsUpdateVersion =
+    // Delete legacy IDs
+    for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
 
-    this.emitUpdate()
+    this.#dapps = dappsMap
+    await this.#storage.set('dapps', Array.from(dappsMap.values()))
+    await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
   }
 
   #createDappSession = (initProps: SessionInitProps) => {
@@ -349,48 +386,57 @@ export class DappsController extends EventEmitter implements IDappsController {
   addDapp(dapp: Dapp) {
     if (!this.isReady) return
 
-    const doesAlreadyExist = this.dapps.find((d) => d.id === dapp.id)
+    const existing = this.#dapps.get(dapp.id)
 
-    if (doesAlreadyExist) {
+    if (existing) {
       this.updateDapp(dapp.id, {
         chainId: dapp.chainId,
         isConnected: dapp.isConnected,
+        isCustom: dapp.isCustom ?? true,
         favorite: dapp.favorite,
         grantedPermissionId: dapp.grantedPermissionId,
         grantedPermissionAt: dapp.grantedPermissionAt
       })
       return
     }
-    this.dapps = [...this.dapps, dapp]
+
+    this.#dapps.set(dapp.id, dapp)
+
+    this.#storage.set('dapps', Array.from(this.#dapps.values()))
+
     this.emitUpdate()
   }
 
   updateDapp(id: string, dapp: Partial<Dapp>) {
     if (!this.isReady) return
 
-    // Override the name of a dapp that's in our predefined list
+    const existing = this.#dapps.get(id)
+    if (!existing) return
+
+    // Prevent renaming predefined dapps
     const predefinedDappRef = predefinedDapps.find((d) => getDappIdFromUrl(d.url) === id)
     const shouldOverrideNameChange = dapp.name && predefinedDappRef
     const dappPropsToUpdate = { ...dapp }
     if (shouldOverrideNameChange) dappPropsToUpdate.name = predefinedDappRef.name
 
-    this.dapps = this.dapps.map((d) => {
-      if (d.id === id) return { ...d, ...dappPropsToUpdate }
-      return d
-    })
+    this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
+    this.#storage.set('dapps', Array.from(this.#dapps.values()))
+
     this.emitUpdate()
   }
 
   removeDapp(id: string) {
     if (!this.isReady) return
 
-    const dapp = this.dapps.find((d) => d.id === id)
+    const existing = this.#dapps.get(id)
+    if (!existing) return
 
-    if (!dapp) return
+    // Do not remove predefined dapps
+    const isPredefined = predefinedDapps.some((d) => getDappIdFromUrl(d.url) === id)
+    if (isPredefined) return
 
-    // do not remove predefined dapps
-    if (predefinedDapps.find((d) => getDappIdFromUrl(d.url) === dapp.id)) return
-    this.dapps = this.dapps.filter((d) => d.id !== id)
+    this.#dapps.delete(id)
+    this.#storage.set('dapps', Array.from(this.#dapps.values()))
 
     this.emitUpdate()
   }
@@ -398,7 +444,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   hasPermission(id: string) {
     if (!id) return false
 
-    const dapp = this.dapps.find((d) => d.id === id)
+    const dapp = this.#dapps.get(id)
     if (!dapp) return false
 
     return dapp.isConnected
@@ -407,7 +453,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   getDapp(id: string) {
     if (!this.isReady) return
 
-    return this.dapps.find((d) => d.id === id)
+    return this.#dapps.get(id)
   }
 
   toJSON() {

@@ -14,7 +14,13 @@ export const dappIdsToBeRemoved = new Set([
   'app.ether.fi' // app.ether.fi was moved to ether.fi
 ])
 
-export const featuredDapps = new Set(['rewards.ambire.com', 'bitrefill.com'])
+export const featuredDapps = new Set([
+  'rewards.ambire.com',
+  'bitrefill.com',
+  'aave.com',
+  'lido.fi',
+  'uniswap.org'
+])
 
 export const predefinedDapps = [
   {
@@ -31,4 +37,11 @@ export const predefinedDapps = [
     description: 'The crypto store for digital gift cards, eSIMs, and phone refills.',
     networkNames: ['Ethereum', 'Polygon']
   }
+]
+
+export const defiLlamaProtocolIdsToExclude = [
+  '2196', // Uniswap V1
+  '2197', // Uniswap V2
+  '2198', // Uniswap V3
+  '3657' // Uniswap Labs
 ]

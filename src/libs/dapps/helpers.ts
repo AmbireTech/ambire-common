@@ -1,6 +1,3 @@
-import { dappIdsToBeRemoved } from '../../consts/dapps'
-import { Dapp } from '../../interfaces/dapp'
-
 const getDappIdFromUrl = (url?: string): string => {
   if (!url) return 'internal'
 
@@ -12,18 +9,11 @@ const getDappIdFromUrl = (url?: string): string => {
   }
 }
 
-/**
- * A temporary function used to patch apps stored in storage. As both predefined and custom apps
- * are stored in the same place and we don't have a mechanism to differentiate between them, we need to
- * remove the predefined ones from the storage.
- */
-const patchStorageApps = (storageDapps: Dapp[]) => {
-  return storageDapps.reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
-    const currAppId = getDappIdFromUrl(curr.url)
-    if (dappIdsToBeRemoved.has(currAppId)) return acc
+const formatDappName = (name: string) => {
+  if (name.toLowerCase().includes('uniswap')) return 'Uniswap'
+  if (name.toLowerCase().includes('aave v3')) return 'AAVE'
 
-    return [...acc, curr]
-  }, [])
+  return name
 }
 
-export { patchStorageApps, getDappIdFromUrl }
+export { getDappIdFromUrl, formatDappName }

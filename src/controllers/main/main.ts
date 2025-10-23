@@ -104,6 +104,8 @@ import { UiController } from '../ui/ui'
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
+  #appVersion: string
+
   fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -195,6 +197,7 @@ export class MainController extends EventEmitter implements IMainController {
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
+    appVersion,
     platform,
     storageAPI,
     fetch,
@@ -207,6 +210,7 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager
   }: {
+    appVersion: string
     platform: Platform
     storageAPI: Storage
     fetch: Fetch
@@ -221,6 +225,7 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     super()
     this.#storageAPI = storageAPI
+    this.#appVersion = appVersion
     this.fetch = fetch
 
     this.storage = new StorageController(this.#storageAPI)
@@ -343,6 +348,7 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui
     })
     this.dapps = new DappsController({
+      appVersion: this.#appVersion,
       fetch: this.fetch,
       storage: this.storage,
       networks: this.networks
