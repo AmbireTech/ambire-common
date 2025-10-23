@@ -51,38 +51,15 @@ export const isSuspectedRegardsKnownAddresses = (
 ): boolean => {
   if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenSymbol) return false
 
-  const normalizedSymbol = tokenSymbol.toLowerCase()
-  const numericChainId = Number(chainId)
+  const isSpoofed = !!Object.values(humanizerInfo.knownAddresses).find((token: any) => {
+    if (token.symbol !== tokenSymbol) return false
+    if (!token.chainIds) return false
+    if (!token.chainIds.includes(Number(chainId))) return false
 
-  let checksumTokenAddr: string
-
-  try {
-    checksumTokenAddr = getAddress(tokenAddr)
-  } catch {
-    // Invalid address format → treat as suspicious
-    return true
-  }
-
-  const knownTokensWithSameSymbol = Object.values(humanizerInfo.knownAddresses).filter(
-    (t: any) => t.token?.symbol && t.address && t.token.symbol.toLowerCase() === normalizedSymbol
-  )
-
-  if (knownTokensWithSameSymbol.length === 0) return false
-
-  const matchedAddress = knownTokensWithSameSymbol.find((t: any) => {
-    const checksumKnownAddr = getAddress(t.address)
-    const hasChainIds = Array.isArray(t.chainIds) && t.chainIds.length > 0
-    const chainIdMatch = hasChainIds ? t.chainIds.includes(numericChainId) : false
-    const addressMatch = checksumKnownAddr === checksumTokenAddr
-
-    // A known token is considered a match if:
-    //    - the address matches, and
-    //    - either there’s no chain restriction or the chain ID matches
-    return addressMatch && (!hasChainIds || chainIdMatch)
+    return tokenAddr.toLowerCase() !== token.address.toLowerCase()
   })
 
-  // Suspicious if: same symbol exists, but no known entry matches this address (and chain)
-  return knownTokensWithSameSymbol.length > 0 && !matchedAddress
+  return isSpoofed
 }
 
 const isSuspectedToken = (
@@ -90,7 +67,7 @@ const isSuspectedToken = (
   symbol: TokenResult['symbol'],
   name: TokenResult['name'],
   chainId: TokenResult['chainId']
-) =>
+): boolean =>
   nonLatinSymbol(symbol) ||
   nonLatinSymbol(name) ||
   isSuspectedRegardsKnownAddresses(address, symbol, chainId)
