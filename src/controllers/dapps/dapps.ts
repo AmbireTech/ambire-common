@@ -190,7 +190,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
-    // if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
     const prevDappsArray = Array.from(prevDapps.values())
 
     const isLegacyStructure = prevDappsArray.some((d) => getIsLegacyDappStructure(d))
