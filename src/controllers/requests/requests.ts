@@ -11,12 +11,15 @@ import {
   AccountOpAction,
   Action,
   ActionExecutionType,
-  ActionPosition
+  ActionPosition,
+  ActionType
 } from '../../interfaces/actions'
+import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
+import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
@@ -58,6 +61,7 @@ import {
   prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
 import { ActionsController } from '../actions/actions'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpUpdateProps } from '../signAccountOp/signAccountOp'
 import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
@@ -92,7 +96,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #transactionManager?: ITransactionManagerController
 
+  #ui: IUiController
+
+  #autoLogin: IAutoLoginController
+
   #getSignAccountOp: () => ISignAccountOpController | null
+
+  #getMainStatuses: () => StatusesWithCustom
 
   #updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
 
@@ -127,12 +137,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge,
     transactionManager,
     ui,
+    autoLogin,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
-    guardHWSigning
+    guardHWSigning,
+    getMainStatuses
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -145,12 +157,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
+    autoLogin: IAutoLoginController
     getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
     updateSelectedAccountPortfolio: (networks?: Network[]) => Promise<void>
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
+    getMainStatuses: () => StatusesWithCustom
   }) {
     super()
 
@@ -164,8 +178,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
+    this.#ui = ui
+    this.#autoLogin = autoLogin
 
     this.#getSignAccountOp = getSignAccountOp
+    this.#getMainStatuses = getMainStatuses
     this.#updateSignAccountOp = updateSignAccountOp
     this.#destroySignAccountOp = destroySignAccountOp
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
@@ -246,6 +263,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const actionsToAdd: Action[] = []
     const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
 
+    const signAccountOpController = this.#getSignAccountOp()
+    const signStatus = this.#getMainStatuses().signAndBroadcastAccountOp
+    let hasTxInProgressErrorShown = false
+
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
       if (
@@ -255,6 +276,55 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ) {
         await this.#addSwitchAccountUserRequest(req)
         return
+      }
+
+      if (req.action.kind === 'calls') {
+        // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
+        //
+        // Why? When a transaction is being signed and broadcast, its action is still unresolved.
+        // If a new request is added during this time, it gets incorrectly attached to the ongoing action.
+        // Once the transaction is broadcast, the action resolves,
+        // leaving the new request "orphaned" in the background with no banner shown on the Dashboard.
+        // The next time the user starts a transaction, both requests appear in the batch, which is confusing.
+        // To avoid this, we block new requests until the current process is complete.
+        //
+        //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
+        if (
+          signStatus === 'LOADING' &&
+          signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
+          signAccountOpController?.accountOp.chainId === req.meta.chainId
+        ) {
+          // Make sure to show the error once
+          if (!hasTxInProgressErrorShown) {
+            const errorMessage =
+              'Please wait until the previous transaction is fully processed before adding a new one.'
+
+            this.emitError({
+              level: 'major',
+              message: errorMessage,
+              error: new Error(
+                'requestsController: Cannot add a new request (addUserRequests) while a signing or broadcasting process is still running.'
+              )
+            })
+
+            if (req.dappPromise) {
+              req.dappPromise?.reject(
+                ethErrors.rpc.transactionRejected({
+                  message: errorMessage
+                })
+              )
+
+              await this.#ui.notification.create({
+                title: 'Rejected!',
+                message: errorMessage
+              })
+            }
+
+            hasTxInProgressErrorShown = true
+          }
+
+          return
+        }
       }
 
       if (req.action.kind === 'calls') {
@@ -271,10 +341,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const { id, action, meta } = req
       if (action.kind === 'calls') {
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-        const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-          meta.accountAddr,
-          meta.chainId
-        )
+        const accountStateBefore = this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId]
+
+        // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+        // otherwise wait for the fetch to complete (no matter how long it takes).
+        // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+        const accountState = (await Promise.race([
+          this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+          // Fallback to the old account state if it exists and the fetch takes too long
+          accountStateBefore
+            ? new Promise((res) => {
+                setTimeout(() => res(accountStateBefore), 2000)
+              })
+            : new Promise(() => {}) // Explicitly never-resolving promise
+        ])) as any
         const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
         const accountOpAction = makeAccountOpAction({
@@ -290,7 +370,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const signAccountOp = this.#getSignAccountOp()
         if (signAccountOp) {
           if (signAccountOp.fromActionId === accountOpAction.id) {
-            this.#updateSignAccountOp({ calls: accountOpAction.accountOp.calls })
+            this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
           }
         } else {
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
@@ -298,7 +378,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
       } else {
-        let actionType: 'dappRequest' | 'benzin' | 'signMessage' | 'switchAccount' = 'dappRequest'
+        let actionType: ActionType = 'dappRequest'
 
         if (req.action.kind === 'typedMessage' || req.action.kind === 'message') {
           actionType = 'signMessage'
@@ -319,7 +399,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
         if (req.action.kind === 'benzin') actionType = 'benzin'
         if (req.action.kind === 'switchAccount') actionType = 'switchAccount'
-        if (req.action.kind === 'authorization-7702') actionType = 'signMessage'
+        if (req.action.kind === 'authorization-7702' || req.action.kind === 'siwe')
+          actionType = 'signMessage'
 
         actionsToAdd.push({
           id,
@@ -403,7 +484,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           actionsToAddOrUpdate.push(accountOpAction)
 
           if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
-            this.#updateSignAccountOp({ calls: accountOpAction.accountOp.calls })
+            this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
           }
         } else {
           if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
@@ -653,6 +734,68 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         },
         dappPromise
       } as SignUserRequest
+
+      // SIWE
+      const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
+      const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
+        rawMessage,
+        request.origin
+      )
+
+      // Handle valid and invalid SIWE messages
+      // If it's valid we want to try to auto-login the user
+      // If it's not we want to flag it to the UI to inform the user
+      if (rawMessage && parsedSiweAndStatus) {
+        const { parsedSiwe, status } = parsedSiweAndStatus
+        let autoLoginStatus: AutoLoginStatus = 'no-policy'
+
+        // Try to auto-login
+        if (status === 'valid' && parsedSiwe) {
+          try {
+            autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
+
+            if (autoLoginStatus === 'active') {
+              // Sign and respond
+              const signedMessage = await this.#autoLogin.autoLogin({
+                message: rawMessage as `0x${string}`,
+                chainId: network.chainId,
+                accountAddr: msgAddress
+              })
+
+              if (!signedMessage) {
+                throw new EmittableError({
+                  message: 'Auto-login failed. Please sign the message manually.',
+                  level: 'major',
+                  error: new Error('SIWE autologin - signedMessage is null')
+                })
+              }
+
+              console.log(
+                `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
+              )
+
+              dappPromise.resolve({ hash: signedMessage.signature })
+              return
+            }
+          } catch (e: any) {
+            this.emitError({
+              error: e,
+              message: 'Auto-login failed. Please sign the message manually.',
+              level: 'major'
+            })
+          }
+        }
+
+        userRequest.action = {
+          kind: 'siwe',
+          message: msg[0],
+          parsedMessage: parsedSiwe,
+          autoLoginStatus,
+          siweValidityStatus: status,
+          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
+          autoLoginDuration: this.#autoLogin.settings.duration
+        }
+      }
     } else if (kind === 'typedMessage') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -821,12 +964,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #buildTransferUserRequest({
     amount,
+    amountInFiat,
     recipientAddress,
     selectedToken,
     actionExecutionType = 'open-action-window',
     windowId
   }: {
     amount: string
+    amountInFiat: bigint
     recipientAddress: string
     selectedToken: TokenResult
     // eslint-disable-next-line default-param-last
@@ -848,6 +993,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccount.account.addr,
       amount,
+      amountInFiat,
       selectedToken,
       recipientAddress,
       paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),

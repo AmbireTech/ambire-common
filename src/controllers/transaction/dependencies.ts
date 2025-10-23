@@ -1,6 +1,5 @@
-import { IActivityController } from 'interfaces/activity'
-
 import { IAccountsController } from '../../interfaces/account'
+import { IActivityController } from '../../interfaces/activity'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'

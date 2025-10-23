@@ -30,7 +30,9 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -204,11 +206,21 @@ const accountsCtrl = new AccountsController(
   () => {},
   () => {}
 )
+const autoLoginCtrl = new AutoLoginController(
+  storageCtrl,
+  keystoreController,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  {},
+  new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+)
 
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore: keystoreController
+  keystore: keystoreController,
+  autoLogin: autoLoginCtrl
 })
 
 const addressBookController = new AddressBookController(
@@ -252,6 +264,7 @@ const getTokens = async () => {
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
     transferController = new TransferController(
+      () => {},
       storageCtrl,
       humanizerInfo as HumanizerMeta,
       selectedAccountCtrl,
@@ -263,7 +276,8 @@ describe('Transfer Controller', () => {
       activity,
       {},
       providersCtrl,
-      relayerUrl
+      relayerUrl,
+      () => Promise.resolve()
     )
 
     await selectedAccountCtrl.initialLoadPromise
@@ -336,7 +350,7 @@ describe('Transfer Controller', () => {
     })
 
     expect(transferController.validationFormMsgs.amount.success).toBe(true)
-    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
 
     // Recipient address
     await transferController.update({

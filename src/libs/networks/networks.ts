@@ -181,22 +181,30 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        const coingeckoRequest = await fetch(
-          `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
-        ).catch(() => ({
-          error: 'currently, we cannot fetch the coingecko information'
-        }))
-        // set the coingecko info
-        let platformId = null
-        let nativeAssetId = null
-        if (!('error' in coingeckoRequest)) {
+        // Keep the old value if the request fails
+        let platformId = network?.platformId || ''
+        let nativeAssetId = network?.nativeAssetId || ''
+
+        try {
+          const coingeckoRequest = await fetch(
+            `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
+          )
           const coingeckoInfo = await coingeckoRequest.json()
+
           if (!coingeckoInfo.error) {
+            // Coingecko info found
             platformId = coingeckoInfo.platformId
             nativeAssetId = coingeckoInfo.nativeAssetId
           }
+        } catch (e) {
+          console.error('Error fetching coingecko info', e)
         }
-        networkInfo = { ...networkInfo, platformId, nativeAssetId }
+
+        networkInfo = {
+          ...networkInfo,
+          platformId,
+          nativeAssetId
+        }
 
         callback(networkInfo)
       })()

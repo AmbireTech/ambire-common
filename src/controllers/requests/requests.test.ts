@@ -8,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -17,6 +18,7 @@ import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
 import { InviteController } from '../invite/invite'
@@ -109,10 +111,21 @@ const prepareTest = async () => {
 
   const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystoreCtrl,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
+
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore: keystoreCtrl
+    keystore: keystoreCtrl,
+    autoLogin: autoLoginCtrl
   })
 
   const dappsCtrl = new DappsController(storageCtrl)
@@ -142,6 +155,7 @@ const prepareTest = async () => {
     () => Promise.resolve()
   )
   const transferCtrl = new TransferController(
+    () => {},
     storageCtrl,
     humanizerInfo as HumanizerMeta,
     selectedAccountCtrl,
@@ -153,12 +167,14 @@ const prepareTest = async () => {
     activityCtrl,
     {},
     providersCtrl,
-    relayerUrl
+    relayerUrl,
+    () => Promise.resolve()
   )
 
   const requestsController: IRequestsController = {} as IRequestsController
 
   const swapAndBridgeCtrl = new SwapAndBridgeController({
+    callRelayer: () => {},
     selectedAccount: selectedAccountCtrl,
     networks: networksCtrl,
     accounts: accountsCtrl,
@@ -176,7 +192,9 @@ const prepareTest = async () => {
     },
     getVisibleActionsQueue: () => {
       return requestsController?.actions?.visibleActionsQueue || []
-    }
+    },
+    onBroadcastSuccess: () => Promise.resolve(),
+    onBroadcastFailed: () => {}
   })
 
   return {
@@ -192,11 +210,13 @@ const prepareTest = async () => {
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
       getSignAccountOp: () => null,
+      getMainStatuses: () => STATUS_WRAPPED_METHODS,
       updateSignAccountOp: () => {},
       destroySignAccountOp: () => {},
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
-      guardHWSigning: () => Promise.resolve(false)
+      guardHWSigning: () => Promise.resolve(false),
+      autoLogin: autoLoginCtrl
     })
   }
 }

@@ -113,7 +113,8 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'INSUFFICIENT_OUTPUT_AMOUNT',
       'return amount is not enough',
       '0x97a6f3b9',
-      '0xcea9e31d'
+      '0xcea9e31d',
+      '0x39d35496'
     ],
     message: 'the slippage tolerance was exceeded.'
   },
@@ -158,6 +159,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   {
     reasons: ['TRANSFER_FROM_FAILED'],
     message: 'Insufficient token amount'
+  },
+  {
+    reasons: ['0x4feac00c'],
+    message:
+      'the Swap path is invalid. Return to the app and reinitiate the swap if you wish to proceed.'
   },
   {
     reasons: ['0x6679996d'],
@@ -245,8 +251,18 @@ const ESTIMATION_ERRORS: ErrorHumanizerError[] = [
   }
 ]
 
+const DEPLOYLESS_ERRORS: ErrorHumanizerError[] = [
+  ...BROADCAST_OR_ESTIMATION_ERRORS,
+  ...ESTIMATION_ERRORS,
+  {
+    reasons: ['0xb4f54111'],
+    message: "the network or provider don't support our Deployless contracts."
+  }
+]
+
 export {
   BROADCAST_ERRORS,
+  DEPLOYLESS_ERRORS,
   BROADCAST_OR_ESTIMATION_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds,

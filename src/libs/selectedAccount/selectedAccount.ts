@@ -1,5 +1,6 @@
 import { getAddress } from 'ethers'
 
+import { STK_WALLET } from '../../consts/addresses'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks,
@@ -8,6 +9,7 @@ import {
   SelectedAccountPortfolioTokenResult
 } from '../../interfaces/selectedAccount'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
+import { calculateRewardsForSeason } from '../../utils/rewards'
 import {
   AccountState as DefiPositionsAccountState,
   AssetType,
@@ -19,6 +21,8 @@ import {
   CollectionResult,
   NetworkSimulatedAccountOp,
   NetworkState,
+  PortfolioProjectedRewardsResult,
+  ProjectedRewardsTokenResult,
   TokenResult
 } from '../portfolio/interfaces'
 
@@ -402,8 +406,8 @@ export function calculateSelectedAccountPortfolioByNetworks(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
-  portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
+  shouldShowPartialResult: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
@@ -411,9 +415,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
   isReadyToVisualize: boolean
   shouldShowPartialResult: boolean
 } {
-  const now = Date.now()
-  const shouldShowPartialResult =
-    !!portfolioStartedLoadingAtTimestamp && now - portfolioStartedLoadingAtTimestamp > 5000
   const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
     pastAccountPortfolioWithDefiPositions
 
@@ -562,7 +563,7 @@ export function calculateSelectedAccountPortfolioByNetworks(
   }
 
   return {
-    shouldShowPartialResult,
+    shouldShowPartialResult: isAllReady ? false : shouldShowPartialResult,
     isReadyToVisualize,
     isAllReady,
     selectedAccountPortfolioByNetworks: newAccountPortfolioWithDefiPositions
@@ -578,8 +579,8 @@ export function calculateSelectedAccountPortfolio(
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
   pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
-  portfolioStartedLoadingAtTimestamp: number | null,
   defiPositionsAccountState: DefiPositionsAccountState,
+  prevShouldShowPartialResult: boolean,
   isLoadingFromScratch: boolean
 ): {
   selectedAccountPortfolio: SelectedAccountPortfolio
@@ -594,8 +595,8 @@ export function calculateSelectedAccountPortfolio(
     latestStateSelectedAccount,
     pendingStateSelectedAccount,
     pastAccountPortfolioWithDefiPositions,
-    portfolioStartedLoadingAtTimestamp,
     defiPositionsAccountState,
+    prevShouldShowPartialResult,
     isLoadingFromScratch
   )
 
@@ -614,6 +615,8 @@ export function calculateSelectedAccountPortfolio(
 
   Object.keys(selectedAccountPortfolioByNetworks).forEach((chainId) => {
     const networkData = selectedAccountPortfolioByNetworks[chainId]
+    const isProjectedRewardsChain = chainId === 'projectedRewards'
+
     if (!networkData) return
 
     if (networkData.simulatedAccountOp) {
@@ -621,12 +624,89 @@ export function calculateSelectedAccountPortfolio(
     }
     selectedAccountPortfolio.tokens.push(...networkData.tokens)
     selectedAccountPortfolio.collections.push(...networkData.collections)
-    selectedAccountPortfolio.totalBalance += networkData.totalBalance || 0
+    selectedAccountPortfolio.totalBalance += !isProjectedRewardsChain
+      ? networkData.totalBalance || 0
+      : 0
     selectedAccountPortfolio.balancePerNetwork[chainId] = networkData.totalBalance || 0
   })
 
   return {
     selectedAccountPortfolio,
     selectedAccountPortfolioByNetworks
+  }
+}
+
+export const calculateAndSetProjectedRewards = (
+  projectedRewards: NetworkState | undefined,
+  latestBalances: { [chainId: string]: number },
+  walletOrStkWalletTokenPrice: number | undefined
+): ProjectedRewardsTokenResult | undefined => {
+  if (!projectedRewards) return
+
+  const result = projectedRewards?.result as PortfolioProjectedRewardsResult
+  const {
+    currentSeasonSnapshots,
+    supportedChainIds,
+    numberOfWeeksSinceStartOfSeason,
+    totalRewardsPool,
+    totalWeightNonUser,
+    userLevel,
+    walletPrice,
+    minLvl,
+    minBalance
+  } = result
+
+  const currentTotalBalanceOnSupportedChains = supportedChainIds
+    .map((chainId: number) => latestBalances[chainId] || 0)
+    .reduce((a: number, b: number) => a + b, 0)
+
+  const parsedSnapshotsBalance = currentSeasonSnapshots.map(
+    (snapshot: { week: number; balance: number }) => snapshot.balance
+  )
+
+  // If the user never participated in Ambire Rewards, we assume they are at level 0.
+  // If they have participated, but are below the minimum level, we assume they are at the minimum level because we need to calculate the APY.
+  // For that purpose, we assume they are at the minimum level with minimum balance.
+  // This means that their projected rewards will be 0, but we will be able to calculate the APY.
+  const level = userLevel < minLvl ? minLvl : userLevel
+  const currentBalance =
+    currentTotalBalanceOnSupportedChains < minBalance
+      ? minBalance
+      : currentTotalBalanceOnSupportedChains
+
+  // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
+  const walletTokenPrice = walletOrStkWalletTokenPrice || walletPrice
+
+  const projectedAmount = calculateRewardsForSeason(
+    level,
+    parsedSnapshotsBalance,
+    currentBalance,
+    numberOfWeeksSinceStartOfSeason,
+    totalWeightNonUser,
+    walletTokenPrice,
+    totalRewardsPool,
+    minLvl,
+    minBalance
+  )
+
+  // If the user is below the minimum level, they get 0 projected rewards
+  const projectedAmountFormatted =
+    userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+
+  return {
+    chainId: BigInt(1),
+    amount: BigInt(projectedAmountFormatted || 0),
+    address: STK_WALLET,
+    symbol: 'stkWALLET',
+    name: 'Staked $WALLET',
+    decimals: 18,
+    apy: projectedAmount.apy,
+    priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
+    flags: {
+      onGasTank: false,
+      rewardsType: 'wallet-projected-rewards' as const,
+      canTopUpGasTank: false,
+      isFeeToken: false
+    }
   }
 }

@@ -54,6 +54,7 @@ export interface AccountOnchainState {
   isSmarterEoa: boolean
   delegatedContract: Hex | null
   delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
+  updatedAt: number
 }
 
 export type AccountStates = {

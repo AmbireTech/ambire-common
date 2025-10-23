@@ -30,6 +30,7 @@ import {
   getSpecialHints,
   getTotal,
   learnedErc721sToHints,
+  mergeERC721s,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
 import {
@@ -37,6 +38,7 @@ import {
   AccountState,
   GasTankTokenResult,
   GetOptions,
+  Hints,
   LearnedAssets,
   NetworkState,
   PortfolioControllerState,
@@ -571,6 +573,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       }
     }
 
+    accountState.projectedRewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewardsProjectionData
+      }
+    }
+
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount || 0),
@@ -722,25 +733,74 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
+  #getImportedAccountsLearnedAssets(
+    chainId: bigint,
+    accountAddr: string
+  ): {
+    learnedTokens: Hints['erc20s']
+    learnedNfts: Hints['erc721s']
+  } {
+    const providedKey = `${chainId}:${accountAddr}` as `${string}:${string}`
+    // Add the assets from the provided account first
+    const learnedTokens = Object.keys(this.#learnedAssets.erc20s[providedKey] || {})
+    let learnedNfts = learnedErc721sToHints(
+      Object.keys(this.#learnedAssets.erc721s[providedKey] || {})
+    )
+
+    // Add the assets from all other imported accounts
+    const importedAccounts = this.#accounts.accounts.filter((acc) => {
+      return this.#keystore.getAccountKeys(acc).length > 0 && acc.addr !== accountAddr
+    })
+
+    importedAccounts.forEach(({ addr }) => {
+      const key = `${chainId}:${addr}` as `${string}:${string}`
+
+      const tokens = Object.keys(this.#learnedAssets.erc20s[key] || {})
+      const nfts = Object.keys(this.#learnedAssets.erc721s[key] || {})
+
+      // Don't dedupe here, it's already done in the portfolio library
+      learnedTokens.push(...tokens)
+      learnedNfts = mergeERC721s([learnedNfts, learnedErc721sToHints(nfts)])
+    })
+
+    return {
+      learnedTokens,
+      learnedNfts
+    }
+  }
+
   /**
    * Gets hints from all sources and formats them as expected
    * by the portfolio lib. These are all hints the portfolio uses,
    * except the external hints discovery request
    */
   protected getAllHints(
-    /**
-     * Key - chainId:accountAddr
-     */
-    key: `${string}:${string}`,
-    chainId: Network['chainId']
+    accountId: AccountId,
+    chainId: Network['chainId'],
+    isManualUpdate?: boolean
   ): Pick<
     Required<GetOptions>,
     'specialErc20Hints' | 'specialErc721Hints' | 'additionalErc20Hints' | 'additionalErc721Hints'
   > {
-    const learnedTokens = this.#learnedAssets.erc20s[key]
-    const learnedNfts = this.#learnedAssets.erc721s[key]
+    const key = `${chainId}:${accountId}` as `${string}:${string}`
     const isKeyNotMigrated =
-      typeof learnedTokens === 'undefined' || typeof learnedNfts === 'undefined'
+      typeof this.#learnedAssets.erc20s[key] === 'undefined' ||
+      typeof this.#learnedAssets.erc721s[key] === 'undefined'
+    let learnedTokensHints: Hints['erc20s'] = Object.keys(this.#learnedAssets.erc20s[key] || {})
+    let learnedNftsHints: Hints['erc721s'] = learnedErc721sToHints(
+      Object.keys(this.#learnedAssets.erc721s[key] || {})
+    )
+
+    // Add learned assets from all imported accounts on manual updates.
+    // This is done to handle the case where an account sends a token to another imported account
+    // We want the second account to see the token after a manual update
+    // Also, the user has a higher chance of holding similar assets in different accounts
+    if (isManualUpdate) {
+      const importedAccountsLearned = this.#getImportedAccountsLearnedAssets(chainId, accountId)
+
+      learnedTokensHints = importedAccountsLearned.learnedTokens
+      learnedNftsHints = importedAccountsLearned.learnedNfts
+    }
 
     // Check if the user key exists in the new learned tokens structure
     // Fallback to the old structure if not
@@ -777,12 +837,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return {
       specialErc20Hints,
       specialErc721Hints,
-      // @TODO: Enrich learnedTokens and learnedNfts with data from other accounts
-      // on manual updates. The user may have the token he is looking for in another account.
-      // It's VERY important to do this only for imported accounts (not view-only), as hints
-      // are now stored in storage, so learned will contain a lot of assets (performance hit).
-      additionalErc20Hints: Object.keys(learnedTokens || {}),
-      additionalErc721Hints: learnedErc721sToHints(Object.keys(learnedNfts || {}))
+      additionalErc20Hints: learnedTokensHints,
+      additionalErc721Hints: learnedNftsHints
     }
   }
 
@@ -866,7 +922,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
             Date.now() - hintsResponse.lastUpdate <
               EXTERNAL_API_HINTS_TTL[!hintsResponse.hasHints ? 'static' : 'dynamic']
 
-          const allHints = this.getAllHints(key, network.chainId)
+          const allHints = this.getAllHints(accountId, network.chainId, isManualUpdate)
 
           const [isSuccessfulLatestUpdate] = await Promise.all([
             // Latest state update
@@ -1250,6 +1306,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
         }
       : undefined
+
     return this.updateSelectedAccount(op.accountAddr, [network], simulation)
   }
 

@@ -1,3 +1,4 @@
+import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { SelectedAccountPortfolioState } from '../../interfaces/selectedAccount'
@@ -6,7 +7,6 @@ import {
   DeFiPositionsError,
   NetworksWithPositions
 } from '../defiPositions/types'
-import { getNetworksWithFailedRPC } from '../networks/networks'
 import { AccountAssetsState } from '../portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../portfolio/portfolio'
 
@@ -35,78 +35,63 @@ export type SelectedAccountBalanceError = {
   actions?: Action[]
 }
 
-export const getNetworksWithFailedRPCErrors = ({
-  providers,
-  networks,
-  networksWithAssets
-}: {
-  providers: RPCProviders
+export const addRPCError = (
+  errors: SelectedAccountBalanceError[],
+  chainId: string,
   networks: Network[]
-  networksWithAssets: AccountAssetsState
-}): SelectedAccountBalanceError[] => {
-  const errors: SelectedAccountBalanceError[] = []
-  const chainIds = getNetworksWithFailedRPC({ providers }).filter(
-    (chainId) =>
-      (Object.keys(networksWithAssets).includes(chainId) && networksWithAssets[chainId] === true) ||
-      !Object.keys(networksWithAssets).includes(chainId)
-  )
+) => {
+  const newErrors = [...errors]
+  const network = networks.find((n) => n.chainId.toString() === chainId)
+  if (!network) return newErrors
 
-  // Show an error for networks with no RPC providers
-  networks.forEach((network) => {
-    if (providers[network.chainId.toString()]) return
+  const hasMultipleRpcUrls = network.rpcUrls && network.rpcUrls.length > 1
+  const errorId: `custom-rpcs-down-${string}` | 'rpcs-down' = hasMultipleRpcUrls
+    ? `custom-rpcs-down-${network.chainId.toString()}`
+    : 'rpcs-down'
+  const networkName = network.name
 
-    chainIds.push(network.chainId.toString())
-  })
+  const existingError = newErrors.find((error) => error.id === errorId)
 
-  const networksData = chainIds.map(
-    (id) => networks.find((n: Network) => n.chainId.toString() === id)!
-  )
+  if (existingError) {
+    if (!existingError.networkNames.includes(networkName) && !hasMultipleRpcUrls) {
+      existingError.networkNames.push(networkName)
+      existingError.title = `Failed to retrieve network data for ${existingError.networkNames.join(
+        ', '
+      )} (RPC malfunction)`
+    }
+  } else {
+    const text =
+      'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.'
+    let title = ''
+    let actions: Action[] | undefined
 
-  const allFailed = networksData.length === networks.length
-
-  const networksWithMultipleRpcUrls = allFailed
-    ? []
-    : networksData.filter((n) => n?.rpcUrls?.length > 1)
-
-  const networksToGroupInSingleBanner = allFailed
-    ? networksData
-    : networksData.filter((n) => n?.rpcUrls?.length <= 1)
-
-  if (!networksData.length) return errors
-
-  networksWithMultipleRpcUrls.forEach((n) => {
-    errors.push({
-      id: `custom-rpcs-down-${n.chainId}`,
-      networkNames: [n.name],
-      type: 'error',
-      title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
-      text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.',
-      actions: [
+    if (hasMultipleRpcUrls) {
+      title = `Failed to retrieve network data for ${networkName}. You can try selecting another RPC URL`
+      actions = [
         {
           label: 'Select',
           actionName: 'select-rpc-url',
-          meta: { network: n }
+          meta: { network }
         }
       ]
+    } else {
+      title = `Failed to retrieve network data for ${networkName} (RPC malfunction)`
+    }
+
+    newErrors.push({
+      id: errorId,
+      networkNames: [networkName],
+      type: 'error',
+      title,
+      text,
+      actions
     })
-  })
+  }
 
-  if (!networksToGroupInSingleBanner.length) return errors
-
-  errors.push({
-    id: 'rpcs-down',
-    networkNames: networksToGroupInSingleBanner.map((n) => n.name),
-    type: 'error',
-    title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
-      .map((n) => n.name)
-      .join(', ')} (RPC malfunction)`,
-    text: 'Affected features: visible assets, DeFi positions, sign message/transaction, ENS domain resolving, add account.'
-  })
-
-  return errors
+  return newErrors
 }
 
-const addPortfolioError = (
+export const addPortfolioError = (
   errors: SelectedAccountBalanceError[],
   networkName: string,
   newError: keyof typeof PORTFOLIO_LIB_ERROR_NAMES | 'portfolio-critical' | 'loading-too-long'
@@ -115,7 +100,21 @@ const addPortfolioError = (
   const existingError = newErrors.find((error) => error.id === newError)
 
   if (existingError) {
-    existingError.networkNames.push(networkName)
+    if (!existingError.networkNames.includes(networkName)) {
+      existingError.networkNames.push(networkName)
+      const networkNames = existingError.networkNames
+
+      const lastIndexOfOn = existingError.title.lastIndexOf(' on ')
+
+      if (lastIndexOfOn !== -1) {
+        existingError.title = `${existingError.title.substring(
+          0,
+          lastIndexOfOn
+        )} on ${networkNames.join(', ')}`
+      } else {
+        existingError.title = `${existingError.title} on ${networkNames.join(', ')}`
+      }
+    }
   } else {
     let title = ''
     let text = ''
@@ -153,6 +152,8 @@ const addPortfolioError = (
 
     if (!title) return newErrors
 
+    title = `${title} on ${networkName}`
+
     newErrors.push({
       id: newError,
       networkNames: [networkName],
@@ -165,91 +166,119 @@ const addPortfolioError = (
   return newErrors
 }
 
-export const getNetworksWithPortfolioErrorErrors = ({
+const getNetworkName = (networks: Network[], chainId: string) => {
+  let networkName = networks.find((n) => n.chainId.toString() === chainId)?.name
+
+  if (chainId === 'gasTank') networkName = 'Gas Tank'
+  else if (chainId === 'rewards') networkName = 'Rewards'
+
+  return networkName
+}
+
+/**
+ * Cases:
+ * - All providers are not working - the user is offline and an error should not be displayed
+ * - Critical RPC error on Ethereum (displayed immediately, because many things depend on it)
+ * - Critical RPC error on other network - displayed after 10 mins of stale account state or portfolio state
+ * - Critical portfolio error on any network - displayed after 10 mins of stale portfolio state
+ * - Non-critical portfolio error on any network - displayed after 10 mins of stale portfolio state
+ */
+
+export const getNetworksWithErrors = ({
   networks,
   selectedAccountLatest,
   providers,
-  isAllReady
+  accountState,
+  shouldShowPartialResult,
+  isAllReady,
+  networksWithAssets
 }: {
   networks: Network[]
   selectedAccountLatest: SelectedAccountPortfolioState
   providers: RPCProviders
+  accountState: {
+    [chainId: string]: AccountOnchainState
+  }
   isAllReady: boolean
+  shouldShowPartialResult: boolean
+  networksWithAssets: AccountAssetsState
 }): SelectedAccountBalanceError[] => {
   let errors: SelectedAccountBalanceError[] = []
+  const areAllProvidersDown = Object.values(providers).every(
+    (provider) => provider?.isWorking === false
+  )
 
-  if (!Object.keys(selectedAccountLatest).length) return []
+  if (!Object.keys(selectedAccountLatest).length || areAllProvidersDown) return []
 
-  Object.keys(selectedAccountLatest).forEach((chainId) => {
+  networks.forEach((network) => {
+    const chainId = network.chainId.toString()
     const portfolioForNetwork = selectedAccountLatest[chainId]
-    const criticalError = portfolioForNetwork?.criticalError
-    const lastSuccessfulUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
-    let networkName = networks.find((n) => n.chainId.toString() === chainId)?.name
-
-    if (chainId === 'gasTank') networkName = 'Gas Tank'
-    else if (chainId === 'rewards') networkName = 'Rewards'
+    const accountStateForNetwork = accountState?.[chainId]
+    const criticalPortfolioError = portfolioForNetwork?.criticalError
+    const isRpcWorking = providers[chainId]?.isWorking !== false
+    const lastSuccessfulPortfolioUpdate = portfolioForNetwork?.result?.lastSuccessfulUpdate
+    const accountStateUpdatedAt = accountStateForNetwork?.updatedAt
+    const networkName = getNetworkName(networks, chainId)
+    const isLoadingFromScratch = portfolioForNetwork?.isLoading && !isAllReady
 
     if (!networkName) {
-      console.error(
-        'Network name not found for network in getNetworksWithPortfolioErrorErrors',
-        chainId
-      )
+      console.error('Network name not found for network in getNetworksWithErrors', chainId)
       return
     }
 
-    if (portfolioForNetwork?.isLoading && !isAllReady) {
-      // Add an error if the network is preventing the portfolio from going ready
-      // The error is added, regardless of whether the loading is taking too long (> 5s)
-      // or not. This is determined in the UI. The error is added so the UI knows which networks
-      // are preventing the portfolio from going ready.
-      errors = addPortfolioError(errors, networkName, 'loading-too-long')
+    // No other errors should be displayed if the portfolio is still loading
+    // from scratch
+    if (isLoadingFromScratch) {
+      // The portfolio has been loading for longer than X seconds. The networks
+      // that are still loading are the slow ones, so we add a warning for them.
+      if (shouldShowPartialResult)
+        errors = addPortfolioError(errors, networkName, 'loading-too-long')
       return
     }
 
-    // Don't display an error banner if the last successful update was less than 10 minutes ago
-    if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
+    // Add portfolio non-critical errors if the portfolio and RPC are working
+    if (!criticalPortfolioError && isRpcWorking) {
+      portfolioForNetwork?.errors.forEach((err: any) => {
+        errors = addPortfolioError(errors, networkName as string, err.name)
+      })
       return
+    }
 
-    if (!portfolioForNetwork || !chainId) return
-    // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
-    // In case of additional networks don't check the RPC as there isn't one
-    const rpcProvider = providers[chainId]
-    // Don't display an error banner if the RPC isn't working because an RPC error banner is already displayed.
-    // Also, it may be the case that isWorking is not defined. In that case there will be no RPC error banner
-    // so we must display the portfolio error banner.
-    // We are purposely checking the RPC and not the RPC banners, because they are only displayed
-    // when the RPC is not working AND the user has balance on the network.
-    // Example: The user has no balance on Berachain and the RPC is not working.
-    // In this case there will be no RPC error banner and no portfolio error banner.
+    // Don't display an error banner if the last successful portfolio update was less than 10 minutes ago
+    // and the account state was updated less than 10 minutes ago
     if (
-      criticalError &&
-      (['gasTank', 'rewards'].includes(chainId) ||
-        typeof rpcProvider?.isWorking !== 'boolean' ||
-        rpcProvider.isWorking)
+      // Skip the 10 minute check for Ethereum as many things depend
+      // on the Ethereum RPC working
+      chainId !== '1' &&
+      typeof lastSuccessfulPortfolioUpdate === 'number' &&
+      Date.now() - lastSuccessfulPortfolioUpdate < TEN_MINUTES &&
+      accountStateUpdatedAt &&
+      Date.now() - accountStateUpdatedAt < TEN_MINUTES
     ) {
-      errors = addPortfolioError(errors, networkName, 'portfolio-critical')
       return
     }
 
-    portfolioForNetwork?.errors.forEach((err: any) => {
-      errors = addPortfolioError(errors, networkName as string, err.name)
-    })
-  })
+    if (!isRpcWorking) {
+      // Don't display an error if the user has never had assets on this network
+      // but display one if we don't know whether the user has assets on this network
+      // Note @petromir: This logic is legacy and I no longer think it's correct. What if
+      // the user has never had assets on a network but expects to receive some?
+      // I think we should simply increase the timeout above to a higher value (30 mins?)
+      // but always display the error on manual reloads.
+      if (networksWithAssets?.[chainId] === false) return
 
-  return errors.map(({ title, networkNames, ...rest }) => {
-    const networkNamesString = networkNames.reduce((acc, name, index) => {
-      const isLast = index === networkNames.length - 1
-      const isOnly = networkNames.length === 1
+      // Add an RPC error if the RPC is not working
+      errors = addRPCError(errors, chainId, networks)
+      return
+    }
 
-      return `${acc}${name}${isLast || isOnly ? '' : ', '}`
-    }, '')
-
-    return {
-      ...rest,
-      title: `${title} on ${networkNamesString}`,
-      networkNames
+    if (criticalPortfolioError) {
+      // Add portfolio critical banner
+      errors = addPortfolioError(errors, networkName as string, 'portfolio-critical')
     }
   })
+
+  return errors
 }
 
 export const getNetworksWithDeFiPositionsErrorErrors = ({

@@ -6,6 +6,13 @@ import { IStorageController } from '../../interfaces/storage'
 import { getDappIdFromUrl, patchStorageApps } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// Create a static map for predefined dapps for efficient lookups
+const predefinedDappsMap = new Map<string, typeof predefinedDapps[0]>()
+predefinedDapps.forEach((dapp) => {
+  const id = getDappIdFromUrl(dapp.url)
+  predefinedDappsMap.set(id, dapp)
+})
+
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
 // 2. Handling active sessions between dApps and the wallet
@@ -39,26 +46,45 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   get dapps(): Dapp[] {
-    const combined = [...this.#dapps, ...predefinedDapps]
+    // Create a map for faster lookups of user dapps
+    const userDappsMap = new Map<string, Dapp>()
+    this.#dapps.forEach((dapp) => {
+      userDappsMap.set(dapp.id, dapp)
+    })
 
-    return combined.reduce((acc: Dapp[], curr): Dapp[] => {
-      const id = 'id' in curr ? curr.id : getDappIdFromUrl(curr.url)
+    // Start with predefined dapps first (maintaining order)
+    const result: Dapp[] = []
+    predefinedDapps.forEach((predefinedDapp) => {
+      const id = getDappIdFromUrl(predefinedDapp.url)
+      const userDapp = userDappsMap.get(id)
 
-      if (!acc.some((dapp) => dapp.id === id)) {
-        acc.push({
-          id,
-          name: curr.name,
-          description: curr.description,
-          url: curr.url,
-          icon: curr.icon,
-          isConnected: 'isConnected' in curr ? curr.isConnected : false,
-          chainId: 'chainId' in curr ? curr.chainId : 1,
-          favorite: 'favorite' in curr ? curr.favorite : false
-        })
-      }
+      result.push({
+        id,
+        // Take metadata from predefined dapp
+        name: predefinedDapp.name,
+        description: predefinedDapp.description,
+        icon: predefinedDapp.icon,
+        url: predefinedDapp.url,
+        // Take user data if available, otherwise use defaults
+        isConnected: userDapp?.isConnected ?? false,
+        chainId: userDapp?.chainId ?? 1,
+        favorite: userDapp?.favorite ?? false,
+        ...(userDapp?.grantedPermissionId && { grantedPermissionId: userDapp.grantedPermissionId }),
+        ...(userDapp?.grantedPermissionAt && { grantedPermissionAt: userDapp.grantedPermissionAt }),
+        ...(userDapp?.blacklisted !== undefined && { blacklisted: userDapp.blacklisted })
+      })
+    })
 
-      return acc
-    }, [])
+    // Add user-only dapps (not in predefined list)
+    this.#dapps.forEach((userDapp) => {
+      if (!predefinedDappsMap.has(userDapp.id)) result.push(userDapp)
+    })
+
+    // Sort by isConnected (true first), then maintain original order
+    return result.sort((a, b) => {
+      if (a.isConnected === b.isConnected) return 0
+      return a.isConnected ? -1 : 1
+    })
   }
 
   set dapps(updatedDapps: Dapp[]) {
@@ -97,8 +123,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#createDappSession(initProps)
   }
 
-  setSessionMessenger = (sessionId: string, messenger: Messenger) => {
-    this.dappSessions[sessionId].setMessenger(messenger)
+  setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
+    this.dappSessions[sessionId].setMessenger(messenger, isAmbireNext)
   }
 
   setSessionLastHandledRequestsId = (
@@ -191,8 +217,14 @@ export class DappsController extends EventEmitter implements IDappsController {
   updateDapp(id: string, dapp: Partial<Dapp>) {
     if (!this.isReady) return
 
+    // Override the name of a dapp that's in our predefined list
+    const predefinedDappRef = predefinedDapps.find((d) => getDappIdFromUrl(d.url) === id)
+    const shouldOverrideNameChange = dapp.name && predefinedDappRef
+    const dappPropsToUpdate = { ...dapp }
+    if (shouldOverrideNameChange) dappPropsToUpdate.name = predefinedDappRef.name
+
     this.dapps = this.dapps.map((d) => {
-      if (d.id === id) return { ...d, ...dapp }
+      if (d.id === id) return { ...d, ...dappPropsToUpdate }
       return d
     })
     this.emitUpdate()

@@ -59,7 +59,7 @@ export function decodeError(e: Error): DecodedError {
   decodedError.reason = formatReason(decodedError.reason || '')
 
   if (decodedError.type === ErrorType.UnknownError) {
-    console.error('Failed to decode error', e)
+    console.error('Failed to decode error', e, 'data', errorData)
   }
 
   return decodedError
