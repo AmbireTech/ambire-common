@@ -69,7 +69,11 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import {
+  OnBroadcastFailed,
+  OnBroadcastSuccess,
+  SignAccountOpController
+} from '../signAccountOp/signAccountOp'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -118,6 +122,8 @@ const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
+  #callRelayer: Function
+
   #selectedAccount: ISelectedAccountController
 
   #networks: INetworksController
@@ -268,7 +274,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #continuouslyUpdateActiveRoutesSessionId: string | undefined
 
+  #onBroadcastSuccess: OnBroadcastSuccess
+
+  #onBroadcastFailed: OnBroadcastFailed
+
   constructor({
+    callRelayer,
     accounts,
     keystore,
     portfolio,
@@ -284,8 +295,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     isMainSignAccountOpThrowingAnEstimationError,
     getUserRequests,
     getVisibleActionsQueue,
-    swapProvider
+    swapProvider,
+    onBroadcastSuccess,
+    onBroadcastFailed
   }: {
+    callRelayer: Function
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController
@@ -302,8 +316,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     getUserRequests: () => UserRequest[]
     getVisibleActionsQueue: () => Action[]
     swapProvider: SwapProvider
+    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastFailed: OnBroadcastFailed
   }) {
     super()
+    this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -321,6 +338,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleActionsQueue = getVisibleActionsQueue
+    this.#onBroadcastSuccess = onBroadcastSuccess
+    this.#onBroadcastFailed = onBroadcastFailed
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
@@ -463,7 +482,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }
       })
     })
-    this.#emitUpdateIfNeeded()
+    // Fetch the supported networks in the beginning so we can disable the
+    // swap and bridge button of unsupported tokens on the dashboard, even if
+    // the user hasn't yet opened the swap and bridge screen
+    // (forceEmit true is crucial here)
+    this.#fetchSupportedChainsIfNeeded(true)
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -683,7 +706,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#serviceProviderAPI.isHealthy
   }
 
-  #fetchSupportedChainsIfNeeded = async () => {
+  #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
     const shouldNotReFetchSupportedChains =
       this.#cachedSupportedChains.data.length &&
       Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
@@ -693,7 +716,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
 
       this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
-      this.#emitUpdateIfNeeded()
+      this.#emitUpdateIfNeeded(forceUpdate)
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
@@ -1027,7 +1050,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const nextFromSelectedToken =
         fromSelectedTokenInNextPortfolio ||
         // Select the first token in the portfolio that is not the same as the "to" token
-        this.portfolioTokenList.find((t) => t.address !== this.toSelectedToken?.address) ||
+        this.portfolioTokenList.find(
+          (t) =>
+            t.address !== this.toSelectedToken?.address &&
+            this.supportedChainIds.includes(t.chainId)
+        ) ||
         null
 
       await this.updateForm(
@@ -1253,6 +1280,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#emitUpdateIfNeeded()
     return token
+  }
+
+  #getIsWrapOrUnwrap(): boolean {
+    const fromSelectedToken = this.fromSelectedToken
+    const toSelectedToken = this.toSelectedToken
+
+    if (!toSelectedToken || !fromSelectedToken) return false
+
+    const isSameChain = this.fromChainId === this.toChainId
+
+    if (!isSameChain) return false
+
+    const fromAddr = fromSelectedToken.address.toLowerCase()
+    const toAddr = toSelectedToken.address.toLowerCase()
+
+    if (fromAddr !== ZeroAddress && toAddr !== ZeroAddress) return false
+
+    const networkData = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
+
+    if (!networkData) return false
+
+    const nativeWrappedAddress = networkData.wrappedAddr?.toLowerCase()
+    const isWrap = fromAddr === ZeroAddress && toAddr === nativeWrappedAddress
+    const isUnwrap = fromAddr === nativeWrappedAddress && toAddr === ZeroAddress
+
+    return isWrap || isUnwrap
   }
 
   #accountNativeBalance(amount: bigint): bigint {
@@ -1487,6 +1540,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       try {
         const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
+        const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
+
         const quoteResult = await this.#serviceProviderAPI.quote({
           fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
@@ -1497,6 +1552,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
           sort: this.routePriority,
+          isWrapOrUnwrap,
           isOG: this.#invite.isOG,
           accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
@@ -1541,7 +1597,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             toChainId: quoteResult.toChainId,
             selectedRoute: quoteResult.selectedRoute,
             selectedRouteSteps: quoteResult.selectedRoute.steps,
-            routes
+            routes,
+            withConvenienceFee: quoteResult.withConvenienceFee
           }
           this.isAutoSelectRouteDisabled = quoteResult.selectedRoute.disabled
         }
@@ -2228,19 +2285,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    this.#signAccountOpController = new SignAccountOpController(
-      this.#accounts,
-      this.#networks,
-      this.#keystore,
-      this.#portfolio,
-      this.#externalSignerControllers,
-      this.#selectedAccount.account,
+    this.#signAccountOpController = new SignAccountOpController({
+      type: 'one-click-swap-and-bridge',
+      callRelayer: this.#callRelayer,
+      accounts: this.#accounts,
+      networks: this.#networks,
+      keystore: this.#keystore,
+      portfolio: this.#portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.#activity,
+      account: this.#selectedAccount.account,
       network,
-      this.#activity,
-      provider,
-      randomId(), // the account op and the action are fabricated
+      provider: this.#providers.providers[network.chainId.toString()],
+      fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      () => {
+      isSignRequestStillActive: () => {
         // this is more for a "just-in-case"
         // stop the gas price refetch if there's no signAccountOpController
         // this could only happen if there's a major bug and more than one
@@ -2250,9 +2309,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // identifiable
         return !!this.#signAccountOpController
       },
-      false,
-      false
-    )
+      shouldSimulate: false,
+      shouldReestimate: false,
+      onBroadcastSuccess: async (props) => {
+        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+        })
+
+        await this.#onBroadcastSuccess(props)
+        // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
+        // visualize the success page on the FE instead of resetting the form
+        this.resetForm()
+      },
+      onBroadcastFailed: this.#onBroadcastFailed
+    })
 
     this.emitUpdate()
 

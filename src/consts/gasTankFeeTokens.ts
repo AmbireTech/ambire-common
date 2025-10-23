@@ -108,6 +108,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
   },
   {
+    address: '0x01bFF41798a0BcF287b996046Ca68b395DbC1071',
+    symbol: 'usd₮0',
+    chainId: 10n,
+    decimals: 6,
+    currencyIcon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
+  },
+  {
     address: '0x4200000000000000000000000000000000000006',
     symbol: 'weth',
     chainId: 10n,
@@ -214,14 +221,14 @@ export default [
   },
   {
     address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
-    symbol: 'stETH',
+    symbol: 'steth',
     chainId: 1n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/13442/standard/steth_logo.png'
   },
   {
     address: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0',
-    symbol: 'wstETH',
+    symbol: 'wsteth',
     chainId: 1n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
@@ -332,7 +339,7 @@ export default [
   },
   {
     address: '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd',
-    symbol: 'wstETH',
+    symbol: 'wsteth',
     chainId: 137n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
@@ -643,7 +650,7 @@ export default [
   {
     chainId: 43114n,
     address: '0x5947bb275c521040051d82396192181b413227a3',
-    symbol: 'LINK',
+    symbol: 'link',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/877/standard/chainlink-new-logo.png?1696502009'
   },
@@ -736,7 +743,7 @@ export default [
   },
   {
     address: '0x1f32b1c2345538c0c6f582fcb022739c4a194ebb',
-    symbol: 'wstETH',
+    symbol: 'wsteth',
     chainId: 10n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
@@ -778,7 +785,7 @@ export default [
   },
   {
     address: '0x5979d7b546e38e414f7e9822514be443a4800529',
-    symbol: 'wstETH',
+    symbol: 'wsteth',
     chainId: 42161n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
@@ -833,6 +840,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/16547/standard/arb.jpg?1721358242'
   },
   {
+    chainId: 42161n,
+    address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+    symbol: 'usd₮0',
+    decimals: 6,
+    currencyIcon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
+  },
+  {
     address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
     symbol: 'usdc',
     chainId: 66n,
@@ -861,8 +875,15 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
+    address: '0x0bbbead62f7647ae8323d2cb243a0db74b7c2b80',
+    symbol: 'wallet',
+    chainId: 8453n,
+    decimals: 18,
+    icon: 'https://raw.githubusercontent.com/AmbireTech/ambire-brand/main/logos/Ambire_logo_250x250.png'
+  },
+  {
     address: '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452',
-    symbol: 'wstETH',
+    symbol: 'wsteth',
     chainId: 8453n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/18834/standard/wstETH.png'
@@ -926,28 +947,28 @@ export default [
   {
     chainId: 534352n,
     address: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
-    symbol: 'USDC',
+    symbol: 'usdc',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
     chainId: 534352n,
     address: '0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df',
-    symbol: 'USDT',
+    symbol: 'usdt',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/32610/small/usdt_%281%29.png'
   },
   {
     chainId: 534352n,
     address: '0x5300000000000000000000000000000000000004',
-    symbol: 'WETH',
+    symbol: 'weth',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/32315/small/weth_%281%29.png?1697365181'
   },
   {
     chainId: 534352n,
     address: '0xf610A9dfB7C89644979b4A0f27063E9e7d7Cda32',
-    symbol: 'wstETH',
+    symbol: 'wsteth',
     decimals: 18,
     icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
   },
@@ -956,16 +977,16 @@ export default [
     address: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
     chainId: 130n,
     disableGasTankDeposit: true,
-    symbol: 'USDC',
+    symbol: 'usdc',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
-    // USD₮0
+    // usd₮0
     address: '0x9151434b16b9763660705744891fA906F660EcC5',
     chainId: 130n,
     disableGasTankDeposit: true,
-    symbol: 'USD₮0',
+    symbol: 'usd₮0',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
   },
@@ -974,7 +995,7 @@ export default [
     address: '0x4200000000000000000000000000000000000006',
     chainId: 130n,
     disableGasTankDeposit: true,
-    symbol: 'WETH',
+    symbol: 'weth',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/32315/small/weth_%281%29.png?1697365181'
   },
@@ -983,7 +1004,7 @@ export default [
     address: '0x8f187aa05619a017077f5308904739877ce9ea21',
     chainId: 130n,
     disableGasTankDeposit: true,
-    symbol: 'UNI',
+    symbol: 'uni',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/12504/standard/uniswap-logo.png?1720676669'
   },
@@ -992,16 +1013,16 @@ export default [
     address: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
     chainId: 57073n,
     disableGasTankDeposit: true,
-    symbol: 'USDC.e',
+    symbol: 'usdc.e',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
-    // USD₮0
+    // usd₮0
     address: '0x0200C29006150606B650577BBE7B6248F58470c1',
     chainId: 57073n,
     disableGasTankDeposit: true,
-    symbol: 'USD₮0',
+    symbol: 'usd₮0',
     decimals: 6,
     icon: 'https://assets.coingecko.com/coins/images/53705/standard/usdt0.jpg?1737086183'
   },
@@ -1009,7 +1030,7 @@ export default [
     // WETH
     address: '0x4200000000000000000000000000000000000006',
     chainId: 57073n,
-    symbol: 'WETH',
+    symbol: 'weth',
     disableGasTankDeposit: true,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/32315/small/weth_%281%29.png?1697365181'
@@ -1019,7 +1040,7 @@ export default [
     address: '0x73E0C0d45E048D25Fc26Fa3159b0aA04BfA4Db98',
     chainId: 57073n,
     disableGasTankDeposit: true,
-    symbol: 'kBTC',
+    symbol: 'kbtc',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/50879/standard/kBTC.png?1730321084'
   }

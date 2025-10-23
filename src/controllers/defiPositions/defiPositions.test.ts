@@ -10,6 +10,8 @@ import { RPCProviders } from '../../interfaces/provider'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { AutoLoginController } from '../autoLogin/autoLogin'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -78,11 +80,21 @@ const prepareTest = async () => {
     () => {},
     () => {}
   )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystoreCtrl,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
 
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore: keystoreCtrl
+    keystore: keystoreCtrl,
+    autoLogin: autoLoginCtrl
   })
   await selectedAccountCtrl.initialLoadPromise
   await networksCtrl.initialLoadPromise
