@@ -1,3 +1,5 @@
+import { Dapp } from '../../interfaces/dapp'
+
 const getDappIdFromUrl = (url?: string): string => {
   if (!url) return 'internal'
 
@@ -16,4 +18,9 @@ const formatDappName = (name: string) => {
   return name
 }
 
-export { getDappIdFromUrl, formatDappName }
+const getIsLegacyDappStructure = (d: Dapp) => {
+  const keys = ['chainIds', 'tvl', 'category'] as const
+  return keys.every((key) => d[key] === undefined)
+}
+
+export { getDappIdFromUrl, formatDappName, getIsLegacyDappStructure }

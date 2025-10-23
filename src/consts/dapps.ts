@@ -28,14 +28,14 @@ export const predefinedDapps = [
     name: 'Ambire Rewards',
     icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
     description: 'Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.',
-    networkNames: ['Ethereum', 'Base', 'Optimism', 'Arbitrum', 'Scroll', 'BNB']
+    chainIds: [1, 8453, 10, 42161, 534352, 56]
   },
   {
     url: 'https://www.bitrefill.com',
     name: 'Bitrefill',
     icon: 'https://www.bitrefill.com/android-chrome-192x192.png',
     description: 'The crypto store for digital gift cards, eSIMs, and phone refills.',
-    networkNames: ['Ethereum', 'Polygon']
+    chains: [1, 137]
   }
 ]
 
@@ -45,3 +45,5 @@ export const defiLlamaProtocolIdsToExclude = [
   '2198', // Uniswap V3
   '3657' // Uniswap Labs
 ]
+
+export const categoriesToNeverExclude = ['Dexs', 'DEX Aggregator']

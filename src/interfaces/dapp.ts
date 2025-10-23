@@ -15,7 +15,7 @@ export interface Dapp {
   tvl: number | null
   twitter: string | null
   geckoId: string | null
-  networkNames: string[]
+  chainIds: number[]
   isConnected: boolean
   isFeatured: boolean
   isCustom: boolean
@@ -43,6 +43,15 @@ export interface DefiLlamaProtocol {
   change_1d: number | null
   change_1h: number | null
   change_7d: number | null
+}
+
+export interface DefiLlamaChain {
+  gecko_id: string
+  tvl: number
+  tokenSymbol: string
+  cmcId: string
+  name: string
+  chainId: number
 }
 
 export interface DappProviderRequest {

@@ -3,8 +3,7 @@
     "url": "https://rewards.ambire.com",
     "name": "Ambire Rewards",
     "icon": "https://rewards.ambire.com/ambire-connect-icon.png",
-    "description": "Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.",
-    "networkNames": ["Ethereum", "Base", "Optimism", "Arbitrum", "Scroll", "BNB"]
+    "description": "Complete quests, earn XP and climb the leaderboard to secure Ambire rewards."
   },
   {
     "url": "https://app.aave.com",

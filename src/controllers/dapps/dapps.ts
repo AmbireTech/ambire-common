@@ -2,18 +2,23 @@
 /* eslint-disable no-restricted-syntax */
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
+  categoriesToNeverExclude,
   dappIdsToBeRemoved,
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps'
 import legacyPredefinedDapps from '../../consts/legacyDappCatalog.json'
-import { Dapp, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
+import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { IStorageController } from '../../interfaces/storage'
-import { formatDappName, getDappIdFromUrl } from '../../libs/dapps/helpers'
+import {
+  formatDappName,
+  getDappIdFromUrl,
+  getIsLegacyDappStructure
+} from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // Create a static map for predefined dapps for efficient lookups
@@ -81,7 +86,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // Detect legacy structure during map iteration (no need for Array.from)
     for (const d of this.#dapps.values()) {
-      if (!d.networkNames && !d.tvl && !d.category) {
+      if (getIsLegacyDappStructure(d)) {
         isLegacyStructure = true
         break
       }
@@ -111,7 +116,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           icon: predefinedDapp.icon,
           url: predefinedDapp.url,
           category: userDapp?.category ?? null,
-          networkNames: userDapp?.networkNames ?? [],
+          chainIds: userDapp?.chainIds ?? [],
           tvl: userDapp?.tvl ?? null,
           twitter: userDapp?.twitter ?? null,
           geckoId: userDapp?.geckoId ?? null,
@@ -148,7 +153,12 @@ export class DappsController extends EventEmitter implements IDappsController {
       }
 
       // For non-featured dapps: exclude only those with no networks and low/no tvl
-      if (!d.networkNames.length || !(d.tvl && d.tvl > 10_000_000)) continue
+      if (
+        !d.chainIds.length ||
+        !(!categoriesToNeverExclude.includes(d.category as string) && d.tvl && d.tvl > 10_000_000)
+      ) {
+        continue
+      }
 
       filtered.push(d)
     }
@@ -183,7 +193,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
     const prevDappsArray = Array.from(prevDapps.values())
 
-    const isLegacyStructure = prevDappsArray.some((d) => !d.networkNames && !d.tvl && !d.category)
+    const isLegacyStructure = prevDappsArray.some((d) => getIsLegacyDappStructure(d))
     const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
     const prevCustomDapps = prevDappsArray.filter(
       (d) => d.isCustom || d.description.startsWith('Custom app automatically added')
@@ -192,15 +202,28 @@ export class DappsController extends EventEmitter implements IDappsController {
     const dappsMap = new Map()
 
     let fetchedDappsList: DefiLlamaProtocol[] = []
+    let fetchedChainsList: DefiLlamaChain[] = []
     try {
-      const res = await this.#fetch('https://api.llama.fi/protocols')
-      if (!res.ok) throw new Error(`Status -' ${res.status}`)
-      fetchedDappsList = await res.json()
+      const [res, chainsRes] = await Promise.all([
+        this.#fetch('https://api.llama.fi/protocols'),
+        this.#fetch('https://api.llama.fi/v2/chains')
+      ])
+
+      if (!res.ok || !chainsRes.ok) {
+        throw new Error(`Fetch failed: protocols=${res.status}, chains=${chainsRes.status}`)
+      }
+
+      ;[fetchedDappsList, fetchedChainsList] = await Promise.all([res.json(), chainsRes.json()])
     } catch (err) {
       console.error('Dapps fetch failed:', err)
     }
 
-    if (fetchedDappsList.length) {
+    if (fetchedDappsList.length && fetchedChainsList.length) {
+      const chainNamesToIds = new Map<string, number>()
+      for (const c of fetchedChainsList) {
+        chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
+      }
+
       for (const dapp of fetchedDappsList) {
         if (['CEX', 'Developer Tools'].includes(dapp.category)) continue
 
@@ -210,6 +233,14 @@ export class DappsController extends EventEmitter implements IDappsController {
 
         const prevStoredDapp = prevDapps.get(id)
 
+        const chainIds = (dapp.chains ?? [])
+          .map((chainName: string) => chainNamesToIds.get(chainName.toLowerCase())!)
+          .filter(
+            (chainId: number) =>
+              !!chainId &&
+              this.#networks.allNetworks.find((n) => n.chainId.toString() === chainId.toString())
+          )
+
         const updatedDapp: Dapp = {
           id,
           name: formatDappName(dapp.name),
@@ -218,9 +249,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           icon: dapp.logo,
           category: dapp.category,
           tvl: dapp.tvl,
-          networkNames: dapp.chains.filter((c) =>
-            this.#networks.networks.some((n) => n.name.toLowerCase() === c.toLowerCase())
-          ),
+          chainIds,
           isConnected: prevStoredDapp?.isConnected || false,
           isFeatured: featuredDapps.has(id),
           isCustom:
@@ -266,7 +295,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           icon: pd.icon,
           category: null,
           tvl: null,
-          networkNames: pd.networkNames || [],
+          chainIds: pd.chainIds || [],
           isConnected: false,
           isFeatured: featuredDapps.has(id),
           isCustom: false,
