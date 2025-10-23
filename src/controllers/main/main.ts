@@ -545,7 +545,6 @@ export class MainController extends EventEmitter implements IMainController {
       const FIVE_MINUTES = 1000 * 60 * 5
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
       if (!this.activity.broadcastedButNotConfirmed.length) {
-        this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }

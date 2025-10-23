@@ -512,7 +512,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
       networkData &&
       // The network must be ready
       isNetworkReady(networkData) &&
-      !networkData?.isLoading &&
       !defiPositionsNetworkState?.isLoading
     ) {
       networkTotal = networkData?.result?.total?.usd || 0
