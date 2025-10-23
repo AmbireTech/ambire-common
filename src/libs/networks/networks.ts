@@ -194,6 +194,11 @@ export async function getNetworkInfo(
           if (!coingeckoInfo.error) {
             platformId = coingeckoInfo.platformId
             nativeAssetId = coingeckoInfo.nativeAssetId
+          } else {
+            // assign platformId & nativeAssetId to empty string
+            // if coinbase itself returns an error
+            networkInfo.platformId = ''
+            networkInfo.nativeAssetId = ''
           }
         }
 
