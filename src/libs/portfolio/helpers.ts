@@ -78,7 +78,8 @@ export function getFlags(
   tokenChainId: bigint,
   address: string,
   name: string,
-  symbol: string
+  symbol: string,
+  blockTag?: string
 ): TokenResult['flags'] {
   const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId)
   const onGasTank = chainId === 'gasTank'
@@ -102,9 +103,11 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
-  const isSuspected = !isRewardsOrGasTank
-    ? isSuspectedToken(address, symbol, name, BigInt(chainId))
-    : undefined
+  let isSuspected
+
+  if (blockTag && blockTag === 'pending' && !isRewardsOrGasTank) {
+    isSuspected = isSuspectedToken(address, symbol, name, BigInt(chainId))
+  }
 
   return {
     onGasTank,
@@ -143,9 +146,9 @@ export const mapToken = (
   token: Pick<TokenResult, 'amount' | 'decimals' | 'name' | 'symbol'>,
   network: Network,
   address: string,
-  opts: Pick<GetOptions, 'specialErc20Hints'>
+  opts: Pick<GetOptions, 'specialErc20Hints' | 'blockTag'>
 ) => {
-  const { specialErc20Hints } = opts
+  const { specialErc20Hints, blockTag } = opts
 
   let symbol = 'Unknown'
   try {
@@ -169,7 +172,8 @@ export const mapToken = (
     network.chainId,
     address,
     tokenName,
-    symbol
+    symbol,
+    typeof blockTag === 'string' ? blockTag : undefined
   )
 
   if (specialErc20Hints) {
