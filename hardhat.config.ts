@@ -30,6 +30,14 @@ const config: HardhatUserConfig = {
       url: 'https://mainnet.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    baseSepolia: {
+      url: 'https://sepolia.base.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    opSepolia: {
+      url: 'https://sepolia.optimism.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     optimism: {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -103,6 +111,22 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.basescan.org/api',
           browserURL: 'https://api.basescan.org/api'
+        }
+      },
+      {
+        network: 'baseSepolia',
+        chainId: 84532,
+        urls: {
+          apiURL: 'https://api.sepolia.basescan.org/api',
+          browserURL: 'https://api.sepolia.basescan.org/api'
+        }
+      },
+      {
+        network: 'opSepolia',
+        chainId: 11155420,
+        urls: {
+          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
+          browserURL: 'https://api-sepolia-optimistic.etherscan.io/api'
         }
       },
       {
