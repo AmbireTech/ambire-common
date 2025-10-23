@@ -155,7 +155,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       // For non-featured dapps: exclude only those with no networks and low/no tvl
       if (
         !d.chainIds.length ||
-        !(!categoriesToNeverExclude.includes(d.category as string) && d.tvl && d.tvl > 10_000_000)
+        !(!categoriesToNeverExclude.includes(d.category as string) && d.tvl && d.tvl > 5_000_000)
       ) {
         continue
       }
@@ -190,7 +190,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
-    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    // if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
     const prevDappsArray = Array.from(prevDapps.values())
 
     const isLegacyStructure = prevDappsArray.some((d) => getIsLegacyDappStructure(d))
