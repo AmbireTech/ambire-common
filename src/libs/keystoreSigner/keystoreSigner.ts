@@ -23,7 +23,10 @@ import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
+import {
+  adaptTypedMessageForMetaMaskSigUtil,
+  getAuthorizationHash
+} from '../signMessage/signMessage'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -88,9 +91,18 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  sign7702(hex: string): EIP7702Signature {
+  async sign7702({
+    chainId,
+    contract,
+    nonce
+  }: {
+    chainId: bigint
+    contract: Hex
+    nonce: bigint
+  }): Promise<EIP7702Signature> {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
+    const hex = getAuthorizationHash(chainId, contract, nonce)
     const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))
     const signature = hexlify(data.signature)
     return {

@@ -881,6 +881,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
     const authorizationHash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
+    // TODO: Adjust test
     const signature = signer.sign7702(authorizationHash)
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
     const authorizationRes = await verifyMessage({
@@ -897,6 +898,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
 
     // increment the nonce to be sure 'v' transform is working
     const authorizationHash2 = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 1n)
+    // TODO: Adjust test
     const signature2 = signer.sign7702(authorizationHash2)
     const authorizationRes2 = await verifyMessage({
       provider,

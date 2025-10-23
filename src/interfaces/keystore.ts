@@ -71,7 +71,15 @@ export interface KeystoreSignerInterface {
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
-  sign7702: (hex: string) => EIP7702Signature
+  sign7702: ({
+    chainId,
+    contract,
+    nonce
+  }: {
+    chainId: bigint
+    contract: Hex
+    nonce: bigint
+  }) => Promise<EIP7702Signature>
   signTransactionTypeFour: (txnRequest: TxnRequest, eip7702Auth: EIP7702Auth) => Hex
   signingCleanup?: () => Promise<void>
 }

@@ -105,6 +105,7 @@ describe('Sign eip-7702 authorization', () => {
   it('should sign successfully', async () => {
     const hash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const signer = new KeystoreSigner(key, privKey)
+    // TODO: Adjust test
     const signature = signer.sign7702(hash)
 
     expect(signature.yParity === '0x00' || signature.yParity === '0x01').toBe(true)

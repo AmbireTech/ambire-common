@@ -234,6 +234,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
+          // TODO: Sync with the latest changes
           signature = this.#signer.sign7702(this.messageToSign.content.message)
         }
       } catch (error: any) {
