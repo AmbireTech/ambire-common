@@ -395,48 +395,16 @@ export const getIsRecalculationNeeded = (
   return hasPortfolioUpdated || areDefiPositionsUpdated
 }
 
-/**
- * Calculates the selected account portfolio (divided by networks).
- * It combines the latest and pending states, checks the status of the networks-
- * whether they are ready or not, loading etc.
- * It also updates the portfolio with defi positions.
- * It's optimized to avoid unnecessary recalculations by comparing the new portfolio/defi positions state
- * with the previous one. (by nonce, block number, simulation status, defi positions updated at timestamp)
- */
-export function calculateSelectedAccountPortfolioByNetworks(
+const mergeLatestAndPendingAccountStates = (
   latestStateSelectedAccount: AccountState,
   pendingStateSelectedAccount: AccountState,
-  pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
-  defiPositionsAccountState: DefiPositionsAccountState,
-  shouldShowPartialResult: boolean,
-  isManualUpdate: boolean
+  hasPending: boolean
 ): {
-  selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
-  isAllReady: boolean
-  isReadyToVisualize: boolean
-  isReloading: boolean
-  shouldShowPartialResult: boolean
-} {
-  const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
-    pastAccountPortfolioWithDefiPositions
-  const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
-  const hasPending = pendingStateSelectedAccount && Object.keys(pendingStateSelectedAccount).length
-
-  if (!hasLatest && !hasPending) {
-    return {
-      selectedAccountPortfolioByNetworks: {},
-      isAllReady: false,
-      isReloading: false,
-      shouldShowPartialResult: false,
-      isReadyToVisualize: false
-    }
-  }
-
-  let selectedAccountData = latestStateSelectedAccount
-  let isAllReady = !!hasLatest
-  let isReadyToVisualize = false
-  let hasTokensWithAmount = false
-  let isReloading = false
+  mergedAccountState: AccountState
+  validSelectedAccountPendingState: AccountState
+  simulatedAccountOps: NetworkSimulatedAccountOp
+} => {
+  let mergedAccountState: AccountState = latestStateSelectedAccount
   /**
    * Replaces the latest state if the following conditions are true:
    * - There is no critical error in the pending state.
@@ -471,14 +439,70 @@ export function calculateSelectedAccountPortfolioByNetworks(
   })
 
   if (hasPending && Object.keys(validSelectedAccountPendingState).length > 0) {
-    selectedAccountData = {
-      ...selectedAccountData,
+    mergedAccountState = {
+      ...mergedAccountState,
       ...validSelectedAccountPendingState
     }
   }
 
-  Object.keys(selectedAccountData).forEach((network: string) => {
-    const networkData = selectedAccountData[network]
+  return {
+    mergedAccountState,
+    validSelectedAccountPendingState,
+    simulatedAccountOps
+  }
+}
+
+/**
+ * Calculates the selected account portfolio (divided by networks).
+ * It combines the latest and pending states, checks the status of the networks-
+ * whether they are ready or not, loading etc.
+ * It also updates the portfolio with defi positions.
+ * It's optimized to avoid unnecessary recalculations by comparing the new portfolio/defi positions state
+ * with the previous one. (by nonce, block number, simulation status, defi positions updated at timestamp)
+ */
+export function calculateSelectedAccountPortfolioByNetworks(
+  latestStateSelectedAccount: AccountState,
+  pendingStateSelectedAccount: AccountState,
+  pastAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks,
+  defiPositionsAccountState: DefiPositionsAccountState,
+  shouldShowPartialResult: boolean,
+  isManualUpdate: boolean
+): {
+  selectedAccountPortfolioByNetworks: SelectedAccountPortfolioByNetworks
+  isAllReady: boolean
+  isReadyToVisualize: boolean
+  isReloading: boolean
+  shouldShowPartialResult: boolean
+} {
+  const newAccountPortfolioWithDefiPositions: SelectedAccountPortfolioByNetworks =
+    pastAccountPortfolioWithDefiPositions
+  const hasLatest = latestStateSelectedAccount && Object.keys(latestStateSelectedAccount).length
+  const hasPending =
+    !!pendingStateSelectedAccount && !!Object.keys(pendingStateSelectedAccount).length
+
+  if (!hasLatest && !hasPending) {
+    return {
+      selectedAccountPortfolioByNetworks: {},
+      isAllReady: false,
+      isReloading: false,
+      shouldShowPartialResult: false,
+      isReadyToVisualize: false
+    }
+  }
+
+  const { mergedAccountState, validSelectedAccountPendingState, simulatedAccountOps } =
+    mergeLatestAndPendingAccountStates(
+      latestStateSelectedAccount,
+      pendingStateSelectedAccount,
+      hasPending
+    )
+  let isAllReady = !!hasLatest
+  let isReadyToVisualize = false
+  let hasTokensWithAmount = false
+  let isReloading = false
+
+  Object.keys(mergedAccountState).forEach((network: string) => {
+    const networkData = mergedAccountState[network]
     const defiPositionsNetworkState = defiPositionsAccountState[network]
     const pastAccountPortfolioWithDefiPositionsNetworkState =
       pastAccountPortfolioWithDefiPositions[network]
