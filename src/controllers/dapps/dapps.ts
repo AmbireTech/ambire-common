@@ -1,8 +1,4 @@
 /* eslint-disable no-continue */
-/* eslint-disable no-restricted-syntax */
-import { IPhishingController } from 'interfaces/phishing'
-import { networkChainIdToHex } from 'libs/networks/networks'
-
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
   categoriesToNeverExclude,
@@ -16,12 +12,15 @@ import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../..
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
+/* eslint-disable no-restricted-syntax */
+import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import {
   formatDappName,
   getDappIdFromUrl,
   getIsLegacyDappStructure
 } from '../../libs/dapps/helpers'
+import { networkChainIdToHex } from '../../libs/networks/networks'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // Create a static map for predefined dapps for efficient lookups
