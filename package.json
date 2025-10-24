@@ -26,6 +26,7 @@
     "js-yaml": "^4.1.0",
     "scrypt-js": "^3.0.1",
     "siwe": "3.0.0",
+    "tldts": "^7.0.17",
     "uuid": "9.0.0",
     "viem": "^2.33.3"
   },
@@ -52,7 +53,6 @@
     "@borislav.itskov/schnorrkel.js": "2.0.85",
     "@ensdomains/dnsprovejs": "^0.4.1",
     "@jest/globals": "^29.6.1",
-    "@types/chrome": "0.0.212",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.11",
@@ -60,6 +60,7 @@
     "@openzeppelin/contracts": "^4.9.6",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",
+    "@types/chrome": "0.0.212",
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.1",
