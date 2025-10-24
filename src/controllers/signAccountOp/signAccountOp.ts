@@ -87,7 +87,6 @@ import {
   adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
-  getAuthorizationHash,
   getEIP712Signature,
   getEntryPointAuthorization,
   getExecuteSignature,
@@ -2309,8 +2308,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           const signedTxn =
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
-              ? // TODO: Sync change across all places
-                await signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              ? await signer.signTransactionTypeFour({
+                  txnRequest: rawTxn,
+                  eip7702Auth: accountOp.meta!.delegation!
+                })
               : await signer.signRawTransaction(rawTxn)
 
           if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
