@@ -1,7 +1,21 @@
+import { getDomain } from 'tldts'
+
 import { Dapp } from '../../interfaces/dapp'
 
-const getDappIdFromUrl = (url?: string): string => {
+const getDappIdFromUrl = (url?: string, dapps?: Dapp[]): string => {
   if (!url) return 'internal'
+
+  try {
+    if (dapps) {
+      const domain = getDomain(url)
+      console.log('domain', url, domain)
+      const existingDapp = dapps.find((d) => d.id === domain)
+      console.log('existingDapp', existingDapp)
+      if (existingDapp) return existingDapp.id
+    }
+  } catch (error) {
+    // silent fail
+  }
 
   try {
     const { hostname } = new URL(url)

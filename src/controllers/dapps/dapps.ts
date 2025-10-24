@@ -328,8 +328,9 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
   }
 
-  #createDappSession = (initProps: SessionInitProps) => {
-    const dappSession = new Session(initProps)
+  async #createDappSession(initProps: SessionInitProps) {
+    await this.initialLoadPromise
+    const dappSession = new Session(initProps, this.dapps)
     this.dappSessions[dappSession.sessionId] = dappSession
 
     this.emitUpdate()
@@ -337,7 +338,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  getOrCreateDappSession = (initProps: SessionInitProps) => {
+  async getOrCreateDappSession(initProps: SessionInitProps) {
     if (!initProps.tabId || !initProps.origin)
       throw new Error('Invalid props passed to getOrCreateDappSession')
 
