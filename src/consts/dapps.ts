@@ -11,7 +11,8 @@ export const dappIdsToBeRemoved = new Set([
   'play.decentraland.org', // play.decentraland.org redirects to decentraland.org
   'bridge.arbitrum.io', // bridge.arbitrum.io was moved to portal.arbitrum.io
   'curve.fi', // curve.fi was moved to curve.finance
-  'app.ether.fi' // app.ether.fi was moved to ether.fi
+  'app.ether.fi', // app.ether.fi was moved to ether.fi
+  'core.app' // not supported
 ])
 
 export const featuredDapps = new Set([
