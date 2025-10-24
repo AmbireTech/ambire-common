@@ -1297,6 +1297,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return this.#pending[accountAddr] || {}
   }
 
+  getIsStateWithOutdatedNetworks(accountAddr: string) {
+    // Get the pending state as latest contains internal networks
+    const pendingNetworksCount = Object.keys(this.getPendingPortfolioState(accountAddr)).length
+    // Read from networks, and not allNetworks
+    const networksCount = this.#networks.networks.length
+
+    return pendingNetworksCount !== networksCount
+  }
+
   getNetworksWithAssets(accountAddr: string) {
     return this.#networksWithAssetsByAccounts[accountAddr] || []
   }

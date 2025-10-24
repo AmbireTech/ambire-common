@@ -251,8 +251,18 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.defiPositions = []
     this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
-    this.updateSelectedAccountPortfolio(true)
-    this.#updateSelectedAccountDefiPositions(true)
+
+    const isStateWithOutdatedNetworks =
+      this.account &&
+      this.#portfolio &&
+      this.#portfolio.getIsStateWithOutdatedNetworks(this.account.addr)
+
+    // Display the current portfolio state immediately only if the user hasn't
+    // added/removed networks since the last time the portfolio was calculated.
+    if (!isStateWithOutdatedNetworks) {
+      this.updateSelectedAccountPortfolio(true)
+      this.#updateSelectedAccountDefiPositions(true)
+    }
     this.dashboardNetworkFilter = null
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
     this.#portfolioLoadingTimeout = null
