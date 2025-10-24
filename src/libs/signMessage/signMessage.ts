@@ -128,7 +128,7 @@ export const getAmbireReadableTypedData = (
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
-    chainId: chainId.toString(),
+    chainId: toBeHex(chainId),
     verifyingContract: verifyingAddr,
     salt: toBeHex(0, 32)
   }
@@ -188,7 +188,7 @@ export const getTypedData = (
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
-    chainId: chainId.toString(),
+    chainId: toBeHex(chainId),
     verifyingContract: verifyingAddr,
     salt: toBeHex(0, 32)
   }
@@ -252,7 +252,7 @@ export const get7702UserOpTypedData = (
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
-    chainId,
+    chainId: toBeHex(chainId),
     verifyingContract: packedUserOp.sender,
     salt: toBeHex(0, 32)
   }
@@ -285,11 +285,11 @@ export const get7702UserOpTypedData = (
   }
   const message = {
     account: packedUserOp.sender,
-    chainId,
-    nonce: packedUserOp.nonce,
+    chainId: toBeHex(chainId),
+    nonce: toBeHex(packedUserOp.nonce),
     initCode: packedUserOp.initCode,
     accountGasLimits: packedUserOp.accountGasLimits,
-    preVerificationGas: packedUserOp.preVerificationGas,
+    preVerificationGas: toBeHex(packedUserOp.preVerificationGas),
     gasFees: packedUserOp.gasFees,
     paymasterAndData: packedUserOp.paymasterAndData,
     callData: packedUserOp.callData,
