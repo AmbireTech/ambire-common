@@ -244,22 +244,9 @@ describe('SelectedAccount Controller', () => {
 
     expect(selectedAccountCtrl.dashboardNetworkFilter).toBe('1')
 
-    await networksCtrl.updateNetwork(
-      {
-        disabled: true
-      },
-      1n
-    )
+    selectedAccountCtrl.removeNetworkData(1n)
 
     expect(selectedAccountCtrl.dashboardNetworkFilter).toBeNull()
-
-    // Re-add the network for other tests
-    await networksCtrl.updateNetwork(
-      {
-        disabled: false
-      },
-      1n
-    )
   })
   it('Selected account portfolio is calculated immediately when an account with ready portfolio is selected', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
