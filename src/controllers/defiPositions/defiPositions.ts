@@ -435,6 +435,15 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
         // return if it fails to prevent hiding/overriding already stored DeFi pos
         if (Object.values(networksWithPositionsOnSelectedAccount).some((pos) => pos.length)) {
+          networksToUpdate.forEach((n) => {
+            this.#state[selectedAccountAddr][n.chainId.toString()] = {
+              ...this.#state[selectedAccountAddr][n.chainId.toString()],
+              isLoading: false,
+              error: DeFiPositionsError.CriticalError
+            }
+          })
+
+          this.emitUpdate()
           return
         }
       }
