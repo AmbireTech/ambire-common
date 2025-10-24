@@ -28,14 +28,16 @@ export const predefinedDapps = [
     name: 'Ambire Rewards',
     icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
     description: 'Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.',
-    chainIds: [1, 8453, 10, 42161, 534352, 56]
+    chainIds: [1, 8453, 10, 42161, 534352, 56],
+    twitter: 'ambire'
   },
   {
     url: 'https://www.bitrefill.com',
     name: 'Bitrefill',
     icon: 'https://www.bitrefill.com/android-chrome-192x192.png',
     description: 'The crypto store for digital gift cards, eSIMs, and phone refills.',
-    chains: [1, 137]
+    chains: [1, 137],
+    twitter: 'bitrefill'
   }
 ]
 

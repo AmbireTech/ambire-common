@@ -197,6 +197,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
+    // NOTE: For debugging, you can comment out this line
+    // to fetch and update dapps on every extension restart.
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
     const prevDappsArray = Array.from(prevDapps.values())
 
@@ -293,6 +295,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     for (const pd of predefinedDapps) {
       const id = getDappIdFromUrl(pd.url)
 
+      const prevStoredDapp = prevDapps.get(id)
+
       if (!dappsMap.has(id)) {
         dappsMap.set(id, {
           id,
@@ -303,13 +307,13 @@ export class DappsController extends EventEmitter implements IDappsController {
           category: null,
           tvl: null,
           chainIds: pd.chainIds || [],
-          isConnected: false,
+          isConnected: prevStoredDapp?.isConnected ?? false,
           isFeatured: featuredDapps.has(id),
           isCustom: false,
-          chainId: 1,
-          favorite: false,
-          blacklisted: false,
-          twitter: null,
+          chainId: prevStoredDapp?.chainId ?? 1,
+          favorite: prevStoredDapp?.favorite ?? false,
+          blacklisted: prevStoredDapp?.blacklisted ?? false,
+          twitter: pd.twitter,
           geckoId: null
         })
       }
