@@ -234,8 +234,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
-          // TODO: Sync with the latest changes
-          signature = this.#signer.sign7702(this.messageToSign.content.message)
+          // TODO: Deprecated. Sync with the latest sign7702 method changes if used
+          // signature = this.#signer.sign7702(this.messageToSign.content.message)
+          throw new ExternalSignerError(
+            'Signing EIP-7702 authorization via this flow is not implemented',
+            { sendCrashReport: true }
+          )
         }
       } catch (error: any) {
         throw new ExternalSignerError(
