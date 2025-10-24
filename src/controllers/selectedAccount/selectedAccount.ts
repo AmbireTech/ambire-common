@@ -225,18 +225,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     })
 
-    this.#networks.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
-        if (!this.dashboardNetworkFilter) return
-        const dashboardFilteredNetwork = this.#networks!.networks.find(
-          (n) => n.chainId === this.dashboardNetworkFilter
-        )
-
-        // reset the dashboardNetworkFilter if the network is removed
-        if (!dashboardFilteredNetwork) this.setDashboardNetworkFilter(null)
-      })
-    })
-
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount(true)
@@ -591,6 +579,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   setDashboardNetworkFilter(networkFilter: bigint | string | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
+  }
+
+  removeNetworkData(chainId: bigint) {
+    const stringChainId = chainId.toString()
+
+    if (this.#portfolioByNetworks[stringChainId]) {
+      delete this.#portfolioByNetworks[stringChainId]
+    }
+    if (String(this.dashboardNetworkFilter) === stringChainId) {
+      this.dashboardNetworkFilter = null
+    }
+
+    this.updateSelectedAccountPortfolio()
   }
 
   async dismissDefiPositionsBannerForTheSelectedAccount() {

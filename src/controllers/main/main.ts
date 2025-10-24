@@ -1518,6 +1518,7 @@ export class MainController extends EventEmitter implements IMainController {
   removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
+    this.selectedAccount.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity
