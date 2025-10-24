@@ -283,6 +283,21 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
+export const isInternalChain = (chainId: string) => {
+  return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards'
+}
+
+export const isDefiNetworkStateReady = (
+  chainId: string,
+  defiNetworkData: DefiPositionsNetworkState | undefined
+) => {
+  // Internal chains are always ready. Also, in case the defi network data is missing we
+  // don't want to block the portfolio calculation.
+  if (isInternalChain(chainId) || !defiNetworkData) return true
+
+  return !!defiNetworkData && !!(defiNetworkData.updatedAt || defiNetworkData?.error)
+}
+
 /**
  * Adds the latest and pending amount to the tokens array.
  * Also returns a flag indicating whether there is a token with an amount > 0
@@ -351,19 +366,13 @@ export const calculateTokensArray = (
  */
 export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
-  latestNetworkData: NetworkState | undefined,
-  pendingNetworkData: NetworkState | undefined,
+  latestNetworkData: NetworkState,
+  pendingNetworkData: NetworkState,
   // Can be pending or selected
-  selectedNetworkData: NetworkState | undefined,
+  selectedNetworkData: NetworkState,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
 ): boolean => {
-  if (
-    !latestNetworkData ||
-    !pendingNetworkData ||
-    !selectedNetworkData ||
-    !pastAccountPortfolioWithDefiPositionsNetworkState ||
-    !defiPositionsNetworkState
-  ) {
+  if (!pastAccountPortfolioWithDefiPositionsNetworkState) {
     return true
   }
 
@@ -372,7 +381,7 @@ export const getIsRecalculationNeeded = (
   if (
     latestNetworkData?.isLoading ||
     pendingNetworkData.isLoading ||
-    defiPositionsNetworkState.isLoading
+    defiPositionsNetworkState?.isLoading
   ) {
     return false
   }
@@ -453,6 +462,56 @@ const mergeLatestAndPendingAccountStates = (
 }
 
 /**
+ * Calculates the portfolio tokens, total balance, collections and defi positions for a specific network.
+ * In essence, it merges all states (latest, pending, defi positions) into a single network portfolio state.
+ */
+const recalculateNetworkPortfolio = (
+  network: string,
+  isPendingValid: boolean,
+  latestNetworkState: NetworkState,
+  pendingNetworkState: NetworkState,
+  mixedNetworkState: NetworkState,
+  defiPositionsAccountState: DefiPositionsAccountState,
+  simulatedAccountOps: NetworkSimulatedAccountOp
+) => {
+  const collectionsArray: CollectionResult[] = mixedNetworkState.result?.collections || []
+  const { tokens, hasTokenWithAmount: hasTokensWithAmountOnNetwork } = calculateTokensArray(
+    network,
+    latestNetworkState?.result?.tokens || [],
+    pendingNetworkState?.result?.tokens || [],
+    isPendingValid
+  )
+  let tokensArray: SelectedAccountPortfolioTokenResult[] = tokens
+  let networkTotal = mixedNetworkState.result?.total?.usd || 0
+
+  // In case defi positions haven't loaded at this point we will still calculate the portfolio
+  // and add the defi positions when they are ready. This is done to not block the user from seeing
+  // their portfolio because of a loading issue with defi positions
+  const defiPositions = calculateDefiPositions(network, tokensArray, defiPositionsAccountState)
+
+  // Replace the token list with the token list that has the defi tokens
+  if (defiPositions?.tokens.length) {
+    tokensArray = defiPositions.tokens
+  }
+
+  // Add the defi positions balance to the total balance
+  networkTotal += defiPositions?.defiPositionsBalance || 0
+
+  // Update the cached network state when the network is completely loaded
+  return {
+    hasTokensWithAmount: hasTokensWithAmountOnNetwork,
+    state: {
+      totalBalance: networkTotal,
+      tokens: tokensArray,
+      collections: collectionsArray,
+      portfolioUpdateStarted: mixedNetworkState.result?.updateStarted,
+      defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
+      simulatedAccountOp: simulatedAccountOps[network]
+    }
+  }
+}
+
+/**
  * Calculates the selected account portfolio (divided by networks).
  * It combines the latest and pending states, checks the status of the networks-
  * whether they are ready or not, loading etc.
@@ -501,11 +560,50 @@ export function calculateSelectedAccountPortfolioByNetworks(
   let hasTokensWithAmount = false
   let isReloading = false
 
+  // Use the merged portfolio state for the calculation
+  // Merges the portfolio with the defi positions
   Object.keys(mergedAccountState).forEach((network: string) => {
     const networkData = mergedAccountState[network]
     const defiPositionsNetworkState = defiPositionsAccountState[network]
+    const isDefiOrPortfolioNotReady =
+      !isNetworkReady(networkData) || !isDefiNetworkStateReady(network, defiPositionsNetworkState)
+
+    // --- READY / LOADING LOGIC ---
+
+    // Don't do anything if the network data is not ready
+    if (
+      !latestStateSelectedAccount[network] ||
+      !pendingStateSelectedAccount[network] ||
+      !networkData ||
+      isDefiOrPortfolioNotReady
+    ) {
+      isAllReady = false
+
+      return
+    }
+
+    const isDefiOrPortfolioLoading = networkData?.isLoading || defiPositionsNetworkState?.isLoading
+    // Either the first update or a manual one
+    const isLoadingFromScratch =
+      (isDefiOrPortfolioNotReady || isManualUpdate) && isDefiOrPortfolioLoading
+
+    // Reloading means that the data is ready, but loading and not fresh
+    // If the portfolio is loading while the data is fresh, we don't notify the user
+    if (!isReloading && isDefiOrPortfolioLoading) {
+      // We are only checking the portfolio data timestamp as defi positions are being
+      // updated more rarely
+      isReloading =
+        !!networkData?.result?.lastSuccessfulUpdate &&
+        Date.now() - networkData.result.lastSuccessfulUpdate > 60 * 60 * 1000
+    }
+
+    if (isLoadingFromScratch) isAllReady = false
+
+    // --- CACHE OR RECALCULATE LOGIC ---
+
     const pastAccountPortfolioWithDefiPositionsNetworkState =
       pastAccountPortfolioWithDefiPositions[network]
+    // Check if a recalculation is needed or the past state can be reused
     const shouldRecalculateState = getIsRecalculationNeeded(
       pastAccountPortfolioWithDefiPositionsNetworkState,
       latestStateSelectedAccount[network],
@@ -513,17 +611,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
       networkData,
       defiPositionsNetworkState
     )
-    const isDefiOrPortfolioLoading = networkData?.isLoading || defiPositionsNetworkState?.isLoading
-    const result = networkData?.result
-    const isLoadingFromScratch =
-      (!networkData?.isReady || isManualUpdate) && isDefiOrPortfolioLoading
-
-    if (!isReloading && isDefiOrPortfolioLoading) {
-      isReloading =
-        !!networkData?.result?.lastSuccessfulUpdate &&
-        networkData.result.lastSuccessfulUpdate - Date.now() > 60 * 60 * 1000
-    }
-    if (isLoadingFromScratch) isAllReady = false
 
     if (!shouldRecalculateState) {
       // If a recalculation is not needed, we just copy the previous state
@@ -539,51 +626,22 @@ export function calculateSelectedAccountPortfolioByNetworks(
       return
     }
 
-    let tokensArray: SelectedAccountPortfolioTokenResult[] = []
-    let collectionsArray: CollectionResult[] = []
-    let networkTotal = 0
-
-    if (isNetworkReady(networkData)) {
-      networkTotal = networkData?.result?.total?.usd || 0
-
-      const latestTokens = latestStateSelectedAccount[network]?.result?.tokens || []
-      const pendingTokens = pendingStateSelectedAccount[network]?.result?.tokens || []
-      collectionsArray = result?.collections || []
-
-      const { tokens, hasTokenWithAmount: hasTokensWithAmountOnNetwork } = calculateTokensArray(
+    // Recalculate the state
+    const { state, hasTokensWithAmount: hasTokensWithAmountOnNetwork } =
+      recalculateNetworkPortfolio(
         network,
-        latestTokens,
-        pendingTokens,
-        !!validSelectedAccountPendingState[network]
+        !!validSelectedAccountPendingState[network],
+        latestStateSelectedAccount[network],
+        pendingStateSelectedAccount[network],
+        networkData,
+        defiPositionsAccountState,
+        simulatedAccountOps
       )
-      tokensArray = tokens
 
-      if (!hasTokensWithAmount && hasTokensWithAmountOnNetwork) {
-        hasTokensWithAmount = true
-      }
+    newAccountPortfolioWithDefiPositions[network] = state
 
-      // In case defi positions haven't loaded at this point we will still calculate the portfolio
-      // and add the defi positions when they are ready. This is done to not block the user from seeing
-      // their portfolio because of a loading issue with defi positions
-      const defiPositions = calculateDefiPositions(network, tokensArray, defiPositionsAccountState)
-
-      // Replace the token list with the token list that has the defi tokens
-      if (defiPositions?.tokens.length) {
-        tokensArray = defiPositions?.tokens
-      }
-
-      // Add the defi positions balance to the total balance
-      networkTotal += defiPositions?.defiPositionsBalance || 0
-
-      // Update the cached network state when the network is completely loaded
-      newAccountPortfolioWithDefiPositions[network] = {
-        totalBalance: networkTotal,
-        tokens: tokensArray,
-        collections: collectionsArray,
-        portfolioUpdateStarted: result?.updateStarted,
-        defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
-        simulatedAccountOp: simulatedAccountOps[network]
-      }
+    if (hasTokensWithAmountOnNetwork) {
+      hasTokensWithAmount = true
     }
   })
 
@@ -593,9 +651,11 @@ export function calculateSelectedAccountPortfolioByNetworks(
   }
 
   return {
+    // If all data is ready, we don't show partial results
     shouldShowPartialResult: isAllReady ? false : shouldShowPartialResult,
     isReadyToVisualize,
     isAllReady,
+    // Can be reloading only if all data is ready
     isReloading: isAllReady ? isReloading : false,
     selectedAccountPortfolioByNetworks: newAccountPortfolioWithDefiPositions
   }
