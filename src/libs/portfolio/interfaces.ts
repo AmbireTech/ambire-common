@@ -241,7 +241,6 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
 export type NetworkState = {
   isReady: boolean
   isLoading: boolean
-  isManualUpdate?: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
   result?:

@@ -32,6 +32,10 @@ const isTokenPriceWithinHalfPercent = (price1: number, price2: number): boolean 
   return diff <= threshold
 }
 
+export const isInternalChain = (chainId: string) => {
+  return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards'
+}
+
 /**
  * Adds the defi positions tokens that aren't handled by the portfolio.
  * Also calculates the total balance of the defi positions so it can be added to the total balance.
@@ -53,10 +57,7 @@ export const calculateDefiPositions = (
   const areDefiPositionsNotInitialized =
     !defiPositionsAccountState || Object.keys(defiPositionsAccountState).length === 0
 
-  const isInternalChain =
-    chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards'
-
-  if (isInternalChain || areDefiPositionsNotInitialized) {
+  if (isInternalChain(chainId) || areDefiPositionsNotInitialized) {
     return null
   }
 
@@ -283,10 +284,6 @@ export const isNetworkReady = (networkData: NetworkState | undefined) => {
   return networkData && (networkData.isReady || networkData?.criticalError)
 }
 
-export const isInternalChain = (chainId: string) => {
-  return chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards'
-}
-
 export const isDefiNetworkStateReady = (
   chainId: string,
   defiNetworkData: DefiPositionsNetworkState | undefined
@@ -313,7 +310,7 @@ export const calculateTokensArray = (
 } => {
   let hasTokenWithAmount = false
 
-  if (chainId === 'gasTank' || chainId === 'rewards' || chainId === 'projectedRewards') {
+  if (isInternalChain(chainId)) {
     return {
       tokens: latestTokens,
       hasTokenWithAmount: false
