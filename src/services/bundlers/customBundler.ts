@@ -11,8 +11,8 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class CustomBundler extends Bundler {
   protected getUrl(network: Network): string {
-    if (!network.erc4337.customBundlerUrl) throw new Error('custom bundler not set')
-    return network.erc4337.customBundlerUrl
+    if (!network.customBundlerUrl) throw new Error('custom bundler not set')
+    return network.customBundlerUrl
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
