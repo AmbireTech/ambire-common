@@ -337,14 +337,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
 
-    // Calculate and add projected rewards token
-    const projectedRewardsToken = calculateAndSetProjectedRewards(
-      latestStateSelectedAccount?.projectedRewards,
-      newSelectedAccountPortfolio.balancePerNetwork,
-      walletORStkWalletToken && walletORStkWalletToken.priceIn[0].price
-    )
+    if (newSelectedAccountPortfolio.isAllReady && latestStateSelectedAccount.projectedRewards) {
+      // Calculate and add projected rewards token
+      const projectedRewardsToken = calculateAndSetProjectedRewards(
+        latestStateSelectedAccount.projectedRewards,
+        newSelectedAccountPortfolio.balancePerNetwork,
+        walletORStkWalletToken && walletORStkWalletToken.priceIn[0].price
+      )
 
-    if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
+      if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
+    }
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
