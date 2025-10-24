@@ -572,10 +572,9 @@ export function calculateSelectedAccountPortfolioByNetworks(
       !latestStateSelectedAccount[network] ||
       // Not checking for pending, as internal networks don't have pending state
       !networkData ||
-      // Purposefully not checking for defi positions state,
-      // as it can be missing and we still want to calculate the portfolio
       isDefiOrPortfolioNotReady
     ) {
+      delete newAccountPortfolioWithDefiPositions[network]
       isAllReady = false
 
       return
