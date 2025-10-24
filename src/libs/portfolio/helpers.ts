@@ -4,7 +4,7 @@ import { getAddress } from 'viem'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -22,6 +22,16 @@ import {
   ToBeLearnedAssets,
   TokenResult
 } from './interfaces'
+
+type KnownTokenInfo = {
+  name?: string
+  address?: string
+  token?: { symbol?: string; decimals?: number }
+  isSC?: boolean
+  chainIds?: number[]
+}
+
+const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
 const usdcEMapping: { [key: string]: string } = {
   '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -43,35 +53,83 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
-const nonLatinSymbol = (str: string): boolean => /[^\x20-\x7E]/.test(str)
+const removeInvisibleChars = (str: string): string =>
+  str
+    // normalize to NFC form to unify visually-similar composed characters
+    .normalize('NFC')
+    .split('')
+    // keep only ASCII range (printable chars)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0)
+      return code >= 32 && code <= 126
+    })
+    .join('')
+
+// returns true if the original string contained any non-ASCII / invisible chars
+const nonLatinSymbol = (str: string): boolean => {
+  if (!str) return false
+  const cleaned = removeInvisibleChars(str)
+  return cleaned !== str
+}
+
+// safe address normalizer
+const normalizeAddress = (addr: string) => addr?.toLowerCase?.() ?? addr
 
 export const isSuspectedRegardsKnownAddresses = (
   tokenAddr: string,
   tokenSymbol: string,
   chainId: bigint
 ): boolean => {
-  if (!humanizerInfo.knownAddresses || !tokenAddr || !tokenSymbol) return false
+  if (!knownAddresses || !tokenAddr || !tokenSymbol) return false
 
-  const isSpoofed = !!Object.values(humanizerInfo.knownAddresses).find((token: any) => {
-    if (token.symbol !== tokenSymbol) return false
-    if (!token.chainIds) return false
-    if (!token.chainIds.includes(Number(chainId))) return false
+  const normalizedAddr = normalizeAddress(tokenAddr)
+  const normalizedSymbol = removeInvisibleChars(tokenSymbol).toUpperCase()
+  const numericChainId = Number(chainId)
 
-    return tokenAddr.toLowerCase() !== token.address.toLowerCase()
+  const knownTokens = Object.values(knownAddresses)
+
+  // Only consider known tokens that have chainIds defined (skip those without chainIds)
+  return knownTokens.some((known: any) => {
+    const knownSymbolRaw = known?.token?.symbol
+    const knownChains = known?.chainIds
+    if (!knownSymbolRaw || !knownChains) return false // skip unknowns or entries without chainIds
+
+    const knownSymbol = removeInvisibleChars(knownSymbolRaw).toUpperCase()
+    if (knownSymbol !== normalizedSymbol) return false
+
+    if (!knownChains.includes(numericChainId)) return false
+
+    // same symbol + same chain but different address -> suspected spoof
+    return normalizeAddress(known.address) !== normalizedAddr
   })
-
-  return isSpoofed
 }
 
-const isSuspectedToken = (
-  address: TokenResult['address'],
-  symbol: TokenResult['symbol'],
-  name: TokenResult['name'],
-  chainId: TokenResult['chainId']
+export const isSuspectedToken = (
+  address: string,
+  symbol: string,
+  name: string,
+  chainId: bigint
 ): IsSuspectedType => {
+  const normalizedAddr = normalizeAddress(address)
+  const numericChainId = Number(chainId)
+
+  // 1) lookup known token by address
+  const knownToken = knownAddresses?.[normalizedAddr]
+
+  // 2) Only auto-accept if known token exists AND chainIds is defined AND includes chainId
+  if (knownToken?.chainIds?.includes(numericChainId)) {
+    return undefined // trusted
+  }
+
+  // 3) Unknown address (or known but no chainIds) => run symbol/name checks
   if (nonLatinSymbol(symbol)) return 'no-latin-symbol'
   if (nonLatinSymbol(name)) return 'no-latin-name'
-  return isSuspectedRegardsKnownAddresses(address, symbol, chainId) ? 'suspected' : undefined
+
+  // 4) Same-symbol spoofing on same chain (different address)
+  if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
+
+  // 5) Not flagged
+  return undefined
 }
 
 export function getFlags(
