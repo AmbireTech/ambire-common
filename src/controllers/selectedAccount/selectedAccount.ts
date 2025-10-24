@@ -239,7 +239,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
-        this.#updateSelectedAccount()
+        this.#updateSelectedAccount(true)
         this.#updatePortfolioErrors(true)
         this.#updateDefiPositionsErrors()
       })
@@ -278,7 +278,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
-  #updateSelectedAccount() {
+  #updateSelectedAccount(skipUpdate: boolean = false) {
     if (!this.account) return
 
     const updatedAccount = this.#accounts.accounts.find((a) => a.addr === this.account!.addr)
@@ -286,7 +286,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.account = updatedAccount
 
-    this.emitUpdate()
+    if (!skipUpdate) this.emitUpdate()
   }
 
   resetSelectedAccountPortfolio({

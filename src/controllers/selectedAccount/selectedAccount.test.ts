@@ -102,6 +102,21 @@ const accounts = [
       label: DEFAULT_ACCOUNT_LABEL,
       pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     }
+  },
+  {
+    addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+    initialPrivileges: [],
+    associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+    creation: {
+      factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+      bytecode:
+        '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+      salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+    },
+    preferences: {
+      label: DEFAULT_ACCOUNT_LABEL,
+      pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    }
   }
 ]
 
@@ -222,6 +237,123 @@ describe('SelectedAccount Controller', () => {
     const json = selectedAccountCtrl.toJSON()
     expect(json).toBeDefined()
   })
+  it('The dashboard filter is removed if the filtered network is removed from the networks list', async () => {
+    const { selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.setDashboardNetworkFilter('1')
+
+    expect(selectedAccountCtrl.dashboardNetworkFilter).toBe('1')
+
+    await networksCtrl.updateNetwork(
+      {
+        disabled: true
+      },
+      1n
+    )
+
+    expect(selectedAccountCtrl.dashboardNetworkFilter).toBeNull()
+
+    // Re-add the network for other tests
+    await networksCtrl.updateNetwork(
+      {
+        disabled: false
+      },
+      1n
+    )
+  })
+  it('Selected account portfolio is calculated immediately when an account with ready portfolio is selected', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+
+    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+
+    await selectedAccountCtrl.setAccount(accounts[1])
+
+    await portfolioCtrl.updateSelectedAccount(accounts[1].addr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+
+    const secondAccountTokensCount = selectedAccountCtrl.portfolio.tokens.length
+
+    await selectedAccountCtrl.setAccount(accounts[0])
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+    expect(selectedAccountCtrl.portfolio.tokens.length).not.toBe(secondAccountTokensCount)
+  })
+  it('An update of the portfolio results in only one update of the selected account controller', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+
+    let updateCount = 0
+
+    const unsubscribe = selectedAccountCtrl.onUpdate(() => {
+      updateCount++
+    })
+
+    await portfolioCtrl.forceEmitUpdate()
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000)
+    })
+
+    expect(updateCount).toBe(1)
+    unsubscribe()
+  })
+  it('An update of accounts, providers, autoLogin result in only one update of the selected account controller', async () => {
+    const { selectedAccountCtrl } = await prepareTest()
+    let updateCount = 0
+
+    const unsubscribe = selectedAccountCtrl.onUpdate(() => {
+      updateCount++
+    })
+
+    await accountsCtrl.forceEmitUpdate()
+    await providersCtrl.forceEmitUpdate()
+    await autoLoginCtrl.forceEmitUpdate()
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000)
+    })
+
+    expect(updateCount).toBe(3)
+    unsubscribe()
+  })
+  it('portfolio isAllReady becomes false when resetSelectedAccountPortfolio is called with isManualUpdate=true', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+
+    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+
+    selectedAccountCtrl.resetSelectedAccountPortfolio({ isManualUpdate: true })
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(false)
+  })
+  it('portfolio isAllReady remains true in subsequent portfolio and defi updates', async () => {
+    const { selectedAccountCtrl, portfolioCtrl, defiPositionsCtrl } = await prepareTest()
+
+    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+
+    let didSetToFalse = false
+
+    const unsubscribe = selectedAccountCtrl.onUpdate(() => {
+      if (!selectedAccountCtrl.portfolio.isAllReady) {
+        didSetToFalse = true
+      }
+    })
+
+    await defiPositionsCtrl.updatePositions({ forceUpdate: true })
+    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+
+    expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
+    expect(didSetToFalse).toBe(false)
+    unsubscribe()
+  })
 
   describe('Banners', () => {
     const accountAddr = accounts[0].addr
@@ -257,6 +389,8 @@ describe('SelectedAccount Controller', () => {
     it("No RPC/portfolio banner is displayed when an RPC isn't working and the user has no assets on it", async () => {
       const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
       await portfolioCtrl.updateSelectedAccount(accountAddr)
+      await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
       jest
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
         .mockImplementation(() => ({ '137': true, '1': false }))
