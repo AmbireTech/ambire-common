@@ -9,6 +9,7 @@ import { isValidAddress } from '../address'
 type ValidateReturnType = {
   success: boolean
   message: string
+  severity?: 'info' | 'warning'
 }
 
 export const validateAddress = (address: string): ValidateReturnType => {
@@ -103,14 +104,16 @@ const validateSendTransferAddress = (
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
-      message: "You can't send to the same address you're sending from."
+      message: "You can't send to the same address you're sending from.",
+      severity: 'warning'
     }
   }
 
   if (isRecipientHumanizerKnownTokenOrSmartContract) {
     return {
       success: false,
-      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
+      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
+      severity: 'warning'
     }
   }
 
@@ -123,7 +126,8 @@ const validateSendTransferAddress = (
     }
     return {
       success: true,
-      message
+      message,
+      severity: 'info'
     }
   }
 
@@ -136,7 +140,8 @@ const validateSendTransferAddress = (
   ) {
     return {
       success: false,
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
+      severity: 'warning'
     }
   }
 
@@ -149,25 +154,28 @@ const validateSendTransferAddress = (
   ) {
     return {
       success: false,
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE
+      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
+      severity: 'warning'
     }
   }
 
   if (isRecipientAddressUnknown && addressConfirmed && isSWWarningVisible && !isSWWarningAgreed) {
     return {
       success: false,
-      message: 'Please confirm that the recipient address is not an exchange.'
+      message: 'Please confirm that the recipient address is not an exchange.',
+      severity: 'warning'
     }
   }
 
   if (lastRecipientTransactionDate) {
     return {
       success: true,
-      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
+      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
+      severity: 'warning'
     }
   }
 
-  return { success: true, message: '' }
+  return { success: true, message: '', severity: 'warning' }
 }
 
 const validateSendTransferAmount = (
@@ -188,13 +196,15 @@ const validateSendTransferAmount = (
     if (Number(amount) > 0 && selectedAsset.decimals && selectedAsset.decimals > 0) {
       return {
         success: false,
-        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`
+        message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`,
+        severity: 'warning'
       }
     }
 
     return {
       success: false,
-      message: 'The amount must be greater than 0.'
+      message: 'The amount must be greater than 0.',
+      severity: 'warning'
     }
   }
 
@@ -203,7 +213,8 @@ const validateSendTransferAmount = (
       if (Number(sanitizedAmount) < 1 / 10 ** selectedAsset.decimals)
         return {
           success: false,
-          message: 'Token amount too low.'
+          message: 'Token amount too low.',
+          severity: 'warning'
         }
 
       const currentAmount: bigint = parseUnits(sanitizedAmount, selectedAsset.decimals)
@@ -211,16 +222,18 @@ const validateSendTransferAmount = (
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: 'Insufficient amount.'
+          message: 'Insufficient amount.',
+          severity: 'warning'
         }
       }
     }
   } catch (e) {
-    console.error(e)
-
+    // Keep original behavior but avoid adding new console usage beyond existing
+    // callers may log if needed; return a warning indicating invalid amount.
     return {
       success: false,
-      message: 'Invalid amount.'
+      message: 'Invalid amount.',
+      severity: 'warning'
     }
   }
 
