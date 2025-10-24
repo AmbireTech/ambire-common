@@ -85,7 +85,7 @@ export const makeAccountOpAction = ({
   ) as AccountOpAction | undefined
 
   if (accountOpAction) {
-    accountOpAction.accountOp.calls = batchCallsFromUserRequests({
+    const calls = batchCallsFromUserRequests({
       accountAddr: account.addr,
       chainId,
       userRequests
@@ -94,7 +94,7 @@ export const makeAccountOpAction = ({
     // a nonce discrepancy issue. This makes sure we're with the
     // latest nonce should the user decide to batch
     accountOpAction.accountOp.nonce = nonce
-    return accountOpAction
+    return { ...accountOpAction, accountOp: { ...accountOpAction.accountOp, calls } }
   }
 
   // find the user request with a paymaster service
