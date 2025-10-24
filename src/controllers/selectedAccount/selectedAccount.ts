@@ -290,25 +290,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   resetSelectedAccountPortfolio({
-    maxDataAgeMs,
     isManualUpdate,
     skipUpdate
-  }: { maxDataAgeMs?: number; isManualUpdate?: boolean; skipUpdate?: boolean } = {}) {
+  }: { isManualUpdate?: boolean; skipUpdate?: boolean } = {}) {
     if (!this.#portfolio || !this.account) return
 
-    if (maxDataAgeMs) {
-      const latestStateSelectedAccount = this.#portfolio.getLatestPortfolioState(this.account.addr)
-
-      const networksThatAreAboutToBeUpdated = Object.values(latestStateSelectedAccount)
-        .filter((state) => !state?.criticalError)
-        .filter((state) => {
-          const updateStarted = state?.result?.updateStarted || 0
-
-          return !!updateStarted && Date.now() - updateStarted >= maxDataAgeMs
-        })
-
-      if (!networksThatAreAboutToBeUpdated.length) return
-    }
     if (isManualUpdate) {
       this.#isManualUpdate = true
     }
