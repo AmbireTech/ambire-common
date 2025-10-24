@@ -2618,7 +2618,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#onBroadcastFailed(this.#accountOp)
     }
 
-    throw new EmittableError({
+    this.emitError({
       level: 'major',
       message,
       error: _err || new Error(message),
