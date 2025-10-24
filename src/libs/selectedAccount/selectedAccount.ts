@@ -367,7 +367,7 @@ export const calculateTokensArray = (
 export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
   latestNetworkData: NetworkState,
-  pendingNetworkData: NetworkState,
+  pendingNetworkData: NetworkState | undefined,
   // Can be pending or selected
   selectedNetworkData: NetworkState,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
@@ -380,7 +380,7 @@ export const getIsRecalculationNeeded = (
   // as that would reset isAllReady to false
   if (
     latestNetworkData?.isLoading ||
-    pendingNetworkData.isLoading ||
+    pendingNetworkData?.isLoading ||
     defiPositionsNetworkState?.isLoading
   ) {
     return false
@@ -469,7 +469,7 @@ const recalculateNetworkPortfolio = (
   network: string,
   isPendingValid: boolean,
   latestNetworkState: NetworkState,
-  pendingNetworkState: NetworkState,
+  pendingNetworkState: NetworkState | undefined,
   mixedNetworkState: NetworkState,
   defiPositionsAccountState: DefiPositionsAccountState,
   simulatedAccountOps: NetworkSimulatedAccountOp
@@ -573,8 +573,10 @@ export function calculateSelectedAccountPortfolioByNetworks(
     // Don't do anything if the network data is not ready
     if (
       !latestStateSelectedAccount[network] ||
-      !pendingStateSelectedAccount[network] ||
+      // Not checking for pending, as internal networks don't have pending state
       !networkData ||
+      // Purposefully not checking for defi positions state,
+      // as it can be missing and we still want to calculate the portfolio
       isDefiOrPortfolioNotReady
     ) {
       isAllReady = false
