@@ -10,6 +10,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getBundlerByName } from '../../services/bundlers/getBundler'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -108,6 +109,14 @@ export class Paymaster extends AbstractPaymaster {
         // TODO: error handling
         console.log(e)
       }
+    }
+
+    // if the bundler doesn't support the ambire paymaster, we stop it here.
+    // this is the case with Custom bundler
+    const bundlerImplementation = getBundlerByName(userOp.bundler)
+    if (!bundlerImplementation.supportsAmbirePaymaster()) {
+      this.type = 'None'
+      return
     }
 
     // has the paymaster dried up

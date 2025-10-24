@@ -1,8 +1,7 @@
 /* eslint-disable class-methods-use-this */
 
 import { toBeHex } from 'ethers'
-import { createPublicClient, extractChain, http } from 'viem'
-import * as builtins from 'viem/chains'
+import { createPublicClient, defineChain, http } from 'viem'
 import { BUNDLER, CUSTOM } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
@@ -16,9 +15,28 @@ export class CustomBundler extends Bundler {
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {
-    const chain = extractChain({
-      chains: builtins as any,
-      id: Number(network.chainId)
+    const chain = defineChain({
+      id: Number(network.chainId),
+      name: network.name,
+      nativeCurrency: {
+        name: network.nativeAssetId,
+        symbol: network.nativeAssetSymbol,
+        decimals: 18
+      },
+      rpcUrls: {
+        default: {
+          http: [network.selectedRpcUrl]
+        },
+        public: {
+          http: [network.selectedRpcUrl]
+        }
+      },
+      blockExplorers: {
+        default: {
+          name: 'Block explorer',
+          url: network.explorerUrl
+        }
+      }
     })
     const client = createPublicClient({
       chain,
@@ -75,5 +93,16 @@ export class CustomBundler extends Bundler {
 
   public shouldReestimateBeforeBroadcast(): boolean {
     return true
+  }
+
+  /**
+   * For the time being, we're not supporting custom bundler URLs
+   * as we need to handle this on the relayer side and there might
+   * be overcomplications, having also legends in mind.
+   * The custom bundler URL is more for devs to experiment and
+   * it's okay to skip paymaster support
+   */
+  supportsAmbirePaymaster() {
+    return false
   }
 }

@@ -184,4 +184,8 @@ export abstract class Bundler {
     const error = new BundlerError(e.message, this.getName())
     return decodeError(error)
   }
+
+  supportsAmbirePaymaster() {
+    return true
+  }
 }
