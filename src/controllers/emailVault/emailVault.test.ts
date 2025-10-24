@@ -38,12 +38,12 @@ class InternalSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = (s) => {
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
     throw new Error('not supported')
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = (s) => {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }

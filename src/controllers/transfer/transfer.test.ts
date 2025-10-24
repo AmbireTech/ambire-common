@@ -151,7 +151,7 @@ class InternalSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = (s) => {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }
@@ -186,7 +186,7 @@ class LedgerSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = (s) => {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }
