@@ -292,7 +292,7 @@ export const isDefiNetworkStateReady = (
   // don't want to block the portfolio calculation.
   if (isInternalChain(chainId) || !defiNetworkData) return true
 
-  return !!defiNetworkData && !!(defiNetworkData.updatedAt || defiNetworkData?.error)
+  return defiNetworkData.updatedAt || defiNetworkData?.error
 }
 
 /**
