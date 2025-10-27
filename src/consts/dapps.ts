@@ -49,4 +49,4 @@ export const defiLlamaProtocolIdsToExclude = [
   '3657' // Uniswap Labs
 ]
 
-export const categoriesToNeverExclude = ['Dexs', 'DEX Aggregator']
+export const categoriesToNotFilterOutByTVL = ['DEX Aggregator']

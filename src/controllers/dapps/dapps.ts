@@ -1,7 +1,7 @@
 /* eslint-disable no-continue */
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
-  categoriesToNeverExclude,
+  categoriesToNotFilterOutByTVL,
   dappIdsToBeRemoved,
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
@@ -162,7 +162,11 @@ export class DappsController extends EventEmitter implements IDappsController {
       // For non-featured dapps: exclude only those with no networks and low/no tvl
       if (
         !d.chainIds.length ||
-        !(!categoriesToNeverExclude.includes(d.category as string) && d.tvl && d.tvl > 5_000_000)
+        !(
+          !categoriesToNotFilterOutByTVL.includes(d.category as string) &&
+          d.tvl &&
+          d.tvl > 5_000_000
+        )
       ) {
         continue
       }
@@ -173,6 +177,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     filtered.sort(sortDapps)
 
     return filtered
+  }
+
+  get categories(): string[] {
+    return [...new Set(this.dapps.map((d) => d.category!).filter((c) => !!c && c !== 'CEX'))].sort()
   }
 
   async #load() {
@@ -533,6 +541,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...this,
       ...super.toJSON(),
       dapps: this.dapps,
+      categories: this.categories,
       isReady: this.isReady
     }
   }
