@@ -270,8 +270,16 @@ export const get7702UserOpTypedData = (
       { name: 'accountGasLimits', type: 'bytes32' },
       { name: 'preVerificationGas', type: 'uint256' },
       { name: 'gasFees', type: 'bytes32' },
-      { name: 'paymasterAndData', type: 'bytes' },
-      { name: 'callData', type: 'bytes' },
+      // FIXME: `paymasterAndData` and `callData` in bytes are too huge,
+      // causing GridPlus device to crash or throw "invalid request".
+      // Changing those to bytes32 and asking the device to sign hashes
+      // works around this limitation, but signature fails to validate onchain:
+      // "error": {
+      //   "message": "UserOperation reverted with reason: AA24 signature error",
+      //   "code": -32507
+      // }
+      { name: 'paymasterAndData', type: 'bytes32' },
+      { name: 'callData', type: 'bytes32' },
       { name: 'calls', type: 'Transaction[]' },
       { name: 'hash', type: 'bytes32' }
     ],
@@ -291,8 +299,8 @@ export const get7702UserOpTypedData = (
     accountGasLimits: packedUserOp.accountGasLimits,
     preVerificationGas: toBeHex(packedUserOp.preVerificationGas),
     gasFees: packedUserOp.gasFees,
-    paymasterAndData: packedUserOp.paymasterAndData,
-    callData: packedUserOp.callData,
+    paymasterAndData: keccak256(packedUserOp.paymasterAndData),
+    callData: keccak256(packedUserOp.callData),
     calls,
     hash: userOpHash
   }
