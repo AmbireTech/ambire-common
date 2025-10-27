@@ -1937,10 +1937,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
+    // TODO: Double-check with Bobby or Petyo
+    const isExternalSignerInvolved = this.accountKeyStoreKeys.find(
+      (keyStoreKey) =>
+        keyStoreKey.addr === this.selectedOption?.paidBy && keyStoreKey.isExternallyStored
+    )
     if (
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
-      !shouldSignDeployAuth
+      !shouldSignDeployAuth &&
+      // TODO: Double-check with Bobby or Petyo
+      !isExternalSignerInvolved
     ) {
       this.status = { type: SigningStatus.WaitingForPaymaster }
     } else {
@@ -2048,6 +2055,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
+          // TODO: Double-check with Bobby or Petyo
+          if (isExternalSignerInvolved) this.update({ signedTransactionsCount: 0 })
+
           const contract = getContractImplementation(this.#network.chainId)
           eip7702Auth = get7702Sig(
             this.#network.chainId,
@@ -2059,6 +2069,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               nonce: accountState.nonce
             })
           )
+          // TODO: Double-check with Bobby or Petyo
+          if (isExternalSignerInvolved) this.update({ signedTransactionsCount: 1 })
 
           shouldReestimate = true
         }
