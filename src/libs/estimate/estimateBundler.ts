@@ -24,8 +24,7 @@ import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
-import { estimateWithRetries } from './estimateWithRetries'
-import { Erc4337GasLimits, EstimationFlags } from './interfaces'
+import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
 
 async function fetchBundlerGasPrice(
   baseAcc: BaseAccount,
@@ -75,7 +74,7 @@ async function estimate(
   }
 ): Promise<{
   gasPrice: GasSpeeds | Error
-  estimation: any
+  estimation: BundlerEstimateResult | Error
   nonFatalErrors: Error[]
 }> {
   const gasPrice = options?.gasPrices
@@ -134,25 +133,32 @@ async function estimate(
       nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
     }
 
-    return getHumanReadableEstimationError(decodedError)
+    const humanReadable = getHumanReadableEstimationError(decodedError)
+    humanReadable.cause = '4337_ESTIMATION'
+    return humanReadable
   }
 
   const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
-  const initializeRequests = () => [
-    bundler.estimate(localUserOp, network, stateOverride).catch(estimateErrorCallback)
-  ]
+  const estimationReq = bundler
+    .estimate(localUserOp, network, stateOverride)
+    .catch(estimateErrorCallback)
+  const estimation = await Promise.race([
+    estimationReq,
+    new Promise((_resolve, reject) => {
+      setTimeout(
+        () => reject(new Error('bundler estimation request too slow')),
+        switcher.canSwitch(baseAcc) ? 6000 : 8000
+      )
+    })
+  ]).catch(() => {
+    // eslint-disable-next-line no-console
+    console.error(`estimation for ${bundler.getName()} failed, switching and retrying`)
+    return new Error('Failed to fetch the bundler estimation', { cause: '4337_ESTIMATION' })
+  })
 
-  const estimation = await estimateWithRetries(
-    initializeRequests,
-    'estimation-bundler',
-    errorCallback
-  )
-  const foundError = Array.isArray(estimation)
-    ? estimation.find((res) => res instanceof Error)
-    : null
   return {
     gasPrice,
-    estimation: foundError ?? estimation,
+    estimation: estimation as BundlerEstimateResult | Error,
     nonFatalErrors
   }
 }
@@ -223,7 +229,7 @@ export async function bundlerEstimate(
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
-      const gasData = estimations.estimation[0]
+      const gasData = estimations.estimation
       return {
         preVerificationGas: gasData.preVerificationGas,
         verificationGasLimit: gasData.verificationGasLimit,
