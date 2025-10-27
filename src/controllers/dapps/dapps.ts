@@ -1,7 +1,7 @@
 /* eslint-disable no-continue */
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
-  categoriesToNotFilterOutByTVL,
+  categoriesNotToFilterOut,
   dappIdsToBeRemoved,
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
@@ -159,15 +159,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         continue
       }
 
-      // For non-featured dapps: exclude only those with no networks and low/no tvl
-      if (
-        !d.chainIds.length ||
-        !(
-          !categoriesToNotFilterOutByTVL.includes(d.category as string) &&
-          d.tvl &&
-          d.tvl > 5_000_000
-        )
-      ) {
+      const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
+      const hasNoNetworks = d.chainIds.length === 0
+      const hasLowTVL = !d.tvl || d.tvl <= 5_000_000
+
+      // Skip dapps that are not in excluded categories and either have no networks or low TVL
+      if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
         continue
       }
 
