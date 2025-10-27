@@ -672,7 +672,7 @@ export const calculateAndSetProjectedRewards = (
   const currentBalance =
     // If the current total balance is below the minimum balance and the user level is below the minimum level,
     // we assume the current balance is equal to the minimum balance for APY calculation purposes.
-    currentTotalBalanceOnSupportedChains < minBalance && userLevel < minLvl
+    currentTotalBalanceOnSupportedChains < minBalance
       ? minBalance
       : currentTotalBalanceOnSupportedChains
 
@@ -693,7 +693,9 @@ export const calculateAndSetProjectedRewards = (
 
   // If the user is below the minimum level, they get 0 projected rewards
   const projectedAmountFormatted =
-    userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+    userLevel < minLvl || currentTotalBalanceOnSupportedChains < minBalance
+      ? 0
+      : Math.round(projectedAmount.walletRewards * 1e18)
 
   return {
     chainId: BigInt(1),
