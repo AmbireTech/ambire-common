@@ -273,11 +273,11 @@ export async function bundlerEstimate(
       continue
     }
 
-    // if there were cached gas prices, delete them
-    gasPrices = null
-
     // if there's an error but we can't switch, return the error
     if (!switcher.canSwitch(baseAcc)) return estimations.estimation
+
+    // if there were cached gas prices, delete them
+    gasPrices = null
 
     // try again
     switcher.switch()
