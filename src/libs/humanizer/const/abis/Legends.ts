@@ -8,5 +8,6 @@ export const Legends = [
   'function invite(address)',
   'function getDailyReward()',
   'function claimXpFromFeedback(string)',
-  'function claimBitrefillCode()'
+  'function claimBitrefillCode()',
+  'function revealMascotLetter()'
 ]
