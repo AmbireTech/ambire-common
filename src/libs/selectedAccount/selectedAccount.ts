@@ -670,9 +670,7 @@ export const calculateAndSetProjectedRewards = (
   // This means that their projected rewards will be 0, but we will be able to calculate the APY.
   const level = userLevel < minLvl ? minLvl : userLevel
   const currentBalance =
-    // If the current total balance is below the minimum balance and the user level is below the minimum level,
-    // we assume the current balance is equal to the minimum balance for APY calculation purposes.
-    currentTotalBalanceOnSupportedChains < minBalance && userLevel < minLvl
+    currentTotalBalanceOnSupportedChains < minBalance
       ? minBalance
       : currentTotalBalanceOnSupportedChains
 
@@ -691,9 +689,12 @@ export const calculateAndSetProjectedRewards = (
     minBalance
   )
 
-  // If the user is below the minimum level, they get 0 projected rewards
+  // If the user is below the minimum level or did not have a single week with balance >$500, they get 0 projected rewards
+  const hasLowBalance = [...parsedSnapshotsBalance, currentTotalBalanceOnSupportedChains].every(
+    (b) => b < minBalance
+  )
   const projectedAmountFormatted =
-    userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+    userLevel < minLvl || hasLowBalance ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
 
   return {
     chainId: BigInt(1),
