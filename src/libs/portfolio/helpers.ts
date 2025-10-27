@@ -118,7 +118,7 @@ export const isSuspectedToken = (
 
   // 2) Only auto-accept if known token exists AND chainIds is defined AND includes chainId
   if (knownToken?.chainIds?.includes(numericChainId)) {
-    return undefined // trusted
+    return null // trusted
   }
 
   // 3) Unknown address (or known but no chainIds) => run symbol/name checks
@@ -129,7 +129,7 @@ export const isSuspectedToken = (
   if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
 
   // 5) Not flagged
-  return undefined
+  return null
 }
 
 export function getFlags(
