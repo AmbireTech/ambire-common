@@ -2,10 +2,10 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-constant-condition */
 
-import { Contract, Interface, toBeHex } from 'ethers'
+import { Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { AccountOnchainState } from '../../interfaces/account'
@@ -69,22 +69,26 @@ async function estimate(
   userOp: UserOperation,
   switcher: BundlerSwitcher,
   errorCallback: Function,
-  pendingUserOp?: SubmittedAccountOp
+  options?: {
+    pendingUserOp?: SubmittedAccountOp
+    gasPrices?: GasSpeeds | null
+  }
 ): Promise<{
   gasPrice: GasSpeeds | Error
   estimation: any
   nonFatalErrors: Error[]
 }> {
-  const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
+  const gasPrice = options?.gasPrices
+    ? options.gasPrices
+    : await fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
   const bundler = switcher.getBundler()
 
   // if the gasPrice fetch fails, we will switch the bundler and try again
   if (gasPrice instanceof Error) {
-    const decodedError = bundler.decodeBundlerError(new Error('internal error'))
     return {
       gasPrice,
       // if gas prices couldn't be fetched, it means there's an internal error
-      estimation: getHumanReadableEstimationError(decodedError),
+      estimation: Error('Failed to fetch gas prices, retrying...'),
       nonFatalErrors: []
     }
   }
@@ -93,10 +97,11 @@ async function estimate(
   // and it has the same userOp nonce as this txn,
   // resolve the bundler estimation with a failure
   if (
-    pendingUserOp &&
-    pendingUserOp.asUserOperation &&
-    pendingUserOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
-    BigInt(pendingUserOp.asUserOperation.nonce) === BigInt(userOp.nonce)
+    options &&
+    options.pendingUserOp &&
+    options.pendingUserOp.asUserOperation &&
+    options.pendingUserOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
+    BigInt(options.pendingUserOp.asUserOperation.nonce) === BigInt(userOp.nonce)
   ) {
     const error = new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
     return {
@@ -202,16 +207,19 @@ export async function bundlerEstimate(
   }
 
   const flags: EstimationFlags = {}
+  let gasPrices: GasSpeeds | null = null
   while (true) {
     // estimate
-    const estimations = await estimate(
-      baseAcc,
-      network,
-      userOp,
-      switcher,
-      errorCallback,
-      pendingUserOp
-    )
+    const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback, {
+      // if we've tried to fetch the nonce 3 times and it's still the same nonce as
+      // the pendingUserOp nonce, then there might be bundler broadcast problems.
+      // In that case, we remove the pendingUserOp logic and leave it to the bundler
+      pendingUserOp:
+        flags.timesSeen4337NonceDiscrepancy && flags.timesSeen4337NonceDiscrepancy >= 3
+          ? undefined
+          : pendingUserOp,
+      gasPrices
+    })
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -236,11 +244,24 @@ export async function bundlerEstimate(
     ) {
       flags.has4337NonceDiscrepancy = true
 
+      // cache the gas prices on 4337_INVALID_NONCE error as we're not changing the bundler
+      if (!(estimations.gasPrice instanceof Error)) {
+        gasPrices = estimations.gasPrice
+      }
+
+      // count the times we've found an invalid nonce
+      if (!flags.timesSeen4337NonceDiscrepancy) flags.timesSeen4337NonceDiscrepancy = 0
+      flags.timesSeen4337NonceDiscrepancy += 1
+
       // wait a bit to allow the state to sync
       await wait(2000)
-      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
-      const accountNonce = await ep
-        .getNonce(account.addr, 0, { blockTag: 'pending' })
+      const ep = new Interface(EntryPoint)
+      const accountNonce = await provider
+        .call({
+          to: ERC_4337_ENTRYPOINT,
+          data: ep.encodeFunctionData('getNonce', [account.addr, 0]),
+          blockTag: 'pending'
+        })
         .catch(() => null)
       if (!accountNonce) continue
 
@@ -251,6 +272,9 @@ export async function bundlerEstimate(
       userOp.nonce = toBeHex(accountNonce)
       continue
     }
+
+    // if there were cached gas prices, delete them
+    gasPrices = null
 
     // if there's an error but we can't switch, return the error
     if (!switcher.canSwitch(baseAcc)) return estimations.estimation
