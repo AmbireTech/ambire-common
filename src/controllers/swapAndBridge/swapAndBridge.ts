@@ -496,7 +496,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.chainId === this.fromSelectedToken?.chainId &&
-        getIsTokenEligibleForSwapAndBridge(t)
+        // We skip the positive balance requirement here,
+        // because we only need to retrieve the token from the portfolio list
+        // and apply the basic eligibility checks (not a reward or Gas Tank token).
+        // Enforcing a positive balance would prevent tokens with zero balance
+        // from being found, which would break the MIN amount validation in `validateFromAmount()`.
+        getIsTokenEligibleForSwapAndBridge(t, false)
     )
 
   get maxFromAmount(): string {
@@ -1001,7 +1006,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
-    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
+    const tokens = nextPortfolioTokenList.filter((token) =>
+      getIsTokenEligibleForSwapAndBridge(token)
+    )
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
