@@ -4,6 +4,7 @@
 
 import { Interface, toBeHex } from 'ethers'
 
+import { DecodedError } from 'libs/errorDecoder/types'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
@@ -123,7 +124,13 @@ async function estimate(
 
   const nonFatalErrors: Error[] = []
   const estimateErrorCallback = (e: Error) => {
-    const decodedError = bundler.decodeBundlerError(e)
+    let decodedError: Error | DecodedError = e
+    try {
+      decodedError = bundler.decodeBundlerError(e)
+    } catch (error) {
+      // silence, we just can't decode the error because it's too custom
+      // so it's better to continue forward with the original one
+    }
 
     // if the bundler estimation fails, add a nonFatalError so we can react to
     // it on the FE. The BE at a later stage decides if this error is actually fatal
