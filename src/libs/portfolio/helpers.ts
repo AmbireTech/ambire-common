@@ -53,7 +53,7 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
-const removeInvisibleChars = (str: string): string =>
+const removeNonLatinChars = (str: string): string =>
   str
     // normalize to NFC form to unify visually-similar composed characters
     .normalize('NFC')
@@ -68,7 +68,7 @@ const removeInvisibleChars = (str: string): string =>
 // returns true if the original string contained any non-ASCII / invisible chars
 const nonLatinSymbol = (str: string): boolean => {
   if (!str) return false
-  const cleaned = removeInvisibleChars(str)
+  const cleaned = removeNonLatinChars(str)
   return cleaned !== str
 }
 
@@ -83,7 +83,7 @@ export const isSuspectedRegardsKnownAddresses = (
   if (!knownAddresses || !tokenAddr || !tokenSymbol) return false
 
   const normalizedAddr = normalizeAddress(tokenAddr)
-  const normalizedSymbol = removeInvisibleChars(tokenSymbol).toUpperCase()
+  const normalizedSymbol = removeNonLatinChars(tokenSymbol).toUpperCase()
   const numericChainId = Number(chainId)
 
   const knownTokens = Object.values(knownAddresses)
@@ -94,7 +94,7 @@ export const isSuspectedRegardsKnownAddresses = (
     const knownChains = known?.chainIds
     if (!knownSymbolRaw || !knownChains) return false // skip unknowns or entries without chainIds
 
-    const knownSymbol = removeInvisibleChars(knownSymbolRaw).toUpperCase()
+    const knownSymbol = removeNonLatinChars(knownSymbolRaw).toUpperCase()
     if (knownSymbol !== normalizedSymbol) return false
 
     if (!knownChains.includes(numericChainId)) return false
