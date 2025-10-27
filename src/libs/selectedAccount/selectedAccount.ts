@@ -670,7 +670,9 @@ export const calculateAndSetProjectedRewards = (
   // This means that their projected rewards will be 0, but we will be able to calculate the APY.
   const level = userLevel < minLvl ? minLvl : userLevel
   const currentBalance =
-    currentTotalBalanceOnSupportedChains < minBalance
+    // If the current total balance is below the minimum balance and the user level is below the minimum level,
+    // we assume the current balance is equal to the minimum balance for APY calculation purposes.
+    currentTotalBalanceOnSupportedChains < minBalance && userLevel < minLvl
       ? minBalance
       : currentTotalBalanceOnSupportedChains
 
