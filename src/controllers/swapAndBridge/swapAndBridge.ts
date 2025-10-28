@@ -74,6 +74,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { NULL_ADDRESS } from '../../services/socket/constants'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -645,11 +646,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // if the provider is socket, convert the null addresses
     if (preselectedFromToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedFromToken.address)
       preselectedFromToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedFromToken.address
       )
     }
     if (preselectedToToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedToToken.address)
       preselectedToToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedToToken.address
       )
@@ -700,6 +703,25 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     this.#emitUpdateIfNeeded()
+  }
+
+  // Temporary helper to monitor if NULL token addresses are still passed
+  // to initForm or updateForm in the Swap & Bridge controller.
+  // In theory, this should no longer happen after the fixes in socket/api.ts,
+  // but we'll keep tracking it in Sentry for about a month to confirm.
+  // If no errors are reported, we'll remove both this function and the
+  // convertNullAddressToZeroAddressIfNeeded logic from initForm/updateForm.
+  #emitSilentErrorIfNullAddress(address: string) {
+    if (address.toLocaleLowerCase() === NULL_ADDRESS) {
+      const message =
+        'NULL token address detected while updating or initializing the Swap & Bridge controller.'
+
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+    }
   }
 
   get isHealthy() {
@@ -816,10 +838,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       routePriority
     } = props
 
-    // set the correct fromSelectedToken as the user might have selected
-    // a duplicate from his portfolio instead
     let fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
+      this.#emitSilentErrorIfNullAddress(fromSelectedToken.address)
+      // if the provider is socket, convert the null addresses
+      fromSelectedToken.address = convertNullAddressToZeroAddressIfNeeded(fromSelectedToken.address)
+
+      // set the correct fromSelectedToken as the user might have selected
+      // a duplicate from his portfolio instead
       const validAddr = mapBannedToValidAddr(
         Number(fromSelectedToken.chainId),
         fromSelectedToken.address
@@ -838,12 +864,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       shouldIncrementFromAmountUpdateCounter = false
     } = updateProps || {}
 
-    // map the token back
     const chainId = toChainId ?? this.toChainId
-    const toSelectedTokenAddr =
-      chainId && props.toSelectedTokenAddr
-        ? mapBannedToValidAddr(Number(chainId), getAddress(props.toSelectedTokenAddr))
-        : undefined
+    let toSelectedTokenAddr: string | undefined
+
+    if (props.toSelectedTokenAddr && chainId) {
+      this.#emitSilentErrorIfNullAddress(props.toSelectedTokenAddr)
+      // if the provider is socket, convert the null addresses
+      toSelectedTokenAddr = convertNullAddressToZeroAddressIfNeeded(props.toSelectedTokenAddr)
+
+      // map the token back
+      toSelectedTokenAddr = mapBannedToValidAddr(Number(chainId), getAddress(toSelectedTokenAddr))
+    }
+
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
       fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
@@ -1513,7 +1545,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           isToNetworkSame &&
           isToAddressSame
         ) {
-          return
+          // We consider reusing the same quote a success (hence we return true).
+          // Otherwise, at the end of `updateQuote`, if we treat it as a falsy value,
+          // the quote will be reset and the signAccountOp will be destroyed,
+          // which is incorrect behavior, given that we already have a valid quote.
+          return true
         }
       }
       if (!skipPreviousQuoteRemoval) {
@@ -1604,12 +1640,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!this.#getIsFormValidToFetchQuote()) {
       if (this.quote || this.quoteRoutesStatuses) {
-        this.quote = null
-        this.quoteRoutesStatuses = {}
-        this.updateQuoteStatus = 'INITIAL'
-        this.removeError('no-routes')
-        this.removeError('all-routes-failed')
-        this.#emitUpdateIfNeeded()
+        this.#resetQuote()
       }
       return
     }
@@ -1635,10 +1666,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (isSuccessful) {
       await this.initSignAccountOpIfNeeded(quoteId)
     } else {
-      // @TODO: This is correct, right?
+      // When destroying the signAccountOp, we must also reset the quote and its status;
+      // otherwise, the toToken state remains stuck in a loading state.
+      // This ensures the user can retry fetching the quote.
       this.destroySignAccountOp()
-      this.emitUpdate()
+      this.#resetQuote()
     }
+  }
+
+  #resetQuote() {
+    this.quote = null
+    this.quoteRoutesStatuses = {}
+    this.updateQuoteStatus = 'INITIAL'
+    this.removeError('no-routes')
+    this.removeError('all-routes-failed')
+    this.#emitUpdateIfNeeded()
   }
 
   async getRouteStartUserTx(): Promise<
