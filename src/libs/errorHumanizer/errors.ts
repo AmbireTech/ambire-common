@@ -37,6 +37,11 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
     message:
       'your wallet has sent too many requests in a short time. Please wait a moment and try again.'
   },
+  {
+    reasons: ['SERVER_ERROR'],
+    message:
+      'of a server error of the RPC provider. Please wait a moment or try changing the RPC provider in settings.'
+  },
   // Contract / Transaction
   {
     reasons: ['IMPOSSIBLE_GAS_CONSUMPTION'],

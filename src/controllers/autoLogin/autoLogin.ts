@@ -148,10 +148,17 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     status: SiweValidityStatus
   } {
     if (typeof message !== 'string' || message.trim() === '') return null
-    const messageString = message.startsWith('0x') ? toUtf8String(message) : message
 
-    // Quick check to see if it looks like a SIWE message at all
-    if (messageString.match(prefixRegex) === null) return null
+    let messageString: string
+
+    try {
+      messageString = message.startsWith('0x') ? toUtf8String(message) : message
+
+      // Quick check to see if it looks like a SIWE message at all
+      if (messageString.match(prefixRegex) === null) return null
+    } catch (e) {
+      return null
+    }
 
     try {
       const requestDomain = new URL(requestOrigin).host
@@ -195,11 +202,15 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     } catch (e: any) {
       console.error('Error parsing message:', e)
 
-      return {
-        // Parse it again with viem to get as much info as possible
-        // so we can display it to the user
-        parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
-        status: 'invalid-critical'
+      // Parse it again with viem to get as much info as possible
+      // so we can display it to the user
+      try {
+        return {
+          parsedSiwe: parseSiweMessage(messageString) as SiweMessageType,
+          status: 'invalid-critical'
+        }
+      } catch {
+        return null
       }
     }
   }
