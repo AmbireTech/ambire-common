@@ -612,7 +612,9 @@ export class TransactionFormState extends EventEmitter {
   }
 
   async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
+    const tokens = nextPortfolioTokenList.filter((token) =>
+      getIsTokenEligibleForSwapAndBridge(token)
+    )
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be

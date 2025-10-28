@@ -201,7 +201,21 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  * Determines if a token is eligible for swapping and bridging.
  * Not all tokens in the portfolio are eligible.
  */
-export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
+export const getIsTokenEligibleForSwapAndBridge = (
+  token: TokenResult,
+  requirePositiveBalance: boolean = true
+) => {
+  const flagsRequirement =
+    // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
+    // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
+    !token.flags.onGasTank &&
+    // And exclude the rewards ones (swapping rewards is not supported).
+    !token.flags.rewardsType
+
+  if (!requirePositiveBalance) {
+    return flagsRequirement
+  }
+
   // Prevent filtering out tokens with amountPostSimulation = 0 if the actual amount is positive.
   // This ensures the token remains in the list when sending the full amount of it
   const amount =
@@ -209,14 +223,8 @@ export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
       ? token.amount
       : token.amountPostSimulation ?? token.amount
   const hasPositiveBalance = Number(amount) > 0
-  return (
-    // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
-    // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
-    !token.flags.onGasTank &&
-    // And exclude the rewards ones (swapping rewards is not supported).
-    !token.flags.rewardsType &&
-    hasPositiveBalance
-  )
+
+  return flagsRequirement && hasPositiveBalance
 }
 
 export const convertPortfolioTokenToSwapAndBridgeToToken = (
