@@ -231,9 +231,9 @@ contract AmbireAccount is IAmbireAccount {
 	 * @param   value  the amount we're sending
 	 * @param   data  callData
 	 */
-	function executeCall(address to, uint256 value, bytes memory data) internal {
+	function executeCall(address to, uint256 value, bytes memory data) internal returns (bytes memory result) {
 		assembly {
-			let result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
+			result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
 
 			if eq(result, 0) {
 				let size := returndatasize()

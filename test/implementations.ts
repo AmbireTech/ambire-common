@@ -1,6 +1,7 @@
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { ethers } from 'hardhat'
 
+import { ERC_4337_ENTRYPOINT } from '../src/consts/deploy'
 import { getProxyDeployBytecode, PrivLevels } from '../src/libs/proxyDeploy/deploy'
 import { AmbireAccount, assertion, deployGasLimit, deploySalt, expect } from './config'
 
@@ -21,7 +22,12 @@ async function deployAmbireAccountHardhatNetwork(
   const [signer] = await ethers.getSigners()
 
   const factory = await ethers.deployContract('AmbireFactory', [signer.address])
-  const contract: any = await ethers.deployContract(ambireAccountName)
+  let contract: any
+  if (ambireAccountName === 'AmbireAccountOmni') {
+    contract = await ethers.deployContract(ambireAccountName, [ERC_4337_ENTRYPOINT])
+  } else {
+    contract = await ethers.deployContract(ambireAccountName)
+  }
   const addr = await contract.getAddress()
   expect(addr).not.to.be.null
 

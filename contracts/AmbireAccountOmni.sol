@@ -20,6 +20,7 @@ contract AmbireAccountOmni is AmbireAccount7702 {
   address public immutable entryPoint;
 
   constructor(address _entryPoint) {
+    require(_entryPoint != address(0));
     entryPoint = _entryPoint;
   }
 

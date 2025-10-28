@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.19;
 
 import { Storage } from './Storage.sol';
 import { InputParam, OutputParam, Constraint, ConstraintType, InputParamFetcherType, OutputParamFetcherType } from '../types/ComposabilityDataTypes.sol';
@@ -141,17 +141,17 @@ library ComposableExecutionLib {
         if (constraint.constraintType == ConstraintType.EQ) {
           require(
             returnValue == bytes32(constraint.referenceData),
-            ConstraintNotMet(ConstraintType.EQ)
+            'ConstraintNotMet(ConstraintType.EQ)'
           );
         } else if (constraint.constraintType == ConstraintType.GTE) {
           require(
             returnValue >= bytes32(constraint.referenceData),
-            ConstraintNotMet(ConstraintType.GTE)
+            'ConstraintNotMet(ConstraintType.GTE)'
           );
         } else if (constraint.constraintType == ConstraintType.LTE) {
           require(
             returnValue <= bytes32(constraint.referenceData),
-            ConstraintNotMet(ConstraintType.LTE)
+            'ConstraintNotMet(ConstraintType.LTE)'
           );
         } else if (constraint.constraintType == ConstraintType.IN) {
           (bytes32 lowerBound, bytes32 upperBound) = abi.decode(
@@ -160,7 +160,7 @@ library ComposableExecutionLib {
           );
           require(
             returnValue >= lowerBound && returnValue <= upperBound,
-            ConstraintNotMet(ConstraintType.IN)
+            'ConstraintNotMet(ConstraintType.IN)'
           );
         } else {
           revert InvalidConstraintType();
