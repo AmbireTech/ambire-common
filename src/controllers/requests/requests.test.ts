@@ -1,3 +1,4 @@
+import { PhishingController } from 'controllers/phishing/phishing'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -121,6 +122,12 @@ const prepareTest = async () => {
     new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
 
+  const phishingCtrl = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    ui: uiCtrl
+  })
+
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
@@ -128,7 +135,13 @@ const prepareTest = async () => {
     autoLogin: autoLoginCtrl
   })
 
-  const dappsCtrl = new DappsController(storageCtrl)
+  const dappsCtrl = new DappsController({
+    appVersion: '10',
+    fetch,
+    storage: storageCtrl,
+    networks: networksCtrl,
+    phishing: phishingCtrl
+  })
 
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   const portfolioCtrl = new PortfolioController(
