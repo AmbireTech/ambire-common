@@ -750,7 +750,7 @@ export class TransactionFormState extends EventEmitter {
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
     this.checkIsRecipientAddressUnknown()

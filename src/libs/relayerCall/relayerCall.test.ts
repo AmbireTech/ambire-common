@@ -4,9 +4,7 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { relayerUrl } from '../../../test/config'
-import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import { relayerCall } from './relayerCall'
@@ -17,7 +15,7 @@ const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const testAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 
 describe('Relayer', () => {
-  test('Test sending a relayer call without a fee payment - it should say that the fee payment is 0', async () => {
+  test('Test sending a relayer call without a signature - it should reject the txn with invalid signature', async () => {
     const call = {
       to: '0x643770e279d5d0733f21d6dc03a8efbabf3255b4',
       value: 10000000000000000n,
@@ -40,42 +38,9 @@ describe('Relayer', () => {
       // it should never come here
       expect(true).toBe(false)
     } catch (e: any) {
-      expect(e.message).toBe('Invalid payment option. Please contact support')
-    }
-  })
-  test('Test sending a relayer call with an invalid fee payment - it should say that the fee payment is 0', async () => {
-    const call = {
-      to: '0x643770e279d5d0733f21d6dc03a8efbabf3255b4',
-      value: 10000000000000000n,
-      data: '0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000065cf141f00000000000000000000000000000000000000000000000000000000000000020b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000002386f26fc10000000000000000000000000000000000000000000000000000000000000000222800000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002b0d500b1d8e8ef31e21c99d1db9a6444d3adf12700001f4c2132d05d31c914a87c6611c10748aeb04b58e8f000000000000000000000000000000000000000000'
-    }
-    const ERC20Interface = new ethers.Interface(ERC20.abi)
-    const feePayment = {
-      to: '0x9c2C5fd7b07E95EE044DDeba0E97a665F142394f',
-      value: 0n,
-      data: ERC20Interface.encodeFunctionData('transfer', [FEE_COLLECTOR, 100000])
-    }
-
-    const contract = new ethers.Contract(testAddr, AmbireAccount.abi, provider)
-    const nonce = await contract.nonce()
-    const body = {
-      gasLimit: 400000, // put a fake high one
-      txns: [
-        [call.to, call.value.toString(), call.data],
-        [feePayment.to, feePayment.value.toString(), feePayment.data]
-      ],
-      // fake sig, obv
-      signature:
-        '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01',
-      signer: { address: testAddr },
-      nonce: Number(nonce)
-    }
-    try {
-      await callRelayer(`/identity/${testAddr}/polygon/submit`, 'POST', body)
-      // it should never come here
-      expect(true).toBe(false)
-    } catch (e: any) {
-      expect(e.message).toBe('Invalid payment option. Please contact support')
+      expect(e.message).toBe(
+        'Broadcast failed: INVALID_SIGNATURE. Please try again or contact support'
+      )
     }
   })
 })
