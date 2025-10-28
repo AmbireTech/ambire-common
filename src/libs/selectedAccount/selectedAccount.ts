@@ -689,9 +689,12 @@ export const calculateAndSetProjectedRewards = (
     minBalance
   )
 
-  // If the user is below the minimum level, they get 0 projected rewards
+  // If the user is below the minimum level or did not have a single week with balance >$500, they get 0 projected rewards
+  const hasLowBalance = [...parsedSnapshotsBalance, currentTotalBalanceOnSupportedChains].every(
+    (b) => b < minBalance
+  )
   const projectedAmountFormatted =
-    userLevel < minLvl ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+    userLevel < minLvl || hasLowBalance ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
 
   return {
     chainId: BigInt(1),

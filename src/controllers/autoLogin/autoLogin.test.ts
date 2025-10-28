@@ -248,6 +248,14 @@ URI: https://docs.fileverse.io
 
       expect(message2).toBeNull()
     })
+    it('non utf8 hex message - should return null', async () => {
+      const message = AutoLoginController.getParsedSiweMessage(
+        '0xcc843bfa94ca4cd39e4b72250386ae369142840c6760815d0d758922f1999a04',
+        'https://docs.fileverse.io'
+      )
+
+      expect(message).toBeNull()
+    })
     it('check whether the request origin matches the SIWE domain to protect against phishing', async () => {
       const siwe = generateSiweMessage()
 
