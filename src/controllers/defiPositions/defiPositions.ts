@@ -401,6 +401,11 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     this.emitUpdate()
 
+    const networksWithPositionsOnSelectedAccount =
+      this.#networksWithPositionsByAccounts[selectedAccountAddr] || {}
+    const prevHasPositions = Object.values(networksWithPositionsOnSelectedAccount).some(
+      (pos) => pos.length
+    )
     let debankPositions: PositionsByProvider[] = []
 
     // Skip Debank call in testing mode — only fetch custom DeFi positions
@@ -417,7 +422,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
           this.#fetch,
           shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl,
           {},
-          3000
+          prevHasPositions ? 5000 : 10000
         )
 
         const body = await resp.json()
@@ -430,11 +435,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       } catch (err) {
         console.error('Debank fetch failed:', err)
 
-        const networksWithPositionsOnSelectedAccount =
-          this.#networksWithPositionsByAccounts[selectedAccountAddr] || {}
-
         // return if it fails to prevent hiding/overriding already stored DeFi pos
-        if (Object.values(networksWithPositionsOnSelectedAccount).some((pos) => pos.length)) {
+        if (prevHasPositions) {
           networksToUpdate.forEach((n) => {
             this.#state[selectedAccountAddr][n.chainId.toString()] = {
               ...this.#state[selectedAccountAddr][n.chainId.toString()],
