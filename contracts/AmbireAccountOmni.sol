@@ -8,10 +8,7 @@ import './composable/lib/ComposableExecutionLib.sol';
 
 /**
  * @notice A contract that extends AmbireAccount7702 to make it cross-chain compatible 7702 adaptable
- * @dev We hardcode the entry point address so we don't have to use
- * any storage slots after authorization. If it changes, the users
- * will have to authrorize another contract with the new entry point addr
- * to continue
+ * @dev This contract is composable, meaning there could be dynamic data commitments
  */
 contract AmbireAccountOmni is AmbireAccount7702 {
   using ComposableExecutionLib for InputParam[];
@@ -125,9 +122,9 @@ contract AmbireAccountOmni is AmbireAccount7702 {
   }
 
   /**
-   * @notice  Allows executions if the caller itself is authorized
+   * @notice  Allows composable executions if the caller itself is authorized
    * @dev     no need for nonce management here cause we're not dealing with sigs
-   * @param   executions  the transaction we're executing
+   * @param   executions  the composable transaction we're executing
    */
   function executeComposableBySender(ComposableExecution[] calldata executions) external payable {
     require(privileges(msg.sender) != bytes32(0), 'INSUFFICIENT_PRIVILEGE');

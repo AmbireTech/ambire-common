@@ -1,8 +1,9 @@
 require('dotenv').config()
 // eslint-disable-next-line import/no-extraneous-dependencies
 const { ethers } = require('hardhat')
-const { Interface } = require('ethers')
+const { Interface, AbiCoder, concat } = require('ethers')
 const ambireAccountOmni = require('../contracts/compiled/AmbireAccountOmni.json')
+const { ERC_4337_ENTRYPOINT } = require('../src/consts/deploy')
 
 async function main() {
   const [deployer] = await ethers.getSigners()
@@ -22,11 +23,13 @@ async function main() {
     }
   ]
   const singletonInterface = new Interface(singletonABI)
-
+  const encoder = new AbiCoder()
+  const encodedArgs = encoder.encode(['address'], [ERC_4337_ENTRYPOINT])
+  const deploymentBytecode = concat([bytecode, encodedArgs])
   const tx = {
     to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton
     value: 0n,
-    data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt]),
+    data: singletonInterface.encodeFunctionData('deploy', [deploymentBytecode, salt]),
     gasLimit: 3500000n
   }
 
