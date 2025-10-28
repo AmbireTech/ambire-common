@@ -8,9 +8,7 @@ const getDappIdFromUrl = (url?: string, dapps?: Dapp[]): string => {
   try {
     if (dapps) {
       const domain = getDomain(url)
-      console.log('domain', url, domain)
       const existingDapp = dapps.find((d) => d.id === domain)
-      console.log('existingDapp', existingDapp)
       if (existingDapp) return existingDapp.id
     }
   } catch (error) {

@@ -238,12 +238,25 @@ export class DappsController extends EventEmitter implements IDappsController {
         chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
       }
 
+      const nonEvmChainsByName = fetchedChainsList
+        .filter((c) => !c.chainId)
+        .map((c) => c.name.toLowerCase())
+
       for (const dapp of fetchedDappsList) {
         if (['CEX', 'Developer Tools'].includes(dapp.category)) continue
 
         if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) continue
 
         const id = getDappIdFromUrl(dapp.url)
+
+        // Tries to find non-EVM protocols by matching their text with known non-EVM chain names because
+        // some protocols have an empty chains props, and thats the only way to filter the non-EVM ones.
+        if (categoriesNotToFilterOut.includes(dapp.category) && !dapp.chains.length) {
+          const text = `${dapp.name} ${dapp.description ?? ''}`.toLowerCase()
+          if (nonEvmChainsByName.some((chainName) => text.includes(chainName))) {
+            continue
+          }
+        }
 
         const prevStoredDapp = prevDapps.get(id)
 
