@@ -1,19 +1,13 @@
 import { getDomain } from 'tldts'
 
+import { predefinedDapps } from '../../consts/dapps'
 import { Dapp } from '../../interfaces/dapp'
 
-const getDappIdFromUrl = (url?: string, dapps?: Dapp[]): string => {
+const getDappIdFromUrl = (url?: string): string => {
   if (!url) return 'internal'
 
-  try {
-    if (dapps) {
-      const domain = getDomain(url)
-      const existingDapp = dapps.find((d) => d.id === domain)
-      if (existingDapp) return existingDapp.id
-    }
-  } catch (error) {
-    // silent fail
-  }
+  const predefinedDapp = predefinedDapps.find((d) => d.url === url)
+  if (predefinedDapp) return predefinedDapp.id
 
   try {
     const { hostname } = new URL(url)
@@ -21,6 +15,10 @@ const getDappIdFromUrl = (url?: string, dapps?: Dapp[]): string => {
   } catch {
     return url
   }
+}
+
+const getDomainFromId = (url: string) => {
+  return getDomain(url)
 }
 
 const formatDappName = (name: string) => {
@@ -35,4 +33,4 @@ const getIsLegacyDappStructure = (d: Dapp) => {
   return keys.every((key) => d[key] === undefined)
 }
 
-export { getDappIdFromUrl, formatDappName, getIsLegacyDappStructure }
+export { getDappIdFromUrl, getDomainFromId, formatDappName, getIsLegacyDappStructure }

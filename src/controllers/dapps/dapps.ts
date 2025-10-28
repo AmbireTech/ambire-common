@@ -18,6 +18,7 @@ import { IStorageController } from '../../interfaces/storage'
 import {
   formatDappName,
   getDappIdFromUrl,
+  getDomainFromId,
   getIsLegacyDappStructure
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
@@ -104,7 +105,11 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (a.id === 'rewards.ambire.com') return -1
       if (b.id === 'rewards.ambire.com') return 1
 
-      // 2. Featured first, then by TVL
+      // 2. Snapshot Ambire DAO always second
+      if (a.id === 'snapshot.box/#/s:ambire.eth') return -1
+      if (b.id === 'snapshot.box/#/s:ambire.eth') return 1
+
+      // 3. Featured first, then by TVL
       return Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl)
     }
 
@@ -352,7 +357,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #createDappSession(initProps: SessionInitProps) {
     await this.initialLoadPromise
-    const dappSession = new Session(initProps, this.dapps)
+    const dappSession = new Session(initProps)
     this.dappSessions[dappSession.sessionId] = dappSession
 
     this.emitUpdate()
@@ -465,35 +470,42 @@ export class DappsController extends EventEmitter implements IDappsController {
         chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
         isConnected: dapp.isConnected
       })
-    } else {
-      this.#dapps.set(dapp.id, {
-        ...dapp,
-        chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
-        description: '',
-        category: null,
-        favorite: false,
-        chainIds: [],
-        isFeatured: false,
-        isCustom: true,
-        tvl: null,
-        blacklisted: await this.#phishing.getIsBlacklisted(dapp.url),
-        geckoId: null,
-        twitter: null
-      } as Dapp)
+      return
+    }
 
-      await this.#storage.set('dapps', Array.from(this.#dapps.values()))
-      this.emitUpdate()
+    const existingByDomain = this.#dapps.get(getDomainFromId(dapp.id)!)
 
-      if (dapp.isConnected) {
-        await this.broadcastDappSessionEvent(
-          'chainChanged',
-          {
-            chain: networkChainIdToHex(dapp.chainId || DEFAULT_CHAIN_ID),
-            networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
-          },
-          dapp.id
-        )
-      }
+    this.#dapps.set(dapp.id, {
+      id: dapp.id,
+      url: dapp.url,
+      name: existingByDomain?.name || dapp.name,
+      chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+      description: existingByDomain?.description || '',
+      icon: existingByDomain?.icon || dapp.icon,
+      category: existingByDomain?.category || null,
+      favorite: false,
+      isConnected: dapp.isConnected,
+      chainIds: existingByDomain?.chainIds || [],
+      isFeatured: false,
+      isCustom: true,
+      tvl: existingByDomain?.tvl || null,
+      blacklisted: await this.#phishing.getIsBlacklisted(dapp.url),
+      geckoId: existingByDomain?.geckoId || null,
+      twitter: existingByDomain?.twitter || null
+    })
+
+    await this.#storage.set('dapps', Array.from(this.#dapps.values()))
+    this.emitUpdate()
+
+    if (dapp.isConnected) {
+      await this.broadcastDappSessionEvent(
+        'chainChanged',
+        {
+          chain: networkChainIdToHex(dapp.chainId || DEFAULT_CHAIN_ID),
+          networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
+        },
+        dapp.id
+      )
     }
   }
 
@@ -503,11 +515,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     const existing = this.#dapps.get(id)
     if (!existing) return
 
-    // Prevent renaming predefined dapps
-    const predefinedDappRef = predefinedDapps.find((d) => getDappIdFromUrl(d.url) === id)
-    const shouldOverrideNameChange = dapp.name && predefinedDappRef
+    // remove the custom dapp if it gets disconnected
+    if (dapp.isConnected !== undefined) {
+      if (existing.isCustom && !dapp.isConnected && existing.isConnected) {
+        this.removeDapp(id)
+        return
+      }
+    }
+
     const dappPropsToUpdate = { ...dapp }
-    if (shouldOverrideNameChange) dappPropsToUpdate.name = predefinedDappRef.name
+    const existingByDomain = this.#dapps.get(getDomainFromId(id)!)
+
+    if (!existing.isCustom) dappPropsToUpdate.name = existing.name
+    if (existingByDomain && existing.isCustom) {
+      dappPropsToUpdate.name = existingByDomain.name
+      dappPropsToUpdate.description = existingByDomain.description
+      dappPropsToUpdate.icon = existingByDomain.icon
+      dappPropsToUpdate.category = existingByDomain.category
+      dappPropsToUpdate.tvl = existingByDomain.tvl
+      dappPropsToUpdate.geckoId = existingByDomain.geckoId
+      dappPropsToUpdate.twitter = existingByDomain.twitter
+    }
 
     this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
     this.#storage.set('dapps', Array.from(this.#dapps.values()))
@@ -521,12 +549,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     const existing = this.#dapps.get(id)
     if (!existing) return
 
-    // Do not remove predefined dapps
-    const isPredefined = predefinedDapps.some((d) => getDappIdFromUrl(d.url) === id)
-    if (isPredefined) return
+    if (!existing.isCustom) return
 
     this.#dapps.delete(id)
     this.#storage.set('dapps', Array.from(this.#dapps.values()))
+    this.broadcastDappSessionEvent('disconnect', undefined, id)
 
     this.emitUpdate()
   }
@@ -544,6 +571,12 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!this.isReady) return
 
     return this.#dapps.get(id)
+  }
+
+  getDappByDomain(id: string) {
+    if (!this.isReady) return
+
+    return this.#dapps.get(getDomainFromId(id)!)
   }
 
   toJSON() {

@@ -17,6 +17,7 @@ export const dappIdsToBeRemoved = new Set([
 
 export const featuredDapps = new Set([
   'rewards.ambire.com',
+  'snapshot.box/#/s:ambire.eth',
   'bitrefill.com',
   'aave.com',
   'lido.fi',
@@ -25,6 +26,7 @@ export const featuredDapps = new Set([
 
 export const predefinedDapps = [
   {
+    id: 'rewards.ambire.com',
     url: 'https://rewards.ambire.com',
     name: 'Ambire Rewards',
     icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
@@ -33,6 +35,16 @@ export const predefinedDapps = [
     twitter: 'ambire'
   },
   {
+    id: 'snapshot.box/#/s:ambire.eth',
+    url: 'https://snapshot.box/#/s:ambire.eth',
+    name: 'Ambire Governance',
+    icon: 'https://cdn.stamp.fyi/space/s:ambire.eth?s=72&cb=4b611281a79dbb15',
+    description: 'Vote on Ambire Wallet DAO proposals.',
+    chainIds: [1],
+    twitter: 'ambire'
+  },
+  {
+    id: 'bitrefill.com',
     url: 'https://www.bitrefill.com',
     name: 'Bitrefill',
     icon: 'https://www.bitrefill.com/android-chrome-192x192.png',
