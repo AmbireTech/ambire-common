@@ -401,28 +401,25 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     this.emitUpdate()
 
-    const networksWithPositionsOnSelectedAccount =
-      this.#networksWithPositionsByAccounts[selectedAccountAddr] || {}
-    const prevHasPositions = Object.values(networksWithPositionsOnSelectedAccount).some(
-      (pos) => pos.length
-    )
     let debankPositions: PositionsByProvider[] = []
 
     // Skip Debank call in testing mode — only fetch custom DeFi positions
     if (process.env.IS_TESTING !== 'true') {
       try {
         const defiUrl = `https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`
-
         const hasKeys = this.#keystore.keys.some(({ addr }) =>
           this.#selectedAccount.account!.associatedKeys.includes(addr)
         )
         const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
+        const hasFetchedBefore = Object.values(this.#state[selectedAccountAddr]).some(
+          (n) => n.updatedAt
+        )
 
         const resp = await fetchWithTimeout(
           this.#fetch,
           shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl,
           {},
-          prevHasPositions ? 5000 : 10000
+          hasFetchedBefore ? 5000 : 10000
         )
 
         const body = await resp.json()
@@ -434,6 +431,13 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         }))
       } catch (err) {
         console.error('Debank fetch failed:', err)
+
+        const networksWithPositionsOnSelectedAccount =
+          this.#networksWithPositionsByAccounts[selectedAccountAddr] || {}
+
+        const prevHasPositions = Object.values(networksWithPositionsOnSelectedAccount).some(
+          (pos) => pos.length
+        )
 
         // return if it fails to prevent hiding/overriding already stored DeFi pos
         if (prevHasPositions) {
