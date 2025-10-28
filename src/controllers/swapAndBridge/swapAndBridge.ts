@@ -74,6 +74,7 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
+import { NULL_ADDRESS } from '../../services/socket/constants'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -645,11 +646,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // if the provider is socket, convert the null addresses
     if (preselectedFromToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedFromToken.address)
       preselectedFromToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedFromToken.address
       )
     }
     if (preselectedToToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedToToken.address)
       preselectedToToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedToToken.address
       )
@@ -700,6 +703,25 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     this.#emitUpdateIfNeeded()
+  }
+
+  // Temporary helper to monitor if NULL token addresses are still passed
+  // to initForm or updateForm in the Swap & Bridge controller.
+  // In theory, this should no longer happen after the fixes in socket/api.ts,
+  // but we'll keep tracking it in Sentry for about a month to confirm.
+  // If no errors are reported, we'll remove both this function and the
+  // convertNullAddressToZeroAddressIfNeeded logic from initForm/updateForm.
+  #emitSilentErrorIfNullAddress(address: string) {
+    if (address.toLocaleLowerCase() === NULL_ADDRESS) {
+      const message =
+        'NULL token address detected while updating or initializing the Swap & Bridge controller.'
+
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+    }
   }
 
   get isHealthy() {
@@ -818,6 +840,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     let fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
+      this.#emitSilentErrorIfNullAddress(fromSelectedToken.address)
       // if the provider is socket, convert the null addresses
       fromSelectedToken.address = convertNullAddressToZeroAddressIfNeeded(fromSelectedToken.address)
 
@@ -845,6 +868,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     let toSelectedTokenAddr: string | undefined
 
     if (props.toSelectedTokenAddr && chainId) {
+      this.#emitSilentErrorIfNullAddress(props.toSelectedTokenAddr)
       // if the provider is socket, convert the null addresses
       toSelectedTokenAddr = convertNullAddressToZeroAddressIfNeeded(props.toSelectedTokenAddr)
 
@@ -1029,7 +1053,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         t.chainId === this.fromSelectedToken?.chainId
       )
     })
-
 
     const shouldUpdateFromSelectedToken =
       !this.fromSelectedToken || // initial (default) state
