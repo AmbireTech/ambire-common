@@ -556,7 +556,6 @@ export class MainController extends EventEmitter implements IMainController {
       const FIVE_MINUTES = 1000 * 60 * 5
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
       if (!this.activity.broadcastedButNotConfirmed.length) {
-        this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
@@ -644,9 +643,9 @@ export class MainController extends EventEmitter implements IMainController {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      resetSelectedAccountPortfolio: false
+      maxDataAgeMs: 5 * 60 * 1000
     })
   }
 
@@ -1340,22 +1339,17 @@ export class MainController extends EventEmitter implements IMainController {
 
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
-    resetSelectedAccountPortfolio?: boolean
     maxDataAgeMs?: number
     isManualReload?: boolean
   }) {
-    const {
-      chainIds,
-      isManualReload = false,
-      maxDataAgeMs,
-      resetSelectedAccountPortfolio = true
-    } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
-    if (resetSelectedAccountPortfolio) this.selectedAccount.resetSelectedAccountPortfolio()
+    if (isManualReload)
+      this.selectedAccount.resetSelectedAccountPortfolio({ isManualUpdate: isManualReload })
 
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
@@ -1535,6 +1529,7 @@ export class MainController extends EventEmitter implements IMainController {
   removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
+    this.selectedAccount.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity

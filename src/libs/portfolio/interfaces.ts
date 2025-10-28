@@ -24,7 +24,7 @@ export type TokenResult = {
   priceIn: Price[]
   flags: {
     onGasTank: boolean
-    rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
+    rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
     canTopUpGasTank: boolean
     isFeeToken: boolean
@@ -37,6 +37,10 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
   cashback: bigint
   saved: bigint
+}
+
+export type ProjectedRewardsTokenResult = TokenResult & {
+  apy: number
 }
 
 export interface CollectionResult extends TokenResult {
@@ -220,12 +224,30 @@ export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
   gasTankTokens: GasTankTokenResult[]
 }
 
+export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
+  currentSeasonSnapshots: { week: number; balance: number }[]
+  currentWeek: number
+  supportedChainIds: number[]
+  numberOfWeeksSinceStartOfSeason: number
+  totalRewardsPool: number
+  totalWeightNonUser: number
+  userLevel: number
+  walletPrice: number
+  apy: number
+  minLvl: number
+  minBalance: number
+}
+
 export type NetworkState = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult | PortfolioGasTankResult
+  result?:
+    | PortfolioNetworkResult
+    | AdditionalPortfolioNetworkResult
+    | PortfolioGasTankResult
+    | PortfolioProjectedRewardsResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
