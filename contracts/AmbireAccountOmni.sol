@@ -3,6 +3,8 @@ pragma solidity 0.8.19;
 
 import './AmbireAccount7702.sol';
 import { MerkleProof } from '@openzeppelin/contracts/utils/cryptography/MerkleProof.sol';
+import './composable/types/ComposabilityDataTypes.sol';
+import './composable/lib/ComposableExecutionLib.sol';
 
 /**
  * @notice A contract that extends AmbireAccount7702 to make it cross-chain compatible 7702 adaptable
@@ -12,6 +14,24 @@ import { MerkleProof } from '@openzeppelin/contracts/utils/cryptography/MerklePr
  * to continue
  */
 contract AmbireAccountOmni is AmbireAccount7702 {
+  using ComposableExecutionLib for InputParam[];
+  using ComposableExecutionLib for OutputParam[];
+
+  address public immutable entryPoint;
+
+  constructor(address _entryPoint) {
+    entryPoint = _entryPoint;
+  }
+
+  function privileges(address key) public view override returns (bytes32) {
+    if (key == address(this)) return bytes32(uint256(2));
+
+    // if the entry point is the sender, we return the marker priv
+    if (key == entryPoint) return ENTRY_POINT_MARKER;
+
+    return getAmbireStorage().privileges[key];
+  }
+
   /**
    * Helper to pack the return value for validateUserOp, when not using an aggregator.
    * @param sigFailed  - True for signature failure, false for success.
@@ -101,5 +121,30 @@ contract AmbireAccountOmni is AmbireAccount7702 {
     if (privileges(signer) == bytes32(0)) return SIG_VALIDATION_FAILED;
 
     return SIG_VALIDATION_SUCCESS;
+  }
+
+  /**
+   * @notice  Allows executions if the caller itself is authorized
+   * @dev     no need for nonce management here cause we're not dealing with sigs
+   * @param   executions  the transaction we're executing
+   */
+  function executeComposableBySender(ComposableExecution[] calldata executions) external payable {
+    require(privileges(msg.sender) != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+
+    uint256 length = executions.length;
+    for (uint256 i; i < length; i++) {
+      ComposableExecution calldata execution = executions[i];
+      bytes memory composedCalldata = execution.inputParams.processInputs(execution.functionSig);
+      bytes memory returnData;
+      if (execution.to != address(0)) {
+        returnData = executeCall(execution.to, execution.value, composedCalldata);
+      } else {
+        returnData = new bytes(0);
+      }
+      execution.outputParams.processOutputs(returnData, address(this));
+    }
+
+    // again, anti-bricking
+    require(privileges(msg.sender) != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
   }
 }
