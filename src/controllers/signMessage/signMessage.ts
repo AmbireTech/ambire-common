@@ -263,8 +263,14 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
           for (let i = 0; i < this.messageToSign.content.chainIdWithUserOps.length; i++) {
             const chainIdWithUserOp = this.messageToSign.content.chainIdWithUserOps[i]
             const chainId = BigInt(chainIdWithUserOp.chainId)
-            // <TODO<eil>: if account state missing, we dead
-            const curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
+
+            // find or fetch the account state
+            let curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
+            if (!curAccountState) {
+              // eslint-disable-next-line no-await-in-loop
+              await this.#accounts.updateAccountState(account.addr, 'pending', [chainId])
+              curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
+            }
 
             let eip7702Sig = null
             const hasDelegatedToOmni =
