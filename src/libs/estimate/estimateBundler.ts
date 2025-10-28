@@ -34,28 +34,26 @@ async function fetchBundlerGasPrice(
   errorCallback: Function
 ): Promise<GasSpeeds | Error> {
   const bundler = switcher.getBundler()
-  const fetchGas = bundler.fetchGasPrices(network, errorCallback).catch(() => {
-    return new Error('Could not fetch gas prices, retrying...')
-  })
-
-  // if there aren't any bundlers available, just go with the original
-  // gas price fetch that auto retries on failure as we don't have a choice
-  if (!switcher.canSwitch(baseAcc)) return fetchGas
 
   // fetchGasPrices should complete in ms, so punish slow bundlers
   // by rotating them off
   const prices = await Promise.race([
-    fetchGas,
+    bundler.fetchGasPrices(network, errorCallback).catch(() => {
+      return new Error('Could not fetch gas prices, retrying...')
+    }),
     new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new Error('bundler gas request too slow')), 4000)
+      setTimeout(
+        () => reject(new Error('bundler gas request too slow')),
+        switcher.canSwitch(baseAcc) ? 4000 : 6000
+      )
     })
   ]).catch(() => {
     // eslint-disable-next-line no-console
-    console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed, switching and retrying`)
-    return null
+    console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed`)
+    return Error('Failed to fetch gas prices, retrying...')
   })
 
-  if (!prices || prices instanceof Error) {
+  if (prices instanceof Error && switcher.canSwitch(baseAcc)) {
     switcher.switch()
     return fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
   }
@@ -88,7 +86,7 @@ async function estimate(
     return {
       gasPrice,
       // if gas prices couldn't be fetched, it means there's an internal error
-      estimation: Error('Failed to fetch gas prices, retrying...'),
+      estimation: Error('Failed to fetch gas prices, retrying...', { cause: '4337_ESTIMATION' }),
       nonFatalErrors: []
     }
   }
