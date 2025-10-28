@@ -110,7 +110,13 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (b.id === 'snapshot.box/#/s:ambire.eth') return 1
 
       // 3. Featured first, then by TVL
-      return Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl)
+      const featuredAndTVL =
+        Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl)
+
+      if (featuredAndTVL !== 0) return featuredAndTVL
+
+      // 4. Custom dapps last
+      return Number(a.isCustom) - Number(b.isCustom)
     }
 
     if (isLegacyStructure) {
