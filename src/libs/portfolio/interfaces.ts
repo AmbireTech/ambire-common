@@ -414,3 +414,11 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
 }
+
+export type KnownTokenInfo = {
+  name?: string
+  address?: string
+  token?: { symbol?: string; decimals?: number }
+  isSC?: boolean
+  chainIds?: number[]
+}

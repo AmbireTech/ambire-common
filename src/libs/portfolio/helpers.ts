@@ -17,19 +17,12 @@ import {
   GetOptions,
   Hints,
   IsSuspectedType,
+  KnownTokenInfo,
   NetworkState,
   PortfolioGasTankResult,
   ToBeLearnedAssets,
   TokenResult
 } from './interfaces'
-
-type KnownTokenInfo = {
-  name?: string
-  address?: string
-  token?: { symbol?: string; decimals?: number }
-  isSC?: boolean
-  chainIds?: number[]
-}
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
