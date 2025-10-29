@@ -89,7 +89,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#inactivityInterval = new RecurringTimeout(
       // id initial fetch and update failed retry after 5 minutes of user inactivity
-      () => this.#fetchAndUpdateDapps(this.#dapps),
+      () => this.fetchAndUpdateDapps(this.#dapps),
       5 * 60 * 1000 // 5min.
     )
 
@@ -159,6 +159,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   async fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
+    if (this.isUpdatingDapps) return
+
     this.isUpdatingDapps = true
     this.emitUpdate()
     await this.#fetchAndUpdateDapps(prevDapps)
@@ -172,9 +174,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     // to fetch and update dapps on every extension restart.
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
 
-    if (this.#fetchAndUpdateFailed) {
-      this.#fetchAndUpdateAttempts += 1
-    }
+    if (this.#fetchAndUpdateFailed) this.#fetchAndUpdateAttempts += 1
 
     const dappsMap = new Map()
 
