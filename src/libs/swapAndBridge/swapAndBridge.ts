@@ -32,11 +32,18 @@ import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
 
 /**
- * Put a list of all the banned addresses (left side) with their
- * corresponding valid/correct address (right side).
- * This is fixing the case of token duplication like EURe. / CELO
- * where if the incorrect (outdated) address is used instead of the
- * new one in the swap, no routes will be found
+ * Maps banned (or outdated) token addresses to their "valid" replacements,
+ * "valid" meaning Swap & Bridge gives more relevant results with these replacements.
+ * There are two use cases:
+ *
+ * 1. Token replacement (e.g., EURe, GBP.e, CELO): Maps banned (or outdated) addresses
+ *    to the "valid" ones. When these banned addresses are used - we automatically
+ *    map them to the "valid" address (when selected) to ensure routes can be found.
+ *
+ * 2. Token filtering (e.g., JPYC variants): Uses identity mapping (same address on both sides).
+ *    These addresses are only used to filter them out from the "to" token list display.
+ *    The valid token is added separately via addCustomTokensIfNeeded(), so these banned
+ *    variants ensure duplication is avoided in the UI.
  */
 const getBannedToValidAddresses = (): {
   [chainId: string]: { [bannedAddr: string]: string }
