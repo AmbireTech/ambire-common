@@ -33,7 +33,7 @@ export const AMBIRE_WALLET_TOKEN_ON_BASE: SwapAndBridgeToToken = {
 }
 
 export const JPYC_TOKEN = {
-  name: 'JPYC',
+  name: 'JPY Coin',
   symbol: 'JPYC',
   decimals: 18,
   address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29',
