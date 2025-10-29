@@ -46,22 +46,22 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #ui: IUiController
 
+  dappSessions: { [sessionId: string]: Session } = {}
+
   #dapps = new Map<string, Dapp>()
 
-  dappSessions: { [sessionId: string]: Session } = {}
+  isFetchingAndUpdatingDapps: boolean = false
+
+  #shouldRetryFetchAndUpdate: boolean = false
+
+  #retryFetchAndUpdateInterval: IRecurringTimeout
+
+  #retryFetchAndUpdateAttempts: number = 0
+
+  #retryFetchAndUpdateMaxAttempts: number = 3
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
-
-  isUpdatingDapps: boolean = false
-
-  #inactivityInterval: IRecurringTimeout
-
-  #fetchAndUpdateFailed: boolean = false
-
-  #fetchAndUpdateAttempts: number = 0
-
-  #fetchAndUpdateMaxAttempts: number = 3
 
   constructor({
     appVersion,
@@ -87,23 +87,26 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#phishing = phishing
     this.#ui = ui
 
-    this.#inactivityInterval = new RecurringTimeout(
-      // id initial fetch and update failed retry after 5 minutes of user inactivity
-      () => this.fetchAndUpdateDapps(this.#dapps),
+    // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
+    this.#retryFetchAndUpdateInterval = new RecurringTimeout(
+      this.fetchAndUpdateDapps.bind(this),
       5 * 60 * 1000 // 5min.
     )
 
     this.#ui.onUpdate(() => {
       if (
         !this.#ui.views.some((v) => v.type === 'popup') &&
-        this.#fetchAndUpdateFailed &&
-        this.#fetchAndUpdateAttempts < this.#fetchAndUpdateMaxAttempts
+        this.#shouldRetryFetchAndUpdate &&
+        this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
-        this.#inactivityInterval.start()
+        this.#retryFetchAndUpdateInterval.start()
       }
 
-      if (this.#ui.views.some((v) => v.type === 'popup') && this.#inactivityInterval.running) {
-        this.#inactivityInterval.stop()
+      if (
+        this.#ui.views.some((v) => v.type === 'popup') &&
+        this.#retryFetchAndUpdateInterval.running
+      ) {
+        this.#retryFetchAndUpdateInterval.stop()
       }
     })
 
@@ -155,26 +158,26 @@ export class DappsController extends EventEmitter implements IDappsController {
     const storedDapps = await this.#storage.get('dappsV2', [])
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
 
-    this.fetchAndUpdateDapps(this.#dapps)
+    this.fetchAndUpdateDapps()
   }
 
-  async fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
-    if (this.isUpdatingDapps) return
+  async fetchAndUpdateDapps() {
+    if (this.isFetchingAndUpdatingDapps) return
 
-    this.isUpdatingDapps = true
+    this.isFetchingAndUpdatingDapps = true
     this.emitUpdate()
-    await this.#fetchAndUpdateDapps(prevDapps)
-    this.isUpdatingDapps = false
+    await this.#fetchAndUpdateDapps()
+    this.isFetchingAndUpdatingDapps = false
     this.emitUpdate()
   }
 
-  async #fetchAndUpdateDapps(prevDapps: Map<string, Dapp>) {
+  async #fetchAndUpdateDapps() {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     // NOTE: For debugging, you can comment out this line
     // to fetch and update dapps on every extension restart.
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
 
-    if (this.#fetchAndUpdateFailed) this.#fetchAndUpdateAttempts += 1
+    if (this.#shouldRetryFetchAndUpdate) this.#retryFetchAndUpdateAttempts += 1
 
     const dappsMap = new Map()
 
@@ -196,13 +199,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     if (!fetchedDappsList.length || !fetchedChainsList.length) {
-      this.#fetchAndUpdateFailed = true
+      this.#shouldRetryFetchAndUpdate = true
 
       // run the interval if the initial fetch failed while the extension is not in use
-      if (!this.#fetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
-        this.#inactivityInterval.start()
+      if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        this.#retryFetchAndUpdateInterval.start()
       } else {
-        this.#inactivityInterval.stop()
+        this.#retryFetchAndUpdateInterval.stop()
       }
       return
     }
@@ -215,6 +218,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     const nonEvmChainsByName = fetchedChainsList
       .filter((c) => !c.chainId)
       .map((c) => c.name.toLowerCase())
+
+    const prevDapps = new Map(this.#dapps)
 
     for (const dapp of fetchedDappsList) {
       if (['CEX', 'Developer Tools'].includes(dapp.category)) continue
@@ -309,8 +314,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#dapps = dappsMap
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
-    this.#fetchAndUpdateFailed = false
-    this.#inactivityInterval.stop()
+    this.#shouldRetryFetchAndUpdate = false
+    this.#retryFetchAndUpdateInterval.stop()
   }
 
   async #createDappSession(initProps: SessionInitProps) {
