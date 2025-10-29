@@ -37,7 +37,7 @@ import { RequestsController } from './requests'
 
 const uiManager = mockUiManager().uiManager
 
-const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
+const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
 const accounts = [
   {
