@@ -1690,7 +1690,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
 
     if (isSuccessful) {
-      console.log('Debug: ', this.quote?.selectedRoute?.routeId)
       await this.initSignAccountOpIfNeeded(quoteId)
     } else {
       // When destroying the signAccountOp, we must also reset the quote and its status;
