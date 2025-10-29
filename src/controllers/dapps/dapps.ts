@@ -131,7 +131,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     // NOTE: For debugging, you can comment out this line
     // to fetch and update dapps on every extension restart.
-    // if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
     const prevDappsArray = Array.from(prevDapps.values())
 
     const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
