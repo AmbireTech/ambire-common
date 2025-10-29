@@ -31,9 +31,23 @@ const formatDappName = (name: string) => {
   return name
 }
 
-const getIsLegacyDappStructure = (d: Dapp) => {
-  const keys = ['chainIds', 'tvl', 'category'] as const
-  return keys.every((key) => d[key] === undefined)
+const sortDapps = (a: Dapp, b: Dapp) => {
+  // 1. rewards.ambire.com always first
+  if (a.id === 'rewards.ambire.com') return -1
+  if (b.id === 'rewards.ambire.com') return 1
+
+  // 2. Snapshot Ambire DAO always second
+  if (a.id === 'snapshot.box/#/s:ambire.eth') return -1
+  if (b.id === 'snapshot.box/#/s:ambire.eth') return 1
+
+  // 3. Featured first, then by TVL
+  const featuredAndTVL =
+    Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl)
+
+  if (featuredAndTVL !== 0) return featuredAndTVL
+
+  // 4. Custom dapps last
+  return Number(a.isCustom) - Number(b.isCustom)
 }
 
-export { getDappIdFromUrl, getDomainFromId, formatDappName, getIsLegacyDappStructure }
+export { getDappIdFromUrl, getDomainFromId, formatDappName, sortDapps }

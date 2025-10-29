@@ -37,7 +37,7 @@ export type StorageProps = {
   keystoreKeys: StoredKey[]
   keystoreSeeds: KeystoreSeed[]
   cashbackStatusByAccount: CashbackStatusByAccount
-  dapps: Dapp[]
+  dappsV2: Dapp[]
   lastDappsUpdateVersion: string | null
   invite: object
   isPinned: boolean
