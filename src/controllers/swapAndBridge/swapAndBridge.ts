@@ -1589,6 +1589,25 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         })
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .filter((route) => {
+            const hasNoRouteId = !route.routeId
+
+            if (hasNoRouteId) {
+              this.emitError({
+                level: 'silent',
+                error: new SwapAndBridgeError(
+                  `Received route with no routeId from ${this.#serviceProviderAPI.name}. From: ${
+                    this.fromSelectedToken?.address
+                  } (${this.fromSelectedToken?.chainId}) To: ${this.toSelectedToken?.address} (${
+                    this.toSelectedToken?.chainId
+                  })`
+                ),
+                message: 'Received route with no routeId'
+              })
+            }
+
+            return !hasNoRouteId
+          })
           .sort((r1, r2) => {
             const a = BigInt(r1.toAmount)
             const b = BigInt(r2.toAmount)
@@ -1671,6 +1690,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
 
     if (isSuccessful) {
+      console.log('Debug: ', this.quote?.selectedRoute?.routeId)
       await this.initSignAccountOpIfNeeded(quoteId)
     } else {
       // When destroying the signAccountOp, we must also reset the quote and its status;
