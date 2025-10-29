@@ -145,7 +145,8 @@ describe('Portfolio helpers', () => {
   describe('mapToken', () => {
     it('Overrides the symbol if needed', () => {
       const token = mapToken(USDC_DATA, optimism, USDC_ADDR, {
-        specialErc20Hints: EMPTY_SPECIAL_HINTS
+        specialErc20Hints: EMPTY_SPECIAL_HINTS,
+        blockTag: ''
       })
 
       expect(token).toBeDefined()
@@ -156,13 +157,15 @@ describe('Portfolio helpers', () => {
         specialErc20Hints: {
           ...EMPTY_SPECIAL_HINTS,
           custom: [USDC_ADDR]
-        }
+        },
+        blockTag: ''
       })
       const hiddenToken = mapToken(USDC_DATA, optimism, USDC_ADDR, {
         specialErc20Hints: {
           ...EMPTY_SPECIAL_HINTS,
           hidden: [USDC_ADDR]
-        }
+        },
+        blockTag: ''
       })
 
       expect(customToken).toBeDefined()
@@ -178,7 +181,8 @@ describe('Portfolio helpers', () => {
           ...EMPTY_SPECIAL_HINTS,
           custom: [USDC_ADDR],
           hidden: [USDC_ADDR]
-        }
+        },
+        blockTag: ''
       })
 
       expect(token).toBeDefined()
