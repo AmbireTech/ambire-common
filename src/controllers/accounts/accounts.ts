@@ -12,6 +12,7 @@ import {
 } from '../../consts/intervals'
 import {
   Account,
+  AccountIdentityResponse,
   AccountOnchainState,
   AccountPreferences,
   AccountStates,
@@ -30,7 +31,7 @@ import {
   isAmbireV1LinkedAccount,
   isSmartAccount
 } from '../../libs/account/account'
-import { getIdentity } from '../../libs/accountPicker/accountPicker'
+import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -389,13 +390,15 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     const accountsToFetchIdentity: Promise<Account>[] = viewOnlyAccountsNeedingIdentityFetch.map(
       async (a) => {
-        const identityRes = await this.#callRelayer(`/v2/identity/${a.addr}`).catch((err: any) => {
+        const identityRes: AccountIdentityResponse = await this.#callRelayer(
+          `/v2/identity/${a.addr}`
+        ).catch((err: any) => {
           // 404 response (if the account is not found) is a valid response, do not throw
           if (err?.output?.res?.status === 404) return null
 
           throw err
         })
-        const { creation, initialPrivileges, associatedKeys } = await getIdentity(
+        const { creation, initialPrivileges, associatedKeys } = await normalizeIdentityResponse(
           a.addr,
           identityRes
         )

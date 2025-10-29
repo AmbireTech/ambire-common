@@ -63,6 +63,23 @@ export type AmbireSmartAccountIdentityCreateResponse = {
   }[]
 }
 
+/**
+ * Identity response from the Ambire Relayer. All fields are optional since
+ * the response may be null/undefined for EOAs or missing data.
+ */
+export interface AccountIdentityResponse {
+  /** The factory address used to create the identity */
+  identityFactoryAddr?: AccountCreation['factoryAddr']
+  /** The bytecode of the identity contract */
+  bytecode?: AccountCreation['bytecode']
+  /** The salt used during identity creation */
+  salt?: AccountCreation['salt']
+  /** Array of [address, hash] tuples representing initial privileges */
+  initialPrivileges?: Account['initialPrivileges']
+  /** Object whose keys are the associated key addresses */
+  associatedKeys?: Account['associatedKeys']
+}
+
 export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean

@@ -1,28 +1,24 @@
-export function getIdentity(address: string, accountIdentityRes?: any) {
-  let creation = null
-  let associatedKeys = [address]
-  if (
-    typeof accountIdentityRes === 'object' &&
-    accountIdentityRes !== null &&
-    'identityFactoryAddr' in accountIdentityRes &&
-    typeof accountIdentityRes.identityFactoryAddr === 'string' &&
-    'bytecode' in accountIdentityRes &&
-    typeof accountIdentityRes.bytecode === 'string' &&
-    'salt' in accountIdentityRes &&
-    typeof accountIdentityRes.salt === 'string'
-  ) {
-    creation = {
-      factoryAddr: accountIdentityRes.identityFactoryAddr,
-      bytecode: accountIdentityRes.bytecode,
-      salt: accountIdentityRes.salt
-    }
-  }
+import { AccountIdentityResponse } from '../../interfaces/account'
 
-  if (accountIdentityRes?.associatedKeys) {
-    associatedKeys = Object.keys(accountIdentityRes?.associatedKeys || {})
-  }
-
-  const initialPrivileges = accountIdentityRes?.initialPrivileges || []
+/**
+ * Parses an identity response from the Ambire Relayer API and extracts identity data.
+ * Returns normalized identity information with defaults for missing fields.
+ */
+export function normalizeIdentityResponse(addr: string, response?: AccountIdentityResponse | null) {
+  const initialPrivileges = response?.initialPrivileges || []
+  const creation =
+    typeof response?.identityFactoryAddr === 'string' &&
+    typeof response?.bytecode === 'string' &&
+    typeof response?.salt === 'string'
+      ? {
+          factoryAddr: response.identityFactoryAddr,
+          bytecode: response.bytecode,
+          salt: response.salt
+        }
+      : null
+  const associatedKeys = response?.associatedKeys
+    ? Object.keys(response?.associatedKeys || {})
+    : [addr]
 
   return {
     creation,
