@@ -132,10 +132,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     // NOTE: For debugging, you can comment out this line
     // to fetch and update dapps on every extension restart.
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
-    const prevDappsArray = Array.from(prevDapps.values())
-
-    const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
-    const prevCustomDapps = prevDappsArray.filter((d) => d.isCustom)
 
     const dappsMap = new Map()
 
@@ -243,6 +239,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         })
       }
     }
+
+    const prevDappsArray = Array.from(prevDapps.values())
+    const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
+    const prevCustomDapps = prevDappsArray.filter((d) => d.isCustom)
 
     // Add connected + custom
     for (const d of [...prevConnectedDapps, ...prevCustomDapps]) {
