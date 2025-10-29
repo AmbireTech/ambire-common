@@ -32,6 +32,14 @@ export const AMBIRE_WALLET_TOKEN_ON_BASE: SwapAndBridgeToToken = {
   ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
 }
 
+export const JPYC_TOKEN = {
+  name: 'JPYC',
+  symbol: 'JPYC',
+  decimals: 18,
+  address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29',
+  icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg?1761556080'
+}
+
 export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
   324: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
   1101: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
