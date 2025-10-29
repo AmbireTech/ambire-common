@@ -66,7 +66,13 @@ const nonLatinSymbol = (str: string): boolean => {
 }
 
 // safe address normalizer
-const normalizeAddress = (addr: string) => addr?.toLowerCase?.() ?? addr
+const normalizeAddress = (addr: string) => {
+  try {
+    return getAddress(addr)
+  } catch {
+    return addr
+  }
+}
 
 export const isSuspectedRegardsKnownAddresses = (
   tokenAddr: string,
