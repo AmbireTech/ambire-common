@@ -189,7 +189,7 @@ export default [
     symbol: 'jpyc',
     chainId: 1n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg?1761556080'
+    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg'
   },
   {
     address: '0x1abaea1f7c830bd89acc67ec4af516284b1bc33c',
@@ -349,7 +349,7 @@ export default [
     symbol: 'jpyc',
     chainId: 137n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg?1761556080'
+    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg'
   },
   {
     address: '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd',
@@ -550,7 +550,7 @@ export default [
     symbol: 'jpyc',
     chainId: 43114n,
     decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg?1761556080'
+    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg'
   },
   {
     address: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
