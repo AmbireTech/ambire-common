@@ -29,6 +29,7 @@ import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
+  JPYC_TOKEN,
   NULL_ADDRESS,
   SOCKET_EXPLORER_URL,
   ZERO_ADDRESS
@@ -75,9 +76,24 @@ const getBannedToValidAddresses = (): {
   const bannedGbpeGnosis = '0x8E34bfEC4f6Eb781f9743D9b4af99CD23F9b7053'
   const validGbpeGnosis = '0x5Cb9073902F2035222B9749F8fB0c9BFe5527108'
 
+  /** ****************************************************
+   *        MAKE SURE ADDRESSES ARE CHECKSUMMED
+   ****************************************************** */
+  const bannedJPYC = '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB'
+  const bannedJPYCPos = '0x6AE7Dfc73E0dDE2aa99ac063DcF7e8A63265108c'
+  const bannedJPYCv1 = '0x2370f9d504c7a6E775bf6E14B3F12846b594cD53'
+  const bannedJPYsuper = '0xFBb291570DE4B87353B1e0f586Df97A1eD856470'
+
   return {
+    '1': {
+      [bannedJPYC]: bannedJPYC,
+      [bannedJPYCv1]: bannedJPYCv1
+    },
     '137': {
-      [bannedEurePolygon]: validEurePolygon
+      [bannedEurePolygon]: validEurePolygon,
+      [bannedJPYC]: bannedJPYC,
+      [bannedJPYCPos]: bannedJPYCPos,
+      [bannedJPYsuper]: bannedJPYsuper
     },
     '100': {
       [bannedEureGnosis]: validEureGnosis,
@@ -85,6 +101,9 @@ const getBannedToValidAddresses = (): {
     },
     '42220': {
       [bannedCelo]: validCelo
+    },
+    '43114': {
+      [bannedJPYC]: bannedJPYC
     }
   }
 }
@@ -421,6 +440,17 @@ const addCustomTokensIfNeeded = ({
       (t) => t.address !== AMBIRE_WALLET_TOKEN_ON_ETHEREUM.address
     )
     if (shouldAddAmbireWalletToken) newTokens.unshift(AMBIRE_WALLET_TOKEN_ON_ETHEREUM)
+
+    const shouldAddJPYCToken = newTokens.every((t) => t.address !== JPYC_TOKEN.address)
+    if (shouldAddJPYCToken) newTokens.unshift({ ...JPYC_TOKEN, chainId: 1 })
+  }
+  if (chainId === 137) {
+    const shouldAddJPYCToken = newTokens.every((t) => t.address !== JPYC_TOKEN.address)
+    if (shouldAddJPYCToken) newTokens.unshift({ ...JPYC_TOKEN, chainId: 137 })
+  }
+  if (chainId === 43114) {
+    const shouldAddJPYCToken = newTokens.every((t) => t.address !== JPYC_TOKEN.address)
+    if (shouldAddJPYCToken) newTokens.unshift({ ...JPYC_TOKEN, chainId: 43114 })
   }
   if (chainId === 8453) {
     const shouldAddAmbireWalletToken = newTokens.every(
