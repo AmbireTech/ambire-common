@@ -83,6 +83,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   temporaryTokens: TemporaryTokens = {}
 
+  hasFundedHotAccount: boolean = false
+
   #portfolioLibs: Map<string, Portfolio>
 
   #banner: IBannerController
@@ -225,6 +227,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.emitUpdate()
   }
 
+  #getHasFundedHotAccount(): boolean {
+    const hotAccounts = this.#accounts.accounts.filter((acc) =>
+      this.#keystore.getAccountKeys(acc).find((key) => key.type === 'internal')
+    )
+
+    return hotAccounts.some((acc) => {
+      const networksWithAssets = this.getNetworksWithAssets(acc.addr)
+
+      return Object.values(networksWithAssets).some(Boolean)
+    })
+  }
+
   async #updatePortfolioOnTokenChange(chainId: bigint, selectedAccountAddr?: string) {
     // As this function currently only updates the portfolio we can skip it altogether
     // if skipPortfolioUpdate is set to true
@@ -330,6 +344,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       storageStateByAccount,
       this.#providers.providers
     )
+    this.hasFundedHotAccount = this.#getHasFundedHotAccount()
 
     this.emitUpdate()
     await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
