@@ -1,4 +1,8 @@
 /* eslint-disable no-continue */
+import {
+  IRecurringTimeout,
+  RecurringTimeout
+} from '../../classes/recurringTimeout/recurringTimeout'
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
   categoriesNotToFilterOut,
@@ -14,6 +18,7 @@ import { INetworksController } from '../../interfaces/network'
 /* eslint-disable no-restricted-syntax */
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import {
   formatDappName,
   getDappIdFromUrl,
@@ -39,6 +44,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #phishing: IPhishingController
 
+  #ui: IUiController
+
   #dapps = new Map<string, Dapp>()
 
   dappSessions: { [sessionId: string]: Session } = {}
@@ -48,18 +55,28 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   isUpdatingDapps: boolean = false
 
+  #inactivityInterval: IRecurringTimeout
+
+  #fetchAndUpdateFailed: boolean = false
+
+  #fetchAndUpdateAttempts: number = 0
+
+  #fetchAndUpdateMaxAttempts: number = 3
+
   constructor({
     appVersion,
     fetch,
     storage,
     networks,
-    phishing
+    phishing,
+    ui
   }: {
     appVersion: string
     fetch: Fetch
     storage: IStorageController
     networks: INetworksController
     phishing: IPhishingController
+    ui: IUiController
   }) {
     super()
 
@@ -68,6 +85,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#storage = storage
     this.#networks = networks
     this.#phishing = phishing
+    this.#ui = ui
+
+    this.#inactivityInterval = new RecurringTimeout(
+      // id initial fetch and update failed retry after 5 minutes of user inactivity
+      () => this.#fetchAndUpdateDapps(this.#dapps),
+      5 * 1000 // 5min.
+    )
+
+    this.#ui.onUpdate(() => {
+      if (
+        !this.#ui.views.some((v) => v.type === 'popup') &&
+        this.#fetchAndUpdateFailed &&
+        this.#fetchAndUpdateAttempts < this.#fetchAndUpdateMaxAttempts
+      ) {
+        this.#inactivityInterval.start()
+      }
+
+      if (this.#ui.views.some((v) => v.type === 'popup') && this.#inactivityInterval.running) {
+        this.#inactivityInterval.stop()
+      }
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -116,6 +154,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     const storedDapps = await this.#storage.get('dappsV2', [])
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
+
     this.fetchAndUpdateDapps(this.#dapps)
   }
 
@@ -132,6 +171,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     // NOTE: For debugging, you can comment out this line
     // to fetch and update dapps on every extension restart.
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+
+    if (this.#fetchAndUpdateFailed) {
+      this.#fetchAndUpdateAttempts += 1
+    }
 
     const dappsMap = new Map()
 
@@ -152,7 +195,18 @@ export class DappsController extends EventEmitter implements IDappsController {
       console.error('Dapps fetch failed:', err)
     }
 
-    if (!fetchedDappsList.length || !fetchedChainsList.length) return
+    if (!fetchedDappsList.length || !fetchedChainsList.length) {
+      this.#fetchAndUpdateFailed = true
+
+      // run the interval if the initial fetch failed while the extension is not in use
+      if (!this.#fetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        this.#inactivityInterval.start()
+      } else {
+        this.#inactivityInterval.stop()
+      }
+      return
+    }
+
     const chainNamesToIds = new Map<string, number>()
     for (const c of fetchedChainsList) {
       chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
@@ -255,6 +309,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#dapps = dappsMap
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
+    this.#fetchAndUpdateFailed = false
+    this.#inactivityInterval.stop()
   }
 
   async #createDappSession(initProps: SessionInitProps) {

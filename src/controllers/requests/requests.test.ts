@@ -140,7 +140,8 @@ const prepareTest = async () => {
     fetch,
     storage: storageCtrl,
     networks: networksCtrl,
-    phishing: phishingCtrl
+    phishing: phishingCtrl,
+    ui: uiCtrl
   })
 
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
