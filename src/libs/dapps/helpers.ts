@@ -18,6 +18,9 @@ const getDappIdFromUrl = (url?: string): string => {
 }
 
 const getDomainFromId = (url: string) => {
+  const predefinedDapp = predefinedDapps.find((d) => d.url === url)
+  if (predefinedDapp) return predefinedDapp.id
+
   return getDomain(url)
 }
 

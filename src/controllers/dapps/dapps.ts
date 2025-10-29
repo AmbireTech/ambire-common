@@ -371,14 +371,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession(initProps: SessionInitProps) {
-    if (!initProps.tabId || !initProps.origin)
-      throw new Error('Invalid props passed to getOrCreateDappSession')
+  async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
+    if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
-    const sessionId = getSessionId(initProps)
+    const dappId = getDappIdFromUrl(url)
+    const sessionId = getSessionId({ windowId, tabId, dappId })
     if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
-    return this.#createDappSession(initProps)
+    return this.#createDappSession({ windowId, tabId, url })
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {

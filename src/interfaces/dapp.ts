@@ -58,6 +58,5 @@ export interface DappProviderRequest {
   method: string
   params?: any
   session: Session
-  origin: string
   meta?: { [key: string]: any }
 }
