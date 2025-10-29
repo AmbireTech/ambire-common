@@ -1,4 +1,12 @@
-import { Contract, getAddress, Interface, MaxUint256, ZeroAddress } from 'ethers'
+import {
+  Contract,
+  formatUnits,
+  getAddress,
+  Interface,
+  MaxUint256,
+  parseUnits,
+  ZeroAddress
+} from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Session } from '../../classes/session'
@@ -10,6 +18,7 @@ import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   SwapAndBridgeActiveRoute,
+  SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
@@ -24,11 +33,13 @@ import {
   SOCKET_EXPLORER_URL,
   ZERO_ADDRESS
 } from '../../services/socket/constants'
+import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
 import { PaymasterService } from '../erc7677/types'
 import { TokenResult } from '../portfolio'
 import { getTokenBalanceInUSD } from '../portfolio/helpers'
+import { getSanitizedAmount } from '../transfer/amount'
 
 /**
  * Put a list of all the banned addresses (left side) with their
@@ -190,7 +201,21 @@ export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[])
  * Determines if a token is eligible for swapping and bridging.
  * Not all tokens in the portfolio are eligible.
  */
-export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
+export const getIsTokenEligibleForSwapAndBridge = (
+  token: TokenResult,
+  requirePositiveBalance: boolean = true
+) => {
+  const flagsRequirement =
+    // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
+    // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
+    !token.flags.onGasTank &&
+    // And exclude the rewards ones (swapping rewards is not supported).
+    !token.flags.rewardsType
+
+  if (!requirePositiveBalance) {
+    return flagsRequirement
+  }
+
   // Prevent filtering out tokens with amountPostSimulation = 0 if the actual amount is positive.
   // This ensures the token remains in the list when sending the full amount of it
   const amount =
@@ -198,14 +223,8 @@ export const getIsTokenEligibleForSwapAndBridge = (token: TokenResult) => {
       ? token.amount
       : token.amountPostSimulation ?? token.amount
   const hasPositiveBalance = Number(amount) > 0
-  return (
-    // The same token can be in the Gas Tank (or as a Reward) and in the portfolio.
-    // Exclude the one in the Gas Tank (swapping Gas Tank tokens is not supported).
-    !token.flags.onGasTank &&
-    // And exclude the rewards ones (swapping rewards is not supported).
-    !token.flags.rewardsType &&
-    hasPositiveBalance
-  )
+
+  return flagsRequirement && hasPositiveBalance
 }
 
 export const convertPortfolioTokenToSwapAndBridgeToToken = (
@@ -461,6 +480,89 @@ const getSlippage = (
   return Number(fromAmountInUsd) < 400
     ? upperBoundary
     : (delimeter / Math.ceil(Number(fromAmountInUsd) / 20000)).toPrecision(2)
+}
+
+export const calculateAmountWarnings = (
+  selectedRoute: SwapAndBridgeQuote['selectedRoute'],
+  fromAmountInFiat: string,
+  fromAmount: string,
+  fromSelectedTokenDecimals: number
+):
+  | { type: 'highPriceImpact'; percentageDiff: number }
+  | {
+      type: 'slippageImpact'
+      possibleSlippage: number
+      minInUsd: number
+      minInToken: string
+      symbol: string
+    }
+  | null => {
+  if (!selectedRoute) return null
+
+  let inputValueInUsd = 0
+  const outputValueInUsd = selectedRoute.outputValueInUsd
+
+  try {
+    inputValueInUsd = Number(fromAmountInFiat)
+  } catch (error) {
+    // silent fail
+  }
+  if (!inputValueInUsd) return null
+
+  try {
+    const sanitizedFromAmount = getSanitizedAmount(fromAmount, fromSelectedTokenDecimals)
+
+    const bigintFromAmount = parseUnits(sanitizedFromAmount, fromSelectedTokenDecimals)
+
+    if (bigintFromAmount !== BigInt(selectedRoute.fromAmount)) return null
+
+    // Can be negative if the output is higher
+    // (possible during arbitrage swaps)
+    const difference = inputValueInUsd - outputValueInUsd
+
+    const percentageDiff = (difference / inputValueInUsd) * 100
+
+    if (percentageDiff >= 5) {
+      return {
+        type: 'highPriceImpact',
+        percentageDiff
+      }
+    }
+
+    // try to calculate the slippage
+    const minAmountOutInWei = BigInt(
+      selectedRoute.userTxs[selectedRoute.userTxs.length - 1].minAmountOut
+    )
+    const minInUsd = safeTokenAmountAndNumberMultiplication(
+      minAmountOutInWei,
+      selectedRoute.toToken.decimals,
+      Number(selectedRoute.toToken.priceUSD)
+    )
+    const allowedSlippage =
+      Number(inputValueInUsd) < 400
+        ? 1.05
+        : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
+    const possibleSlippage = (1 - Number(minInUsd) / outputValueInUsd) * 100
+    // @precautionary if
+    const diffBetweenQuoteAndMinAmount =
+      outputValueInUsd > Number(minInUsd) ? outputValueInUsd - Number(minInUsd) : 0
+
+    // It seems a bit odd to display a slippage warning only if the difference
+    // is > $50?
+    if (possibleSlippage > allowedSlippage && diffBetweenQuoteAndMinAmount > 50) {
+      return {
+        type: 'slippageImpact',
+        possibleSlippage,
+        minInUsd: Number(minInUsd),
+        minInToken: formatUnits(minAmountOutInWei, selectedRoute.toToken.decimals),
+        symbol: selectedRoute.toToken.symbol
+      }
+    }
+
+    return null
+  } catch (error) {
+    return null
+  }
 }
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {

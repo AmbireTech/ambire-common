@@ -23,7 +23,6 @@ import { IStorageController } from '../../interfaces/storage'
 import {
   CachedSupportedChains,
   CachedTokenListKey,
-  CachedToTokenLists,
   FromToken,
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -70,7 +69,12 @@ import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import {
+  OnBroadcastFailed,
+  OnBroadcastSuccess,
+  SignAccountOpController
+} from '../signAccountOp/signAccountOp'
+import { NULL_ADDRESS } from '../../services/socket/constants'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -119,6 +123,8 @@ const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
  *  - Manages token active routes
  */
 export class SwapAndBridgeController extends EventEmitter implements ISwapAndBridgeController {
+  #callRelayer: Function
+
   #selectedAccount: ISelectedAccountController
 
   #networks: INetworksController
@@ -137,20 +143,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
-  #updateToTokenListThrottle: {
-    time: number
-    throttled: boolean
-    shouldReset: boolean
-    addressToSelect?: string
-  } = {
-    time: 0,
-    shouldReset: true,
-    throttled: false
-  }
-
   #updateQuoteId?: string
-
-  updateToTokenListStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
@@ -190,18 +183,22 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   errors: SwapAndBridgeErrorType[] = []
 
-  /**
-   * Needed to efficiently manage and cache token lists for different chain
-   * combinations (fromChainId and toChainId) without having to fetch them
-   * repeatedly from the API. Moreover, this way tokens added to a list by
-   * address are also cached for sometime.
-   */
-  #cachedToTokenLists: CachedToTokenLists = {}
+  #toTokenList: {
+    [key in CachedTokenListKey]?: {
+      status: 'INITIAL' | 'LOADING'
+      // Timestamp (in ms) of the last successful `apiTokens` update.
+      lastUpdate: number
+      // Raw tokens fetched from the API, refreshed periodically based on SUPPORTED_CHAINS_CACHE_THRESHOLD.
+      apiTokens: SwapAndBridgeToToken[]
+      // Final, processed list of tokens shown to the user.
+      // Includes: `apiTokens` + portfolio tokens + post-filtering and sorting logic.
+      // Use this array in all UI and presentation layers.
+      tokens: SwapAndBridgeToToken[]
+    }
+  } = {}
 
-  #toTokenList: SwapAndBridgeToToken[] = []
-
   /**
-   * Similar to the `#cachedToTokenLists`, this helps in avoiding repeated API
+   * Similar to the `#toTokenList[key].apiTokens`, this helps in avoiding repeated API
    * calls to fetch the supported chains from our service provider.
    */
   #cachedSupportedChains: CachedSupportedChains = { lastFetched: 0, data: [] }
@@ -278,7 +275,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #continuouslyUpdateActiveRoutesSessionId: string | undefined
 
+  #onBroadcastSuccess: OnBroadcastSuccess
+
+  #onBroadcastFailed: OnBroadcastFailed
+
   constructor({
+    callRelayer,
     accounts,
     keystore,
     portfolio,
@@ -294,8 +296,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     isMainSignAccountOpThrowingAnEstimationError,
     getUserRequests,
     getVisibleActionsQueue,
-    swapProvider
+    swapProvider,
+    onBroadcastSuccess,
+    onBroadcastFailed
   }: {
+    callRelayer: Function
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController
@@ -312,8 +317,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     getUserRequests: () => UserRequest[]
     getVisibleActionsQueue: () => Action[]
     swapProvider: SwapProvider
+    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastFailed: OnBroadcastFailed
   }) {
     super()
+    this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -331,6 +339,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleActionsQueue = getVisibleActionsQueue
+    this.#onBroadcastSuccess = onBroadcastSuccess
+    this.#onBroadcastFailed = onBroadcastFailed
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#initialLoadPromise = this.#load().finally(() => {
@@ -465,7 +475,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#selectedAccount.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateFormOnSelectedAccountUpdate', async () => {
-        if (this.#selectedAccount.portfolio.isReadyToVisualize) {
+        if (this.#selectedAccount.portfolio.isReadyToVisualize && this.sessionIds.length) {
           this.isTokenListLoading = false
           await this.updatePortfolioTokenList(this.#selectedAccount.portfolio.tokens)
           // To token list includes selected account portfolio tokens, it should get an update too
@@ -473,7 +483,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }
       })
     })
-    this.#emitUpdateIfNeeded()
+    // Fetch the supported networks in the beginning so we can disable the
+    // swap and bridge button of unsupported tokens on the dashboard, even if
+    // the user hasn't yet opened the swap and bridge screen
+    // (forceEmit true is crucial here)
+    this.#fetchSupportedChainsIfNeeded(true)
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -483,7 +497,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.chainId === this.fromSelectedToken?.chainId &&
-        getIsTokenEligibleForSwapAndBridge(t)
+        // We skip the positive balance requirement here,
+        // because we only need to retrieve the token from the portfolio list
+        // and apply the basic eligibility checks (not a reward or Gas Tank token).
+        // Enforcing a positive balance would prevent tokens with zero balance
+        // from being found, which would break the MIN amount validation in `validateFromAmount()`.
+        getIsTokenEligibleForSwapAndBridge(t, false)
     )
 
   get maxFromAmount(): string {
@@ -632,11 +651,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // if the provider is socket, convert the null addresses
     if (preselectedFromToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedFromToken.address)
       preselectedFromToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedFromToken.address
       )
     }
     if (preselectedToToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedToToken.address)
       preselectedToToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedToToken.address
       )
@@ -689,11 +710,30 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
   }
 
+  // Temporary helper to monitor if NULL token addresses are still passed
+  // to initForm or updateForm in the Swap & Bridge controller.
+  // In theory, this should no longer happen after the fixes in socket/api.ts,
+  // but we'll keep tracking it in Sentry for about a month to confirm.
+  // If no errors are reported, we'll remove both this function and the
+  // convertNullAddressToZeroAddressIfNeeded logic from initForm/updateForm.
+  #emitSilentErrorIfNullAddress(address: string) {
+    if (address.toLocaleLowerCase() === NULL_ADDRESS) {
+      const message =
+        'NULL token address detected while updating or initializing the Swap & Bridge controller.'
+
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+    }
+  }
+
   get isHealthy() {
     return this.#serviceProviderAPI.isHealthy
   }
 
-  #fetchSupportedChainsIfNeeded = async () => {
+  #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
     const shouldNotReFetchSupportedChains =
       this.#cachedSupportedChains.data.length &&
       Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
@@ -703,7 +743,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
 
       this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
-      this.#emitUpdateIfNeeded()
+      this.#emitUpdateIfNeeded(forceUpdate)
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
@@ -731,6 +771,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (this.fromChainId === null || this.toChainId === null) return null
 
     return `from-${this.fromChainId}-to-${this.toChainId}`
+  }
+
+  // Get the toTokenListKey from parameters instead of `this`,
+  // because during async execution, the class state may already point
+  // to a different chain pair.
+  static getToTokenListKey(
+    fromChainId: number | null,
+    toChainId: number | null
+  ): CachedTokenListKey | null {
+    if (fromChainId === null || toChainId === null) return null
+
+    return `from-${fromChainId}-to-${toChainId}`
   }
 
   unloadScreen(sessionId: string, forceUnload?: boolean) {
@@ -791,10 +843,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       routePriority
     } = props
 
-    // set the correct fromSelectedToken as the user might have selected
-    // a duplicate from his portfolio instead
     let fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
+      this.#emitSilentErrorIfNullAddress(fromSelectedToken.address)
+      // if the provider is socket, convert the null addresses
+      fromSelectedToken.address = convertNullAddressToZeroAddressIfNeeded(fromSelectedToken.address)
+
+      // set the correct fromSelectedToken as the user might have selected
+      // a duplicate from his portfolio instead
       const validAddr = mapBannedToValidAddr(
         Number(fromSelectedToken.chainId),
         fromSelectedToken.address
@@ -813,12 +869,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       shouldIncrementFromAmountUpdateCounter = false
     } = updateProps || {}
 
-    // map the token back
     const chainId = toChainId ?? this.toChainId
-    const toSelectedTokenAddr =
-      chainId && props.toSelectedTokenAddr
-        ? mapBannedToValidAddr(Number(chainId), getAddress(props.toSelectedTokenAddr))
-        : undefined
+    let toSelectedTokenAddr: string | undefined
+
+    if (props.toSelectedTokenAddr && chainId) {
+      this.#emitSilentErrorIfNullAddress(props.toSelectedTokenAddr)
+      // if the provider is socket, convert the null addresses
+      toSelectedTokenAddr = convertNullAddressToZeroAddressIfNeeded(props.toSelectedTokenAddr)
+
+      // map the token back
+      toSelectedTokenAddr = mapBannedToValidAddr(Number(chainId), getAddress(toSelectedTokenAddr))
+    }
+
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
       fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
@@ -891,8 +953,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    const nextToToken = toSelectedTokenAddr
-      ? this.#toTokenList.find((t) => t.address === toSelectedTokenAddr)
+    const toTokensKey = this.#toTokenListKey
+    const toTokenList = toTokensKey ? this.#toTokenList[toTokensKey] : undefined
+    const nextToToken = toTokenList
+      ? toTokenList.tokens.find((t) => t.address === toSelectedTokenAddr)
       : null
 
     if (nextToToken) this.toSelectedToken = { ...nextToToken }
@@ -943,12 +1007,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   reset(shouldEmit?: boolean) {
+    const toTokenListKey = this.#toTokenListKey
+
     this.resetForm()
+
+    this.portfolioTokenList = []
+    if (toTokenListKey && this.#toTokenList[toTokenListKey]) {
+      this.#toTokenList[toTokenListKey].tokens = []
+    }
+
     this.fromChainId = 1
     this.fromSelectedToken = null
     this.toChainId = 1
-    this.portfolioTokenList = []
-    this.#toTokenList = []
     this.errors = []
     this.updateQuoteInterval.stop()
 
@@ -968,7 +1038,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
-    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
+    const tokens = nextPortfolioTokenList.filter((token) =>
+      getIsTokenEligibleForSwapAndBridge(token)
+    )
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
@@ -1008,7 +1080,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const nextFromSelectedToken =
         fromSelectedTokenInNextPortfolio ||
         // Select the first token in the portfolio that is not the same as the "to" token
-        this.portfolioTokenList.find((t) => t.address !== this.toSelectedToken?.address) ||
+        this.portfolioTokenList.find(
+          (t) =>
+            t.address !== this.toSelectedToken?.address &&
+            this.supportedChainIds.includes(t.chainId)
+        ) ||
         null
 
       await this.updateForm(
@@ -1031,65 +1107,57 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   async updateToTokenList(shouldReset: boolean, addressToSelect?: string) {
-    const now = Date.now()
-    const timeSinceLastCall = now - this.#updateToTokenListThrottle.time
-    if (timeSinceLastCall <= 500) {
-      this.#updateToTokenListThrottle.shouldReset = shouldReset
-      this.#updateToTokenListThrottle.addressToSelect = addressToSelect
-
-      if (!this.#updateToTokenListThrottle.throttled) {
-        this.#updateToTokenListThrottle.throttled = true
-        await wait(500 - timeSinceLastCall)
-        this.#updateToTokenListThrottle.throttled = false
-        await this.updateToTokenList(
-          this.#updateToTokenListThrottle.shouldReset,
-          this.#updateToTokenListThrottle.addressToSelect
-        )
-      }
-      return
-    }
-
+    const fromChainId = this.fromChainId
+    const toChainId = this.toChainId
     const toTokenListKeyAtStart = this.#toTokenListKey
 
-    this.updateToTokenListStatus = 'LOADING'
-    this.#updateToTokenListThrottle.time = now
-    this.removeError('to-token-list-fetch-failed', false)
-    if (!this.fromChainId || !this.toChainId) {
-      this.updateToTokenListStatus = 'INITIAL'
+    if (!toTokenListKeyAtStart || !fromChainId || !toChainId) return
+
+    let toTokenList = this.#toTokenList[toTokenListKeyAtStart]
+
+    // Prevent updating the same token list twice
+    if (toTokenList?.status === 'LOADING') {
       return
     }
+
+    // Create the list if it doesn’t exist yet, or set its status to LOADING if it does.
+    if (!toTokenList) {
+      this.#toTokenList[toTokenListKeyAtStart] = {
+        status: 'LOADING',
+        apiTokens: [],
+        tokens: [],
+        lastUpdate: 0
+      }
+
+      toTokenList = this.#toTokenList[toTokenListKeyAtStart]
+    } else {
+      toTokenList.status = 'LOADING'
+    }
+
+    if (shouldReset) {
+      this.toSelectedToken = null
+    }
+
+    this.removeError('to-token-list-fetch-failed', false)
 
     // Emit an update to set the loading state in the UI
     this.#emitUpdateIfNeeded()
 
-    if (shouldReset) {
-      this.#toTokenList = []
-      this.toSelectedToken = null
-    }
+    const now = Date.now()
 
-    const toTokenListInCache =
-      this.#toTokenListKey && this.#cachedToTokenLists[this.#toTokenListKey]
-    let toTokenList: SwapAndBridgeToToken[] = toTokenListInCache?.data || []
     const shouldFetchTokenList =
-      !toTokenList.length ||
-      now - (toTokenListInCache?.lastFetched || 0) >= TO_TOKEN_LIST_CACHE_THRESHOLD
+      !toTokenList.apiTokens.length || now - toTokenList.lastUpdate >= TO_TOKEN_LIST_CACHE_THRESHOLD
+
     if (shouldFetchTokenList) {
       try {
-        toTokenList = await this.#serviceProviderAPI.getToTokenList({
-          fromChainId: this.fromChainId,
-          toChainId: this.toChainId
+        toTokenList.apiTokens = await this.#serviceProviderAPI.getToTokenList({
+          fromChainId,
+          toChainId
         })
-        // Cache the latest token list
-        if (this.#toTokenListKey) {
-          this.#cachedToTokenLists[this.#toTokenListKey] = {
-            lastFetched: now,
-            data: toTokenList
-          }
-        }
+        toTokenList.lastUpdate = Date.now()
       } catch (error: any) {
         // Display an error only if there is no cached data
-        if (!toTokenList.length) {
-          toTokenList = addCustomTokensIfNeeded({ chainId: this.toChainId, tokens: toTokenList })
+        if (!toTokenList.apiTokens.length) {
           const { message } = getHumanReadableSwapAndBridgeError(error)
 
           this.addOrUpdateError({
@@ -1102,46 +1170,27 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    // The key has changed, meaning the user has modified the form,
-    // so we should not update the to token list as another update is in progress
-    if (toTokenListKeyAtStart !== this.#toTokenListKey) return
+    toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
 
-    const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
+    const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === toChainId)
     // should never happen
     if (!toTokenNetwork) {
-      this.updateToTokenListStatus = 'INITIAL'
+      toTokenList.status = 'INITIAL'
       this.#emitUpdateIfNeeded()
       throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
     }
 
-    const additionalTokensFromPortfolio = this.portfolioTokenList
-      .filter((t) => t.chainId === toTokenNetwork.chainId)
-      .filter((token) => !toTokenList.some((t) => t.address === token.address))
-      .map((t) => convertPortfolioTokenToSwapAndBridgeToToken(t, Number(toTokenNetwork.chainId)))
-
-    // The key has changed, meaning the user has modified the form,
-    // so we should not update the to token list as another update is in progress
-    if (toTokenListKeyAtStart !== this.#toTokenListKey) return
-
-    const chainBannedTokens: string[] = getBannedToTokenList(toTokenNetwork.chainId.toString())
-    this.#toTokenList = sortTokenListResponse(
-      [...toTokenList, ...additionalTokensFromPortfolio],
-      this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
-    ).filter((t) => !chainBannedTokens.includes(getAddress(t.address)))
-
-    if (!this.toSelectedToken) {
+    if (toTokenListKeyAtStart === this.#toTokenListKey && !this.toSelectedToken) {
       if (addressToSelect) {
-        const token = this.#toTokenList.find((t) => t.address === addressToSelect)
+        const token = toTokenList.tokens.find((t) => t.address === addressToSelect)
         if (token) {
           await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
-          this.updateToTokenListStatus = 'INITIAL'
           this.#emitUpdateIfNeeded()
-          return
         }
       }
     }
 
-    this.updateToTokenListStatus = 'INITIAL'
+    toTokenList.status = 'INITIAL'
     this.#emitUpdateIfNeeded()
   }
 
@@ -1151,24 +1200,75 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * HUGE as well, that leads to performance problems.
    */
   get toTokenShortList(): SwapAndBridgeToToken[] {
-    const isSwapping = this.fromChainId === this.toChainId
+    const toTokenListKey = this.#toTokenListKey
+    const fromChainId = this.fromChainId
+    const toChainId = this.toChainId
+
+    if (!toTokenListKey || !fromChainId || !toChainId) return []
+
+    const tokens = this.#toTokenList[toTokenListKey]?.tokens || []
+
+    const isSwapping = fromChainId === toChainId
     if (isSwapping) {
       return (
-        this.#toTokenList
+        tokens
           // Swaps between same "from" and "to" tokens are not feasible, filter them out
           .filter((t) => t.address !== this.fromSelectedToken?.address)
           .slice(0, TO_TOKEN_LIST_LIMIT)
       )
     }
 
-    return this.#toTokenList.slice(0, TO_TOKEN_LIST_LIMIT)
+    return tokens.slice(0, TO_TOKEN_LIST_LIMIT)
+  }
+
+  #getToTokens(fromChainId: number | null, toChainId: number | null) {
+    const toTokenListKey = SwapAndBridgeController.getToTokenListKey(fromChainId, toChainId)
+
+    if (!toTokenListKey || !fromChainId || !toChainId) return []
+
+    const apiTokens =
+      this.#toTokenList[toTokenListKey]?.apiTokens ||
+      addCustomTokensIfNeeded({
+        chainId: toChainId,
+        tokens: []
+      })
+    const portfolioTokens = this.portfolioTokenList.filter((t) => t.chainId === BigInt(toChainId))
+
+    const additionalTokensFromPortfolio = portfolioTokens
+      .filter((token) => !apiTokens.some((t) => t.address === token.address))
+      .map((t) => convertPortfolioTokenToSwapAndBridgeToToken(t, toChainId))
+
+    const chainBannedTokens: string[] = getBannedToTokenList(toChainId.toString())
+
+    return sortTokenListResponse(
+      [...apiTokens, ...additionalTokensFromPortfolio],
+      portfolioTokens
+    ).filter((t) => !chainBannedTokens.includes(getAddress(t.address)))
+  }
+
+  get updateToTokenListStatus() {
+    const toTokenListKey = this.#toTokenListKey
+
+    if (!toTokenListKey) return 'INITIAL'
+
+    const toTokenList = this.#toTokenList[toTokenListKey]
+
+    if (!toTokenList) return 'INITIAL'
+
+    return toTokenList.status
   }
 
   async #addToTokenByAddress(address: string) {
     if (!this.toChainId) return // should never happen
     if (!isAddress(address)) return // no need to attempt with invalid addresses
 
-    const isAlreadyInTheList = this.#toTokenList.some(
+    const toTokenListKey = this.#toTokenListKey
+
+    if (!toTokenListKey || !this.#toTokenList[toTokenListKey]) return
+
+    const tokenList = this.#toTokenList[toTokenListKey]
+
+    const isAlreadyInTheList = tokenList.tokens.some(
       // Compare lowercase, address param comes from a search term that is lowercased
       (t) => t.address.toLowerCase() === address.toLowerCase()
     )
@@ -1187,9 +1287,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       throw new EmittableError({ error, level: 'minor', message })
     }
 
-    if (this.#toTokenListKey)
+    if (toTokenListKey)
       // Cache for sometime the tokens added by address
-      this.#cachedToTokenLists[this.#toTokenListKey]?.data.push(token)
+      tokenList.apiTokens.push(token)
+
+    tokenList.tokens.push(token)
 
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === this.toChainId)
     // should never happen
@@ -1198,10 +1300,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       throw new EmittableError({ error, level: 'minor', message: error?.message })
     }
 
-    const nextTokenList: SwapAndBridgeToToken[] = [...this.#toTokenList, token]
-
-    this.#toTokenList = sortTokenListResponse(
-      nextTokenList,
+    tokenList.tokens = sortTokenListResponse(
+      tokenList.tokens,
       this.portfolioTokenList.filter((t) => t.chainId === toTokenNetwork.chainId)
     )
 
@@ -1210,6 +1310,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.#emitUpdateIfNeeded()
     return token
+  }
+
+  #getIsWrapOrUnwrap(): boolean {
+    const fromSelectedToken = this.fromSelectedToken
+    const toSelectedToken = this.toSelectedToken
+
+    if (!toSelectedToken || !fromSelectedToken) return false
+
+    const isSameChain = this.fromChainId === this.toChainId
+
+    if (!isSameChain) return false
+
+    const fromAddr = fromSelectedToken.address.toLowerCase()
+    const toAddr = toSelectedToken.address.toLowerCase()
+
+    if (fromAddr !== ZeroAddress && toAddr !== ZeroAddress) return false
+
+    const networkData = this.#networks.networks.find((n) => n.chainId === fromSelectedToken.chainId)
+
+    if (!networkData) return false
+
+    const nativeWrappedAddress = networkData.wrappedAddr?.toLowerCase()
+    const isWrap = fromAddr === ZeroAddress && toAddr === nativeWrappedAddress
+    const isUnwrap = fromAddr === nativeWrappedAddress && toAddr === ZeroAddress
+
+    return isWrap || isUnwrap
   }
 
   #accountNativeBalance(amount: bigint): bigint {
@@ -1261,10 +1387,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!searchTerm) return // should never happen
 
+    if (!this.#toTokenListKey || !this.#toTokenList[this.#toTokenListKey]) return
+
     const normalizedSearchTerm = searchTerm.trim().toLowerCase()
     this.toTokenSearchTerm = normalizedSearchTerm
 
-    const { exactMatches, partialMatches } = this.#toTokenList.reduce(
+    const tokens = this.#toTokenList[this.#toTokenListKey]?.tokens || []
+
+    const { exactMatches, partialMatches } = tokens.reduce(
       (result, token) => {
         const fieldsToSearch = [
           token.address.toLowerCase(),
@@ -1422,7 +1552,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           isToNetworkSame &&
           isToAddressSame
         ) {
-          return
+          // We consider reusing the same quote a success (hence we return true).
+          // Otherwise, at the end of `updateQuote`, if we treat it as a falsy value,
+          // the quote will be reset and the signAccountOp will be destroyed,
+          // which is incorrect behavior, given that we already have a valid quote.
+          return true
         }
       }
       if (!skipPreviousQuoteRemoval) {
@@ -1436,6 +1570,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       try {
         const network = this.#networks.networks.find((n) => Number(n.chainId) === this.fromChainId!)
+        const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
+
         const quoteResult = await this.#serviceProviderAPI.quote({
           fromAsset: this.fromSelectedToken,
           fromChainId: this.fromChainId!,
@@ -1446,6 +1582,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           fromAmount: bigintFromAmount,
           userAddress: this.#selectedAccount.account.addr,
           sort: this.routePriority,
+          isWrapOrUnwrap,
           isOG: this.#invite.isOG,
           accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
           nativeSymbol: network?.nativeAssetSymbol || 'ETH'
@@ -1490,7 +1627,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             toChainId: quoteResult.toChainId,
             selectedRoute: quoteResult.selectedRoute,
             selectedRouteSteps: quoteResult.selectedRoute.steps,
-            routes
+            routes,
+            withConvenienceFee: quoteResult.withConvenienceFee
           }
           this.isAutoSelectRouteDisabled = quoteResult.selectedRoute.disabled
         }
@@ -1509,12 +1647,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!this.#getIsFormValidToFetchQuote()) {
       if (this.quote || this.quoteRoutesStatuses) {
-        this.quote = null
-        this.quoteRoutesStatuses = {}
-        this.updateQuoteStatus = 'INITIAL'
-        this.removeError('no-routes')
-        this.removeError('all-routes-failed')
-        this.#emitUpdateIfNeeded()
+        this.#resetQuote()
       }
       return
     }
@@ -1540,10 +1673,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (isSuccessful) {
       await this.initSignAccountOpIfNeeded(quoteId)
     } else {
-      // @TODO: This is correct, right?
+      // When destroying the signAccountOp, we must also reset the quote and its status;
+      // otherwise, the toToken state remains stuck in a loading state.
+      // This ensures the user can retry fetching the quote.
       this.destroySignAccountOp()
-      this.emitUpdate()
+      this.#resetQuote()
     }
+  }
+
+  #resetQuote() {
+    this.quote = null
+    this.quoteRoutesStatuses = {}
+    this.updateQuoteStatus = 'INITIAL'
+    this.removeError('no-routes')
+    this.removeError('all-routes-failed')
+    this.#emitUpdateIfNeeded()
   }
 
   async getRouteStartUserTx(): Promise<
@@ -2130,13 +2274,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       ) {
         this.destroySignAccountOp()
       } else {
-        this.#signAccountOpController.update({ calls })
-
         // add the real swapTxn
-        if (!this.#signAccountOpController.accountOp.meta)
-          this.#signAccountOpController.accountOp.meta = {}
-        this.#signAccountOpController.accountOp.meta.swapTxn = userTxn
-        this.#signAccountOpController.accountOp.meta.fromQuoteId = quoteIdGuard
+        this.#signAccountOpController.update({
+          accountOpData: {
+            calls,
+            meta: {
+              ...(this.#signAccountOpController.accountOp.meta || {}),
+              swapTxn: userTxn,
+              fromQuoteId: quoteIdGuard
+            }
+          }
+        })
         return
       }
     }
@@ -2167,19 +2315,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    this.#signAccountOpController = new SignAccountOpController(
-      this.#accounts,
-      this.#networks,
-      this.#keystore,
-      this.#portfolio,
-      this.#externalSignerControllers,
-      this.#selectedAccount.account,
+    this.#signAccountOpController = new SignAccountOpController({
+      type: 'one-click-swap-and-bridge',
+      callRelayer: this.#callRelayer,
+      accounts: this.#accounts,
+      networks: this.#networks,
+      keystore: this.#keystore,
+      portfolio: this.#portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.#activity,
+      account: this.#selectedAccount.account,
       network,
-      this.#activity,
-      provider,
-      randomId(), // the account op and the action are fabricated
+      provider: this.#providers.providers[network.chainId.toString()],
+      fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      () => {
+      isSignRequestStillActive: () => {
         // this is more for a "just-in-case"
         // stop the gas price refetch if there's no signAccountOpController
         // this could only happen if there's a major bug and more than one
@@ -2189,10 +2339,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         // identifiable
         return !!this.#signAccountOpController
       },
-      false,
-      false,
-      undefined
-    )
+      shouldSimulate: false,
+      shouldReestimate: false,
+      onBroadcastSuccess: async (props) => {
+        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+        })
+
+        await this.#onBroadcastSuccess(props)
+        // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
+        // visualize the success page on the FE instead of resetting the form
+        this.resetForm()
+      },
+      onBroadcastFailed: this.#onBroadcastFailed
+    })
 
     this.emitUpdate()
 
@@ -2449,6 +2609,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       ...this,
       ...super.toJSON(),
       toTokenShortList: this.toTokenShortList,
+      updateToTokenListStatus: this.updateToTokenListStatus,
       maxFromAmount: this.maxFromAmount,
       validateFromAmount: this.validateFromAmount,
       isFormEmpty: this.isFormEmpty,

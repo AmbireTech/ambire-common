@@ -24,6 +24,7 @@ export type BuildRequest =
       type: 'transferRequest'
       params: {
         amount: string
+        amountInFiat: bigint
         recipientAddress: string
         selectedToken: TokenResult
         actionExecutionType: ActionExecutionType

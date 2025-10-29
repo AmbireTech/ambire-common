@@ -152,6 +152,8 @@ export const addPortfolioError = (
 
     if (!title) return newErrors
 
+    title = `${title} on ${networkName}`
+
     newErrors.push({
       id: newError,
       networkNames: [networkName],
@@ -169,6 +171,7 @@ const getNetworkName = (networks: Network[], chainId: string) => {
 
   if (chainId === 'gasTank') networkName = 'Gas Tank'
   else if (chainId === 'rewards') networkName = 'Rewards'
+  else if (chainId === 'projectedRewards') networkName = 'Projected Rewards'
 
   return networkName
 }

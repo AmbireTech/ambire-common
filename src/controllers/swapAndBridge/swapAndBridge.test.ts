@@ -16,6 +16,7 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -107,10 +108,20 @@ const accountsCtrl = new AccountsController(
   relayerUrl,
   fetch
 )
+const autoLoginCtrl = new AutoLoginController(
+  storageCtrl,
+  keystore,
+  providersCtrl,
+  networksCtrl,
+  accountsCtrl,
+  {},
+  new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+)
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore
+  keystore,
+  autoLogin: autoLoginCtrl
 })
 
 const actionsCtrl = new ActionsController({
@@ -187,6 +198,7 @@ const PORTFOLIO_TOKENS = [
 ]
 
 const swapAndBridgeController = new SwapAndBridgeController({
+  callRelayer: () => {},
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   accounts: accountsCtrl,
@@ -200,7 +212,9 @@ const swapAndBridgeController = new SwapAndBridgeController({
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
-  getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue
+  getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue,
+  onBroadcastSuccess: () => Promise.resolve(),
+  onBroadcastFailed: () => {}
 })
 
 describe('SwapAndBridge Controller', () => {

@@ -1,4 +1,4 @@
-import { ZeroAddress } from 'ethers'
+import { getAddress, isAddress, ZeroAddress } from 'ethers'
 
 import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
 
@@ -112,7 +112,8 @@ export function getKnownName(
   humanizerMeta: HumanizerMeta | undefined,
   address: string
 ): string | undefined {
-  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
+  if (!isAddress(address)) return
+  return humanizerMeta?.knownAddresses?.[getAddress(address)]?.name
 }
 
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }

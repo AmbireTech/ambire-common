@@ -89,7 +89,7 @@ const getHumanReadableErrorMessage = (
   messagePrefix: string,
   decodedError: DecodedError,
   e: any
-) => {
+): string | null => {
   if (commonError) return commonError
 
   const alreadyHumanizedError = getHumanizedRelayerError(decodedError, e)
