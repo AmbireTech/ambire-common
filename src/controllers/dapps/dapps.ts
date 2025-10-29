@@ -90,7 +90,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#inactivityInterval = new RecurringTimeout(
       // id initial fetch and update failed retry after 5 minutes of user inactivity
       () => this.#fetchAndUpdateDapps(this.#dapps),
-      5 * 1000 // 5min.
+      5 * 60 * 1000 // 5min.
     )
 
     this.#ui.onUpdate(() => {
