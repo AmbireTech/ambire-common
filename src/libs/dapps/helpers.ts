@@ -17,7 +17,7 @@ const getDappIdFromUrl = (url?: string): string => {
   }
 }
 
-const getDomainFromId = (url: string) => {
+const getDomainFromUrl = (url: string) => {
   const predefinedDapp = predefinedDapps.find((d) => d.url === url)
   if (predefinedDapp) return predefinedDapp.id
 
@@ -50,4 +50,4 @@ const sortDapps = (a: Dapp, b: Dapp) => {
   return Number(a.isCustom) - Number(b.isCustom)
 }
 
-export { getDappIdFromUrl, getDomainFromId, formatDappName, sortDapps }
+export { getDappIdFromUrl, getDomainFromUrl, formatDappName, sortDapps }

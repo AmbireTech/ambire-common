@@ -17,7 +17,7 @@ import { IStorageController } from '../../interfaces/storage'
 import {
   formatDappName,
   getDappIdFromUrl,
-  getDomainFromId,
+  getDomainFromUrl,
   sortDapps
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
@@ -80,28 +80,31 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   get dapps(): Dapp[] {
-    const filtered: Dapp[] = []
-    for (const d of this.#dapps.values()) {
-      if (d.isFeatured || d.isConnected || d.isCustom) {
-        filtered.push(d)
-        continue
-      }
+    // Clone the original map so we don’t mutate #dapps
+    const filteredMap = new Map(this.#dapps)
+
+    for (const [key, d] of filteredMap) {
+      if (d.isFeatured || d.isConnected || d.isCustom) continue
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
       const hasNoNetworks = d.chainIds.length === 0
       const hasLowTVL = !d.tvl || d.tvl <= 5_000_000
 
-      // Skip dapps that are not in excluded categories and either have no networks or low TVL
+      // Remove dapps that are not in excluded categories and either have no networks or low TVL
       if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
-        continue
+        filteredMap.delete(key)
       }
-
-      filtered.push(d)
     }
 
-    filtered.sort(sortDapps)
+    for (const [, d] of filteredMap) {
+      const domainId = getDomainFromUrl(d.url)
+      if (!domainId) continue
 
-    return filtered
+      // If the dapp's id is NOT its domain and there's already a dapp using that domain id → delete the dapp with that domain
+      if (domainId !== d.id && filteredMap.has(domainId)) filteredMap.delete(domainId)
+    }
+
+    return Array.from(filteredMap.values()).sort(sortDapps)
   }
 
   get categories(): string[] {
@@ -128,7 +131,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     // NOTE: For debugging, you can comment out this line
     // to fetch and update dapps on every extension restart.
-    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    // if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
     const prevDappsArray = Array.from(prevDapps.values())
 
     const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
@@ -199,7 +202,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         tvl: dapp.tvl,
         chainIds,
         isConnected: prevStoredDapp?.isConnected || false,
-        isFeatured: featuredDapps.has(id),
+        isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
         isCustom: !!prevStoredDapp?.isCustom,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
@@ -230,7 +233,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           tvl: null,
           chainIds: pd.chainIds || [],
           isConnected: prevStoredDapp?.isConnected ?? false,
-          isFeatured: featuredDapps.has(id),
+          isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(pd.url)!),
           isCustom: false,
           chainId: prevStoredDapp?.chainId ?? 1,
           favorite: prevStoredDapp?.favorite ?? false,
@@ -372,7 +375,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return
     }
 
-    const existingByDomain = this.#dapps.get(getDomainFromId(dapp.id)!)
+    const existingByDomain = this.#dapps.get(getDomainFromUrl(dapp.url)!)
 
     this.#dapps.set(dapp.id, {
       id: dapp.id,
@@ -382,11 +385,11 @@ export class DappsController extends EventEmitter implements IDappsController {
       description: existingByDomain?.description || '',
       icon: existingByDomain?.icon || dapp.icon,
       category: existingByDomain?.category || null,
-      favorite: false,
+      favorite: existingByDomain?.favorite || false,
       isConnected: dapp.isConnected,
       chainIds: existingByDomain?.chainIds || [],
-      isFeatured: false,
-      isCustom: true,
+      isFeatured: existingByDomain?.isFeatured || false,
+      isCustom: existingByDomain?.isCustom ?? true,
       tvl: existingByDomain?.tvl || null,
       blacklisted: await this.#phishing.getIsBlacklisted(dapp.url),
       geckoId: existingByDomain?.geckoId || null,
@@ -423,7 +426,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     const dappPropsToUpdate = { ...dapp }
-    const existingByDomain = this.#dapps.get(getDomainFromId(id)!)
+    const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
     if (!existing.isCustom) dappPropsToUpdate.name = existing.name
     if (existingByDomain && existing.isCustom) {
@@ -431,6 +434,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       dappPropsToUpdate.description = existingByDomain.description
       dappPropsToUpdate.icon = existingByDomain.icon
       dappPropsToUpdate.category = existingByDomain.category
+      dappPropsToUpdate.chainIds = existingByDomain.chainIds
       dappPropsToUpdate.tvl = existingByDomain.tvl
       dappPropsToUpdate.geckoId = existingByDomain.geckoId
       dappPropsToUpdate.twitter = existingByDomain.twitter
@@ -472,10 +476,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(id)
   }
 
-  getDappByDomain(id: string) {
+  getDappByDomain(url: string) {
     if (!this.isReady) return
 
-    return this.#dapps.get(getDomainFromId(id)!)
+    return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
   toJSON() {
