@@ -185,6 +185,13 @@ export default [
     icon: 'https://assets.coingecko.com/coins/images/2518/small/weth.png?1628852295'
   },
   {
+    address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29',
+    symbol: 'jpyc',
+    chainId: 1n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg'
+  },
+  {
     address: '0x1abaea1f7c830bd89acc67ec4af516284b1bc33c',
     symbol: 'eurc',
     chainId: 1n,
@@ -336,6 +343,13 @@ export default [
     chainId: 137n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/14073/small/matic.png'
+  },
+  {
+    address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29',
+    symbol: 'jpyc',
+    chainId: 137n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg'
   },
   {
     address: '0x03b54a6e9a984069379fae1a4fc4dbae93b3bccd',
@@ -530,6 +544,13 @@ export default [
     chainId: 43114n,
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/15075/small/wrapped-avax.png'
+  },
+  {
+    address: '0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29',
+    symbol: 'jpyc',
+    chainId: 43114n,
+    decimals: 18,
+    icon: 'https://assets.coingecko.com/coins/images/70314/standard/JPYC_400x400.jpg'
   },
   {
     address: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
