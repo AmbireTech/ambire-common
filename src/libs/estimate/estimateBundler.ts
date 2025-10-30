@@ -4,11 +4,8 @@
 
 import { Interface, toBeHex } from 'ethers'
 
-import { DecodedError } from 'libs/errorDecoder/types'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -21,8 +18,10 @@ import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../accountOp/types'
 import { PaymasterEstimationData } from '../erc7677/types'
+import { DecodedError } from '../errorDecoder/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
+import { fetchNonce } from '../userOperation/fetchEntryPointNonce'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
@@ -219,6 +218,7 @@ export async function bundlerEstimate(
 
   const flags: EstimationFlags = {}
   let gasPrices: GasSpeeds | null = null
+  flags.timesSeen4337NonceDiscrepancy = 0
   while (true) {
     // estimate
     const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback, {
@@ -254,27 +254,25 @@ export async function bundlerEstimate(
       estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
     ) {
       flags.has4337NonceDiscrepancy = true
+      flags.timesSeen4337NonceDiscrepancy += 1
+
+      // prevent infinite loops in the event of a terrible rpc malfunction
+      if (flags.timesSeen4337NonceDiscrepancy > 3) {
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
 
       // cache the gas prices on 4337_INVALID_NONCE error as we're not changing the bundler
       if (!(estimations.gasPrice instanceof Error)) {
         gasPrices = estimations.gasPrice
       }
 
-      // count the times we've found an invalid nonce
-      if (!flags.timesSeen4337NonceDiscrepancy) flags.timesSeen4337NonceDiscrepancy = 0
-      flags.timesSeen4337NonceDiscrepancy += 1
-
       // wait a bit to allow the state to sync
       await wait(2000)
-      const ep = new Interface(EntryPoint)
-      const accountNonce = await provider
-        .call({
-          to: ERC_4337_ENTRYPOINT,
-          data: ep.encodeFunctionData('getNonce', [account.addr, 0]),
-          blockTag: 'pending'
-        })
-        .catch(() => null)
-      if (!accountNonce) continue
+      const accountNonce = await fetchNonce(account, provider)
+      if (accountNonce === null || accountNonce === 0n) {
+        // RPC serious malfunction
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
 
       if (network.chainId === 1n && BigInt(userOp.nonce) === BigInt(accountNonce)) {
         return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
