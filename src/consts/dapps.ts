@@ -18,10 +18,11 @@ export const dappIdsToBeRemoved = new Set([
 export const featuredDapps = new Set([
   'rewards.ambire.com',
   'snapshot.box/#/s:ambire.eth',
-  'bitrefill.com',
   'aave.com',
   'lido.fi',
-  'uniswap.org'
+  'uniswap.org',
+  'bitrefill.com',
+  'altitude.fi'
 ])
 
 export const predefinedDapps = [
@@ -182,12 +183,7 @@ export const predefinedDapps = [
   }
 ]
 
-export const defiLlamaProtocolIdsToExclude = [
-  '2196', // Uniswap V1
-  '2197', // Uniswap V2
-  '2198', // Uniswap V3
-  '3657' // Uniswap Labs
-]
+export const defiLlamaProtocolIdsToExclude: string[] = []
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const dappsNotToFilterOutByDomain = ['snapshot.box']

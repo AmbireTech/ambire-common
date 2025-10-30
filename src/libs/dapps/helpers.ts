@@ -1,7 +1,7 @@
 import { getDomain } from 'tldts'
 
 import { predefinedDapps } from '../../consts/dapps'
-import { Dapp } from '../../interfaces/dapp'
+import { Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url?: string): string => {
   if (!url) return 'internal'
@@ -50,4 +50,22 @@ const sortDapps = (a: Dapp, b: Dapp) => {
   return Number(a.isCustom) - Number(b.isCustom)
 }
 
-export { getDappIdFromUrl, getDomainFromUrl, formatDappName, sortDapps }
+const modifyDappPropsIfNeeded = (
+  id: string,
+  dappsMap: Map<string, Dapp>,
+  protocol: DefiLlamaProtocol,
+  onModify: (modifiedDapp: Dapp) => void
+) => {
+  if (id === 'uniswap.org') {
+    const uniswap = dappsMap.get(id)
+    if (uniswap) {
+      uniswap.tvl = (uniswap.tvl || 0) + (protocol.tvl || 0)
+      uniswap.description =
+        'Swap, earn, and build on the leading decentralized crypto trading protocol.'
+      if (protocol.id === '5690') uniswap.icon = protocol.logo
+      onModify(uniswap)
+    }
+  }
+}
+
+export { getDappIdFromUrl, getDomainFromUrl, formatDappName, sortDapps, modifyDappPropsIfNeeded }

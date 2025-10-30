@@ -24,6 +24,7 @@ import {
   formatDappName,
   getDappIdFromUrl,
   getDomainFromUrl,
+  modifyDappPropsIfNeeded,
   sortDapps
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
@@ -187,7 +188,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     if (this.#shouldRetryFetchAndUpdate) this.#retryFetchAndUpdateAttempts += 1
 
-    const dappsMap = new Map()
+    const dappsMap = new Map<string, Dapp>()
 
     let fetchedDappsList: DefiLlamaProtocol[] = []
     let fetchedChainsList: DefiLlamaChain[] = []
@@ -272,6 +273,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         grantedPermissionId: prevStoredDapp?.grantedPermissionId,
         grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
       }
+
+      modifyDappPropsIfNeeded(id, dappsMap, dapp, (modifiedDapp: Dapp) => {
+        dappsMap.set(id, modifiedDapp)
+      })
 
       if (!dappsMap.has(id)) dappsMap.set(id, updatedDapp)
     }
