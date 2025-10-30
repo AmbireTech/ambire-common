@@ -69,16 +69,36 @@ export abstract class Bundler {
     stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
     const provider = this.getProvider(network)
-    return stateOverride
-      ? provider.send('eth_estimateUserOperationGas', [
-          getCleanUserOp(userOperation)[0],
+    const payload = getCleanUserOp(userOperation)[0]
+
+    let res: any
+    try {
+      if (stateOverride) {
+        res = await provider.send('eth_estimateUserOperationGas', [
+          payload,
           ERC_4337_ENTRYPOINT,
           stateOverride
         ])
-      : provider.send('eth_estimateUserOperationGas', [
-          getCleanUserOp(userOperation)[0],
-          ERC_4337_ENTRYPOINT
-        ])
+      } else {
+        res = await provider.send('eth_estimateUserOperationGas', [payload, ERC_4337_ENTRYPOINT])
+      }
+    } catch (error: any) {
+      // Extract the actual error - sometimes it's nested in error.error
+      const actualError = error?.error || error
+
+      // Decode the bundler error using the existing error handling
+      this.decodeBundlerError(actualError)
+      console.log(
+        `[Bundler][${this.getName()}] estimate ERROR:`,
+        error,
+        'actual error extracted:',
+        actualError
+      )
+      // Re-throw the actual error for upstream handling
+      throw actualError
+    }
+
+    return res
   }
 
   async estimate(
@@ -137,10 +157,34 @@ export abstract class Bundler {
    */
   async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
     const provider = this.getProvider(network)
-    return provider.send('eth_sendUserOperation', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
+    const payload = getCleanUserOp(userOperation)[0]
+
+    // eslint-disable-next-line no-console
+    console.log(
+      '[Bundler][%s] broadcasting eth_sendUserOperation to %s payload:',
+      this.getName(),
+      this.getUrl(network),
+      {
+        sender: payload.sender,
+        nonce: payload.nonce,
+        signature: payload.signature
+      }
+    )
+
+    try {
+      const res: any = await provider.send('eth_sendUserOperation', [payload, ERC_4337_ENTRYPOINT])
+
+      // eslint-disable-next-line no-console
+      console.log('[Bundler][%s] broadcast response:', this.getName(), res)
+
+      return res
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[Bundler][%s] broadcast ERROR:', this.getName(), error)
+
+      // Re-throw the original error for upstream handling
+      throw error
+    }
   }
 
   // use this request to check if the bundler supports the network
