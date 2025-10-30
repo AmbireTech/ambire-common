@@ -88,12 +88,6 @@ export abstract class Bundler {
 
       // Decode the bundler error using the existing error handling
       this.decodeBundlerError(actualError)
-      console.log(
-        `[Bundler][${this.getName()}] estimate ERROR:`,
-        error,
-        'actual error extracted:',
-        actualError
-      )
       // Re-throw the actual error for upstream handling
       throw actualError
     }
@@ -159,32 +153,7 @@ export abstract class Bundler {
     const provider = this.getProvider(network)
     const payload = getCleanUserOp(userOperation)[0]
 
-    // eslint-disable-next-line no-console
-    console.log(
-      '[Bundler][%s] broadcasting eth_sendUserOperation to %s payload:',
-      this.getName(),
-      this.getUrl(network),
-      {
-        sender: payload.sender,
-        nonce: payload.nonce,
-        signature: payload.signature
-      }
-    )
-
-    try {
-      const res: any = await provider.send('eth_sendUserOperation', [payload, ERC_4337_ENTRYPOINT])
-
-      // eslint-disable-next-line no-console
-      console.log('[Bundler][%s] broadcast response:', this.getName(), res)
-
-      return res
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('[Bundler][%s] broadcast ERROR:', this.getName(), error)
-
-      // Re-throw the original error for upstream handling
-      throw error
-    }
+    return provider.send('eth_sendUserOperation', [payload, ERC_4337_ENTRYPOINT])
   }
 
   // use this request to check if the bundler supports the network
