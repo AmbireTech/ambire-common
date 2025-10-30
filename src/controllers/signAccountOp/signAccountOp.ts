@@ -389,7 +389,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.bundlerSwitcher = new BundlerSwitcher(
       network,
       () => {
-        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) !== -1 : false
       },
       { canDelegate: this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) }
     )
@@ -913,6 +913,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   async estimate() {
     await this.estimation.estimate(this.accountOp)
+  }
+
+  async retry(method: 'simulate' | 'estimate') {
+    this.bundlerSwitcher.cleanUp()
+    return this[method]()
   }
 
   update({
