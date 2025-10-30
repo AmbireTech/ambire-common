@@ -268,7 +268,13 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   // As of version 4.55.0 we no longer need the dappSessions in the storage so this migration removes them
   async #removeDappSessions() {
+    const passedMigrations = await this.#storage.get('passedMigrations', [])
+    if (passedMigrations.includes('removeDappSessions')) return
+
     await this.#storage.remove('dappSessions')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'removeDappSessions'])
+    ])
   }
 
   // As of version 4.51.0, migrate legacy token preferences to token preferences and custom tokens
