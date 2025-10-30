@@ -643,10 +643,11 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
     const isDismissed =
       this.#setupBannerDismissedAt > 0 && now - this.#setupBannerDismissedAt < ONE_WEEK
+    const hasConfiguredKeystoreAndHotWallet =
+      this.#keyStore.hasPasswordSecret && this.#keyStore.keys.find((key) => key.type === 'internal')
+    const isKeystoreRecoveryEnabled = this.hasKeystoreRecovery
 
-    // Show the banner if the keystore is already configured and the `password` secret is already set (for HW and ViewOnly accounts the app can run without keystore)
-    // and if the keystore secret backup is not enabled already
-    if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery && !isDismissed) {
+    if (hasConfiguredKeystoreAndHotWallet && !isKeystoreRecoveryEnabled && !isDismissed) {
       banners.push({
         id: 'keystore-secret-backup',
         type: 'info',

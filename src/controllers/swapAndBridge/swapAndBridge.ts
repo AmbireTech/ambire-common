@@ -60,6 +60,7 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import {
   convertTokenPriceToBigInt,
@@ -482,7 +483,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }
       })
     })
-    this.#emitUpdateIfNeeded()
+    // Fetch the supported networks in the beginning so we can disable the
+    // swap and bridge button of unsupported tokens on the dashboard, even if
+    // the user hasn't yet opened the swap and bridge screen
+    // (forceEmit true is crucial here)
+    this.#fetchSupportedChainsIfNeeded(true)
   }
 
   // The token in portfolio is the source of truth for the amount, it updates
@@ -492,7 +497,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       (t) =>
         t.address === this.fromSelectedToken?.address &&
         t.chainId === this.fromSelectedToken?.chainId &&
-        getIsTokenEligibleForSwapAndBridge(t)
+        // We skip the positive balance requirement here,
+        // because we only need to retrieve the token from the portfolio list
+        // and apply the basic eligibility checks (not a reward or Gas Tank token).
+        // Enforcing a positive balance would prevent tokens with zero balance
+        // from being found, which would break the MIN amount validation in `validateFromAmount()`.
+        getIsTokenEligibleForSwapAndBridge(t, false)
     )
 
   get maxFromAmount(): string {
@@ -641,11 +651,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // if the provider is socket, convert the null addresses
     if (preselectedFromToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedFromToken.address)
       preselectedFromToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedFromToken.address
       )
     }
     if (preselectedToToken) {
+      this.#emitSilentErrorIfNullAddress(preselectedToToken.address)
       preselectedToToken.address = convertNullAddressToZeroAddressIfNeeded(
         preselectedToToken.address
       )
@@ -698,11 +710,30 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#emitUpdateIfNeeded()
   }
 
+  // Temporary helper to monitor if NULL token addresses are still passed
+  // to initForm or updateForm in the Swap & Bridge controller.
+  // In theory, this should no longer happen after the fixes in socket/api.ts,
+  // but we'll keep tracking it in Sentry for about a month to confirm.
+  // If no errors are reported, we'll remove both this function and the
+  // convertNullAddressToZeroAddressIfNeeded logic from initForm/updateForm.
+  #emitSilentErrorIfNullAddress(address: string) {
+    if (address.toLocaleLowerCase() === NULL_ADDRESS) {
+      const message =
+        'NULL token address detected while updating or initializing the Swap & Bridge controller.'
+
+      this.emitError({
+        level: 'silent',
+        message,
+        error: new Error(message)
+      })
+    }
+  }
+
   get isHealthy() {
     return this.#serviceProviderAPI.isHealthy
   }
 
-  #fetchSupportedChainsIfNeeded = async () => {
+  #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
     const shouldNotReFetchSupportedChains =
       this.#cachedSupportedChains.data.length &&
       Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
@@ -712,7 +743,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
 
       this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
-      this.#emitUpdateIfNeeded()
+      this.#emitUpdateIfNeeded(forceUpdate)
     } catch (error: any) {
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
@@ -812,10 +843,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       routePriority
     } = props
 
-    // set the correct fromSelectedToken as the user might have selected
-    // a duplicate from his portfolio instead
     let fromSelectedToken = props.fromSelectedToken
     if (fromSelectedToken) {
+      this.#emitSilentErrorIfNullAddress(fromSelectedToken.address)
+      // if the provider is socket, convert the null addresses
+      fromSelectedToken.address = convertNullAddressToZeroAddressIfNeeded(fromSelectedToken.address)
+
+      // set the correct fromSelectedToken as the user might have selected
+      // a duplicate from his portfolio instead
       const validAddr = mapBannedToValidAddr(
         Number(fromSelectedToken.chainId),
         fromSelectedToken.address
@@ -834,12 +869,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       shouldIncrementFromAmountUpdateCounter = false
     } = updateProps || {}
 
-    // map the token back
     const chainId = toChainId ?? this.toChainId
-    const toSelectedTokenAddr =
-      chainId && props.toSelectedTokenAddr
-        ? mapBannedToValidAddr(Number(chainId), getAddress(props.toSelectedTokenAddr))
-        : undefined
+    let toSelectedTokenAddr: string | undefined
+
+    if (props.toSelectedTokenAddr && chainId) {
+      this.#emitSilentErrorIfNullAddress(props.toSelectedTokenAddr)
+      // if the provider is socket, convert the null addresses
+      toSelectedTokenAddr = convertNullAddressToZeroAddressIfNeeded(props.toSelectedTokenAddr)
+
+      // map the token back
+      toSelectedTokenAddr = mapBannedToValidAddr(Number(chainId), getAddress(toSelectedTokenAddr))
+    }
+
     // when we init the form by using the retry button
     const shouldNotResetFromAmount =
       fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
@@ -997,7 +1038,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
-    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
+    const tokens = nextPortfolioTokenList.filter((token) =>
+      getIsTokenEligibleForSwapAndBridge(token)
+    )
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
@@ -1037,7 +1080,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const nextFromSelectedToken =
         fromSelectedTokenInNextPortfolio ||
         // Select the first token in the portfolio that is not the same as the "to" token
-        this.portfolioTokenList.find((t) => t.address !== this.toSelectedToken?.address) ||
+        this.portfolioTokenList.find(
+          (t) =>
+            t.address !== this.toSelectedToken?.address &&
+            this.supportedChainIds.includes(t.chainId)
+        ) ||
         null
 
       await this.updateForm(
@@ -1505,7 +1552,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           isToNetworkSame &&
           isToAddressSame
         ) {
-          return
+          // We consider reusing the same quote a success (hence we return true).
+          // Otherwise, at the end of `updateQuote`, if we treat it as a falsy value,
+          // the quote will be reset and the signAccountOp will be destroyed,
+          // which is incorrect behavior, given that we already have a valid quote.
+          return true
         }
       }
       if (!skipPreviousQuoteRemoval) {
@@ -1538,6 +1589,25 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         })
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .filter((route) => {
+            const hasNoRouteId = !route.routeId
+
+            if (hasNoRouteId) {
+              this.emitError({
+                level: 'silent',
+                error: new SwapAndBridgeError(
+                  `Received route with no routeId from ${this.#serviceProviderAPI.name}. From: ${
+                    this.fromSelectedToken?.address
+                  } (${this.fromSelectedToken?.chainId}) To: ${this.toSelectedToken?.address} (${
+                    this.toSelectedToken?.chainId
+                  })`
+                ),
+                message: 'Received route with no routeId'
+              })
+            }
+
+            return !hasNoRouteId
+          })
           .sort((r1, r2) => {
             const a = BigInt(r1.toAmount)
             const b = BigInt(r2.toAmount)
@@ -1596,12 +1666,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (!this.#getIsFormValidToFetchQuote()) {
       if (this.quote || this.quoteRoutesStatuses) {
-        this.quote = null
-        this.quoteRoutesStatuses = {}
-        this.updateQuoteStatus = 'INITIAL'
-        this.removeError('no-routes')
-        this.removeError('all-routes-failed')
-        this.#emitUpdateIfNeeded()
+        this.#resetQuote()
       }
       return
     }
@@ -1627,10 +1692,21 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (isSuccessful) {
       await this.initSignAccountOpIfNeeded(quoteId)
     } else {
-      // @TODO: This is correct, right?
+      // When destroying the signAccountOp, we must also reset the quote and its status;
+      // otherwise, the toToken state remains stuck in a loading state.
+      // This ensures the user can retry fetching the quote.
       this.destroySignAccountOp()
-      this.emitUpdate()
+      this.#resetQuote()
     }
+  }
+
+  #resetQuote() {
+    this.quote = null
+    this.quoteRoutesStatuses = {}
+    this.updateQuoteStatus = 'INITIAL'
+    this.removeError('no-routes')
+    this.removeError('all-routes-failed')
+    this.#emitUpdateIfNeeded()
   }
 
   async getRouteStartUserTx(): Promise<
@@ -2086,7 +2162,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !!getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken?.decimals) &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
-      (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)
+      // Allow the quote fetch if the error is insufficient amount, as the user might want
+      // to see the routes even if he has insufficient balance
+      (this.validateFromAmount.success ||
+        this.validateFromAmount.errorType === 'insufficient_amount')
     )
   }
 

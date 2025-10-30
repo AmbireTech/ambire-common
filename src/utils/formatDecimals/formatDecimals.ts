@@ -1,4 +1,4 @@
-type FormatType = 'value' | 'price' | 'amount' | 'default' | 'precise'
+export type FormatType = 'value' | 'price' | 'amount' | 'default' | 'precise' | 'noDecimal'
 
 const DEFAULT_DECIMALS = 2
 const DECIMAL_RULES = {
@@ -21,6 +21,10 @@ const DECIMAL_RULES = {
   precise: {
     min: 0,
     max: 8
+  },
+  noDecimal: {
+    min: 0,
+    max: 0
   }
 }
 const TYPES_WITH_DOLLAR_PREFIX: FormatType[] = ['value', 'price']

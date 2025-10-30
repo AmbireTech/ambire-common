@@ -47,7 +47,7 @@ import {
   ToBeLearnedAssets,
   TokenResult
 } from '../../libs/portfolio/interfaces'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -83,6 +83,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   temporaryTokens: TemporaryTokens = {}
 
+  hasFundedHotAccount: boolean = false
+
   #portfolioLibs: Map<string, Portfolio>
 
   #banner: IBannerController
@@ -91,7 +93,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #fetch: Fetch
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #velcroUrl: string
 
@@ -225,6 +227,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.emitUpdate()
   }
 
+  #getHasFundedHotAccount(): boolean {
+    const hotAccounts = this.#accounts.accounts.filter((acc) =>
+      this.#keystore.getAccountKeys(acc).find((key) => key.type === 'internal')
+    )
+
+    return hotAccounts.some((acc) => {
+      const networksWithAssets = this.getNetworksWithAssets(acc.addr)
+
+      return Object.values(networksWithAssets).some(Boolean)
+    })
+  }
+
   async #updatePortfolioOnTokenChange(chainId: bigint, selectedAccountAddr?: string) {
     // As this function currently only updates the portfolio we can skip it altogether
     // if skipPortfolioUpdate is set to true
@@ -330,6 +344,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       storageStateByAccount,
       this.#providers.providers
     )
+    this.hasFundedHotAccount = this.#getHasFundedHotAccount()
 
     this.emitUpdate()
     await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
@@ -509,7 +524,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     let res: any
     try {
-      res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
+      res = await this.#callRelayer(
+        `/v2/identity/${accountId}/portfolio-additional`,
+        'GET',
+        undefined,
+        undefined,
+        5000
+      )
     } catch (e: any) {
       console.error('relayer error for portfolio additional')
       this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
@@ -570,6 +591,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         updateStarted: start,
         tokens: rewardsTokens,
         total: getTotal(rewardsTokens)
+      }
+    }
+
+    accountState.projectedRewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewardsProjectionData
       }
     }
 
@@ -1280,6 +1310,15 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   getPendingPortfolioState(accountAddr: string) {
     return this.#pending[accountAddr] || {}
+  }
+
+  getIsStateWithOutdatedNetworks(accountAddr: string) {
+    // Get the pending state as latest contains internal networks
+    const pendingNetworksCount = Object.keys(this.getPendingPortfolioState(accountAddr)).length
+    // Read from networks, and not allNetworks
+    const networksCount = this.#networks.networks.length
+
+    return pendingNetworksCount !== networksCount
   }
 
   getNetworksWithAssets(accountAddr: string) {
