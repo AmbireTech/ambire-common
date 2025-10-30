@@ -245,7 +245,7 @@ export class EstimationController extends EventEmitter {
     if (this.#notFatalBundlerError?.cause === '4337_ESTIMATION') {
       warnings.push({
         id: 'bundler-failure',
-        title: 'Gas abstraction is temporarily unavailable'
+        title: 'We are experiencing temporary issues and broadcasting options are limited'
       })
     }
 
