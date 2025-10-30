@@ -315,7 +315,19 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // Add connected + custom
     for (const d of [...prevConnectedDapps, ...prevCustomDapps]) {
-      if (!dappsMap.has(d.id)) dappsMap.set(d.id, d)
+      if (!dappsMap.has(d.id)) {
+        const existingByDomain = dappsMap.get(getDomainFromUrl(d.url)!)
+        if (existingByDomain) {
+          d.name = existingByDomain.name
+          d.description = existingByDomain.description
+          d.tvl = existingByDomain.tvl
+          d.icon = existingByDomain.icon
+          d.twitter = existingByDomain.twitter
+          d.geckoId = existingByDomain.geckoId
+          d.chainIds = existingByDomain.chainIds
+        }
+        dappsMap.set(d.id, d)
+      }
     }
 
     // Delete legacy IDs
