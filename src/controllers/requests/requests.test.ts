@@ -1,4 +1,3 @@
-import { PhishingController } from 'controllers/phishing/phishing'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -9,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { PhishingController } from '../phishing/phishing'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
