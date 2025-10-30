@@ -12,7 +12,8 @@ export const dappIdsToBeRemoved = new Set([
   'bridge.arbitrum.io', // bridge.arbitrum.io was moved to portal.arbitrum.io
   'curve.fi', // curve.fi was moved to curve.finance
   'app.ether.fi', // app.ether.fi was moved to ether.fi
-  'core.app' // not supported
+  'core.app', // not supported,
+  'bridge.base.org'
 ])
 
 export const featuredDapps = new Set([
