@@ -56,7 +56,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   #viewOnlyAccountGetIdentityInterval: IRecurringTimeout
 
-  accounts: Account[] = []
+  #accounts: Account[] = []
 
   accountStates: AccountStates = {}
 
@@ -147,7 +147,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null)
     this.accounts = getUniqueAccountsArray(accounts)
 
-    this.#viewOnlyAccountGetIdentityInterval.start({ runImmediately: true })
     this.#smartAccountIdentityCreateInterval.start({ runImmediately: true })
 
     // Emit an update before updating account states as the first state update may take some time
@@ -161,6 +160,17 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     ).finally(() => {
       this.accountStatesInitialLoadPromise = undefined
     })
+  }
+
+  get accounts() {
+    return this.#accounts
+  }
+
+  set accounts(nextAccounts) {
+    this.#accounts = nextAccounts
+
+    this.#viewOnlyAccountGetIdentityInterval.restart({ runImmediately: true })
+    this.#smartAccountIdentityCreateInterval.restart({ runImmediately: true })
   }
 
   async updateAccountStates(
@@ -414,22 +424,21 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       }
     )
 
-    try {
-      const accountsWithIdentities = await Promise.all(accountsToFetchIdentity)
+    const results = await Promise.allSettled(accountsToFetchIdentity)
 
-      this.accounts = this.accounts.map((a) => {
-        const accountsWithIdentityRef = accountsWithIdentities.find((f) => f.addr === a.addr)
-        return accountsWithIdentityRef || a
-      })
+    // Collect fulfilled results (accounts with updated identities)
+    const fulfilledAccountsWithIdentities: Account[] = results
+      .filter((r) => r.status === 'fulfilled' && r.value)
+      .map((r) => (r as PromiseFulfilledResult<Account>).value)
 
-      this.emitUpdate()
-      await this.#storage.set('accounts', this.accounts)
+    // Update only accounts whose identity fetch succeeded
+    this.accounts = this.accounts.map((a) => {
+      const updated = fulfilledAccountsWithIdentities.find((f) => f.addr === a.addr)
+      return updated || a
+    })
 
-      this.#viewOnlyAccountGetIdentityInterval.stop()
-    } catch {
-      // Fail silently, it's not a fatal error and the retry mechanism kicks-in anyways
-      this.#viewOnlyAccountGetIdentityInterval.start()
-    }
+    this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
   }
 
   /**
@@ -499,11 +508,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       )
       if (identityRequestsFailedToCreate.length)
         throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
-
-      this.#smartAccountIdentityCreateInterval.stop()
     } catch (error: any) {
-      this.#smartAccountIdentityCreateInterval.start()
-
       const identitiesFailedToCreate =
         error instanceof AmbireSmartAccountIdentityCreateError
           ? error.identityRequests.map((req) => req.addr) // only some failed
@@ -520,7 +525,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     return {
       ...this,
       ...super.toJSON(),
-      areAccountStatesLoading: this.areAccountStatesLoading
+      areAccountStatesLoading: this.areAccountStatesLoading,
+      accounts: this.accounts
     }
   }
 }
