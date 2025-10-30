@@ -1,4 +1,5 @@
 import { Interface } from 'ethers'
+
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
@@ -8,7 +9,7 @@ export async function fetchNonce(account: Account, provider: RPCProvider): Promi
   const epInterface = new Interface(entryPointAbi)
   const failure = () => {
     // eslint-disable-next-line no-console
-    console.error('inable to fetch the entry point nonce, estimateBundler')
+    console.error('unable to fetch the entry point nonce, estimateBundler')
     return null
   }
   const [accountNonceHexLatest, accountNonceHexPending] = await Promise.all([
