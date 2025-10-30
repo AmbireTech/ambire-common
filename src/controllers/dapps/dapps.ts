@@ -7,6 +7,7 @@ import { getSessionId, Session, SessionInitProps, SessionProp } from '../../clas
 import {
   categoriesNotToFilterOut,
   dappIdsToBeRemoved,
+  dappsNotToFilterOutByDomain,
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
   predefinedDapps
@@ -125,7 +126,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     const filteredMap = new Map(this.#dapps)
 
     for (const [key, d] of filteredMap) {
-      if (d.isFeatured || d.isConnected || d.isCustom) continue
+      const isPredefined = predefinedDapps.some((pd) => pd.id === d.id)
+      if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
       const hasNoNetworks = d.chainIds.length === 0
@@ -140,6 +142,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     for (const [, d] of filteredMap) {
       const domainId = getDomainFromUrl(d.url)
       if (!domainId) continue
+      if (dappsNotToFilterOutByDomain.includes(domainId)) continue
 
       // If the dapp's id is NOT its domain and there's already a dapp using that domain id → delete the dapp with that domain
       if (domainId !== d.id && filteredMap.has(domainId)) filteredMap.delete(domainId)
@@ -166,9 +169,14 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.isFetchingAndUpdatingDapps = true
     this.emitUpdate()
-    await this.#fetchAndUpdateDapps()
-    this.isFetchingAndUpdatingDapps = false
-    this.emitUpdate()
+    try {
+      await this.#fetchAndUpdateDapps()
+    } catch (err) {
+      console.error('Dapps fetch failed:', err)
+    } finally {
+      this.isFetchingAndUpdatingDapps = false
+      this.emitUpdate()
+    }
   }
 
   async #fetchAndUpdateDapps() {
@@ -183,20 +191,17 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     let fetchedDappsList: DefiLlamaProtocol[] = []
     let fetchedChainsList: DefiLlamaChain[] = []
-    try {
-      const [res, chainsRes] = await Promise.all([
-        this.#fetch('https://api.llama.fi/protocols'),
-        this.#fetch('https://api.llama.fi/v2/chains')
-      ])
 
-      if (!res.ok || !chainsRes.ok) {
-        throw new Error(`Fetch failed: protocols=${res.status}, chains=${chainsRes.status}`)
-      }
+    const [res, chainsRes] = await Promise.all([
+      this.#fetch('https://api.llama.fi/protocols'),
+      this.#fetch('https://api.llama.fi/v2/chains')
+    ])
 
-      ;[fetchedDappsList, fetchedChainsList] = await Promise.all([res.json(), chainsRes.json()])
-    } catch (err) {
-      console.error('Dapps fetch failed:', err)
+    if (!res.ok || !chainsRes.ok) {
+      throw new Error(`Fetch failed: protocols=${res.status}, chains=${chainsRes.status}`)
     }
+
+    ;[fetchedDappsList, fetchedChainsList] = await Promise.all([res.json(), chainsRes.json()])
 
     if (!fetchedDappsList.length || !fetchedChainsList.length) {
       this.#shouldRetryFetchAndUpdate = true
@@ -284,7 +289,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           description: pd.description,
           url: pd.url,
           icon: pd.icon,
-          category: null,
+          category: pd.category || null,
           tvl: null,
           chainIds: pd.chainIds || [],
           isConnected: prevStoredDapp?.isConnected ?? false,
@@ -293,7 +298,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           chainId: prevStoredDapp?.chainId ?? 1,
           favorite: prevStoredDapp?.favorite ?? false,
           blacklisted: prevStoredDapp?.blacklisted ?? false,
-          twitter: pd.twitter,
+          twitter: pd.twitter || null,
           geckoId: null
         })
       }
