@@ -2,12 +2,10 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-constant-condition */
 
-import { Contract, Interface, toBeHex } from 'ethers'
+import { Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -20,8 +18,10 @@ import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../accountOp/types'
 import { PaymasterEstimationData } from '../erc7677/types'
+import { DecodedError } from '../errorDecoder/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
 import { TokenResult } from '../portfolio'
+import { fetchNonce } from '../userOperation/fetchEntryPointNonce'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { estimateWithRetries } from './estimateWithRetries'
@@ -119,7 +119,12 @@ async function estimate(
 
   const nonFatalErrors: Error[] = []
   const estimateErrorCallback = (e: Error) => {
-    const decodedError = bundler.decodeBundlerError(e)
+    let decodedError: Error | DecodedError = e
+    try {
+      decodedError = bundler.decodeBundlerError(e)
+    } catch (err) {
+      // failed to decode the error, move on with the original one
+    }
 
     // if the bundler estimation fails, add a nonFatalError so we can react to
     // it on the FE. The BE at a later stage decides if this error is actually fatal
@@ -202,6 +207,7 @@ export async function bundlerEstimate(
   }
 
   const flags: EstimationFlags = {}
+  flags.invalid4337NonceCounter = 0
   while (true) {
     // estimate
     const estimations = await estimate(
@@ -235,14 +241,20 @@ export async function bundlerEstimate(
       estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
     ) {
       flags.has4337NonceDiscrepancy = true
+      flags.invalid4337NonceCounter += 1
+
+      // prevent infinite loops in the event of a terrible rpc malfunction
+      if (flags.invalid4337NonceCounter >= 3) {
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
 
       // wait a bit to allow the state to sync
       await wait(2000)
-      const ep = new Contract(ERC_4337_ENTRYPOINT, entryPointAbi, provider)
-      const accountNonce = await ep
-        .getNonce(account.addr, 0, { blockTag: 'pending' })
-        .catch(() => null)
-      if (!accountNonce) continue
+      const accountNonce = await fetchNonce(account, provider)
+      if (accountNonce === null || accountNonce === 0n) {
+        // RPC serious malfunction
+        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
 
       if (network.chainId === 1n && BigInt(userOp.nonce) === BigInt(accountNonce)) {
         return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
