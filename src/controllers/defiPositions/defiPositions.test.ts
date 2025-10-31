@@ -133,6 +133,7 @@ const prepareTest = async () => {
 describe('DefiPositionsController', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
+    jest.clearAllMocks()
   })
   it('should update positions correctly', async () => {
     const { controller } = await prepareTest()
@@ -287,6 +288,177 @@ describe('DefiPositionsController', () => {
     )
     const mergedUni = merged.find((p) => p.providerName === 'Uniswap V3')!
     expect(mergedUni.source).toBe('custom')
+  })
+
+  it('aave v3 is coming from custom positions', async () => {
+    const { controller } = await prepareTest()
+
+    await controller.updatePositions({
+      forceDebankCall: true
+    })
+
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
+    const aaveV3Positions = selectedAccountState['10'].positionsByProvider.find(
+      (p) => DefiPositionsController.getProviderId(p.providerName) === 'aave v3'
+    )
+
+    expect(aaveV3Positions).toBeDefined()
+    expect(aaveV3Positions!.positions.length).toEqual(1)
+    expect(aaveV3Positions!.source).toBe('custom')
+    aaveV3Positions!.positions.forEach((position) => {
+      expect(position.additionalData.healthRate).toBeDefined()
+    })
+  })
+
+  it('debank critical error is prioritized over price errors', async () => {
+    const { restore } = suppressConsole()
+
+    jest
+      // @ts-ignore
+      .spyOn(DefiPositionsController.prototype, 'updatePositionsByProviderAssetPrices')
+      // @ts-ignore
+      .mockRejectedValue(new Error('Price fetch failed'))
+
+    const { controller } = await prepareTest()
+
+    await controller.updatePositions({ forceDebankCall: true })
+
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
+
+    expect(Object.keys(selectedAccountState).length).toBeGreaterThan(0)
+
+    Object.values(selectedAccountState).forEach((networkState) => {
+      // There won't be an error if there are no positions on that network
+      if (!networkState.positionsByProvider.length) return
+
+      expect(networkState.error).toBeDefined()
+      expect(networkState.error).toBe(DeFiPositionsError.AssetPriceError)
+    })
+
+    jest
+      // @ts-ignore
+      .spyOn(DefiPositionsController.prototype, 'callDebank')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Debank fetch failed'))
+
+    await controller.updatePositions({ forceDebankCall: true, maxDataAgeMs: 0, forceUpdate: true })
+
+    const selectedAccountState2 = controller.getDefiPositionsState(ACCOUNT.addr)
+
+    expect(Object.keys(selectedAccountState2).length).toBeGreaterThan(0)
+
+    Object.values(selectedAccountState2).forEach((networkState) => {
+      expect(networkState.error).toBeDefined()
+      expect(networkState.error).toBe(DeFiPositionsError.CriticalError)
+    })
+    restore()
+  })
+
+  it('custom positions are persisted after a failure', async () => {
+    const { restore } = suppressConsole()
+    const spy = jest.spyOn(defiProviders, 'getAAVEPositions')
+
+    const { controller } = await prepareTest()
+
+    // First, do a successful update to have positions stored
+    await controller.updatePositions({ forceDebankCall: true })
+
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
+    expect(Object.keys(selectedAccountState).length).toBeGreaterThan(0)
+
+    let aaveV3PositionsCount = 0
+
+    Object.values(selectedAccountState).forEach((networkState) => {
+      if (!networkState.positionsByProvider.length) return
+
+      if (
+        networkState.positionsByProvider.some(
+          (p) => DefiPositionsController.getProviderId(p.providerName) === 'aave v3'
+        )
+      ) {
+        aaveV3PositionsCount++
+      }
+    })
+
+    // Mock getAAVEPositions to throw
+    spy.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          reject(new Error('AAVE error'))
+        })
+    )
+
+    // Now, do an update that will fail on AAVE
+    await controller.updatePositions({ forceDebankCall: true, maxDataAgeMs: 0, forceUpdate: true })
+
+    const selectedAccountState2 = controller.getDefiPositionsState(ACCOUNT.addr)
+
+    expect(Object.keys(selectedAccountState2).length).toBeGreaterThan(0)
+
+    let aaveV3PositionsCount2 = 0
+
+    Object.values(selectedAccountState2).forEach((networkState) => {
+      if (!networkState.positionsByProvider.length) return
+
+      if (
+        networkState.positionsByProvider.some(
+          (p) => DefiPositionsController.getProviderId(p.providerName) === 'aave v3'
+        )
+      ) {
+        expect(networkState.providerErrors).toBeDefined()
+        expect(networkState.providerErrors?.length).toBeGreaterThan(0)
+        aaveV3PositionsCount2++
+      }
+    })
+
+    expect(aaveV3PositionsCount2).toBe(aaveV3PositionsCount)
+    restore()
+  })
+
+  it('debank positions are persisted after a debank call failure', async () => {
+    const { restore } = suppressConsole()
+
+    const { controller } = await prepareTest()
+
+    await controller.updatePositions({ forceDebankCall: true })
+
+    const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
+    expect(Object.keys(selectedAccountState).length).toBeGreaterThan(0)
+    let debankPositionsCount = 0
+
+    Object.values(selectedAccountState).forEach((networkState) => {
+      if (!networkState.positionsByProvider.length) return
+
+      if (networkState.positionsByProvider.some((p) => p.source === 'debank')) {
+        debankPositionsCount++
+      }
+    })
+
+    jest
+      // @ts-ignore
+      .spyOn(DefiPositionsController.prototype, 'callDebank')
+      // @ts-ignore
+      .mockRejectedValueOnce(new Error('Debank fetch failed'))
+
+    await controller.updatePositions({ forceDebankCall: true, maxDataAgeMs: 0, forceUpdate: true })
+
+    let debankPositionsCount2 = 0
+
+    const selectedAccountState2 = controller.getDefiPositionsState(ACCOUNT.addr)
+    expect(Object.keys(selectedAccountState2).length).toBeGreaterThan(0)
+
+    Object.values(selectedAccountState2).forEach((networkState) => {
+      if (!networkState.positionsByProvider.length) return
+
+      if (networkState.positionsByProvider.some((p) => p.source === 'debank')) {
+        expect(networkState.error).toBeDefined()
+        expect(networkState.error).toBe(DeFiPositionsError.CriticalError)
+        debankPositionsCount2++
+      }
+    })
+
+    expect(debankPositionsCount2).toBe(debankPositionsCount)
+    restore()
   })
 
   it('should continuously update the defi positions', async () => {

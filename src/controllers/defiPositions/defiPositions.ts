@@ -217,9 +217,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         await Promise.all([
           getAAVEPositions(addr, provider, network).catch((e: any) => {
             this.emitError({
-              message: `Failed to fetch AAVE v3 positions for ${addr} on ${network.name}: ${
-                e?.message || 'Unknown error'
-              }`,
+              message: `Failed to fetch AAVE v3 positions for ${addr} on ${network.name}.`,
               error: e,
               level: 'silent'
             })
@@ -266,9 +264,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
             })
             .catch((e: any) => {
               this.emitError({
-                message: `Failed to fetch AAVE v3 positions for ${addr} on ${network.name}: ${
-                  e?.message || 'Unknown error'
-                }`,
+                message: `Failed to fetch Uniswap v3 positions for ${addr} on ${network.name}.`,
                 error: e,
                 level: 'silent'
               })
@@ -286,7 +282,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       if (newPositions.length) {
         try {
           newPositions =
-            (await this.#updatePositionsByProviderAssetPrices(newPositions, network.chainId)) ||
+            (await this.updatePositionsByProviderAssetPrices(newPositions, network.chainId)) ||
             newPositions
         } catch (e) {
           console.error(`#setAssetPrices error for ${addr} on ${network.name}:`, e)
@@ -513,8 +509,12 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     if (process.env.IS_TESTING !== 'true' || forceDebankCall) {
       try {
         debankPositions = await this.getDebankPositionsForAccount(selectedAccountAddr, forceUpdate)
-      } catch (err) {
-        console.error('Debank fetch failed:', err)
+      } catch (err: any) {
+        this.emitError({
+          message: `Failed to fetch DeFi positions from Debank for ${selectedAccountAddr}`,
+          error: err,
+          level: 'silent'
+        })
       }
     } else {
       // Null means an error occurred when fetching from Debank
@@ -530,7 +530,13 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.emitUpdate()
   }
 
-  async #updatePositionsByProviderAssetPrices(
+  /**
+   * Fetches the USD prices for the assets in the provided positions
+   * using cena and updates the positions with the fetched prices and values.
+   *
+   * Note: It's private so we can mock it in tests.
+   */
+  private async updatePositionsByProviderAssetPrices(
     positionsByProvider: PositionsByProvider[],
     chainId: bigint
   ) {
