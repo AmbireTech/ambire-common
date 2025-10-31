@@ -16,10 +16,10 @@ import {
   FormattedExternalHintsAPIResponse,
   GetOptions,
   Hints,
-  IsSuspectedType,
   KnownTokenInfo,
   NetworkState,
   PortfolioGasTankResult,
+  SuspectedType,
   ToBeLearnedAssets,
   TokenResult
 } from './interfaces'
@@ -108,7 +108,7 @@ export const isSuspectedToken = (
   symbol: string,
   name: string,
   chainId: bigint
-): IsSuspectedType => {
+): SuspectedType => {
   const normalizedAddr = normalizeAddress(address)
   const numericChainId = Number(chainId)
 
@@ -163,10 +163,10 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
-  let isSuspected: IsSuspectedType = null
+  let suspectedType: SuspectedType = null
 
   if (blockTag && blockTag === 'pending' && hasSimulationAmount && !isRewardsOrGasTank) {
-    isSuspected = isSuspectedToken(address, symbol, name, BigInt(chainId))
+    suspectedType = isSuspectedToken(address, symbol, name, BigInt(chainId))
   }
 
   return {
@@ -175,7 +175,7 @@ export function getFlags(
     canTopUpGasTank,
     isFeeToken,
     isHidden: false,
-    isSuspected
+    suspectedType
   }
 }
 
