@@ -5,7 +5,6 @@ import { AccountIdentityResponse } from '../../interfaces/account'
  * Returns normalized identity information with defaults for missing fields.
  */
 export function normalizeIdentityResponse(addr: string, response?: AccountIdentityResponse | null) {
-  const initialPrivileges = response?.initialPrivileges || []
   const creation =
     typeof response?.identityFactoryAddr === 'string' &&
     typeof response?.bytecode === 'string' &&
@@ -23,6 +22,12 @@ export function normalizeIdentityResponse(addr: string, response?: AccountIdenti
   return {
     creation,
     associatedKeys,
-    initialPrivileges
+    // Applies only to Ambire smart accounts (not coming in the AccountIdentityResponse).
+    // - view-only accounts: can be empty.
+    // - ambire smart v2: generated from `associatedKeys`, key management was never
+    // implemented for these, so privileges are technically static in this case
+    // - ambire smart v1: `initialPrivileges` would be set upon re-importing
+    // account with key as a linked account
+    initialPrivileges: []
   }
 }

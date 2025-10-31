@@ -42,7 +42,7 @@ export interface AccountCreation {
 }
 
 export interface AmbireSmartAccountIdentityCreateRequest {
-  /* For this request, associatedKeys are indeed initialPrivileges */
+  /* For this request, associatedKeys are expected to be initialPrivileges */
   associatedKeys: Account['initialPrivileges']
   creation: {
     factoryAddr: string
@@ -75,8 +75,6 @@ export interface AccountIdentityResponse {
   bytecode?: AccountCreation['bytecode']
   /** The salt used during identity creation */
   salt?: AccountCreation['salt']
-  /** Array of [address, hash] tuples representing initial privileges */
-  initialPrivileges?: Account['initialPrivileges']
   /** Object whose keys are the associated key addresses */
   associatedKeys?: Account['associatedKeys']
 }
