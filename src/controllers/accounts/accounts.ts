@@ -22,13 +22,14 @@ import {
 } from '../../interfaces/account'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
-import { IKeystoreController } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getUniqueAccountsArray,
   isAmbireV1LinkedAccount,
+  isAmbireV2Account,
   isSmartAccount
 } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
@@ -503,7 +504,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const smartAccountsNeedingIdentityCreate = this.accounts.filter(
       (a) =>
         isSmartAccount(a) &&
-        !isAmbireV1LinkedAccount(a.creation?.factoryAddr) &&
+        isAmbireV2Account(a.creation?.factoryAddr) &&
         this.#keystore.getAccountKeys(a).length &&
         !a.creation?.identityCreatedAt
     )
@@ -515,7 +516,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       smartAccountsNeedingIdentityCreate.map((account) => ({
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
-        associatedKeys: account.initialPrivileges,
+        associatedKeys: account.initialPrivileges.length
+          ? account.initialPrivileges
+          : // default initialPrivileges, Ambire v2 accounts always have these
+            // privileges, because key management for them got never implemented.
+            [[account.associatedKeys[0], dedicatedToOneSAPriv]],
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,
@@ -551,7 +556,17 @@ export class AccountsController extends EventEmitter implements IAccountsControl
           return account
         }
 
-        return { ...account, creation: { ...account.creation, identityCreatedAt: now } }
+        // Force refresh `initialPrivileges` from `identityRequests`.
+        // 1) Fixes pre-v5.30.0 imports where view-only -> reimport with key left `initialPrivileges` empty.
+        // 2) Post-v5.30.0 this is safe, as Ambire v2 accounts always share the same
+        // privileges, because key management for them got never implemented.
+        const initialPrivileges =
+          identityRequests.find((a) => a.addr === account.addr)?.associatedKeys ||
+          account.initialPrivileges
+
+        const creation = { ...account.creation, identityCreatedAt: now }
+
+        return { ...account, initialPrivileges, creation }
       })
 
       this.emitUpdate()

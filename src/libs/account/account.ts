@@ -188,6 +188,9 @@ export async function getEmailAccount(
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
   factoryAddr && getAddress(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
+export const isAmbireV2Account = (factoryAddr?: string) =>
+  factoryAddr && getAddress(factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+
 export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
 
 /**
