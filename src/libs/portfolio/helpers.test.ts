@@ -4,6 +4,7 @@ import { networks } from '../../consts/networks'
 import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
+  isSuspectedToken,
   learnedErc721sToHints,
   mapToken,
   mergeERC721s
@@ -26,6 +27,45 @@ const USDC_DATA = {
   name: 'USD Coin',
   symbol: 'USDC'
 }
+
+const TOKENS = {
+  TRUSTED: {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    symbol: 'USDC',
+    name: 'USDC',
+    chainId: 1n
+  },
+  TRUSTED_WITH_NON_LATIN_SYMBOL: {
+    address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+    symbol: 'USD₮0',
+    name: 'USDT token contract',
+    chainId: 42161n
+  },
+  LEGIT_BUT_NOT_TRUSTED: {
+    address: '0xc50673edb3a7b94e8cad8a7d4e0cd68864e33edf',
+    symbol: 'PNKSTR',
+    name: 'PunkStrategy',
+    chainId: 1n
+  },
+  SPOOFED_WITH_VALID_SYMBOL: {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49',
+    symbol: 'USDC',
+    name: 'USDC',
+    chainId: 1n
+  },
+  SPOOFED_WITH_NON_LATIN_SYMBOL: {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49',
+    symbol: 'USD\u200BT', // visually "USDT" but contains zero-width space
+    name: 'USD Coin',
+    chainId: 1n
+  },
+  SPOOFED_WITH_NON_LATIN_NAME: {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49',
+    symbol: 'USD',
+    name: 'USD Сoin', // Cyrillic 'С'
+    chainId: 1n
+  }
+} as const
 
 if (!ethereum || !polygon || !optimism) throw new Error('Failed to find ethereum in networks')
 
@@ -145,7 +185,8 @@ describe('Portfolio helpers', () => {
   describe('mapToken', () => {
     it('Overrides the symbol if needed', () => {
       const token = mapToken(USDC_DATA, optimism, USDC_ADDR, {
-        specialErc20Hints: EMPTY_SPECIAL_HINTS
+        specialErc20Hints: EMPTY_SPECIAL_HINTS,
+        blockTag: ''
       })
 
       expect(token).toBeDefined()
@@ -156,13 +197,15 @@ describe('Portfolio helpers', () => {
         specialErc20Hints: {
           ...EMPTY_SPECIAL_HINTS,
           custom: [USDC_ADDR]
-        }
+        },
+        blockTag: ''
       })
       const hiddenToken = mapToken(USDC_DATA, optimism, USDC_ADDR, {
         specialErc20Hints: {
           ...EMPTY_SPECIAL_HINTS,
           hidden: [USDC_ADDR]
-        }
+        },
+        blockTag: ''
       })
 
       expect(customToken).toBeDefined()
@@ -178,12 +221,45 @@ describe('Portfolio helpers', () => {
           ...EMPTY_SPECIAL_HINTS,
           custom: [USDC_ADDR],
           hidden: [USDC_ADDR]
-        }
+        },
+        blockTag: ''
       })
 
       expect(token).toBeDefined()
       expect(token?.flags.isCustom).toBe(true)
       expect(token?.flags.isHidden).toBe(true)
     })
+  })
+})
+
+describe('isSuspectedToken', () => {
+  it('returns null for trusted token', () => {
+    const { address, symbol, name, chainId } = TOKENS.TRUSTED
+    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+  })
+
+  it('returns null for trusted token with non-Latin symbol', () => {
+    const { address, symbol, name, chainId } = TOKENS.TRUSTED_WITH_NON_LATIN_SYMBOL
+    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+  })
+
+  it('returns null for legit token missing from trusted list', () => {
+    const { address, symbol, name, chainId } = TOKENS.LEGIT_BUT_NOT_TRUSTED
+    expect(isSuspectedToken(address, symbol, name, chainId)).toBeNull()
+  })
+
+  it('returns "no-latin-symbol" for token with hidden/invisible symbol', () => {
+    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_NON_LATIN_SYMBOL
+    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('no-latin-symbol')
+  })
+
+  it('returns "no-latin-name" for token with non-Latin name', () => {
+    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_NON_LATIN_NAME
+    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('no-latin-name')
+  })
+
+  it('returns "suspected" for spoofed token with same symbol but different address', () => {
+    const { address, symbol, name, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
+    expect(isSuspectedToken(address, symbol, name, chainId)).toBe('suspected')
   })
 })

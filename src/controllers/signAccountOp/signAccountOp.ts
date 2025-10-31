@@ -117,6 +117,7 @@ import {
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
+  getUnknownTokenWarning,
   SignAccountOpType
 } from './helper'
 
@@ -389,7 +390,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.bundlerSwitcher = new BundlerSwitcher(
       network,
       () => {
-        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) !== -1 : false
       },
       { canDelegate: this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) }
     )
@@ -810,6 +811,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.traceCallDiscoveryStatus
     )
 
+    const unknownTokenWarnings = getUnknownTokenWarning(pendingState, this.accountOp.chainId)
+
     if (this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(
         this.selectedOption,
@@ -828,6 +831,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
+    if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
     // if 7702 EOA that is not ambire
     // and another delegation is there, show the warning
@@ -913,6 +917,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   async estimate() {
     await this.estimation.estimate(this.accountOp)
+  }
+
+  async retry(method: 'simulate' | 'estimate') {
+    this.bundlerSwitcher.cleanUp()
+    return this[method]()
   }
 
   update({
