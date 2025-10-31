@@ -562,6 +562,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       )
       if (identityRequestsFailedToCreate.length)
         throw new AmbireSmartAccountIdentityCreateError(identityRequestsFailedToCreate)
+
+      // Stop the interval immediately upon success (otherwise, it would make
+      // one more circle and then stop because of the guard upfront)
+      this.#smartAccountIdentityCreateInterval.stop()
     } catch (error: any) {
       const identitiesFailedToCreate =
         error instanceof AmbireSmartAccountIdentityCreateError

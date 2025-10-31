@@ -42,7 +42,8 @@ export interface AccountCreation {
 }
 
 export interface AmbireSmartAccountIdentityCreateRequest {
-  associatedKeys: [string, string][]
+  /* For this request, associatedKeys are indeed initialPrivileges */
+  associatedKeys: Account['initialPrivileges']
   creation: {
     factoryAddr: string
     salt: string
