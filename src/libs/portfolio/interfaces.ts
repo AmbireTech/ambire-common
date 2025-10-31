@@ -39,10 +39,6 @@ export type GasTankTokenResult = TokenResult & {
   saved: bigint
 }
 
-export type ProjectedRewardsTokenResult = TokenResult & {
-  apy: number
-}
-
 export interface CollectionResult extends TokenResult {
   name: string
   collectibles: bigint[]
