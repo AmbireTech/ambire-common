@@ -58,6 +58,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
   #updatePositionsPromise: Promise<void> | undefined
 
+  #initialLoadPromise: Promise<void> | undefined
+
   get positionsContinuousUpdateInterval() {
     return this.#positionsContinuousUpdateInterval
   }
@@ -92,6 +94,10 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#providers = providers
     this.#ui = ui
 
+    this.#initialLoadPromise = this.#load().finally(() => {
+      this.#initialLoadPromise = undefined
+    })
+
     this.#positionsContinuousUpdateInterval = new RecurringTimeout(
       async () => this.positionsContinuousUpdate(),
       ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
@@ -105,6 +111,23 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     this.#ui.uiEvent.on('removeView', () => {
       if (!this.#ui.views.length) this.#positionsContinuousUpdateInterval.stop()
     })
+  }
+
+  async #load() {
+    try {
+      this.#networksWithPositionsByAccounts = await this.#storage.get(
+        'networksWithPositionsByAccounts',
+        {}
+      )
+
+      this.emitUpdate()
+    } catch (e: any) {
+      this.emitError({
+        message: 'Failed to load DeFi positions data from storage.',
+        error: e,
+        level: 'silent'
+      })
+    }
   }
 
   static getProviderId(providerName: ProviderName) {
@@ -150,12 +173,10 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   }
 
   async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
-    const storageStateByAccount = await this.#storage.get('networksWithPositionsByAccounts', {})
-
     this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
       accountId,
       accountState,
-      storageStateByAccount,
+      this.#networksWithPositionsByAccounts,
       this.#providers.providers
     )
 
