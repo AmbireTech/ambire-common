@@ -265,7 +265,7 @@ export class EstimationController extends EventEmitter {
     if (this.#notFatalBundlerError?.cause === 'reverted SV_SIGMODE') {
       warnings.push({
         id: 'bundler-sigmode-error',
-        title: "Transaction cannot be sent because it's invalid."
+        title: 'UserOperation reverted during simulation with signature related error'
       })
     }
 

@@ -99,27 +99,19 @@ export class Candide extends Bundler {
     network: Network,
     stateOverride?: BundlerStateOverride
   ): Promise<BundlerEstimateResult> {
-    try {
-      const estimatiton = await this.sendEstimateReq(userOperation, network, stateOverride)
+    const estimation = await this.sendEstimateReq(userOperation, network, stateOverride)
 
-      return {
-        // add 20000n overhead as discussed with candide
-        preVerificationGas: toBeHex(BigInt(estimatiton.preVerificationGas) + 20000n) as Hex,
-        verificationGasLimit: toBeHex(BigInt(estimatiton.verificationGasLimit) + 20000n) as Hex,
-        callGasLimit: toBeHex(estimatiton.callGasLimit) as Hex,
-        paymasterVerificationGasLimit: estimatiton.paymasterVerificationGasLimit
-          ? (toBeHex(estimatiton.paymasterVerificationGasLimit) as Hex)
-          : '0x00',
-        paymasterPostOpGasLimit: estimatiton.paymasterPostOpGasLimit
-          ? (toBeHex(estimatiton.paymasterPostOpGasLimit) as Hex)
-          : '0x00'
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('[Candide] estimate failed:', error)
-
-      // Re-throw for upstream error handling
-      throw error
+    return {
+      // add 20000n overhead as discussed with candide
+      preVerificationGas: toBeHex(BigInt(estimation.preVerificationGas) + 20000n) as Hex,
+      verificationGasLimit: toBeHex(BigInt(estimation.verificationGasLimit) + 20000n) as Hex,
+      callGasLimit: toBeHex(estimation.callGasLimit) as Hex,
+      paymasterVerificationGasLimit: estimation.paymasterVerificationGasLimit
+        ? (toBeHex(estimation.paymasterVerificationGasLimit) as Hex)
+        : '0x00',
+      paymasterPostOpGasLimit: estimation.paymasterPostOpGasLimit
+        ? (toBeHex(estimation.paymasterPostOpGasLimit) as Hex)
+        : '0x00'
     }
   }
 
