@@ -147,8 +147,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     const initialSelectedAccountAddr = await this.#storage.get('selectedAccount', null)
     this.accounts = getUniqueAccountsArray(accounts)
 
-    this.#smartAccountIdentityCreateInterval.start({ runImmediately: true })
-
     // Emit an update before updating account states as the first state update may take some time
     this.emitUpdate()
     // Don't await this. Networks should update one by one
@@ -167,8 +165,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   set accounts(nextAccounts) {
+    const prevAccountsCount = this.#accounts.length
+    const nextAccountsCount = nextAccounts.length
     this.#accounts = nextAccounts
 
+    const noNewAccountsAndNotInitialLoad = nextAccountsCount <= prevAccountsCount
+    if (noNewAccountsAndNotInitialLoad) return
     this.#viewOnlyAccountGetIdentityInterval.restart({ runImmediately: true })
     this.#smartAccountIdentityCreateInterval.restart({ runImmediately: true })
   }
