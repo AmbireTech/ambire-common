@@ -486,6 +486,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       return updated || a
     })
 
+    // Stop the interval immediately if all promises were fulfilled (otherwise,
+    // it would make one more circle and then stop because of the guard upfront)
+    const allPromisesFulfilled = results.every((r) => r.status === 'fulfilled')
+    if (allPromisesFulfilled) this.#viewOnlyAccountGetIdentityInterval.stop()
+
     this.emitUpdate()
     await this.#storage.set('accounts', this.accounts)
   }
