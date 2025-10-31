@@ -24,8 +24,7 @@ import { TokenResult } from '../portfolio'
 import { fetchNonce } from '../userOperation/fetchEntryPointNonce'
 import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
-import { estimateWithRetries } from './estimateWithRetries'
-import { Erc4337GasLimits, EstimationFlags } from './interfaces'
+import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
 
 async function fetchBundlerGasPrice(
   baseAcc: BaseAccount,
@@ -34,28 +33,26 @@ async function fetchBundlerGasPrice(
   errorCallback: Function
 ): Promise<GasSpeeds | Error> {
   const bundler = switcher.getBundler()
-  const fetchGas = bundler.fetchGasPrices(network, errorCallback).catch(() => {
-    return new Error('Could not fetch gas prices, retrying...')
-  })
-
-  // if there aren't any bundlers available, just go with the original
-  // gas price fetch that auto retries on failure as we don't have a choice
-  if (!switcher.canSwitch(baseAcc)) return fetchGas
 
   // fetchGasPrices should complete in ms, so punish slow bundlers
   // by rotating them off
   const prices = await Promise.race([
-    fetchGas,
+    bundler.fetchGasPrices(network, errorCallback).catch(() => {
+      return new Error('Could not fetch gas prices, retrying...')
+    }),
     new Promise((_resolve, reject) => {
-      setTimeout(() => reject(new Error('bundler gas request too slow')), 4000)
+      setTimeout(
+        () => reject(new Error('bundler gas request too slow')),
+        switcher.canSwitch(baseAcc) ? 4000 : 6000
+      )
     })
   ]).catch(() => {
     // eslint-disable-next-line no-console
-    console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed, switching and retrying`)
-    return null
+    console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed`)
+    return Error('Failed to fetch gas prices, retrying...')
   })
 
-  if (!prices || prices instanceof Error) {
+  if (prices instanceof Error && switcher.canSwitch(baseAcc)) {
     switcher.switch()
     return fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
   }
@@ -69,22 +66,26 @@ async function estimate(
   userOp: UserOperation,
   switcher: BundlerSwitcher,
   errorCallback: Function,
-  pendingUserOp?: SubmittedAccountOp
+  options?: {
+    pendingUserOp?: SubmittedAccountOp
+    gasPrices?: GasSpeeds | null
+  }
 ): Promise<{
   gasPrice: GasSpeeds | Error
-  estimation: any
+  estimation: BundlerEstimateResult | Error
   nonFatalErrors: Error[]
 }> {
-  const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
+  const gasPrice = options?.gasPrices
+    ? options.gasPrices
+    : await fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
   const bundler = switcher.getBundler()
 
   // if the gasPrice fetch fails, we will switch the bundler and try again
   if (gasPrice instanceof Error) {
-    const decodedError = bundler.decodeBundlerError(new Error('internal error'))
     return {
       gasPrice,
       // if gas prices couldn't be fetched, it means there's an internal error
-      estimation: getHumanReadableEstimationError(decodedError),
+      estimation: Error('Failed to fetch gas prices, retrying...', { cause: '4337_ESTIMATION' }),
       nonFatalErrors: []
     }
   }
@@ -93,10 +94,11 @@ async function estimate(
   // and it has the same userOp nonce as this txn,
   // resolve the bundler estimation with a failure
   if (
-    pendingUserOp &&
-    pendingUserOp.asUserOperation &&
-    pendingUserOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
-    BigInt(pendingUserOp.asUserOperation.nonce) === BigInt(userOp.nonce)
+    options &&
+    options.pendingUserOp &&
+    options.pendingUserOp.asUserOperation &&
+    options.pendingUserOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
+    BigInt(options.pendingUserOp.asUserOperation.nonce) === BigInt(userOp.nonce)
   ) {
     const error = new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
     return {
@@ -122,8 +124,9 @@ async function estimate(
     let decodedError: Error | DecodedError = e
     try {
       decodedError = bundler.decodeBundlerError(e)
-    } catch (err) {
-      // failed to decode the error, move on with the original one
+    } catch (error) {
+      // silence, we just can't decode the error because it's too custom
+      // so it's better to continue forward with the original one
     }
 
     // if the bundler estimation fails, add a nonFatalError so we can react to
@@ -134,25 +137,32 @@ async function estimate(
       nonFatalErrors.push(new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' }))
     }
 
-    return getHumanReadableEstimationError(decodedError)
+    const humanReadable = getHumanReadableEstimationError(decodedError)
+    humanReadable.cause = '4337_ESTIMATION'
+    return humanReadable
   }
 
   const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
-  const initializeRequests = () => [
-    bundler.estimate(localUserOp, network, stateOverride).catch(estimateErrorCallback)
-  ]
+  const estimationReq = bundler
+    .estimate(localUserOp, network, stateOverride)
+    .catch(estimateErrorCallback)
+  const estimation = await Promise.race([
+    estimationReq,
+    new Promise((_resolve, reject) => {
+      setTimeout(
+        () => reject(new Error('bundler estimation request too slow')),
+        switcher.canSwitch(baseAcc) ? 6000 : 8000
+      )
+    })
+  ]).catch(() => {
+    // eslint-disable-next-line no-console
+    console.error(`estimation for ${bundler.getName()} failed, switching and retrying`)
+    return new Error('Failed to fetch the bundler estimation', { cause: '4337_ESTIMATION' })
+  })
 
-  const estimation = await estimateWithRetries(
-    initializeRequests,
-    'estimation-bundler',
-    errorCallback
-  )
-  const foundError = Array.isArray(estimation)
-    ? estimation.find((res) => res instanceof Error)
-    : null
   return {
     gasPrice,
-    estimation: foundError ?? estimation,
+    estimation: estimation as BundlerEstimateResult | Error,
     nonFatalErrors
   }
 }
@@ -207,21 +217,24 @@ export async function bundlerEstimate(
   }
 
   const flags: EstimationFlags = {}
-  flags.invalid4337NonceCounter = 0
+  let gasPrices: GasSpeeds | null = null
+  flags.timesSeen4337NonceDiscrepancy = 0
   while (true) {
     // estimate
-    const estimations = await estimate(
-      baseAcc,
-      network,
-      userOp,
-      switcher,
-      errorCallback,
-      pendingUserOp
-    )
+    const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback, {
+      // if we've tried to fetch the nonce 3 times and it's still the same nonce as
+      // the pendingUserOp nonce, then there might be bundler broadcast problems.
+      // In that case, we remove the pendingUserOp logic and leave it to the bundler
+      pendingUserOp:
+        flags.timesSeen4337NonceDiscrepancy && flags.timesSeen4337NonceDiscrepancy >= 3
+          ? undefined
+          : pendingUserOp,
+      gasPrices
+    })
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
-      const gasData = estimations.estimation[0]
+      const gasData = estimations.estimation
       return {
         preVerificationGas: gasData.preVerificationGas,
         verificationGasLimit: gasData.verificationGasLimit,
@@ -241,11 +254,16 @@ export async function bundlerEstimate(
       estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
     ) {
       flags.has4337NonceDiscrepancy = true
-      flags.invalid4337NonceCounter += 1
+      flags.timesSeen4337NonceDiscrepancy += 1
 
       // prevent infinite loops in the event of a terrible rpc malfunction
-      if (flags.invalid4337NonceCounter >= 3) {
+      if (flags.timesSeen4337NonceDiscrepancy > 3) {
         return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
+      }
+
+      // cache the gas prices on 4337_INVALID_NONCE error as we're not changing the bundler
+      if (!(estimations.gasPrice instanceof Error)) {
+        gasPrices = estimations.gasPrice
       }
 
       // wait a bit to allow the state to sync
@@ -266,6 +284,9 @@ export async function bundlerEstimate(
 
     // if there's an error but we can't switch, return the error
     if (!switcher.canSwitch(baseAcc)) return estimations.estimation
+
+    // if there were cached gas prices, delete them
+    gasPrices = null
 
     // try again
     switcher.switch()
