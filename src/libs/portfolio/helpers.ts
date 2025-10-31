@@ -4,6 +4,7 @@ import { getAddress } from 'viem'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -15,11 +16,15 @@ import {
   FormattedExternalHintsAPIResponse,
   GetOptions,
   Hints,
+  KnownTokenInfo,
   NetworkState,
   PortfolioGasTankResult,
+  SuspectedType,
   ToBeLearnedAssets,
   TokenResult
 } from './interfaces'
+
+const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
 const usdcEMapping: { [key: string]: string } = {
   '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
@@ -41,11 +46,99 @@ export function overrideSymbol(address: string, chainId: bigint, symbol: string)
   return symbol
 }
 
+const removeNonLatinChars = (str: string): string =>
+  str
+    // normalize to NFC form to unify visually-similar composed characters
+    .normalize('NFC')
+    .split('')
+    // keep only ASCII range (printable chars)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0)
+      return code >= 32 && code <= 126
+    })
+    .join('')
+
+// returns true if the original string contained any non-ASCII / invisible chars
+const nonLatinSymbol = (str: string): boolean => {
+  if (!str) return false
+  const cleaned = removeNonLatinChars(str)
+  return cleaned !== str
+}
+
+// safe address normalizer
+const normalizeAddress = (addr: string) => {
+  try {
+    return getAddress(addr)
+  } catch {
+    return addr
+  }
+}
+
+export const isSuspectedRegardsKnownAddresses = (
+  tokenAddr: string,
+  tokenSymbol: string,
+  chainId: bigint
+): boolean => {
+  if (!knownAddresses || !tokenAddr || !tokenSymbol) return false
+
+  const normalizedAddr = normalizeAddress(tokenAddr)
+  const normalizedSymbol = removeNonLatinChars(tokenSymbol).toUpperCase()
+  const numericChainId = Number(chainId)
+
+  const knownTokens = Object.values(knownAddresses)
+
+  // Only consider known tokens that have chainIds defined (skip those without chainIds)
+  return knownTokens.some((known: any) => {
+    const knownSymbolRaw = known?.token?.symbol
+    const knownChains = known?.chainIds
+    if (!knownSymbolRaw || !knownChains) return false // skip unknowns or entries without chainIds
+
+    const knownSymbol = removeNonLatinChars(knownSymbolRaw).toUpperCase()
+    if (knownSymbol !== normalizedSymbol) return false
+
+    if (!knownChains.includes(numericChainId)) return false
+
+    // same symbol + same chain but different address -> suspected spoof
+    return normalizeAddress(known.address) !== normalizedAddr
+  })
+}
+
+export const isSuspectedToken = (
+  address: string,
+  symbol: string,
+  name: string,
+  chainId: bigint
+): SuspectedType => {
+  const normalizedAddr = normalizeAddress(address)
+  const numericChainId = Number(chainId)
+
+  // 1) lookup known token by address
+  const knownToken = knownAddresses?.[normalizedAddr]
+
+  // 2) Only auto-accept if known token exists AND chainIds is defined AND includes chainId
+  if (knownToken?.chainIds?.includes(numericChainId)) {
+    return null // trusted
+  }
+
+  // 3) Unknown address (or known but no chainIds) => run symbol/name checks
+  if (nonLatinSymbol(symbol)) return 'no-latin-symbol'
+  if (nonLatinSymbol(name)) return 'no-latin-name'
+
+  // 4) Same-symbol spoofing on same chain (different address)
+  if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
+
+  // 5) Not flagged
+  return null
+}
+
 export function getFlags(
   networkData: any,
   chainId: string,
   tokenChainId: bigint,
-  address: string
+  address: string,
+  name: string,
+  symbol: string,
+  hasSimulationAmount?: boolean
 ): TokenResult['flags'] {
   const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(chainId)
   const onGasTank = chainId === 'gasTank'
@@ -69,12 +162,19 @@ export function getFlags(
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
+  let suspectedType: SuspectedType = null
+
+  if (hasSimulationAmount && !isRewardsOrGasTank) {
+    suspectedType = isSuspectedToken(address, symbol, name, BigInt(chainId))
+  }
+
   return {
     onGasTank,
     rewardsType,
     canTopUpGasTank,
     isFeeToken,
-    isHidden: false
+    isHidden: false,
+    suspectedType
   }
 }
 
@@ -105,7 +205,8 @@ export const mapToken = (
   token: Pick<TokenResult, 'amount' | 'decimals' | 'name' | 'symbol'>,
   network: Network,
   address: string,
-  opts: Pick<GetOptions, 'specialErc20Hints'>
+  opts: Pick<GetOptions, 'specialErc20Hints'>,
+  hasSimulationAmount?: boolean
 ) => {
   const { specialErc20Hints } = opts
 
@@ -129,7 +230,10 @@ export const mapToken = (
     {},
     network.chainId.toString(),
     network.chainId,
-    address
+    address,
+    tokenName,
+    symbol,
+    hasSimulationAmount
   )
 
   if (specialErc20Hints) {

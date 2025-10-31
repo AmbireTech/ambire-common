@@ -309,6 +309,9 @@ export async function getTokens(
         ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
         : null
 
+      const simulationAmount = simulation ? simulation.amount - token.amount : undefined
+      const amountPostSimulation = simulation ? simulation.amount : token.amount
+
       // Here's the math before `simulationAmount` and `amountPostSimulation`.
       // AccountA initial balance: 10 USDC.
       // AccountA attempts to transfer 5 USDC (not signed yet).
@@ -323,9 +326,9 @@ export async function getTokens(
       return [
         token.error,
         {
-          ...mapToken(token, network, tokenAddrs[i], opts),
-          simulationAmount: simulation ? simulation.amount - token.amount : undefined,
-          amountPostSimulation: simulation ? simulation.amount : token.amount
+          ...mapToken(token, network, tokenAddrs[i], opts, !!simulationAmount),
+          simulationAmount,
+          amountPostSimulation
         }
       ]
     }),
