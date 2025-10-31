@@ -24,13 +24,13 @@ export function calculateRewardsForSeason(
   REWARDS_FOR_SEASON: number,
   minLvl: number,
   minBalance: number
-): { walletRewards: number; apy: number } {
+): number {
   // required minimum level
-  if (level < minLvl) return { apy: 0, walletRewards: 0 }
+  if (level < minLvl) return 0
   // the current balance acts as an additional week snapshot
   // thats why we add it to the list and divide by (passedWeeks + 1)
   const snapshotsAndCur = [...balanceSnapshots, currentBalance]
-  if (!snapshotsAndCur.some((x) => x >= minBalance)) return { apy: 0, walletRewards: 0 }
+  if (!snapshotsAndCur.some((x) => x >= minBalance)) return 0
 
   const sumOfBalances = snapshotsAndCur.reduce((a, b) => a + b, 0)
   const averageBalance = sumOfBalances / (passedWeeks + 1)
@@ -42,14 +42,5 @@ export function calculateRewardsForSeason(
   const fraction = weight / (weight + totalWeightNoUser)
   const walletRewards = fraction * REWARDS_FOR_SEASON
 
-  // @TODO hardcoded for now, should be passed from the relayer later
-  const lengthOfSeasonInYears = 0.5
-  // we want to calc the rewards in USD, simply to get the 'APY'
-  const yearlyWalletRewards = walletRewards / lengthOfSeasonInYears
-  const yearlyRewardsInUsd = yearlyWalletRewards * walletPrice
-
-  const ratioYearlyRewardsToBalance = yearlyRewardsInUsd / currentBalance
-  const apy = ratioYearlyRewardsToBalance * 100
-
-  return { apy, walletRewards }
+  return walletRewards
 }

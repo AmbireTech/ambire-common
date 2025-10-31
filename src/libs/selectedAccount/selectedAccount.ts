@@ -22,7 +22,6 @@ import {
   NetworkSimulatedAccountOp,
   NetworkState,
   PortfolioProjectedRewardsResult,
-  ProjectedRewardsTokenResult,
   TokenResult
 } from '../portfolio/interfaces'
 
@@ -731,7 +730,7 @@ export const calculateAndSetProjectedRewards = (
   projectedRewards: NetworkState | undefined,
   latestBalances: { [chainId: string]: number },
   walletOrStkWalletTokenPrice: number | undefined
-): ProjectedRewardsTokenResult | undefined => {
+): TokenResult | undefined => {
   if (!projectedRewards) return
 
   const result = projectedRewards?.result as PortfolioProjectedRewardsResult
@@ -785,7 +784,7 @@ export const calculateAndSetProjectedRewards = (
     (b) => b < minBalance
   )
   const projectedAmountFormatted =
-    userLevel < minLvl || hasLowBalance ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+    userLevel < minLvl || hasLowBalance ? 0 : Math.round(projectedAmount * 1e18)
 
   return {
     chainId: BigInt(1),
@@ -794,7 +793,6 @@ export const calculateAndSetProjectedRewards = (
     symbol: 'stkWALLET',
     name: 'Staked $WALLET',
     decimals: 18,
-    apy: projectedAmount.apy,
     priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
     flags: {
       onGasTank: false,
