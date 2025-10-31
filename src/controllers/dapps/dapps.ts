@@ -6,6 +6,7 @@ import {
 import { getSessionId, Session, SessionInitProps, SessionProp } from '../../classes/session'
 import {
   categoriesNotToFilterOut,
+  categoriesToExclude,
   dappIdsToBeRemoved,
   dappsNotToFilterOutByDomain,
   defiLlamaProtocolIdsToExclude,
@@ -150,7 +151,11 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   get categories(): string[] {
-    return [...new Set(this.dapps.map((d) => d.category!).filter((c) => !!c && c !== 'CEX'))].sort()
+    return [
+      ...new Set(
+        this.dapps.map((d) => d.category!).filter((c) => !!c && !categoriesToExclude.includes(c))
+      )
+    ].sort()
   }
 
   async #load() {
@@ -225,8 +230,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const prevDapps = new Map(this.#dapps)
 
     for (const dapp of fetchedDappsList) {
-      if (['CEX', 'Developer Tools'].includes(dapp.category)) continue
-
+      if (categoriesToExclude.includes(dapp.category)) continue
       if (defiLlamaProtocolIdsToExclude.includes(dapp.id)) continue
 
       const id = getDappIdFromUrl(dapp.url)
@@ -508,8 +512,9 @@ export class DappsController extends EventEmitter implements IDappsController {
     const dappPropsToUpdate = { ...dapp }
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
 
-    if (!existing.isCustom) dappPropsToUpdate.name = existing.name
-    if (existingByDomain && existing.isCustom) {
+    if (!existing.isCustom) {
+      dappPropsToUpdate.name = existing.name
+    } else if (existingByDomain && existing.isCustom) {
       dappPropsToUpdate.name = existingByDomain.name
       dappPropsToUpdate.description = existingByDomain.description
       dappPropsToUpdate.icon = existingByDomain.icon

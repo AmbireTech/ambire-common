@@ -189,4 +189,5 @@ export const defiLlamaProtocolIdsToExclude: string[] = [
 ]
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
+export const categoriesToExclude = ['CEX', 'Developer Tools']
 export const dappsNotToFilterOutByDomain = ['snapshot.box']
