@@ -524,9 +524,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,
-          // TODO: retrieve baseIdentityAddr from the bytecode instead
+          // No need to retrieve the base identity address from the bytecode
+          // because all Ambire smart accounts v2 has the same
           baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-          // baseIdentityAddr: await this.#providers.providers['1'].getCode(account.addr)
         }
       }))
 
