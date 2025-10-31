@@ -174,8 +174,12 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
     try {
       await this.#fetchAndUpdateDapps()
-    } catch (err) {
-      console.error('Dapps fetch failed:', err)
+    } catch (err: any) {
+      this.emitError({
+        message: 'Failed to fetch the app catalog.',
+        error: err,
+        level: 'silent'
+      })
     } finally {
       this.isFetchingAndUpdatingDapps = false
       this.emitUpdate()
