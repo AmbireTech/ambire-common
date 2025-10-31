@@ -240,6 +240,53 @@ export class AccountsController extends EventEmitter implements IAccountsControl
           networkAccountStates.forEach((accountState) => {
             const addr = accountState.accountAddr
             if (!this.accountStates[addr]) this.accountStates[addr] = {}
+
+            // if the block tag is pending & we have a fetched latest state,
+            // we check each nonce against the latest state.
+            // if the pending nonce is lower than the latest state, we override the res
+            // also, we check isDeployed, isSmarterEoa & isEOA
+            // we do this because rogue RPCs sometimes mess up the pending state
+            if (blockTag === 'pending') {
+              const current = this.accountStates[addr][network.chainId.toString()]
+              if (current) {
+                const account = accounts.find((acc) => acc.addr === addr)
+                if (account) {
+                  if (accountState.erc4337Nonce < current.erc4337Nonce) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.erc4337Nonce = current.erc4337Nonce
+                  }
+                  if (accountState.nonce < current.nonce) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.nonce = current.nonce
+                  }
+                  if (
+                    accountState.eoaNonce !== null &&
+                    current.eoaNonce !== null &&
+                    accountState.eoaNonce < current.eoaNonce
+                  ) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.eoaNonce = current.eoaNonce
+                  }
+                  if (!accountState.isDeployed && current.isDeployed) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.isDeployed = current.isDeployed
+                  }
+                  if (!accountState.isErc4337Enabled && current.isErc4337Enabled) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.isErc4337Enabled = current.isErc4337Enabled
+                  }
+                  if (!accountState.isSmarterEoa && current.isSmarterEoa) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.isSmarterEoa = current.isSmarterEoa
+                  }
+                  if (!accountState.isEOA && current.isEOA) {
+                    // eslint-disable-next-line no-param-reassign
+                    accountState.isEOA = current.isEOA
+                  }
+                }
+              }
+            }
+
             this.accountStates[addr][network.chainId.toString()] = accountState
           })
         } catch (err: any) {

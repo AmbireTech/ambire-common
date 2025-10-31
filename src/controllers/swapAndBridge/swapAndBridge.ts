@@ -60,6 +60,7 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import {
   convertTokenPriceToBigInt,
@@ -74,7 +75,6 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
-import { NULL_ADDRESS } from '../../services/socket/constants'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -1589,6 +1589,25 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         })
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .filter((route) => {
+            const hasNoRouteId = !route.routeId
+
+            if (hasNoRouteId) {
+              this.emitError({
+                level: 'silent',
+                error: new SwapAndBridgeError(
+                  `Received route with no routeId from ${this.#serviceProviderAPI.name}. From: ${
+                    this.fromSelectedToken?.address
+                  } (${this.fromSelectedToken?.chainId}) To: ${this.toSelectedToken?.address} (${
+                    this.toSelectedToken?.chainId
+                  })`
+                ),
+                message: 'Received route with no routeId'
+              })
+            }
+
+            return !hasNoRouteId
+          })
           .sort((r1, r2) => {
             const a = BigInt(r1.toAmount)
             const b = BigInt(r2.toAmount)
@@ -2143,7 +2162,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !!getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken?.decimals) &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
-      (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)
+      // Allow the quote fetch if the error is insufficient amount, as the user might want
+      // to see the routes even if he has insufficient balance
+      (this.validateFromAmount.success ||
+        this.validateFromAmount.errorType === 'insufficient_amount')
     )
   }
 
