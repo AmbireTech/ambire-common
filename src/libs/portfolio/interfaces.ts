@@ -39,6 +39,10 @@ export type GasTankTokenResult = TokenResult & {
   saved: bigint
 }
 
+export type ProjectedRewardsTokenResult = TokenResult & {
+  userXp: number
+}
+
 export interface CollectionResult extends TokenResult {
   name: string
   collectibles: bigint[]
@@ -232,6 +236,7 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
   apy: number
   minLvl: number
   minBalance: number
+  userXp: number
 }
 
 export type NetworkState = {
