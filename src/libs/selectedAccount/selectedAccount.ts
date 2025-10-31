@@ -1,6 +1,6 @@
 import { getAddress } from 'ethers'
 
-import { STK_WALLET } from '../../consts/addresses'
+import { WALLET_TOKEN } from '../../consts/addresses'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks,
@@ -791,9 +791,9 @@ export const calculateAndSetProjectedRewards = (
   return {
     chainId: BigInt(1),
     amount: BigInt(projectedAmountFormatted || 0),
-    address: STK_WALLET,
-    symbol: 'stkWALLET',
-    name: 'Staked $WALLET',
+    address: WALLET_TOKEN,
+    symbol: 'WALLET',
+    name: '$WALLET',
     decimals: 18,
     priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
     userXp,
