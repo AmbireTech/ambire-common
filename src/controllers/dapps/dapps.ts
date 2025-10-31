@@ -19,7 +19,7 @@ import { INetworksController } from '../../interfaces/network'
 /* eslint-disable no-restricted-syntax */
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController } from '../../interfaces/ui'
+import { IUiController, View } from '../../interfaces/ui'
 import {
   formatDappName,
   getDappIdFromUrl,
@@ -95,20 +95,17 @@ export class DappsController extends EventEmitter implements IDappsController {
       5 * 60 * 1000 // 5min.
     )
 
-    this.#ui.onUpdate(() => {
+    this.#ui.uiEvent.on('addView', () => {
+      if (this.#retryFetchAndUpdateInterval.running) this.#retryFetchAndUpdateInterval.stop()
+    })
+
+    this.#ui.uiEvent.on('removeView', (removedView: View) => {
       if (
-        !this.#ui.views.some((v) => v.type === 'popup') &&
+        removedView.type === 'popup' &&
         this.#shouldRetryFetchAndUpdate &&
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
         this.#retryFetchAndUpdateInterval.start()
-      }
-
-      if (
-        this.#ui.views.some((v) => v.type === 'popup') &&
-        this.#retryFetchAndUpdateInterval.running
-      ) {
-        this.#retryFetchAndUpdateInterval.stop()
       }
     })
 
