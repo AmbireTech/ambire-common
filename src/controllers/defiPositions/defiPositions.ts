@@ -518,8 +518,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     // Set all networks to loading
     networksToUpdate.forEach((n) => {
-      const state = this.#state[selectedAccountAddr][n.chainId.toString()]
-      Object.assign(state, { isLoading: true, providerErrors: [], error: undefined })
+      this.#state[selectedAccountAddr][n.chainId.toString()].isLoading = true
     })
 
     this.emitUpdate()
