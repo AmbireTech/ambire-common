@@ -184,7 +184,9 @@ export const predefinedDapps = [
   }
 ]
 
-export const defiLlamaProtocolIdsToExclude: string[] = []
+export const defiLlamaProtocolIdsToExclude: string[] = [
+  '1624' // https://www.ambire.com
+]
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const dappsNotToFilterOutByDomain = ['snapshot.box']
