@@ -1,5 +1,5 @@
 import { Hex } from '../interfaces/hex'
-import { EIP_7702_AMBIRE_ACCOUNT } from './deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_GRID_PLUS, EIP_7702_KATANA } from './deploy'
 
 export interface Custom7702Settings {
   [chainId: string]: {
@@ -16,15 +16,17 @@ export const networks7702: Custom7702Settings = {
   '11155111': {
     implementation: EIP_7702_AMBIRE_ACCOUNT
   },
-  // gnosis
-  '100': {
-    implementation: EIP_7702_AMBIRE_ACCOUNT
-  },
   // katana, they don't have the singleton
   '747474': {
-    implementation: '0x8226995E02C70293595E0634C5F89547EDb08126'
+    implementation: EIP_7702_KATANA
   }
 }
+
+export const eip7702AmbireContracts = [
+  EIP_7702_AMBIRE_ACCOUNT,
+  EIP_7702_KATANA,
+  EIP_7702_GRID_PLUS
+]
 
 export interface EIP7702Auth {
   address: Hex

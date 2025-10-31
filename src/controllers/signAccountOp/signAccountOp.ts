@@ -21,7 +21,7 @@ import ExternalSignerError from '../../classes/ExternalSignerError'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_GRID_PLUS, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 /* eslint-disable no-restricted-syntax */
 import {
@@ -842,6 +842,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.delegatedContract &&
       this.delegatedContract !== ZeroAddress &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
       (broadcastOption === BROADCAST_OPTIONS.byBundler ||
         broadcastOption === BROADCAST_OPTIONS.delegation)
@@ -2015,7 +2016,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         const contract =
           this.accountOp.meta?.setDelegation || this.accountOp.calls.length > 1
-            ? getContractImplementation(this.#network.chainId)
+            ? getContractImplementation(
+                this.#network.chainId,
+                this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
+              )
             : (ZeroAddress as Hex)
         if (this.accountOp.meta)
           this.accountOp.meta.delegation = get7702Sig(
@@ -2058,7 +2062,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // TODO: Double-check with Bobby or Petyo
           if (isExternalSignerInvolved) this.update({ signedTransactionsCount: 0 })
 
-          const contract = getContractImplementation(this.#network.chainId)
+          const contract = getContractImplementation(
+            this.#network.chainId,
+            this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
+          )
           eip7702Auth = get7702Sig(
             this.#network.chainId,
             accountState.nonce,
@@ -2134,7 +2141,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (!this.#isSignRequestStillActive()) return
 
         const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
-        if (userOperation.requestType === 'standard') {
+        const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
+        if (!isHotEOA) {
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,
@@ -2143,7 +2151,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else if (userOperation.requestType === '7702') {
+        } else {
           const typedData = get7702UserOpTypedData(
             this.#network.chainId,
             getSignableCalls(this.accountOp),
@@ -2153,8 +2161,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else {
-          this.#updateAccountOp({ asUserOperation: userOperation })
         }
       } else {
         // Relayer

@@ -20,12 +20,7 @@ import { Network } from '../../interfaces/network'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 //  TODO: dependency cycle
 // eslint-disable-next-line import/no-cycle
-import {
-  PackedUserOperation,
-  UserOperation,
-  UserOperationEventData,
-  UserOpRequestType
-} from './types'
+import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -68,7 +63,7 @@ export function getActivatorCall(addr: AccountId) {
  * @returns EntryPoint userOp
  */
 export function getCleanUserOp(userOp: UserOperation) {
-  return [(({ requestType, activatorCall, bundler, ...o }) => o)(userOp)]
+  return [(({ activatorCall, bundler, ...o }) => o)(userOp)]
 }
 
 /**
@@ -117,10 +112,6 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
-export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
-  return accountState.isEOA ? '7702' : 'standard'
-}
-
 export function getUserOperation(
   account: Account,
   accountState: AccountOnchainState,
@@ -139,7 +130,6 @@ export function getUserOperation(
     maxFeePerGas: toBeHex(0),
     maxPriorityFeePerGas: toBeHex(0),
     signature: '0x',
-    requestType: getRequestType(accountState),
     bundler
   }
 
@@ -156,10 +146,6 @@ export function getUserOperation(
       entryPointSig
     ])
   }
-
-  // if the request type is activator, add the activator call
-  if (userOp.requestType === 'activator')
-    userOp.activatorCall = getActivatorCall(accountOp.accountAddr)
 
   userOp.eip7702Auth = eip7702Auth
   return userOp
