@@ -100,4 +100,8 @@ export class BundlerSwitcher {
     this.usedBundlers.push(this.bundler.getName())
     return this.bundler
   }
+
+  cleanUp() {
+    this.usedBundlers = [this.bundler.getName()]
+  }
 }

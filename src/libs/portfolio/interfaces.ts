@@ -11,6 +11,7 @@ export interface GetOptionsSimulation {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
+export type SuspectedType = 'no-latin-symbol' | 'no-latin-name' | 'suspected' | null
 
 export type TokenResult = {
   symbol: string
@@ -24,12 +25,13 @@ export type TokenResult = {
   priceIn: Price[]
   flags: {
     onGasTank: boolean
-    rewardsType: 'wallet-vesting' | 'wallet-rewards' | null
+    rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
     defiTokenType?: AssetType
     canTopUpGasTank: boolean
     isFeeToken: boolean
     isHidden?: boolean
     isCustom?: boolean
+    suspectedType?: SuspectedType
   }
 }
 
@@ -37,6 +39,10 @@ export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
   cashback: bigint
   saved: bigint
+}
+
+export type ProjectedRewardsTokenResult = TokenResult & {
+  apy: number
 }
 
 export interface CollectionResult extends TokenResult {
@@ -220,12 +226,30 @@ export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
   gasTankTokens: GasTankTokenResult[]
 }
 
+export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
+  currentSeasonSnapshots: { week: number; balance: number }[]
+  currentWeek: number
+  supportedChainIds: number[]
+  numberOfWeeksSinceStartOfSeason: number
+  totalRewardsPool: number
+  totalWeightNonUser: number
+  userLevel: number
+  walletPrice: number
+  apy: number
+  minLvl: number
+  minBalance: number
+}
+
 export type NetworkState = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  result?: PortfolioNetworkResult | AdditionalPortfolioNetworkResult | PortfolioGasTankResult
+  result?:
+    | PortfolioNetworkResult
+    | AdditionalPortfolioNetworkResult
+    | PortfolioGasTankResult
+    | PortfolioProjectedRewardsResult
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
@@ -389,4 +413,12 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingBalanceUSDFormatted?: string
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
+}
+
+export type KnownTokenInfo = {
+  name?: string
+  address?: string
+  token?: { symbol?: string; decimals?: number }
+  isSC?: boolean
+  chainIds?: number[]
 }

@@ -341,7 +341,7 @@ export class SocketAPI implements SwapProvider {
                 : undefined,
             swapSlippage: route.slippage,
             toAmount: route.output.amount,
-            toAsset: route.output.token,
+            toAsset: normalizeIncomingSocketToken(route.output.token),
             type: 'swap',
             userTxIndex: 0
           }

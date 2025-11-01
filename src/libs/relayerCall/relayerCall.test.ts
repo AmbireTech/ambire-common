@@ -39,7 +39,7 @@ describe('Relayer', () => {
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'Broadcast failed: INVALID_SIGNATURE. Please try again or contact support'
+        'Signature validation was not successful. Please try again or contact support'
       )
     }
   })
