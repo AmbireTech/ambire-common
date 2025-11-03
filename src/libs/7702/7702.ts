@@ -1,4 +1,3 @@
-import { networks7702 } from '../../consts/7702'
 import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_GRID_PLUS, EIP_7702_METAMASK } from '../../consts/deploy'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
@@ -7,8 +6,6 @@ export function getContractImplementation(
   chainId: bigint,
   accountKeys: { type: 'internal' | 'lattice' | 'trezor' | 'ledger' }[]
 ): Hex {
-  if (networks7702[chainId.toString()]) return networks7702[chainId.toString()].implementation
-
   if (accountKeys.find((key) => key.type === 'lattice')) {
     return EIP_7702_GRID_PLUS
   }
@@ -17,7 +14,7 @@ export function getContractImplementation(
 }
 
 export function has7702(net: Network) {
-  return net.has7702 || !!networks7702[net.chainId.toString()]
+  return net.has7702
 }
 
 export function getDelegatorName(contract: Hex) {
