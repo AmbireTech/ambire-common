@@ -544,7 +544,8 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-      if (!this.activity.broadcastedButNotConfirmed.length) {
+
+      if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
@@ -621,6 +622,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.resetForm()
+    await this.activity.forceEmitUpdate()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
@@ -1228,8 +1230,14 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.initialLoadPromise
 
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses()
+
+    if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
+
+    const updatedAccountsOpsForSelectedAccount =
+      updatedAccountsOpsByAccount[this.selectedAccount.account.addr]
     const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
-      await this.activity.updateAccountsOpsStatuses()
+      updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
       this.emitUpdate()

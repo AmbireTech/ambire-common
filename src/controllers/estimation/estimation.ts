@@ -179,11 +179,8 @@ export class EstimationController extends EventEmitter {
         this.estimationRetryError = e
         this.emitUpdate()
       },
-      this.#activity.broadcastedButNotConfirmed.find(
-        (accOp) =>
-          accOp.accountAddr === account.addr &&
-          accOp.chainId === network.chainId &&
-          !!accOp.asUserOperation
+      (this.#activity.broadcastedButNotConfirmed[account.addr] || []).find(
+        (accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation
       )
     ).catch((e) => e)
 

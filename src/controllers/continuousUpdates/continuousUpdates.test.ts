@@ -219,7 +219,9 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates.accountsOpsStatusesInterval.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 2
     )
-    jest.spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get').mockReturnValue([])
+    jest
+      .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+      .mockReturnValue(Object.fromEntries(mainCtrl.accounts.accounts.map((a) => [a.addr, []])))
     // @ts-ignore
     mainCtrl.activity.emitUpdate()
     await jest.advanceTimersByTimeAsync(0)

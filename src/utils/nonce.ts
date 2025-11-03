@@ -1,4 +1,5 @@
 import { Interface } from 'ethers'
+
 import AmbireAccount from '../../contracts/compiled/AmbireAccount.json'
 import { IActivityController } from '../interfaces/activity'
 import { RPCProvider } from '../interfaces/provider'
@@ -11,8 +12,9 @@ export async function getRelayerNonce(
   provider: RPCProvider
 ): Promise<bigint> {
   // find the pending activity with the biggest nonce
-  const pendingActivityOps = activity.broadcastedButNotConfirmed.filter(
-    (accOp) => accOp.accountAddr === op.accountAddr && accOp.chainId === op.chainId
+  const accountBroadcastedButNotConfirmed = activity.broadcastedButNotConfirmed[op.accountAddr]
+  const pendingActivityOps = accountBroadcastedButNotConfirmed.filter(
+    (accOp) => accOp.chainId === op.chainId
   )
   const pendingActivityOp = pendingActivityOps.length
     ? pendingActivityOps.reduce((prev, current) => (current.nonce > prev.nonce ? current : prev))

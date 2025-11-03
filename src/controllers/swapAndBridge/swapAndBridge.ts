@@ -1757,12 +1757,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
-      const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
-        op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
-      )
+
+      const selectedAccountBroadcastedButNotConfirmed = (
+        this.#selectedAccount.account
+          ? this.#activity.broadcastedButNotConfirmed[this.#selectedAccount.account.addr]
+          : []
+      ).find((op) => op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId))
 
       // call getRouteStatus only after the transaction has processed
-      if (broadcastedButNotConfirmed) return
+      if (selectedAccountBroadcastedButNotConfirmed) return
       if (activeRoute.routeStatus === 'completed') return
 
       try {

@@ -406,35 +406,34 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
-  async updateAccountsOpsStatuses(): Promise<{
-    shouldEmitUpdate: boolean
-    // Which networks require a portfolio update?
-    chainsToUpdate: Network['chainId'][]
-    updatedAccountsOps: SubmittedAccountOp[]
-    newestOpTimestamp: number
-  }> {
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return {
-        shouldEmitUpdate: false,
-        chainsToUpdate: [],
-        updatedAccountsOps: [],
-        newestOpTimestamp: 0
+  async updateAccountsOpsStatuses(): Promise<
+    Record<
+      string,
+      {
+        shouldEmitUpdate: boolean
+        chainsToUpdate: Network['chainId'][]
+        updatedAccountsOps: SubmittedAccountOp[]
+        newestOpTimestamp: number
       }
+    >
+  > {
+    const results = await Promise.all(
+      this.#accounts.accounts.map(async ({ addr }) => {
+        if (this.#updateAccountsOpsStatusesPromises[addr])
+          return [addr, await this.#updateAccountsOpsStatusesPromises[addr]] as const
 
-    if (this.#updateAccountsOpsStatusesPromises[this.#selectedAccount.account.addr]) {
-      const res = await this.#updateAccountsOpsStatusesPromises[this.#selectedAccount.account.addr]!
-      return res
-    }
+        this.#updateAccountsOpsStatusesPromises[addr] = this.#updateAccountsOpsStatuses(
+          addr
+        ).finally(() => {
+          this.#updateAccountsOpsStatusesPromises[addr] = undefined
+        })
 
-    const updateForAccount = this.#selectedAccount.account.addr
-    this.#updateAccountsOpsStatusesPromises[updateForAccount] = this.#updateAccountsOpsStatuses(
-      updateForAccount
-    ).finally(() => {
-      this.#updateAccountsOpsStatusesPromises[updateForAccount] = undefined
-    })
+        const res = await this.#updateAccountsOpsStatusesPromises[addr]
+        return [addr, res] as const
+      })
+    )
 
-    const res = await this.#updateAccountsOpsStatusesPromises[updateForAccount]
-    return res
+    return Object.fromEntries(results)
   }
 
   /**
@@ -456,7 +455,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }> {
     await this.#initialLoadPromise
 
-    if (!this.#selectedAccount.account || !this.#accountsOps[accountAddr])
+    if (!this.#accountsOps[accountAddr])
       return {
         shouldEmitUpdate: false,
         chainsToUpdate: [],
@@ -481,12 +480,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         if (!network) return
         const provider = this.#providers.providers[network.chainId.toString()]
 
-        const selectedAccount = this.#selectedAccount.account?.addr
-
-        if (!selectedAccount) return
-
         return Promise.all(
-          this.#accountsOps[selectedAccount][network.chainId.toString()].map(
+          this.#accountsOps[accountAddr][network.chainId.toString()].map(
             async (accountOp, accountOpIndex) => {
               // Don't update the current network account ops statuses,
               // as the statuses are already updated in the previous calls.
@@ -501,7 +496,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
                 if (hasTimePassedSinceBroadcast(op, 5)) {
                   const updatedOpIfAny = updateOpStatus(
-                    this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                    this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
                     AccountOpStatus.BroadcastButStuck
                   )
                   if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
@@ -516,7 +511,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               )
               if (fetchTxnIdResult.status === 'rejected') {
                 const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
                   AccountOpStatus.Rejected
                 )
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
@@ -528,7 +523,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               }
 
               const txnId = fetchTxnIdResult.txnId as string
-              this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex].txnId =
+              this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId =
                 txnId
 
               try {
@@ -543,7 +538,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       txnId,
                       network
                     )
-                    this.#accountsOps[selectedAccount][network.chainId.toString()][
+                    this.#accountsOps[accountAddr][network.chainId.toString()][
                       accountOpIndex
                     ].txnId = frontRanTxnId
                     receipt = await provider.getTransactionReceipt(frontRanTxnId)
@@ -564,7 +559,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   if (isSuccess === undefined) isSuccess = !!receipt.status
 
                   const updatedOpIfAny = updateOpStatus(
-                    this.#accountsOps[selectedAccount][network.chainId.toString()][accountOpIndex],
+                    this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
                     isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
                     receipt
                   )
@@ -654,13 +649,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
-  get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
-    if (!this.#selectedAccount.account || !this.#accountsOps[this.#selectedAccount.account.addr])
-      return []
+  get broadcastedButNotConfirmed(): { [accAddr: string]: SubmittedAccountOp[] } {
+    return Object.fromEntries(
+      this.#accounts.accounts.map((acc) => {
+        const accOps = this.#accountsOps[acc.addr]
 
-    return Object.values(this.#accountsOps[this.#selectedAccount.account.addr] || {})
-      .flat()
-      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
+        if (!accOps) return [acc.addr, []]
+
+        const ops = Object.values(accOps)
+          .flat()
+          .filter((op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed)
+
+        return [acc.addr, ops]
+      })
+    )
   }
 
   getLastFive(): SubmittedAccountOp[] {
@@ -738,31 +740,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   get banners() {
-    if (
-      !this.#networks.isInitialized ||
-      !this.#selectedAccount.account ||
-      !this.#accountsOps[this.#selectedAccount.account.addr]
-    ) {
+    if (!this.#networks.isInitialized) {
       return Array.from(this.#bannersByAccount.values()).flat()
     }
-
-    const { addr } = this.#selectedAccount.account
-    const prevBanners = this.#bannersByAccount.get(addr) || []
-    const activityBanners: Banner[] = []
-
-    const pendingBanner = prevBanners.find((b) => b.category === 'pending-to-be-confirmed-acc-ops')
-    const failedBanner = prevBanners.find((b) => b.category === 'failed-acc-ops')
-
-    const latestOps = Object.values(this.#accountsOps[addr])
-      .flat()
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 10)
-
-    const pendingOps = latestOps.filter(
-      (op) =>
-        op.status === AccountOpStatus.Pending ||
-        op.status === AccountOpStatus.BroadcastedButNotConfirmed
-    )
 
     // Extract only needed props from the SubmittedAccountOp
     const mapToMetaData = (ops: SubmittedAccountOp[]) =>
@@ -772,86 +752,114 @@ export class ActivityController extends EventEmitter implements IActivityControl
         timestamp: op.timestamp
       }))
 
-    if (pendingOps.length) {
-      let opsDataForNextUpdate = mapToMetaData(pendingOps)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const acc of this.#accounts.accounts) {
+      const addr = acc.addr
+      const accountOps = this.#accountsOps[addr]
 
-      if (pendingBanner) {
-        opsDataForNextUpdate = [
-          ...pendingBanner.meta!.accountOpsDataForNextUpdate,
-          ...opsDataForNextUpdate
-        ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
+      if (!accountOps) {
+        this.#bannersByAccount.set(addr, [])
+        // eslint-disable-next-line no-continue
+        continue
       }
 
-      if (!pendingBanner && failedBanner) {
-        opsDataForNextUpdate = [
-          ...failedBanner.meta!.accountOpsDataForNextUpdate,
-          ...opsDataForNextUpdate
-        ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
+      const prevBanners = this.#bannersByAccount.get(addr) || []
+      const pendingBanner = prevBanners.find(
+        (b) => b.category === 'pending-to-be-confirmed-acc-ops'
+      )
+      const failedBanner = prevBanners.find((b) => b.category === 'failed-acc-ops')
+      const activityBanners: Banner[] = []
+
+      const latestOps = Object.values(accountOps)
+        .flat()
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 10)
+
+      const pendingOps = latestOps.filter(
+        (op) =>
+          op.status === AccountOpStatus.Pending ||
+          op.status === AccountOpStatus.BroadcastedButNotConfirmed
+      )
+
+      if (pendingOps.length) {
+        let opsDataForNextUpdate = mapToMetaData(pendingOps)
+
+        if (pendingBanner) {
+          opsDataForNextUpdate = [
+            ...pendingBanner.meta!.accountOpsDataForNextUpdate,
+            ...opsDataForNextUpdate
+          ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
+        }
+
+        if (!pendingBanner && failedBanner) {
+          opsDataForNextUpdate = [
+            ...failedBanner.meta!.accountOpsDataForNextUpdate,
+            ...opsDataForNextUpdate
+          ].filter((o, i, s) => s.findIndex((x) => x.timestamp === o.timestamp) === i)
+        }
+
+        activityBanners.push({
+          id: `pending-${addr}`,
+          type: 'info2',
+          category: 'pending-to-be-confirmed-acc-ops',
+          title:
+            pendingOps.length === 1
+              ? 'Transaction is pending on-chain confirmation.'
+              : 'Transactions are pending on-chain confirmation.',
+          text:
+            pendingOps.length === 1
+              ? 'Scroll down to view the pending transaction.'
+              : 'Scroll down to view the pending transactions.',
+          meta: {
+            accountAddr: addr,
+            accountOpsDataForNextUpdate: opsDataForNextUpdate,
+            accountOpsCount: pendingOps.length
+          },
+          actions: []
+        })
       }
 
-      activityBanners.push({
-        id: `pending-${addr}`,
-        type: 'info2',
-        category: 'pending-to-be-confirmed-acc-ops',
-        title:
-          pendingOps.length === 1
-            ? 'Transaction is pending on-chain confirmation.'
-            : 'Transactions are pending on-chain confirmation.',
-        text:
-          pendingOps.length === 1
-            ? 'Scroll down to view the pending transaction.'
-            : 'Scroll down to view the pending transactions.',
-        meta: {
-          accountAddr: addr,
-          accountOpsDataForNextUpdate: opsDataForNextUpdate,
-          accountOpsCount: pendingOps.length
-        },
-        actions: []
-      })
-    }
-
-    const pendingOpsWithUpdatedStatus = pendingBanner
-      ? latestOps.filter((op) =>
-          pendingBanner.meta!.accountOpsDataForNextUpdate.find(
-            (meta: any) =>
-              meta.accountAddr === op.accountAddr &&
-              meta.chainId === op.chainId &&
-              meta.timestamp === op.timestamp
+      const pendingOpsWithUpdatedStatus = pendingBanner
+        ? latestOps.filter((op) =>
+            pendingBanner.meta!.accountOpsDataForNextUpdate.find(
+              (meta: any) =>
+                meta.accountAddr === op.accountAddr &&
+                meta.chainId === op.chainId &&
+                meta.timestamp === op.timestamp
+            )
           )
-        )
-      : []
+        : []
 
-    const failedOps = pendingOpsWithUpdatedStatus.filter(
-      (op) => op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
-    )
+      const failedOps = pendingOpsWithUpdatedStatus.filter(
+        (op) => op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
+      )
 
-    if (failedOps.length) {
-      // If there are new failed ops → create or update banner
-      const shouldMarkSeen = Object.keys(this.accountsOps).some((k) => k.startsWith('dashboard'))
-      activityBanners.push({
-        id: `failed-${addr}`,
-        type: 'error',
-        category: 'failed-acc-ops',
-        title: failedOps.length === 1 ? 'Transaction failed.' : 'Transactions failed.',
-        text:
-          failedOps.length === 1
-            ? 'Scroll down to view the failed transaction.'
-            : 'Scroll down to view the failed transactions.',
-        meta: {
-          accountAddr: addr,
-          accountOpsDataForNextUpdate: mapToMetaData(failedOps),
-          accountOpsCount: failedOps.length,
-          seen: shouldMarkSeen
-        },
-        actions: []
-      })
-    } else if (failedBanner) {
-      // Preserve existing failed banner if no new ones
-      activityBanners.push(failedBanner)
+      if (failedOps.length) {
+        const shouldMarkSeen = Object.keys(this.accountsOps).some((k) => k.startsWith('dashboard'))
+        activityBanners.push({
+          id: `failed-${addr}`,
+          type: 'error',
+          category: 'failed-acc-ops',
+          title: failedOps.length === 1 ? 'Transaction failed.' : 'Transactions failed.',
+          text:
+            failedOps.length === 1
+              ? 'Scroll down to view the failed transaction.'
+              : 'Scroll down to view the failed transactions.',
+          meta: {
+            accountAddr: addr,
+            accountOpsDataForNextUpdate: mapToMetaData(failedOps),
+            accountOpsCount: failedOps.length,
+            seen: shouldMarkSeen
+          },
+          actions: []
+        })
+      } else if (failedBanner) {
+        // Preserve existing failed banner if no new ones
+        activityBanners.push(failedBanner)
+      }
+
+      this.#bannersByAccount.set(addr, activityBanners)
     }
-
-    // Update banners only for the current account
-    this.#bannersByAccount.set(addr, activityBanners as Banner[])
 
     return Array.from(this.#bannersByAccount.values()).flat()
   }
