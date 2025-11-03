@@ -1947,22 +1947,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    // TODO: Double-check with Bobby or Petyo
-    const isExternalSignerInvolved = this.accountKeyStoreKeys.find(
-      (keyStoreKey) =>
-        keyStoreKey.addr === this.selectedOption?.paidBy && keyStoreKey.isExternallyStored
-    )
-    if (
+    const isExternalSignerInvolved =
+      this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
+      this.accountOp.signingKeyType !== 'internal'
+    const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
       !shouldSignDeployAuth &&
-      // TODO: Double-check with Bobby or Petyo
+      // when using external signer, don’t flip status immediately - device action takes time
       !isExternalSignerInvolved
-    ) {
-      this.status = { type: SigningStatus.WaitingForPaymaster }
-    } else {
-      this.status = { type: SigningStatus.InProgress }
-    }
+
+    if (isImmediatelyWaitingForPaymaster) this.status = { type: SigningStatus.WaitingForPaymaster }
 
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
@@ -2030,7 +2025,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
                 this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
               )
             : (ZeroAddress as Hex)
-        if (this.accountOp.meta)
+        if (this.accountOp.meta) {
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
@@ -2044,6 +2041,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               nonce: accountState.eoaNonce! + 1n
             })
           )
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
+        }
         this.#updateAccountOp({
           signature: '0x'
         })
@@ -2068,9 +2068,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
-          // TODO: Double-check with Bobby or Petyo
-          if (isExternalSignerInvolved) this.update({ signedTransactionsCount: 0 })
-
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           const contract = getContractImplementation(
             this.#network.chainId,
             this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
@@ -2085,9 +2084,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               nonce: accountState.nonce
             })
           )
-          // TODO: Double-check with Bobby or Petyo
-          if (isExternalSignerInvolved) this.update({ signedTransactionsCount: 1 })
-
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
           shouldReestimate = true
         }
 
