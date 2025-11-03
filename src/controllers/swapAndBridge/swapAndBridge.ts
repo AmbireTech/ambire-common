@@ -1609,11 +1609,37 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             return !hasNoRouteId
           })
           .sort((r1, r2) => {
-            const sortByAmount = () => {
+            const sortByAmountAndTime = () => {
               const a = BigInt(r1.toAmount)
               const b = BigInt(r2.toAmount)
-              if (a === b) return 0
-              if (a > b) return -1
+
+              // time calculations shouldn't affect swaps
+              const isBridge = r1.fromChainId !== r1.toChainId
+
+              const sortByTime = () => {
+                const aTime = BigInt(r1.serviceTime)
+                const bTime = BigInt(r2.serviceTime)
+                if (aTime === bTime) return 0
+                if (aTime > bTime) return 1
+                return -1
+              }
+
+              // if value is the same, check time if bridge
+              if (a === b) {
+                if (!isBridge) return 0
+                return sortByTime()
+              }
+
+              if (a > b) {
+                if (!isBridge) return -1
+                const percentage = ((a - b) * 100n) / a
+                if (percentage < 3n) return sortByTime()
+                return -1
+              }
+
+              if (!isBridge) return 1
+              const percentage = ((b - a) * 100n) / b
+              if (percentage < 3) return sortByTime()
               return 1
             }
 
@@ -1622,7 +1648,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
             if (r1ServiceFee && !r2ServiceFee) return 1
             if (r2ServiceFee && !r1ServiceFee) return -1
-            return sortByAmount()
+            return sortByAmountAndTime()
           })
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
