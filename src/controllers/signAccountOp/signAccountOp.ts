@@ -1008,6 +1008,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
             if (hasNewCalls) this.learnTokensFromCalls()
             this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+
+            this.#reestimateCounter = 0
           }
         }
       }

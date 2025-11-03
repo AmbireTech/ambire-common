@@ -1002,6 +1002,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.isAutoSelectRouteDisabled = false
     this.#updateQuoteId = undefined
     this.fromAmountUpdateCounter = 0
+    this.#userTxn = null
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -2384,8 +2385,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
           })
           .catch((e) => {
-            // eslint-disable-next-line no-console
-            console.error('swap&bridge simulation failed', e.message)
+            this.emitError({
+              level: 'silent',
+              message: 'swap&bridge simulation failed',
+              error: e
+            })
           })
 
         await this.#onBroadcastSuccess(props)

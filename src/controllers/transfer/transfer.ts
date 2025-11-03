@@ -134,12 +134,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   hasProceeded: boolean = false
 
-  // Used to safely manage and cancel the periodic estimation loop.
-  // When destroySignAccountOp() is called, the AbortController is aborted,
-  // which prevents further re-estimation calls even if a wait() is in progress.
-  // This ensures only one active estimation loop exists at any time.
-  #reestimateAbortController: AbortController | null = null
-
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
 
@@ -750,11 +744,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Unsubscribe from all previous subscriptions
     this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#signAccountOpSubscriptions = []
-
-    if (this.#reestimateAbortController) {
-      this.#reestimateAbortController.abort()
-      this.#reestimateAbortController = null
-    }
 
     if (this.signAccountOpController) {
       this.signAccountOpController.reset()
