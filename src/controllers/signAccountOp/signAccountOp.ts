@@ -2510,10 +2510,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.signPromise = undefined
       })
       await this.signPromise
-      this.broadcastPromise = this.#broadcast().finally(() => {
-        this.broadcastPromise = undefined
-      })
-      await this.broadcastPromise
+      if (this.status && this.status.type === SigningStatus.Done) {
+        this.broadcastPromise = this.#broadcast().finally(() => {
+          this.broadcastPromise = undefined
+        })
+        await this.broadcastPromise
+      }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
     })
@@ -2618,14 +2620,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#onBroadcastFailed(this.#accountOp)
     }
 
-    const broadcastError = _err ?? new Error(message)
     this.emitError({
       level: 'major',
       message,
-      error: broadcastError,
+      error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
     })
-    throw broadcastError
   }
 
   canUpdate(): boolean {
