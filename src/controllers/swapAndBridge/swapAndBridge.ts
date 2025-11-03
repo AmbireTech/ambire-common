@@ -1609,11 +1609,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             return !hasNoRouteId
           })
           .sort((r1, r2) => {
-            const a = BigInt(r1.toAmount)
-            const b = BigInt(r2.toAmount)
-            if (a === b) return 0
-            if (a > b) return -1
-            return 1
+            const sortByAmount = () => {
+              const a = BigInt(r1.toAmount)
+              const b = BigInt(r2.toAmount)
+              if (a === b) return 0
+              if (a > b) return -1
+              return 1
+            }
+
+            // move the routes with service fee to the bottom
+            const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
+            const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
+            if (r1ServiceFee && !r2ServiceFee) return 1
+            if (r2ServiceFee && !r1ServiceFee) return -1
+            return sortByAmount()
           })
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
