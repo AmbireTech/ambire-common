@@ -474,134 +474,136 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // implementation is in background.ts
     let newestOpTimestamp: number = 0
 
+    // Limit the number of iterations to optimize the performance on accounts with large transaction history
+    const MAX_OPS_TO_ITERATE_PER_CHAIN = 50
+
     await Promise.all(
       Object.keys(this.#accountsOps[accountAddr]).map(async (keyAsChainId) => {
         const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
         if (!network) return
         const provider = this.#providers.providers[network.chainId.toString()]
 
+        const allOps = this.#accountsOps[accountAddr][network.chainId.toString()]
+        const recentOps = allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN)
+        const opsToUpdate = recentOps.filter(
+          (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
+        )
+
         return Promise.all(
-          this.#accountsOps[accountAddr][network.chainId.toString()].map(
-            async (accountOp, accountOpIndex) => {
-              // Don't update the current network account ops statuses,
-              // as the statuses are already updated in the previous calls.
-              if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
+          opsToUpdate.map(async (accountOp, accountOpIndex) => {
+            // Don't update the current network account ops statuses,
+            // as the statuses are already updated in the previous calls.
+            if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
-              shouldEmitUpdate = true
+            shouldEmitUpdate = true
 
-              if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
-                newestOpTimestamp = accountOp.timestamp
-              }
+            if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
+              newestOpTimestamp = accountOp.timestamp
+            }
 
-              const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
-                if (hasTimePassedSinceBroadcast(op, 5)) {
-                  const updatedOpIfAny = updateOpStatus(
-                    this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                    AccountOpStatus.BroadcastButStuck
-                  )
-                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-                }
-              }
-
-              const fetchTxnIdResult = await fetchTxnId(
-                accountOp.identifiedBy,
-                network,
-                this.#callRelayer,
-                accountOp
-              )
-              if (fetchTxnIdResult.status === 'rejected') {
+            const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
+              if (hasTimePassedSinceBroadcast(op, 5)) {
                 const updatedOpIfAny = updateOpStatus(
                   this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                  AccountOpStatus.Rejected
+                  AccountOpStatus.BroadcastButStuck
                 )
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-                return
-              }
-              if (fetchTxnIdResult.status === 'not_found') {
-                declareStuckIfFiveMinsPassed(accountOp)
-                return
-              }
-
-              const txnId = fetchTxnIdResult.txnId as string
-              this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId =
-                txnId
-
-              try {
-                let receipt = await provider.getTransactionReceipt(txnId)
-                if (receipt) {
-                  // if the status is a failure and it's an userOp, it means it
-                  // could've been front ran. We need to make sure we find the
-                  // transaction that has succeeded
-                  if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                    const frontRanTxnId = await fetchFrontRanTxnId(
-                      accountOp.identifiedBy,
-                      txnId,
-                      network
-                    )
-                    this.#accountsOps[accountAddr][network.chainId.toString()][
-                      accountOpIndex
-                    ].txnId = frontRanTxnId
-                    receipt = await provider.getTransactionReceipt(frontRanTxnId)
-                    if (!receipt) return
-                  }
-
-                  // if this is an user op, we have to check the logs
-                  let isSuccess: boolean | undefined
-                  if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
-                    const userOpEventLog = parseLogs(
-                      receipt.logs,
-                      accountOp.identifiedBy.identifier
-                    )
-                    if (userOpEventLog) isSuccess = userOpEventLog.success
-                  }
-
-                  // if it's not an userOp or it is, but isSuccess was not found
-                  if (isSuccess === undefined) isSuccess = !!receipt.status
-
-                  const updatedOpIfAny = updateOpStatus(
-                    this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                    isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
-                    receipt
-                  )
-                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-
-                  if (accountOp.isSingletonDeploy && receipt.status) {
-                    await this.#onContractsDeployed(network)
-                  }
-
-                  // learn tokens from the transfer logs
-                  if (isSuccess) {
-                    const foundTokens = await getTransferLogTokens(
-                      receipt.logs,
-                      accountOp.accountAddr
-                    )
-                    if (foundTokens.length) {
-                      this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
-                    }
-                  }
-
-                  // update the chain if a receipt has been received as otherwise, we're
-                  // left hanging with a pending portfolio balance
-                  chainsToUpdate.add(network.chainId)
-                  return
-                }
-
-                // if there's no receipt, confirm there's a txn
-                // if there's no txn and 15 minutes have passed, declare it a failure
-                const txn = await provider.getTransaction(txnId)
-                if (txn) return
-                declareStuckIfFiveMinsPassed(accountOp)
-              } catch {
-                this.emitError({
-                  level: 'silent',
-                  message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
-                  error: new Error(
-                    `activity: failed to get transaction receipt for ${accountOp.txnId}`
-                  )
-                })
               }
             }
-          )
+
+            const fetchTxnIdResult = await fetchTxnId(
+              accountOp.identifiedBy,
+              network,
+              this.#callRelayer,
+              accountOp
+            )
+            if (fetchTxnIdResult.status === 'rejected') {
+              const updatedOpIfAny = updateOpStatus(
+                this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
+                AccountOpStatus.Rejected
+              )
+              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+              return
+            }
+            if (fetchTxnIdResult.status === 'not_found') {
+              declareStuckIfFiveMinsPassed(accountOp)
+              return
+            }
+
+            const txnId = fetchTxnIdResult.txnId as string
+            this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId = txnId
+
+            try {
+              let receipt = await provider.getTransactionReceipt(txnId)
+              if (receipt) {
+                // if the status is a failure and it's an userOp, it means it
+                // could've been front ran. We need to make sure we find the
+                // transaction that has succeeded
+                if (!receipt.status && isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                  const frontRanTxnId = await fetchFrontRanTxnId(
+                    accountOp.identifiedBy,
+                    txnId,
+                    network
+                  )
+                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId =
+                    frontRanTxnId
+                  receipt = await provider.getTransactionReceipt(frontRanTxnId)
+                  if (!receipt) return
+                }
+
+                // if this is an user op, we have to check the logs
+                let isSuccess: boolean | undefined
+                if (isIdentifiedByUserOpHash(accountOp.identifiedBy)) {
+                  const userOpEventLog = parseLogs(receipt.logs, accountOp.identifiedBy.identifier)
+                  if (userOpEventLog) isSuccess = userOpEventLog.success
+                }
+
+                // if it's not an userOp or it is, but isSuccess was not found
+                if (isSuccess === undefined) isSuccess = !!receipt.status
+
+                const updatedOpIfAny = updateOpStatus(
+                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
+                  isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
+                  receipt
+                )
+                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+
+                if (accountOp.isSingletonDeploy && receipt.status) {
+                  await this.#onContractsDeployed(network)
+                }
+
+                // learn tokens from the transfer logs
+                if (isSuccess) {
+                  const foundTokens = await getTransferLogTokens(
+                    receipt.logs,
+                    accountOp.accountAddr
+                  )
+                  if (foundTokens.length) {
+                    this.#portfolio.addTokensToBeLearned(foundTokens, accountOp.chainId)
+                  }
+                }
+
+                // update the chain if a receipt has been received as otherwise, we're
+                // left hanging with a pending portfolio balance
+                chainsToUpdate.add(network.chainId)
+                return
+              }
+
+              // if there's no receipt, confirm there's a txn
+              // if there's no txn and 15 minutes have passed, declare it a failure
+              const txn = await provider.getTransaction(txnId)
+              if (txn) return
+              declareStuckIfFiveMinsPassed(accountOp)
+            } catch {
+              this.emitError({
+                level: 'silent',
+                message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
+                error: new Error(
+                  `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                )
+              })
+            }
+          })
         )
       })
     )
