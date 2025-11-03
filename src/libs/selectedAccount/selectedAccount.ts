@@ -775,7 +775,6 @@ export const calculateAndSetProjectedRewards = (
     currentBalance,
     numberOfWeeksSinceStartOfSeason,
     totalWeightNonUser,
-    walletTokenPrice,
     totalRewardsPool,
     minLvl,
     minBalance

@@ -20,7 +20,6 @@ export function calculateRewardsForSeason(
   currentBalance: number,
   passedWeeks: number,
   totalWeightNoUser: number,
-  walletPrice: number,
   REWARDS_FOR_SEASON: number,
   minLvl: number,
   minBalance: number
