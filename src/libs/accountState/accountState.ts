@@ -102,7 +102,11 @@ export async function getAccountState(
     let delegatedContractName = null
 
     if (delegatedContract) {
-      if (eip7702AmbireContracts.map(c => c.toLowerCase()).indexOf(delegatedContract.toLowerCase()) !== -1) {
+      if (
+        eip7702AmbireContracts
+          .map((c) => c.toLowerCase())
+          .indexOf(delegatedContract.toLowerCase()) !== -1
+      ) {
         delegatedContractName = 'AMBIRE'
       } else if (delegatedContract.toLowerCase() === EIP_7702_METAMASK.toLowerCase()) {
         delegatedContractName = 'METAMASK'
