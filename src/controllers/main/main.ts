@@ -622,10 +622,10 @@ export class MainController extends EventEmitter implements IMainController {
     this.#continuousUpdates.accountsOpsStatusesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
     this.transfer.resetForm()
-    await this.activity.forceEmitUpdate()
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
+      this.activity.forceEmitUpdate(),
       this.requests.actions.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
