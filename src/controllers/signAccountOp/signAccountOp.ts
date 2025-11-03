@@ -2618,12 +2618,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.#onBroadcastFailed(this.#accountOp)
     }
 
+    const broadcastError = _err ?? new Error(message)
     this.emitError({
       level: 'major',
       message,
-      error: _err || new Error(message),
+      error: broadcastError,
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
     })
+    throw broadcastError
   }
 
   canUpdate(): boolean {
