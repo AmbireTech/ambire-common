@@ -86,6 +86,17 @@ function getSignificantBalanceDecreaseWarning(
   return null
 }
 
+const getUnknownTokenWarning = (pending: AccountState, chainId: bigint): Warning | null => {
+  const networkData = pending?.[chainId.toString()]
+
+  if (networkData?.isLoading) return null
+
+  const tokens = networkData?.result?.tokens || []
+  const hasUnknownTokens = tokens.some((t) => t.flags.suspectedType)
+
+  return hasUnknownTokens ? WARNINGS.unknownToken : null
+}
+
 const getFeeTokenPriceUnavailableWarning = (
   hasSpeed: boolean,
   feeTokenHasPrice: boolean
@@ -99,5 +110,6 @@ export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount
+  getTokenUsdAmount,
+  getUnknownTokenWarning
 }
