@@ -1230,7 +1230,13 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.initialLoadPromise
 
-    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses()
+    const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
+      .filter(([, ops]) => ops.length > 0)
+      .map(([addr]) => addr)
+
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
 
     if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
 

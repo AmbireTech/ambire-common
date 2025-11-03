@@ -406,7 +406,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.emitUpdate()
   }
 
-  async updateAccountsOpsStatuses(): Promise<
+  async updateAccountsOpsStatuses(accountAddresses: string[] = []): Promise<
     Record<
       string,
       {
@@ -417,8 +417,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
       }
     >
   > {
+    const selectedAddr = this.#selectedAccount.account?.addr
+    // ensure ops are always updated for selected account if no addresses are passed
+    const uniqueAddresses = Array.from(
+      new Set([...accountAddresses, selectedAddr].filter(Boolean))
+    ) as string[]
     const results = await Promise.all(
-      this.#accounts.accounts.map(async ({ addr }) => {
+      uniqueAddresses.map(async (addr) => {
         if (this.#updateAccountsOpsStatusesPromises[addr])
           return [addr, await this.#updateAccountsOpsStatusesPromises[addr]] as const
 
