@@ -38,6 +38,10 @@ const config: HardhatUserConfig = {
       url: 'https://rpc-gel.inkonchain.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    hyperEvm: {
+      url: 'https://invictus.ambire.com/hyperevm',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     baseSepolia: {
       url: 'https://sepolia.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -223,6 +227,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.arbiscan.io/api',
           browserURL: 'https://api.arbiscan.io'
+        }
+      },
+      {
+        network: 'hyperEvm',
+        chainId: 999,
+        urls: {
+          apiURL: 'https://api.hyperevmscan.io/api',
+          browserURL: 'https://api.hyperevmscan.io'
         }
       },
       {

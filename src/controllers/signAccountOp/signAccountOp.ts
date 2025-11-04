@@ -42,6 +42,7 @@ import {
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
 /* eslint-disable no-restricted-syntax */
+import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -304,11 +305,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #shouldSimulate: boolean
 
-  /**
-   * Should this signAccountOp decide on its own terms whether
-   * to fire a new estimation or not
-   */
-  #shouldReestimate: boolean
+  #reestimateCounter: number = 0
 
   #stopRefetching: boolean = false
 
@@ -340,7 +337,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOp,
     isSignRequestStillActive,
     shouldSimulate,
-    shouldReestimate,
     onAccountOpUpdate,
     traceCall,
     onBroadcastSuccess,
@@ -361,7 +357,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean
-    shouldReestimate: boolean
     onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void
     traceCall?: Function
     onBroadcastSuccess: OnBroadcastSuccess
@@ -423,7 +418,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     )
     this.#shouldSimulate = shouldSimulate
-    this.#shouldReestimate = shouldReestimate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
@@ -496,6 +490,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   async #reestimate() {
+    // stop the interval reestimate if the user has done it over 20 times
+    this.#reestimateCounter += 1
+    if (this.#reestimateCounter > 20) this.#stopRefetching = true
+
     if (
       this.#stopRefetching ||
       this.estimation.status === EstimationStatus.Initial ||
@@ -503,7 +501,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     )
       return
 
-    await wait(30000)
+    // the first 10 times, reestimate once every 30s; then, slow down
+    // the time as the user might just have closed the popup of the extension
+    // in a ready-to-estimate state, resulting in meaningless requests
+    const waitTime =
+      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
+    await wait(waitTime)
 
     if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
 
@@ -515,7 +518,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
-      if (this.#shouldReestimate) this.#reestimate()
+      this.#reestimate()
     })
     this.gasPrice.onUpdate(() => {
       this.update({
@@ -1011,6 +1014,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
             if (hasNewCalls) this.learnTokensFromCalls()
             this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+
+            this.#reestimateCounter = 0
           }
         }
       }

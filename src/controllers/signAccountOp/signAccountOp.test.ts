@@ -530,7 +530,6 @@ const init = async (
     fromActionId: 1,
     accountOp: op,
     isSignRequestStillActive: () => {},
-    shouldReestimate: true,
     shouldSimulate: true,
     onAccountOpUpdate: () => {},
     // @ts-ignore
