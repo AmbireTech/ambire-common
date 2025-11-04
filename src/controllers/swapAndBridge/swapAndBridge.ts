@@ -1610,20 +1610,23 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             return !hasNoRouteId
           })
           .sort((r1, r2) => {
+            const isBridge = r1.fromChainId !== r1.toChainId
+
+            // the amount threshold in %. If below, we check the time as
+            // the deciding sort factor
+            const threshold = 1.2
+
+            const sortByTime = () => {
+              const aTime = Number(r1.serviceTime)
+              const bTime = Number(r2.serviceTime)
+              if (aTime === bTime) return 0
+              if (aTime > bTime) return 1
+              return -1
+            }
+
             const sortByAmountAndTime = () => {
               const a = BigInt(r1.toAmount)
               const b = BigInt(r2.toAmount)
-
-              // time calculations shouldn't affect swaps
-              const isBridge = r1.fromChainId !== r1.toChainId
-
-              const sortByTime = () => {
-                const aTime = BigInt(r1.serviceTime)
-                const bTime = BigInt(r2.serviceTime)
-                if (aTime === bTime) return 0
-                if (aTime > bTime) return 1
-                return -1
-              }
 
               // if value is the same, check time if bridge
               if (a === b) {
@@ -1631,29 +1634,29 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
                 return sortByTime()
               }
 
+              const aUsd = Number(r1.outputValueInUsd ?? 0)
+              const bUsd = Number(r2.outputValueInUsd ?? 0)
               if (a > b) {
+                // if it's not a bridge, just return the higher output route
                 if (!isBridge) return -1
-                const aUsd = r1.outputValueInUsd
-                const bUsd = r2.outputValueInUsd
 
                 // if the bigint amount says a > b but the usd amount says
                 // the opposite, we're stuck, so just return a as the winner
-                if (bUsd > aUsd) return -1
+                if (bUsd > aUsd || aUsd === 0) return -1
 
                 const percentage = ((aUsd - bUsd) / aUsd) * 100
-                if (percentage < 1.2) return sortByTime()
+                if (percentage < threshold) return sortByTime()
                 return -1
               }
 
+              // if it's not a bridge, just return the higher output route
               if (!isBridge) return 1
-              const aUsd = r1.outputValueInUsd
-              const bUsd = r2.outputValueInUsd
 
               // if the bigint amount says b > a but the usd amount says
               // the opposite, we're stuck, so just return b as the winner
-              if (aUsd > bUsd) return 1
+              if (aUsd > bUsd || bUsd === 0) return 1
               const percentage = ((bUsd - aUsd) / bUsd) * 100
-              if (percentage < 1.2) return sortByTime()
+              if (percentage < threshold) return sortByTime()
               return 1
             }
 
