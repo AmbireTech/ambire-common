@@ -24,6 +24,7 @@ import {
   PositionsByProvider,
   ProviderName
 } from '../../libs/defiPositions/types'
+import { fetchWithTimeout } from '../../utils/fetch'
 /* eslint-disable no-restricted-syntax */
 import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -273,11 +274,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       debankPositionsByProvider: PositionsByProvider[]
     ) => {
       const chain = network.chainId.toString()
-      initNetworkState(selectedAccountAddr, chain)
-
       const state = this.#state[selectedAccountAddr][chain]
-      Object.assign(state, { isLoading: true, providerErrors: [], error: undefined })
-      this.emitUpdate()
 
       const previousPositions = state.positionsByProvider
       let customPositions: PositionsByProvider[] = []
@@ -393,16 +390,16 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
 
     prepareNetworks()
 
-    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) {
-      // Emit a single update to trigger a calculation in the selected account portfolio
-      this.emitUpdate()
-      return
-    }
-    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) {
-      // Emit a single update to trigger a calculation in the selected account portfolio
-      this.emitUpdate()
-      return
-    }
+    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
+    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) return
+
+    // Set all networks to loading
+    networksToUpdate.forEach((n) => {
+      const state = this.#state[selectedAccountAddr][n.chainId.toString()]
+      Object.assign(state, { isLoading: true, providerErrors: [], error: undefined })
+    })
+
+    this.emitUpdate()
 
     let debankPositions: PositionsByProvider[] = []
 
@@ -410,15 +407,21 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     if (process.env.IS_TESTING !== 'true') {
       try {
         const defiUrl = `https://cena.ambire.com/api/v3/defi/${selectedAccountAddr}`
-
         const hasKeys = this.#keystore.keys.some(({ addr }) =>
           this.#selectedAccount.account!.associatedKeys.includes(addr)
         )
         const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
-
-        const resp = await this.#fetch(
-          shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl
+        const hasFetchedBefore = Object.values(this.#state[selectedAccountAddr]).some(
+          (n) => n.updatedAt
         )
+
+        const resp = await fetchWithTimeout(
+          this.#fetch,
+          shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl,
+          {},
+          hasFetchedBefore ? 5000 : 10000
+        )
+
         const body = await resp.json()
         if (resp.status !== 200 || body?.message || body?.error) throw body
 
@@ -432,8 +435,21 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         const networksWithPositionsOnSelectedAccount =
           this.#networksWithPositionsByAccounts[selectedAccountAddr] || {}
 
+        const prevHasPositions = Object.values(networksWithPositionsOnSelectedAccount).some(
+          (pos) => pos.length
+        )
+
         // return if it fails to prevent hiding/overriding already stored DeFi pos
-        if (Object.values(networksWithPositionsOnSelectedAccount).some((pos) => pos.length)) {
+        if (prevHasPositions) {
+          networksToUpdate.forEach((n) => {
+            this.#state[selectedAccountAddr][n.chainId.toString()] = {
+              ...this.#state[selectedAccountAddr][n.chainId.toString()],
+              isLoading: false,
+              error: DeFiPositionsError.CriticalError
+            }
+          })
+
+          this.emitUpdate()
           return
         }
       }
@@ -472,7 +488,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       addresses
     ).join('%2C')}&vs_currencies=usd`
 
-    const resp = await this.#fetch(cenaUrl)
+    const resp = await fetchWithTimeout(this.#fetch, cenaUrl, {}, 3000)
     const body = await resp.json()
     if (resp.status !== 200) throw body
     // eslint-disable-next-line no-prototype-builtins

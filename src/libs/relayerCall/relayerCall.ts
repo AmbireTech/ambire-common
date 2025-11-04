@@ -1,5 +1,6 @@
-/* eslint-disable no-prototype-builtins */
 import { Fetch } from '../../interfaces/fetch'
+/* eslint-disable no-prototype-builtins */
+import { fetchWithTimeout } from '../../utils/fetch'
 import { parse, stringify } from '../richJson/richJson'
 
 export class RelayerError extends Error {
@@ -24,7 +25,8 @@ export async function relayerCallUncaught(
   fetch: Fetch,
   method: string = 'GET',
   body: any = null,
-  headers: any = null
+  headers: any = null,
+  timeoutMs: number = 10000
 ) {
   if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
     return { success: false, message: 'bad method' }
@@ -32,14 +34,19 @@ export async function relayerCallUncaught(
   if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
     return { success: false, message: 'should not have a body' }
 
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers
+  const res = await fetchWithTimeout(
+    fetch,
+    url,
+    {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers
+      },
+      body: body ? stringify(body) : undefined
     },
-    body: body ? stringify(body) : undefined
-  })
+    timeoutMs
+  )
 
   const text = await res.text()
   const isStatusOk = res.status < 300 && res.status >= 200
@@ -59,6 +66,14 @@ export async function relayerCallUncaught(
   }
 }
 
+export type BindedRelayerCall = (
+  path: string,
+  method?: string,
+  body?: any,
+  headers?: any,
+  timeoutMs?: number
+) => Promise<any>
+
 export async function relayerCall(
   this: {
     url: string
@@ -67,9 +82,17 @@ export async function relayerCall(
   path: string,
   method: string = 'GET',
   body: any = null,
-  headers: any = null
+  headers: any = null,
+  timeoutMs: number = 10000
 ): Promise<any> {
-  const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
+  const res = await relayerCallUncaught(
+    this.url + path,
+    this.fetch,
+    method,
+    body,
+    headers,
+    timeoutMs
+  )
   if (!res.success) {
     const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res
     throw new RelayerError(

@@ -90,6 +90,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     },
     [iface.getFunction('claimBitrefillCode')?.selector!]: () => {
       return [getAction('Claim'), getLabel('cashback code for'), getLabel('Bitrefill', true)]
+    },
+    [iface.getFunction('revealMascotLetter')?.selector!]: () => {
+      return [getAction('Reveal'), getLabel('a letter from'), getLabel('SHI_T_', true)]
     }
   }
   const newCalls = calls.map((call) => {
