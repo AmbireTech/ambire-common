@@ -733,7 +733,6 @@ export class MainController extends EventEmitter implements IMainController {
           return this.isSignRequestStillActive
         },
         shouldSimulate: true,
-        shouldReestimate: true,
         onAccountOpUpdate: (updatedAccountOp: AccountOp) => {
           this.requests.actions.updateAccountOpAction(updatedAccountOp)
         },

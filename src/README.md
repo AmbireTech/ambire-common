@@ -79,11 +79,11 @@ An email vault is a mechanism on the relayer to safeguard arbitrary secrets and 
 
 There are 3 types of account recovery/restoration in Ambire 2.0:
 
-### On-chain account recovery via email
+### Onchain account recovery via email
 
 This works via [recovery signatures](https://github.com/AmbireTech/ambire-common/blob/984e9f1d77c1756292dc6304baf98080211f97b0/contracts/AmbireAccount.sol#L108-L141) and is very similar in operation to the legacy `QuickAccManager` recoveries.
 
-This recovery must be performed for each network (chain) individually because it involves on-chain state, and is intended to have a timelock.
+This recovery must be performed for each network (chain) individually because it involves onchain state, and is intended to have a timelock.
 
 The way it works is the following:
 
@@ -104,7 +104,7 @@ The DKIM recovery replaces the timelocked recovery described above and works as 
 
 1. The user receives an email that includes the new key address in the subject
 2. The user replies to the email with anything
-3. The relayer extracts the signature from this email and prepares the canonized DKIM headers and body hash for submission to the on-chain code (DKIM signature validator), which verifies `subject` and `to` to prevent phishing and verify the recovery key (the new key we give privileges too)
+3. The relayer extracts the signature from this email and prepares the canonized DKIM headers and body hash for submission to the onchain code (DKIM signature validator), which verifies `subject` and `to` to prevent phishing and verify the recovery key (the new key we give privileges too)
 4. The relayer also needs to produce another signature via the email vault recovery key (normal EOA signature) and provide it alongside, for extra security - in order to provide this signature the relayer will enforce an off-chain timelock (to protect against DKIM keys getting compromised, email accounts getting compromised, etc.).
 5. The two signatures are merged and can now be used for finalizing the recovery on any chain (this signature is not replay-protected by nonces, but by uniqueness of the operation)
 
@@ -128,20 +128,20 @@ You can think of the DKIM recovery signature as a multi-signature between the em
 
 ##### Nuclear option: 1/2 recovery
 
-The happy path requires a compound 2/2 signature. However, in case the relayer is not available, the user needs to be able to recover their account using DKIM alone. For this case, we'll enforce an additional on-chain timelock. It's a mode of last resort, but it also needs to be secure against attack vectors like DKIM keys getting compromised, email providers getting compromised, email accounts getting compromised, etc.
+The happy path requires a compound 2/2 signature. However, in case the relayer is not available, the user needs to be able to recover their account using DKIM alone. For this case, we'll enforce an additional onchain timelock. It's a mode of last resort, but it also needs to be secure against attack vectors like DKIM keys getting compromised, email providers getting compromised, email accounts getting compromised, etc.
 
 ##### Summarized list of all timelocks in the DKIM system
 
-- Nuclear option: only 1/2 signatures, on-chain timelock
-- Relayer off-chain timelock: the relayer will simply wait some time before providing the email vault key signature; this preserves the timelock UX and security benefits without having to ask the user to trigger an on-chain timelock on every chain they use the account on
+- Nuclear option: only 1/2 signatures, onchain timelock
+- Relayer off-chain timelock: the relayer will simply wait some time before providing the email vault key signature; this preserves the timelock UX and security benefits without having to ask the user to trigger an onchain timelock on every chain they use the account on
 - Pseudo-timelocks for accepting the addition and revokation of DKIM public keys: each user can set in their account settings (stored as a hash in `privileges[key]`) whether they want to accept unknown (different from their originally set) selectors, and if so, how much time needs to pass before accepting the submission of a record, or the revokation of a record (read why below)
-- There may be additional timelocks implemented on-chain in the future for the `authorizedToSubmit` and `authorizedToRevoke` addresses (they may be set to a timelock contract).
+- There may be additional timelocks implemented onchain in the future for the `authorizedToSubmit` and `authorizedToRevoke` addresses (they may be set to a timelock contract).
 
 #### DKIM Recovery: public key management
 
-In order for DKIM recovery to work, there must be a reliable DNS oracle on-chain. For that purpose, we will use the ENS DNSSec oracle.
+In order for DKIM recovery to work, there must be a reliable DNS oracle onchain. For that purpose, we will use the ENS DNSSec oracle.
 
-Becase DNSSec proofs contain no time in them, it's not possible to introduce the concept of "latest DNS record" on-chain without significant compromises. This is why we'll accept any DNS TXT record of a DKIM key (`${selector}._domainKey.{$domain}`) and record it on-chain, but we'll also allow revoking of any of those keys.
+Becase DNSSec proofs contain no time in them, it's not possible to introduce the concept of "latest DNS record" onchain without significant compromises. This is why we'll accept any DNS TXT record of a DKIM key (`${selector}._domainKey.{$domain}`) and record it onchain, but we'll also allow revoking of any of those keys.
 
 ##### Adding
 
@@ -149,7 +149,7 @@ The DKIM recovery contract will have an `authorizedToSubmit` variable, which ind
 
 Later on, this could be set to a santinel value that allows _anyone_ to submit records. This should be safe, because they go through a DNSSec proof, except in the case in which someone might submit a proof for an old DNS record, in which case revoking is needed. Bear in mind that because of the nature of DKIM, we expect that no email provider will ever _change_ a DNS TXT DKIM record in production (due to DNS caches, this will lead to many dropped emails), so this should be a near-impossible case.
 
-Upon submitting, we will verify the DNSSec proof, parse the DNS TXT record, but only store `dkimKeys[keccak256((publicKey, domainName))] = { dateAdded, dateRevoked }` on-chain.
+Upon submitting, we will verify the DNSSec proof, parse the DNS TXT record, but only store `dkimKeys[keccak256((publicKey, domainName))] = { dateAdded, dateRevoked }` onchain.
 
 Each user can set whether they want to accept unknown selectors, and can set the time before starting to accept newly submitted records.
 

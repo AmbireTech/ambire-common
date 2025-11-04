@@ -260,13 +260,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
       const accountState = accountStates[opArb.accountAddr][opArb.chainId.toString()]
       const bundler = new Biconomy()
-      const userOp = getUserOperation(
-        smartAccNew,
+      const userOp = getUserOperation({
+        account: smartAccNew,
         accountState,
-        opArb,
-        bundler.getName(),
-        '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
-      )
+        accountOp: opArb,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opArb)
@@ -305,13 +306,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
       const accountState = accountStates[opArb.accountAddr][opArb.chainId.toString()]
       const bundler = new Biconomy()
-      const userOp = getUserOperation(
-        smartAccNew,
+      const userOp = getUserOperation({
+        account: smartAccNew,
         accountState,
-        opArb,
-        bundler.getName(),
-        '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
-      )
+        accountOp: opArb,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opArb)
@@ -363,13 +365,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccNew])
       const accountState = accountStates[opArb.accountAddr][opArb.chainId.toString()]
       const bundler = new Biconomy()
-      const userOp = getUserOperation(
-        smartAccNew,
+      const userOp = getUserOperation({
+        account: smartAccNew,
         accountState,
-        opArb,
-        bundler.getName(),
-        '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
-      )
+        accountOp: opArb,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x279e2ba17426b50fff124d445629f57b95f59a0a73613a924a1d205d53b67ae44bd5f1f4ae336e1edf396693c22f1d05793d984f7515c691b54b82178364dc911c01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opArb)
@@ -413,13 +416,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.chainId.toString()]
       const bundler = new Pimlico() // use pimlico for these tests
-      const userOp = getUserOperation(
-        smartAcc,
+      const userOp = getUserOperation({
+        account: smartAcc,
         accountState,
-        opOptimism,
-        bundler.getName(),
-        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      )
+        accountOp: opOptimism,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opOptimism)
@@ -469,13 +473,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.chainId.toString()]
       const bundler = new Pimlico()
-      const userOp = getUserOperation(
-        smartAcc,
+      const userOp = getUserOperation({
+        account: smartAcc,
         accountState,
-        opOptimism,
-        bundler.getName(),
-        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      )
+        accountOp: opOptimism,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opOptimism)
@@ -534,13 +539,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.chainId.toString()]
       const bundler = new Pimlico()
-      const userOp = getUserOperation(
-        smartAcc,
+      const userOp = getUserOperation({
+        account: smartAcc,
         accountState,
-        opOptimism,
-        bundler.getName(),
-        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      )
+        accountOp: opOptimism,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opOptimism)
@@ -585,12 +591,12 @@ describe('Bundler tests', () => {
       const accountState =
         accountStates[opBaseSepolia.accountAddr][opBaseSepolia.chainId.toString()]
       const bundler = getDefaultBundler(baseSepolia)
-      const userOp = getUserOperation(
-        smartAccDeployedOnGnosisButNo4337,
+      const userOp = getUserOperation({
+        account: smartAccDeployedOnGnosisButNo4337,
         accountState,
-        opBaseSepolia,
-        bundler.getName()
-      )
+        accountOp: opBaseSepolia,
+        bundler: bundler.getName()
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opBaseSepolia)
@@ -628,12 +634,12 @@ describe('Bundler tests', () => {
       ])
       const accountState = accountStates[opGnosis.accountAddr][opGnosis.chainId.toString()]
       const bundler = getDefaultBundler(gnosis)
-      const userOp = getUserOperation(
-        smartAccDeployedOnGnosisButNo4337,
+      const userOp = getUserOperation({
+        account: smartAccDeployedOnGnosisButNo4337,
         accountState,
-        opGnosis,
-        bundler.getName()
-      )
+        accountOp: opGnosis,
+        bundler: bundler.getName()
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opGnosis)
@@ -678,13 +684,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opMantle.accountAddr][opMantle.chainId.toString()]
       const bundler = getDefaultBundler(mantle)
-      const userOp = getUserOperation(
-        smartAcc,
+      const userOp = getUserOperation({
+        account: smartAcc,
         accountState,
-        opMantle,
-        bundler.getName(),
-        '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
-      )
+        accountOp: opMantle,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opMantle)
@@ -734,13 +741,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opMantle.accountAddr][opMantle.chainId.toString()]
       const bundler = getDefaultBundler(mantle)
-      const userOp = getUserOperation(
-        smartAcc,
+      const userOp = getUserOperation({
+        account: smartAcc,
         accountState,
-        opMantle,
-        bundler.getName(),
-        '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
-      )
+        accountOp: opMantle,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x38d93f334162dbbbf5115b6a73051426663be3083e698ec89f6db4dc520e8029531bbe508ba2461401fb2f39d9cab723c8b1b5e85cd15841cad6615b7107ae351b01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opMantle)
@@ -789,13 +797,14 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAcc])
       const accountState = accountStates[opBase.accountAddr][opBase.chainId.toString()]
       const bundler = getDefaultBundler(mantle)
-      const userOp = getUserOperation(
-        smartAcc,
+      const userOp = getUserOperation({
+        account: smartAcc,
         accountState,
-        opBase,
-        bundler.getName(),
-        '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      )
+        accountOp: opBase,
+        bundler: bundler.getName(),
+        entryPointSig:
+          '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opBase)
@@ -838,7 +847,12 @@ describe('Bundler tests', () => {
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
       const accountState = accountStates[opBase.accountAddr][opBase.chainId.toString()]
       const bundler = getDefaultBundler(base)
-      const userOp = getUserOperation(smartAccDeployed, accountState, opBase, bundler.getName())
+      const userOp = getUserOperation({
+        account: smartAccDeployed,
+        accountState,
+        accountOp: opBase,
+        bundler: bundler.getName()
+      })
       const ambireInterface = new Interface(AmbireAccount.abi)
       userOp.callData = ambireInterface.encodeFunctionData('executeBySender', [
         getSignableCalls(opBase)
