@@ -2029,10 +2029,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         const contract =
           this.accountOp.meta?.setDelegation || this.accountOp.calls.length > 1
-            ? getContractImplementation(
-                this.#network.chainId,
-                this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
-              )
+            ? getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
             : (ZeroAddress as Hex)
         if (this.accountOp.meta) {
           if (isExternalSignerInvolved)
@@ -2081,7 +2078,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           const contract = getContractImplementation(
             this.#network.chainId,
-            this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
+            this.accountKeyStoreKeys
           )
           eip7702Auth = get7702Sig(
             this.#network.chainId,
