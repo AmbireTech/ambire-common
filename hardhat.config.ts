@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import '@nomicfoundation/hardhat-chai-matchers'
 import '@nomicfoundation/hardhat-ethers'
-import '@nomiclabs/hardhat-etherscan'
+import '@nomicfoundation/hardhat-verify'
 import 'hardhat-gas-reporter'
 
 import { HardhatUserConfig } from 'hardhat/config'
@@ -28,6 +28,18 @@ const config: HardhatUserConfig = {
   networks: {
     base: {
       url: 'https://mainnet.base.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    hyperEvm: {
+      url: 'https://invictus.ambire.com/hyperevm',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    baseSepolia: {
+      url: 'https://sepolia.base.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    opSepolia: {
+      url: 'https://sepolia.optimism.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     optimism: {
@@ -61,20 +73,41 @@ const config: HardhatUserConfig = {
     berachain: {
       url: 'https://rpc.berachain-apis.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    arbitrum: {
+      url: 'https://invictus.ambire.com/arbitrum',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    berachainBepolia: {
+      url: 'https://bepolia.rpc.berachain.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    katana: {
+      url: 'https://rpc.katana.network',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    celo: {
+      url: 'https://forno.celo.org',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     }
   },
   etherscan: {
-    apiKey: {
-      base: process.env.BASESCAN_API_KEY,
-      optimism: process.env.OPTIMISM_API_KEY,
-      odyssey: process.env.ETHERSCAN_API_KEY,
-      ethereum: process.env.ETHERSCAN_API_KEY,
-      sepolia: process.env.ETHERSCAN_API_KEY,
-      binance: process.env.BNB_API_KEY,
-      gnosis: process.env.GNOSIS_API_KEY,
-      unichain: process.env.BASESCAN_API_KEY,
-      berachain: process.env.BERACHAIN_API_KEY
-    },
+    // apiKey: {
+    //   base: process.env.ETHERSCAN_API_KEY,
+    //   optimism: process.env.ETHERSCAN_API_KEY,
+    //   odyssey: process.env.ETHERSCAN_API_KEY,
+    //   ethereum: process.env.ETHERSCAN_API_KEY,
+    //   sepolia: process.env.ETHERSCAN_API_KEY,
+    //   binance: process.env.BNB_API_KEY,
+    //   gnosis: process.env.GNOSIS_API_KEY,
+    //   unichain: process.env.BASESCAN_API_KEY,
+    //   berachain: process.env.BERACHAIN_API_KEY,
+    //   arbitrum: process.env.ARBITRUM_API_KEY,
+    //   berachainBepolia: process.env.ETHERSCAN_API_KEY,
+    //   katana: process.env.ETHERSCAN_API_KEY,
+    //   celo: process.env.MULTICHAIN_KEY
+    // },
+    apiKey: process.env.MULTICHAIN_KEY,
     customChains: [
       {
         network: 'base',
@@ -82,6 +115,22 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.basescan.org/api',
           browserURL: 'https://api.basescan.org/api'
+        }
+      },
+      {
+        network: 'baseSepolia',
+        chainId: 84532,
+        urls: {
+          apiURL: 'https://api.sepolia.basescan.org/api',
+          browserURL: 'https://api.sepolia.basescan.org/api'
+        }
+      },
+      {
+        network: 'opSepolia',
+        chainId: 11155420,
+        urls: {
+          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
+          browserURL: 'https://api-sepolia-optimistic.etherscan.io/api'
         }
       },
       {
@@ -146,6 +195,47 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.berascan.com/api',
           browserURL: 'https://api.berascan.com'
+        }
+      },
+      {
+        network: 'arbitrum',
+        chainId: 42161,
+        urls: {
+          apiURL: 'https://api.arbiscan.io/api',
+          browserURL: 'https://api.arbiscan.io'
+        }
+      },
+      {
+        network: 'hyperEvm',
+        chainId: 999,
+        urls: {
+          apiURL: 'https://api.hyperevmscan.io/api',
+          browserURL: 'https://api.hyperevmscan.io'
+        }
+      },
+      {
+        network: 'berachainBepolia',
+        chainId: 80069,
+        urls: {
+          // these aren't correct, it's a testnet afterall
+          apiURL: 'https://api.testnet.berascan.com/api',
+          browserURL: 'https://api.testnet.berascan.com'
+        }
+      },
+      {
+        network: 'katana',
+        chainId: 747474,
+        urls: {
+          apiURL: 'https://explorer.katanarpc.com/api',
+          browserURL: 'https://explorer.katanarpc.com'
+        }
+      },
+      {
+        network: 'celo',
+        chainId: 42220,
+        urls: {
+          apiURL: 'https://api.celoscan.io/api',
+          browserURL: 'https://celoscan.io'
         }
       }
     ]

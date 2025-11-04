@@ -303,7 +303,7 @@ describe('Portfolio', () => {
   })
 
   test('simulation works for smart accounts imported as EOAs', async () => {
-    const acc = '0xba4d70875B99CAaBb90e558e46d3ea7164D80E4E'
+    const acc = '0xae376B42699fDB0D80e9ceE068A4f75ae6d70d85'
     const accountOp: any = {
       accountAddr: acc,
       signingKeyAddr: acc,
@@ -315,7 +315,7 @@ describe('Portfolio', () => {
       calls: [
         {
           to: '0x26d6a373397d553595cd6a7bbabd86debd60a1cc',
-          value: 10000000000000000n,
+          value: 100n,
           data: '0x'
         }
       ]
@@ -342,7 +342,7 @@ describe('Portfolio', () => {
     if (!entry || entry.amountPostSimulation === undefined) {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
     }
-    expect(entry.amount - entry.amountPostSimulation).toBe(10000000000000000n)
+    expect(entry.amount - entry.amountPostSimulation).toBe(100n)
   })
 
   test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
