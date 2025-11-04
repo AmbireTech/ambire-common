@@ -2095,6 +2095,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
+          if (isUsingPaymaster) {
+            this.status = { type: SigningStatus.WaitingForPaymaster }
+            this.emitUpdate()
+          }
           shouldReestimate = true
         }
 
