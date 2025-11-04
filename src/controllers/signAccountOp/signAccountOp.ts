@@ -1796,14 +1796,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    const userOperation = getUserOperation(
-      this.account,
+    const userOperation = getUserOperation({
+      account: this.account,
       accountState,
-      this.accountOp,
-      this.bundlerSwitcher.getBundler().getName(),
-      this.accountOp.meta?.entryPointAuthorization,
-      eip7702Auth
-    )
+      accountOp: this.accountOp,
+      bundler: this.bundlerSwitcher.getBundler().getName(),
+      entryPointSig: this.accountOp.meta?.entryPointAuthorization,
+      eip7702Auth,
+      hasPendingUserOp: !!this.#activity.broadcastedButNotConfirmed.find(
+        (accOp) =>
+          accOp.accountAddr === this.account.addr &&
+          accOp.chainId === this.#network.chainId &&
+          !!accOp.asUserOperation
+      )
+    })
 
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
     userOperation.callGasLimit = toBeHex(

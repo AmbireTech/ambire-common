@@ -16,7 +16,6 @@ import wait from '../../utils/wait'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../accountOp/types'
 import { PaymasterEstimationData } from '../erc7677/types'
 import { DecodedError } from '../errorDecoder/types'
 import { getHumanReadableEstimationError } from '../errorHumanizer'
@@ -67,7 +66,6 @@ async function estimate(
   switcher: BundlerSwitcher,
   errorCallback: Function,
   options?: {
-    pendingUserOp?: SubmittedAccountOp
     gasPrices?: GasSpeeds | null
   }
 ): Promise<{
@@ -87,25 +85,6 @@ async function estimate(
       // if gas prices couldn't be fetched, it means there's an internal error
       estimation: Error('Failed to fetch gas prices, retrying...', { cause: '4337_ESTIMATION' }),
       nonFatalErrors: []
-    }
-  }
-
-  // if there's a pending userOp in the activity
-  // and it has the same userOp nonce as this txn,
-  // resolve the bundler estimation with a failure
-  if (
-    options &&
-    options.pendingUserOp &&
-    options.pendingUserOp.asUserOperation &&
-    options.pendingUserOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
-    BigInt(options.pendingUserOp.asUserOperation.nonce) === BigInt(userOp.nonce)
-  ) {
-    const error = new Error('4337 invalid account nonce', { cause: '4337_INVALID_NONCE' })
-    return {
-      gasPrice,
-      // if gas prices couldn't be fetched, it means there's an internal error
-      estimation: error,
-      nonFatalErrors: [error]
     }
   }
 
@@ -184,14 +163,15 @@ export async function bundlerEstimate(
   const account = baseAcc.getAccount()
   const localOp = { ...op }
   const initialBundler = switcher.getBundler()
-  const userOp = getUserOperation(
+  const userOp = getUserOperation({
     account,
     accountState,
-    localOp,
-    initialBundler.getName(),
-    op.meta?.entryPointAuthorization,
-    eip7702Auth
-  )
+    accountOp: localOp,
+    bundler: initialBundler.getName(),
+    entryPointSig: op.meta?.entryPointAuthorization,
+    eip7702Auth,
+    hasPendingUserOp: !!pendingUserOp
+  })
   // set the callData
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
 
@@ -218,17 +198,9 @@ export async function bundlerEstimate(
 
   const flags: EstimationFlags = {}
   let gasPrices: GasSpeeds | null = null
-  flags.timesSeen4337NonceDiscrepancy = 0
   while (true) {
     // estimate
     const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback, {
-      // if we've tried to fetch the nonce 3 times and it's still the same nonce as
-      // the pendingUserOp nonce, then there might be bundler broadcast problems.
-      // In that case, we remove the pendingUserOp logic and leave it to the bundler
-      pendingUserOp:
-        flags.timesSeen4337NonceDiscrepancy && flags.timesSeen4337NonceDiscrepancy >= 3
-          ? undefined
-          : pendingUserOp,
       gasPrices
     })
 
@@ -254,12 +226,6 @@ export async function bundlerEstimate(
       estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
     ) {
       flags.has4337NonceDiscrepancy = true
-      flags.timesSeen4337NonceDiscrepancy += 1
-
-      // prevent infinite loops in the event of a terrible rpc malfunction
-      if (flags.timesSeen4337NonceDiscrepancy > 3) {
-        return estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')!
-      }
 
       // cache the gas prices on 4337_INVALID_NONCE error as we're not changing the bundler
       if (!(estimations.gasPrice instanceof Error)) {

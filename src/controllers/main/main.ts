@@ -544,7 +544,8 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-      if (!this.activity.broadcastedButNotConfirmed.length) {
+
+      if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
@@ -624,6 +625,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
+      this.activity.forceEmitUpdate(),
       this.requests.actions.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
@@ -1227,8 +1229,26 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.initialLoadPromise
 
+    const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
+      .filter(([, ops]) => ops.length > 0)
+      .map(([addr]) => addr)
+
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
+
+    if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
+
+    const updatedAccountsOpsForSelectedAccount = updatedAccountsOpsByAccount[
+      this.selectedAccount.account.addr
+    ] || {
+      shouldEmitUpdate: false,
+      chainsToUpdate: [],
+      updatedAccountsOps: [],
+      newestOpTimestamp: 0
+    }
     const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
-      await this.activity.updateAccountsOpsStatuses()
+      updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
