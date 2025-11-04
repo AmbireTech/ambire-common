@@ -76,6 +76,7 @@ export type PositionsByProvider = {
   chainId: bigint
   iconUrl: string
   siteUrl: string
+  source: 'debank' | 'custom'
   type:
     | 'common'
     | 'locked'

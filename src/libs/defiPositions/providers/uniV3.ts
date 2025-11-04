@@ -106,6 +106,7 @@ export async function getUniV3Positions(
   return {
     providerName: 'Uniswap V3',
     chainId,
+    source: 'custom',
     iconUrl: '',
     siteUrl: 'https://app.uniswap.org/swap',
     type: 'common',
