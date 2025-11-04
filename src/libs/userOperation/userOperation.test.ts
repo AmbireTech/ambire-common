@@ -66,7 +66,6 @@ describe('User Operation tests', () => {
       })
       expect(userOp).toHaveProperty('factory')
       expect(userOp).toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('standard')
       expect(userOp.activatorCall).toBe(undefined)
     })
     test('should not include deploy code nor the activator call on a deployed account with entry point privs', async () => {
@@ -94,7 +93,6 @@ describe('User Operation tests', () => {
       })
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('standard')
       expect(userOp.activatorCall).toBe(undefined)
     })
     test('should include activator call if the account is deployed but does not have entry point privs', async () => {
@@ -123,7 +121,6 @@ describe('User Operation tests', () => {
       })
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('standard')
       expect(userOp.activatorCall).toBe(undefined)
     })
   })

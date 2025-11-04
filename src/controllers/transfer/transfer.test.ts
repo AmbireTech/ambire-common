@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
@@ -12,16 +11,14 @@ import { expect } from '@jest/globals'
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { mockInternalKeys, produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
-import { Key, TxnRequest } from '../../interfaces/keystore'
+import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { IProvidersController } from '../../interfaces/provider'
-import { EIP7702Signature } from '../../interfaces/signatures'
 import { ITransferController } from '../../interfaces/transfer'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
@@ -144,7 +141,8 @@ class InternalSigner {
     return Promise.resolve('')
   }
 
-  sign7702(hex: string): EIP7702Signature {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
@@ -153,7 +151,7 @@ class InternalSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }
@@ -178,7 +176,8 @@ class LedgerSigner {
     return Promise.resolve('')
   }
 
-  sign7702(hex: string): EIP7702Signature {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
@@ -187,7 +186,7 @@ class LedgerSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }

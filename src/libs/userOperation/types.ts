@@ -3,8 +3,6 @@ import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
 import { Call } from '../accountOp/types'
 
-export type UserOpRequestType = 'standard' | 'activator' | 'recovery' | '7702'
-
 export interface PackedUserOperation {
   sender: string
   nonce: bigint
@@ -36,7 +34,6 @@ export interface UserOperation {
   paymasterData?: string // hex string
   signature: string // hex string
   // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
-  requestType: UserOpRequestType
   activatorCall?: Call
   // which bundler is responsible for submitting and fetching info
   // about this userOp

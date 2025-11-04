@@ -30,6 +30,14 @@ const config: HardhatUserConfig = {
       url: 'https://mainnet.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    polygon: {
+      url: 'https://invictus.ambire.com/polygon',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    ink: {
+      url: 'https://rpc-gel.inkonchain.com',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     hyperEvm: {
       url: 'https://invictus.ambire.com/hyperevm',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -71,7 +79,7 @@ const config: HardhatUserConfig = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     berachain: {
-      url: 'https://rpc.berachain-apis.com',
+      url: 'https://berachain-rpc.publicnode.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     arbitrum: {
@@ -115,6 +123,22 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.basescan.org/api',
           browserURL: 'https://api.basescan.org/api'
+        }
+      },
+      {
+        network: 'polygon',
+        chainId: 137,
+        urls: {
+          apiURL: 'https://api.polygonscan.org/api',
+          browserURL: 'https://api.polygonscan.org/api'
+        }
+      },
+      {
+        network: 'ink',
+        chainId: 57073,
+        urls: {
+          apiURL: 'https://explorer.inkonchain.com/api',
+          browserURL: 'https://explorer.inkonchain.com'
         }
       },
       {
