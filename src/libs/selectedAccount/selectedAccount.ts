@@ -784,8 +784,14 @@ export const calculateAndSetProjectedRewards = (
   const hasLowBalance = [...parsedSnapshotsBalance, currentTotalBalanceOnSupportedChains].every(
     (b) => b < minBalance
   )
-  const projectedAmountFormatted =
-    userLevel < minLvl || hasLowBalance ? 0 : Math.round(projectedAmount * 1e18)
+
+  // Final projected amount after checks.
+  // If the user is below min level or has low balance, it's 0.
+  // If projected amount < 1, it's also 0.
+  const finalProjectedAmount =
+    userLevel < minLvl || hasLowBalance || projectedAmount < 1 ? 0 : projectedAmount
+
+  const projectedAmountFormatted = Math.round(finalProjectedAmount * 1e18)
 
   return {
     chainId: BigInt(1),
