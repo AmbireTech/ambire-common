@@ -795,8 +795,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         category: 'pending-to-be-confirmed-acc-ops',
         title:
           pendingOps.length === 1
-            ? 'Transaction is pending on-chain confirmation.'
-            : 'Transactions are pending on-chain confirmation.',
+            ? 'Transaction is pending onchain confirmation.'
+            : 'Transactions are pending onchain confirmation.',
         text:
           pendingOps.length === 1
             ? 'Scroll down to view the pending transaction.'
