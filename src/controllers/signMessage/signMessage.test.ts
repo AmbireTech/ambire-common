@@ -137,7 +137,9 @@ describe('SignMessageController', () => {
       keystoreCtrl,
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
     inviteCtrl = new InviteController({ relayerUrl, fetch, storage: storageCtrl })
 

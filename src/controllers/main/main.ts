@@ -261,7 +261,9 @@ export class MainController extends EventEmitter implements IMainController {
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers),
-      this.#updateIsOffline.bind(this)
+      this.#updateIsOffline.bind(this),
+      relayerUrl,
+      this.fetch
     )
     this.autoLogin = new AutoLoginController(
       this.storage,

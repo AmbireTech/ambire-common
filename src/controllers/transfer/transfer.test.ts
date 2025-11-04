@@ -203,7 +203,9 @@ const accountsCtrl = new AccountsController(
   keystoreController,
   () => {},
   () => {},
-  () => {}
+  () => {},
+  relayerUrl,
+  fetch
 )
 const autoLoginCtrl = new AutoLoginController(
   storageCtrl,

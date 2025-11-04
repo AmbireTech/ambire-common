@@ -81,7 +81,9 @@ const prepareTest = async () => {
     keystoreCtrl,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   const autoLoginCtrl = new AutoLoginController(
     storageCtrl,
