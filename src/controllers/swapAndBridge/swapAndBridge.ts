@@ -1634,15 +1634,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
                 return sortByTime()
               }
 
-              const aUsd = r1.outputValueInUsd
-              const bUsd = r2.outputValueInUsd
+              const aUsd = Number(r1.outputValueInUsd ?? 0)
+              const bUsd = Number(r2.outputValueInUsd ?? 0)
               if (a > b) {
                 // if it's not a bridge, just return the higher output route
                 if (!isBridge) return -1
 
                 // if the bigint amount says a > b but the usd amount says
                 // the opposite, we're stuck, so just return a as the winner
-                if (bUsd > aUsd || aUsd.toFixed(2) === '0.00') return -1
+                if (bUsd > aUsd || aUsd === 0) return -1
 
                 const percentage = ((aUsd - bUsd) / aUsd) * 100
                 if (percentage < threshold) return sortByTime()
@@ -1654,7 +1654,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
               // if the bigint amount says b > a but the usd amount says
               // the opposite, we're stuck, so just return b as the winner
-              if (aUsd > bUsd || bUsd.toFixed(2) === '0.00') return 1
+              if (aUsd > bUsd || bUsd === 0) return 1
               const percentage = ((bUsd - aUsd) / bUsd) * 100
               if (percentage < threshold) return sortByTime()
               return 1
