@@ -12,7 +12,8 @@ export async function getRelayerNonce(
   provider: RPCProvider
 ): Promise<bigint> {
   // find the pending activity with the biggest nonce
-  const accountBroadcastedButNotConfirmed = activity.broadcastedButNotConfirmed[op.accountAddr]
+  const accountBroadcastedButNotConfirmed =
+    activity.broadcastedButNotConfirmed[op.accountAddr] || []
   const pendingActivityOps = accountBroadcastedButNotConfirmed.filter(
     (accOp) => accOp.chainId === op.chainId
   )

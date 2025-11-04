@@ -1239,8 +1239,14 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
 
-    const updatedAccountsOpsForSelectedAccount =
-      updatedAccountsOpsByAccount[this.selectedAccount.account.addr]
+    const updatedAccountsOpsForSelectedAccount = updatedAccountsOpsByAccount[
+      this.selectedAccount.account.addr
+    ] || {
+      shouldEmitUpdate: false,
+      chainsToUpdate: [],
+      updatedAccountsOps: [],
+      newestOpTimestamp: 0
+    }
     const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
       updatedAccountsOpsForSelectedAccount
 
