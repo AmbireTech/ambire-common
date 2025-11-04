@@ -629,15 +629,17 @@ export class StorageController extends EventEmitter implements IStorageControlle
     dapps.forEach((dapp: Dapp) => {
       const updatedDapp: Dapp = {
         ...dapp,
-        category: dapp.category || null,
-        tvl: dapp.tvl || null,
-        chainIds: dapp.chainIds || [],
+        description: dapp?.description?.startsWith('Custom app automatically added')
+          ? ''
+          : dapp.description,
+        category: null,
+        tvl: null,
+        chainIds: [],
         isConnected: dapp?.isConnected || false,
         isFeatured: dapp.isFeatured || false,
-        isCustom:
-          dapp.isCustom || !!dapp?.description?.startsWith('Custom app automatically added'),
-        twitter: dapp.twitter || null,
-        geckoId: dapp.geckoId || null
+        isCustom: !!dapp?.description?.startsWith('Custom app automatically added'),
+        twitter: null,
+        geckoId: null
       }
       migratedDapps.push(updatedDapp)
     })
