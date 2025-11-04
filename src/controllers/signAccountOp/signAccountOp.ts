@@ -1803,7 +1803,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       bundler: this.bundlerSwitcher.getBundler().getName(),
       entryPointSig: this.accountOp.meta?.entryPointAuthorization,
       eip7702Auth,
-      hasPendingUserOp: !!this.#activity.broadcastedButNotConfirmed.find(
+      hasPendingUserOp: !!(this.#activity.broadcastedButNotConfirmed[this.account.addr] || []).find(
         (accOp) =>
           accOp.accountAddr === this.account.addr &&
           accOp.chainId === this.#network.chainId &&
