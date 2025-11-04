@@ -788,8 +788,8 @@ export const calculateAndSetProjectedRewards = (
   // Final projected amount after checks.
   // If the user is below min level or has low balance, it's 0.
   // If projected amount < 1, it's also 0.
-  const finalProjectedAmount =
-    userLevel < minLvl || hasLowBalance || projectedAmount < 1 ? 0 : projectedAmount
+  const shouldZeroRewards = userLevel < minLvl || hasLowBalance || projectedAmount < 1
+  const finalProjectedAmount = shouldZeroRewards ? 0 : projectedAmount
 
   const projectedAmountFormatted = Math.round(finalProjectedAmount * 1e18)
 
