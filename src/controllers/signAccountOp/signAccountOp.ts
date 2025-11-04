@@ -28,7 +28,6 @@ import {
   SINGLETON
 } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-/* eslint-disable no-restricted-syntax */
 import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   ERRORS,
@@ -1413,6 +1412,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const speeds: SpeedCalc[] = []
         const usesPaymaster = estimation.bundlerEstimation?.paymaster.isUsable()
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const [speed, speedValue] of Object.entries(increasedGasPrices)) {
           const simulatedGasLimit =
             BigInt(gasUsed) +
