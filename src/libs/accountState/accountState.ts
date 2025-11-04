@@ -1,6 +1,8 @@
-import { concat, Provider } from 'ethers'
+/* eslint-disable no-underscore-dangle */
+import { concat } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
+import { ProviderError } from '../../classes/ProviderError'
 import { eip7702AmbireContracts } from '../../consts/7702'
 import {
   EIP_7702_METAMASK,
@@ -10,6 +12,7 @@ import {
 } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
@@ -23,7 +26,7 @@ const hasAmbireDelegation = (code: string) => {
 }
 
 export async function getAccountState(
-  provider: Provider,
+  provider: RPCProvider,
   network: Network,
   accounts: Account[],
   blockTag: string | number = 'latest'
@@ -77,8 +80,12 @@ export async function getAccountState(
     deploylessAccountState.call('getAccountsState', [args], {
       blockTag
     }),
-    getEOAsNonce(eoas),
-    getEOAsCode(eoas)
+    getEOAsNonce(eoas).catch((e) => {
+      throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
+    }),
+    getEOAsCode(eoas).catch((e) => {
+      throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
+    })
   ])
 
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {

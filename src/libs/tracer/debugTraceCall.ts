@@ -4,6 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+import { ProviderError } from '../../classes/ProviderError'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -87,16 +88,17 @@ export async function debugTraceCall(
 
   const params = getFunctionParams(account, op, accountState)
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
-    await provider.send('debug_traceCall', [
-      {
-        to: params.to,
-        value: toQuantity(params.value.toString()),
-        data: params.data,
-        from: params.from
-      },
-      'latest',
-      {
-        tracer: `{
+    await provider
+      .send('debug_traceCall', [
+        {
+          to: params.to,
+          value: toQuantity(params.value.toString()),
+          data: params.data,
+          from: params.from
+        },
+        'latest',
+        {
+          tracer: `{
           discovered: [],
           fault: function (log) {},
           step: function (log) {
@@ -120,20 +122,24 @@ export async function debugTraceCall(
           }
         }`,
 
-        enableMemory: false,
-        enableReturnData: true,
-        disableStorage: true,
-        stateOverrides: supportsStateOverride
-          ? {
-              // TODO: if it's an EOA, add the EOA state override data
-              [params.from]: {
-                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-              },
-              ...overrideData
-            }
-          : {}
-      }
-    ])
+          enableMemory: false,
+          enableReturnData: true,
+          disableStorage: true,
+          stateOverrides: supportsStateOverride
+            ? {
+                // TODO: if it's an EOA, add the EOA state override data
+                [params.from]: {
+                  balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+                },
+                ...overrideData
+              }
+            : {}
+        }
+      ])
+      .catch((e) => {
+        // eslint-disable-next-line no-underscore-dangle
+        throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
+      })
 
   const foundTokens = [
     ...new Set(results.filter((i) => i?.erc === 20).map((i) => getAddress(i.address)))
