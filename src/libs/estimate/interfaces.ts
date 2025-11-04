@@ -24,7 +24,6 @@ export interface EstimationFlags {
   hasNonceDiscrepancy?: boolean
   has4337NonceDiscrepancy?: boolean
   hasInitialGasLimitFailed?: boolean
-  timesSeen4337NonceDiscrepancy?: number
 }
 
 export interface Erc4337GasLimits {
