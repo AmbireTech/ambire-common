@@ -68,4 +68,28 @@ const modifyDappPropsIfNeeded = (
   }
 }
 
-export { getDappIdFromUrl, getDomainFromUrl, formatDappName, sortDapps, modifyDappPropsIfNeeded }
+function getDappNameFromId(id: string) {
+  try {
+    return id
+      .replace(/^www\./, '')
+      .split('.')
+      .map((part) =>
+        part
+          .split('-')
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ')
+      )
+      .join(' ')
+  } catch {
+    return 'Unknown Dapp'
+  }
+}
+
+export {
+  getDappIdFromUrl,
+  getDomainFromUrl,
+  formatDappName,
+  sortDapps,
+  modifyDappPropsIfNeeded,
+  getDappNameFromId
+}

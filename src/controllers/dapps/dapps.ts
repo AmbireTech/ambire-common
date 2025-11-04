@@ -24,6 +24,7 @@ import { IUiController, View } from '../../interfaces/ui'
 import {
   formatDappName,
   getDappIdFromUrl,
+  getDappNameFromId,
   getDomainFromUrl,
   modifyDappPropsIfNeeded,
   sortDapps
@@ -468,7 +469,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#dapps.set(dapp.id, {
       id: dapp.id,
       url: dapp.url,
-      name: existingByDomain?.name || dapp.name,
+      name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
       chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
       description: existingByDomain?.description || '',
       icon: existingByDomain?.icon || dapp.icon,

@@ -8,6 +8,7 @@ import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { CashbackStatus } from '../../interfaces/selectedAccount'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
+import { getDappNameFromId } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
@@ -629,6 +630,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     dapps.forEach((dapp: Dapp) => {
       const updatedDapp: Dapp = {
         ...dapp,
+        name: dapp.name || getDappNameFromId(dapp.id),
         description: dapp?.description?.startsWith('Custom app automatically added')
           ? ''
           : dapp.description,
