@@ -29,6 +29,7 @@ import {
 } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 /* eslint-disable no-restricted-syntax */
+import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -41,8 +42,6 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-/* eslint-disable no-restricted-syntax */
-import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -1965,8 +1964,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
       !shouldSignDeployAuth &&
-      // when using external signer, don’t flip status immediately - device action takes time
-      !isExternalSignerInvolved
+      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)
 
     if (isImmediatelyWaitingForPaymaster) this.status = { type: SigningStatus.WaitingForPaymaster }
 
