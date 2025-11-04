@@ -145,6 +145,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #updateQuoteId?: string
 
+  #userTxn: SwapAndBridgeSendTxRequest | null = null
+
   switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   sessionIds: string[] = []
@@ -254,8 +256,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * - when the user has chosen a custom route by himself
    */
   isAutoSelectRouteDisabled: boolean = false
-
-  #isReestimating: boolean = false
 
   #relayerUrl: string
 
@@ -1002,6 +1002,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.isAutoSelectRouteDisabled = false
     this.#updateQuoteId = undefined
     this.fromAmountUpdateCounter = 0
+    this.#userTxn = null
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -2299,6 +2300,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn || !userTxn.success) {
+      this.#userTxn = null
+
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote', false)
 
@@ -2313,6 +2316,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.onEstimationFailure(undefined)
       return
     }
+
+    // set the correct userTxn
+    this.#userTxn = userTxn
 
     // learn the token in the portfolio
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
@@ -2399,22 +2405,40 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       provider: this.#providers.providers[network.chainId.toString()],
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      isSignRequestStillActive: () => {
-        // this is more for a "just-in-case"
-        // stop the gas price refetch if there's no signAccountOpController
-        // this could only happen if there's a major bug and more than one
-        // instance gets created in this controller.
-        // It's arguable if it's not better to leave this to "true" instead
-        // as leaving it to true will make the problem bigger, but more easy
-        // identifiable
-        return !!this.#signAccountOpController
+      isSignRequestStillActive: (): boolean => {
+        // if we're refetching a quote atm, we don't execute the estimation
+        // a race between the old estimation with the old quote and the new
+        // estimation with the new quote might happen
+        //
+        // also, if the tx data is different, it means the user is playing
+        // with the swap, so we don't want to reestimate
+        //
+        // we only want a re-estimate in a stale state
+        if (
+          this.updateQuoteStatus === 'LOADING' ||
+          !this.#signAccountOpController ||
+          !this.#signAccountOpController.accountOp.meta?.swapTxn ||
+          !this.#userTxn ||
+          this.#userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
+        )
+          return false
+
+        return true
       },
       shouldSimulate: false,
-      shouldReestimate: false,
       onBroadcastSuccess: async (props) => {
-        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
-          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
-        })
+        this.#portfolio
+          .simulateAccountOp(props.accountOp)
+          .then(() => {
+            this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+          })
+          .catch((e) => {
+            this.emitError({
+              level: 'silent',
+              message: 'swap&bridge simulation failed',
+              error: e
+            })
+          })
 
         await this.#onBroadcastSuccess(props)
         // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
@@ -2469,55 +2493,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }
       })
     )
-
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate(userTxn)
-  }
-
-  /**
-   * Reestimate the signAccountOp request periodically.
-   * Encapsulate it here instead of creating an interval in the background
-   * as intervals are tricky and harder to control
-   */
-  async reestimate(userTxn: SwapAndBridgeSendTxRequest) {
-    if (this.#isReestimating) return
-
-    this.#isReestimating = true
-    await wait(30000)
-    this.#isReestimating = false
-
-    if (!this.#signAccountOpController) return
-    if (!this.#signAccountOpController.accountOp.meta?.swapTxn) return
-
-    const newestUserTxn = JSON.parse(
-      JSON.stringify(this.#signAccountOpController.accountOp.meta.swapTxn)
-    )
-
-    // if we're refetching a quote atm, we don't execute the estimation
-    // a race between the old estimation with the old quote and the new
-    // estimation with the new quote might happen
-    //
-    // also, if the tx data is different, it means the user is playing
-    // with the swap, so we don't want to reestimate
-    //
-    // we only want a re-estimate in a stale state
-    if (
-      this.updateQuoteStatus === 'LOADING' ||
-      userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.reestimate(newestUserTxn)
-      return
-    }
-
-    this.#signAccountOpController.estimate().catch((e) => {
-      // eslint-disable-next-line no-console
-      console.log('error on swap&bridge re-estimate')
-      // eslint-disable-next-line no-console
-      console.log(e)
-    })
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate(newestUserTxn)
   }
 
   setUserProceeded(hasProceeded: boolean) {
