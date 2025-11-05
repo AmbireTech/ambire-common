@@ -340,14 +340,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
 
-    const isRecipientAddressUnknownMissingOrAccepted =
-      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
-
     return (
-      areFormFieldsValid &&
-      isSWWarningMissingOrAccepted &&
-      isRecipientAddressUnknownMissingOrAccepted &&
-      !this.addressState.isDomainResolving
+      areFormFieldsValid && isSWWarningMissingOrAccepted && !this.addressState.isDomainResolving
     )
   }
 
