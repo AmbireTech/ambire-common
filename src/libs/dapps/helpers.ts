@@ -1,7 +1,13 @@
-import { Dapp } from '../../interfaces/dapp'
+import { getDomain } from 'tldts'
+
+import { predefinedDapps } from '../../consts/dapps'
+import { Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url?: string): string => {
   if (!url) return 'internal'
+
+  const predefinedDapp = predefinedDapps.find((d) => d.url === url)
+  if (predefinedDapp) return predefinedDapp.id
 
   try {
     const { hostname } = new URL(url)
@@ -11,34 +17,88 @@ const getDappIdFromUrl = (url?: string): string => {
   }
 }
 
-const dappIdsToBeRemoved = new Set([
-  'legends.ambire.com', // Remove legends from the list as it was replaced with rewards.ambire.com
-  'yearn.finance', // Remove the legacy Yarn Finance URL from the list
-  'getpass.civic.com', // Civic Pass got shut down
-  'mean.finance', // Mean Finance became Balmy, but Balmy got shut down
-  'polygon.lido.fi', // Lido Polygon staking was sunset on June 16th 2025
-  'kwenta.io', // Synthetix acquired Kwenta
-  'pro.opensea.io', // Open Sea Pro is no longer on e separate domain
-  'app.paraswap.io', // ParaSwap rebranded to Velora
-  'snapshot.org', // snapshot.org became snapshot.box
-  'play.decentraland.org', // play.decentraland.org redirects to decentraland.org
-  'bridge.arbitrum.io', // bridge.arbitrum.io was moved to portal.arbitrum.io
-  'curve.fi', // curve.fi was moved to curve.finance
-  'app.ether.fi' // app.ether.fi was moved to ether.fi
-])
+const getDomainFromUrl = (url: string) => {
+  const predefinedDapp = predefinedDapps.find((d) => d.url === url)
+  if (predefinedDapp) return predefinedDapp.id
 
-/**
- * A temporary function used to patch apps stored in storage. As both predefined and custom apps
- * are stored in the same place and we don't have a mechanism to differentiate between them, we need to
- * remove the predefined ones from the storage.
- */
-const patchStorageApps = (storageDapps: Dapp[]) => {
-  return storageDapps.reduce((acc: Dapp[], curr: Dapp): Dapp[] => {
-    const currAppId = getDappIdFromUrl(curr.url)
-    if (dappIdsToBeRemoved.has(currAppId)) return acc
-
-    return [...acc, curr]
-  }, [])
+  return getDomain(url)
 }
 
-export { patchStorageApps, getDappIdFromUrl }
+const formatDappName = (name: string) => {
+  if (name.toLowerCase().includes('uniswap')) return 'Uniswap'
+  if (name.toLowerCase().includes('aave v3')) return 'AAVE'
+
+  return name
+}
+
+const sortDapps = (a: Dapp, b: Dapp) => {
+  // 1. rewards.ambire.com always first
+  if (a.id === 'rewards.ambire.com') return -1
+  if (b.id === 'rewards.ambire.com') return 1
+
+  // 2. Snapshot Ambire DAO always second
+  if (a.id === 'snapshot.box/#/s:ambire.eth') return -1
+  if (b.id === 'snapshot.box/#/s:ambire.eth') return 1
+
+  // 3. Featured first, then by TVL
+  const featuredAndTVL =
+    Number(b.isFeatured) - Number(a.isFeatured) || Number(b.tvl) - Number(a.tvl)
+
+  if (featuredAndTVL !== 0) return featuredAndTVL
+
+  // 4. Custom dapps last
+  return Number(a.isCustom) - Number(b.isCustom)
+}
+
+const modifyDappPropsIfNeeded = (
+  id: string,
+  dappsMap: Map<string, Dapp>,
+  protocol: DefiLlamaProtocol,
+  onModify: (modifiedDapp: Dapp) => void
+) => {
+  if (id === 'uniswap.org') {
+    const uniswap = dappsMap.get(id)
+    if (uniswap) {
+      uniswap.tvl = (uniswap.tvl || 0) + (protocol.tvl || 0)
+      uniswap.description =
+        'Swap, earn, and build on the leading decentralized crypto trading protocol.'
+      if (protocol.id === '5690') uniswap.icon = protocol.logo
+      onModify(uniswap)
+    }
+  }
+}
+
+function getDappNameFromId(id: string) {
+  try {
+    return id
+      .replace(/^www\./, '')
+      .split('.')
+      .map((part) =>
+        part
+          .split('-')
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ')
+      )
+      .join(' ')
+  } catch {
+    return 'Unknown Dapp'
+  }
+}
+
+function unifyDefiLlamaDappUrl(url: string) {
+  try {
+    return new URL(url).origin
+  } catch {
+    return url // If it's not a valid URL, return as-is
+  }
+}
+
+export {
+  getDappIdFromUrl,
+  getDomainFromUrl,
+  formatDappName,
+  sortDapps,
+  modifyDappPropsIfNeeded,
+  getDappNameFromId,
+  unifyDefiLlamaDappUrl
+}

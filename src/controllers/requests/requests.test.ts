@@ -8,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { PhishingController } from '../phishing/phishing'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
@@ -36,7 +37,7 @@ import { RequestsController } from './requests'
 
 const uiManager = mockUiManager().uiManager
 
-const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
+const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
 const accounts = [
   {
@@ -123,6 +124,12 @@ const prepareTest = async () => {
     new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
 
+  const phishingCtrl = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    ui: uiCtrl
+  })
+
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
@@ -130,7 +137,14 @@ const prepareTest = async () => {
     autoLogin: autoLoginCtrl
   })
 
-  const dappsCtrl = new DappsController(storageCtrl)
+  const dappsCtrl = new DappsController({
+    appVersion: '10',
+    fetch,
+    storage: storageCtrl,
+    networks: networksCtrl,
+    phishing: phishingCtrl,
+    ui: uiCtrl
+  })
 
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   const portfolioCtrl = new PortfolioController(

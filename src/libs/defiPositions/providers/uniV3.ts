@@ -2,8 +2,10 @@ import { JsonRpcProvider, Provider } from 'ethers'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiUniswapV3Positions.json'
 import { Network } from '../../../interfaces/network'
+import { RPCProvider } from '../../../interfaces/provider'
 import { fromDescriptor } from '../../deployless/deployless'
 import { UNISWAP_V3 } from '../defiAddresses'
+import { getProviderId } from '../helpers'
 import { AssetType, Position, PositionsByProvider } from '../types'
 import { uniV3DataToPortfolioPosition } from './helpers/univ3Math'
 
@@ -111,5 +113,55 @@ export async function getUniV3Positions(
     siteUrl: 'https://app.uniswap.org/swap',
     type: 'common',
     positions
+  }
+}
+
+export async function getDebankEnhancedUniV3Positions(
+  addr: string,
+  provider: RPCProvider,
+  network: Network,
+  previousPositions: PositionsByProvider[],
+  debankNetworkPositionsByProvider: PositionsByProvider[],
+  isDebankCallSuccessful: boolean
+): Promise<PositionsByProvider | null> {
+  const previousMixedUniV3 = previousPositions.find(
+    (p) => getProviderId(p.providerName) === getProviderId('Uniswap V3') && p.source === 'mixed'
+  )
+
+  // If the call to debank wasn't successful, and we have a previous mixed UniV3 position, return it
+  // This is done to avoid losing the mixed data in case of Debank being down
+  // At the same time, we want to fetch the custom position if there is no previous mixed data
+  if (!isDebankCallSuccessful && previousMixedUniV3) {
+    return previousMixedUniV3
+  }
+
+  const uniPosition = await getUniV3Positions(addr, provider, network)
+
+  if (!uniPosition) return null
+
+  const uniPositionFromDebank = debankNetworkPositionsByProvider?.find(
+    (p) => getProviderId(p.providerName) === getProviderId(uniPosition.providerName)
+  )
+
+  // If we can't find a matching UniV3 position from Debank, return the custom one
+  if (!uniPositionFromDebank) return uniPosition
+
+  // Merge the positions from Debank with the custom ones
+  return {
+    ...uniPositionFromDebank,
+    source: 'mixed' as const,
+    positions: uniPositionFromDebank.positions.map((pos) => {
+      const match = uniPosition.positions.find((p) => p.id === pos.additionalData.positionIndex)
+
+      return match
+        ? {
+            ...pos,
+            additionalData: {
+              ...pos.additionalData,
+              inRange: match.additionalData.inRange
+            }
+          }
+        : pos
+    })
   }
 }

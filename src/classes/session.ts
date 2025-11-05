@@ -4,7 +4,7 @@ import { getDappIdFromUrl } from '../libs/dapps/helpers'
 export interface SessionInitProps {
   tabId?: number
   windowId?: number
-  origin?: string
+  url?: string
 }
 export interface SessionProp {
   icon?: string
@@ -12,12 +12,20 @@ export interface SessionProp {
   isWeb3App?: boolean
 }
 
-export function getSessionId({ tabId, windowId, origin }: SessionInitProps) {
+export function getSessionId({
+  tabId,
+  windowId,
+  dappId
+}: {
+  windowId: SessionInitProps['windowId']
+  tabId: SessionInitProps['tabId']
+  dappId: string
+}) {
   if (windowId) {
-    return `${windowId}-${tabId}-${origin}`
+    return `${windowId}-${tabId}-${dappId}`
   }
 
-  return `${tabId}-${origin}`
+  return `${tabId}-${dappId}`
 }
 
 // Each instance of a Session represents an active connection between a dApp and the wallet.
@@ -64,9 +72,13 @@ export class Session {
     )
   }
 
-  constructor({ tabId, windowId, origin }: SessionInitProps = {}) {
-    this.id = getDappIdFromUrl(origin)
-    this.origin = origin || 'internal'
+  constructor({ tabId, windowId, url }: SessionInitProps = {}) {
+    if (url) {
+      this.origin = new URL(url).origin
+    } else {
+      this.origin = 'internal'
+    }
+    this.id = getDappIdFromUrl(url)
     this.tabId = tabId || Date.now()
     this.windowId = windowId
 
@@ -97,11 +109,7 @@ export class Session {
   }
 
   get sessionId() {
-    return getSessionId({
-      tabId: this.tabId,
-      windowId: this.windowId,
-      origin: this.origin
-    })
+    return getSessionId({ tabId: this.tabId, windowId: this.windowId, dappId: this.id })
   }
 
   toJSON() {
