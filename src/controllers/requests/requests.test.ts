@@ -107,7 +107,9 @@ const prepareTest = async () => {
     keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
 
   const keystoreCtrl = new KeystoreController('default', storageCtrl, {}, uiCtrl)

@@ -96,7 +96,9 @@ describe('AddressBookController', () => {
     keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   const autoLoginCtrl = new AutoLoginController(
     storageCtrl,

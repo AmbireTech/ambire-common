@@ -42,7 +42,7 @@ export type GasTankTokenResult = TokenResult & {
 }
 
 export type ProjectedRewardsTokenResult = TokenResult & {
-  apy: number
+  userXp: number
 }
 
 export interface CollectionResult extends TokenResult {
@@ -238,6 +238,7 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
   apy: number
   minLvl: number
   minBalance: number
+  userXp: number
 }
 
 export type NetworkState = {

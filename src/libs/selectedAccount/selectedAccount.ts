@@ -1,6 +1,6 @@
 import { getAddress } from 'ethers'
 
-import { STK_WALLET } from '../../consts/addresses'
+import { WALLET_TOKEN } from '../../consts/addresses'
 import {
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks,
@@ -744,7 +744,8 @@ export const calculateAndSetProjectedRewards = (
     userLevel,
     walletPrice,
     minLvl,
-    minBalance
+    minBalance,
+    userXp
   } = result
 
   const currentTotalBalanceOnSupportedChains = supportedChainIds
@@ -774,7 +775,6 @@ export const calculateAndSetProjectedRewards = (
     currentBalance,
     numberOfWeeksSinceStartOfSeason,
     totalWeightNonUser,
-    walletTokenPrice,
     totalRewardsPool,
     minLvl,
     minBalance
@@ -784,18 +784,24 @@ export const calculateAndSetProjectedRewards = (
   const hasLowBalance = [...parsedSnapshotsBalance, currentTotalBalanceOnSupportedChains].every(
     (b) => b < minBalance
   )
-  const projectedAmountFormatted =
-    userLevel < minLvl || hasLowBalance ? 0 : Math.round(projectedAmount.walletRewards * 1e18)
+
+  // Final projected amount after checks.
+  // If the user is below min level or has low balance, it's 0.
+  // If projected amount < 1, it's also 0.
+  const shouldZeroRewards = userLevel < minLvl || hasLowBalance || projectedAmount < 1
+  const finalProjectedAmount = shouldZeroRewards ? 0 : projectedAmount
+
+  const projectedAmountFormatted = Math.round(finalProjectedAmount * 1e18)
 
   return {
     chainId: BigInt(1),
     amount: BigInt(projectedAmountFormatted || 0),
-    address: STK_WALLET,
-    symbol: 'stkWALLET',
-    name: 'Staked $WALLET',
+    address: WALLET_TOKEN,
+    symbol: 'WALLET',
+    name: '$WALLET',
     decimals: 18,
-    apy: projectedAmount.apy,
     priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
+    userXp,
     flags: {
       onGasTank: false,
       rewardsType: 'wallet-projected-rewards' as const,

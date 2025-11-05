@@ -1,4 +1,4 @@
-import { AbiCoder, concat, hexlify, Interface, keccak256, Log, toBeHex } from 'ethers'
+import { AbiCoder, concat, hexlify, Interface, keccak256, Log, randomBytes, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -20,12 +20,7 @@ import { Network } from '../../interfaces/network'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 //  TODO: dependency cycle
 // eslint-disable-next-line import/no-cycle
-import {
-  PackedUserOperation,
-  UserOperation,
-  UserOperationEventData,
-  UserOpRequestType
-} from './types'
+import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
   if (callData === '0x') return 0n
@@ -68,7 +63,7 @@ export function getActivatorCall(addr: AccountId) {
  * @returns EntryPoint userOp
  */
 export function getCleanUserOp(userOp: UserOperation) {
-  return [(({ requestType, activatorCall, bundler, ...o }) => o)(userOp)]
+  return [(({ activatorCall, bundler, ...o }) => o)(userOp)]
 }
 
 /**
@@ -117,21 +112,28 @@ export function getOneTimeNonce(userOperation: UserOperation) {
   ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
-export function getRequestType(accountState: AccountOnchainState): UserOpRequestType {
-  return accountState.isEOA ? '7702' : 'standard'
-}
-
-export function getUserOperation(
-  account: Account,
-  accountState: AccountOnchainState,
-  accountOp: AccountOp,
-  bundler: BUNDLER,
-  entryPointSig?: string,
+export function getUserOperation({
+  account,
+  accountState,
+  accountOp,
+  bundler,
+  entryPointSig,
+  eip7702Auth,
+  hasPendingUserOp
+}: {
+  account: Account
+  accountState: AccountOnchainState
+  accountOp: AccountOp
+  bundler: BUNDLER
+  entryPointSig?: string
   eip7702Auth?: EIP7702Auth
-): UserOperation {
+  hasPendingUserOp?: boolean
+}): UserOperation {
+  const uniqueNonce = concat([randomBytes(24), toBeHex(0, 8)]) // 1 / 10 ^ −52 collision chance
+  const nonce = hasPendingUserOp ? uniqueNonce : toBeHex(accountState.erc4337Nonce)
   const userOp: UserOperation = {
     sender: accountOp.accountAddr,
-    nonce: toBeHex(accountState.erc4337Nonce),
+    nonce,
     callData: '0x',
     callGasLimit: toBeHex(0),
     verificationGasLimit: toBeHex(0),
@@ -139,7 +141,6 @@ export function getUserOperation(
     maxFeePerGas: toBeHex(0),
     maxPriorityFeePerGas: toBeHex(0),
     signature: '0x',
-    requestType: getRequestType(accountState),
     bundler
   }
 
@@ -156,10 +157,6 @@ export function getUserOperation(
       entryPointSig
     ])
   }
-
-  // if the request type is activator, add the activator call
-  if (userOp.requestType === 'activator')
-    userOp.activatorCall = getActivatorCall(accountOp.accountAddr)
 
   userOp.eip7702Auth = eip7702Auth
   return userOp
