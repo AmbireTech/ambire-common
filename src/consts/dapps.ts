@@ -65,7 +65,8 @@ export const dappIdsToBeRemoved = new Set([
   'varlamore.capital',
   'binaryx.com',
   'rari.capital',
-  'decentraland.org'
+  'decentraland.org',
+  'internal'
 ])
 
 export const featuredDapps = new Set([
