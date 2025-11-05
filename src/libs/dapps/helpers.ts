@@ -85,11 +85,20 @@ function getDappNameFromId(id: string) {
   }
 }
 
+function unifyDefiLlamaDappUrl(url: string) {
+  try {
+    return new URL(url).origin
+  } catch {
+    return url // If it's not a valid URL, return as-is
+  }
+}
+
 export {
   getDappIdFromUrl,
   getDomainFromUrl,
   formatDappName,
   sortDapps,
   modifyDappPropsIfNeeded,
-  getDappNameFromId
+  getDappNameFromId,
+  unifyDefiLlamaDappUrl
 }
