@@ -13,8 +13,11 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { getAssetValue } from '../../libs/defiPositions/helpers'
-import { getAAVEPositions, getUniV3Positions } from '../../libs/defiPositions/providers'
+import { getAssetValue, getProviderId } from '../../libs/defiPositions/helpers'
+import {
+  getAAVEPositions,
+  getDebankEnhancedUniV3Positions
+} from '../../libs/defiPositions/providers'
 import getAccountNetworksWithPositions from '../../libs/defiPositions/providers/helpers/networksWithPositions'
 import {
   AccountState,
@@ -22,8 +25,7 @@ import {
   DeFiPositionsState,
   NetworksWithPositionsByAccounts,
   PositionsByProvider,
-  ProviderError,
-  ProviderName
+  ProviderError
 } from '../../libs/defiPositions/types'
 import { fetchWithTimeout } from '../../utils/fetch'
 /* eslint-disable no-restricted-syntax */
@@ -130,10 +132,6 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     }
   }
 
-  static getProviderId(providerName: ProviderName) {
-    return providerName.toLowerCase()
-  }
-
   #getShouldSkipUpdate(
     accountAddr: string,
     _maxDataAgeMs = ONE_MINUTE,
@@ -218,7 +216,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     provider: RPCProvider,
     network: Network,
     previousPositions: PositionsByProvider[],
-    debankPositionsByProvider: PositionsByProvider[] | null
+    debankNetworkPositionsByProvider: PositionsByProvider[],
+    isDebankCallSuccessful: boolean
   ): Promise<{
     positionsByProvider: PositionsByProvider[]
     providerErrors: ProviderError[]
@@ -251,52 +250,27 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
             return null
           }),
           // Uniswap is a bit of an odd case. We return the positions merged with Debank data
-          getUniV3Positions(addr, provider, network)
-            .then((uniPosition) => {
-              if (!uniPosition) return null
-
-              const uniPositionFromDebank = debankPositionsByProvider?.find(
-                (p) =>
-                  DefiPositionsController.getProviderId(p.providerName) ===
-                  DefiPositionsController.getProviderId(uniPosition.providerName)
-              )
-
-              if (!uniPositionFromDebank) return uniPosition
-
-              return {
-                ...uniPositionFromDebank,
-                source: 'custom' as const,
-                positions: uniPositionFromDebank.positions.map((pos) => {
-                  const match = uniPosition.positions.find(
-                    (p) => p.id === pos.additionalData.positionIndex
-                  )
-
-                  return match
-                    ? {
-                        ...pos,
-                        additionalData: {
-                          ...pos.additionalData,
-                          inRange: match.additionalData.inRange
-                        }
-                      }
-                    : pos
-                })
-              }
+          getDebankEnhancedUniV3Positions(
+            addr,
+            provider,
+            network,
+            previousPositions,
+            debankNetworkPositionsByProvider,
+            isDebankCallSuccessful
+          ).catch((e: any) => {
+            this.emitError({
+              message: `Failed to fetch Uniswap v3 positions for ${addr} on ${network.name}.`,
+              error: e,
+              level: 'silent'
             })
-            .catch((e: any) => {
-              this.emitError({
-                message: `Failed to fetch Uniswap v3 positions for ${addr} on ${network.name}.`,
-                error: e,
-                level: 'silent'
-              })
 
-              providerErrors.push({
-                providerName: 'Uniswap V3',
-                error: e?.message || 'Unknown error'
-              })
-
-              return null
+            providerErrors.push({
+              providerName: 'Uniswap V3',
+              error: e?.message || 'Unknown error'
             })
+
+            return null
+          })
         ])
       ).filter(Boolean) as PositionsByProvider[]
 
@@ -318,9 +292,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         (prev) =>
           prev.source === 'custom' &&
           !newPositions.some(
-            (n) =>
-              DefiPositionsController.getProviderId(n.providerName) ===
-              DefiPositionsController.getProviderId(prev.providerName)
+            (n) => getProviderId(n.providerName) === getProviderId(prev.providerName)
           )
       )
 
@@ -347,23 +319,15 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
    * Merges Debank positions with custom fetched positions, ensuring uniqueness by provider.
    */
   static getUniqueMergedPositions(
-    network: Network,
-    debankPositionsByProvider: PositionsByProvider[],
+    debankNetworkPositionsByProvider: PositionsByProvider[],
     customPositions: PositionsByProvider[]
   ): PositionsByProvider[] {
-    // Get the Debank positions for this network
-    const debankNetworkPositionsByProvider = debankPositionsByProvider.filter(
-      (p) => String(p.chainId) === String(network.chainId)
-    )
     const debankPositionMap = new Map(
-      debankNetworkPositionsByProvider.map((p) => [
-        DefiPositionsController.getProviderId(p.providerName),
-        p
-      ])
+      debankNetworkPositionsByProvider.map((p) => [getProviderId(p.providerName), p])
     )
 
     customPositions.forEach((custom) => {
-      const key = DefiPositionsController.getProviderId(custom.providerName)
+      const key = getProviderId(custom.providerName)
 
       debankPositionMap.set(key, custom)
     })
@@ -380,7 +344,13 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     debankPositionsByProvider: PositionsByProvider[] | null
   ) {
     const chain = network.chainId.toString()
-    const previousPositions = this.#state[selectedAccount.addr][chain].positionsByProvider
+    const debankNetworkPositionsByProvider =
+      debankPositionsByProvider?.filter((p) => String(p.chainId) === String(network.chainId)) || []
+    const previousNetworkPositionsByProvider =
+      this.#state[selectedAccount.addr][chain].positionsByProvider
+    const nonceId = this.#getNonceId(selectedAccount, network.chainId)
+    const isDebankCallSuccessful = !!debankPositionsByProvider
+    const state = this.#state[selectedAccount.addr][network.chainId.toString()]
     const {
       positionsByProvider: customPositionsByProvider,
       providerErrors: customProvidersErrors,
@@ -389,18 +359,15 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       selectedAccount.addr,
       this.#providers.providers[chain],
       network,
-      previousPositions,
-      debankPositionsByProvider
+      previousNetworkPositionsByProvider,
+      debankNetworkPositionsByProvider,
+      isDebankCallSuccessful
     )
-    const nonceId = this.#getNonceId(selectedAccount, network.chainId)
-    const isDebankCallSuccessful = !!debankPositionsByProvider
-    const state = this.#state[selectedAccount.addr][network.chainId.toString()]
 
     const uniqueAndMerged = DefiPositionsController.getUniqueMergedPositions(
-      network,
-      isDebankCallSuccessful && debankPositionsByProvider
-        ? debankPositionsByProvider
-        : previousPositions.filter((p) => p.source === 'debank'),
+      isDebankCallSuccessful
+        ? debankNetworkPositionsByProvider
+        : previousNetworkPositionsByProvider.filter((p) => p.source === 'debank'),
       customPositionsByProvider
     )
 
@@ -592,8 +559,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     if (body.hasOwnProperty('error')) throw body
 
     const positionsByProviderWithPrices = positionsByProvider.map((posByProvider) => {
-      if (DefiPositionsController.getProviderId(posByProvider.providerName).includes('aave'))
-        return posByProvider
+      if (getProviderId(posByProvider.providerName).includes('aave')) return posByProvider
 
       const updatedPositions = posByProvider.positions.map((position) => {
         let positionInUSD = position.additionalData.positionInUSD || 0
