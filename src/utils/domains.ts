@@ -11,7 +11,7 @@ const findAccountDomainFromPartialDomain = (
 ) => {
   const normalizedSearch = search.toLowerCase().trim()
   const domainsEntry = domains[address]
-  const normalizedDomain = domainsEntry?.ens?.toLowerCase().trim()
+  const normalizedDomain = domainsEntry?.ens?.toLowerCase()?.trim()
 
   if (!normalizedDomain) return undefined
 
