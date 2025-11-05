@@ -8,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { networks } from '../../consts/networks'
 import { RPCProviders } from '../../interfaces/provider'
+import { getProviderId } from '../../libs/defiPositions/helpers'
 import * as defiProviders from '../../libs/defiPositions/providers'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { getRpcProvider } from '../../services/provider'
@@ -154,7 +155,7 @@ describe('DefiPositionsController', () => {
           reject(new Error('AAVE error'))
         })
     )
-    jest.spyOn(defiProviders, 'getUniV3Positions').mockImplementation(
+    jest.spyOn(defiProviders, 'getDebankEnhancedUniV3Positions').mockImplementation(
       () =>
         new Promise((_, reject) => {
           reject(new Error('Uniswap error'))
@@ -270,9 +271,9 @@ describe('DefiPositionsController', () => {
   })
 
   it('getUniqueMergedPositions: duplicates are removed and custom are preffered', async () => {
-    const uniV3 = MOCK_DEBANK_RESPONSE_DATA.find((p) => p.providerName === 'Uniswap V3')!
-
-    const network = networks.find((n) => n.chainId === BigInt(uniV3.chainId))!
+    const uniV3 = MOCK_DEBANK_RESPONSE_DATA.find(
+      (p) => p.providerName === 'Uniswap V3' && p.chainId === 1
+    )!
 
     const customUni = {
       ...uniV3,
@@ -280,8 +281,7 @@ describe('DefiPositionsController', () => {
     }
 
     const merged = DefiPositionsController.getUniqueMergedPositions(
-      network,
-      MOCK_DEBANK_RESPONSE_DATA as any[],
+      MOCK_DEBANK_RESPONSE_DATA.filter(({ chainId }) => chainId === 1) as any[],
       [customUni] as any[]
     )
 
@@ -301,7 +301,7 @@ describe('DefiPositionsController', () => {
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
     const aaveV3Positions = selectedAccountState['10'].positionsByProvider.find(
-      (p) => DefiPositionsController.getProviderId(p.providerName) === 'aave v3'
+      (p) => getProviderId(p.providerName) === 'aave v3'
     )
 
     expect(aaveV3Positions).toBeDefined()
@@ -374,9 +374,7 @@ describe('DefiPositionsController', () => {
       if (!networkState.positionsByProvider.length) return
 
       if (
-        networkState.positionsByProvider.some(
-          (p) => DefiPositionsController.getProviderId(p.providerName) === 'aave v3'
-        )
+        networkState.positionsByProvider.some((p) => getProviderId(p.providerName) === 'aave v3')
       ) {
         aaveV3PositionsCount++
       }
@@ -403,9 +401,7 @@ describe('DefiPositionsController', () => {
       if (!networkState.positionsByProvider.length) return
 
       if (
-        networkState.positionsByProvider.some(
-          (p) => DefiPositionsController.getProviderId(p.providerName) === 'aave v3'
-        )
+        networkState.positionsByProvider.some((p) => getProviderId(p.providerName) === 'aave v3')
       ) {
         expect(networkState.providerErrors).toBeDefined()
         expect(networkState.providerErrors?.length).toBeGreaterThan(0)
