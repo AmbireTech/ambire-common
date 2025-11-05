@@ -336,11 +336,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     )
 
     if (newSelectedAccountPortfolio.isAllReady && latestStateSelectedAccount.projectedRewards) {
+      const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
+
       // Calculate and add projected rewards token
       const projectedRewardsToken = calculateAndSetProjectedRewards(
         latestStateSelectedAccount.projectedRewards,
         newSelectedAccountPortfolio.balancePerNetwork,
-        walletORStkWalletToken && walletORStkWalletToken.priceIn[0].price
+        walletOrStkWalletTokenPrice
       )
 
       if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
