@@ -61,30 +61,7 @@ describe('Selected Account lib', () => {
     })
   })
   describe('getIsRecalculationNeeded', () => {
-    it('should return true if there is no portfolio or defi positions state', () => {
-      const result = getIsRecalculationNeeded(
-        { totalBalance: 0, collections: [], tokens: [] },
-        PORTFOLIO_STATE['1'],
-        PORTFOLIO_STATE['1'],
-        PORTFOLIO_STATE['1'],
-        undefined
-      )
-
-      expect(result).toBe(true)
-
-      const result2 = getIsRecalculationNeeded(
-        { totalBalance: 0, collections: [], tokens: [] },
-        undefined,
-        undefined,
-        undefined,
-        DEFI_STATE['1']
-      )
-
-      expect(result2).toBe(true)
-    })
     it('should return false if the portfolio or defi positions state is loading', () => {
-      // THIS ONE IS VITAL. IF THE PORTFOLIO OR DEFI POSITIONS STATE IS LOADING WE NEVER
-      // WANT A RECALCULATION AS THAT WOULD FLIP ISALLREADY TO FALSE
       const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
       const clonedPortfolioEthereumStatePending = structuredClone(
         PENDING_PORTFOLIO_STATE['1']
@@ -366,12 +343,185 @@ describe('Selected Account lib', () => {
       expect(
         getIsRecalculationNeeded(
           selectedAccountPortfolioByNetworks['1'],
+          // @ts-ignore
           clonedPortfolioLatestState['1'],
           clonedPortfolioPendingState['1'],
           clonedPortfolioPendingState['1'],
           clonedDefiAccountState['1']
         )
       ).toBe(false)
+    })
+    it("Portfolio state state is ready, defi positions are loading, shouldn't be ready", () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      clonedDefiAccountState['1']!.isLoading = true
+      clonedDefiAccountState['1']!.updatedAt = undefined
+
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        clonedPortfolioPendingState,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      expect(selectedAccountPortfolio.isAllReady).toBe(false)
+      expect(selectedAccountPortfolio.isReloading).toBe(false)
+    })
+    it("Portfolio state is loading, defi positions are ready, shouldn't be ready", () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      clonedPortfolioLatestState['1']!.isLoading = true
+      clonedPortfolioPendingState['1']!.isLoading = true
+      clonedPortfolioLatestState['1']!.isReady = false
+      clonedPortfolioPendingState['1']!.isReady = false
+
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        clonedPortfolioPendingState,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      expect(selectedAccountPortfolio.isAllReady).toBe(false)
+      expect(selectedAccountPortfolio.isReloading).toBe(false)
+    })
+    it('Portfolio state is not ready - should be isAllReady false', () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      Object.keys(clonedPortfolioPendingState).forEach((chainId) => {
+        clonedPortfolioPendingState[chainId]!.isReady = false
+        clonedPortfolioLatestState[chainId]!.isReady = false
+      })
+
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        clonedPortfolioPendingState,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      expect(selectedAccountPortfolio.isAllReady).toBe(false)
+      expect(selectedAccountPortfolio.isReloading).toBe(false)
+    })
+    it('Defi network state is missing, portfolio is ready - should be isAllReady true', () => {
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      delete clonedDefiAccountState['8453']
+
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        PORTFOLIO_STATE,
+        PENDING_PORTFOLIO_STATE,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      expect(selectedAccountPortfolio.isAllReady).toBe(true)
+      expect(selectedAccountPortfolio.isReloading).toBe(false)
+    })
+    it('Manual update: both states are ready, but loading - should be isAllReady false', () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      Object.keys(clonedPortfolioPendingState).forEach((chainId) => {
+        clonedPortfolioPendingState[chainId]!.isLoading = true
+        clonedPortfolioLatestState[chainId]!.isLoading = true
+      })
+
+      // Not a manual update
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        clonedPortfolioPendingState,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      // isAllReady should be true because both states are ready
+      expect(selectedAccountPortfolio.isAllReady).toBe(true)
+
+      // Manual update
+      const { selectedAccountPortfolio: selectedAccountPortfolio2 } =
+        calculateSelectedAccountPortfolio(
+          clonedPortfolioLatestState,
+          clonedPortfolioPendingState,
+          {},
+          clonedDefiAccountState,
+          false,
+          true
+        )
+
+      // isAllReady should be false because it's a manual update
+      expect(selectedAccountPortfolio2.isAllReady).toBe(false)
+    })
+    it('Portfolio and defi are ready, state is older than 60min and loading - isReloading should be true', () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      const sixtyMinutesAndOneSecondAgo = Date.now() - 60 * 60 * 1000 - 1000
+
+      Object.keys(clonedPortfolioPendingState).forEach((chainId) => {
+        clonedPortfolioPendingState[chainId]!.isLoading = true
+        clonedPortfolioLatestState[chainId]!.isLoading = true
+        clonedPortfolioPendingState[chainId]!.result!.lastSuccessfulUpdate =
+          sixtyMinutesAndOneSecondAgo
+        clonedPortfolioLatestState[chainId]!.result!.lastSuccessfulUpdate =
+          sixtyMinutesAndOneSecondAgo
+      })
+
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        clonedPortfolioPendingState,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      expect(selectedAccountPortfolio.isReloading).toBe(true)
+      expect(selectedAccountPortfolio.isAllReady).toBe(true)
+    })
+    it('Portfolio and defi are ready, state is fresh and loading - isReloading should be false', () => {
+      const clonedPortfolioLatestState = structuredClone(PORTFOLIO_STATE) as AccountState
+      const clonedPortfolioPendingState = structuredClone(PENDING_PORTFOLIO_STATE) as AccountState
+      const clonedDefiAccountState = structuredClone(DEFI_STATE) as DefiAccountState
+
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+
+      Object.keys(clonedPortfolioPendingState).forEach((chainId) => {
+        clonedPortfolioPendingState[chainId]!.isLoading = true
+        clonedPortfolioLatestState[chainId]!.isLoading = true
+        clonedPortfolioPendingState[chainId]!.result!.lastSuccessfulUpdate = fiveMinutesAgo
+        clonedPortfolioLatestState[chainId]!.result!.lastSuccessfulUpdate = fiveMinutesAgo
+      })
+
+      const { selectedAccountPortfolio } = calculateSelectedAccountPortfolio(
+        clonedPortfolioLatestState,
+        clonedPortfolioPendingState,
+        {},
+        clonedDefiAccountState,
+        false,
+        false
+      )
+
+      expect(selectedAccountPortfolio.isReloading).toBe(false)
+      expect(selectedAccountPortfolio.isAllReady).toBe(true)
     })
   })
 })
@@ -552,8 +702,8 @@ const PORTFOLIO_STATE: AccountState = {
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
           symbol: 'USDC',
           name: 'USD Coin',
-          amount: 5n ** 6n,
-          availableAmount: 5n ** 6n,
+          amount: 5n * 10n ** 6n,
+          availableAmount: 5n * 10n ** 6n,
           cashback: 1n,
           saved: 14040n,
           decimals: 6,
@@ -756,6 +906,12 @@ const DEFI_STATE: DefiAccountState = {
         positionInUSD: 18985.66497510702
       }
     ],
+    updatedAt: 1753258959994
+  },
+  '8453': {
+    providerErrors: [],
+    isLoading: false,
+    positionsByProvider: [],
     updatedAt: 1753258959994
   }
 }

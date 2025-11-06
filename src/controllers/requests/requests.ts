@@ -473,18 +473,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           }
           return
         }
-
-        accountOpAction.accountOp.calls = this.#batchCallsFromUserRequests(
-          meta.accountAddr,
-          meta.chainId
-        )
+        const newCalls = this.#batchCallsFromUserRequests(meta.accountAddr, meta.chainId)
         const signAccountOp = this.#getSignAccountOp()
-
-        if (accountOpAction.accountOp.calls.length) {
-          actionsToAddOrUpdate.push(accountOpAction)
+        if (newCalls.length) {
+          actionsToAddOrUpdate.push({
+            ...accountOpAction,
+            accountOp: { ...accountOpAction.accountOp, calls: newCalls }
+          })
 
           if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
-            this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
+            this.#updateSignAccountOp({ accountOpData: { calls: newCalls } })
           }
         } else {
           if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
@@ -739,7 +737,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
       const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
         rawMessage,
-        request.origin
+        request.session.origin
       )
 
       // Handle valid and invalid SIWE messages

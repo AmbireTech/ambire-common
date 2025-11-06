@@ -104,6 +104,8 @@ import { UiController } from '../ui/ui'
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
+  #appVersion: string
+
   fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -195,6 +197,7 @@ export class MainController extends EventEmitter implements IMainController {
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
+    appVersion,
     platform,
     storageAPI,
     fetch,
@@ -207,6 +210,7 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager
   }: {
+    appVersion: string
     platform: Platform
     storageAPI: Storage
     fetch: Fetch
@@ -221,6 +225,7 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     super()
     this.#storageAPI = storageAPI
+    this.#appVersion = appVersion
     this.fetch = fetch
 
     this.storage = new StorageController(this.#storageAPI)
@@ -261,7 +266,9 @@ export class MainController extends EventEmitter implements IMainController {
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers),
-      this.#updateIsOffline.bind(this)
+      this.#updateIsOffline.bind(this),
+      relayerUrl,
+      this.fetch
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -342,7 +349,14 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       ui: this.ui
     })
-    this.dapps = new DappsController(this.storage)
+    this.dapps = new DappsController({
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
+    })
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -544,8 +558,8 @@ export class MainController extends EventEmitter implements IMainController {
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-      if (!this.activity.broadcastedButNotConfirmed.length) {
-        this.selectedAccount.resetSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+
+      if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
@@ -625,6 +639,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
+      this.activity.forceEmitUpdate(),
       this.requests.actions.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
@@ -633,9 +648,9 @@ export class MainController extends EventEmitter implements IMainController {
     // Don't await these as they are not critical for the account selection
     // and if the user decides to quickly change to another account withStatus
     // will block the UI until these are resolved.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      resetSelectedAccountPortfolio: false
+      maxDataAgeMs: 5 * 60 * 1000
     })
   }
 
@@ -732,7 +747,6 @@ export class MainController extends EventEmitter implements IMainController {
           return this.isSignRequestStillActive
         },
         shouldSimulate: true,
-        shouldReestimate: true,
         onAccountOpUpdate: (updatedAccountOp: AccountOp) => {
           this.requests.actions.updateAccountOpAction(updatedAccountOp)
         },
@@ -1229,8 +1243,26 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.initialLoadPromise
 
+    const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
+      .filter(([, ops]) => ops.length > 0)
+      .map(([addr]) => addr)
+
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
+
+    if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
+
+    const updatedAccountsOpsForSelectedAccount = updatedAccountsOpsByAccount[
+      this.selectedAccount.account.addr
+    ] || {
+      shouldEmitUpdate: false,
+      chainsToUpdate: [],
+      updatedAccountsOps: [],
+      newestOpTimestamp: 0
+    }
     const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
-      await this.activity.updateAccountsOpsStatuses()
+      updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
@@ -1329,22 +1361,17 @@ export class MainController extends EventEmitter implements IMainController {
 
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
-    resetSelectedAccountPortfolio?: boolean
     maxDataAgeMs?: number
     isManualReload?: boolean
   }) {
-    const {
-      chainIds,
-      isManualReload = false,
-      maxDataAgeMs,
-      resetSelectedAccountPortfolio = true
-    } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
     if (!this.selectedAccount.account) return
 
-    if (resetSelectedAccountPortfolio) this.selectedAccount.resetSelectedAccountPortfolio()
+    if (isManualReload)
+      this.selectedAccount.resetSelectedAccountPortfolio({ isManualUpdate: isManualReload })
 
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
@@ -1524,6 +1551,7 @@ export class MainController extends EventEmitter implements IMainController {
   removeNetworkData(chainId: bigint) {
     this.portfolio.removeNetworkData(chainId)
     this.accountPicker.removeNetworkData(chainId)
+    this.selectedAccount.removeNetworkData(chainId)
     // Don't remove user activity for now because removing networks
     // is no longer possible in the UI. Users can only disable networks
     // and it doesn't make sense to delete their activity

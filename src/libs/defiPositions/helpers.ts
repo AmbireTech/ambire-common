@@ -26,4 +26,8 @@ const getAssetValue = (amount: bigint, decimals: number, priceIn: Price[]): numb
   return Number(assetValueString)
 }
 
+export const getProviderId = (providerName: string): string => {
+  return providerName.toLowerCase()
+}
+
 export { sortByValue, getAssetValue }

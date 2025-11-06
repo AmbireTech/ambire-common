@@ -57,16 +57,15 @@ describe('User Operation tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
       accountStates[smartAccDeployed.addr][optimism.chainId.toString()].isDeployed = false
-      const userOp = getUserOperation(
-        smartAccDeployed,
-        accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
-        opOptimism,
-        'pimlico',
-        '0x0001'
-      )
+      const userOp = getUserOperation({
+        account: smartAccDeployed,
+        accountState: accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
+        accountOp: opOptimism,
+        bundler: 'pimlico',
+        entryPointSig: '0x0001'
+      })
       expect(userOp).toHaveProperty('factory')
       expect(userOp).toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('standard')
       expect(userOp.activatorCall).toBe(undefined)
     })
     test('should not include deploy code nor the activator call on a deployed account with entry point privs', async () => {
@@ -86,15 +85,14 @@ describe('User Operation tests', () => {
         [optimism.chainId.toString()]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
-      const userOp = getUserOperation(
-        smartAccDeployed,
-        accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
-        opOptimism,
-        'pimlico'
-      )
+      const userOp = getUserOperation({
+        account: smartAccDeployed,
+        accountState: accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
+        accountOp: opOptimism,
+        bundler: 'pimlico'
+      })
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('standard')
       expect(userOp.activatorCall).toBe(undefined)
     })
     test('should include activator call if the account is deployed but does not have entry point privs', async () => {
@@ -115,15 +113,14 @@ describe('User Operation tests', () => {
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [smartAccDeployed])
       accountStates[smartAccDeployed.addr][optimism.chainId.toString()].isErc4337Enabled = false
-      const userOp = getUserOperation(
-        smartAccDeployed,
-        accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
-        opOptimism,
-        'pimlico'
-      )
+      const userOp = getUserOperation({
+        account: smartAccDeployed,
+        accountState: accountStates[smartAccDeployed.addr][optimism.chainId.toString()],
+        accountOp: opOptimism,
+        bundler: 'pimlico'
+      })
       expect(userOp).not.toHaveProperty('factory')
       expect(userOp).not.toHaveProperty('factoryData')
-      expect(userOp.requestType).toBe('standard')
       expect(userOp.activatorCall).toBe(undefined)
     })
   })

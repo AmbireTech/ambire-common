@@ -1,6 +1,7 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
 
+import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
@@ -32,7 +33,10 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import {
+  calculateAndSetProjectedRewards,
+  calculateSelectedAccountPortfolio
+} from '../../libs/selectedAccount/selectedAccount'
 import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -45,6 +49,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isReadyToVisualize: false,
   isAllReady: false,
   shouldShowPartialResult: false,
+  isReloading: false,
   networkSimulatedAccountOp: {},
   latest: {},
   pending: {}
@@ -86,7 +91,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
-  #isPortfolioLoadingFromScratch = true
+  #isManualUpdate = true
 
   dashboardNetworkFilter: bigint | string | null = null
 
@@ -220,21 +225,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     })
 
-    this.#networks.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
-        if (!this.dashboardNetworkFilter) return
-        const dashboardFilteredNetwork = this.#networks!.networks.find(
-          (n) => n.chainId === this.dashboardNetworkFilter
-        )
-
-        // reset the dashboardNetworkFilter if the network is removed
-        if (!dashboardFilteredNetwork) this.setDashboardNetworkFilter(null)
-      })
-    })
-
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
-        this.#updateSelectedAccount()
+        this.#updateSelectedAccount(true)
         this.#updatePortfolioErrors(true)
         this.#updateDefiPositionsErrors()
       })
@@ -258,6 +251,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.defiPositions = []
     this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
+
+    const isStateWithOutdatedNetworks =
+      this.account &&
+      this.#portfolio &&
+      this.#portfolio.getIsStateWithOutdatedNetworks(this.account.addr)
+
+    // Display the current portfolio state immediately only if the user hasn't
+    // added/removed networks since the last time the portfolio was calculated.
+    if (!isStateWithOutdatedNetworks) {
+      this.#updateSelectedAccountDefiPositions(true)
+      this.updateSelectedAccountPortfolio(true)
+      this.#updateDefiPositionsErrors(true)
+    }
     this.dashboardNetworkFilter = null
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
     this.#portfolioLoadingTimeout = null
@@ -271,7 +277,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
-  #updateSelectedAccount() {
+  #updateSelectedAccount(skipUpdate: boolean = false) {
     if (!this.account) return
 
     const updatedAccount = this.#accounts.accounts.find((a) => a.addr === this.account!.addr)
@@ -279,32 +285,21 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.account = updatedAccount
 
-    this.emitUpdate()
+    if (!skipUpdate) this.emitUpdate()
   }
 
   resetSelectedAccountPortfolio({
-    maxDataAgeMs,
+    isManualUpdate,
     skipUpdate
-  }: { maxDataAgeMs?: number; skipUpdate?: boolean } = {}) {
+  }: { isManualUpdate?: boolean; skipUpdate?: boolean } = {}) {
     if (!this.#portfolio || !this.account) return
 
-    if (maxDataAgeMs) {
-      const latestStateSelectedAccount = this.#portfolio.getLatestPortfolioState(this.account.addr)
-
-      const networksThatAreAboutToBeUpdated = Object.values(latestStateSelectedAccount)
-        .filter((state) => !state?.criticalError)
-        .filter((state) => {
-          const updateStarted = state?.result?.updateStarted || 0
-
-          return !!updateStarted && Date.now() - updateStarted >= maxDataAgeMs
-        })
-
-      if (!networksThatAreAboutToBeUpdated.length) return
+    if (isManualUpdate) {
+      this.#isManualUpdate = true
     }
 
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
-    this.#isPortfolioLoadingFromScratch = true
     this.#portfolioByNetworks = {}
 
     if (!skipUpdate) {
@@ -333,8 +328,26 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       structuredClone(this.#portfolioByNetworks),
       defiPositionsAccountState,
       this.portfolio.shouldShowPartialResult,
-      this.#isPortfolioLoadingFromScratch
+      this.#isManualUpdate
     )
+
+    // Find stkWALLET or WALLET token in the latest portfolio state
+    const walletORStkWalletToken = latestStateSelectedAccount['1']?.result?.tokens.find(
+      ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
+    )
+
+    if (newSelectedAccountPortfolio.isAllReady && latestStateSelectedAccount.projectedRewards) {
+      const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
+
+      // Calculate and add projected rewards token
+      const projectedRewardsToken = calculateAndSetProjectedRewards(
+        latestStateSelectedAccount.projectedRewards,
+        newSelectedAccountPortfolio.balancePerNetwork,
+        walletOrStkWalletTokenPrice
+      )
+
+      if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
+    }
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
@@ -351,9 +364,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       }, 5000)
     }
 
-    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
-    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
-      this.#isPortfolioLoadingFromScratch = false
+    // Reset isManualUpdate flag when the portfolio has finished the initial load
+    if (this.#isManualUpdate && newSelectedAccountPortfolio.isAllReady) {
+      this.#isManualUpdate = false
     }
 
     this.portfolio = newSelectedAccountPortfolio
@@ -579,6 +592,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   setDashboardNetworkFilter(networkFilter: bigint | string | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
+  }
+
+  removeNetworkData(chainId: bigint) {
+    const stringChainId = chainId.toString()
+
+    if (this.#portfolioByNetworks[stringChainId]) {
+      delete this.#portfolioByNetworks[stringChainId]
+    }
+    if (String(this.dashboardNetworkFilter) === stringChainId) {
+      this.dashboardNetworkFilter = null
+    }
+
+    this.updateSelectedAccountPortfolio()
   }
 
   async dismissDefiPositionsBannerForTheSelectedAccount() {

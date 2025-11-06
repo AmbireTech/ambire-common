@@ -10,6 +10,7 @@ type ValidateReturnType = {
   success: boolean
   message: string
   severity?: 'info' | 'warning'
+  errorType?: 'insufficient_amount'
 }
 
 export const validateAddress = (address: string): ValidateReturnType => {
@@ -224,6 +225,7 @@ const validateSendTransferAmount = (
           success: false,
           message: 'Insufficient amount.',
           severity: 'warning'
+          errorType: 'insufficient_amount'
         }
       }
     }
