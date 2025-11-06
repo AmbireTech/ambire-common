@@ -10,7 +10,7 @@ import {
   isAddress,
   isBytesLike,
   keccak256,
-  parseEther,
+  parseUnits,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -1193,7 +1193,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             const nativeInFloat = valueInUsd / nativePrice.price
             this.gasRequest = {
               token: gasRequestToken,
-              value: parseEther(tokenToSendInFloat.toFixed(gasRequestToken.decimals)),
+              value: parseUnits(
+                tokenToSendInFloat.toFixed(gasRequestToken.decimals),
+                gasRequestToken.decimals
+              ),
               valueToken: tokenToSendInFloat.toFixed(gasRequestToken.decimals),
               valueNative: nativeInFloat.toFixed(native.decimals),
               valueUSD: valueInUsd
@@ -1998,14 +2001,23 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     // create a new account op with the new data
+    const ERC20Interface = new Interface(ERC20.abi)
     const gasReqAccountOp = {
       accountAddr: this.accountOp.accountAddr,
       chainId: this.accountOp.chainId,
       signingKeyAddr: this.accountOp.signingKeyAddr,
       signingKeyType: this.accountOp.signingKeyType,
       nonce: this.accountOp.nonce,
-      // todo: add the top up call
-      calls: [],
+      calls: [
+        {
+          to: this.gasRequest.token.address,
+          value: 0n,
+          data: ERC20Interface.encodeFunctionData('transfer', [
+            FEE_COLLECTOR,
+            this.gasRequest.value
+          ])
+        }
+      ],
       gasLimit: Number(this.accountOp.gasFeePayment.simulatedGasLimit),
       signature: null,
       gasFeePayment: this.accountOp.gasFeePayment
@@ -2050,6 +2062,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         gasReqAccountOp.calls[0]
       )
       const signedTxn = await signer.signRawTransaction(rawTxn)
+      const response = await this.#callRelayer(
+        `/v2/eoaSubmitTxn/${gasReqAccountOp.chainId.toString()}/requestGas`,
+        'POST',
+        {
+          rawTxn: signedTxn
+        }
+      )
+      if (!response.success) throw new Error(response.message)
       const submittedAccountOp: SubmittedAccountOp = {
         ...gasReqAccountOp,
         status: AccountOpStatus.BroadcastedButNotConfirmed,
@@ -2062,6 +2082,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         timestamp: new Date().getTime()
       }
       this.#activity.addAccountOp(submittedAccountOp)
+      this.status = null
+      this.estimation.reset()
+
+      // we need to fetch the portfolio
+      await this.#portfolio.updateSelectedAccount(
+        gasReqAccountOp.accountAddr,
+        [this.#network],
+        undefined,
+        { isManualUpdate: true }
+      )
+      this.simulate(true)
+      this.emitUpdate()
     } catch (error: any) {
       return this.throwBroadcastAccountOp({ error, accountState })
     }
