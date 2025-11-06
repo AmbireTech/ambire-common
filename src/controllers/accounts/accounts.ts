@@ -53,8 +53,19 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   #callRelayer: Function
 
+  /**
+   * Creating Ambire smart account identity is needed but not critical, user
+   * is still able to interact and transfer funds with a smart account one.
+   * So schedule an interval to retry after import, allowing the user
+   * to import the account even if the first Relayer identity create call fails.
+   */
   #smartAccountIdentityCreateInterval: IRecurringTimeout
 
+  /**
+   * Getting view-only accounts’ identity is needed but not critical,
+   * so schedule an interval to retry after import, allowing the user
+   * to import the account even if the first Relayer identity fetch fails.
+   */
   #viewOnlyAccountGetIdentityInterval: IRecurringTimeout
 
   #accounts: Account[] = []
@@ -102,19 +113,12 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAccountStateUpdate = onAccountStateUpdate
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 
-    // Getting view-only accounts’ identity is needed but not critical,
-    // so schedule an interval to retry after import, allowing the user
-    // to import the account even if the first Relayer identity fetch fails.
     this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
       this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
       VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL,
       this.emitError.bind(this)
     )
 
-    // Creating Ambire smart account identity is needed but not critical, user
-    // is still able to interact and transfer funds with a smart account one.
-    // So schedule an interval to retry after import, allowing the user
-    // to import the account even if the first Relayer identity create call fails.
     this.#smartAccountIdentityCreateInterval = new RecurringTimeout(
       this.createSmartAccountIdentitiesIfNeeded.bind(this),
       SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
