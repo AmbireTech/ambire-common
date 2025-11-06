@@ -300,6 +300,12 @@ type SpecialHintType = 'custom' | 'hidden' | 'learn'
 
 export interface GetOptions {
   baseCurrency: string
+  /**
+   * 'latest', 'pending' - self-explanatory
+   * 'both' - fetches the asset info from the pending block and only the balances
+   * from the latest block. Then merges the data together.
+   * number - a specific block number to fetch the data from
+   */
   blockTag: 'latest' | 'pending' | 'both' | number
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache

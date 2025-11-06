@@ -259,7 +259,18 @@ export async function getTokens(
     blockTag: isFetchingBothBlocks ? 'pending' : opts.blockTag
   })
 
-  const getOtherResult = async () => {
+  // If we are fetching both the pending and latest block, we don't need to fetch the entire token
+  // info twice, just the info from the pending block and the balances from the latest block
+  const getLatestBalances = async () => {
+    if (!isFetchingBothBlocks) return null
+
+    return deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
+      ...deploylessOpts,
+      blockTag: 'latest'
+    })
+  }
+
+  const getMainResults = async () => {
     if (!opts.simulation) {
       return deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
     }
@@ -291,18 +302,10 @@ export async function getTokens(
     }
   }
 
-  const [latestBalances, otherResult] = await Promise.all([
-    isFetchingBothBlocks
-      ? deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
-          ...deploylessOpts,
-          blockTag: 'latest'
-        })
-      : Promise.resolve(null),
-    getOtherResult()
-  ])
+  const [mainResults, latestBalances] = await Promise.all([getMainResults(), getLatestBalances()])
 
   if (!opts.simulation) {
-    const [results, blockNumber] = otherResult
+    const [results, blockNumber] = mainResults
 
     return [
       results.map((token: any, i: number) => [
@@ -322,11 +325,11 @@ export async function getTokens(
     ]
   }
 
-  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = otherResult.result
+  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = mainResults.result
 
   const beforeNonce = before.nonce
   const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, otherResult.simulationOps)
+  handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps)
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
