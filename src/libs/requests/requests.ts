@@ -1,7 +1,7 @@
 import { Account, AccountId } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
-import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { Call } from '../accountOp/types'
 
@@ -14,13 +14,11 @@ export const batchCallsFromUserRequests = ({
   chainId: bigint
   userRequests: UserRequest[]
 }): Call[] => {
-  return (userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
+  return (userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]).reduce(
     (uCalls: Call[], req) => {
-      if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
-        const { calls } = req.action as Calls
-        calls.forEach((call) =>
-          uCalls.push({ ...call, fromUserRequestId: req.id, dapp: req.meta.dapp })
-        )
+      if (req.accountOp.chainId === chainId && req.accountOp.accountAddr === accountAddr) {
+        const { calls } = req.accountOp
+        calls.forEach((call) => uCalls.push({ ...call, dapp: req.meta.dapp }))
       }
       return uCalls
     },

@@ -1,7 +1,7 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
-import { Session } from '../classes/session'
+import { AccountOp } from '../libs/accountOp/accountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { SignMessageAction } from './actions'
@@ -10,99 +10,94 @@ import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { EIP7702Signature } from './signatures'
 
-export interface Calls {
-  kind: 'calls'
-  calls: {
-    to: string
-    value: bigint
-    data: string
-    id?: string
-  }[]
-}
-export interface PlainTextMessage {
-  kind: 'message'
-  message: Hex
-}
-
-export interface SiweMessage {
-  kind: 'siwe'
-  message: PlainTextMessage['message']
-  parsedMessage: ViemSiweMessage
-  siweValidityStatus: SiweValidityStatus
-  autoLoginStatus: AutoLoginStatus
-  isAutoLoginEnabledByUser: boolean
-  autoLoginDuration: number
-}
-
-export interface TypedMessage {
-  kind: 'typedMessage'
-  domain: TypedDataDomain
-  types: Record<string, Array<TypedDataField>>
-  message: Record<string, any>
-  primaryType: keyof TypedMessage['types']
-}
-
-export interface Authorization {
-  kind: 'authorization-7702'
-  chainId: bigint
-  nonce: bigint
-  contractAddr: Hex
-  message: Hex
-}
-
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
   fromActionId: SignMessageAction['id']
   accountAddr: AccountId
   chainId: bigint
-  content: PlainTextMessage | TypedMessage | Authorization | SiweMessage
+  content:
+    | PlainTextMessageUserRequest
+    | TypedMessageUserRequest
+    | AuthorizationUserRequest
+    | SiweMessageUserRequest
   signature: EIP7702Signature | string | null
 }
 
-export interface SignUserRequest {
+interface UserRequestBase {
   id: string | number
-  action: Calls | PlainTextMessage | TypedMessage | SiweMessage | Authorization | { kind: 'benzin' }
-  session: Session
+  kind: string
+  meta: { [key: string]: any }
+  dappPromises: {
+    dapp: Dapp | null
+    session: DappProviderRequest['session']
+    meta: {
+      isWalletSendCalls?: boolean
+    }
+    resolve: (data: any) => void
+    reject: (data: any) => void
+  }[]
+}
+
+export interface CallsUserRequest extends UserRequestBase {
+  kind: 'calls'
   meta: {
-    isSignAction: true
-    accountAddr: AccountId
+    accountAddr: string
     chainId: bigint
     paymasterService?: PaymasterService
-    isWalletSendCalls?: boolean
-    submittedAccountOp?: any
     activeRouteId?: string
-    dapp?: Dapp
-    topUpAmount?: bigint
-    [key: string]: any
+    isSwapAndBridgeCall?: boolean
   }
-  // defined only when SignUserRequest is built from a DappRequest
-  dappPromise?: {
-    session: DappProviderRequest['session']
-    resolve: (data: any) => void
-    reject: (data: any) => void
-  }
+  accountOp: AccountOp
 }
 
-export interface DappUserRequest {
-  id: string | number
-  action: {
-    kind: Exclude<
-      string,
-      'calls' | 'message' | 'siwe' | 'typedMessage' | 'benzin' | 'switchAccount'
-    >
-    params: any
-  }
-  session: Session
+export interface PlainTextMessageUserRequest extends UserRequestBase {
+  kind: 'message'
   meta: {
-    isSignAction: false
-    [key: string]: any
-  }
-  dappPromise: {
-    session: DappProviderRequest['session']
-    resolve: (data: any) => void
-    reject: (data: any) => void
+    message: Hex
+    accountAddr: AccountId
   }
 }
 
-export type UserRequest = DappUserRequest | SignUserRequest
+export interface SiweMessageUserRequest extends UserRequestBase {
+  kind: 'siwe'
+  meta: {
+    message: Hex
+    parsedMessage: ViemSiweMessage
+    siweValidityStatus: SiweValidityStatus
+    autoLoginStatus: AutoLoginStatus
+    isAutoLoginEnabledByUser: boolean
+    autoLoginDuration: number
+    accountAddr: AccountId
+  }
+}
+
+export interface TypedMessageUserRequest extends UserRequestBase {
+  kind: 'typedMessage'
+  meta: {
+    domain: TypedDataDomain
+    types: Record<string, Array<TypedDataField>>
+    message: Record<string, any>
+    primaryType: keyof Record<string, Array<TypedDataField>>
+    accountAddr: AccountId
+  }
+}
+
+export interface AuthorizationUserRequest extends UserRequestBase {
+  kind: 'authorization-7702'
+  meta: {
+    accountAddr: AccountId
+    chainId: bigint
+    nonce: bigint
+    contractAddr: Hex
+    message: Hex
+  }
+}
+
+export type UserRequest =
+  | CallsUserRequest
+  | PlainTextMessageUserRequest
+  | TypedMessageUserRequest
+  | SiweMessageUserRequest
+  | AuthorizationUserRequest
+// | UserRequestBase

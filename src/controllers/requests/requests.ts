@@ -1,6 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
+import generateSpoofSig from 'utils/generateSpoofSig'
 
 import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
@@ -32,10 +33,11 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
-import { IUiController } from '../../interfaces/ui'
-import { Calls, DappUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { IUiController, WindowProps } from '../../interfaces/ui'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
@@ -119,6 +121,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   userRequestsWaitingAccountSwitch: UserRequest[] = []
 
   actions: ActionsController
+
+  userRequestWindow: {
+    windowProps: WindowProps
+    openWindowPromise?: Promise<WindowProps>
+    focusWindowPromise?: Promise<WindowProps>
+    closeWindowPromise?: Promise<void>
+    loaded: boolean
+    pendingMessage: {
+      message: string
+      options?: {
+        timeout?: number
+        type?: 'error' | 'success' | 'info' | 'warning'
+        sticky?: boolean
+      }
+    } | null
+  } = {
+    windowProps: null,
+    loaded: false,
+    pendingMessage: null
+  }
+
+  currentUserRequest: UserRequest | null = null
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -260,8 +284,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (shouldSkipAddUserRequest) return
 
-    const actionsToAdd: Action[] = []
-    const baseWindowId = reqs.find((r) => r.session.windowId)?.session?.windowId
+    let baseWindowId: number | undefined
+
+    reqs.forEach((r) => {
+      r.dappPromises.forEach((p) => {
+        if (p.session.windowId && !baseWindowId) baseWindowId = p.session.windowId
+      })
+    })
 
     const signAccountOpController = this.#getSignAccountOp()
     const signStatus = this.#getMainStatuses().signAndBroadcastAccountOp
@@ -269,16 +298,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
-      if (
-        allowAccountSwitch &&
-        req.meta.isSignAction &&
-        req.meta.accountAddr !== this.#selectedAccount.account?.addr
-      ) {
+      if (allowAccountSwitch && req.meta.accountAddr !== this.#selectedAccount.account?.addr) {
         await this.#addSwitchAccountUserRequest(req)
         return
       }
 
-      if (req.action.kind === 'calls') {
+      if (req.kind === 'calls') {
         // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
         //
         // Why? When a transaction is being signed and broadcast, its action is still unresolved.
@@ -307,12 +332,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
               )
             })
 
-            if (req.dappPromise) {
-              req.dappPromise?.reject(
-                ethErrors.rpc.transactionRejected({
-                  message: errorMessage
-                })
-              )
+            if (req.dappPromises) {
+              req.dappPromises.forEach((p) => {
+                p.reject(
+                  ethErrors.rpc.transactionRejected({
+                    message: errorMessage
+                  })
+                )
+              })
 
               await this.#ui.notification.create({
                 title: 'Rejected!',
@@ -327,21 +354,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
       }
 
-      if (req.action.kind === 'calls') {
-        ;(req.action as Calls).calls.forEach((_, i) => {
-          ;(req.action as Calls).calls[i].id = `${req.id}-${i}`
+      if (req.kind === 'calls') {
+        req.accountOp.calls.forEach((_, i) => {
+          req.accountOp.calls[i].id = `${req.id}-${i}`
         })
       }
-      if (actionPosition === 'first') {
-        this.userRequests.unshift(req)
-      } else {
-        this.userRequests.push(req)
-      }
 
-      const { id, action, meta } = req
-      if (action.kind === 'calls') {
+      const { id, kind, meta } = req
+      if (kind === 'calls') {
+        const { accountOp } = req
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-        const accountStateBefore = this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId]
+        const accountStateBefore =
+          this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
         // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
         // otherwise wait for the fetch to complete (no matter how long it takes).
@@ -407,6 +431,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           type: actionType,
           userRequest: req as UserRequest as never
         })
+      }
+
+      const existingIndex = this.userRequests.findIndex((r) => r.id === req.id)
+
+      if (existingIndex !== -1) {
+        // Update existing without changing `this.userRequests` ref
+        this.userRequests[existingIndex] = req
+      } else if (actionPosition === 'first') {
+        this.userRequests.unshift(req)
+      } else {
+        this.userRequests.push(req)
       }
     }
 
@@ -659,7 +694,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           message: 'Request rejected - empty calls array not allowed!'
         })
 
-      const calls: Calls['calls'] = isWalletSendCalls
+      const calls: AccountOp['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
       const paymasterService =
@@ -679,8 +714,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].version ?? '1.0.0'
         : undefined
 
+      const callsUserRequests = this.userRequests.filter(
+        (req): req is CallsUserRequest => req.kind === 'calls'
+      )
+      const existingUserRequest = callsUserRequests.find(
+        (r) => r.accountOp.accountAddr === accountAddr && r.accountOp.chainId === network.chainId
+      )
+
       userRequest = {
         id: new Date().getTime(),
+        kind: 'calls',
         action: {
           kind,
           calls: calls.map((call) => ({
@@ -700,7 +743,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           paymasterService
         },
         dappPromise
-      } as SignUserRequest
+      } as CallsUserRequest
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -1222,6 +1265,77 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       networks: this.#networks.networks,
       swapAndBridgeRoutesPendingSignature
     })
+  }
+
+  async #addOrUpdateCallsUserRequest(
+    calls: Call[],
+    meta: CallsUserRequest['meta'],
+    dappPromises: CallsUserRequest['dappPromises'] = []
+  ) {
+    const existingUserRequest = this.userRequests.find(
+      (r) =>
+        r.kind === 'calls' &&
+        r.meta.accountAddr === meta.accountAddr &&
+        r.meta.chainId === meta.chainId
+    ) as CallsUserRequest | undefined
+
+    if (existingUserRequest) {
+      existingUserRequest.accountOp.calls = [
+        ...existingUserRequest.accountOp.calls,
+        ...calls.map((call) => ({
+          to: call.to,
+          data: call.data || '0x',
+          value: call.value ? getBigInt(call.value) : 0n
+        }))
+      ].map((c, i) => ({ ...c, id: `${existingUserRequest.id}-${i}` }))
+      if (dappPromises) {
+        existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
+      }
+    } else {
+      const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+      const accountStateBefore =
+        this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
+
+      // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+      // otherwise wait for the fetch to complete (no matter how long it takes).
+      // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+      const accountState = (await Promise.race([
+        this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+        // Fallback to the old account state if it exists and the fetch takes too long
+        accountStateBefore
+          ? new Promise((res) => {
+              setTimeout(() => res(accountStateBefore), 2000)
+            })
+          : new Promise(() => {}) // Explicitly never-resolving promise
+      ])) as any
+      const userRequest = {
+        id: new Date().getTime(),
+        kind: 'calls',
+        meta,
+        accountOp: {
+          accountAddr: meta.accountAddr,
+          chainId: meta.chainId,
+          signingKeyAddr: null,
+          signingKeyType: null,
+          gasLimit: null,
+          gasFeePayment: null,
+          nonce: accountState.nonce,
+          signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
+          })),
+          meta: {
+            paymasterService,
+            walletSendCallsVersion,
+            setDelegation,
+            topUpAmount: sumTopUps(userRequests)
+          }
+        },
+        dappPromises
+      } as CallsUserRequest
+    }
   }
 
   toJSON() {
