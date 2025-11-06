@@ -28,7 +28,6 @@ import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getUniqueAccountsArray,
-  isAmbireV1LinkedAccount,
   isAmbireV2Account,
   isSmartAccount
 } from '../../libs/account/account'
