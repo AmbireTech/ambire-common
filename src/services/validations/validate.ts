@@ -224,7 +224,7 @@ const validateSendTransferAmount = (
         return {
           success: false,
           message: 'Insufficient amount.',
-          severity: 'warning'
+          severity: 'warning',
           errorType: 'insufficient_amount'
         }
       }
