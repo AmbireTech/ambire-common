@@ -655,25 +655,12 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #onAccountPickerSuccess() {
-    // Add accounts first, because some of the next steps have validation
-    // if accounts exists.
-    if (this.accountPicker.readyToRemoveAccounts) {
-      // eslint-disable-next-line no-restricted-syntax
-      for (const acc of this.accountPicker.readyToRemoveAccounts) {
-        await this.#removeAccount(acc.addr)
-      }
-    }
-
-    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
-
-    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator)) {
+    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
-    }
 
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
-
     if (storedSeed) {
-      this.keystore.updateSeed({
+      await this.keystore.updateSeed({
         id: storedSeed.id,
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
@@ -682,13 +669,22 @@ export class MainController extends EventEmitter implements IMainController {
         (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
       )
     }
-    // Then add keys, because some of the next steps could have validation
-    // if keys exists. Should be separate (not combined in Promise.all,
-    // since firing multiple keystore actions is not possible
-    // (the #wrapKeystoreAction listens for the first one to finish and
-    // skips the parallel one, if one is requested).
+
+    // Should be separate (not combined in Promise.all, since firing multiple
+    // keystore actions is not possible (the #wrapKeystoreAction listens for the
+    // first one to finish and skips the parallel one, if one is requested).
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+
+    if (this.accountPicker.readyToRemoveAccounts) {
+      // eslint-disable-next-line no-restricted-syntax
+      for (const acc of this.accountPicker.readyToRemoveAccounts) {
+        await this.#removeAccount(acc.addr)
+      }
+    }
+
+    // Add accounts as a final step, because some of the next steps check if accounts have keys.
+    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
