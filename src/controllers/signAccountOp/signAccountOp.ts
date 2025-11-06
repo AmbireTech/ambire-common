@@ -9,6 +9,8 @@ import {
   Interface,
   isAddress,
   isBytesLike,
+  keccak256,
+  parseEther,
   toBeHex,
   ZeroAddress
 } from 'ethers'
@@ -126,6 +128,8 @@ import {
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
+  EoaInsufficientNative = 'eoa-insufficient-native',
+  GasRequested = 'gas-requested',
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
   /**
@@ -166,7 +170,8 @@ export const noStateUpdateStatuses = [
   SigningStatus.InProgress,
   SigningStatus.Done,
   SigningStatus.UpdatesPaused,
-  SigningStatus.WaitingForPaymaster
+  SigningStatus.WaitingForPaymaster,
+  SigningStatus.GasRequested
 ]
 
 export type SignAccountOpUpdateProps = {
@@ -238,6 +243,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #paidBy: string | null = null
 
   feeTokenResult: TokenResult | null = null
+
+  gasRequest: {
+    token: TokenResult
+    value: bigint
+    valueToken: string
+    valueNative: string
+    valueUSD: number
+  } | null = null
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
@@ -1157,7 +1170,41 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return
     }
 
-    if (this.errors.length) {
+    const errros = this.errors
+    if (errros.length) {
+      // if the error is for an EOA that doesn't have enough native,
+      // check if the conditions are fulfilled for us to help him
+      if (
+        this.#network.hasRelayer &&
+        errros.find((err) => err.title === ERRORS.eoaInsufficientFunds)
+      ) {
+        const gasRequestToken = this.#getGasRequestToken()
+        const native = this.#portfolio
+          .getLatestPortfolioState(this.accountOp.accountAddr)
+          [this.accountOp.chainId.toString()]?.result?.tokens.find(
+            (token) => token.address === '0x0000000000000000000000000000000000000000'
+          )
+        if (gasRequestToken && native) {
+          const tokenPrice = gasRequestToken.priceIn.find((price) => price.baseCurrency === 'usd')
+          const nativePrice = native.priceIn.find((price) => price.baseCurrency === 'usd')
+          if (tokenPrice && nativePrice) {
+            const valueInUsd = 0.1
+            const tokenToSendInFloat = valueInUsd / tokenPrice.price
+            const nativeInFloat = valueInUsd / nativePrice.price
+            this.gasRequest = {
+              token: gasRequestToken,
+              value: parseEther(tokenToSendInFloat.toFixed(gasRequestToken.decimals)),
+              valueToken: tokenToSendInFloat.toFixed(gasRequestToken.decimals),
+              valueNative: nativeInFloat.toFixed(native.decimals),
+              valueUSD: valueInUsd
+            }
+            this.status = { type: SigningStatus.EoaInsufficientNative }
+            this.emitUpdate()
+            return
+          }
+        }
+      }
+
       this.status = { type: SigningStatus.UnableToSign }
       this.emitUpdate()
       return
@@ -1198,6 +1245,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   resetStatus() {
     this.status = null
     this.emitUpdate()
+  }
+
+  #getGasRequestToken(): TokenResult | null {
+    const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
+    const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
+    const topAmountGasToken = currentPortfolioNetwork?.result?.tokens
+      .filter((token) => token.amount > 0 && token.flags.canTopUpGasTank && token.priceIn.length)
+      .sort((a, b) => {
+        if (a.amount === b.amount) return 0
+        if (a.amount > b.amount) return 1
+        return -1
+      })
+    return topAmountGasToken?.length ? topAmountGasToken[0] : null
   }
 
   /**
@@ -1913,6 +1973,97 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       required: true,
       success: false,
       errorResponse
+    }
+  }
+
+  async signGasRequest() {
+    this.status = { type: SigningStatus.GasRequested }
+    this.emitUpdate()
+
+    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+      const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
+
+    if (!this.accountOp.gasFeePayment) {
+      return this.#emitSigningErrorAndResetToReadyToSign(
+        `Unable to sign the transaction. During the preparation step, required signing gas information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      )
+    }
+
+    if (!this.gasRequest) {
+      return this.#emitSigningErrorAndResetToReadyToSign(
+        `Unable to sign the transaction. During the preparation step, the required gas token was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      )
+    }
+
+    // create a new account op with the new data
+    const gasReqAccountOp = {
+      accountAddr: this.accountOp.accountAddr,
+      chainId: this.accountOp.chainId,
+      signingKeyAddr: this.accountOp.signingKeyAddr,
+      signingKeyType: this.accountOp.signingKeyType,
+      nonce: this.accountOp.nonce,
+      // todo: add the top up call
+      calls: [],
+      gasLimit: Number(this.accountOp.gasFeePayment.simulatedGasLimit),
+      signature: null,
+      gasFeePayment: this.accountOp.gasFeePayment
+    }
+
+    const signer = await this.#keystore.getSigner(
+      gasReqAccountOp.signingKeyAddr,
+      gasReqAccountOp.signingKeyType
+    )
+    if (!signer) {
+      const message = `Unable to sign the transaction. During the preparation step, required account key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
+
+    if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      gasReqAccountOp.accountAddr,
+      gasReqAccountOp.chainId
+    )
+
+    const senderAddr = gasReqAccountOp.accountAddr
+    const nonce = await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+
+    // @precaution
+    if (nonce instanceof Error) {
+      return this.throwBroadcastAccountOp({
+        message: 'RPC error. Please try again',
+        accountState
+      })
+    }
+
+    try {
+      const rawTxn = await buildRawTransaction(
+        this.account,
+        gasReqAccountOp,
+        accountState,
+        this.provider,
+        this.#network,
+        nonce,
+        BROADCAST_OPTIONS.bySelf,
+        gasReqAccountOp.calls[0]
+      )
+      const signedTxn = await signer.signRawTransaction(rawTxn)
+      const submittedAccountOp: SubmittedAccountOp = {
+        ...gasReqAccountOp,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        txnId: keccak256(signedTxn),
+        nonce: BigInt(nonce),
+        identifiedBy: {
+          type: 'Transaction',
+          identifier: keccak256(signedTxn)
+        },
+        timestamp: new Date().getTime()
+      }
+      this.#activity.addAccountOp(submittedAccountOp)
+    } catch (error: any) {
+      return this.throwBroadcastAccountOp({ error, accountState })
     }
   }
 
