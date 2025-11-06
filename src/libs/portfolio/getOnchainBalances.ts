@@ -129,8 +129,12 @@ export async function getNFTs(
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
-  const mapToken = (token: any) => {
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+    ...opts,
+    blockTag: opts.blockTag === 'both' ? 'pending' : opts.blockTag
+  })
+
+  const mapNft = (token: any) => {
     return {
       name: token.name,
       chainId: network.chainId,
@@ -153,7 +157,7 @@ export async function getNFTs(
       deploylessOpts
     )
 
-    return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
+    return [collections.map((token: any) => [token.error, mapNft(token)]), {}]
   }
 
   const { accountOps, account, state } = opts.simulation
@@ -190,7 +194,7 @@ export async function getNFTs(
 
   const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
     ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
-        ...mapToken(simulationToken),
+        ...mapNft(simulationToken),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
@@ -203,7 +207,7 @@ export async function getNFTs(
           )
         : null
 
-      const token = mapToken(beforeToken)
+      const token = mapNft(beforeToken)
       const receiving: bigint[] = []
       const sending: bigint[] = []
 
@@ -248,7 +252,27 @@ export async function getTokens(
     await yieldToMain()
   }
 
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
+  const isFetchingBothBlocks = opts.blockTag === 'both'
+
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+    ...opts,
+    blockTag: isFetchingBothBlocks ? 'pending' : opts.blockTag
+  })
+
+  let latestBalances:
+    | {
+        amount: bigint
+        error: string
+      }[]
+    | null = null
+
+  if (isFetchingBothBlocks) {
+    latestBalances = await deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
+      ...deploylessOpts,
+      blockTag: 'latest'
+    })
+  }
+
   if (!opts.simulation) {
     const [results, blockNumber] = await deployless.call(
       'getBalances',
@@ -258,8 +282,15 @@ export async function getTokens(
 
     return [
       results.map((token: any, i: number) => [
-        token.error,
-        mapToken(token, network, tokenAddrs[i], opts)
+        token.error || (latestBalances && latestBalances[i].error ? latestBalances[i].error : null),
+        mapToken(
+          token,
+          network,
+          tokenAddrs[i],
+          opts,
+          undefined,
+          Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
+        )
       ]),
       {
         blockNumber
@@ -324,9 +355,16 @@ export async function getTokens(
       // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
       //   - after.balances, 8 USDC.
       return [
-        token.error,
+        token.error || (latestBalances && latestBalances[i].error ? latestBalances[i].error : null),
         {
-          ...mapToken(token, network, tokenAddrs[i], opts, !!simulationAmount),
+          ...mapToken(
+            token,
+            network,
+            tokenAddrs[i],
+            opts,
+            !!simulationAmount,
+            Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
+          ),
           simulationAmount,
           amountPostSimulation
         }
