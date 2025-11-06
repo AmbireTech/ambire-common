@@ -266,7 +266,9 @@ export const mapToken = (
     ...tokenResult,
     // Fallback to the pending amount if latestAmount is not provided
     // Otherwise it will look like someone is receiving tokens and the current amount is 0
-    latestAmount: latestAmount || token.amount,
+    // It's important that we are using ?? here instead of ||
+    // because latestAmount can be 0
+    latestAmount: latestAmount ?? token.amount,
     pendingAmount: tokenResult.amount
   }
 }
