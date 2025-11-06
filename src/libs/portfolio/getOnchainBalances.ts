@@ -259,26 +259,50 @@ export async function getTokens(
     blockTag: isFetchingBothBlocks ? 'pending' : opts.blockTag
   })
 
-  let latestBalances:
-    | {
-        amount: bigint
-        error: string
-      }[]
-    | null = null
+  const getOtherResult = async () => {
+    if (!opts.simulation) {
+      return deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
+    }
 
-  if (isFetchingBothBlocks) {
-    latestBalances = await deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
-      ...deploylessOpts,
-      blockTag: 'latest'
-    })
+    const { accountOps, account, state } = opts.simulation || {}
+    const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
+      // EOA starts from a fake, specified nonce
+      nonce: !shouldUseStateOverrideForEOA(account, state)
+        ? nonce
+        : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+      calls: calls.map(toSingletonCall).map(callToTuple)
+    }))
+    const [factory, factoryCalldata] = getAccountDeployParams(account)
+
+    return {
+      simulationOps,
+      result: await deployless.call(
+        'simulateAndGetBalances',
+        [
+          accountAddr,
+          account.associatedKeys,
+          tokenAddrs,
+          factory,
+          factoryCalldata,
+          simulationOps?.map((op) => Object.values(op))
+        ],
+        deploylessOpts
+      )
+    }
   }
 
+  const [latestBalances, otherResult] = await Promise.all([
+    isFetchingBothBlocks
+      ? deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
+          ...deploylessOpts,
+          blockTag: 'latest'
+        })
+      : Promise.resolve(null),
+    getOtherResult()
+  ])
+
   if (!opts.simulation) {
-    const [results, blockNumber] = await deployless.call(
-      'getBalances',
-      [accountAddr, tokenAddrs],
-      deploylessOpts
-    )
+    const [results, blockNumber] = otherResult
 
     return [
       results.map((token: any, i: number) => [
@@ -297,32 +321,12 @@ export async function getTokens(
       }
     ]
   }
-  const { accountOps, account, state } = opts.simulation
-  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
-    // EOA starts from a fake, specified nonce
-    nonce: !shouldUseStateOverrideForEOA(account, state)
-      ? nonce
-      : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-    calls: calls.map(toSingletonCall).map(callToTuple)
-  }))
-  const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] =
-    await deployless.call(
-      'simulateAndGetBalances',
-      [
-        accountAddr,
-        account.associatedKeys,
-        tokenAddrs,
-        factory,
-        factoryCalldata,
-        simulationOps.map((op) => Object.values(op))
-      ],
-      deploylessOpts
-    )
+
+  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = otherResult.result
 
   const beforeNonce = before.nonce
   const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
+  handleSimulationError(simulationErr, beforeNonce, afterNonce, otherResult.simulationOps)
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
