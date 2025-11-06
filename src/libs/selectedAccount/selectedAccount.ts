@@ -302,8 +302,6 @@ export const isDefiNetworkStateReady = (
 export const getIsRecalculationNeeded = (
   pastAccountPortfolioWithDefiPositionsNetworkState: SelectedAccountPortfolioByNetworksNetworkState,
   portfolioState: NetworkState,
-  // Can be pending or selected
-  selectedNetworkData: NetworkState,
   defiPositionsNetworkState: DefiPositionsNetworkState | undefined
 ): boolean => {
   if (!pastAccountPortfolioWithDefiPositionsNetworkState) {
@@ -317,7 +315,7 @@ export const getIsRecalculationNeeded = (
   }
 
   const pastAccountOp = pastAccountPortfolioWithDefiPositionsNetworkState.simulatedAccountOp
-  const networkDataAccountOp = selectedNetworkData?.accountOps?.[0]
+  const networkDataAccountOp = portfolioState?.accountOps?.[0]
 
   // If there is or was an account op we must recalculate the portfolio
   // on every update to ensure that the simulations are correct
@@ -325,7 +323,7 @@ export const getIsRecalculationNeeded = (
 
   const hasPortfolioUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.portfolioUpdateStarted !==
-    selectedNetworkData.result?.updateStarted
+    portfolioState.result?.updateStarted
 
   const areDefiPositionsUpdated =
     pastAccountPortfolioWithDefiPositionsNetworkState.defiPositionsUpdatedAt !==
@@ -457,7 +455,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
     // Check if a recalculation is needed or the past state can be reused
     const shouldRecalculateState = getIsRecalculationNeeded(
       pastAccountPortfolioWithDefiPositionsNetworkState,
-      portfolioState[network],
       networkData,
       defiPositionsNetworkState
     )

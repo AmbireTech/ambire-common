@@ -48,6 +48,7 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
+import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -1300,7 +1301,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   getIsStateWithOutdatedNetworks(accountAddr: string) {
-    const stateNetworksCount = Object.keys(this.getAccountPortfolioState(accountAddr)).length
+    const stateNetworksCount = Object.keys(this.getAccountPortfolioState(accountAddr)).filter(
+      (key) => !isInternalChain(key)
+    ).length
     // Read from networks, and not allNetworks
     const networksCount = this.#networks.networks.length
 

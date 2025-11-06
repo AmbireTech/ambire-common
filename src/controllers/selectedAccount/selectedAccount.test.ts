@@ -383,8 +383,8 @@ describe('SelectedAccount Controller', () => {
       jest
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
         .mockImplementation(() => ({ '137': true, '1': false }))
-      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -404,8 +404,8 @@ describe('SelectedAccount Controller', () => {
 
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
-      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -435,13 +435,13 @@ describe('SelectedAccount Controller', () => {
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
       // There is a critical error but lastSuccessfulUpdate is less than 10 minutes ago
-      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       await forceBannerRecalculation()
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
       // There is a critical error and lastSuccessfulUpdate is more than 10 minutes ago
-      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
       await forceBannerRecalculation()
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
@@ -542,12 +542,12 @@ describe('SelectedAccount Controller', () => {
     await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
     ;(
-      selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
+      selectedAccountCtrl.portfolio.portfolioState.gasTank!.result as PortfolioGasTankResult
     ).gasTankTokens[0].cashback = 0n
     // Mocks 'no-cashback'
     await selectedAccountCtrl.updateCashbackStatus()
     ;(
-      selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
+      selectedAccountCtrl.portfolio.portfolioState.gasTank!.result as PortfolioGasTankResult
     ).gasTankTokens[0].cashback = 10n
     // Mocks 'unseen-cashback'
     await selectedAccountCtrl.updateCashbackStatus()
