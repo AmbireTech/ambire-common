@@ -2,6 +2,7 @@ import { AbiCoder, concat, hexlify, Interface, keccak256, Log, randomBytes, toBe
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
+import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
 import {
@@ -9,6 +10,7 @@ import {
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
+  ENTRYPOINT_0_9_0,
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
@@ -21,6 +23,7 @@ import { SignUserOperation } from '../../interfaces/userOperation'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 //  TODO: dependency cycle
 // eslint-disable-next-line import/no-cycle
+import { RPCProvider } from '../../interfaces/provider'
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -215,7 +218,7 @@ export function getPackedUserOp(userOp: SignUserOperation): PackedUserOperation 
   }
 }
 
-export function getUserOpHash(userOp: SignUserOperation, chainId: bigint) {
+export function getUserOpHash(userOp: SignUserOperation, chainId: bigint): string {
   const abiCoder = new AbiCoder()
   const packedUserOp = getPackedUserOp(userOp)
   const hashInitCode = keccak256(packedUserOp.initCode)
@@ -238,6 +241,18 @@ export function getUserOpHash(userOp: SignUserOperation, chainId: bigint) {
   return keccak256(
     abiCoder.encode(['bytes32', 'address', 'uint256'], [packedHash, ERC_4337_ENTRYPOINT, chainId])
   )
+}
+
+export function getEntryPoint090Hash(
+  userOp: SignUserOperation,
+  provider: RPCProvider
+): Promise<string> {
+  const packedUserOp = getPackedUserOp(userOp)
+  const epInterface = new Interface(EntryPoint)
+  return provider.call({
+    to: ENTRYPOINT_0_9_0,
+    data: epInterface.encodeFunctionData('getUserOpHash', [packedUserOp])
+  })
 }
 
 // try to parse the UserOperationEvent to understand whether

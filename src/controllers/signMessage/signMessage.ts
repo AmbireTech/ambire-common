@@ -27,7 +27,7 @@ import {
 import { get7702SigV } from '../../libs/signMessage/utils'
 import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import { getMerkleProof, getMerkleRoot } from '../../libs/userOperation/merkleProofs'
-import { getUserOpHash } from '../../libs/userOperation/userOperation'
+import { getEntryPoint090Hash } from '../../libs/userOperation/userOperation'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -256,10 +256,27 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
           const userOps = []
           const hasSigned7702: string[] = []
-          const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
-            (chainIdWithUserOp) =>
-              getUserOpHash(chainIdWithUserOp.userOperation, BigInt(chainIdWithUserOp.chainId))
-          )
+          const userOpHashes: string[] = []
+          // TODO<eil>: calculate the hashes instead of an RPC request
+          for (let i = 0; i < this.messageToSign.content.chainIdWithUserOps.length; i++) {
+            const userOpFromRequest = this.messageToSign.content.chainIdWithUserOps[i].userOperation
+            const chainIdFromRequest = this.messageToSign.content.chainIdWithUserOps[i].chainId
+            // eslint-disable-next-line no-await-in-loop
+            const userOpHash = await getEntryPoint090Hash(
+              userOpFromRequest,
+              this.#providers.providers[chainIdFromRequest.toString()]
+            )
+            userOpHashes.push(userOpHash)
+          }
+          // const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
+          //   async (chainIdWithUserOp) => {
+          //     const userOpHash = await getEntryPoint090Hash(
+          //       chainIdWithUserOp.userOperation,
+          //       this.#providers.providers[network?.chainId.toString() || '1']
+          //     )
+          //     return userOpHash
+          //   }
+          // )
           const merkleRoot = getMerkleRoot(0, 0, userOpHashes)
           const merkleSig = this.#signer.plainSign(merkleRoot)
           const merkleSignature = concat([merkleSig.r, merkleSig.s, get7702SigV(merkleSig)]) as Hex
@@ -294,7 +311,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
 
             const userOp = chainIdWithUserOp.userOperation
-            const userOpHash = getUserOpHash(userOp, chainId)
+            // const userOpHash = getUserOpHash(userOp, chainId)
+            // eslint-disable-next-line no-await-in-loop
+            const userOpHash = await getEntryPoint090Hash(
+              userOp,
+              this.#providers.providers[chainIdWithUserOp.chainId.toString()]
+            )
             const fullSigWithoutWrapping = coder.encode(
               ['uint48', 'uint48', 'bytes32', 'bytes32[]', 'bytes'],
               [0, 0, merkleRoot, getMerkleProof(0, 0, userOpHash, userOpHashes), merkleSignature]
