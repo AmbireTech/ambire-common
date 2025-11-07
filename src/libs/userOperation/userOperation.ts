@@ -1,4 +1,14 @@
-import { AbiCoder, concat, hexlify, Interface, keccak256, Log, randomBytes, toBeHex } from 'ethers'
+import {
+  AbiCoder,
+  concat,
+  Contract,
+  hexlify,
+  Interface,
+  keccak256,
+  Log,
+  randomBytes,
+  toBeHex
+} from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -248,11 +258,9 @@ export function getEntryPoint090Hash(
   provider: RPCProvider
 ): Promise<string> {
   const packedUserOp = getPackedUserOp(userOp)
-  const epInterface = new Interface(EntryPoint)
-  return provider.call({
-    to: ENTRYPOINT_0_9_0,
-    data: epInterface.encodeFunctionData('getUserOpHash', [packedUserOp])
-  })
+  packedUserOp.signature = '0x'
+  const epContract = new Contract(ENTRYPOINT_0_9_0, EntryPoint, provider)
+  return epContract.getUserOpHash(packedUserOp)
 }
 
 // try to parse the UserOperationEvent to understand whether

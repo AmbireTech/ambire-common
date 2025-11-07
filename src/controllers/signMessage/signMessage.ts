@@ -264,7 +264,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             // eslint-disable-next-line no-await-in-loop
             const userOpHash = await getEntryPoint090Hash(
               userOpFromRequest,
-              this.#providers.providers[chainIdFromRequest.toString()]
+              this.#providers.providers[Number(BigInt(chainIdFromRequest).toString())]
             )
             userOpHashes.push(userOpHash)
           }
@@ -315,7 +315,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             // eslint-disable-next-line no-await-in-loop
             const userOpHash = await getEntryPoint090Hash(
               userOp,
-              this.#providers.providers[chainIdWithUserOp.chainId.toString()]
+              this.#providers.providers[Number(BigInt(chainId).toString())]
             )
             const fullSigWithoutWrapping = coder.encode(
               ['uint48', 'uint48', 'bytes32', 'bytes32[]', 'bytes'],
