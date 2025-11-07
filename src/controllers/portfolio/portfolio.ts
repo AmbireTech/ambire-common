@@ -863,6 +863,33 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
+  /**
+   * Returns the maxDataAgeMs to be used for portfolio updates on a specific network,
+   * based on whether the account ops have changed and the user has assets on that network.
+   */
+  #getMaxDataAgeMs(
+    accountId: AccountId,
+    chainId: bigint,
+    areAccountOpsChanged: boolean,
+    maxDataAgeMs?: number,
+    maxDataAgeUnused?: number
+  ): number | undefined {
+    if (areAccountOpsChanged) return undefined
+
+    // maxDataAgeMsUnused is optional so we fall back to maxDataAgeMs if not provided
+    if (typeof maxDataAgeUnused !== 'number') return maxDataAgeMs
+
+    const networksWithAssets = this.getNetworksWithAssets(accountId)
+    const stringChainId = chainId.toString()
+
+    // If we don't know about the network we assume it has assets
+    if (!(stringChainId in networksWithAssets)) return maxDataAgeMs
+
+    const hasAssetsOnNetwork = networksWithAssets[stringChainId]
+
+    return hasAssetsOnNetwork ? maxDataAgeMs : maxDataAgeUnused
+  }
+
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
@@ -881,9 +908,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
     },
-    opts?: { maxDataAgeMs?: number; isManualUpdate?: boolean }
+    opts?: { maxDataAgeMs?: number; maxDataAgeMsUnused?: number; isManualUpdate?: boolean }
   ) {
-    const { maxDataAgeMs: paramsMaxDataAgeMs = 0, isManualUpdate } = opts || {}
+    const {
+      maxDataAgeMs: paramsMaxDataAgeMs = 0,
+      maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
+      isManualUpdate
+    } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount)
@@ -932,7 +963,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               : currentAccountOps !== simulatedAccountOps
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
-          const maxDataAgeMs = areAccountOpsChanged ? undefined : paramsMaxDataAgeMs
+          const maxDataAgeMs = this.#getMaxDataAgeMs(
+            accountId,
+            network.chainId,
+            areAccountOpsChanged,
+            paramsMaxDataAgeMs,
+            paramsMaxDataAgeMsUnused
+          )
 
           const hintsResponse =
             this.#latest[accountId][network.chainId.toString()]?.result?.lastExternalApiUpdateData

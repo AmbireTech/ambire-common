@@ -557,10 +557,14 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
+      const ONE_HOUR = 1000 * 60 * 60
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
-        this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+        this.updateSelectedAccountPortfolio({
+          maxDataAgeMs: FIVE_MINUTES,
+          maxDataAgeMsUnused: ONE_HOUR
+        })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
 
@@ -650,7 +654,8 @@ export class MainController extends EventEmitter implements IMainController {
     // will block the UI until these are resolved.
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000
+      maxDataAgeMs: 5 * 60 * 1000,
+      maxDataAgeMsUnused: 60 * 60 * 1000
     })
   }
 
@@ -1358,9 +1363,10 @@ export class MainController extends EventEmitter implements IMainController {
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
+    maxDataAgeMsUnused?: number
     isManualReload?: boolean
   }) {
-    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMsUnused, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
@@ -1386,6 +1392,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.updateSelectedAccountPortfolio({
         networks: networksToUpdate,
         isManualUpdate: isManualReload,
+        maxDataAgeMsUnused,
         maxDataAgeMs
       }),
       this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
@@ -1445,8 +1452,9 @@ export class MainController extends EventEmitter implements IMainController {
     networks?: Network[]
     isManualUpdate?: boolean
     maxDataAgeMs?: number
+    maxDataAgeMsUnused?: number
   }) {
-    const { networks, maxDataAgeMs, isManualUpdate } = opts || {}
+    const { networks, maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate } = opts || {}
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1468,7 +1476,7 @@ export class MainController extends EventEmitter implements IMainController {
             states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
           }
         : undefined,
-      { maxDataAgeMs, isManualUpdate }
+      { maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate }
     )
     this.#updateIsOffline()
   }
