@@ -135,12 +135,13 @@ export abstract class Bundler {
    * @param UserOperation userOperation
    * @returns userOperationHash
    */
-  async broadcast(userOperation: UserOperation, network: Network): Promise<string> {
+  async broadcast(
+    userOperation: UserOperation,
+    network: Network,
+    ep: string = ERC_4337_ENTRYPOINT
+  ): Promise<string> {
     const provider = this.getProvider(network)
-    return provider.send('eth_sendUserOperation', [
-      getCleanUserOp(userOperation)[0],
-      ERC_4337_ENTRYPOINT
-    ])
+    return provider.send('eth_sendUserOperation', [getCleanUserOp(userOperation)[0], ep])
   }
 
   // use this request to check if the bundler supports the network
