@@ -15,12 +15,15 @@ const stakingAddresses = [
   '0xec3b10ce9cabab5dbf49f946a623e294963fbb4e'
 ]
 
+const WALLET_SUPPLY_CONTROLLER_MAPPING = WALLETSupplyControllerMapping()
+const STAKING_POOLS = StakingPools()
+
 const stkWalletIface = new Interface(StkWallet)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
   const matcher = {
-    supplyController: WALLETSupplyControllerMapping(),
-    stakingPool: StakingPools(),
+    supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,
+    stakingPool: STAKING_POOLS,
     stkWallet: {
       [stkWalletIface.getFunction('wrapAll')!.selector]: () => {
         return [
