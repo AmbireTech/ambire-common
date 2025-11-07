@@ -1409,15 +1409,15 @@ export class MainController extends EventEmitter implements IMainController {
     // and not the selected account portfolio the flag isOffline
     // and the errors of the selected account portfolio should
     // come in the same tick. Otherwise the UI may flash the wrong error.
-    const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
-    const latestStateKeys = Object.keys(latestState)
-    const isAllLoaded = latestStateKeys.every((chainId) => {
-      return isNetworkReady(latestState[chainId]) && !latestState[chainId]?.isLoading
+    const portfolioState = this.portfolio.getAccountPortfolioState(accountAddr)
+    const portfolioStateKeys = Object.keys(portfolioState)
+    const isAllLoaded = portfolioStateKeys.every((chainId) => {
+      return isNetworkReady(portfolioState[chainId]) && !portfolioState[chainId]?.isLoading
     })
 
     // Set isOffline back to false if the portfolio is loading.
     // This is done to prevent the UI from flashing the offline error
-    if (!latestStateKeys.length || !isAllLoaded) {
+    if (!portfolioStateKeys.length || !isAllLoaded) {
       // Skip unnecessary updates
       if (!this.isOffline) return
 
@@ -1426,8 +1426,8 @@ export class MainController extends EventEmitter implements IMainController {
       return
     }
 
-    const allPortfolioNetworksHaveErrors = latestStateKeys.every((chainId) => {
-      const state = latestState[chainId]
+    const allPortfolioNetworksHaveErrors = portfolioStateKeys.every((chainId) => {
+      const state = portfolioState[chainId]
 
       return !!state?.criticalError
     })
