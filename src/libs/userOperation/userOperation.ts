@@ -23,7 +23,7 @@ import {
   ENTRYPOINT_0_9_0,
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
-import { SPOOF_SIGTYPE } from '../../consts/signatures'
+import { PAYMASTER_SIG_MAGIC, SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
@@ -252,12 +252,41 @@ export function getUserOpHash(userOp: SignUserOperation, chainId: bigint): strin
   )
 }
 
+function getPaymasterSignatureLength(paymasterAndData: string): number {
+  // if there's a paymaster sig, it will be encoded as:
+  // <paymasterAddr> | <paymasterVerificationGasLimit> | <paymasterPostOpGasLimit> | <signature> | <signatureLength> | <MAGIC>
+  const paymasterDataLength = paymasterAndData.length
+  const suffixLength = PAYMASTER_SIG_MAGIC.length - 2 // remove 2 because of 0x
+  if (
+    paymasterDataLength > suffixLength &&
+    `0x${paymasterAndData.slice(paymasterDataLength - suffixLength)}` === PAYMASTER_SIG_MAGIC
+  ) {
+    const asBigInt = BigInt(
+      `0x${paymasterAndData.slice(paymasterDataLength - 10, paymasterDataLength - 8)}`
+    )
+    return Number(asBigInt.toString())
+  }
+  return 0
+}
+
+function keccakPaymasterAndData(paymasterAndData: string): string {
+  const pmdLen = paymasterAndData.length
+  const pmSigLength = getPaymasterSignatureLength(paymasterAndData)
+  if (pmSigLength > 0) {
+    // const dataToHash = hexDataSlice(paymasterAndData, 0, pmdLen - pmSigLength - 10)
+    const dataToHash = paymasterAndData.slice(0, pmdLen - pmSigLength - 10)
+    // if there is a paymasterSignature, remove it before hashing, but still append the SIGNATURE_SUFFIX
+    return keccak256(concat([dataToHash, PAYMASTER_SIG_MAGIC]))
+  }
+  return keccak256(paymasterAndData)
+}
+
 export function getEntryPoint090Hash(userOp: SignUserOperation, chainId: bigint): string {
   const abiCoder = new AbiCoder()
   const packedUserOp = getPackedUserOp(userOp)
   const hashInitCode = keccak256(packedUserOp.initCode)
   const hashCallData = keccak256(packedUserOp.callData)
-  const hashPaymasterAndData = keccak256(packedUserOp.paymasterAndData) // TODO<eil>
+  const hashPaymasterAndData = keccakPaymasterAndData(packedUserOp.paymasterAndData)
   const domainSeparator = keccak256(
     abiCoder.encode(
       ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],

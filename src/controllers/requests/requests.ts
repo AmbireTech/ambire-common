@@ -895,7 +895,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         for (let k = 0; k < requiredProperties.length; k++) {
           const prop = requiredProperties[k]
           if (!(userOp as any)[prop])
-            throw ethErrors.rpc.invalidRequest(`Invalid user operation property ${prop}`)
+            throw ethErrors.rpc.invalidRequest(`Missing user operation property ${prop}`)
         }
       }
 
