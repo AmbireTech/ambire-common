@@ -557,10 +557,14 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
+      const ONE_HOUR = 1000 * 60 * 60
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
-        this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+        this.updateSelectedAccountPortfolio({
+          maxDataAgeMs: FIVE_MINUTES,
+          maxDataAgeMsUnused: ONE_HOUR
+        })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
 
@@ -650,30 +654,18 @@ export class MainController extends EventEmitter implements IMainController {
     // will block the UI until these are resolved.
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000
+      maxDataAgeMs: 5 * 60 * 1000,
+      maxDataAgeMsUnused: 60 * 60 * 1000
     })
   }
 
   async #onAccountPickerSuccess() {
-    // Add accounts first, because some of the next steps have validation
-    // if accounts exists.
-    if (this.accountPicker.readyToRemoveAccounts) {
-      // eslint-disable-next-line no-restricted-syntax
-      for (const acc of this.accountPicker.readyToRemoveAccounts) {
-        await this.#removeAccount(acc.addr)
-      }
-    }
-
-    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
-
-    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator)) {
+    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
-    }
 
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
-
     if (storedSeed) {
-      this.keystore.updateSeed({
+      await this.keystore.updateSeed({
         id: storedSeed.id,
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
@@ -682,13 +674,22 @@ export class MainController extends EventEmitter implements IMainController {
         (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
       )
     }
-    // Then add keys, because some of the next steps could have validation
-    // if keys exists. Should be separate (not combined in Promise.all,
-    // since firing multiple keystore actions is not possible
-    // (the #wrapKeystoreAction listens for the first one to finish and
-    // skips the parallel one, if one is requested).
+
+    // Should be separate (not combined in Promise.all, since firing multiple
+    // keystore actions is not possible (the #wrapKeystoreAction listens for the
+    // first one to finish and skips the parallel one, if one is requested).
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+
+    if (this.accountPicker.readyToRemoveAccounts) {
+      // eslint-disable-next-line no-restricted-syntax
+      for (const acc of this.accountPicker.readyToRemoveAccounts) {
+        await this.#removeAccount(acc.addr)
+      }
+    }
+
+    // Add accounts as a final step, because some of the next steps check if accounts have keys.
+    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
@@ -1362,9 +1363,10 @@ export class MainController extends EventEmitter implements IMainController {
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
+    maxDataAgeMsUnused?: number
     isManualReload?: boolean
   }) {
-    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMsUnused, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
@@ -1390,6 +1392,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.updateSelectedAccountPortfolio({
         networks: networksToUpdate,
         isManualUpdate: isManualReload,
+        maxDataAgeMsUnused,
         maxDataAgeMs
       }),
       this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
@@ -1449,8 +1452,9 @@ export class MainController extends EventEmitter implements IMainController {
     networks?: Network[]
     isManualUpdate?: boolean
     maxDataAgeMs?: number
+    maxDataAgeMsUnused?: number
   }) {
-    const { networks, maxDataAgeMs, isManualUpdate } = opts || {}
+    const { networks, maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate } = opts || {}
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1472,7 +1476,7 @@ export class MainController extends EventEmitter implements IMainController {
             states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
           }
         : undefined,
-      { maxDataAgeMs, isManualUpdate }
+      { maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate }
     )
     this.#updateIsOffline()
   }
