@@ -1,7 +1,7 @@
 import { hashMessage } from 'ethers'
 import { ethers } from 'hardhat'
 
-import { getExecute712Data, wrapEIP712 } from '../ambireSign'
+import { getExecute712Data, wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
 import {
   abiCoder,
   addressFour,
@@ -44,8 +44,9 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
-    const s = wrapEIP712(
+    // const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     await contract.execute(txns, s)
@@ -119,8 +120,9 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
-    const s = wrapEIP712(
+    // const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     await expect(contract.execute(txns, s)).to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
@@ -222,14 +224,15 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, firstBatch]
       )
     )
-    const typedData = getExecute712Data(
-      chainId,
-      nonce,
-      firstBatch,
-      ambireAccountAddress,
-      executeHash
-    )
-    const s = wrapEIP712(
+    // const typedData = getExecute712Data(
+    //   chainId,
+    //   nonce,
+    //   firstBatch,
+    //   ambireAccountAddress,
+    //   executeHash
+    // )
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     const secondBatch: [string, string, string][] = [
@@ -243,14 +246,15 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, incrementedNonce, secondBatch]
       )
     )
-    const typedData2 = getExecute712Data(
-      chainId,
-      incrementedNonce,
-      secondBatch,
-      ambireAccountAddress,
-      executeHash2
-    )
-    const s2 = wrapEIP712(
+    // const typedData2 = getExecute712Data(
+    //   chainId,
+    //   incrementedNonce,
+    //   secondBatch,
+    //   ambireAccountAddress,
+    //   executeHash2
+    // )
+    const typedData2 = wrapTypedData(chainId, ambireAccountAddress, executeHash2)
+    const s2 = wrapEthSign(
       await signer.signTypedData(typedData2.domain, typedData2.types, typedData2.value)
     )
     const balance = await provider.getBalance(ambireAccountAddress)
@@ -277,8 +281,9 @@ describe('Basic Ambire Account tests', () => {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
-    const s = wrapEIP712(
+    // const typedData = getExecute712Data(chainId, nonce, txns, ambireAccountAddress, executeHash)
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     const balance = await provider.getBalance(ambireAccountAddress)
