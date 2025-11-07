@@ -19,7 +19,6 @@ import { Message } from '../../interfaces/userRequest'
 import {
   get7702Sig,
   getAppFormatted,
-  getAuthorizationHash,
   getEIP712Signature,
   getPlainTextSignature,
   getVerifyMessageSignature,
@@ -244,7 +243,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
-          signature = this.#signer.sign7702(this.messageToSign.content.message)
+          // TODO: Deprecated. Sync with the latest sign7702 method changes if used
+          // signature = this.#signer.sign7702(this.messageToSign.content.message)
+          throw new ExternalSignerError(
+            'Signing EIP-7702 authorization via this flow is not implemented',
+            { sendCrashReport: true }
+          )
         }
         if (this.messageToSign.content.kind === 'signUserOperations') {
           if (!this.#signer.plainSign)
@@ -281,9 +285,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
                   AMBIRE_ACCOUNT_OMNI.toLowerCase())
             if (!hasDelegatedToOmni) {
               hasSigned7702.push(chainIdWithUserOp.chainId)
-              eip7702Sig = this.#signer.sign7702(
-                getAuthorizationHash(chainId, AMBIRE_ACCOUNT_OMNI, curAccountState.eoaNonce!)
-              )
+              // eslint-disable-next-line no-await-in-loop
+              eip7702Sig = await this.#signer.sign7702({
+                chainId,
+                contract: AMBIRE_ACCOUNT_OMNI,
+                nonce: curAccountState.eoaNonce!
+              })
             }
 
             const userOp = chainIdWithUserOp.userOperation

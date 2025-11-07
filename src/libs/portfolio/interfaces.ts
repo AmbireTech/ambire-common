@@ -11,6 +11,7 @@ export interface GetOptionsSimulation {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
+export type SuspectedType = 'no-latin-symbol' | 'no-latin-name' | 'suspected' | null
 
 export type TokenResult = {
   symbol: string
@@ -30,6 +31,7 @@ export type TokenResult = {
     isFeeToken: boolean
     isHidden?: boolean
     isCustom?: boolean
+    suspectedType?: SuspectedType
   }
 }
 
@@ -40,7 +42,7 @@ export type GasTankTokenResult = TokenResult & {
 }
 
 export type ProjectedRewardsTokenResult = TokenResult & {
-  apy: number
+  userXp: number
 }
 
 export interface CollectionResult extends TokenResult {
@@ -236,6 +238,7 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
   apy: number
   minLvl: number
   minBalance: number
+  userXp: number
 }
 
 export type NetworkState = {
@@ -411,4 +414,12 @@ export type FormattedPendingAmounts = Omit<PendingAmounts, 'pendingBalance'> & {
   pendingBalanceUSDFormatted?: string
   pendingToBeSignedFormatted?: string
   pendingToBeConfirmedFormatted?: string
+}
+
+export type KnownTokenInfo = {
+  name?: string
+  address?: string
+  token?: { symbol?: string; decimals?: number }
+  isSC?: boolean
+  chainIds?: number[]
 }

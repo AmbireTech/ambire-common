@@ -260,8 +260,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     // Display the current portfolio state immediately only if the user hasn't
     // added/removed networks since the last time the portfolio was calculated.
     if (!isStateWithOutdatedNetworks) {
-      this.updateSelectedAccountPortfolio(true)
       this.#updateSelectedAccountDefiPositions(true)
+      this.updateSelectedAccountPortfolio(true)
+      this.#updateDefiPositionsErrors(true)
     }
     this.dashboardNetworkFilter = null
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
@@ -336,11 +337,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     )
 
     if (newSelectedAccountPortfolio.isAllReady && latestStateSelectedAccount.projectedRewards) {
+      const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
+
       // Calculate and add projected rewards token
       const projectedRewardsToken = calculateAndSetProjectedRewards(
         latestStateSelectedAccount.projectedRewards,
         newSelectedAccountPortfolio.balancePerNetwork,
-        walletORStkWalletToken && walletORStkWalletToken.priceIn[0].price
+        walletOrStkWalletTokenPrice
       )
 
       if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)

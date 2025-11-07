@@ -60,6 +60,7 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount } from '../../services/validations/validate'
 import {
   convertTokenPriceToBigInt,
@@ -74,7 +75,6 @@ import {
   OnBroadcastSuccess,
   SignAccountOpController
 } from '../signAccountOp/signAccountOp'
-import { NULL_ADDRESS } from '../../services/socket/constants'
 
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
@@ -144,6 +144,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   #updateQuoteId?: string
+
+  #userTxn: SwapAndBridgeSendTxRequest | null = null
 
   switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
@@ -254,8 +256,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * - when the user has chosen a custom route by himself
    */
   isAutoSelectRouteDisabled: boolean = false
-
-  #isReestimating: boolean = false
 
   #relayerUrl: string
 
@@ -1002,6 +1002,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.isAutoSelectRouteDisabled = false
     this.#updateQuoteId = undefined
     this.fromAmountUpdateCounter = 0
+    this.#userTxn = null
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -1589,12 +1590,82 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         })
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .filter((route) => {
+            const hasNoRouteId = !route.routeId
+
+            if (hasNoRouteId) {
+              this.emitError({
+                level: 'silent',
+                error: new SwapAndBridgeError(
+                  `Received route with no routeId from ${this.#serviceProviderAPI.name}. From: ${
+                    this.fromSelectedToken?.address
+                  } (${this.fromSelectedToken?.chainId}) To: ${this.toSelectedToken?.address} (${
+                    this.toSelectedToken?.chainId
+                  })`
+                ),
+                message: 'Received route with no routeId'
+              })
+            }
+
+            return !hasNoRouteId
+          })
           .sort((r1, r2) => {
-            const a = BigInt(r1.toAmount)
-            const b = BigInt(r2.toAmount)
-            if (a === b) return 0
-            if (a > b) return -1
-            return 1
+            const isBridge = r1.fromChainId !== r1.toChainId
+
+            // the amount threshold in %. If below, we check the time as
+            // the deciding sort factor
+            const threshold = 1.2
+
+            const sortByTime = () => {
+              const aTime = Number(r1.serviceTime)
+              const bTime = Number(r2.serviceTime)
+              if (aTime === bTime) return 0
+              if (aTime > bTime) return 1
+              return -1
+            }
+
+            const sortByAmountAndTime = () => {
+              const a = BigInt(r1.toAmount)
+              const b = BigInt(r2.toAmount)
+
+              // if value is the same, check time if bridge
+              if (a === b) {
+                if (!isBridge) return 0
+                return sortByTime()
+              }
+
+              const aUsd = Number(r1.outputValueInUsd ?? 0)
+              const bUsd = Number(r2.outputValueInUsd ?? 0)
+              if (a > b) {
+                // if it's not a bridge, just return the higher output route
+                if (!isBridge) return -1
+
+                // if the bigint amount says a > b but the usd amount says
+                // the opposite, we're stuck, so just return a as the winner
+                if (bUsd > aUsd || aUsd === 0) return -1
+
+                const percentage = ((aUsd - bUsd) / aUsd) * 100
+                if (percentage < threshold) return sortByTime()
+                return -1
+              }
+
+              // if it's not a bridge, just return the higher output route
+              if (!isBridge) return 1
+
+              // if the bigint amount says b > a but the usd amount says
+              // the opposite, we're stuck, so just return b as the winner
+              if (aUsd > bUsd || bUsd === 0) return 1
+              const percentage = ((bUsd - aUsd) / bUsd) * 100
+              if (percentage < threshold) return sortByTime()
+              return 1
+            }
+
+            // move the routes with service fee to the bottom
+            const r1ServiceFee = r1.serviceFee && Number(r1.serviceFee.amountUSD) > 0
+            const r2ServiceFee = r2.serviceFee && Number(r2.serviceFee.amountUSD) > 0
+            if (r1ServiceFee && !r2ServiceFee) return 1
+            if (r2ServiceFee && !r1ServiceFee) return -1
+            return sortByAmountAndTime()
           })
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
@@ -1738,12 +1809,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#initialLoadPromise
     const fetchAndUpdateRoute = async (activeRoute: SwapAndBridgeActiveRoute) => {
       let status: SwapAndBridgeRouteStatus = null
-      const broadcastedButNotConfirmed = this.#activity.broadcastedButNotConfirmed.find((op) =>
-        op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId)
-      )
+
+      const selectedAccountBroadcastedButNotConfirmed = (
+        this.#selectedAccount.account
+          ? this.#activity.broadcastedButNotConfirmed[this.#selectedAccount.account.addr]
+          : []
+      ).find((op) => op.calls.some((c) => c.fromUserRequestId === activeRoute.activeRouteId))
 
       // call getRouteStatus only after the transaction has processed
-      if (broadcastedButNotConfirmed) return
+      if (selectedAccountBroadcastedButNotConfirmed) return
       if (activeRoute.routeStatus === 'completed') return
 
       try {
@@ -2143,7 +2217,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !!getSafeAmountFromFieldValue(this.fromAmount, this.fromSelectedToken?.decimals) &&
       this.fromSelectedToken &&
       this.toSelectedToken &&
-      (this.validateFromAmount.success || this.fromSelectedToken?.isSwitchedToToken)
+      // Allow the quote fetch if the error is insufficient amount, as the user might want
+      // to see the routes even if he has insufficient balance
+      (this.validateFromAmount.success ||
+        this.validateFromAmount.errorType === 'insufficient_amount')
     )
   }
 
@@ -2229,6 +2306,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn || !userTxn.success) {
+      this.#userTxn = null
+
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote', false)
 
@@ -2243,6 +2322,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.onEstimationFailure(undefined)
       return
     }
+
+    // set the correct userTxn
+    this.#userTxn = userTxn
 
     // learn the token in the portfolio
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
@@ -2329,22 +2411,40 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       provider: this.#providers.providers[network.chainId.toString()],
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      isSignRequestStillActive: () => {
-        // this is more for a "just-in-case"
-        // stop the gas price refetch if there's no signAccountOpController
-        // this could only happen if there's a major bug and more than one
-        // instance gets created in this controller.
-        // It's arguable if it's not better to leave this to "true" instead
-        // as leaving it to true will make the problem bigger, but more easy
-        // identifiable
-        return !!this.#signAccountOpController
+      isSignRequestStillActive: (): boolean => {
+        // if we're refetching a quote atm, we don't execute the estimation
+        // a race between the old estimation with the old quote and the new
+        // estimation with the new quote might happen
+        //
+        // also, if the tx data is different, it means the user is playing
+        // with the swap, so we don't want to reestimate
+        //
+        // we only want a re-estimate in a stale state
+        if (
+          this.updateQuoteStatus === 'LOADING' ||
+          !this.#signAccountOpController ||
+          !this.#signAccountOpController.accountOp.meta?.swapTxn ||
+          !this.#userTxn ||
+          this.#userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
+        )
+          return false
+
+        return true
       },
       shouldSimulate: false,
-      shouldReestimate: false,
       onBroadcastSuccess: async (props) => {
-        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
-          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
-        })
+        this.#portfolio
+          .simulateAccountOp(props.accountOp)
+          .then(() => {
+            this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+          })
+          .catch((e) => {
+            this.emitError({
+              level: 'silent',
+              message: 'swap&bridge simulation failed',
+              error: e
+            })
+          })
 
         await this.#onBroadcastSuccess(props)
         // TODO<Bobby>: make a new SwapAndBridgeFormStatus "Broadcast" and
@@ -2399,55 +2499,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         }
       })
     )
-
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate(userTxn)
-  }
-
-  /**
-   * Reestimate the signAccountOp request periodically.
-   * Encapsulate it here instead of creating an interval in the background
-   * as intervals are tricky and harder to control
-   */
-  async reestimate(userTxn: SwapAndBridgeSendTxRequest) {
-    if (this.#isReestimating) return
-
-    this.#isReestimating = true
-    await wait(30000)
-    this.#isReestimating = false
-
-    if (!this.#signAccountOpController) return
-    if (!this.#signAccountOpController.accountOp.meta?.swapTxn) return
-
-    const newestUserTxn = JSON.parse(
-      JSON.stringify(this.#signAccountOpController.accountOp.meta.swapTxn)
-    )
-
-    // if we're refetching a quote atm, we don't execute the estimation
-    // a race between the old estimation with the old quote and the new
-    // estimation with the new quote might happen
-    //
-    // also, if the tx data is different, it means the user is playing
-    // with the swap, so we don't want to reestimate
-    //
-    // we only want a re-estimate in a stale state
-    if (
-      this.updateQuoteStatus === 'LOADING' ||
-      userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.reestimate(newestUserTxn)
-      return
-    }
-
-    this.#signAccountOpController.estimate().catch((e) => {
-      // eslint-disable-next-line no-console
-      console.log('error on swap&bridge re-estimate')
-      // eslint-disable-next-line no-console
-      console.log(e)
-    })
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reestimate(newestUserTxn)
   }
 
   setUserProceeded(hasProceeded: boolean) {

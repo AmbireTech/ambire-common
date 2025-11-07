@@ -9,6 +9,7 @@ import { isValidAddress } from '../address'
 type ValidateReturnType = {
   success: boolean
   message: string
+  errorType?: 'insufficient_amount'
 }
 
 export const validateAddress = (address: string): ValidateReturnType => {
@@ -211,7 +212,8 @@ const validateSendTransferAmount = (
       if (currentAmount > getTokenAmount(selectedAsset)) {
         return {
           success: false,
-          message: 'Insufficient amount.'
+          message: 'Insufficient amount.',
+          errorType: 'insufficient_amount'
         }
       }
     }

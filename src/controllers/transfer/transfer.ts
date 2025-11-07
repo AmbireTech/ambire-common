@@ -30,8 +30,6 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
-import wait from '../../utils/wait'
-import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -135,12 +133,6 @@ export class TransferController extends EventEmitter implements ITransferControl
   #shouldTrackLatestBroadcastedAccountOp: boolean = true
 
   hasProceeded: boolean = false
-
-  // Used to safely manage and cancel the periodic estimation loop.
-  // When destroySignAccountOp() is called, the AbortController is aborted,
-  // which prevents further re-estimation calls even if a wait() is in progress.
-  // This ensures only one active estimation loop exists at any time.
-  #reestimateAbortController: AbortController | null = null
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
@@ -711,7 +703,6 @@ export class TransferController extends EventEmitter implements ITransferControl
       accountOp,
       isSignRequestStillActive: () => true,
       shouldSimulate: false,
-      shouldReestimate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
         this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
@@ -742,43 +733,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.emitError(error)
       })
     )
-
-    this.reestimate()
-  }
-
-  /**
-   * Reestimate the signAccountOp request periodically.
-   * Encapsulate it here instead of creating an interval in the background
-   * as intervals are tricky and harder to control
-   */
-  async reestimate() {
-    // Don't run the estimation loop if there is no SignAccountOpController or if the loop is already running.
-    if (!this.signAccountOpController || this.#reestimateAbortController) return
-
-    this.#reestimateAbortController = new AbortController()
-    const signal = this.#reestimateAbortController!.signal
-
-    const loop = async () => {
-      while (!signal.aborted) {
-        // eslint-disable-next-line no-await-in-loop
-        await wait(30000)
-        if (signal.aborted) break
-
-        if (this.signAccountOpController?.estimation.status !== EstimationStatus.Loading) {
-          // eslint-disable-next-line no-await-in-loop
-          await this.signAccountOpController?.estimate()
-        }
-
-        if (this.signAccountOpController?.estimation.errors.length) {
-          console.log(
-            'Errors on Transfer re-estimate',
-            this.signAccountOpController.estimation.errors
-          )
-        }
-      }
-    }
-
-    loop()
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -790,11 +744,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Unsubscribe from all previous subscriptions
     this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#signAccountOpSubscriptions = []
-
-    if (this.#reestimateAbortController) {
-      this.#reestimateAbortController.abort()
-      this.#reestimateAbortController = null
-    }
 
     if (this.signAccountOpController) {
       this.signAccountOpController.reset()

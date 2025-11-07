@@ -103,9 +103,12 @@ describe('KeystoreSigner', () => {
 
 describe('Sign eip-7702 authorization', () => {
   it('should sign successfully', async () => {
-    const hash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const signer = new KeystoreSigner(key, privKey)
-    const signature = signer.sign7702(hash)
+    const signature = await signer.sign7702({
+      chainId: 1n,
+      contract: EIP_7702_AMBIRE_ACCOUNT,
+      nonce: 0n
+    })
 
     expect(signature.yParity === '0x00' || signature.yParity === '0x01').toBe(true)
     expect(signature.r.length).toBe(66)
@@ -115,6 +118,7 @@ describe('Sign eip-7702 authorization', () => {
     const rsSig = getBytes(concat([signature.r, signature.s]))
 
     // recover the public key
+    const hash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const publicKey = ecdsaRecover(rsSig, Number(BigInt(signature.yParity)), getBytes(hash))
 
     const originalAddr = computeAddress(privKey)

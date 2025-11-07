@@ -17,12 +17,14 @@ import {
   signTypedData as signTypedDataWithMetaMaskSigUtil
 } from '@metamask/eth-sig-util'
 
-import { EIP7702Auth } from '../../consts/7702'
 import { Hex } from '../../interfaces/hex'
-import { Key, KeystoreSignerInterface, TxnRequest } from '../../interfaces/keystore'
-import { EIP7702Signature, PlainSignature } from '../../interfaces/signatures'
+import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
+import { PlainSignature } from '../../interfaces/signatures'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
+import {
+  adaptTypedMessageForMetaMaskSigUtil,
+  getAuthorizationHash
+} from '../signMessage/signMessage'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -87,9 +89,14 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  plainSign(hex: string): PlainSignature {
+  sign7702: KeystoreSignerInterface['sign7702'] = async ({
+    chainId,
+    contract,
+    nonce
+  }): Promise<PlainSignature> => {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
+    const hex = getAuthorizationHash(chainId, contract, nonce)
     const data = ecdsaSign(getBytes(hex), getBytes(this.#authorizationPrivkey))
     const signature = hexlify(data.signature)
     return {
@@ -99,12 +106,10 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     }
   }
 
-  // eslint-disable-next-line class-methods-use-this
-  sign7702(hex: string): EIP7702Signature {
-    return this.plainSign(hex)
-  }
-
-  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async ({
+    txnRequest,
+    eip7702Auth
+  }): Promise<Hex> => {
     if (!this.#authorizationPrivkey) throw new Error('no key to perform sign')
 
     const maxPriorityFeePerGas = txnRequest.maxPriorityFeePerGas ?? txnRequest.gasPrice

@@ -104,7 +104,9 @@ const accountsCtrl = new AccountsController(
   keystore,
   () => {},
   () => {},
-  () => {}
+  () => {},
+  relayerUrl,
+  fetch
 )
 const autoLoginCtrl = new AutoLoginController(
   storageCtrl,
@@ -237,7 +239,6 @@ describe('SwapAndBridge Controller', () => {
     jest
       .spyOn(swapAndBridgeController.updateActiveRoutesInterval, 'stop')
       .mockImplementation(jest.fn())
-    jest.spyOn(swapAndBridgeController, 'reestimate').mockImplementation(jest.fn() as any)
   })
   afterEach(() => {
     jest.restoreAllMocks()
