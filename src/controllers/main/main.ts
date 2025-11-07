@@ -104,6 +104,8 @@ import { UiController } from '../ui/ui'
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
+  #appVersion: string
+
   fetch: Fetch
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -195,6 +197,7 @@ export class MainController extends EventEmitter implements IMainController {
   #traceCallTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   constructor({
+    appVersion,
     platform,
     storageAPI,
     fetch,
@@ -207,6 +210,7 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager
   }: {
+    appVersion: string
     platform: Platform
     storageAPI: Storage
     fetch: Fetch
@@ -221,6 +225,7 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     super()
     this.#storageAPI = storageAPI
+    this.#appVersion = appVersion
     this.fetch = fetch
 
     this.storage = new StorageController(this.#storageAPI)
@@ -261,7 +266,9 @@ export class MainController extends EventEmitter implements IMainController {
         }
       },
       this.providers.updateProviderIsWorking.bind(this.providers),
-      this.#updateIsOffline.bind(this)
+      this.#updateIsOffline.bind(this),
+      relayerUrl,
+      this.fetch
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -342,7 +349,14 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       ui: this.ui
     })
-    this.dapps = new DappsController(this.storage)
+    this.dapps = new DappsController({
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
+    })
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -545,7 +559,8 @@ export class MainController extends EventEmitter implements IMainController {
       const FIVE_MINUTES = 1000 * 60 * 5
       const ONE_HOUR = 1000 * 60 * 60
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
-      if (!this.activity.broadcastedButNotConfirmed.length) {
+
+      if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
         this.updateSelectedAccountPortfolio({
           maxDataAgeMs: FIVE_MINUTES,
           maxDataAgeMsUnused: ONE_HOUR
@@ -628,6 +643,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
+      this.activity.forceEmitUpdate(),
       this.requests.actions.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
@@ -644,25 +660,12 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async #onAccountPickerSuccess() {
-    // Add accounts first, because some of the next steps have validation
-    // if accounts exists.
-    if (this.accountPicker.readyToRemoveAccounts) {
-      // eslint-disable-next-line no-restricted-syntax
-      for (const acc of this.accountPicker.readyToRemoveAccounts) {
-        await this.#removeAccount(acc.addr)
-      }
-    }
-
-    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
-
-    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator)) {
+    if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
-    }
 
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
-
     if (storedSeed) {
-      this.keystore.updateSeed({
+      await this.keystore.updateSeed({
         id: storedSeed.id,
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
@@ -671,13 +674,22 @@ export class MainController extends EventEmitter implements IMainController {
         (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
       )
     }
-    // Then add keys, because some of the next steps could have validation
-    // if keys exists. Should be separate (not combined in Promise.all,
-    // since firing multiple keystore actions is not possible
-    // (the #wrapKeystoreAction listens for the first one to finish and
-    // skips the parallel one, if one is requested).
+
+    // Should be separate (not combined in Promise.all, since firing multiple
+    // keystore actions is not possible (the #wrapKeystoreAction listens for the
+    // first one to finish and skips the parallel one, if one is requested).
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+
+    if (this.accountPicker.readyToRemoveAccounts) {
+      // eslint-disable-next-line no-restricted-syntax
+      for (const acc of this.accountPicker.readyToRemoveAccounts) {
+        await this.#removeAccount(acc.addr)
+      }
+    }
+
+    // Add accounts as a final step, because some of the next steps check if accounts have keys.
+    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
   }
 
   initSignAccOp(actionId: AccountOpAction['id']): null | void {
@@ -1232,8 +1244,26 @@ export class MainController extends EventEmitter implements IMainController {
   async updateAccountsOpsStatuses(): Promise<{ newestOpTimestamp: number }> {
     await this.initialLoadPromise
 
+    const addressesWithPendingOps = Object.entries(this.activity.broadcastedButNotConfirmed)
+      .filter(([, ops]) => ops.length > 0)
+      .map(([addr]) => addr)
+
+    const updatedAccountsOpsByAccount = await this.activity.updateAccountsOpsStatuses(
+      addressesWithPendingOps
+    )
+
+    if (!this.selectedAccount.account) return { newestOpTimestamp: 0 }
+
+    const updatedAccountsOpsForSelectedAccount = updatedAccountsOpsByAccount[
+      this.selectedAccount.account.addr
+    ] || {
+      shouldEmitUpdate: false,
+      chainsToUpdate: [],
+      updatedAccountsOps: [],
+      newestOpTimestamp: 0
+    }
     const { shouldEmitUpdate, chainsToUpdate, updatedAccountsOps, newestOpTimestamp } =
-      await this.activity.updateAccountsOpsStatuses()
+      updatedAccountsOpsForSelectedAccount
 
     if (shouldEmitUpdate) {
       this.emitUpdate()

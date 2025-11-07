@@ -303,7 +303,9 @@ const prepareTest = async (
     keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   const controller = new PortfolioController(
     storageCtrl,

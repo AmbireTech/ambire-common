@@ -396,7 +396,9 @@ const init = async (
     keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
   )
   await accountsCtrl.initialLoadPromise
   await waitForAccountsCtrlFirstLoad(accountsCtrl)

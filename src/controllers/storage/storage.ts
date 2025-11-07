@@ -1,12 +1,14 @@
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
+import { Dapp } from '../../interfaces/dapp'
 /* eslint-disable no-restricted-syntax */
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { CashbackStatus } from '../../interfaces/selectedAccount'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
+import { getDappNameFromId } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
@@ -52,10 +54,12 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#clearHumanizerMetaObjectFromStorage() // As of version v4.34.0
       await this.#migrateTokenPreferences() // As of version 4.51.0
       await this.#migrateCashbackStatusToNewFormat() // As of version 4.53.0
+      await this.#removeDappSessions() // As of version 4.55.0
       await this.#removeIsDefaultWalletStorageIfExist() // As of version 4.57.0
       await this.#removeOnboardingStateStorageIfExist() // As of version 4.59.0
       await this.#migrateNetworkIdToChainId()
       await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
+      await this.#migrateLegacyDappsToDappsV2() // As of version 5.30.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -260,6 +264,17 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'migrateCashbackStatusToNewFormat'])
+    ])
+  }
+
+  // As of version 4.55.0 we no longer need the dappSessions in the storage so this migration removes them
+  async #removeDappSessions() {
+    const passedMigrations = await this.#storage.get('passedMigrations', [])
+    if (passedMigrations.includes('removeDappSessions')) return
+
+    await this.#storage.remove('dappSessions')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'removeDappSessions'])
     ])
   }
 
@@ -598,6 +613,43 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'migrateAccountsCleanupUsedOnNetworks'])
+    ])
+  }
+
+  // As of version 5.30.0, we've introduced an extended dynamic dapp catalog.
+  // This method migrates legacy dapp data to the new format and clears outdated storage.
+  async #migrateLegacyDappsToDappsV2() {
+    const [passedMigrations, dapps] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('dapps', [])
+    ])
+
+    if (passedMigrations.includes('migrateLegacyDappsToDappsV2')) return
+
+    const migratedDapps: Dapp[] = []
+    dapps.forEach((dapp: Dapp) => {
+      const updatedDapp: Dapp = {
+        ...dapp,
+        name: dapp.name || getDappNameFromId(dapp.id),
+        description: dapp?.description?.startsWith('Custom app automatically added')
+          ? ''
+          : dapp.description,
+        category: null,
+        tvl: null,
+        chainIds: [],
+        isConnected: dapp?.isConnected || false,
+        isFeatured: dapp.isFeatured || false,
+        isCustom: !!dapp?.description?.startsWith('Custom app automatically added'),
+        twitter: null,
+        geckoId: null
+      }
+      migratedDapps.push(updatedDapp)
+    })
+
+    await this.#storage.set('dappsV2', migratedDapps)
+    await this.#storage.remove('dapps')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'migrateLegacyDappsToDappsV2'])
     ])
   }
 

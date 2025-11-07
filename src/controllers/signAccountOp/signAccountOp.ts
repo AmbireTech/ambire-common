@@ -21,9 +21,14 @@ import ExternalSignerError from '../../classes/ExternalSignerError'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
+import {
+  EIP_7702_AMBIRE_ACCOUNT,
+  EIP_7702_GRID_PLUS,
+  EIP_7702_KATANA,
+  SINGLETON
+} from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-/* eslint-disable no-restricted-syntax */
+import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -36,8 +41,6 @@ import {
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-/* eslint-disable no-restricted-syntax */
-import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -88,7 +91,6 @@ import {
   adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
-  getAuthorizationHash,
   getEIP712Signature,
   getEntryPointAuthorization,
   getExecuteSignature,
@@ -850,6 +852,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.delegatedContract &&
       this.delegatedContract !== ZeroAddress &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
       (broadcastOption === BROADCAST_OPTIONS.byBundler ||
         broadcastOption === BROADCAST_OPTIONS.delegation)
@@ -1408,6 +1412,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const speeds: SpeedCalc[] = []
         const usesPaymaster = estimation.bundlerEstimation?.paymaster.isUsable()
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const [speed, speedValue] of Object.entries(increasedGasPrices)) {
           const simulatedGasLimit =
             BigInt(gasUsed) +
@@ -1798,7 +1803,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       bundler: this.bundlerSwitcher.getBundler().getName(),
       entryPointSig: this.accountOp.meta?.entryPointAuthorization,
       eip7702Auth,
-      hasPendingUserOp: !!this.#activity.broadcastedButNotConfirmed.find(
+      hasPendingUserOp: !!(this.#activity.broadcastedButNotConfirmed[this.account.addr] || []).find(
         (accOp) =>
           accOp.accountAddr === this.account.addr &&
           accOp.chainId === this.#network.chainId &&
@@ -1958,15 +1963,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    if (
+    const isExternalSignerInvolved =
+      this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
+      this.accountOp.signingKeyType !== 'internal'
+    const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
-      !shouldSignDeployAuth
-    ) {
-      this.status = { type: SigningStatus.WaitingForPaymaster }
-    } else {
-      this.status = { type: SigningStatus.InProgress }
-    }
+      !shouldSignDeployAuth &&
+      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)
+
+    if (isImmediatelyWaitingForPaymaster) this.status = { type: SigningStatus.WaitingForPaymaster }
 
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
@@ -2029,9 +2035,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         const contract =
           this.accountOp.meta?.setDelegation || this.accountOp.calls.length > 1
-            ? getContractImplementation(this.#network.chainId)
+            ? getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
             : (ZeroAddress as Hex)
-        if (this.accountOp.meta)
+        if (this.accountOp.meta) {
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
@@ -2039,10 +2047,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             // authrorization validation
             accountState.eoaNonce! + 1n,
             contract,
-            signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
-            )
+            await signer.sign7702({
+              chainId: this.#network.chainId,
+              contract,
+              nonce: accountState.eoaNonce! + 1n
+            })
           )
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
+        }
         this.#updateAccountOp({
           signature: '0x'
         })
@@ -2067,16 +2080,28 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
-          const contract = getContractImplementation(this.#network.chainId)
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
+          const contract = getContractImplementation(
+            this.#network.chainId,
+            this.accountKeyStoreKeys
+          )
           eip7702Auth = get7702Sig(
             this.#network.chainId,
             accountState.nonce,
             contract,
-            signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, accountState.nonce)
-            )
+            await signer.sign7702({
+              chainId: this.#network.chainId,
+              contract,
+              nonce: accountState.nonce
+            })
           )
-
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
+          if (isUsingPaymaster) {
+            this.status = { type: SigningStatus.WaitingForPaymaster }
+            this.emitUpdate()
+          }
           shouldReestimate = true
         }
 
@@ -2139,7 +2164,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (!this.#isSignRequestStillActive()) return
 
         const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
-        if (userOperation.requestType === 'standard') {
+        const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
+        if (!isHotEOA) {
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,
@@ -2148,7 +2174,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else if (userOperation.requestType === '7702') {
+        } else {
           const typedData = get7702UserOpTypedData(
             this.#network.chainId,
             getSignableCalls(this.accountOp),
@@ -2158,8 +2184,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else {
-          this.#updateAccountOp({ asUserOperation: userOperation })
         }
       } else {
         // Relayer
@@ -2325,7 +2349,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           )
           const signedTxn =
             accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
-              ? signer.signTransactionTypeFour(rawTxn, accountOp.meta!.delegation!)
+              ? await signer.signTransactionTypeFour({
+                  txnRequest: rawTxn,
+                  eip7702Auth: accountOp.meta!.delegation!
+                })
               : await signer.signRawTransaction(rawTxn)
 
           if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
@@ -2530,10 +2557,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.signPromise = undefined
       })
       await this.signPromise
-      this.broadcastPromise = this.#broadcast().finally(() => {
-        this.broadcastPromise = undefined
-      })
-      await this.broadcastPromise
+      if (this.status && this.status.type === SigningStatus.Done) {
+        this.broadcastPromise = this.#broadcast().finally(() => {
+          this.broadcastPromise = undefined
+        })
+        await this.broadcastPromise
+      }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
     })

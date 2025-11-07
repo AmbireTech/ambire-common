@@ -737,7 +737,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
       const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
         rawMessage,
-        request.origin
+        request.session.origin
       )
 
       // Handle valid and invalid SIWE messages

@@ -220,7 +220,9 @@ describe('Activity Controller ', () => {
       keystore,
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
     const autoLoginCtrl = new AutoLoginController(
       storageCtrl,
