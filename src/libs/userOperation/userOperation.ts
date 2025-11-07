@@ -1,18 +1,18 @@
 import {
   AbiCoder,
   concat,
-  Contract,
   hexlify,
   Interface,
   keccak256,
   Log,
   randomBytes,
-  toBeHex
+  solidityPacked,
+  toBeHex,
+  toUtf8Bytes
 } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
-import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
 import {
@@ -33,7 +33,6 @@ import { SignUserOperation } from '../../interfaces/userOperation'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 //  TODO: dependency cycle
 // eslint-disable-next-line import/no-cycle
-import { RPCProvider } from '../../interfaces/provider'
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -253,14 +252,61 @@ export function getUserOpHash(userOp: SignUserOperation, chainId: bigint): strin
   )
 }
 
-export function getEntryPoint090Hash(
-  userOp: SignUserOperation,
-  provider: RPCProvider
-): Promise<string> {
+export function getEntryPoint090Hash(userOp: SignUserOperation, chainId: bigint): string {
+  const abiCoder = new AbiCoder()
   const packedUserOp = getPackedUserOp(userOp)
-  packedUserOp.signature = '0x'
-  const epContract = new Contract(ENTRYPOINT_0_9_0, EntryPoint, provider)
-  return epContract.getUserOpHash(packedUserOp)
+  const hashInitCode = keccak256(packedUserOp.initCode)
+  const hashCallData = keccak256(packedUserOp.callData)
+  const hashPaymasterAndData = keccak256(packedUserOp.paymasterAndData) // TODO<eil>
+  const domainSeparator = keccak256(
+    abiCoder.encode(
+      ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],
+      [
+        keccak256(
+          toUtf8Bytes(
+            'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)'
+          )
+        ),
+        keccak256(toUtf8Bytes('ERC4337')),
+        keccak256(toUtf8Bytes('1')),
+        chainId,
+        ENTRYPOINT_0_9_0
+      ]
+    )
+  )
+  const packedUserOpDomain = keccak256(
+    toUtf8Bytes(
+      'PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData)'
+    )
+  )
+  const packed = abiCoder.encode(
+    [
+      'bytes32',
+      'address',
+      'uint256',
+      'bytes32',
+      'bytes32',
+      'bytes32',
+      'uint256',
+      'bytes32',
+      'bytes32'
+    ],
+    [
+      packedUserOpDomain,
+      userOp.sender,
+      userOp.nonce,
+      hashInitCode,
+      hashCallData,
+      packedUserOp.accountGasLimits,
+      userOp.preVerificationGas,
+      packedUserOp.gasFees,
+      hashPaymasterAndData
+    ]
+  )
+  const packedHash = keccak256(packed)
+  return keccak256(
+    solidityPacked(['string', 'bytes32', 'bytes32'], ['\x19\x01', domainSeparator, packedHash])
+  )
 }
 
 // try to parse the UserOperationEvent to understand whether
