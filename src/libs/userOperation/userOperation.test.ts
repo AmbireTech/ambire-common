@@ -1,14 +1,15 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { Contract, parseEther } from 'ethers'
+import { Contract, parseEther, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { getAccountsInfo } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { ENTRYPOINT_0_9_0 } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ENTRYPOINT_0_9_0 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
+import { PAYMASTER_SIG_MAGIC } from '../../consts/signatures'
 import { Account } from '../../interfaces/account'
 import { RPCProvider } from '../../interfaces/provider'
 import { SignUserOperation } from '../../interfaces/userOperation'
@@ -165,6 +166,42 @@ describe('User Operation tests', () => {
       const entryPointUserOpHashViaRPC = await getEntryPoint090HashViaRPC(userOp, provider)
       const entryPointUserOpHash = getEntryPoint090Hash(userOp, optimism.chainId)
       expect(entryPointUserOpHashViaRPC).toBe(entryPointUserOpHash)
+
+      // try with paymaster also
+      const userOpWithPaymaster: SignUserOperation = {
+        ...userOp,
+        paymaster: AMBIRE_PAYMASTER,
+        paymasterPostOpGasLimit: toBeHex(100000, 16),
+        paymasterVerificationGasLimit: toBeHex(100000, 16),
+        paymasterData: '0x0102'
+      }
+      const entryPointUserOpHashViaRPCTwo = await getEntryPoint090HashViaRPC(
+        userOpWithPaymaster,
+        provider
+      )
+      const entryPointUserOpHashTwo = getEntryPoint090Hash(userOpWithPaymaster, optimism.chainId)
+      expect(entryPointUserOpHashViaRPCTwo).toBe(entryPointUserOpHashTwo)
+
+      // try with paymaster that has a signature
+      const userOpWithPaymasterSig: SignUserOperation = {
+        ...userOp,
+        paymaster: AMBIRE_PAYMASTER,
+        paymasterPostOpGasLimit: toBeHex(100000, 16),
+        paymasterVerificationGasLimit: toBeHex(100000, 16),
+        paymasterData: `0x0101${toBeHex(0, 65).substring(2)}${toBeHex(65, 2).substring(
+          2
+        )}${PAYMASTER_SIG_MAGIC.substring(2)}`
+      }
+
+      const entryPointUserOpHashViaRPCThree = await getEntryPoint090HashViaRPC(
+        userOpWithPaymasterSig,
+        provider
+      )
+      const entryPointUserOpHashThree = getEntryPoint090Hash(
+        userOpWithPaymasterSig,
+        optimism.chainId
+      )
+      expect(entryPointUserOpHashViaRPCThree).toBe(entryPointUserOpHashThree)
     })
   })
 })

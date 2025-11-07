@@ -21,6 +21,7 @@ export interface SignUserOperation {
   paymasterVerificationGasLimit?: string
   paymasterPostOpGasLimit?: string
   paymasterData?: string // hex string
+  paymasterSignature?: string // hex string
   signature?: string // hex string
   eip7702Auth?: EIP7702Auth
 }
