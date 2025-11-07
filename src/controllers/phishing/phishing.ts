@@ -1,34 +1,11 @@
-import jsYaml from 'js-yaml'
-
 import { Fetch } from '../../interfaces/fetch'
-import { IPhishingController, StoredPhishingDetection } from '../../interfaces/phishing'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
+import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-const METAMASK_BLACKLIST_URL =
-  'https://api.github.com/repos/MetaMask/eth-phishing-detect/contents/src/config.json?ref=main'
-
-const PHANTOM_BLACKLIST_URL =
-  'https://api.github.com/repos/phantom/blocklist/contents/blocklist.yaml?ref=master'
-
-export const domainToParts = (domain: string) => {
-  try {
-    return domain.split('.').reverse()
-  } catch (e) {
-    throw new Error(JSON.stringify(domain))
-  }
-}
-
-export const matchPartsAgainstList = (source: string[], list: string[]) => {
-  return list.find((domain: string) => {
-    const target = domainToParts(domain)
-    // target domain has more parts than source, fail
-    if (target.length > source.length) return false
-    // source matches target or (is deeper subdomain)
-    return target.every((part, index) => source[index] === part)
-  })
-}
+const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 
 export class PhishingController extends EventEmitter implements IPhishingController {
   #fetch: Fetch
@@ -37,22 +14,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #ui: IUiController
 
-  #blacklist: string[] = [] // list of blacklisted URLs
-
-  #lastStorageUpdate: number | null = null
-
-  updateStatus: 'LOADING' | 'INITIAL' = 'INITIAL'
-
-  // Holds the initial load promise, so that one can wait until it completes
-  initialLoadPromise?: Promise<void>
-
-  get lastStorageUpdate() {
-    return this.#lastStorageUpdate
-  }
-
-  get blacklistLength() {
-    return this.#blacklist.length
-  }
+  dappsBlacklistedStatus: {
+    [dappId: string]: {
+      status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+      updatedAt: number
+    }
+  } = {}
 
   constructor({
     fetch,
@@ -68,140 +35,75 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#fetch = fetch
     this.#storage = storage
     this.#ui = ui
-
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.initialLoadPromise = this.#load().finally(() => {
-      this.initialLoadPromise = undefined
-    })
   }
 
-  async #load() {
-    const storedPhishingDetection: StoredPhishingDetection = await this.#storage.get(
-      'phishingDetection',
-      null
-    )
+  /**
+   * Takes a list of dapp domains and returns each with blacklist status.
+   */
+  async checkDappsBlacklistedStatus(urls: string[]) {
+    if (!urls.length) return
 
-    if (storedPhishingDetection) {
-      this.#blacklist = Array.from(
-        new Set([
-          ...storedPhishingDetection.metamaskBlacklist,
-          ...storedPhishingDetection.phantomBlacklist
-        ])
-      )
-    }
-    await this.#update(storedPhishingDetection)
-  }
+    const dappIds = urls.map((url) => getDappIdFromUrl(url))
+    const now = Date.now()
+    const TWO_HOURS = 2 * 60 * 60 * 1000
 
-  async #update(storedPhishingDetection: StoredPhishingDetection) {
-    this.updateStatus = 'LOADING'
-    this.emitUpdate()
-
-    const headers = {
-      Accept: 'application/vnd.github.v3.+json'
-    } as any
-    const results = await Promise.allSettled([
-      this.#fetch(METAMASK_BLACKLIST_URL, headers)
-        .then((res) => res.json())
-        .then((metadata) => fetch(metadata.download_url))
-        .then((rawRes) => rawRes.json())
-        .then((data) => data.blacklist)
-        .catch((e) => {
-          console.error('Failed to fetch blacklist1:', e)
-          return []
-        }),
-      this.#fetch(PHANTOM_BLACKLIST_URL, headers)
-        .then((res) => res.json())
-        .then((metadata) => fetch(metadata.download_url))
-        .then((res) => res.text())
-        .then((text) => jsYaml.load(text))
-        .then((data: any) => (data && data.length ? data.map((i: { url: string }) => i.url) : []))
-        .catch((e) => {
-          console.error('Failed to fetch blacklist2:', e)
-          return []
-        })
-    ])
-
-    let [metamaskBlacklist, phantomBlacklist] = results.map((result) =>
-      result.status === 'fulfilled' ? (result.value as string[]) || [] : []
-    )
-
-    if (metamaskBlacklist.length && phantomBlacklist.length) {
-      const timestamp = Date.now()
-      await this.#storage.set('phishingDetection', {
-        timestamp,
-        metamaskBlacklist: metamaskBlacklist || [],
-        phantomBlacklist: phantomBlacklist || []
-      })
-      this.#lastStorageUpdate = timestamp
-    } else if (storedPhishingDetection && !this.#lastStorageUpdate) {
-      this.#lastStorageUpdate = storedPhishingDetection.timestamp
-    }
-
-    if (storedPhishingDetection) {
-      metamaskBlacklist = metamaskBlacklist.length
-        ? metamaskBlacklist
-        : storedPhishingDetection.metamaskBlacklist
-      phantomBlacklist = phantomBlacklist.length
-        ? phantomBlacklist
-        : storedPhishingDetection.phantomBlacklist
-    }
-
-    this.#blacklist = Array.from(new Set([...metamaskBlacklist, ...phantomBlacklist]))
-    this.updateStatus = 'INITIAL'
-    this.emitUpdate()
-  }
-
-  async updateIfNeeded() {
-    if (this.updateStatus === 'LOADING') return
-    const sixHoursInMs = 6 * 60 * 60 * 1000
-
-    if (this.#lastStorageUpdate && Date.now() - this.#lastStorageUpdate < sixHoursInMs) return
-    const storedPhishingDetection: StoredPhishingDetection = await this.#storage.get(
-      'phishingDetection',
-      null
-    )
-
-    if (!storedPhishingDetection) return
-
-    if (Date.now() - storedPhishingDetection.timestamp >= sixHoursInMs) {
-      await this.#update(storedPhishingDetection)
-    }
-  }
-
-  async getIsBlacklisted(url: string) {
-    await this.initialLoadPromise
-
-    try {
-      const hostname = new URL(url).hostname
-      const domain = hostname.endsWith('.') ? hostname.slice(0, -1) : hostname
-
-      // blacklisted if it has `ambire` in the hostname but it is not a pre-approved ambire domain
-      if (/ambire/i.test(domain) && !/\.?ambire\.com$/.test(domain)) {
-        return true
-      }
-
-      const source = domainToParts(domain)
-      return !!matchPartsAgainstList(source, this.#blacklist)
-    } catch (error) {
+    // Filter: we only fetch for ones that are missing or stale
+    const idsToFetch = dappIds.filter((id) => {
+      const existing = this.dappsBlacklistedStatus[id]
+      if (!existing) return true
+      if (existing.status === 'LOADING') return true
+      if (!existing.updatedAt || now - existing.updatedAt > TWO_HOURS) return true
       return false
-    }
-  }
-
-  async sendIsBlacklistedToUi(url: string) {
-    await this.initialLoadPromise
-
-    const isBlacklisted = await this.getIsBlacklisted(url)
-    this.#ui.message.sendUiMessage({
-      hostname: isBlacklisted ? 'BLACKLISTED' : 'NOT_BLACKLISTED'
     })
+
+    // Mark only the ones we will fetch as LOADING
+    idsToFetch.forEach((id) => {
+      this.dappsBlacklistedStatus[id] = {
+        status: 'LOADING',
+        updatedAt: this.dappsBlacklistedStatus[id]?.updatedAt || 0
+      }
+    })
+    this.emitUpdate()
+
+    // If nothing to fetch → we are done
+    if (!idsToFetch.length) return
+
+    const res = await this.#fetch(`${SCAMCHECKER_BASE_URL}/domains`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domains: idsToFetch })
+    })
+
+    const updatedAt = Date.now()
+
+    if (!res.ok) {
+      console.error('[validateDapps] phishing detection failed:', res.status)
+      dappIds.forEach((id) => {
+        this.dappsBlacklistedStatus[id] = { status: 'FAILED_TO_GET', updatedAt }
+      })
+    } else {
+      const dappsBlacklistedStatus: Record<string, boolean> = await res.json()
+
+      idsToFetch.forEach((id) => {
+        this.dappsBlacklistedStatus[id] = {
+          // eslint-disable-next-line no-nested-ternary
+          status: !dappsBlacklistedStatus
+            ? 'FAILED_TO_GET'
+            : dappsBlacklistedStatus[id]
+            ? 'BLACKLISTED'
+            : 'NOT_BLACKLISTED',
+          updatedAt
+        }
+      })
+    }
+
+    this.emitUpdate()
   }
 
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      lastStorageUpdate: this.lastStorageUpdate,
-      blacklistLength: this.blacklistLength
+      ...super.toJSON()
     }
   }
 }

@@ -339,8 +339,17 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // Delete legacy IDs
     for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
+    const unverifiedDappsArray = Array.from(dappsMap.values())
+    await this.#phishing.checkDappsBlacklistedStatus(unverifiedDappsArray.map((d) => d.id))
+
+    for (const dapp of dappsMap.values()) {
+      dapp.blacklisted = Boolean(
+        this.#phishing.dappsBlacklistedStatus[dapp.id]?.status === 'BLACKLISTED'
+      )
+    }
 
     this.#dapps = dappsMap
+
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
     this.#shouldRetryFetchAndUpdate = false
@@ -467,6 +476,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     const existingByDomain = this.#dapps.get(getDomainFromUrl(dapp.url)!)
 
+    await this.#phishing.checkDappsBlacklistedStatus([dapp.id])
+
     this.#dapps.set(dapp.id, {
       id: dapp.id,
       url: dapp.url,
@@ -481,7 +492,9 @@ export class DappsController extends EventEmitter implements IDappsController {
       isFeatured: existingByDomain?.isFeatured || false,
       isCustom: existingByDomain?.isCustom ?? true,
       tvl: existingByDomain?.tvl || null,
-      blacklisted: await this.#phishing.getIsBlacklisted(dapp.url),
+      blacklisted: Boolean(
+        this.#phishing.dappsBlacklistedStatus[dapp.id]?.status === 'BLACKLISTED'
+      ),
       geckoId: existingByDomain?.geckoId || null,
       twitter: existingByDomain?.twitter || null
     })
