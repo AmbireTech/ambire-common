@@ -1183,7 +1183,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!this.#selectedAccount.account) return
 
     const claimableRewardsData =
-      this.#selectedAccount.portfolio.latest.rewards?.result?.claimableRewardsData
+      this.#selectedAccount.portfolio.portfolioState.rewards?.result?.claimableRewardsData
 
     if (!claimableRewardsData) return
 
@@ -1206,7 +1206,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }) {
     if (!this.#selectedAccount.account) return
 
-    const addrVestingData = this.#selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
+    const addrVestingData =
+      this.#selectedAccount.portfolio.portfolioState.rewards?.result?.addrVestingData
 
     if (!addrVestingData) return
     const userRequest: UserRequest = buildMintVestingRequest({
