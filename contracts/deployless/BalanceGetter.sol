@@ -21,6 +21,10 @@ contract BalanceGetter is Simulation {
     uint8 decimals;
     bytes error;
   }
+  struct BalanceInfo {
+    uint256 amount;
+    bytes error;
+  }
   struct BalancesAtNonce {
     TokenInfo[] balances;
     uint nonce;
@@ -34,6 +38,13 @@ contract BalanceGetter is Simulation {
     info.symbol = token.symbol();
     info.name = token.name();
     info.decimals = token.decimals();
+  }
+
+  function getERC20TokenBalance(
+    IAmbireAccount account,
+    IERC20 token
+  ) external view returns (BalanceInfo memory info) {
+    info.amount = token.balanceOf(address(account));
   }
 
   function getBalances(
@@ -62,6 +73,27 @@ contract BalanceGetter is Simulation {
   ) public view returns (TokenInfo[] memory, uint, uint) {
     (TokenInfo[] memory results, uint blockNumber) = getBalances(account, tokenAddrs);
     return (results, gasleft(), blockNumber);
+  }
+
+  function getBalancesOf(
+    IAmbireAccount account,
+    address[] calldata tokenAddrs
+  ) public view returns (BalanceInfo[] memory) {
+    uint len = tokenAddrs.length;
+    BalanceInfo[] memory results = new BalanceInfo[](len);
+    
+    for (uint256 i = 0; i < len; i++) {
+      if (tokenAddrs[i] == address(0)) {
+        results[i] = BalanceInfo(address(account).balance, bytes(''));
+      } else {
+        try this.getERC20TokenBalance(account, IERC20(tokenAddrs[i])) returns (BalanceInfo memory balanceInfo) {
+          results[i] = balanceInfo;
+        } catch (bytes memory e) {
+          results[i].error = e.length > 0 ? e : bytes('unkn');
+        }
+      }
+    }
+    return results;
   }
 
   // Compare the tokens balances before (balancesA) and after simulation (balancesB)
