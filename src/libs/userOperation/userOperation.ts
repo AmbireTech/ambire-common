@@ -196,23 +196,31 @@ export function shouldIncludeActivatorCall(
 
 export const ENTRY_POINT_AUTHORIZATION_REQUEST_ID = 'ENTRY_POINT_AUTHORIZATION_REQUEST_ID'
 
-function getPaymasterData(paymasterData?: string) {
-  if (!paymasterData || paymasterData === '0x') return '0x'
-
-  const paymasterDataLength = paymasterData.length
+function hashPaymasterAndData(paymasterAndData: string) {
+  const paymasterDataLength = paymasterAndData.length
   const suffixLength = PAYMASTER_SIG_MAGIC.length - 2
   if (
     paymasterDataLength > suffixLength &&
-    paymasterData.slice(paymasterDataLength - suffixLength) === PAYMASTER_SIG_MAGIC
+    `0x${paymasterAndData.slice(paymasterDataLength - suffixLength)}` === PAYMASTER_SIG_MAGIC
   ) {
     const sigLength = BigInt(
-      `0x${paymasterData.slice(paymasterDataLength - 20, paymasterDataLength - 16)}`
+      `0x${paymasterAndData.slice(paymasterDataLength - 20, paymasterDataLength - 16)}`
     )
     const sigLengthInHex = Number(sigLength) * 2
-    const dataToHash = paymasterData.slice(0, paymasterDataLength - sigLengthInHex - 20)
-    return concat([dataToHash, PAYMASTER_SIG_MAGIC])
+    const dataToHash = paymasterAndData.slice(0, paymasterDataLength - sigLengthInHex - 20)
+    return keccak256(concat([dataToHash, PAYMASTER_SIG_MAGIC]))
   }
-  return '0x'
+  return keccak256(paymasterAndData)
+}
+
+function getPaymasterData(paymasterData?: string, paymasterSignature?: string) {
+  if (!paymasterData || paymasterData === '0x') return '0x'
+
+  if (paymasterSignature && paymasterSignature.length > 2) {
+    return concat([paymasterData, paymasterSignature])
+  }
+
+  return paymasterData
 }
 
 function getPackedPaymasterData(userOp: SignUserOperation) {
@@ -221,7 +229,7 @@ function getPackedPaymasterData(userOp: SignUserOperation) {
         userOp.paymaster,
         toBeHex(userOp.paymasterVerificationGasLimit!.toString(), 16),
         toBeHex(userOp.paymasterPostOpGasLimit!.toString(), 16),
-        getPaymasterData(userOp.paymasterData)
+        getPaymasterData(userOp.paymasterData, userOp.paymasterSignature)
       ])
     : '0x'
 }
@@ -254,7 +262,7 @@ export function getUserOpHash(userOp: SignUserOperation, chainId: bigint): strin
   const packedUserOp = getPackedUserOp(userOp)
   const hashInitCode = keccak256(packedUserOp.initCode)
   const hashCallData = keccak256(packedUserOp.callData)
-  const hashPaymasterAndData = keccak256(packedUserOp.paymasterAndData)
+  const hashedPaymasterAndData = hashPaymasterAndData(packedUserOp.paymasterAndData)
   const packed = abiCoder.encode(
     ['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'],
     [
@@ -265,7 +273,7 @@ export function getUserOpHash(userOp: SignUserOperation, chainId: bigint): strin
       packedUserOp.accountGasLimits,
       userOp.preVerificationGas,
       packedUserOp.gasFees,
-      hashPaymasterAndData
+      hashedPaymasterAndData
     ]
   )
   const packedHash = keccak256(packed)
@@ -279,7 +287,7 @@ export function getEntryPoint090Hash(userOp: SignUserOperation, chainId: bigint)
   const packedUserOp = getPackedUserOp(userOp)
   const hashInitCode = keccak256(packedUserOp.initCode)
   const hashCallData = keccak256(packedUserOp.callData)
-  const hashPaymasterAndData = keccak256(packedUserOp.paymasterAndData)
+  const hashedPaymasterAndData = hashPaymasterAndData(packedUserOp.paymasterAndData)
   const domainSeparator = keccak256(
     abiCoder.encode(
       ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],
@@ -322,7 +330,7 @@ export function getEntryPoint090Hash(userOp: SignUserOperation, chainId: bigint)
       packedUserOp.accountGasLimits,
       userOp.preVerificationGas,
       packedUserOp.gasFees,
-      hashPaymasterAndData
+      hashedPaymasterAndData
     ]
   )
   const packedHash = keccak256(packed)

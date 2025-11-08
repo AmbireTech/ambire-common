@@ -188,7 +188,8 @@ describe('User Operation tests', () => {
         paymaster: AMBIRE_PAYMASTER,
         paymasterPostOpGasLimit: toBeHex(100000, 16),
         paymasterVerificationGasLimit: toBeHex(100000, 16),
-        paymasterData: `0x0101${toBeHex(0, 65).substring(2)}${toBeHex(65, 2).substring(
+        paymasterData: '0x0102',
+        paymasterSignature: `${toBeHex(0, 65)}${toBeHex(65, 2).substring(
           2
         )}${PAYMASTER_SIG_MAGIC.substring(2)}`
       }
