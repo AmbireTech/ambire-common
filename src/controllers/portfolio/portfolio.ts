@@ -502,7 +502,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } catch (e: any) {
       this.emitError({
         level: 'silent',
-        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}).`,
+        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}) for account ${accountId}.`,
         error: e
       })
       this.temporaryTokens[network.chainId.toString()].isLoading = false
