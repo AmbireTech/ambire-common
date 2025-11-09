@@ -592,7 +592,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
 
     if (type === 'dappRequest') {
-      await this.#buildUserRequestFromDAppRequest(params.request, params.dappPromise)
+      try {
+        await this.#buildUserRequestFromDAppRequest(params.request, params.dappPromise)
+      } catch(e) {
+        this.emitError({
+          error: e,
+          message: 'error in #buildUserRequestFromDAppRequest, sending back to the dapp',
+          level: 'major'
+        })
+        throw e
+      }
     }
 
     if (type === 'transferRequest') {
