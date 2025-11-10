@@ -9,7 +9,7 @@ import { isValidAddress } from '../address'
 type ValidateReturnType = {
   success: boolean
   message: string
-  severity?: 'info' | 'warning'
+  severity?: 'info' | 'warning' | 'error'
   errorType?: 'insufficient_amount'
 }
 
@@ -106,7 +106,7 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: "You can't send to the same address you're sending from.",
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
@@ -114,7 +114,7 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
@@ -142,7 +142,7 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
@@ -156,7 +156,7 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
@@ -164,7 +164,7 @@ const validateSendTransferAddress = (
     return {
       success: false,
       message: 'Please confirm that the recipient address is not an exchange.',
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
