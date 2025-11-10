@@ -79,8 +79,7 @@ export interface SelectedAccountPortfolio {
     [chainId: string]: number
   }
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
-  latest: SelectedAccountPortfolioState
-  pending: SelectedAccountPortfolioState
+  portfolioState: SelectedAccountPortfolioState
 }
 
 // As of version 4.53.0, cashback status information has been introduced.
