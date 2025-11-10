@@ -205,10 +205,11 @@ export const mapToken = (
   token: Pick<TokenResult, 'amount' | 'decimals' | 'name' | 'symbol'>,
   network: Network,
   address: string,
-  opts: Pick<GetOptions, 'specialErc20Hints'>,
-  hasSimulationAmount?: boolean
+  opts: Pick<GetOptions, 'specialErc20Hints' | 'blockTag'>,
+  hasSimulationAmount?: boolean,
+  latestAmount?: bigint
 ) => {
-  const { specialErc20Hints } = opts
+  const { specialErc20Hints, blockTag } = opts
 
   let symbol = 'Unknown'
   try {
@@ -245,7 +246,7 @@ export const mapToken = (
     }
   }
 
-  return {
+  const tokenResult = {
     amount: token.amount,
     chainId: network.chainId,
     decimals: Number(token.decimals),
@@ -258,6 +259,18 @@ export const mapToken = (
     address,
     flags: tokenFlags
   } as TokenResult
+
+  if (blockTag !== 'both') return tokenResult
+
+  return {
+    ...tokenResult,
+    // Fallback to the pending amount if latestAmount is not provided
+    // Otherwise it will look like someone is receiving tokens and the current amount is 0
+    // It's important that we are using ?? here instead of ||
+    // because latestAmount can be 0
+    latestAmount: latestAmount ?? token.amount,
+    pendingAmount: tokenResult.amount
+  }
 }
 
 export const validateERC20Token = async (
@@ -300,7 +313,9 @@ export const validateERC20Token = async (
 
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
-export const getTokenAmount = (token: TokenResult): bigint => {
+export const getTokenAmount = (token: TokenResult, beforeSimulation?: boolean): bigint => {
+  if (beforeSimulation) return token.amount
+
   return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
 
@@ -314,7 +329,11 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
   return balance * price
 }
 
-export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) =>
+export const getTotal = (
+  t: TokenResult[],
+  excludeHiddenTokens: boolean = true,
+  beforeSimulation: boolean = false
+) =>
   t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
     if (token.flags.isHidden && excludeHiddenTokens) return localCur
@@ -322,7 +341,7 @@ export const getTotal = (t: TokenResult[], excludeHiddenTokens: boolean = true) 
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
 
-      const tokenAmount = Number(getTokenAmount(token)) / 10 ** token.decimals
+      const tokenAmount = Number(getTokenAmount(token, beforeSimulation)) / 10 ** token.decimals
       localCur[x.baseCurrency] = currentAmount + tokenAmount * x.price
     }
 
