@@ -495,11 +495,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         )
 
         return Promise.all(
-          opsToUpdate.map(async (accountOp, accountOpIndex) => {
-            // Don't update the current network account ops statuses,
-            // as the statuses are already updated in the previous calls.
-            if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
-
+          opsToUpdate.map(async (accountOp) => {
             shouldEmitUpdate = true
 
             if (newestOpTimestamp === undefined || newestOpTimestamp < accountOp.timestamp) {
@@ -508,10 +504,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
             const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
               if (hasTimePassedSinceBroadcast(op, 5)) {
-                const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                  AccountOpStatus.BroadcastButStuck
-                )
+                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               }
             }
@@ -523,10 +516,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               accountOp
             )
             if (fetchTxnIdResult.status === 'rejected') {
-              const updatedOpIfAny = updateOpStatus(
-                this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
-                AccountOpStatus.Rejected
-              )
+              const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
               if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               return
             }
@@ -536,7 +526,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
             }
 
             const txnId = fetchTxnIdResult.txnId as string
-            this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId = txnId
+            // eslint-disable-next-line no-param-reassign
+            accountOp.txnId = txnId
 
             try {
               let receipt = await provider.getTransactionReceipt(txnId)
@@ -550,8 +541,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     txnId,
                     network
                   )
-                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex].txnId =
-                    frontRanTxnId
+                  // eslint-disable-next-line no-param-reassign
+                  accountOp.txnId = frontRanTxnId
                   receipt = await provider.getTransactionReceipt(frontRanTxnId)
                   if (!receipt) return
                 }
@@ -567,7 +558,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 if (isSuccess === undefined) isSuccess = !!receipt.status
 
                 const updatedOpIfAny = updateOpStatus(
-                  this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
+                  accountOp,
                   isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
                   receipt
                 )
@@ -594,7 +585,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 return
               }
 
-              // declare it a failure if there's no receipt after 5 mins
+              // if there's no receipt, confirm there's a txn
+              // if there's no txn and 15 minutes have passed, declare it a failure
+              const txn = await provider.getTransaction(txnId)
+              if (txn) return
               declareStuckIfFiveMinsPassed(accountOp)
             } catch {
               this.emitError({
