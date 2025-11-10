@@ -507,7 +507,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             }
 
             const declareStuckIfFiveMinsPassed = (op: SubmittedAccountOp) => {
-              if (hasTimePassedSinceBroadcast(op, 1)) {
+              if (hasTimePassedSinceBroadcast(op, 5)) {
                 const updatedOpIfAny = updateOpStatus(
                   this.#accountsOps[accountAddr][network.chainId.toString()][accountOpIndex],
                   AccountOpStatus.BroadcastButStuck
@@ -515,13 +515,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
               }
             }
-
-            // if there's no receipt, confirm there's a txn
-            // if there's no txn and 15 minutes have passed, declare it a failure
-            // const txn = await provider.getTransaction(txnId)
-            // if (txn) return
-            // declareStuckIfFiveMinsPassed(accountOp)
-            // return
 
             const fetchTxnIdResult = await fetchTxnId(
               accountOp.identifiedBy,
