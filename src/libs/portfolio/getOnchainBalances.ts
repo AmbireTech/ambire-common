@@ -129,8 +129,12 @@ export async function getNFTs(
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
-  const mapToken = (token: any) => {
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+    ...opts,
+    blockTag: opts.blockTag === 'both' ? 'pending' : opts.blockTag
+  })
+
+  const mapNft = (token: any) => {
     return {
       name: token.name,
       chainId: network.chainId,
@@ -153,7 +157,7 @@ export async function getNFTs(
       deploylessOpts
     )
 
-    return [collections.map((token: any) => [token.error, mapToken(token)]), {}]
+    return [collections.map((token: any) => [token.error, mapNft(token)]), {}]
   }
 
   const { accountOps, account, state } = opts.simulation
@@ -190,7 +194,7 @@ export async function getNFTs(
 
   const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
     ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
-        ...mapToken(simulationToken),
+        ...mapNft(simulationToken),
         addr: deltaAddressesMapping[tokenIndex]
       }))
     : null
@@ -203,7 +207,7 @@ export async function getNFTs(
           )
         : null
 
-      const token = mapToken(beforeToken)
+      const token = mapNft(beforeToken)
       const receiving: bigint[] = []
       const sending: bigint[] = []
 
@@ -248,50 +252,84 @@ export async function getTokens(
     await yieldToMain()
   }
 
-  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, opts)
+  const isFetchingBothBlocks = opts.blockTag === 'both'
+
+  const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
+    ...opts,
+    blockTag: isFetchingBothBlocks ? 'pending' : opts.blockTag
+  })
+
+  // If we are fetching both the pending and latest block, we don't need to fetch the entire token
+  // info twice, just the info from the pending block and the balances from the latest block
+  const getLatestBalances = async () => {
+    if (!isFetchingBothBlocks) return null
+
+    return deployless.call('getBalancesOf', [accountAddr, tokenAddrs], {
+      ...deploylessOpts,
+      blockTag: 'latest'
+    })
+  }
+
+  const getMainResults = async () => {
+    if (!opts.simulation) {
+      return deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
+    }
+
+    const { accountOps, account, state } = opts.simulation || {}
+    const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
+      // EOA starts from a fake, specified nonce
+      nonce: !shouldUseStateOverrideForEOA(account, state)
+        ? nonce
+        : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+      calls: calls.map(toSingletonCall).map(callToTuple)
+    }))
+    const [factory, factoryCalldata] = getAccountDeployParams(account)
+
+    return {
+      simulationOps,
+      result: await deployless.call(
+        'simulateAndGetBalances',
+        [
+          accountAddr,
+          account.associatedKeys,
+          tokenAddrs,
+          factory,
+          factoryCalldata,
+          simulationOps?.map((op) => Object.values(op))
+        ],
+        deploylessOpts
+      )
+    }
+  }
+
+  const [mainResults, latestBalances] = await Promise.all([getMainResults(), getLatestBalances()])
+
   if (!opts.simulation) {
-    const [results, blockNumber] = await deployless.call(
-      'getBalances',
-      [accountAddr, tokenAddrs],
-      deploylessOpts
-    )
+    const [results, blockNumber] = mainResults
 
     return [
       results.map((token: any, i: number) => [
-        token.error,
-        mapToken(token, network, tokenAddrs[i], opts)
+        token.error || (latestBalances && latestBalances[i].error ? latestBalances[i].error : null),
+        mapToken(
+          token,
+          network,
+          tokenAddrs[i],
+          opts,
+          undefined,
+          Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
+        )
       ]),
       {
         blockNumber
       }
     ]
   }
-  const { accountOps, account, state } = opts.simulation
-  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
-    // EOA starts from a fake, specified nonce
-    nonce: !shouldUseStateOverrideForEOA(account, state)
-      ? nonce
-      : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-    calls: calls.map(toSingletonCall).map(callToTuple)
-  }))
-  const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] =
-    await deployless.call(
-      'simulateAndGetBalances',
-      [
-        accountAddr,
-        account.associatedKeys,
-        tokenAddrs,
-        factory,
-        factoryCalldata,
-        simulationOps.map((op) => Object.values(op))
-      ],
-      deploylessOpts
-    )
+
+  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = mainResults.result
 
   const beforeNonce = before.nonce
   const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
+  handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps)
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
@@ -324,9 +362,16 @@ export async function getTokens(
       // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
       //   - after.balances, 8 USDC.
       return [
-        token.error,
+        token.error || (latestBalances && latestBalances[i].error ? latestBalances[i].error : null),
         {
-          ...mapToken(token, network, tokenAddrs[i], opts, !!simulationAmount),
+          ...mapToken(
+            token,
+            network,
+            tokenAddrs[i],
+            opts,
+            !!simulationAmount,
+            Array.isArray(latestBalances) ? latestBalances[i].amount : undefined
+          ),
           simulationAmount,
           amountPostSimulation
         }
