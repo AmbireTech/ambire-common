@@ -42,6 +42,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   tokens: [],
+  feeTokens: [],
   collections: [],
   tokenAmounts: [],
   totalBalance: 0,

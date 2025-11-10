@@ -500,6 +500,7 @@ const recalculateNetworkPortfolio = (
     state: {
       totalBalance: networkTotal,
       tokens: tokensArray,
+      feeTokens: mixedNetworkState.result?.feeTokens || [],
       collections: collectionsArray,
       portfolioUpdateStarted: mixedNetworkState.result?.updateStarted,
       defiPositionsUpdatedAt: defiPositionsAccountState[network]?.updatedAt,
@@ -556,7 +557,6 @@ export function calculateSelectedAccountPortfolioByNetworks(
   let isReadyToVisualize = false
   let hasTokensWithAmount = false
   let isReloading = false
-
   // Use the merged portfolio state for the calculation
   // Merges the portfolio with the defi positions
   Object.keys(mergedAccountState).forEach((network: string) => {
@@ -692,6 +692,7 @@ export function calculateSelectedAccountPortfolio(
 
   const selectedAccountPortfolio: SelectedAccountPortfolio = {
     tokens: [],
+    feeTokens: [],
     collections: [],
     totalBalance: 0,
     isReloading,
@@ -709,6 +710,22 @@ export function calculateSelectedAccountPortfolio(
     const isProjectedRewardsChain = chainId === 'projectedRewards'
 
     if (!networkData) return
+    if (chainId !== 'rewards' && chainId !== 'gasTank' && chainId !== 'projectedRewards') {
+      const test = networkData.feeTokens.filter((t) => {
+        return Number(t.chainId) === Number(chainId)
+      })
+
+      const unique = Array.from(
+        new Map(
+          [...selectedAccountPortfolio.feeTokens, ...test].map((t) => [
+            `${t.address}-${t.chainId}`,
+            t
+          ])
+        ).values()
+      )
+
+      selectedAccountPortfolio.feeTokens = [...unique]
+    }
 
     if (networkData.simulatedAccountOp) {
       selectedAccountPortfolio.networkSimulatedAccountOp[chainId] = networkData.simulatedAccountOp

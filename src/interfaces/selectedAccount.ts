@@ -28,6 +28,7 @@ export type SelectedAccountPortfolioState = {
 export type SelectedAccountPortfolioByNetworksNetworkState = {
   totalBalance: number
   tokens: SelectedAccountPortfolio['tokens']
+  feeTokens: SelectedAccountPortfolio['feeTokens']
   collections: SelectedAccountPortfolio['collections']
   /**
    * When the portfolio lib was last called to update the portfolio for this network.
@@ -55,6 +56,7 @@ export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
 
 export interface SelectedAccountPortfolio {
   tokens: SelectedAccountPortfolioTokenResult[]
+  feeTokens: SelectedAccountPortfolioTokenResult[]
   collections: CollectionResultInterface[]
   totalBalance: number
   /**

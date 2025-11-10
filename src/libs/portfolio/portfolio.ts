@@ -498,6 +498,38 @@ export class Portfolio {
 
     const priceUpdateDone = Date.now()
 
+    const test = gasTankFeeTokens.map((t) => {
+      // return the native token
+      // if (t.address === ZeroAddress && t.chainId === this.network.chainId) return null
+
+      const mainToken = tokensWithPrices.find(
+        (gasTankT) =>
+          gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
+          gasTankT.chainId === t.chainId
+      )
+      if (mainToken) {
+        return mainToken
+      }
+
+      return {
+        address: t.address,
+        chainId: t.chainId,
+        symbol: t.symbol,
+        name: t.symbol,
+        decimals: t.decimals,
+        amount: BigInt(0),
+        flags: {
+          isCustom: false,
+          isHidden: false,
+          isFeeToken: true,
+          onGasTank: false,
+          rewardsType: null,
+          canTopUpGasTank: true
+        },
+        priceIn: []
+      }
+    })
+
     return {
       toBeLearned,
       lastExternalApiUpdateData: hints.externalApi
@@ -513,16 +545,7 @@ export class Portfolio {
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
       tokens: tokensWithPrices,
-      feeTokens: tokensWithPrices.filter((t) => {
-        // return the native token
-        if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
-
-        return gasTankFeeTokens.find(
-          (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.chainId === t.chainId
-        )
-      }),
+      feeTokens: test,
       beforeNonce,
       afterNonce,
       blockNumber,
