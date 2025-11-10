@@ -139,7 +139,11 @@ export class ContinuousUpdatesController extends EventEmitter {
     }, 'continuous-update')
 
     this.#main.activity.onUpdate(() => {
-      if (this.#main.activity.broadcastedButNotConfirmed.length) {
+      const allBroadcastedButNotConfirmed = Object.values(
+        this.#main.activity.broadcastedButNotConfirmed
+      ).flat()
+
+      if (allBroadcastedButNotConfirmed.length) {
         this.#accountsOpsStatusesInterval.start()
       } else {
         this.#accountsOpsStatusesInterval.stop()
@@ -160,8 +164,14 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #updatePortfolio() {
     await this.initialLoadPromise
 
-    if (this.#main.activity.broadcastedButNotConfirmed.length) return
-    await this.#main.updateSelectedAccountPortfolio({ maxDataAgeMs: 60 * 1000 })
+    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      : []
+    if (selectedAccountBroadcastedButNotConfirmed.length) return
+    await this.#main.updateSelectedAccountPortfolio({
+      maxDataAgeMs: 60 * 1000,
+      maxDataAgeMsUnused: 60 * 60 * 1000
+    })
   }
 
   async #updateAccountsOpsStatuses() {
@@ -182,7 +192,10 @@ export class ContinuousUpdatesController extends EventEmitter {
       providers: this.#main.providers.providers
     })
 
-    const networksWithPendingAccountOp = this.#main.activity.broadcastedButNotConfirmed
+    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      : []
+    const networksWithPendingAccountOp = selectedAccountBroadcastedButNotConfirmed
       .map((op) => op.chainId)
       .filter((chainId, index, self) => self.indexOf(chainId) === index)
 
@@ -210,7 +223,10 @@ export class ContinuousUpdatesController extends EventEmitter {
       return
     }
 
-    const networksToUpdate = this.#main.activity.broadcastedButNotConfirmed
+    const selectedAccountBroadcastedButNotConfirmed = this.#main.selectedAccount.account
+      ? this.#main.activity.broadcastedButNotConfirmed[this.#main.selectedAccount.account.addr]
+      : []
+    const networksToUpdate = selectedAccountBroadcastedButNotConfirmed
       .map((op) => op.chainId)
       .filter((chainId, index, self) => self.indexOf(chainId) === index)
 

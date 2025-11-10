@@ -170,10 +170,8 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#sessionKeys[email] = await this.#emailVault.getSessionKey(email, key)
 
     // store magicLinkKey and sessionKey
-    await Promise.all([
-      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
-    ])
+    await this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
+    await this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
   }
 
   async handleMagicLinkKey(email: string, fn?: Function, flow?: MagicLinkFlow) {
@@ -589,10 +587,8 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#magicLinkKeys = {}
     this.#sessionKeys = {}
 
-    await Promise.all([
-      this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
-    ])
+    await this.#storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
+    await this.#storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
 
     this.emitUpdate()
   }
@@ -647,10 +643,11 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
 
     const isDismissed =
       this.#setupBannerDismissedAt > 0 && now - this.#setupBannerDismissedAt < ONE_WEEK
+    const hasConfiguredKeystoreAndHotWallet =
+      this.#keyStore.hasPasswordSecret && this.#keyStore.keys.find((key) => key.type === 'internal')
+    const isKeystoreRecoveryEnabled = this.hasKeystoreRecovery
 
-    // Show the banner if the keystore is already configured and the `password` secret is already set (for HW and ViewOnly accounts the app can run without keystore)
-    // and if the keystore secret backup is not enabled already
-    if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery && !isDismissed) {
+    if (hasConfiguredKeystoreAndHotWallet && !isKeystoreRecoveryEnabled && !isDismissed) {
       banners.push({
         id: 'keystore-secret-backup',
         type: 'info',

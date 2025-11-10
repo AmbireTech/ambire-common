@@ -4,7 +4,6 @@ import { getCreate2Address, keccak256 } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -40,7 +39,6 @@ import {
   getDefaultAccountPreferences,
   getEmailAccount,
   getSmartAccount,
-  isAmbireV1LinkedAccount,
   isDerivedForSmartAccountKeyOnly,
   isSmartAccount
 } from '../../libs/account/account'
@@ -57,8 +55,7 @@ const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
 
 /**
  * Account Picker Controller
- * is responsible for listing accounts that can be selected for adding, and for
- * adding (creating) identity for the smart accounts (if needed) on the Relayer.
+ * is responsible for listing accounts that can be selected for adding.
  * It uses a KeyIterator interface allow iterating all the keys in a specific
  * underlying store such as a hardware device or an object holding a seed.
  */
@@ -434,6 +431,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
+
     if (shouldAddNextAccountAutomatically) {
       await this.selectNextAccount()
       await this.addAccounts()
@@ -517,7 +515,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
-      console.error(`accountPicker: account ${account.addr} was not found in the accountsOnPage.`)
+      const message = `accountPicker: account ${account.addr} was not found in the accountsOnPage.`
+      this.emitError({ message, level: 'silent', error: new Error(message) })
+
       return []
     }
 
@@ -798,64 +798,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.addAccountsStatus = 'LOADING'
     await this.forceEmitUpdate()
 
-    let newlyCreatedAccounts: Account['addr'][] = []
-    const accountsToAddOnRelayer: SelectedAccountForImport[] = (
-      accounts || this.selectedAccountsFromCurrentSession
-    )
-      // Identity only for the smart accounts must be created on the Relayer
-      .filter((x) => isSmartAccount(x.account))
-      // Skip creating identity for Ambire v1 smart accounts
-      .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
-
-    if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccountForImport) => ({
-        addr: account.addr,
-        ...(account.email ? { email: account.email } : {}),
-        associatedKeys: account.initialPrivileges,
-        creation: {
-          factoryAddr: account.creation!.factoryAddr,
-          salt: account.creation!.salt,
-          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-        }
-      }))
-
-      try {
-        const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-          accounts: body
-        })
-
-        if (!res.success) {
-          throw new Error(res?.message || 'No response received from the Ambire Relayer.')
-        }
-
-        type AccResType = {
-          identity: string
-          status: {
-            created: boolean
-            reason?: string
-          }
-        }
-
-        type BodyType = AccResType[]
-        if (res.body) {
-          newlyCreatedAccounts = (res.body as BodyType)
-            .filter((acc: AccResType) => acc.status.created)
-            .map((acc: AccResType) => acc.identity)
-        }
-      } catch (e: any) {
-        this.emitError({
-          level: 'major',
-          message:
-            'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.',
-          error: e
-        })
-
-        this.addAccountsStatus = 'INITIAL'
-        await this.forceEmitUpdate()
-        return
-      }
-    }
-
     this.readyToAddAccounts = [
       ...(accounts || this.selectedAccountsFromCurrentSession).map((x, i) => {
         const alreadyImportedAcc = this.#alreadyImportedAccounts.find(
@@ -868,8 +810,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           // re-importing the same account via different key type(s) would reset them.
           preferences: alreadyImportedAcc
             ? alreadyImportedAcc.preferences
-            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i),
-          newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i)
         }
       })
     ]
@@ -991,8 +932,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       currentPage++
     }
 
-    // TODO: Should never happen, but could benefit with better error handling
-    if (!nextAccount) console.error('accountPicker: no next account found')
+    // Should never happen
+    if (!nextAccount) {
+      const message = 'accountPicker: selectNextAccount called, but no next account found.'
+      this.emitError({ message, level: 'silent', error: new Error(message) })
+    }
 
     this.selectNextAccountStatus = 'SUCCESS'
     await this.forceEmitUpdate()
@@ -1044,7 +988,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
-      console.error('accountPicker: missing keyIterator')
+      const message = 'accountPicker: #deriveAccounts called, but keyIterator was missing'
+      this.emitError({ message, level: 'silent', error: new Error(message) })
+
       return []
     }
 
@@ -1167,7 +1113,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
-          console.error('accountPicker: failed to get account state on ', chainId)
           if (this.networksWithAccountStateError.includes(BigInt(chainId))) return
           this.networksWithAccountStateError.push(BigInt(chainId))
         })

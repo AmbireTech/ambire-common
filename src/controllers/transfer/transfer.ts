@@ -30,10 +30,8 @@ import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
-import wait from '../../utils/wait'
-import { EstimationStatus } from '../estimation/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
@@ -58,6 +56,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 const HARD_CODED_CURRENCY = 'usd'
 
 export class TransferController extends EventEmitter implements ITransferController {
+  #callRelayer: Function
+
   #storage: IStorageController
 
   #networks: INetworksController
@@ -134,18 +134,15 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   hasProceeded: boolean = false
 
-  // Used to safely manage and cancel the periodic estimation loop.
-  // When destroySignAccountOp() is called, the AbortController is aborted,
-  // which prevents further re-estimation calls even if a wait() is in progress.
-  // This ensures only one active estimation loop exists at any time.
-  #reestimateAbortController: AbortController | null = null
-
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
 
   #activity: IActivityController
 
+  #onBroadcastSuccess: OnBroadcastSuccess
+
   constructor(
+    callRelayer: Function,
     storage: IStorageController,
     humanizerInfo: HumanizerMeta,
     selectedAccountData: ISelectedAccountController,
@@ -157,10 +154,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
-    relayerUrl: string
+    relayerUrl: string,
+    onBroadcastSuccess: OnBroadcastSuccess
   ) {
     super()
 
+    this.#callRelayer = callRelayer
     this.#storage = storage
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccountData = selectedAccountData
@@ -174,6 +173,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#relayerUrl = relayerUrl
+    this.#onBroadcastSuccess = onBroadcastSuccess
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -417,10 +417,16 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     // Check if the address has been used previously for transactions
-    const { found, lastTransactionDate } = await this.#activity.hasAccountOpsSentTo(
-      this.recipientAddress,
-      this.#selectedAccountData.account?.addr || ''
-    )
+    let found = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccountData.account?.addr || ''
+      )
+      found = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
     this.isRecipientAddressFirstTimeSend =
       !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
@@ -460,7 +466,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = false
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
-      this.lastRecipientTransactionDate = null
+      this.lastSentToRecipientAt = null
       this.isSWWarningVisible = false
       this.isSWWarningAgreed = false
 
@@ -470,7 +476,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
     this.checkIsRecipientAddressUnknown()
@@ -517,11 +523,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       // Convert the numbers to big int
-      const amountInFiatBigInt = parseUnits(
-        getSanitizedAmount(fieldValue, amountInFiatDecimals),
-        amountInFiatDecimals
-      )
-
+      const sanitizedFiat = getSanitizedAmount(fieldValue, amountInFiatDecimals)
+      const amountInFiatBigInt = sanitizedFiat
+        ? parseUnits(sanitizedFiat, amountInFiatDecimals)
+        : 0n
       this.amount = formatUnits(
         (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
         // Shift the decimal point by the number of decimals in the token price
@@ -584,11 +589,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     // form field validation
     if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress)) return
 
+    const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
+    const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n
     const userRequest = buildTransferUserRequest({
       selectedAccount: this.#selectedAccountData.account.addr,
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
-      recipientAddress
+      recipientAddress,
+      amountInFiat: amountInFiatBigInt
     })
 
     if (!userRequest || userRequest.action.kind !== 'calls') {
@@ -607,14 +615,23 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     // If SignAccountOpController is already initialized, we just update it.
     if (this.signAccountOpController) {
-      this.signAccountOpController.update({ accountOpData: { calls } })
+      this.signAccountOpController.update({
+        accountOpData: {
+          calls,
+          meta: {
+            ...(this.signAccountOpController.accountOp.meta || {}),
+            topUpAmount: userRequest.meta.topUpAmount
+          }
+        }
+      })
+
       return
     }
 
-    await this.#initSignAccOp(calls)
+    await this.#initSignAccOp(calls, userRequest.meta.topUpAmount)
   }
 
-  async #initSignAccOp(calls: Call[]) {
+  async #initSignAccOp(calls: Call[], topUpAmount?: bigint) {
     if (!this.#selectedAccountData.account || this.signAccountOpController) return
 
     const network = this.#networks.networks.find(
@@ -648,38 +665,60 @@ export class TransferController extends EventEmitter implements ITransferControl
       signature: null,
       calls,
       meta: {
-        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+        paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
+        topUpAmount
       }
     }
 
     // Check if the address has been used previously for transactions
-    const { found: previousTransactionExists, lastTransactionDate } =
-      await this.#activity.hasAccountOpsSentTo(
+    let previousTransactionExists = false
+    let lastTransactionDate = null
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
         this.recipientAddress,
         this.#selectedAccountData.account.addr
       )
+      previousTransactionExists = result.found
+      lastTransactionDate = result.lastTransactionDate
+    }
 
     // Update state based on whether there are previous transactions to this address
     this.isRecipientAddressFirstTimeSend =
       !previousTransactionExists &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.lastSentToRecipientAt = lastTransactionDate
-    this.signAccountOpController = new SignAccountOpController(
-      this.#accounts,
-      this.#networks,
-      this.#keystore,
-      this.#portfolio,
-      this.#externalSignerControllers,
-      this.#selectedAccountData.account,
+    this.signAccountOpController = new SignAccountOpController({
+      type: 'one-click-transfer',
+      callRelayer: this.#callRelayer,
+      accounts: this.#accounts,
+      networks: this.#networks,
+      keystore: this.#keystore,
+      portfolio: this.#portfolio,
+      externalSignerControllers: this.#externalSignerControllers,
+      activity: this.#activity,
+      account: this.#selectedAccountData.account,
       network,
-      this.#activity,
       provider,
-      randomId(), // the account op and the action are fabricated
+      fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      () => true,
-      false,
-      false
-    )
+      isSignRequestStillActive: () => true,
+      shouldSimulate: false,
+      onBroadcastSuccess: async (props) => {
+        const { submittedAccountOp } = props
+        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+          this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
+        })
+
+        await this.#onBroadcastSuccess(props)
+
+        if (this.shouldTrackLatestBroadcastedAccountOp) {
+          this.latestBroadcastedToken = this.selectedToken
+          this.latestBroadcastedAccountOp = submittedAccountOp
+        }
+
+        this.resetForm()
+      }
+    })
 
     // propagate updates from signAccountOp here
     this.#signAccountOpSubscriptions.push(
@@ -690,47 +729,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#signAccountOpSubscriptions.push(
       this.signAccountOpController.onError((error) => {
         if (this.signAccountOpController)
-          this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+          this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
         this.emitError(error)
       })
     )
-
-    this.reestimate()
-  }
-
-  /**
-   * Reestimate the signAccountOp request periodically.
-   * Encapsulate it here instead of creating an interval in the background
-   * as intervals are tricky and harder to control
-   */
-  async reestimate() {
-    // Don't run the estimation loop if there is no SignAccountOpController or if the loop is already running.
-    if (!this.signAccountOpController || this.#reestimateAbortController) return
-
-    this.#reestimateAbortController = new AbortController()
-    const signal = this.#reestimateAbortController!.signal
-
-    const loop = async () => {
-      while (!signal.aborted) {
-        // eslint-disable-next-line no-await-in-loop
-        await wait(30000)
-        if (signal.aborted) break
-
-        if (this.signAccountOpController?.estimation.status !== EstimationStatus.Loading) {
-          // eslint-disable-next-line no-await-in-loop
-          await this.signAccountOpController?.estimate()
-        }
-
-        if (this.signAccountOpController?.estimation.errors.length) {
-          console.log(
-            'Errors on Transfer re-estimate',
-            this.signAccountOpController.estimation.errors
-          )
-        }
-      }
-    }
-
-    loop()
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -742,11 +744,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Unsubscribe from all previous subscriptions
     this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
     this.#signAccountOpSubscriptions = []
-
-    if (this.#reestimateAbortController) {
-      this.#reestimateAbortController.abort()
-      this.#reestimateAbortController = null
-    }
 
     if (this.signAccountOpController) {
       this.signAccountOpController.reset()

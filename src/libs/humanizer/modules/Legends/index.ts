@@ -14,8 +14,9 @@ const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
   '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
 ]
 
+const iface = new Interface(Legends)
+
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface(Legends)
   const characterTypes: { [season: number]: string[] } = {
     '0': [
       'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
@@ -90,6 +91,9 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
     },
     [iface.getFunction('claimBitrefillCode')?.selector!]: () => {
       return [getAction('Claim'), getLabel('cashback code for'), getLabel('Bitrefill', true)]
+    },
+    [iface.getFunction('revealMascotLetter')?.selector!]: () => {
+      return [getAction('Reveal'), getLabel('a letter from'), getLabel('SHI_T_', true)]
     }
   }
   const newCalls = calls.map((call) => {

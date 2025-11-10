@@ -1,5 +1,3 @@
-import { ISignMessageController } from 'interfaces/signMessage'
-
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -13,6 +11,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { ISignMessageController, SignMessageUpdateParams } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
@@ -94,7 +93,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     await this.#accounts.initialLoadPromise
 
-    if (['message', 'typedMessage', 'authorization-7702'].includes(messageToSign.content.kind)) {
+    if (
+      ['message', 'typedMessage', 'authorization-7702', 'siwe'].includes(messageToSign.content.kind)
+    ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
       this.isInitialized = true
@@ -121,6 +122,27 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
     this.signedMessage = null
     this.signingKeyAddr = null
     this.signingKeyType = null
+    this.emitUpdate()
+  }
+
+  update({ isAutoLoginEnabledByUser, autoLoginDuration }: SignMessageUpdateParams) {
+    if (!this.isInitialized) {
+      this.emitError({
+        level: 'major',
+        message: 'There was an error while updating the sign message request. Please try again.',
+        error: new Error('signMessage: controller not initialized')
+      })
+      return
+    }
+
+    if (this.messageToSign && this.messageToSign.content.kind === 'siwe') {
+      if (typeof isAutoLoginEnabledByUser === 'boolean') {
+        this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
+      }
+      if (typeof autoLoginDuration === 'number') {
+        this.messageToSign.content.autoLoginDuration = autoLoginDuration
+      }
+    }
     this.emitUpdate()
   }
 
@@ -212,7 +234,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'authorization-7702') {
-          signature = this.#signer.sign7702(this.messageToSign.content.message)
+          // TODO: Deprecated. Sync with the latest sign7702 method changes if used
+          // signature = this.#signer.sign7702(this.messageToSign.content.message)
+          throw new ExternalSignerError(
+            'Signing EIP-7702 authorization via this flow is not implemented',
+            { sendCrashReport: true }
+          )
         }
       } catch (error: any) {
         throw new ExternalSignerError(

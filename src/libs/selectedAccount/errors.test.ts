@@ -75,7 +75,7 @@ const getMockSelectedAccountPortfolio = (params?: {
         : []
     }
     return acc
-  }, {} as SelectedAccountPortfolio['latest'])
+  }, {} as SelectedAccountPortfolio['portfolioState'])
 }
 
 describe('selectedAccount errors', () => {
@@ -256,7 +256,7 @@ describe('selectedAccount errors', () => {
           id: 'portfolio-critical',
           networkNames: ['Ethereum'],
           type: 'error',
-          title: 'Failed to retrieve the portfolio data',
+          title: 'Failed to retrieve the portfolio data on Ethereum',
           text: 'Account balance and visible assets may be inaccurate.'
         })
       })
@@ -267,7 +267,7 @@ describe('selectedAccount errors', () => {
             id: 'portfolio-critical',
             networkNames: ['Ethereum'],
             type: 'error',
-            title: 'Failed to retrieve the portfolio data',
+            title: 'Failed to retrieve the portfolio data on Ethereum',
             text: 'Account balance and visible assets may be inaccurate.'
           }
         ]
@@ -294,7 +294,7 @@ describe('selectedAccount errors', () => {
           id: 'loading-too-long',
           networkNames: ['BNB Smart Chain'],
           type: 'warning',
-          title: 'Loading is taking longer than expected',
+          title: 'Loading is taking longer than expected on BNB Smart Chain',
           text: 'Account balance and visible assets may be inaccurate.'
         })
       })
@@ -305,7 +305,7 @@ describe('selectedAccount errors', () => {
             id: 'loading-too-long',
             networkNames: ['BNB Smart Chain'],
             type: 'warning',
-            title: 'Loading is taking longer than expected',
+            title: 'Loading is taking longer than expected on BNB Smart Chain',
             text: 'Account balance and visible assets may be inaccurate.'
           }
         ]
@@ -340,7 +340,7 @@ describe('selectedAccount errors', () => {
           id: 'PriceFetchError',
           networkNames: ['Ethereum'],
           type: 'warning',
-          title: 'Failed to retrieve prices',
+          title: 'Failed to retrieve prices on Ethereum',
           text: 'Account balance and asset prices may be inaccurate.'
         })
       })
@@ -354,7 +354,7 @@ describe('selectedAccount errors', () => {
           id: 'NoApiHintsError',
           networkNames: ['Polygon'],
           type: 'error',
-          title: 'Automatic asset discovery is temporarily unavailable',
+          title: 'Automatic asset discovery is temporarily unavailable on Polygon',
           text: 'Your funds are safe, but your portfolio will be inaccurate. You can add assets manually or wait for the issue to be resolved.'
         })
       })
@@ -368,7 +368,7 @@ describe('selectedAccount errors', () => {
           id: 'StaleApiHintsError',
           networkNames: ['BNB Smart Chain'],
           type: 'warning',
-          title: 'Automatic asset discovery is temporarily unavailable',
+          title: 'Automatic asset discovery is temporarily unavailable on BNB Smart Chain',
           text: 'New assets may not be visible in your portfolio. You can add assets manually or wait for the issue to be resolved.'
         })
       })
@@ -382,21 +382,6 @@ describe('selectedAccount errors', () => {
             networkNames: ['Ethereum'],
             type: 'error',
             title: 'Failed to retrieve the portfolio data on Ethereum',
-            text: 'Account balance and visible assets may be inaccurate.'
-          }
-        ]
-        const result = addPortfolioError(existingErrors, 'Polygon', 'portfolio-critical')
-
-        expect(result[0].title).toBe('Failed to retrieve the portfolio data on Ethereum, Polygon')
-      })
-
-      it('should handle title without " on " when adding mockNetworks', () => {
-        const existingErrors: SelectedAccountBalanceError[] = [
-          {
-            id: 'portfolio-critical',
-            networkNames: ['Ethereum'],
-            type: 'error',
-            title: 'Failed to retrieve the portfolio data',
             text: 'Account balance and visible assets may be inaccurate.'
           }
         ]
@@ -482,7 +467,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 137n]
         }),
         isAllReady: true,
@@ -497,7 +482,7 @@ describe('selectedAccount errors', () => {
     it('critical portfolio error', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 137n]
         }),
         isAllReady: true,
@@ -518,7 +503,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 56n]
         }),
         isAllReady: true,
@@ -535,7 +520,7 @@ describe('selectedAccount errors', () => {
     it('no errors are added when the state is fresh (not Ethereum)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           freshDataChainIds: [56n, 137n],
           criticalErrorChainIds: [56n]
         }),
@@ -551,7 +536,7 @@ describe('selectedAccount errors', () => {
     it('errors are added even when the state is fresh (Ethereum)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           freshDataChainIds: [1n, 56n, 137n],
           criticalErrorChainIds: [1n]
         }),
@@ -573,7 +558,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -592,7 +577,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [137n]
         }),
         isAllReady: true,
@@ -607,7 +592,7 @@ describe('selectedAccount errors', () => {
     it("critical portfolio error, but we don't know if the user has assets", () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [137n]
         }),
         isAllReady: true,
@@ -624,7 +609,7 @@ describe('selectedAccount errors', () => {
     it('non-critical portfolio errors', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           nonCriticalErrorChainIds: [1n, 137n],
           criticalErrorChainIds: [1n]
         }),
@@ -646,7 +631,7 @@ describe('selectedAccount errors', () => {
     it('no errors are added for loading networks if (isAllReady=false)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -662,7 +647,7 @@ describe('selectedAccount errors', () => {
     it('errors are added for loading networks if (isAllReady=true)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -680,7 +665,7 @@ describe('selectedAccount errors', () => {
     it('loading-too-long error is added for loading networks if isAllReady=false and shouldShowPartialResult=true', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n]
         }),
         isAllReady: false,
@@ -698,7 +683,7 @@ describe('selectedAccount errors', () => {
     it('loading-too-long error is not added for loading networks if isAllReady=true and shouldShowPartialResult=true', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n]
         }),
         isAllReady: true,

@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable @typescript-eslint/brace-style */
+/* eslint-disable no-await-in-loop */
 /* eslint-disable class-methods-use-this */
 import {
   AbiCoder,
@@ -14,12 +15,20 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+/* eslint-disable @typescript-eslint/no-floating-promises */
+import EmittableError from '../../classes/EmittableError'
+import ExternalSignerError from '../../classes/ExternalSignerError'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
-import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
+import {
+  EIP_7702_AMBIRE_ACCOUNT,
+  EIP_7702_GRID_PLUS,
+  EIP_7702_KATANA,
+  SINGLETON
+} from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-/* eslint-disable no-restricted-syntax */
+import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -30,9 +39,8 @@ import {
   SA_ERC20_TRANSFER_GAS_USED,
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
-import { Account, IAccountsController } from '../../interfaces/account'
+import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { AccountOpAction } from '../../interfaces/actions'
-/* eslint-disable no-restricted-syntax */
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -58,10 +66,12 @@ import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/acco
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
+import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
+import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
 import { bundlerEstimate } from '../../libs/estimate/estimateBundler'
 import {
   Erc4337GasLimits,
@@ -74,14 +84,13 @@ import {
   GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { hasRelayerSupport } from '../../libs/networks/networks'
+import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import {
   adjustEntryPointAuthorization,
   get7702Sig,
   get7702UserOpTypedData,
-  getAuthorizationHash,
   getEIP712Signature,
   getEntryPointAuthorization,
   getExecuteSignature,
@@ -99,6 +108,8 @@ import {
 } from '../../libs/userOperation/userOperation'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
+import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
+import shortenAddress from '../../utils/shortenAddress'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
@@ -108,7 +119,9 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount
+  getTokenUsdAmount,
+  getUnknownTokenWarning,
+  SignAccountOpType
 } from './helper'
 
 export enum SigningStatus {
@@ -172,7 +185,22 @@ export type SignAccountOpUpdateProps = {
   accountOpData?: Partial<AccountOp>
 }
 
+export type OnboardingSuccessProps = {
+  submittedAccountOp: SubmittedAccountOp
+  accountOp: AccountOp
+  type: SignAccountOpType
+  fromActionId: string | number
+}
+
+export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void>
+
+export type OnBroadcastFailed = (accountOp: AccountOp) => void
+
 export class SignAccountOpController extends EventEmitter implements ISignAccountOpController {
+  #type: SignAccountOpType
+
+  #callRelayer: Function
+
   #accounts: IAccountsController
 
   #keystore: IKeystoreController
@@ -216,6 +244,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
+
+  broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
   #isSignRequestStillActive: Function
 
@@ -273,36 +303,67 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #shouldSimulate: boolean
 
-  /**
-   * Should this signAccountOp decide on its own terms whether
-   * to fire a new estimation or not
-   */
-  #shouldReestimate: boolean
+  #reestimateCounter: number = 0
 
   #stopRefetching: boolean = false
 
   #activity: IActivityController
 
-  constructor(
-    accounts: IAccountsController,
-    networks: INetworksController,
-    keystore: IKeystoreController,
-    portfolio: IPortfolioController,
-    externalSignerControllers: ExternalSignerControllers,
-    account: Account,
-    network: Network,
-    activity: IActivityController,
-    provider: RPCProvider,
-    fromActionId: AccountOpAction['id'],
-    accountOp: AccountOp,
-    isSignRequestStillActive: Function,
-    shouldSimulate: boolean,
-    shouldReestimate: boolean,
-    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void,
+  #onBroadcastSuccess: OnBroadcastSuccess
+
+  #onBroadcastFailed?: OnBroadcastFailed
+
+  signPromise: Promise<void> | undefined
+
+  broadcastPromise: Promise<void> | undefined
+
+  signAndBroadcastPromise: Promise<void> | undefined
+
+  constructor({
+    type,
+    callRelayer,
+    accounts,
+    networks,
+    keystore,
+    portfolio,
+    externalSignerControllers,
+    account,
+    network,
+    activity,
+    provider,
+    fromActionId,
+    accountOp,
+    isSignRequestStillActive,
+    shouldSimulate,
+    onAccountOpUpdate,
+    traceCall,
+    onBroadcastSuccess,
+    onBroadcastFailed
+  }: {
+    type?: SignAccountOpType
+    callRelayer: Function
+    accounts: IAccountsController
+    networks: INetworksController
+    keystore: IKeystoreController
+    portfolio: IPortfolioController
+    externalSignerControllers: ExternalSignerControllers
+    account: Account
+    network: Network
+    activity: IActivityController
+    provider: RPCProvider
+    fromActionId: AccountOpAction['id']
+    accountOp: AccountOp
+    isSignRequestStillActive: Function
+    shouldSimulate: boolean
+    onAccountOpUpdate?: (updatedAccountOp: AccountOp) => void
     traceCall?: Function
-  ) {
+    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastFailed?: OnBroadcastFailed
+  }) {
     super()
 
+    this.#type = type || 'default'
+    this.#callRelayer = callRelayer
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -326,7 +387,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.bundlerSwitcher = new BundlerSwitcher(
       network,
       () => {
-        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) : false
+        return this.status ? noStateUpdateStatuses.indexOf(this.status.type) !== -1 : false
       },
       { canDelegate: this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) }
     )
@@ -355,7 +416,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       })
     )
     this.#shouldSimulate = shouldSimulate
-    this.#shouldReestimate = shouldReestimate
+
+    this.#onBroadcastSuccess = onBroadcastSuccess
+    if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
 
     this.#load(shouldSimulate)
   }
@@ -425,6 +488,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   async #reestimate() {
+    // stop the interval reestimate if the user has done it over 20 times
+    this.#reestimateCounter += 1
+    if (this.#reestimateCounter > 20) this.#stopRefetching = true
+
     if (
       this.#stopRefetching ||
       this.estimation.status === EstimationStatus.Initial ||
@@ -432,7 +499,12 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     )
       return
 
-    await wait(30000)
+    // the first 10 times, reestimate once every 30s; then, slow down
+    // the time as the user might just have closed the popup of the extension
+    // in a ready-to-estimate state, resulting in meaningless requests
+    const waitTime =
+      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
+    await wait(waitTime)
 
     if (this.#stopRefetching || !this.#isSignRequestStillActive()) return
 
@@ -444,7 +516,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
-      if (this.#shouldReestimate) this.#reestimate()
+      this.#reestimate()
     })
     this.gasPrice.onUpdate(() => {
       this.update({
@@ -584,7 +656,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         code: 'NO_KEYS_AVAILABLE'
       })
 
-    const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
+    const currentPortfolio = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
     const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
 
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
@@ -734,15 +806,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   calculateWarnings() {
     const warnings: Warning[] = []
 
-    const latestState = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
-    const pendingState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+    const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
 
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      latestState,
-      pendingState,
+      state,
       this.accountOp.chainId,
       this.traceCallDiscoveryStatus
     )
+
+    const unknownTokenWarnings = getUnknownTokenWarning(state, this.accountOp.chainId)
 
     if (this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(
@@ -762,6 +834,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
 
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
+    if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
     // if 7702 EOA that is not ambire
     // and another delegation is there, show the warning
@@ -777,6 +850,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.delegatedContract &&
       this.delegatedContract !== ZeroAddress &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
       (broadcastOption === BROADCAST_OPTIONS.byBundler ||
         broadcastOption === BROADCAST_OPTIONS.delegation)
@@ -818,7 +893,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // if the portfolio detects a nonce discrepancy and the estimation is a Success,
     // refetch the account state, resimulate and put the correct nonce in accountOp
-    const portfolioState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+    const portfolioState = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
     const pendingPortfolioState = portfolioState
       ? portfolioState[this.accountOp.chainId.toString()]
       : null
@@ -841,7 +916,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // if there's an estimation error, override the pending results
     if (this.estimation.status === EstimationStatus.Error) {
-      this.#portfolio.overridePendingResults(this.accountOp)
+      this.#portfolio.overrideSimulationResults(this.accountOp)
     }
   }
 
@@ -849,8 +924,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     await this.estimation.estimate(this.accountOp)
   }
 
-  async portfolioSimulate() {
-    await this.#portfolio.simulateAccountOp(this.accountOp)
+  async retry(method: 'simulate' | 'estimate') {
+    this.bundlerSwitcher.cleanUp()
+    return this[method]()
   }
 
   update({
@@ -934,6 +1010,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
             if (hasNewCalls) this.learnTokensFromCalls()
             this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
+
+            this.#reestimateCounter = 0
           }
         }
       }
@@ -1133,7 +1211,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
     const native = this.#portfolio
-      .getLatestPortfolioState(this.accountOp.accountAddr)
+      .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
         (token) => token.address === '0x0000000000000000000000000000000000000000'
       )
@@ -1332,6 +1410,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         const speeds: SpeedCalc[] = []
         const usesPaymaster = estimation.bundlerEstimation?.paymaster.isUsable()
 
+        // eslint-disable-next-line no-restricted-syntax
         for (const [speed, speedValue] of Object.entries(increasedGasPrices)) {
           const simulatedGasLimit =
             BigInt(gasUsed) +
@@ -1589,7 +1668,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // get the native token from the portfolio to calculate prices
     const native = this.#portfolio
-      .getLatestPortfolioState(this.accountOp.accountAddr)
+      .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
         (token) => token.address === '0x0000000000000000000000000000000000000000'
       )
@@ -1715,14 +1794,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    const userOperation = getUserOperation(
-      this.account,
+    const userOperation = getUserOperation({
+      account: this.account,
       accountState,
-      this.accountOp,
-      this.bundlerSwitcher.getBundler().getName(),
-      this.accountOp.meta?.entryPointAuthorization,
-      eip7702Auth
-    )
+      accountOp: this.accountOp,
+      bundler: this.bundlerSwitcher.getBundler().getName(),
+      entryPointSig: this.accountOp.meta?.entryPointAuthorization,
+      eip7702Auth,
+      hasPendingUserOp: !!(this.#activity.broadcastedButNotConfirmed[this.account.addr] || []).find(
+        (accOp) =>
+          accOp.accountAddr === this.account.addr &&
+          accOp.chainId === this.#network.chainId &&
+          !!accOp.asUserOperation
+      )
+    })
 
     userOperation.preVerificationGas = erc4337Estimation.preVerificationGas
     userOperation.callGasLimit = toBeHex(
@@ -1876,15 +1961,16 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
     }
 
-    if (
+    const isExternalSignerInvolved =
+      this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
+      this.accountOp.signingKeyType !== 'internal'
+    const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
-      !shouldSignDeployAuth
-    ) {
-      this.status = { type: SigningStatus.WaitingForPaymaster }
-    } else {
-      this.status = { type: SigningStatus.InProgress }
-    }
+      !shouldSignDeployAuth &&
+      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)
+
+    if (isImmediatelyWaitingForPaymaster) this.status = { type: SigningStatus.WaitingForPaymaster }
 
     // we update the FE with the changed status (in progress) only after the checks
     // above confirm everything is okay to prevent two different state updates
@@ -1927,6 +2013,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
         // SA, EOA pays fee. execute() needs a signature
+
+        // fetch the nonce if needed
+        const nonce = await this.baseAccount.getBroadcastNonce(
+          this.#activity,
+          this.accountOp,
+          this.provider
+        )
+        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
         })
@@ -1938,9 +2033,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
         const contract =
           this.accountOp.meta?.setDelegation || this.accountOp.calls.length > 1
-            ? getContractImplementation(this.#network.chainId)
+            ? getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
             : (ZeroAddress as Hex)
-        if (this.accountOp.meta)
+        if (this.accountOp.meta) {
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           this.accountOp.meta.delegation = get7702Sig(
             this.#network.chainId,
             // because we're broadcasting by ourselves, we need to add 1 to the nonce
@@ -1948,10 +2045,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             // authrorization validation
             accountState.eoaNonce! + 1n,
             contract,
-            signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, accountState.eoaNonce! + 1n)
-            )
+            await signer.sign7702({
+              chainId: this.#network.chainId,
+              contract,
+              nonce: accountState.eoaNonce! + 1n
+            })
           )
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
+        }
         this.#updateAccountOp({
           signature: '0x'
         })
@@ -1976,16 +2078,28 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
-          const contract = getContractImplementation(this.#network.chainId)
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
+          const contract = getContractImplementation(
+            this.#network.chainId,
+            this.accountKeyStoreKeys
+          )
           eip7702Auth = get7702Sig(
             this.#network.chainId,
             accountState.nonce,
             contract,
-            signer.sign7702(
-              getAuthorizationHash(this.#network.chainId, contract, accountState.nonce)
-            )
+            await signer.sign7702({
+              chainId: this.#network.chainId,
+              contract,
+              nonce: accountState.nonce
+            })
           )
-
+          if (isExternalSignerInvolved)
+            this.shouldSignAuth = { type: '7702', text: 'Step 2/2 signing transaction' }
+          if (isUsingPaymaster) {
+            this.status = { type: SigningStatus.WaitingForPaymaster }
+            this.emitUpdate()
+          }
           shouldReestimate = true
         }
 
@@ -2048,7 +2162,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         if (!this.#isSignRequestStillActive()) return
 
         const userOperation = paymasterInfo.required ? paymasterInfo.userOp! : initialUserOp
-        if (userOperation.requestType === 'standard') {
+        const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
+        if (!isHotEOA) {
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,
@@ -2057,7 +2172,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else if (userOperation.requestType === '7702') {
+        } else {
           const typedData = get7702UserOpTypedData(
             this.#network.chainId,
             getSignableCalls(this.accountOp),
@@ -2067,12 +2182,18 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           const signature = wrapUnprotected(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.#updateAccountOp({ signature, asUserOperation: userOperation })
-        } else {
-          this.#updateAccountOp({ asUserOperation: userOperation })
         }
       } else {
         // Relayer
         this.#addFeePayment()
+
+        // fetch the nonce if needed
+        const nonce = await this.baseAccount.getBroadcastNonce(
+          this.#activity,
+          this.accountOp,
+          this.provider
+        )
+        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
 
         this.#updateAccountOp({
           signature: await getExecuteSignature(this.#network, this.accountOp, accountState, signer)
@@ -2080,14 +2201,476 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       }
 
       this.status = { type: SigningStatus.Done }
-      this.signedAccountOp = structuredClone(this.accountOp)
       this.emitUpdate()
-      return this.signedAccountOp
     } catch (error: any) {
       const { message } = getHumanReadableBroadcastError(error)
 
       this.#emitSigningErrorAndResetToReadyToSign(message, error?.sendCrashReport)
     }
+  }
+
+  /**
+   * There are 4 ways to broadcast an AccountOp:
+   *   1. For EOAs, there is only one way to do that. After
+   *   signing the transaction, the serialized signed transaction object gets
+   *   send to the network.
+   *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
+   *   for this. The first one is the signature of the AccountOp itself. The
+   *   second one is the signature of the transaction that will be executed
+   *   by the smart account.
+   *   3. For smart accounts that broadcast the ERC-4337 way.
+   *   4. for smart accounts, when the Relayer does the broadcast.
+   *
+   */
+  async #broadcast() {
+    if (this.status?.type !== SigningStatus.Done) {
+      this.throwBroadcastAccountOp({
+        message: 'Pending broadcast. Please try again in a bit.'
+      })
+      return
+    }
+    const accountOp = this.accountOp
+    const estimation = this.estimation.estimation
+    const actionId = this.fromActionId
+    const bundlerSwitcher = this.bundlerSwitcher
+    const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
+
+    if (
+      !accountOp ||
+      !estimation ||
+      !actionId ||
+      !accountOp.signingKeyAddr ||
+      !accountOp.signingKeyType ||
+      !accountOp.signature ||
+      !bundlerSwitcher ||
+      !accountOp.gasFeePayment
+    ) {
+      const message = `Missing mandatory transaction details. ${contactSupportPrompt}`
+      return this.throwBroadcastAccountOp({ message })
+    }
+
+    const account = this.#accounts.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+
+    if (!this.provider) {
+      const networkName = this.#network?.name || `network with id ${accountOp.chainId}`
+      const message = `Provider for ${networkName} not found. ${contactSupportPrompt}`
+      return this.throwBroadcastAccountOp({ message })
+    }
+
+    if (!account) {
+      const addr = shortenAddress(accountOp.accountAddr, 13)
+      const message = `Account with address ${addr} not found. ${contactSupportPrompt}`
+      return this.throwBroadcastAccountOp({ message })
+    }
+
+    if (!this.#network) {
+      const message = `Network with id ${accountOp.chainId} not found. ${contactSupportPrompt}`
+      return this.throwBroadcastAccountOp({ message })
+    }
+
+    this.broadcastStatus = 'LOADING'
+    await this.forceEmitUpdate()
+
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+    const baseAcc = getBaseAccount(
+      account,
+      accountState,
+      this.#keystore.getAccountKeys(account),
+      this.#network
+    )
+    let transactionRes: {
+      txnId?: string
+      nonce: number
+      identifiedBy: AccountOpIdentifiedBy
+    } | null = null
+
+    // broadcasting by EOA is quite the same:
+    // 1) build a rawTxn 2) sign 3) broadcast
+    // we have one handle, just a diff rawTxn for each case
+    const rawTxnBroadcast = [
+      BROADCAST_OPTIONS.bySelf,
+      BROADCAST_OPTIONS.bySelf7702,
+      BROADCAST_OPTIONS.byOtherEOA,
+      BROADCAST_OPTIONS.delegation
+    ]
+
+    if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+      const multipleTxnsBroadcastRes = []
+      const senderAddr =
+        accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+          ? accountOp.gasFeePayment.paidBy
+          : accountOp.accountAddr
+      const nonce = await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+
+      // @precaution
+      if (nonce instanceof Error) {
+        return this.throwBroadcastAccountOp({
+          message: 'RPC error. Please try again',
+          accountState
+        })
+      }
+
+      try {
+        const { gasFeePayment } = accountOp
+
+        if (!gasFeePayment.paidBy || !gasFeePayment.paidByKeyType) {
+          const message = `Missing gas fee payment details. ${contactSupportPrompt}`
+          return this.throwBroadcastAccountOp({ message })
+        }
+
+        const signer = await this.#keystore.getSigner(
+          gasFeePayment.paidBy,
+          gasFeePayment.paidByKeyType
+        )
+        if (signer.init) {
+          signer.init(this.#externalSignerControllers[gasFeePayment.paidByKeyType])
+        }
+
+        const txnLength = baseAcc.shouldBroadcastCallsSeparately(accountOp)
+          ? accountOp.calls.length
+          : 1
+        if (txnLength > 1) this.update({ signedTransactionsCount: 0 })
+        for (let i = 0; i < txnLength; i++) {
+          const currentNonce = nonce + i
+          const rawTxn = await buildRawTransaction(
+            account,
+            accountOp,
+            accountState,
+            this.provider,
+            this.#network,
+            currentNonce,
+            accountOp.gasFeePayment.broadcastOption,
+            accountOp.calls[i]
+          )
+          const signedTxn =
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation
+              ? await signer.signTransactionTypeFour({
+                  txnRequest: rawTxn,
+                  eip7702Auth: accountOp.meta!.delegation!
+                })
+              : await signer.signRawTransaction(rawTxn)
+
+          if (accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.delegation) {
+            multipleTxnsBroadcastRes.push({
+              hash: await this.provider.send('eth_sendRawTransaction', [signedTxn])
+            })
+          } else {
+            multipleTxnsBroadcastRes.push(await this.provider.broadcastTransaction(signedTxn))
+          }
+          if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
+
+          // record the EOA txn
+          this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
+            rawTxn: signedTxn
+          }).catch((e: any) => {
+            // eslint-disable-next-line no-console
+            console.log('failed to record EOA txn to relayer', accountOp.chainId)
+            // eslint-disable-next-line no-console
+            console.log(e)
+          })
+        }
+
+        transactionRes = {
+          nonce:
+            accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
+              ? Number(accountOp.nonce)
+              : nonce,
+          identifiedBy: {
+            type: txnLength > 1 ? 'MultipleTxns' : 'Transaction',
+            identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
+          },
+          txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
+        }
+      } catch (error: any) {
+        // eslint-disable-next-line no-console
+        console.error('Error broadcasting', error)
+        // for multiple txn cases
+        // if a batch of 5 txn is sent to Ledger for sign but the user reject
+        // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
+        // to #1 and #2 and create a submittedAccountOp
+        //
+        // unless it's the build-in swap - we want to throw an error and
+        // allow the user to retry in this case
+        if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
+          transactionRes = {
+            nonce,
+            identifiedBy: {
+              type: 'MultipleTxns',
+              identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
+            },
+            txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
+          }
+        } else {
+          return this.throwBroadcastAccountOp({ error, accountState })
+        }
+      } finally {
+        this.update({ signedTransactionsCount: null })
+      }
+    }
+    // Smart account, the ERC-4337 way
+    else if (accountOp.gasFeePayment?.broadcastOption === BROADCAST_OPTIONS.byBundler) {
+      const userOperation = accountOp.asUserOperation
+      if (!userOperation) {
+        const accAddr = shortenAddress(accountOp.accountAddr, 13)
+        const message = `Trying to broadcast an ERC-4337 request but userOperation is not set for the account with address ${accAddr}`
+        return this.throwBroadcastAccountOp({ message, accountState })
+      }
+
+      // broadcast through bundler's service
+      let userOperationHash
+      const bundler = bundlerSwitcher.getBundler()
+      try {
+        userOperationHash = await bundler.broadcast(userOperation, this.#network)
+      } catch (e: any) {
+        let retryMsg
+
+        // if the signAccountOp is still active (it should be)
+        // try to switch the bundler and ask the user to try again
+        const switcher = this.bundlerSwitcher
+        this.updateStatus(SigningStatus.ReadyToSign)
+
+        if (switcher.canSwitch(baseAcc)) {
+          switcher.switch()
+          this.simulate()
+          this.gasPrice.fetch()
+          retryMsg = 'Broadcast failed because bundler was down. Please try again'
+        }
+
+        return this.throwBroadcastAccountOp({
+          error: e,
+          accountState,
+          provider: this.provider,
+          network: this.#network,
+          message: retryMsg
+        })
+      }
+      if (!userOperationHash) {
+        return this.throwBroadcastAccountOp({
+          message: 'Bundler broadcast failed. Please try broadcasting by an EOA or contact support.'
+        })
+      }
+
+      transactionRes = {
+        nonce: Number(userOperation.nonce),
+        identifiedBy: {
+          type: 'UserOperation',
+          identifier: userOperationHash,
+          bundler: bundler.getName()
+        }
+      }
+    }
+    // Smart account, the Relayer way
+    else {
+      try {
+        const body = {
+          gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
+          txns: getSignableCalls(accountOp),
+          signature: accountOp.signature,
+          signer: { address: accountOp.signingKeyAddr },
+          nonce: Number(accountOp.nonce)
+        }
+        const additionalRelayerNetwork = relayerAdditionalNetworks.find(
+          (net) => net.chainId === this.#network.chainId
+        )
+        const relayerChainId = additionalRelayerNetwork
+          ? additionalRelayerNetwork.chainId
+          : accountOp.chainId
+        const response = await this.#callRelayer(
+          `/identity/${accountOp.accountAddr}/${relayerChainId}/submit`,
+          'POST',
+          body
+        )
+        if (!response.success) throw new Error(response.message)
+
+        transactionRes = {
+          txnId: response.txId,
+          nonce: Number(accountOp.nonce),
+          identifiedBy: {
+            type: 'Relayer',
+            identifier: response.id
+          }
+        }
+      } catch (error: any) {
+        return this.throwBroadcastAccountOp({ error, accountState, isRelayer: true })
+      }
+    }
+
+    if (!transactionRes)
+      return this.throwBroadcastAccountOp({
+        message: 'No transaction response received after being broadcasted.'
+      })
+
+    const submittedAccountOp: SubmittedAccountOp = {
+      ...accountOp,
+      status: AccountOpStatus.BroadcastedButNotConfirmed,
+      txnId: transactionRes.txnId,
+      nonce: BigInt(transactionRes.nonce),
+      identifiedBy: transactionRes.identifiedBy,
+      timestamp: new Date().getTime(),
+      isSingletonDeploy: !!accountOp.calls.find(
+        (call) => call.to && getAddress(call.to) === SINGLETON
+      )
+    }
+
+    await this.#onBroadcastSuccess({
+      submittedAccountOp,
+      accountOp: this.accountOp,
+      type: this.#type,
+      fromActionId: this.fromActionId
+    })
+
+    // Allow the user to broadcast a new transaction;
+    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
+    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
+    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
+    // leaving the new request 'orphaned' in the background without being attached to any action.
+    this.broadcastStatus = 'SUCCESS'
+    await this.forceEmitUpdate()
+    this.broadcastStatus = 'INITIAL'
+    await this.forceEmitUpdate()
+    return Promise.resolve()
+  }
+
+  async signAndBroadcast() {
+    if (this.signAndBroadcastPromise) {
+      return this.emitError({
+        level: 'major',
+        message:
+          'Please wait, the signing/broadcasting process of this transaction is already in progress.',
+        error: new Error(
+          `The signing/broadcasting process is already in progress. (signAndBroadcast func). Status: ${
+            this.status
+          }. BroadcastStatus: ${this.broadcastStatus}. Signing key: ${
+            this.accountOp.signingKeyType
+          }. Fee payer key: ${this.accountOp.gasFeePayment?.paidByKeyType}. Type: ${this.#type}.`
+        )
+      })
+    }
+
+    this.signAndBroadcastPromise = (async () => {
+      this.signPromise = this.sign().finally(() => {
+        this.signPromise = undefined
+      })
+      await this.signPromise
+      if (this.status && this.status.type === SigningStatus.Done) {
+        this.broadcastPromise = this.#broadcast().finally(() => {
+          this.broadcastPromise = undefined
+        })
+        await this.broadcastPromise
+      }
+    })().finally(() => {
+      this.signAndBroadcastPromise = undefined
+    })
+
+    await this.signAndBroadcastPromise
+  }
+
+  get isSignInProgress() {
+    return !!this.signPromise
+  }
+
+  get isBroadcastInProgress() {
+    return !!this.broadcastPromise
+  }
+
+  get isSignAndBroadcastInProgress() {
+    return !!this.signAndBroadcastPromise
+  }
+
+  throwBroadcastAccountOp({
+    message: humanReadableMessage,
+    error: _err,
+    accountState,
+    isRelayer = false,
+    provider = undefined,
+    network = undefined
+  }: {
+    message?: string
+    error?: Error | EmittableError | ExternalSignerError
+    accountState?: AccountOnchainState
+    isRelayer?: boolean
+    provider?: RPCProvider
+    network?: Network
+  }) {
+    const originalMessage = _err?.message
+    let message = humanReadableMessage
+    let isReplacementFeeLow = false
+
+    this.broadcastStatus = 'ERROR'
+    this.forceEmitUpdate()
+    this.broadcastStatus = 'INITIAL'
+    this.forceEmitUpdate()
+
+    if (originalMessage) {
+      if (originalMessage.includes('replacement fee too low')) {
+        message =
+          'Replacement fee is insufficient. Fees have been automatically adjusted so please try submitting your transaction again.'
+        isReplacementFeeLow = true
+        this.simulate(false)
+      } else if (originalMessage.includes('INSUFFICIENT_PRIVILEGE')) {
+        message = accountState?.isV2
+          ? 'Broadcast failed because of a pending transaction. Please try again'
+          : 'Signer key not supported on this network'
+      } else if (
+        originalMessage.includes('underpriced') ||
+        originalMessage.includes('Fee confirmation failed')
+      ) {
+        if (originalMessage.includes('underpriced')) {
+          message =
+            'Transaction fee underpriced. Please select a higher transaction speed and try again'
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.gasPrice.fetch()
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.simulate(false)
+      } else if (originalMessage.includes('Failed to fetch') && isRelayer) {
+        message =
+          'Currently, the Ambire relayer seems to be down. Please try again a few moments later or broadcast with an EOA account'
+      } else if (
+        originalMessage.includes('INVALID_ACCOUNT_NONCE') ||
+        originalMessage.includes('user nonce')
+      ) {
+        message = 'Pending transaction detected. Please try again in a few seconds'
+        this.#accounts
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .then(() => this.simulate())
+          .catch((e) => e)
+      }
+    }
+
+    if (!message) {
+      message = getHumanReadableBroadcastError(_err || new Error('')).message
+
+      // if the message states that the paymaster doesn't have sufficient amount,
+      // add it to the failedPaymasters to disable it until a top-up is made
+      if (message.includes(insufficientPaymasterFunds) && provider && network) {
+        failedPaymasters.addInsufficientFunds(provider, network).then(() => {
+          this.simulate(false)
+        })
+      }
+      if (message.includes('the selected fee is too low')) {
+        this.gasPrice.fetch()
+      }
+    }
+
+    // To enable another try for signing in case of broadcast fail
+    // broadcast is called in the FE only after successful signing
+    this.updateStatus(SigningStatus.ReadyToSign, isReplacementFeeLow)
+
+    if (this.#onBroadcastFailed) {
+      this.#onBroadcastFailed(this.#accountOp)
+    }
+
+    this.emitError({
+      level: 'major',
+      message,
+      error: _err || new Error(message),
+      sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
+    })
   }
 
   canUpdate(): boolean {
@@ -2096,6 +2679,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
     this.traceCallDiscoveryStatus = status
+  }
+
+  get type() {
+    return this.#type
   }
 
   get delegatedContract(): Hex | null {
@@ -2111,6 +2698,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ...this,
       ...super.toJSON(),
       isInitialized: this.isInitialized,
+      type: this.type,
       readyToSign: this.readyToSign,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
@@ -2121,7 +2709,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       errors: this.errors,
       gasSavedUSD: this.gasSavedUSD,
       delegatedContract: this.delegatedContract,
-      accountOp: this.accountOp
+      accountOp: this.accountOp,
+      isSignInProgress: this.isSignInProgress,
+      isBroadcastInProgress: this.isBroadcastInProgress,
+      isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress
     }
   }
 }

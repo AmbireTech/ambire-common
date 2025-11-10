@@ -17,7 +17,9 @@ import { AccountOpStatus } from '../../libs/accountOp/types'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -218,12 +220,24 @@ describe('Activity Controller ', () => {
       keystore,
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
+    )
+    const autoLoginCtrl = new AutoLoginController(
+      storageCtrl,
+      keystore,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      {},
+      new InviteController({ relayerUrl, fetch, storage: storageCtrl })
     )
     selectedAccountCtrl = new SelectedAccountController({
       storage: storageCtrl,
       accounts: accountsCtrl,
-      keystore
+      keystore,
+      autoLogin: autoLoginCtrl
     })
 
     await selectedAccountCtrl.initialLoadPromise

@@ -12,6 +12,8 @@ import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
+import { AutoLoginController } from '../autoLogin/autoLogin'
+import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
 import { ProvidersController } from '../providers/providers'
@@ -86,19 +88,32 @@ describe('AddressBookController', () => {
   providersCtrl.providers = providers
   const { uiManager } = mockUiManager()
   const uiCtrl = new UiController({ uiManager })
+  const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
   const accountsCtrl = new AccountsController(
     storageCtrl,
     providersCtrl,
     networksCtrl,
-    new KeystoreController('default', storageCtrl, {}, uiCtrl),
+    keystore,
     () => {},
     () => {},
-    () => {}
+    () => {},
+    relayerUrl,
+    fetch
+  )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystore,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
-    keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl)
+    keystore,
+    autoLogin: autoLoginCtrl
   })
   const addressBookController = new AddressBookController(
     storageCtrl,

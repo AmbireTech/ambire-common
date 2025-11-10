@@ -1,5 +1,4 @@
 import { formatUnits, isAddress } from 'ethers'
-import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { testnetNetworks } from '../../consts/testnetNetworks'
@@ -15,6 +14,7 @@ import {
   SwapAndBridgeQuote,
   SwapAndBridgeToToken
 } from '../../interfaces/swapAndBridge'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { getTokenAmount } from '../../libs/portfolio/helpers'
 import {
@@ -612,7 +612,9 @@ export class TransactionFormState extends EventEmitter {
   }
 
   async updatePortfolioTokenList(nextPortfolioTokenList: TokenResult[]) {
-    const tokens = nextPortfolioTokenList.filter(getIsTokenEligibleForSwapAndBridge)
+    const tokens = nextPortfolioTokenList.filter((token) =>
+      getIsTokenEligibleForSwapAndBridge(token)
+    )
     this.portfolioTokenList = sortPortfolioTokenList(
       // Filtering out hidden tokens here means: 1) They won't be displayed in
       // the "From" token list (`this.portfolioTokenList`) and 2) They won't be
@@ -750,7 +752,7 @@ export class TransactionFormState extends EventEmitter {
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract =
-        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress]?.isSC
     }
 
     this.checkIsRecipientAddressUnknown()

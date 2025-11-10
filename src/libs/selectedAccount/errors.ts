@@ -152,6 +152,8 @@ export const addPortfolioError = (
 
     if (!title) return newErrors
 
+    title = `${title} on ${networkName}`
+
     newErrors.push({
       id: newError,
       networkNames: [networkName],
@@ -169,6 +171,7 @@ const getNetworkName = (networks: Network[], chainId: string) => {
 
   if (chainId === 'gasTank') networkName = 'Gas Tank'
   else if (chainId === 'rewards') networkName = 'Rewards'
+  else if (chainId === 'projectedRewards') networkName = 'Projected Rewards'
 
   return networkName
 }
@@ -184,7 +187,7 @@ const getNetworkName = (networks: Network[], chainId: string) => {
 
 export const getNetworksWithErrors = ({
   networks,
-  selectedAccountLatest,
+  selectedAccountPortfolioState,
   providers,
   accountState,
   shouldShowPartialResult,
@@ -192,7 +195,7 @@ export const getNetworksWithErrors = ({
   networksWithAssets
 }: {
   networks: Network[]
-  selectedAccountLatest: SelectedAccountPortfolioState
+  selectedAccountPortfolioState: SelectedAccountPortfolioState
   providers: RPCProviders
   accountState: {
     [chainId: string]: AccountOnchainState
@@ -206,11 +209,11 @@ export const getNetworksWithErrors = ({
     (provider) => provider?.isWorking === false
   )
 
-  if (!Object.keys(selectedAccountLatest).length || areAllProvidersDown) return []
+  if (!Object.keys(selectedAccountPortfolioState).length || areAllProvidersDown) return []
 
   networks.forEach((network) => {
     const chainId = network.chainId.toString()
-    const portfolioForNetwork = selectedAccountLatest[chainId]
+    const portfolioForNetwork = selectedAccountPortfolioState[chainId]
     const accountStateForNetwork = accountState?.[chainId]
     const criticalPortfolioError = portfolioForNetwork?.criticalError
     const isRpcWorking = providers[chainId]?.isWorking !== false

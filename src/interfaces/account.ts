@@ -23,18 +23,63 @@ export interface Account {
   creation: AccountCreation | null
   preferences: AccountPreferences
   email?: string
-  newlyCreated?: boolean
   newlyAdded?: boolean
   disable7702Popup?: boolean
   disable7702Banner?: boolean
+  /**
+   * Timestamp when the identity was fetched from the Ambire Relayer, needed to
+   * determine if the account is EOA or Ambire smart account (and set the
+   * correct creation, associatedKeys and initialPrivileges).
+   */
+  identityFetchedAt?: number
 }
 
 export interface AccountCreation {
   factoryAddr: string
   bytecode: string
   salt: string
+  /** Timestamp when the identity was created on the Ambire Relayer */
+  identityCreatedAt?: number
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
+}
+
+export interface AmbireSmartAccountIdentityCreateRequest {
+  /* For this request, associatedKeys are expected to be initialPrivileges */
+  associatedKeys: Account['initialPrivileges']
+  creation: {
+    factoryAddr: string
+    salt: string
+    baseIdentityAddr: string
+  }
+  email?: string | undefined
+  addr: Account['addr']
+}
+
+export type AmbireSmartAccountIdentityCreateResponse = {
+  success: boolean
+  body: {
+    identity: string
+    status: {
+      created: boolean
+      reason?: string
+    }
+  }[]
+}
+
+/**
+ * Identity response from the Ambire Relayer. All fields are optional since
+ * the response may be null/undefined for EOAs or missing data.
+ */
+export interface AccountIdentityResponse {
+  /** The factory address used to create the identity */
+  identityFactoryAddr?: AccountCreation['factoryAddr']
+  /** The bytecode of the identity contract */
+  bytecode?: AccountCreation['bytecode']
+  /** The salt used during identity creation */
+  salt?: AccountCreation['salt']
+  /** Object whose keys are the associated key addresses */
+  associatedKeys?: Account['associatedKeys']
 }
 
 export interface AccountOnchainState {

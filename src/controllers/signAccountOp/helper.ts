@@ -1,4 +1,4 @@
-import { formatUnits, ZeroAddress } from 'ethers'
+import { ZeroAddress } from 'ethers'
 
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
@@ -6,14 +6,11 @@ import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountO
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { TokenResult } from '../../libs/portfolio'
-import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
+import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
-export const SIGN_ACCOUNT_OP_MAIN = 'signAccountOpMain'
-export const SIGN_ACCOUNT_OP_SWAP = 'signAccountOpSwap'
-export const SIGN_ACCOUNT_OP_TRANSFER = 'signAccountOpTransfer'
-export type SignAccountOpType = 'signAccountOpMain' | 'signAccountOpSwap' | 'signAccountOpTransfer'
+export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
 
 function getFeeSpeedIdentifier(
   option: FeePaymentOption,
@@ -41,26 +38,28 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 }
 
 function getSignificantBalanceDecreaseWarning(
-  latest: AccountState,
-  pending: AccountState,
+  portfolioState: AccountState,
   chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const latestNetworkData = latest?.[chainId.toString()]
-  const pendingNetworkData = pending?.[chainId.toString()]
+  const portfolioNetworkState = portfolioState?.[chainId.toString()]
   const canDetermineIfBalanceWillDecrease =
-    latestNetworkData &&
-    !latestNetworkData.isLoading &&
-    pendingNetworkData &&
-    !pendingNetworkData.isLoading
+    portfolioNetworkState && !portfolioNetworkState.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const latestTotalInUSD = getAccountPortfolioTotal(latest, ['rewards', 'gasTank'], false)
-    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
-    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
+    const totalInUSD = getAccountPortfolioTotal(
+      portfolioState,
+      ['rewards', 'gasTank', 'projectedRewards'],
+      false
+    )
+    const latestOnNetworkInUSD = portfolioNetworkState.result?.totalBeforeSimulation?.usd
+    const pendingOnNetworkInUSD = portfolioNetworkState.result?.total?.usd
+
+    if (!latestOnNetworkInUSD || !pendingOnNetworkInUSD) return null
+
     const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
     const hasSignificantBalanceDecrease =
-      absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
+      absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
     if (!hasSignificantBalanceDecrease) return null
 
@@ -85,6 +84,17 @@ function getSignificantBalanceDecreaseWarning(
   return null
 }
 
+const getUnknownTokenWarning = (pending: AccountState, chainId: bigint): Warning | null => {
+  const networkData = pending?.[chainId.toString()]
+
+  if (networkData?.isLoading) return null
+
+  const tokens = networkData?.result?.tokens || []
+  const hasUnknownTokens = tokens.some((t) => t.flags.suspectedType)
+
+  return hasUnknownTokens ? WARNINGS.unknownToken : null
+}
+
 const getFeeTokenPriceUnavailableWarning = (
   hasSpeed: boolean,
   feeTokenHasPrice: boolean
@@ -98,5 +108,6 @@ export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSignificantBalanceDecreaseWarning,
-  getTokenUsdAmount
+  getTokenUsdAmount,
+  getUnknownTokenWarning
 }

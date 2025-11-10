@@ -1,8 +1,10 @@
 /* eslint-disable no-underscore-dangle */
 import { getAddress } from 'ethers'
 
+import { STK_WALLET, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
+import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -20,8 +22,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
-  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
-  getFirstCashbackBanners
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
 } from '../../libs/banners/banners'
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
@@ -32,7 +33,10 @@ import {
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
-import { calculateSelectedAccountPortfolio } from '../../libs/selectedAccount/selectedAccount'
+import {
+  calculateAndSetProjectedRewards,
+  calculateSelectedAccountPortfolio
+} from '../../libs/selectedAccount/selectedAccount'
 import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -45,15 +49,17 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   isReadyToVisualize: false,
   isAllReady: false,
   shouldShowPartialResult: false,
+  isReloading: false,
   networkSimulatedAccountOp: {},
-  latest: {},
-  pending: {}
+  portfolioState: {}
 }
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
   #accounts: IAccountsController
+
+  #autoLogin: IAutoLoginController
 
   #portfolio: IPortfolioController | null = null
 
@@ -84,7 +90,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
-  #isPortfolioLoadingFromScratch = true
+  #isManualUpdate = true
 
   dashboardNetworkFilter: bigint | string | null = null
 
@@ -133,17 +139,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   constructor({
     storage,
     accounts,
-    keystore
+    keystore,
+    autoLogin
   }: {
     storage: IStorageController
     accounts: IAccountsController
     keystore: IKeystoreController
+    autoLogin: IAutoLoginController
   }) {
     super()
 
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
+    this.#autoLogin = autoLogin
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -215,24 +224,18 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     })
 
-    this.#networks.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('resetDashboardNetworkFilterIfNeeded', () => {
-        if (!this.dashboardNetworkFilter) return
-        const dashboardFilteredNetwork = this.#networks!.networks.find(
-          (n) => n.chainId === this.dashboardNetworkFilter
-        )
-
-        // reset the dashboardNetworkFilter if the network is removed
-        if (!dashboardFilteredNetwork) this.setDashboardNetworkFilter(null)
-      })
-    })
-
     this.#accounts.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
-        this.#updateSelectedAccount()
+        this.#updateSelectedAccount(true)
         this.#updatePortfolioErrors(true)
         this.#updateDefiPositionsErrors()
       })
+    })
+
+    this.#autoLogin.onUpdate(() => {
+      if (this.account) {
+        this.emitUpdate()
+      }
     })
 
     this.areControllersInitialized = true
@@ -247,6 +250,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.defiPositions = []
     this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
+
+    const isStateWithOutdatedNetworks =
+      this.account &&
+      this.#portfolio &&
+      this.#portfolio.getIsStateWithOutdatedNetworks(this.account.addr)
+
+    // Display the current portfolio state immediately only if the user hasn't
+    // added/removed networks since the last time the portfolio was calculated.
+    if (!isStateWithOutdatedNetworks) {
+      this.#updateSelectedAccountDefiPositions(true)
+      this.updateSelectedAccountPortfolio(true)
+      this.#updateDefiPositionsErrors(true)
+    }
     this.dashboardNetworkFilter = null
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
     this.#portfolioLoadingTimeout = null
@@ -260,7 +276,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
-  #updateSelectedAccount() {
+  #updateSelectedAccount(skipUpdate: boolean = false) {
     if (!this.account) return
 
     const updatedAccount = this.#accounts.accounts.find((a) => a.addr === this.account!.addr)
@@ -268,32 +284,21 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.account = updatedAccount
 
-    this.emitUpdate()
+    if (!skipUpdate) this.emitUpdate()
   }
 
   resetSelectedAccountPortfolio({
-    maxDataAgeMs,
+    isManualUpdate,
     skipUpdate
-  }: { maxDataAgeMs?: number; skipUpdate?: boolean } = {}) {
+  }: { isManualUpdate?: boolean; skipUpdate?: boolean } = {}) {
     if (!this.#portfolio || !this.account) return
 
-    if (maxDataAgeMs) {
-      const latestStateSelectedAccount = this.#portfolio.getLatestPortfolioState(this.account.addr)
-
-      const networksThatAreAboutToBeUpdated = Object.values(latestStateSelectedAccount)
-        .filter((state) => !state?.criticalError)
-        .filter((state) => {
-          const updateStarted = state?.result?.updateStarted || 0
-
-          return !!updateStarted && Date.now() - updateStarted >= maxDataAgeMs
-        })
-
-      if (!networksThatAreAboutToBeUpdated.length) return
+    if (isManualUpdate) {
+      this.#isManualUpdate = true
     }
 
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
-    this.#isPortfolioLoadingFromScratch = true
     this.#portfolioByNetworks = {}
 
     if (!skipUpdate) {
@@ -306,24 +311,36 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const latestStateSelectedAccount = structuredClone(
-      this.#portfolio.getLatestPortfolioState(this.account.addr)
-    )
-    const pendingStateSelectedAccount = structuredClone(
-      this.#portfolio.getPendingPortfolioState(this.account.addr)
-    )
+    const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
       selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
     } = calculateSelectedAccountPortfolio(
-      latestStateSelectedAccount,
-      pendingStateSelectedAccount,
+      portfolioAccountState,
       structuredClone(this.#portfolioByNetworks),
       defiPositionsAccountState,
       this.portfolio.shouldShowPartialResult,
-      this.#isPortfolioLoadingFromScratch
+      this.#isManualUpdate
     )
+
+    // Find stkWALLET or WALLET token in the latest portfolio state
+    const walletORStkWalletToken = portfolioAccountState['1']?.result?.tokens.find(
+      ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
+    )
+
+    if (newSelectedAccountPortfolio.isAllReady && portfolioAccountState.projectedRewards) {
+      const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
+
+      // Calculate and add projected rewards token
+      const projectedRewardsToken = calculateAndSetProjectedRewards(
+        portfolioAccountState.projectedRewards,
+        newSelectedAccountPortfolio.balancePerNetwork,
+        walletOrStkWalletTokenPrice
+      )
+
+      if (projectedRewardsToken) newSelectedAccountPortfolio.tokens.push(projectedRewardsToken)
+    }
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
@@ -340,9 +357,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       }, 5000)
     }
 
-    // Reset isPortfolioLoadingFromScratch flag when the portfolio has finished the initial load
-    if (this.#isPortfolioLoadingFromScratch && newSelectedAccountPortfolio.isAllReady) {
-      this.#isPortfolioLoadingFromScratch = false
+    // Reset isManualUpdate flag when the portfolio has finished the initial load
+    if (this.#isManualUpdate && newSelectedAccountPortfolio.isAllReady) {
+      this.#isManualUpdate = false
     }
 
     this.portfolio = newSelectedAccountPortfolio
@@ -356,14 +373,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   async updateCashbackStatus(skipUpdate?: boolean) {
-    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
+    if (!this.#portfolio || !this.account || !this.portfolio.portfolioState.gasTank?.result) return
     const importedAccountKeys = this.#keystore?.getAccountKeys(this.account) || []
 
     // Don't update cashback status for view-only accounts
     if (getIsViewOnly(importedAccountKeys, this.account.associatedKeys)) return
 
     const accountId = this.account.addr
-    const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
+    const gasTankResult = this.portfolio.portfolioState.gasTank.result as PortfolioGasTankResult
 
     const isCashbackZero = gasTankResult.gasTankTokens?.[0]?.cashback === 0n
     const cashbackWasZeroBefore = this.#cashbackStatusByAccount[accountId] === 'no-cashback'
@@ -506,7 +523,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
       shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
-      selectedAccountLatest: this.portfolio.latest,
+      selectedAccountPortfolioState: this.portfolio.portfolioState,
       isAllReady: this.portfolio.isAllReady,
       accountState: this.#accounts.accountStates[this.account.addr] || {},
       providers: this.#providers.providers,
@@ -553,24 +570,34 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     ]
   }
 
-  get firstCashbackBanner(): Banner[] {
-    if (!this.account || !isSmartAccount(this.account) || !this.#portfolio) return []
-
-    return getFirstCashbackBanners({
-      selectedAccountAddr: this.account.addr,
-      cashbackStatusByAccount: this.#cashbackStatusByAccount
-    })
-  }
-
   get cashbackStatus(): CashbackStatus | undefined {
     if (!this.account) return undefined
 
     return this.#cashbackStatusByAccount[this.account.addr]
   }
 
+  get autoLoginPolicies(): AutoLoginPolicy[] {
+    if (!this.account) return []
+
+    return this.#autoLogin.getAccountPolicies(this.account.addr, true)
+  }
+
   setDashboardNetworkFilter(networkFilter: bigint | string | null) {
     this.dashboardNetworkFilter = networkFilter
     this.emitUpdate()
+  }
+
+  removeNetworkData(chainId: bigint) {
+    const stringChainId = chainId.toString()
+
+    if (this.#portfolioByNetworks[stringChainId]) {
+      delete this.#portfolioByNetworks[stringChainId]
+    }
+    if (String(this.dashboardNetworkFilter) === stringChainId) {
+      this.dashboardNetworkFilter = null
+    }
+
+    this.updateSelectedAccountPortfolio()
   }
 
   async dismissDefiPositionsBannerForTheSelectedAccount() {
@@ -639,12 +666,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ...this,
       ...super.toJSON(),
       banners: this.banners,
-      firstCashbackBanner: this.firstCashbackBanner,
       cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
       defiPositions: this.defiPositions,
-      areDefiPositionsLoading: this.areDefiPositionsLoading
+      areDefiPositionsLoading: this.areDefiPositionsLoading,
+      autoLoginPolicies: this.autoLoginPolicies
     }
   }
 }

@@ -1,5 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
+import { toBeHex } from 'ethers'
+
 import { AMBIRE_ACCOUNT_FACTORY, OPTIMISTIC_ORACLE, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { Fetch } from '../../interfaces/fetch'
@@ -181,24 +183,30 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        const coingeckoRequest = await fetch(
-          `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
-        ).catch(() => ({
-          error: 'currently, we cannot fetch the coingecko information'
-        }))
         // Keep the old value if the request fails
-        let platformId = network?.platformId || null
-        let nativeAssetId = network?.nativeAssetId || null
-        if (!('error' in coingeckoRequest)) {
+        let platformId = network?.platformId || ''
+        let nativeAssetId = network?.nativeAssetId || ''
+
+        try {
+          const coingeckoRequest = await fetch(
+            `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
+          )
           const coingeckoInfo = await coingeckoRequest.json()
+
           if (!coingeckoInfo.error) {
+            // Coingecko info found
             platformId = coingeckoInfo.platformId
             nativeAssetId = coingeckoInfo.nativeAssetId
           }
+        } catch (e) {
+          console.error('Error fetching coingecko info', e)
         }
 
-        if (platformId) networkInfo.platformId = platformId
-        if (nativeAssetId) networkInfo.nativeAssetId = nativeAssetId
+        networkInfo = {
+          ...networkInfo,
+          platformId,
+          nativeAssetId
+        }
 
         callback(networkInfo)
       })()
@@ -505,5 +513,15 @@ export const getNetworksUpdatedWithRelayerNetworks = (
   return {
     mergedNetworks: networks,
     updatedNetworkChainIds
+  }
+}
+
+export const networkChainIdToHex = (chainId: number | bigint) => {
+  try {
+    // Remove leading zero in hex representation
+    // to match the format expected by dApps (e.g., "0xa" instead of "0x0a")
+    return toBeHex(chainId).replace(/^0x0/, '0x')
+  } catch (error) {
+    return `0x${chainId.toString(16)}`
   }
 }
