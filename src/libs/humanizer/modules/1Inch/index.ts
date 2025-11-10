@@ -6,15 +6,15 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
   eToNative,
   getAction,
+  getAddressVisualization,
   getLabel,
   getRecipientText,
   getToken,
   uintToAddress
 } from '../../utils'
 
-const iface = new Interface(OneInch)
-
 const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+  const iface = new Interface(OneInch)
   const matcher = {
     [iface.getFunction('cancelOrder(uint256 makerTraits, bytes32 orderHash)')?.selector!]: (
       call: IrCall

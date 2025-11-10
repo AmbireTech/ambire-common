@@ -5,8 +5,8 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 
 const CONTRACT_FACTORY_ADDRESS = '0xce0042B868300000d44A59004Da54A005ffdcf9f'
-const iface = new Interface(['function  deploy(bytes,bytes32)'])
 export const singletonFactory: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
+  const iface = new Interface(['function  deploy(bytes,bytes32)'])
   const newCalls = irCalls.map((call) => {
     // @TODO fix those upper/lowercase
     if (

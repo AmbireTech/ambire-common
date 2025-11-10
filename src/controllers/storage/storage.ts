@@ -60,7 +60,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateNetworkIdToChainId()
       await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
       await this.#migrateLegacyDappsToDappsV2() // As of version 5.30.0
-      await this.#cleanObsoleteNewlyCreatedFlagOnAccounts() // As of version 5.30.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -651,34 +650,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.remove('dapps')
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'migrateLegacyDappsToDappsV2'])
-    ])
-  }
-
-  /**
-   * As of version 5.30.0, the "newlyAdded" is no longer part of the account
-   * interface and moreover - even before this v - it was no longer used anywhere.
-   */
-  async #cleanObsoleteNewlyCreatedFlagOnAccounts() {
-    const [passedMigrations, accounts] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('accounts', [])
-    ])
-
-    if (passedMigrations.includes('cleanObsoleteNewlyCreatedFlagOnAccounts')) return
-
-    const shouldCleanupNewlyCreatedFlags = accounts.some((a) => 'newlyCreated' in a)
-    if (shouldCleanupNewlyCreatedFlags) {
-      await this.#storage.set(
-        'accounts',
-        accounts.map((acc) =>
-          // destructure and re-build to remove the `newlyCreated` property
-          'newlyCreated' in acc ? (({ newlyCreated, ...rest }) => ({ ...rest }))(acc) : acc
-        )
-      )
-    }
-
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'cleanObsoleteNewlyCreatedFlagOnAccounts'])
     ])
   }
 

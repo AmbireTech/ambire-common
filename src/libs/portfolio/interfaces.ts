@@ -20,8 +20,6 @@ export type TokenResult = {
   address: string
   chainId: bigint
   amount: bigint
-  latestAmount?: bigint
-  pendingAmount?: bigint
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
@@ -218,7 +216,6 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     lastSuccessfulUpdate: number
     total: Total
-    totalBeforeSimulation?: Total
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
   }
@@ -300,13 +297,7 @@ type SpecialHintType = 'custom' | 'hidden' | 'learn'
 
 export interface GetOptions {
   baseCurrency: string
-  /**
-   * 'latest', 'pending' - self-explanatory
-   * 'both' - fetches the asset info from the pending block and only the balances
-   * from the latest block. Then merges the data together.
-   * number - a specific block number to fetch the data from
-   */
-  blockTag: 'latest' | 'pending' | 'both' | number
+  blockTag: string | number
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number

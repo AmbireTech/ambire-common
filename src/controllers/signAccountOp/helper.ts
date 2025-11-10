@@ -6,7 +6,7 @@ import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountO
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { TokenResult } from '../../libs/portfolio'
-import { getAccountPortfolioTotal } from '../../libs/portfolio/helpers'
+import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
@@ -38,28 +38,30 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 }
 
 function getSignificantBalanceDecreaseWarning(
-  portfolioState: AccountState,
+  latest: AccountState,
+  pending: AccountState,
   chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const portfolioNetworkState = portfolioState?.[chainId.toString()]
+  const latestNetworkData = latest?.[chainId.toString()]
+  const pendingNetworkData = pending?.[chainId.toString()]
   const canDetermineIfBalanceWillDecrease =
-    portfolioNetworkState && !portfolioNetworkState.isLoading
+    latestNetworkData &&
+    !latestNetworkData.isLoading &&
+    pendingNetworkData &&
+    !pendingNetworkData.isLoading
 
   if (canDetermineIfBalanceWillDecrease) {
-    const totalInUSD = getAccountPortfolioTotal(
-      portfolioState,
+    const latestTotalInUSD = getAccountPortfolioTotal(
+      latest,
       ['rewards', 'gasTank', 'projectedRewards'],
       false
     )
-    const latestOnNetworkInUSD = portfolioNetworkState.result?.totalBeforeSimulation?.usd
-    const pendingOnNetworkInUSD = portfolioNetworkState.result?.total?.usd
-
-    if (!latestOnNetworkInUSD || !pendingOnNetworkInUSD) return null
-
+    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
+    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
     const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
     const hasSignificantBalanceDecrease =
-      absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
+      absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
     if (!hasSignificantBalanceDecrease) return null
 
