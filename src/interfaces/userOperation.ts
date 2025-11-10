@@ -6,6 +6,15 @@ export interface ChainIdWithUserOp {
   userOperation: SignUserOperation
 }
 
+export interface PartialOperation {
+  chainId: bigint
+  sender: string
+  callData: string // hex string
+  callGasLimit: string
+  verificationGasLimit: string
+  preVerificationGas: string
+}
+
 export interface SignUserOperation {
   sender: string
   nonce: string
