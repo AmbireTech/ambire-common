@@ -30,12 +30,24 @@ import {
 import { flattenResults, paginate } from './pagination'
 
 // List of tokens to exclude from display by chainId and address
-const EXCLUDED_TOKENS: Array<{ chainId: bigint; address: string }> = [
-  { chainId: BigInt('100'), address: '0xcB444e90D8198415266c6a2724b7900fb12FC56E' }, // Gnosis
-  { chainId: BigInt('137'), address: '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' }, // Polygon
-  { chainId: BigInt('1'), address: '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' }, // Ethereum
-  { chainId: BigInt('999'), address: '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' } // Hyper EVM
-]
+const EXCLUDED_TOKENS: Record<string, string[]> = {
+  // Gnosis Chain (xDAI)
+  '100': [
+    '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+  ],
+  // Polygon
+  '137': [
+    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+  ],
+  // Ethereum Mainnet
+  '1': [
+    '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+  ],
+  // Hyper EVM
+  '999': [
+    '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE. Only stHYPE should be displayed (following Rabby's approach)
+  ]
+}
 
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -276,6 +288,18 @@ export class Portfolio {
       // add the fee tokens
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
+
+    // Exclude tokens by chainId/address from hints
+    const excludedAddresses = EXCLUDED_TOKENS[this.network.chainId.toString()]
+    if (excludedAddresses) {
+      hints.erc20s = hints.erc20s.filter(
+        (addr) =>
+          !excludedAddresses.some(
+            (excludedAddr) => excludedAddr.toLowerCase() === addr.toLowerCase()
+          )
+      )
+    }
+
     hints.erc721s = mergeERC721s([
       additionalErc721Hints || {},
       hints.erc721s,
@@ -295,15 +319,7 @@ export class Portfolio {
       .filter(Boolean) as string[]
 
     // Remove duplicates and always add ZeroAddress
-    let filteredErc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
-    // Exclude tokens by chainId/address
-    filteredErc20s = filteredErc20s.filter(
-      (addr) =>
-        !EXCLUDED_TOKENS.some(
-          (ex) =>
-            ex.chainId === this.network.chainId && ex.address.toLowerCase() === addr.toLowerCase()
-        )
-    )
+    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = paramsPriceCache || new Map()
@@ -323,7 +339,7 @@ export class Portfolio {
     const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
-        paginate(filteredErc20s, limits.erc20).map((page, index) =>
+        paginate(hints.erc20s, limits.erc20).map((page, index) =>
           getTokens(
             this.network,
             this.deploylessTokens,
