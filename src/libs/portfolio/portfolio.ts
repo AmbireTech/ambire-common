@@ -386,7 +386,10 @@ export class Portfolio {
           result.amount &&
           !result.flags.isCustom &&
           !result.flags.isHidden &&
-          !toBeLearned.erc20s.includes(result.address)
+          !toBeLearned.erc20s.includes(result.address) &&
+          // Learn assets only if they are on the latest block
+          // so they are not affected by the simulation
+          blockTag === 'latest'
         ) {
           // Add all non-zero tokens to toBeLearned
           toBeLearned.erc20s.push(result.address)
@@ -411,7 +414,13 @@ export class Portfolio {
       .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
       .map(([, collection]) => {
         // Add all collections with collectibles to toBeLearned
-        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length) {
+        if (
+          !toBeLearned.erc721s[collection.address] &&
+          collection.collectibles.length &&
+          // Learn assets only if they are on the latest block
+          // so they are not affected by the simulation
+          blockTag === 'latest'
+        ) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 

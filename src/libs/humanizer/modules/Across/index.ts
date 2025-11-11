@@ -13,9 +13,8 @@ import {
   getTokenWithChain
 } from '../../utils'
 
-const iface = new Interface(Across)
-
 const AcrossModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+  const iface = new Interface(Across)
   const matcher = {
     [iface.getFunction(
       'depositV3(address depositor,address recipient,address inputToken,address outputToken,uint256 inputAmount,uint256 outputAmount,uint256 destinationChainId,address exclusiveRelayer,uint32 quoteTimestamp,uint32 fillDeadline,uint32 exclusivityDeadline,bytes calldata message)'

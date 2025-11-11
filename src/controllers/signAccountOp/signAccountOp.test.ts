@@ -421,8 +421,8 @@ const init = async (
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  if (portfolio.getAccountPortfolioState(account.addr)[op.chainId.toString()]!.result) {
-    portfolio!.getAccountPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
+  if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
+    portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
         amount: 1n,
         chainId: op.chainId,

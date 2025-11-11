@@ -5,8 +5,8 @@ import { RouteProcessor } from '../../const/abis'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getLabel, getRecipientText, getToken } from '../../utils'
 
-const routeProcessorIface = new Interface(RouteProcessor)
 export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
+  const routeProcessorIface = new Interface(RouteProcessor)
   const matcher = {
     [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (
       _accountOp: AccountOp,

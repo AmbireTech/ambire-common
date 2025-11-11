@@ -557,14 +557,10 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
-      const ONE_HOUR = 1000 * 60 * 60
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
-        this.updateSelectedAccountPortfolio({
-          maxDataAgeMs: FIVE_MINUTES,
-          maxDataAgeMsUnused: ONE_HOUR
-        })
+        this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
 
@@ -654,8 +650,7 @@ export class MainController extends EventEmitter implements IMainController {
     // will block the UI until these are resolved.
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      maxDataAgeMsUnused: 60 * 60 * 1000
+      maxDataAgeMs: 5 * 60 * 1000
     })
   }
 
@@ -1011,7 +1006,6 @@ export class MainController extends EventEmitter implements IMainController {
 
     try {
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
-      const provider = this.providers.providers[network.chainId.toString()]
       const stateOverride =
         accountOp.calls.length > 1 && isBasicAccount(account, state)
           ? {
@@ -1023,7 +1017,7 @@ export class MainController extends EventEmitter implements IMainController {
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
-        provider,
+        network,
         state,
         !network.rpcNoStateOverride,
         stateOverride
@@ -1363,10 +1357,9 @@ export class MainController extends EventEmitter implements IMainController {
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
-    maxDataAgeMsUnused?: number
     isManualReload?: boolean
   }) {
-    const { chainIds, isManualReload = false, maxDataAgeMsUnused, maxDataAgeMs } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
@@ -1392,7 +1385,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.updateSelectedAccountPortfolio({
         networks: networksToUpdate,
         isManualUpdate: isManualReload,
-        maxDataAgeMsUnused,
         maxDataAgeMs
       }),
       this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
@@ -1409,15 +1401,15 @@ export class MainController extends EventEmitter implements IMainController {
     // and not the selected account portfolio the flag isOffline
     // and the errors of the selected account portfolio should
     // come in the same tick. Otherwise the UI may flash the wrong error.
-    const portfolioState = this.portfolio.getAccountPortfolioState(accountAddr)
-    const portfolioStateKeys = Object.keys(portfolioState)
-    const isAllLoaded = portfolioStateKeys.every((chainId) => {
-      return isNetworkReady(portfolioState[chainId]) && !portfolioState[chainId]?.isLoading
+    const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
+    const latestStateKeys = Object.keys(latestState)
+    const isAllLoaded = latestStateKeys.every((chainId) => {
+      return isNetworkReady(latestState[chainId]) && !latestState[chainId]?.isLoading
     })
 
     // Set isOffline back to false if the portfolio is loading.
     // This is done to prevent the UI from flashing the offline error
-    if (!portfolioStateKeys.length || !isAllLoaded) {
+    if (!latestStateKeys.length || !isAllLoaded) {
       // Skip unnecessary updates
       if (!this.isOffline) return
 
@@ -1426,8 +1418,8 @@ export class MainController extends EventEmitter implements IMainController {
       return
     }
 
-    const allPortfolioNetworksHaveErrors = portfolioStateKeys.every((chainId) => {
-      const state = portfolioState[chainId]
+    const allPortfolioNetworksHaveErrors = latestStateKeys.every((chainId) => {
+      const state = latestState[chainId]
 
       return !!state?.criticalError
     })
@@ -1452,9 +1444,8 @@ export class MainController extends EventEmitter implements IMainController {
     networks?: Network[]
     isManualUpdate?: boolean
     maxDataAgeMs?: number
-    maxDataAgeMsUnused?: number
   }) {
-    const { networks, maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate } = opts || {}
+    const { networks, maxDataAgeMs, isManualUpdate } = opts || {}
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1476,7 +1467,7 @@ export class MainController extends EventEmitter implements IMainController {
             states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
           }
         : undefined,
-      { maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate }
+      { maxDataAgeMs, isManualUpdate }
     )
     this.#updateIsOffline()
   }

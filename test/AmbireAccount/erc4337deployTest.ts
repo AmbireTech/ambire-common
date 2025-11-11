@@ -3,7 +3,7 @@ import { ethers } from 'hardhat'
 
 import { Hex } from '../../src/interfaces/hex'
 import { getProxyDeployBytecode, PrivLevels } from '../../src/libs/proxyDeploy/deploy'
-import { wrapEthSign, wrapTypedData } from '../ambireSign'
+import { getExecute712Data, getUserOp712Data, wrapEIP712 } from '../ambireSign'
 import { abiCoder, chainId, expect, provider } from '../config'
 import {
   buildUserOp,
@@ -90,9 +90,8 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
         [senderAddress, 31337, 0, [txn]]
       )
     )
-    // const typedData = getExecute712Data(chainId, 0n, [txn], senderAddress, executeHash)
-    const typedData = wrapTypedData(chainId, senderAddress, executeHash)
-    const s = wrapEthSign(
+    const typedData = getExecute712Data(chainId, 0n, [txn], senderAddress, executeHash)
+    const s = wrapEIP712(
       await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     const initCode = ethers.hexlify(
@@ -108,18 +107,13 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       initCode,
       callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]])
     })
-    // const typedDataFirstUserOp = getUserOp712Data(
-    //   chainId,
-    //   [nextTxn],
-    //   userOperation,
-    //   await entryPoint.getUserOpHash(userOperation)
-    // )
-    const typedDataFirstUserOp = wrapTypedData(
+    const typedDataFirstUserOp = getUserOp712Data(
       chainId,
-      senderAddress,
+      [nextTxn],
+      userOperation,
       await entryPoint.getUserOpHash(userOperation)
     )
-    const firstSignature = wrapEthSign(
+    const firstSignature = wrapEIP712(
       await signer.signTypedData(
         typedDataFirstUserOp.domain,
         typedDataFirstUserOp.types,
@@ -137,18 +131,13 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]]),
       chainId
     })
-    // const typedDataUserOp = getUserOp712Data(
-    //   chainId,
-    //   [nextTxn],
-    //   userOperation2,
-    //   await entryPoint.getUserOpHash(userOperation2)
-    // )
-    const typedDataUserOp = wrapTypedData(
+    const typedDataUserOp = getUserOp712Data(
       chainId,
-      senderAddress,
+      [nextTxn],
+      userOperation2,
       await entryPoint.getUserOpHash(userOperation2)
     )
-    const signature = wrapEthSign(
+    const signature = wrapEIP712(
       await signer.signTypedData(
         typedDataUserOp.domain,
         typedDataUserOp.types,
@@ -181,18 +170,13 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       paymasterAndData: '0x' as Hex,
       signature: '0x' as Hex
     }
-    // const typedDataUserOp3 = getUserOp712Data(
-    //   chainId,
-    //   [anotherTxn],
-    //   userOperation3,
-    //   await entryPoint.getUserOpHash(userOperation3)
-    // )
-    const typedDataUserOp3 = wrapTypedData(
+    const typedDataUserOp3 = getUserOp712Data(
       chainId,
-      senderAddress,
+      [anotherTxn],
+      userOperation3,
       await entryPoint.getUserOpHash(userOperation3)
     )
-    const sig = wrapEthSign(
+    const sig = wrapEIP712(
       await signer.signTypedData(
         typedDataUserOp3.domain,
         typedDataUserOp3.types,
@@ -221,18 +205,13 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       paymasterAndData: '0x' as Hex,
       signature: '0x' as Hex
     }
-    // const typedDataUserOp4 = getUserOp712Data(
-    //   chainId,
-    //   [anotherTxn],
-    //   userOperation4,
-    //   await entryPoint.getUserOpHash(userOperation4)
-    // )
-    const typedDataUserOp4 = wrapTypedData(
+    const typedDataUserOp4 = getUserOp712Data(
       chainId,
-      senderAddress,
+      [anotherTxn],
+      userOperation4,
       await entryPoint.getUserOpHash(userOperation4)
     )
-    const sigLatest = wrapEthSign(
+    const sigLatest = wrapEIP712(
       await signer.signTypedData(
         typedDataUserOp4.domain,
         typedDataUserOp4.types,

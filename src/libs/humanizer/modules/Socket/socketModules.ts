@@ -31,34 +31,33 @@ const STARGATE_CHAIN_IDS: { [key: string]: bigint } = {
   '177': 2222n,
   '181': 5000n
 }
-const preControllerIface = new Interface([
-  'function executeController((uint32 controllerId, bytes data) socketControllerRequest)',
-  'function takeFeesAndSwap((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 routeId, bytes swapRequestData) ftsRequest) payable returns (bytes)',
-  'function takeFeesAndBridge((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 routeId, bytes bridgeRequestData) ftbRequest) payable returns (bytes)',
-  // @TODO
-  'function takeFeeAndSwapAndBridge((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 swapRouteId, bytes swapData, uint32 bridgeRouteId, bytes bridgeData) fsbRequest)'
-])
-const iface = new Interface([
-  ...SocketViaAcross,
-  // @TODO move to more appropriate place all funcs
-  'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData) payable returns (uint256)',
-  'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
-  'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
-  'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
-  'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
-  'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)',
-  'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)',
-  'function exec(address,address,uint256,address,bytes)',
-  'function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32) payable returns (bool)',
-  'function uniswapV3SwapTo(address,uint256,uint256,uint256[])',
-  'function BASIC(address,uint256,address,uint256,bytes)',
-  'function UNISWAPV3(address,uint256,bytes,uint256)'
-])
-
 // @TODO check all additional data provided
 // @TODO consider fees everywhere
 // @TODO add automated tests
 export const SocketModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
+  const preControllerIface = new Interface([
+    'function executeController((uint32 controllerId, bytes data) socketControllerRequest)',
+    'function takeFeesAndSwap((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 routeId, bytes swapRequestData) ftsRequest) payable returns (bytes)',
+    'function takeFeesAndBridge((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 routeId, bytes bridgeRequestData) ftbRequest) payable returns (bytes)',
+    // @TODO
+    'function takeFeeAndSwapAndBridge((address feesTakerAddress, address feesToken, uint256 feesAmount, uint32 swapRouteId, bytes swapData, uint32 bridgeRouteId, bytes bridgeData) fsbRequest)'
+  ])
+  const iface = new Interface([
+    ...SocketViaAcross,
+    // @TODO move to more appropriate place all funcs
+    'function performAction(address fromToken, address toToken, uint256 amount, address receiverAddress, bytes32 metadata, bytes swapExtraData) payable returns (uint256)',
+    'function performActionWithIn(address fromToken, address toToken, uint256 amount, bytes32 metadata, bytes swapExtraData) payable returns (uint256, address)',
+    'function bridgeERC20To(uint256,bytes32,address,address,uint256,uint32,uint256)',
+    'function bridgeERC20To(uint256 amount, (uint256 toChainId, uint256 slippage, uint256 relayerFee, uint32 dstChainDomain, address token, address receiverAddress, bytes32 metadata, bytes callData, address delegate) connextBridgeData)',
+    'function transformERC20(address inputToken, address outputToken, uint256 inputTokenAmount, uint256 minOutputTokenAmount, (uint32,bytes)[] transformations)',
+    'function swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)',
+    'function swap(address caller, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 guaranteedAmount, uint256 flags, address referrer, bytes permit) desc, (uint256 target, uint256 gasLimit, uint256 value, bytes data)[] calls) payable returns (uint256 returnAmount)',
+    'function exec(address,address,uint256,address,bytes)',
+    'function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32) payable returns (bool)',
+    'function uniswapV3SwapTo(address,uint256,uint256,uint256[])',
+    'function BASIC(address,uint256,address,uint256,bytes)',
+    'function UNISWAPV3(address,uint256,bytes,uint256)'
+  ])
   const matcher: { [sighash: string]: (irCall: IrCall) => HumanizerVisualization[] } = {
     [`${
       iface.getFunction(
