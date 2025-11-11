@@ -1,4 +1,3 @@
-/* eslint-disable no-continue */
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -19,6 +18,8 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 /* eslint-disable no-restricted-syntax */
 import { IPhishingController } from '../../interfaces/phishing'
+/* eslint-disable no-continue */
+import { IRequestsController } from '../../interfaces/requests'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import {
@@ -49,11 +50,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #phishing: IPhishingController
 
+  #requests: IRequestsController
+
   #ui: IUiController
 
   dappSessions: { [sessionId: string]: Session } = {}
 
   #dapps = new Map<string, Dapp>()
+
+  dappToConnect: Dapp | null = null
 
   isFetchingAndUpdatingDapps: boolean = false
 
@@ -74,6 +79,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
+    requests,
     ui
   }: {
     appVersion: string
@@ -81,6 +87,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage: IStorageController
     networks: INetworksController
     phishing: IPhishingController
+    requests: IRequestsController
     ui: IUiController
   }) {
     super()
@@ -90,6 +97,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#storage = storage
     this.#networks = networks
     this.#phishing = phishing
+    this.#requests = requests
     this.#ui = ui
 
     // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
@@ -109,6 +117,28 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
         this.#retryFetchAndUpdateInterval.start()
+      }
+    })
+
+    this.#requests.onUpdate(async () => {
+      if (this.#requests.actions.currentAction) {
+        if (this.#requests.actions.currentAction.type === 'dappRequest') {
+          if (this.#requests.actions.currentAction.userRequest.action.kind !== 'dappConnect') return
+          const { session } = this.#requests.actions.currentAction.userRequest
+          const dapp = await this.#getOrBuildDapp({
+            id: session.id,
+            name: session.name,
+            url: session.origin,
+            icon: session.icon,
+            chainId: 1,
+            isConnected: false
+          })
+          if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
+            this.dappToConnect = dapp
+
+            this.emitUpdate()
+          }
+        }
       }
     })
 
@@ -340,12 +370,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     // Delete legacy IDs
     for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
     const unverifiedDappsArray = Array.from(dappsMap.values())
-    await this.#phishing.checkDappsBlacklistedStatus(unverifiedDappsArray.map((d) => d.id))
+    const dappsStatus = await this.#phishing.getDappsStatus(unverifiedDappsArray.map((d) => d.id))
 
     for (const dapp of dappsMap.values()) {
-      dapp.blacklisted = Boolean(
-        this.#phishing.dappsBlacklistedStatus[dapp.id]?.status === 'BLACKLISTED'
-      )
+      dapp.blacklisted = Boolean(dappsStatus[dapp.id] === 'BLACKLISTED')
     }
 
     this.#dapps = dappsMap
@@ -448,6 +476,56 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  async #getOrBuildDapp(dapp: {
+    id: Dapp['id']
+    name: Dapp['name']
+    url: Dapp['url']
+    icon: Dapp['icon']
+    chainId?: Dapp['chainId']
+    isConnected: Dapp['isConnected']
+  }): Promise<Dapp> {
+    await this.initialLoadPromise
+
+    const existing = this.#dapps.get(dapp.id)
+
+    const network = this.#networks.allNetworks.find(
+      (n) => n.chainId.toString() === dapp.chainId?.toString()
+    )
+
+    const DEFAULT_CHAIN_ID = 1
+
+    if (existing) {
+      return {
+        ...existing,
+        chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+        isConnected: dapp.isConnected
+      }
+    }
+
+    const existingByDomain = this.#dapps.get(getDomainFromUrl(dapp.url)!)
+
+    const dappsStatus = await this.#phishing.getDappsStatus([dapp.id])
+
+    return {
+      id: dapp.id,
+      url: dapp.url,
+      name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
+      chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+      description: existingByDomain?.description || '',
+      icon: existingByDomain?.icon || dapp.icon,
+      category: existingByDomain?.category || null,
+      favorite: existingByDomain?.favorite || false,
+      isConnected: dapp.isConnected,
+      chainIds: existingByDomain?.chainIds || [],
+      isFeatured: existingByDomain?.isFeatured || false,
+      isCustom: existingByDomain?.isCustom ?? true,
+      tvl: existingByDomain?.tvl || null,
+      blacklisted: Boolean(dappsStatus[dapp.id] === 'BLACKLISTED'),
+      geckoId: existingByDomain?.geckoId || null,
+      twitter: existingByDomain?.twitter || null
+    }
+  }
+
   async addDapp(dapp: {
     id: Dapp['id']
     name: Dapp['name']
@@ -474,30 +552,8 @@ export class DappsController extends EventEmitter implements IDappsController {
       return
     }
 
-    const existingByDomain = this.#dapps.get(getDomainFromUrl(dapp.url)!)
-
-    await this.#phishing.checkDappsBlacklistedStatus([dapp.id])
-
-    this.#dapps.set(dapp.id, {
-      id: dapp.id,
-      url: dapp.url,
-      name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
-      chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
-      description: existingByDomain?.description || '',
-      icon: existingByDomain?.icon || dapp.icon,
-      category: existingByDomain?.category || null,
-      favorite: existingByDomain?.favorite || false,
-      isConnected: dapp.isConnected,
-      chainIds: existingByDomain?.chainIds || [],
-      isFeatured: existingByDomain?.isFeatured || false,
-      isCustom: existingByDomain?.isCustom ?? true,
-      tvl: existingByDomain?.tvl || null,
-      blacklisted: Boolean(
-        this.#phishing.dappsBlacklistedStatus[dapp.id]?.status === 'BLACKLISTED'
-      ),
-      geckoId: existingByDomain?.geckoId || null,
-      twitter: existingByDomain?.twitter || null
-    })
+    const newDapp = await this.#getOrBuildDapp(dapp)
+    this.#dapps.set(dapp.id, newDapp)
 
     await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
     this.emitUpdate()

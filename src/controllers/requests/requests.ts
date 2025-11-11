@@ -16,11 +16,12 @@ import {
 } from '../../interfaces/actions'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
-import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -88,8 +89,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #keystore: IKeystoreController
 
-  #dapps: IDappsController
-
   #transfer: ITransferController
 
   #swapAndBridge: ISwapAndBridgeController
@@ -98,7 +97,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #ui: IUiController
 
+  #phishing: IPhishingController
+
   #autoLogin: IAutoLoginController
+
+  #getDapp: (id: string) => Promise<Dapp | undefined>
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
@@ -132,12 +135,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     providers,
     selectedAccount,
     keystore,
-    dapps,
     transfer,
     swapAndBridge,
     transactionManager,
     ui,
+    phishing,
     autoLogin,
+    getDapp,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
@@ -152,12 +156,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     providers: IProvidersController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
-    dapps: IDappsController
     transfer: ITransferController
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
+    phishing: IPhishingController
     autoLogin: IAutoLoginController
+    getDapp: (id: string) => Promise<Dapp | undefined>
     getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
@@ -174,13 +179,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#providers = providers
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
-    this.#dapps = dapps
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
+    this.#phishing = phishing
     this.#autoLogin = autoLogin
-
+    this.#getDapp = getDapp
     this.#getSignAccountOp = getSignAccountOp
     this.#getMainStatuses = getMainStatuses
     this.#updateSignAccountOp = updateSignAccountOp
@@ -238,7 +243,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
-    await this.#dapps.initialLoadPromise
   }
 
   async addUserRequests(
@@ -630,7 +634,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
-    const dapp = this.#dapps.getDapp(request.session.id)
+    const dapp = await this.#getDapp(request.session.id)
 
     if (kind === 'calls') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -855,6 +859,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         dappPromise
       } as SignUserRequest
     } else {
+      if (kind === 'dappConnect') {
+        this.#phishing.fetchAndSetDappsBlacklistedStatus([request.session.origin])
+      }
       userRequest = {
         id: new Date().getTime(),
         session: request.session,

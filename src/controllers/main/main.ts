@@ -349,14 +349,6 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       ui: this.ui
     })
-    this.dapps = new DappsController({
-      appVersion: this.#appVersion,
-      fetch: this.fetch,
-      storage: this.storage,
-      networks: this.networks,
-      phishing: this.phishing,
-      ui: this.ui
-    })
 
     this.selectedAccount.initControllers({
       portfolio: this.portfolio,
@@ -471,12 +463,16 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
-      dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
+      phishing: this.phishing,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
+      getDapp: async (id) => {
+        await this.dapps.initialLoadPromise
+        return this.dapps.getDapp(id)
+      },
       getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
@@ -489,6 +485,16 @@ export class MainController extends EventEmitter implements IMainController {
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
       guardHWSigning: this.#guardHWSigning.bind(this)
+    })
+
+    this.dapps = new DappsController({
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      requests: this.requests,
+      ui: this.ui
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
