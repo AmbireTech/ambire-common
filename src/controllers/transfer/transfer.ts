@@ -729,7 +729,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#signAccountOpSubscriptions.push(
       this.signAccountOpController.onError((error) => {
         if (this.signAccountOpController)
-          this.#portfolio.overridePendingResults(this.signAccountOpController.accountOp)
+          this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
         this.emitError(error)
       })
     )

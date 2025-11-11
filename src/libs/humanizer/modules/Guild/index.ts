@@ -5,8 +5,9 @@ import { Guild } from '../../const/abis/Guild'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getLabel } from '../../utils'
 
+const iface = new Interface(Guild)
+
 const GuildModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface(Guild)
   const matcher = {
     [iface.getFunction(
       'claim((address receiver, uint8 guildAction, uint256 userId, uint256 guildId, string guildName, uint256 createdAt) pinData, address adminTreasury, uint256 adminFee, uint256 signedAt, string cid, bytes signature)'
