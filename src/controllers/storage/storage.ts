@@ -631,17 +631,11 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   // As of version 5.32.0, we no longer need to keep cashback status by account in the storage
   async #cleanupCashbackStatus() {
-    const [passedMigrations, cashbackStatusByAccount] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('cashbackStatusByAccount', {})
-    ])
+    const [passedMigrations] = await Promise.all([this.#storage.get('passedMigrations', [])])
 
     if (passedMigrations.includes('cleanupCashbackStatus')) return
 
-    if (cashbackStatusByAccount && Object.keys(cashbackStatusByAccount).length > 0) {
-      await this.#storage.remove('cashbackStatusByAccount')
-    }
-
+    await this.#storage.remove('cashbackStatusByAccount')
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'cleanupCashbackStatus'])
     ])
