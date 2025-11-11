@@ -27,7 +27,7 @@ import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { ActionsController } from './actions'
 
-const MOCK_SESSION = new Session({ tabId: 1, origin: 'https://test-dApp.com' })
+const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 
 const DAPP_CONNECT_REQUEST: DappUserRequest = {
   id: 1,
@@ -178,7 +178,9 @@ describe('Actions Controller', () => {
       keystore,
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
     const autoLoginCtrl = new AutoLoginController(
       storageCtrl,

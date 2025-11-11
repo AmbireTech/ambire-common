@@ -4,7 +4,6 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { InternalSignedMessages, SignedMessage } from '../../controllers/activity/types'
 import {
   Account,
   AccountOnchainState,
@@ -16,8 +15,7 @@ import {
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { Authorization } from '../../interfaces/userRequest'
-import { getContractImplementation, has7702 } from '../7702/7702'
+import { has7702 } from '../7702/7702'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
@@ -188,6 +186,9 @@ export async function getEmailAccount(
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
   factoryAddr && getAddress(factoryAddr) === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
 
+export const isAmbireV2Account = (factoryAddr?: string) =>
+  factoryAddr && getAddress(factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+
 export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
 
 /**
@@ -306,34 +307,24 @@ export function getUniqueAccountsArray(accounts: Account[]) {
   return Array.from(new Map(accounts.map((account) => [account.addr, account])).values())
 }
 
-export function getAuthorization(
-  account: Account,
-  // make sure to pass the EOA nonce here, not the SA or entry point
-  eoaNonce: bigint,
-  network: Network,
-  authorizations: InternalSignedMessages
-): SignedMessage | undefined {
-  if (account.creation || !authorizations[account.addr]) return undefined
-
-  return authorizations[account.addr].find((msg) => {
-    const content = msg.content as Authorization
-    return (
-      (content.chainId === 0n || content.chainId === network.chainId) &&
-      content.nonce === eoaNonce &&
-      getContractImplementation(content.chainId) === content.contractAddr
-    )
-  })
-}
-
 // use this in cases where you strictly want to enable/disable an action for
 // EOAs (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
   return !account.creation && !state.isSmarterEoa
 }
 
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = [
+  'internal',
+  // TODO: Temporarily enable only for Ambire Next, while testing, best to use feature flag for this
+  ...(process.env.AMBIRE_NEXT === 'true' ? (['lattice'] as const) : [])
+]
+
 // can the account as a whole become smarter (disregarding chain and state)
 export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
-  return !isSmartAccount(acc) && !!accKeys.find((key) => key.type === 'internal')
+  return (
+    !isSmartAccount(acc) &&
+    !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
+  )
 }
 
 // can the account become smarter on a specific chain
@@ -346,7 +337,7 @@ export function canBecomeSmarterOnChain(
   return (
     has7702(network) &&
     isBasicAccount(acc, state) &&
-    !!accKeys.find((key) => key.type === 'internal')
+    !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
   )
 }
 

@@ -880,9 +880,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const accountStates = await getAccountsInfo([eoaAccount])
     const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
 
-    const authorizationHash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
-    const signature = signer.sign7702(authorizationHash)
+    const signature = await signer.sign7702({
+      chainId: 1n,
+      contract: EIP_7702_AMBIRE_ACCOUNT,
+      nonce: 0n
+    })
     const provider = getRpcProvider(ethereumNetwork.rpcUrls, ethereumNetwork.chainId)
+    const authorizationHash = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 0n)
     const authorizationRes = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,
@@ -895,9 +899,13 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     })
     expect(authorizationRes).toBe(true)
 
-    // increment the nonce to be sure 'v' transform is working
+    const signature2 = await signer.sign7702({
+      chainId: 1n,
+      contract: EIP_7702_AMBIRE_ACCOUNT,
+      // increment the nonce to be sure 'v' transform is working
+      nonce: 1n
+    })
     const authorizationHash2 = getAuthorizationHash(1n, EIP_7702_AMBIRE_ACCOUNT, 1n)
-    const signature2 = signer.sign7702(authorizationHash2)
     const authorizationRes2 = await verifyMessage({
       provider,
       signer: eoaSigner.keyPublicAddress,

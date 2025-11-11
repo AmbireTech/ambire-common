@@ -1,4 +1,4 @@
-import { getAddress, Interface, JsonRpcProvider, toQuantity } from 'ethers'
+import { getAddress, Interface, toQuantity } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -8,6 +8,8 @@ import { ProviderError } from '../../classes/ProviderError'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Network } from '../../interfaces/network'
+import { getRpcProvider } from '../../services/provider'
 import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
@@ -61,7 +63,7 @@ function getFunctionParams(account: Account, op: AccountOp, accountState: Accoun
 export async function debugTraceCall(
   account: Account,
   op: AccountOp,
-  provider: JsonRpcProvider,
+  network: Network,
   accountState: AccountOnchainState,
   supportsStateOverride: boolean,
   overrideData?: any
@@ -85,6 +87,11 @@ export async function debugTraceCall(
       op.calls.map(callToTuple)
     ]
   ]
+
+  // initialize a new provider for debug trace call to avoid batching it
+  // as sometimes debug_traceCall gets handled really slowly from the RPCs
+  // and that affects wallet performance
+  const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)
 
   const params = getFunctionParams(account, op, accountState)
   const results: ({ erc: 20; address: string } | { erc: 721; address: string; tokenId: string })[] =
@@ -183,6 +190,15 @@ export async function debugTraceCall(
 
   const beforeNftCollections = before.collections
   const afterNftCollections = after.collections
+
+  // clean up the provider after usage
+  try {
+    provider.destroy()
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e)
+  }
+
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
     nfts: foundNftTransfers.filter((nft, i) => {

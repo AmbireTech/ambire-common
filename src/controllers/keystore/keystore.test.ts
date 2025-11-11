@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
@@ -12,7 +11,6 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { EIP7702Auth } from '../../consts/7702'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
@@ -23,9 +21,8 @@ import {
   IKeystoreController,
   InternalKey,
   Key,
-  TxnRequest
+  KeystoreSignerInterface
 } from '../../interfaces/keystore'
-import { EIP7702Signature } from '../../interfaces/signatures'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { StorageController } from '../storage/storage'
@@ -54,7 +51,8 @@ class InternalSigner {
     return Promise.resolve('')
   }
 
-  sign7702(hex: string): EIP7702Signature {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
@@ -63,7 +61,7 @@ class InternalSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }
@@ -88,7 +86,8 @@ class LedgerSigner {
     return Promise.resolve('')
   }
 
-  sign7702(hex: string): EIP7702Signature {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
@@ -97,7 +96,7 @@ class LedgerSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
     throw new Error('not supported')
   }
 }
@@ -585,7 +584,6 @@ describe('KeystoreController', () => {
 
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
-  const timestamp = new Date().getTime()
   let keystore2: IKeystoreController
   let uid2: string
 

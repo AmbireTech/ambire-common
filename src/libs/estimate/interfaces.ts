@@ -7,8 +7,8 @@ export interface BundlerEstimateResult {
   preVerificationGas: Hex
   verificationGasLimit: Hex
   callGasLimit: Hex
-  paymasterVerificationGasLimit?: Hex
-  paymasterPostOpGasLimit?: Hex
+  paymasterVerificationGasLimit: Hex
+  paymasterPostOpGasLimit: Hex
 }
 
 export interface BundlerStateOverride {
@@ -24,7 +24,6 @@ export interface EstimationFlags {
   hasNonceDiscrepancy?: boolean
   has4337NonceDiscrepancy?: boolean
   hasInitialGasLimitFailed?: boolean
-  invalid4337NonceCounter?: number
 }
 
 export interface Erc4337GasLimits {

@@ -8,16 +8,14 @@ import { describe, expect, jest, test } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
-import { EIP7702Auth } from '../../consts/7702'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
-import { IKeystoreController, Key, TxnRequest } from '../../interfaces/keystore'
+import { IKeystoreController, Key, KeystoreSignerInterface } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import { EIP7702Signature } from '../../interfaces/signatures'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
@@ -53,7 +51,7 @@ class InternalSigner {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702(hex: string): EIP7702Signature {
+  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
     return {
       yParity: '0x00',
       r: hexlify(randomBytes(32)) as Hex,
@@ -61,10 +59,10 @@ class InternalSigner {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour(txnRequest: TxnRequest, eip7702Auth: EIP7702Auth): Hex {
-    return '0x'
-  }
+  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    s
+  ) => '0x'
 }
 
 const providers = Object.fromEntries(
@@ -139,7 +137,9 @@ describe('SignMessageController', () => {
       keystoreCtrl,
       () => {},
       () => {},
-      () => {}
+      () => {},
+      relayerUrl,
+      fetch
     )
     inviteCtrl = new InviteController({ relayerUrl, fetch, storage: storageCtrl })
 

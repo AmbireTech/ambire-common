@@ -119,7 +119,8 @@ const BROADCAST_OR_ESTIMATION_ERRORS: ErrorHumanizerError[] = [
       'return amount is not enough',
       '0x97a6f3b9',
       '0xcea9e31d',
-      '0x39d35496'
+      '0x39d35496',
+      '0x849eaf98'
     ],
     message: 'the slippage tolerance was exceeded.'
   },
@@ -267,8 +268,8 @@ const DEPLOYLESS_ERRORS: ErrorHumanizerError[] = [
 
 export {
   BROADCAST_ERRORS,
-  DEPLOYLESS_ERRORS,
   BROADCAST_OR_ESTIMATION_ERRORS,
+  DEPLOYLESS_ERRORS,
   ESTIMATION_ERRORS,
   insufficientPaymasterFunds,
   noPrefixReasons

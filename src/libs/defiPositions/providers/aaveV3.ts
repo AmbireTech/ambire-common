@@ -154,6 +154,7 @@ export async function getAAVEPositions(
   return {
     providerName: 'AAVE v3',
     chainId,
+    source: 'custom',
     type: 'lending',
     positions: [position],
     iconUrl: '',
