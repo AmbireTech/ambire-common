@@ -367,7 +367,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
           if (req.dappPromise) {
             req.dappPromise?.reject(ethErrors.rpc.internal())
-            await this.#ui.notification.create({ title: 'Rejected!', message })
+            await this.#ui.notification.create({ title: "Couldn't Process Request", message })
           }
 
           return
