@@ -61,6 +61,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
       await this.#migrateLegacyDappsToDappsV2() // As of version 5.30.0
       await this.#cleanObsoleteNewlyCreatedFlagOnAccounts() // As of version 5.30.0
+      await this.#cleanupCashbackStatus() // As of version 5.32.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -215,6 +216,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
   async #clearHumanizerMetaObjectFromStorage() {
     await this.#storage.remove('HumanizerMetaV2')
   }
+
+  // TODO: Delete after migration is complete
 
   // As of version 4.53.0, cashback status information has been introduced.
   // Previously, cashback statuses were stored as separate objects per account.
@@ -679,6 +682,22 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'cleanObsoleteNewlyCreatedFlagOnAccounts'])
+    ])
+  }
+
+  // As of version 5.32.0, we no longer need to keep cashback status by account in the storage
+  async #cleanupCashbackStatus() {
+    const [passedMigrations, cashbackStatusByAccount] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('cashbackStatusByAccount', {})
+    ])
+
+    if (Object.keys(cashbackStatusByAccount).length > 0) {
+      await this.#storage.remove('cashbackStatusByAccount')
+    }
+
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'cleanupCashbackStatus'])
     ])
   }
 
