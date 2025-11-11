@@ -45,20 +45,23 @@ function getSignificantBalanceDecreaseWarning(
 ): Warning | null {
   const latestNetworkData = latest?.[chainId.toString()]
   const pendingNetworkData = pending?.[chainId.toString()]
-  const canDetermineIfBalanceWillDecrease =
+
+  if (
     latestNetworkData &&
+    latestNetworkData.result &&
     !latestNetworkData.isLoading &&
     pendingNetworkData &&
+    pendingNetworkData.result &&
     !pendingNetworkData.isLoading
-
-  if (canDetermineIfBalanceWillDecrease) {
+  ) {
     const latestTotalInUSD = getAccountPortfolioTotal(
       latest,
       ['rewards', 'gasTank', 'projectedRewards'],
       false
     )
-    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
-    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
+
+    const latestOnNetworkInUSD = getTotal(latestNetworkData.result.tokens).usd
+    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result.tokens).usd
     const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
     const hasSignificantBalanceDecrease =
       absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
