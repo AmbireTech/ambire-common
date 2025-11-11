@@ -613,8 +613,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       amount: BigInt(t.amount || 0),
       chainId: BigInt(t.chainId || 1),
       availableAmount: BigInt(t.availableAmount || 0),
-      cashback: BigInt(t.cashback || 0),
-      saved: BigInt(t.saved || 0),
       flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
     }))
 
