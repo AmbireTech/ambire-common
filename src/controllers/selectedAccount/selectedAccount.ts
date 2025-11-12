@@ -267,13 +267,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
     this.#portfolioLoadingTimeout = null
 
+    this.emitUpdate()
+
     if (!account) {
       await this.#storage.remove('selectedAccount')
     } else {
       await this.#storage.set('selectedAccount', account.addr)
     }
-
-    this.emitUpdate()
   }
 
   #updateSelectedAccount(skipUpdate: boolean = false) {
