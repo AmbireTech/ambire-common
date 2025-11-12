@@ -70,6 +70,6 @@ describe('PhishingController', () => {
     expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
     sendWindowUiMessageSpy.mockClear()
     await phishing.sendIsBlacklistedToUi('https://safe.com')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'NOT_BLACKLISTED' })
+    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'VERIFIED' })
   })
 })

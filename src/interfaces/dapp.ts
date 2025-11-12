@@ -21,7 +21,7 @@ export interface Dapp {
   isCustom: boolean
   chainId: number
   favorite: boolean
-  blacklisted: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+  blacklisted: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
   grantedPermissionId?: string
   grantedPermissionAt?: number
 }

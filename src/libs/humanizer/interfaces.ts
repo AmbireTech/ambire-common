@@ -30,7 +30,13 @@ export type HumanizerVisualization = (
       value: bigint
       chainId?: bigint
     }
-) & { isHidden?: boolean; id: number; content?: string; isBold?: boolean }
+) & {
+  isHidden?: boolean
+  id: number
+  content?: string
+  isBold?: boolean
+  verification?: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
+}
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]

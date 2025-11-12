@@ -21,6 +21,7 @@ import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -162,6 +163,8 @@ const activityCtrl = new ActivityController(
   () => Promise.resolve()
 )
 
+const phishingCtrl = new PhishingController({ fetch, storage: storageCtrl })
+
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
 const PORTFOLIO_TOKENS = [
@@ -209,6 +212,7 @@ const swapAndBridgeController = new SwapAndBridgeController({
   keystore,
   portfolio: portfolioCtrl,
   providers: providersCtrl,
+  phishing: phishingCtrl,
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],

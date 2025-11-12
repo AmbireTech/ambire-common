@@ -1,4 +1,5 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
+import { IPhishingController } from 'interfaces/phishing'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
@@ -112,6 +113,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #providers: IProvidersController
 
+  #phishing: IPhishingController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -154,6 +157,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
+    phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess
   ) {
@@ -172,6 +176,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
+    this.#phishing = phishing
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
 
@@ -699,6 +704,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       account: this.#selectedAccountData.account,
       network,
       provider,
+      phishing: this.#phishing,
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
       isSignRequestStillActive: () => true,

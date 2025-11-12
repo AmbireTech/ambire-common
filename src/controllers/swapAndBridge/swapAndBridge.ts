@@ -1,4 +1,5 @@
 import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
+import { IPhishingController } from 'interfaces/phishing'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -222,6 +223,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #providers: IProvidersController
 
+  #phishing: IPhishingController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -290,6 +293,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks,
     activity,
     storage,
+    phishing,
     invite,
     portfolioUpdate,
     relayerUrl,
@@ -310,6 +314,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks: INetworksController
     activity: IActivityController
     storage: IStorageController
+    phishing: IPhishingController
     invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
@@ -335,6 +340,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activity = activity
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
+    this.#phishing = phishing
     this.#invite = invite
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
@@ -2409,6 +2415,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       account: this.#selectedAccount.account,
       network,
       provider: this.#providers.providers[network.chainId.toString()],
+      phishing: this.#phishing,
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
       isSignRequestStillActive: (): boolean => {

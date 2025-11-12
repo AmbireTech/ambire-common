@@ -385,6 +385,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       invite: this.invite,
       storage: this.storage,
+      phishing: this.phishing,
       swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
@@ -427,6 +428,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.activity,
       this.#externalSignerControllers,
       this.providers,
+      this.phishing,
       relayerUrl,
       this.#commonHandlerForBroadcastSuccess.bind(this)
     )
@@ -747,6 +749,7 @@ export class MainController extends EventEmitter implements IMainController {
         account: this.selectedAccount.account,
         network,
         provider: this.providers.providers[network.chainId.toString()],
+        phishing: this.phishing,
         fromActionId: actionId,
         accountOp,
         isSignRequestStillActive: () => {

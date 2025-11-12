@@ -1,5 +1,6 @@
 /* eslint no-console: "off" */
 
+import { PhishingController } from 'controllers/phishing/phishing'
 import { AbiCoder, getAddress, hexlify, parseEther, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -416,6 +417,7 @@ const init = async (
     velcroUrl,
     new BannerController(storageCtrl)
   )
+  const phishing = new PhishingController({ fetch, storage: storageCtrl })
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
@@ -529,6 +531,7 @@ const init = async (
     network,
     activity,
     provider,
+    phishing,
     fromActionId: 1,
     accountOp: op,
     isSignRequestStillActive: () => {},

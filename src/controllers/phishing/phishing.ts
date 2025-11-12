@@ -9,8 +9,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 
 interface BlacklistedStatuses {
-  [item: string]: {
-    status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+  [dappId: string]: {
+    status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     updatedAt: number
   }
 }
@@ -18,11 +18,11 @@ interface BlacklistedStatuses {
 function filterByStatus(
   obj: {
     [item: string]: {
-      status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+      status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
       updatedAt: number
     }
   },
-  statuses: ('LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED')[]
+  statuses: ('LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED')[]
 ) {
   return Object.entries(obj).reduce((acc: BlacklistedStatuses, [key, val]) => {
     if (statuses.includes(val.status)) acc[key] = val
@@ -42,14 +42,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
 
-  constructor({
-    fetch,
-    storage
-  }: {
-    fetch: Fetch
-    storage: IStorageController
-    ui: IUiController
-  }) {
+  constructor({ fetch, storage }: { fetch: Fetch; storage: IStorageController }) {
     super()
 
     this.#fetch = fetch
@@ -79,7 +72,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #fetchAndSetDappsBlacklistedStatus(
     urls: string[],
     callback?: (res: {
-      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
     await this.#initialLoadPromise
@@ -141,11 +134,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
             ? 'FAILED_TO_GET'
             : dappsBlacklistedStatus[id]
             ? 'BLACKLISTED'
-            : 'NOT_BLACKLISTED',
+            : 'VERIFIED',
           updatedAt
         }
       })
     }
+
+    const dappsBlacklistedStatusToStore = filterByStatus(this.#dappsBlacklistedStatus, [
+      'BLACKLISTED',
+      'VERIFIED'
+    ])
+    await this.#storage.set('dappsBlacklistedStatus', dappsBlacklistedStatusToStore)
 
     !!callback &&
       callback(
@@ -154,16 +153,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
       )
 
-    const dappsBlacklistedStatusToStore = filterByStatus(this.#dappsBlacklistedStatus, [
-      'BLACKLISTED',
-      'NOT_BLACKLISTED'
-    ])
-    await this.#storage.set('dappsBlacklistedStatus', dappsBlacklistedStatusToStore)
-
     this.emitUpdate()
   }
 
-  async #fetchAndSetAddressesBlacklistedStatus(addresses: string[]) {
+  async #fetchAndSetAddressesBlacklistedStatus(
+    addresses: string[],
+    callback?: (res: {
+      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
+    }) => void
+  ) {
     await this.#initialLoadPromise
 
     if (!addresses.length) return
@@ -187,6 +185,13 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         updatedAt: this.#addressesBlacklistedStatus[id]?.updatedAt || 0
       }
     })
+
+    !!callback &&
+      callback(
+        Object.fromEntries(
+          addresses.map((addr) => [addr, this.#addressesBlacklistedStatus[addr].status])
+        ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+      )
     this.emitUpdate()
 
     // If nothing to fetch → we are done
@@ -195,7 +200,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const res = await this.#fetch(`${SCAMCHECKER_BASE_URL}/addresses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domains: addressesToFetch })
+      body: JSON.stringify({ addresses: addressesToFetch })
     })
 
     const updatedAt = Date.now()
@@ -215,7 +220,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
             ? 'FAILED_TO_GET'
             : addressesBlacklistedStatus[addr]
             ? 'BLACKLISTED'
-            : 'NOT_BLACKLISTED',
+            : 'VERIFIED',
           updatedAt
         }
       })
@@ -223,9 +228,16 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     const addressesBlacklistedStatusToStore = filterByStatus(this.#addressesBlacklistedStatus, [
       'BLACKLISTED',
-      'NOT_BLACKLISTED'
+      'VERIFIED'
     ])
     await this.#storage.set('addressesBlacklistedStatus', addressesBlacklistedStatusToStore)
+
+    !!callback &&
+      callback(
+        Object.fromEntries(
+          addresses.map((addr) => [addr, this.#addressesBlacklistedStatus[addr].status])
+        ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+      )
 
     this.emitUpdate()
   }
@@ -233,19 +245,21 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   updateDappsBlacklistedStatus(
     urls: string[],
     callback: (res: {
-      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
   }
 
-  async getAddressesStatus(addresses: string[]) {
-    await this.#fetchAndSetAddressesBlacklistedStatus(addresses)
-
-    return Object.fromEntries(
-      addresses.map((addr) => [addr, this.#addressesBlacklistedStatus[addr]!.status])
-    ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+  updateAddressesBlacklistedStatus(
+    urls: string[],
+    callback: (res: {
+      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
+    }) => void
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
   }
 
   toJSON() {
