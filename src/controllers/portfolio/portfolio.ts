@@ -394,7 +394,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       return rest
     })
 
-    networkState.result.totalBeforeSimulation = undefined
     networkState.result.total = getTotal(networkState.result.tokens)
 
     this.emitUpdate()
@@ -734,7 +733,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           ...result,
           lastSuccessfulUpdate,
           tokens: result.tokens,
-          totalBeforeSimulation: getTotal(result.tokens, undefined, true),
           total: getTotal(result.tokens)
         }
       }
