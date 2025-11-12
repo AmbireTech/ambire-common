@@ -5,10 +5,12 @@ on:
     branches:
       - v2
       - main
+      - 'release/*'
   pull_request:
     branches:
       - v2
       - main
+      - 'release/*'
 jobs:
   tests:
     name: Tests
