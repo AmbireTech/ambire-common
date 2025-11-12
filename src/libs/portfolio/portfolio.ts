@@ -289,17 +289,6 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
-    // Exclude tokens by chainId/address from hints
-    const excludedAddresses = EXCLUDED_TOKENS[this.network.chainId.toString()]
-    if (excludedAddresses) {
-      hints.erc20s = hints.erc20s.filter(
-        (addr) =>
-          !excludedAddresses.some(
-            (excludedAddr) => excludedAddr.toLowerCase() === addr.toLowerCase()
-          )
-      )
-    }
-
     hints.erc721s = mergeERC721s([
       additionalErc721Hints || {},
       hints.erc721s,
@@ -318,8 +307,14 @@ export class Portfolio {
       })
       .filter(Boolean) as string[]
 
+    // Exclude tokens by chainId/address from hints (after checksumming)
+    const excludedAddresses = EXCLUDED_TOKENS[this.network.chainId.toString()]
+    const filteredChecksummedHints = excludedAddresses
+      ? checksummedErc20Hints.filter((addr) => !excludedAddresses.includes(addr))
+      : checksummedErc20Hints
+
     // Remove duplicates and always add ZeroAddress
-    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
+    hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = paramsPriceCache || new Map()
