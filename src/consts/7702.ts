@@ -1,10 +1,5 @@
 import { Hex } from '../interfaces/hex'
-import {
-  AMBIRE_ACCOUNT_OMNI,
-  EIP_7702_AMBIRE_ACCOUNT,
-  EIP_7702_GRID_PLUS,
-  EIP_7702_KATANA
-} from './deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, EIP_7702_GRID_PLUS, EIP_7702_KATANA } from './deploy'
 
 export interface Custom7702Settings {
   [chainId: string]: {
@@ -12,12 +7,7 @@ export interface Custom7702Settings {
   }
 }
 
-export const eip7702AmbireContracts = [
-  EIP_7702_AMBIRE_ACCOUNT,
-  EIP_7702_KATANA,
-  EIP_7702_GRID_PLUS,
-  AMBIRE_ACCOUNT_OMNI
-]
+export const eip7702AmbireContracts = [EIP_7702_AMBIRE_ACCOUNT, EIP_7702_KATANA, EIP_7702_GRID_PLUS]
 
 export interface EIP7702Auth {
   address: Hex

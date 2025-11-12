@@ -111,7 +111,7 @@ contract AmbireAccountOmni is AmbireAccount7702 {
 
     // this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
     (address signer, ) = SignatureValidator.recoverAddrAllowUnprotectedWithMode(
-      Eip712HashBuilder.getUserOp712Hash(op, userOpHash),
+      userOpHash,
       op.signature,
       true,
       mode
