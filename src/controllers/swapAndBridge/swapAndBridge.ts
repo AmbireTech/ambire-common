@@ -2586,7 +2586,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   async continuouslyUpdateQuote() {
-    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+    if (
+      this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit ||
+      this.isAutoSelectRouteDisabled
+    ) {
       this.updateQuoteInterval.stop()
       return
     }
