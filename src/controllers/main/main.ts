@@ -466,7 +466,6 @@ export class MainController extends EventEmitter implements IMainController {
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
-      phishing: this.phishing,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
       getDapp: async (id) => {

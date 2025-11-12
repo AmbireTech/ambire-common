@@ -21,7 +21,6 @@ import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { StatusesWithCustom } from '../../interfaces/main'
 import { INetworksController, Network } from '../../interfaces/network'
-import { IPhishingController } from '../../interfaces/phishing'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -97,8 +96,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #ui: IUiController
 
-  #phishing: IPhishingController
-
   #autoLogin: IAutoLoginController
 
   #getDapp: (id: string) => Promise<Dapp | undefined>
@@ -139,7 +136,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge,
     transactionManager,
     ui,
-    phishing,
     autoLogin,
     getDapp,
     getSignAccountOp,
@@ -160,7 +156,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
-    phishing: IPhishingController
     autoLogin: IAutoLoginController
     getDapp: (id: string) => Promise<Dapp | undefined>
     getSignAccountOp: () => ISignAccountOpController | null
@@ -183,7 +178,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
-    this.#phishing = phishing
     this.#autoLogin = autoLogin
     this.#getDapp = getDapp
     this.#getSignAccountOp = getSignAccountOp
@@ -859,9 +853,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         dappPromise
       } as SignUserRequest
     } else {
-      if (kind === 'dappConnect') {
-        this.#phishing.fetchAndSetDappsBlacklistedStatus([request.session.origin])
-      }
       userRequest = {
         id: new Date().getTime(),
         session: request.session,

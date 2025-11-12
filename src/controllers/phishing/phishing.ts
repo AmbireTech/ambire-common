@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 import { Fetch } from '../../interfaces/fetch'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
@@ -75,7 +76,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   /**
    * Takes a list of dapp domains and returns each with blacklist status.
    */
-  async #fetchAndSetDappsBlacklistedStatus(urls: string[]) {
+  async #fetchAndSetDappsBlacklistedStatus(
+    urls: string[],
+    callback?: (res: {
+      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+    }) => void
+  ) {
     await this.#initialLoadPromise
 
     if (!urls.length) return
@@ -100,6 +106,13 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         updatedAt: this.#dappsBlacklistedStatus[id]?.updatedAt || 0
       }
     })
+
+    !!callback &&
+      callback(
+        Object.fromEntries(
+          dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id].status])
+        ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+      )
     this.emitUpdate()
 
     // If nothing to fetch → we are done
@@ -133,6 +146,13 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         }
       })
     }
+
+    !!callback &&
+      callback(
+        Object.fromEntries(
+          dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id].status])
+        ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+      )
 
     const dappsBlacklistedStatusToStore = filterByStatus(this.#dappsBlacklistedStatus, [
       'BLACKLISTED',
@@ -210,14 +230,14 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.emitUpdate()
   }
 
-  async getDappsStatus(urls: string[]) {
-    await this.#fetchAndSetDappsBlacklistedStatus(urls)
-
-    const dappIds = urls.map((url) => getDappIdFromUrl(url))
-
-    return Object.fromEntries(
-      dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id]!.status])
-    ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+  updateDappsBlacklistedStatus(
+    urls: string[],
+    callback: (res: {
+      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'NOT_BLACKLISTED'
+    }) => void
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
   }
 
   async getAddressesStatus(addresses: string[]) {
