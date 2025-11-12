@@ -6,7 +6,7 @@ import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId, IAccountsController } from '../../interfaces/account'
+import { AccountId, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import {
   AccountOpAction,
   Action,
@@ -344,16 +344,32 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-        const accountState = (await Promise.race([
+        const accountState = await Promise.race([
           this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
           // Fallback to the old account state if it exists and the fetch takes too long
           accountStateBefore
-            ? new Promise((res) => {
+            ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
+              new Promise<AccountOnchainState | undefined>((res) => {
                 setTimeout(() => res(accountStateBefore), 2000)
               })
-            : new Promise(() => {}) // Explicitly never-resolving promise
-        ])) as any
-        const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
+            : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+        ])
+
+        if (!accountState) {
+          const message =
+            "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support."
+          const error = new Error(
+            `requestsController error: accountState for ${meta.accountAddr} is undefined on network with id ${meta.chainId}`
+          )
+          this.emitError({ level: 'major', message, error })
+
+          if (req.dappPromise) {
+            req.dappPromise?.reject(ethErrors.rpc.internal())
+            await this.#ui.notification.create({ title: "Couldn't Process Request", message })
+          }
+
+          return
+        }
 
         const accountOpAction = makeAccountOpAction({
           account,
@@ -371,8 +387,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
           }
         } else {
+          const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
           // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
       } else {

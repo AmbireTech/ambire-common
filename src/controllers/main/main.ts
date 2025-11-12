@@ -1016,7 +1016,6 @@ export class MainController extends EventEmitter implements IMainController {
 
     try {
       const state = this.accounts.accountStates[accountOp.accountAddr][accountOp.chainId.toString()]
-      const provider = this.providers.providers[network.chainId.toString()]
       const stateOverride =
         accountOp.calls.length > 1 && isBasicAccount(account, state)
           ? {
@@ -1028,7 +1027,7 @@ export class MainController extends EventEmitter implements IMainController {
       const { tokens, nfts } = await debugTraceCall(
         account,
         accountOp,
-        provider,
+        network,
         state,
         !network.rpcNoStateOverride,
         stateOverride

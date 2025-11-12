@@ -1,6 +1,6 @@
 /* eslint-disable import/no-cycle */
 /* eslint-disable no-restricted-syntax */
-import { JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { ZeroAddress } from 'ethers'
 /* eslint-disable guard-for-in */
 import { getAddress } from 'viem'
 
@@ -10,6 +10,7 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
@@ -71,6 +72,8 @@ const defaultOptions: GetOptions = {
 export class Portfolio {
   network: Network
 
+  provider: RPCProvider
+
   private batchedVelcroDiscovery: Function
 
   private batchedGecko: Function
@@ -81,7 +84,7 @@ export class Portfolio {
 
   constructor(
     fetch: Fetch,
-    provider: Provider | JsonRpcProvider,
+    provider: RPCProvider,
     network: Network,
     velcroUrl?: string,
     customBatcher?: Function
@@ -118,6 +121,7 @@ export class Portfolio {
         timeoutErrorMessage: `Cena request timed out on ${network.name}`
       }
     })
+    this.provider = provider
     this.network = network
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
