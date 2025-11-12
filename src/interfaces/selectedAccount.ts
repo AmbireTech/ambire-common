@@ -4,7 +4,6 @@ import {
   NetworkState,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
-import { AccountId } from './account'
 import { ControllerInterface } from './controller'
 
 export type ISelectedAccountController = ControllerInterface<
