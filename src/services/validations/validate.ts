@@ -9,6 +9,10 @@ import { isValidAddress } from '../address'
 type ValidateReturnType = {
   success: boolean
   message: string
+  // Severity levels:
+  // 'error' - Critical validation failures that block the transaction (success: false)
+  // 'warning' - Important information user should know but transaction can proceed (success: true)
+  // 'info' - Neutral informational messages (success: true)
   severity?: 'info' | 'warning' | 'error'
   errorType?: 'insufficient_amount'
 }
@@ -198,14 +202,14 @@ const validateSendTransferAmount = (
       return {
         success: false,
         message: `The amount must be greater than 0.${'0'.repeat(selectedAsset.decimals - 1)}1.`,
-        severity: 'warning'
+        severity: 'error'
       }
     }
 
     return {
       success: false,
       message: 'The amount must be greater than 0.',
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
@@ -215,7 +219,7 @@ const validateSendTransferAmount = (
         return {
           success: false,
           message: 'Token amount too low.',
-          severity: 'warning'
+          severity: 'error'
         }
 
       const currentAmount: bigint = parseUnits(sanitizedAmount, selectedAsset.decimals)
@@ -224,7 +228,7 @@ const validateSendTransferAmount = (
         return {
           success: false,
           message: 'Insufficient amount.',
-          severity: 'warning',
+          severity: 'error',
           errorType: 'insufficient_amount'
         }
       }
@@ -235,7 +239,7 @@ const validateSendTransferAmount = (
     return {
       success: false,
       message: 'Invalid amount.',
-      severity: 'warning'
+      severity: 'error'
     }
   }
 
