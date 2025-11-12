@@ -14,6 +14,13 @@ import {
 } from './selectedAccount'
 
 describe('Selected Account lib', () => {
+  it('the original portfolio state is not mutated', () => {
+    const clonedPortfolioState = structuredClone(PORTFOLIO_STATE)
+
+    calculateSelectedAccountPortfolio(clonedPortfolioState, {}, DEFI_STATE, false, true)
+
+    expect(clonedPortfolioState).toEqual(PORTFOLIO_STATE)
+  })
   it('stripPortfolioState works as expected', () => {
     const strippedState = stripPortfolioState({
       '1': PORTFOLIO_STATE['1']
