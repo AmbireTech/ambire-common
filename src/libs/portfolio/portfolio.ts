@@ -30,6 +30,26 @@ import {
 } from './interfaces'
 import { flattenResults, paginate } from './pagination'
 
+// List of tokens to exclude from display by chainId and address
+const EXCLUDED_TOKENS: Record<string, string[]> = {
+  // Gnosis Chain (xDAI)
+  '100': [
+    '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+  ],
+  // Polygon
+  '137': [
+    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+  ],
+  // Ethereum Mainnet
+  '1': [
+    '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
+  ],
+  // Hyper EVM
+  '999': [
+    '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE. Only stHYPE should be displayed (following Rabby's approach)
+  ]
+}
+
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
@@ -272,6 +292,7 @@ export class Portfolio {
       // add the fee tokens
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
+
     hints.erc721s = mergeERC721s([
       additionalErc721Hints || {},
       hints.erc721s,
@@ -290,8 +311,14 @@ export class Portfolio {
       })
       .filter(Boolean) as string[]
 
+    // Exclude tokens by chainId/address from hints (after checksumming)
+    const excludedAddresses = EXCLUDED_TOKENS[this.network.chainId.toString()]
+    const filteredChecksummedHints = excludedAddresses
+      ? checksummedErc20Hints.filter((addr) => !excludedAddresses.includes(addr))
+      : checksummedErc20Hints
+
     // Remove duplicates and always add ZeroAddress
-    hints.erc20s = [...new Set(checksummedErc20Hints.concat(ZeroAddress))]
+    hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = paramsPriceCache || new Map()

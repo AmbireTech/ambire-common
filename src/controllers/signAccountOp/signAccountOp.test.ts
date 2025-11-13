@@ -534,7 +534,7 @@ const init = async (
     phishing,
     fromActionId: 1,
     accountOp: op,
-    isSignRequestStillActive: () => {},
+    isSignRequestStillActive: () => true,
     shouldSimulate: true,
     onAccountOpUpdate: () => {},
     // @ts-ignore

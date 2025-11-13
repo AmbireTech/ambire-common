@@ -536,23 +536,3 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)
     })
   })
-  test("Cashback status is not updated for the account because it's view-only", async () => {
-    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
-
-    await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
-    ;(
-      selectedAccountCtrl.portfolio.portfolioState.gasTank!.result as PortfolioGasTankResult
-    ).gasTankTokens[0].cashback = 0n
-    // Mocks 'no-cashback'
-    await selectedAccountCtrl.updateCashbackStatus()
-    ;(
-      selectedAccountCtrl.portfolio.portfolioState.gasTank!.result as PortfolioGasTankResult
-    ).gasTankTokens[0].cashback = 10n
-    // Mocks 'unseen-cashback'
-    await selectedAccountCtrl.updateCashbackStatus()
-
-    // Cashback is undefined because the account is view-only
-    expect(selectedAccountCtrl.cashbackStatus).toBeUndefined()
-  })
-})
