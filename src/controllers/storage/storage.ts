@@ -59,7 +59,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
       await this.#migrateLegacyDappsToDappsV2() // As of version 5.30.0
       await this.#cleanObsoleteNewlyCreatedFlagOnAccounts() // As of version 5.30.0
-      await this.#cleanupCashbackStatus() // As of version 5.30.3
+      await this.#cleanupCashbackStatus() // As of version 5.32.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -629,7 +629,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     ])
   }
 
-  // As of version 5.30.3, we no longer need to keep cashback status by account in the storage
+  // As of version 5.32.0, we no longer need to keep cashback status by account in the storage
   async #cleanupCashbackStatus() {
     const [passedMigrations] = await Promise.all([this.#storage.get('passedMigrations', [])])
 
