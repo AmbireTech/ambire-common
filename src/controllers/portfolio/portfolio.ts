@@ -1068,9 +1068,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         // Chain the new updatePromise to the current queue
         this.#queue[accountId][network.chainId.toString()] = this.#queue?.[accountId]?.[
           network.chainId.toString()
-        ]!.then(() => network.chainId.toString())
-          .then(updatePromise)
-          .catch(() => updatePromise())
+        ]!.then(updatePromise).catch(() => updatePromise())
 
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.chainId.toString()]
