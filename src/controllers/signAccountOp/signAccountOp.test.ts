@@ -1,6 +1,5 @@
 /* eslint no-console: "off" */
 
-import { PhishingController } from 'controllers/phishing/phishing'
 import { AbiCoder, getAddress, hexlify, parseEther, verifyMessage } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -43,6 +42,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
