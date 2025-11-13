@@ -2411,26 +2411,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       provider: this.#providers.providers[network.chainId.toString()],
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      isSignRequestStillActive: (): boolean => {
-        // if we're refetching a quote atm, we don't execute the estimation
-        // a race between the old estimation with the old quote and the new
-        // estimation with the new quote might happen
-        //
-        // also, if the tx data is different, it means the user is playing
-        // with the swap, so we don't want to reestimate
-        //
-        // we only want a re-estimate in a stale state
-        if (
-          this.updateQuoteStatus === 'LOADING' ||
-          !this.#signAccountOpController ||
-          !this.#signAccountOpController.accountOp.meta?.swapTxn ||
-          !this.#userTxn ||
-          this.#userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
-        )
-          return false
-
-        return true
-      },
+      isSignRequestStillActive: (): boolean => !!this.#signAccountOpController,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         this.#portfolio
