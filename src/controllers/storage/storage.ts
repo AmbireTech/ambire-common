@@ -449,7 +449,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
   }
 
-  async get<K extends keyof StorageProps | string | undefined>(
+  async get<K extends keyof StorageProps | string>(
     key: K,
     defaultValue?: any
   ): Promise<K extends keyof StorageProps ? StorageProps[K] : any> {
