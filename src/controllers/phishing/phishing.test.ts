@@ -3,73 +3,60 @@ import fetch from 'node-fetch'
 import { expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
 import { IPhishingController } from '../../interfaces/phishing'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
 import { PhishingController } from './phishing'
 
 const storage: Storage = produceMemoryStore()
 const storageCtrl = new StorageController(storage)
-const uiManager = mockUiManager().uiManager
-const uiCtrl = new UiController({ uiManager })
 
 let phishing: IPhishingController
-const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
+
 describe('PhishingController', () => {
   beforeEach(async () => {
-    await storageCtrl.set('phishingDetection', {
-      timestamp: twentyFourHoursAgo,
-      // actual blacklisted domains by MetaMask/eth-phishing-detect
-      metamaskBlacklist: [
-        'go-blast2l.xyz',
-        'insta-dapp.net',
-        'l2blast-check.xyz',
-        'lihea.build',
-        'lidofinance.one',
-        'owlto-v2.online',
-        'swlifi.org',
-        'pndlifi.com'
-      ],
-      phantomBlacklist: []
+    await storageCtrl.set('dappsBlacklistedStatus', {
+      'foourmemez.com': {
+        status: 'BLACKLISTED',
+        updatedAt: Date.now()
+      },
+      'rewards.ambire.com': {
+        status: 'VERIFIED',
+        updatedAt: Date.now()
+      }
     })
-    phishing = new PhishingController({ storage: storageCtrl, fetch, ui: uiCtrl })
+    await storageCtrl.set('addressesBlacklistedStatus', {
+      '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e': {
+        status: 'BLACKLISTED',
+        updatedAt: Date.now()
+      },
+      '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45': {
+        status: 'VERIFIED',
+        updatedAt: Date.now()
+      }
+    })
+    phishing = new PhishingController({ fetch, storage: storageCtrl })
     await phishing.initialLoadPromise
   })
   test('should initialize', async () => {
     expect(phishing).toBeDefined()
   })
-  test('should fetch lists from github', async () => {
-    const storedPhishingDetection = await storageCtrl.get('phishingDetection', {
-      timestamp: null,
-      metamaskBlacklist: [],
-      phantomBlacklist: []
-    })
-    expect(storedPhishingDetection).not.toBe(null)
-    expect(phishing.lastStorageUpdate).not.toBe(null)
-    if ((phishing.lastStorageUpdate as number) > twentyFourHoursAgo) {
-      expect(phishing.blacklistLength).toBeGreaterThan(
-        storedPhishingDetection!.metamaskBlacklist.length
-      )
-    } else {
-      expect(phishing.blacklistLength).toEqual(storedPhishingDetection!.metamaskBlacklist.length)
-    }
+  test('should get dapps blacklisted status', async () => {
+    phishing.updateDappsBlacklistedStatus(
+      ['foourmemez.com', 'rewards.ambire.com'],
+      (blacklistedStatus) => {
+        expect(blacklistedStatus['foourmemez.com'] === 'BLACKLISTED')
+        expect(blacklistedStatus['rewards.ambire.com'] === 'VERIFIED')
+      }
+    )
   })
-  test('should load and update blacklists and correctly check for blacklisted urls', async () => {
-    expect(await phishing.getIsBlacklisted('https://unstake.it')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://blogpost-opensea.io')).toBe(true)
-    expect(await phishing.getIsBlacklisted('https://safe.com')).toBe(false)
-  })
-  test('should send correct url status to the UI', async () => {
-    const sendWindowUiMessageSpy = jest.spyOn(uiManager.message, 'sendUiMessage')
-    await phishing.sendIsBlacklistedToUi('https://unstake.it')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
-    sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://blogpost-opensea.io')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'BLACKLISTED' })
-    sendWindowUiMessageSpy.mockClear()
-    await phishing.sendIsBlacklistedToUi('https://safe.com')
-    expect(sendWindowUiMessageSpy).toHaveBeenCalledWith({ hostname: 'VERIFIED' })
+  test('should get addresses blacklisted status', async () => {
+    await phishing.updateAddressesBlacklistedStatus(
+      ['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e', '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'],
+      (blacklistedStatus) => {
+        expect(blacklistedStatus['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'] === 'BLACKLISTED')
+        expect(blacklistedStatus['0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'] === 'VERIFIED')
+      }
+    )
   })
 })

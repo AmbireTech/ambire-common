@@ -2,7 +2,6 @@
 import { Fetch } from '../../interfaces/fetch'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -40,7 +39,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   #addressesBlacklistedStatus: BlacklistedStatuses = {}
 
   // Holds the initial load promise, so that one can wait until it completes
-  #initialLoadPromise?: Promise<void>
+  initialLoadPromise?: Promise<void>
 
   constructor({ fetch, storage }: { fetch: Fetch; storage: IStorageController }) {
     super()
@@ -49,8 +48,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#storage = storage
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#initialLoadPromise = this.#load().finally(() => {
-      this.#initialLoadPromise = undefined
+    this.initialLoadPromise = this.#load().finally(() => {
+      this.initialLoadPromise = undefined
     })
   }
 
@@ -75,7 +74,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!urls.length) return
 
@@ -162,7 +161,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
-    await this.#initialLoadPromise
+    await this.initialLoadPromise
 
     if (!addresses.length) return
 
@@ -252,14 +251,13 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
   }
 
-  updateAddressesBlacklistedStatus(
+  async updateAddressesBlacklistedStatus(
     urls: string[],
     callback: (res: {
       [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
+    await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
   }
 
   toJSON() {

@@ -323,6 +323,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #onBroadcastFailed?: OnBroadcastFailed
 
+  #updateBlacklistedStatusPromise: Promise<void> | undefined
+
   signPromise: Promise<void> | undefined
 
   broadcastPromise: Promise<void> | undefined
@@ -434,6 +436,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
 
     this.#load(shouldSimulate)
+  }
+
+  get safetyChecksLoading() {
+    return !!this.#updateBlacklistedStatusPromise
   }
 
   get accountOp(): Readonly<AccountOp> {
@@ -551,33 +557,38 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     const currentHumanizationId = Date.now()
     this.humanizationId = currentHumanizationId
     if (this.humanization.length) {
-      this.#phishing.updateAddressesBlacklistedStatus(
-        this.humanization
-          .flatMap((call) =>
-            (call.fullVisualization ?? [])
-              .filter((v) => v.type === 'token' || v.type === 'address')
-              .map((v) => v.address)
-          )
-          .filter((addr): addr is string => Boolean(addr)),
-        (addressesStatus) => {
-          if (this.humanizationId !== currentHumanizationId) return
+      this.#updateBlacklistedStatusPromise = this.#phishing
+        .updateAddressesBlacklistedStatus(
+          this.humanization
+            .flatMap((call) =>
+              (call.fullVisualization ?? [])
+                .filter((v) => v.type === 'token' || v.type === 'address')
+                .map((v) => v.address)
+            )
+            .filter((addr): addr is string => Boolean(addr)),
+          (addressesStatus) => {
+            if (this.humanizationId !== currentHumanizationId) return
 
-          for (const call of this.humanization) {
-            if (!call.fullVisualization) continue
+            for (const call of this.humanization) {
+              if (!call.fullVisualization) continue
 
-            for (const vis of call.fullVisualization) {
-              if (
-                (vis.type === 'token' || vis.type === 'address') &&
-                vis.address &&
-                addressesStatus[vis.address]
-              ) {
-                vis.verification = addressesStatus[vis.address]
+              for (const vis of call.fullVisualization) {
+                if (
+                  (vis.type === 'token' || vis.type === 'address') &&
+                  vis.address &&
+                  addressesStatus[vis.address]
+                ) {
+                  vis.verification = addressesStatus[vis.address]
+                }
               }
             }
+            this.emitUpdate()
           }
-          this.emitUpdate()
-        }
-      )
+        )
+        .finally(() => {
+          this.#updateBlacklistedStatusPromise = undefined
+          this.updateStatus()
+        })
     }
     this.emitUpdate()
   }
@@ -1216,7 +1227,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.isInitialized &&
       this.accountOp.signingKeyAddr &&
       this.accountOp.signingKeyType &&
-      this.accountOp.gasFeePayment
+      this.accountOp.gasFeePayment &&
+      !this.#updateBlacklistedStatusPromise
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 
@@ -2794,6 +2806,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isInitialized: this.isInitialized,
       type: this.type,
       readyToSign: this.readyToSign,
+      safetyChecksLoading: this.safetyChecksLoading,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
