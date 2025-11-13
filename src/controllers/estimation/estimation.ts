@@ -122,7 +122,7 @@ export class EstimationController extends EventEmitter {
     // NOTE: at some point we should check all the "?" signs below and if
     // an error pops out, we should notify the user about it
     let networkFeeTokens =
-      this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
+      this.#portfolio.getAccountPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
         ?.feeTokens ?? []
 
     // This could happen only in a race when a NOT currently selected account is
@@ -132,11 +132,11 @@ export class EstimationController extends EventEmitter {
     if (networkFeeTokens.length === 0) {
       await this.#portfolio.updateSelectedAccount(op.accountAddr, [network])
       networkFeeTokens =
-        this.#portfolio.getLatestPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
+        this.#portfolio.getAccountPortfolioState(op.accountAddr)?.[op.chainId.toString()]?.result
           ?.feeTokens ?? []
     }
 
-    const gasTankResult = this.#portfolio.getLatestPortfolioState(op.accountAddr)?.gasTank?.result
+    const gasTankResult = this.#portfolio.getAccountPortfolioState(op.accountAddr)?.gasTank?.result
     const gasTankFeeTokens = isPortfolioGasTankResult(gasTankResult)
       ? gasTankResult.gasTankTokens
       : []

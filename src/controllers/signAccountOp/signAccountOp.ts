@@ -656,7 +656,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         code: 'NO_KEYS_AVAILABLE'
       })
 
-    const currentPortfolio = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
+    const currentPortfolio = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
     const currentPortfolioNetwork = currentPortfolio[this.accountOp.chainId.toString()]
 
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
@@ -806,17 +806,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   calculateWarnings() {
     const warnings: Warning[] = []
 
-    const latestState = this.#portfolio.getLatestPortfolioState(this.accountOp.accountAddr)
-    const pendingState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+    const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
 
     const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      latestState,
-      pendingState,
+      state,
       this.accountOp.chainId,
       this.traceCallDiscoveryStatus
     )
 
-    const unknownTokenWarnings = getUnknownTokenWarning(pendingState, this.accountOp.chainId)
+    const unknownTokenWarnings = getUnknownTokenWarning(state, this.accountOp.chainId)
 
     if (this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(
@@ -895,7 +893,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // if the portfolio detects a nonce discrepancy and the estimation is a Success,
     // refetch the account state, resimulate and put the correct nonce in accountOp
-    const portfolioState = this.#portfolio.getPendingPortfolioState(this.accountOp.accountAddr)
+    const portfolioState = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
     const pendingPortfolioState = portfolioState
       ? portfolioState[this.accountOp.chainId.toString()]
       : null
@@ -918,7 +916,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // if there's an estimation error, override the pending results
     if (this.estimation.status === EstimationStatus.Error) {
-      this.#portfolio.overridePendingResults(this.accountOp)
+      this.#portfolio.overrideSimulationResults(this.accountOp)
     }
   }
 
@@ -1215,7 +1213,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
     const native = this.#portfolio
-      .getLatestPortfolioState(this.accountOp.accountAddr)
+      .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
         (token) => token.address === '0x0000000000000000000000000000000000000000'
       )
@@ -1672,7 +1670,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // get the native token from the portfolio to calculate prices
     const native = this.#portfolio
-      .getLatestPortfolioState(this.accountOp.accountAddr)
+      .getAccountPortfolioState(this.accountOp.accountAddr)
       [this.accountOp.chainId.toString()]?.result?.tokens.find(
         (token) => token.address === '0x0000000000000000000000000000000000000000'
       )
