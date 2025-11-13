@@ -1227,8 +1227,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.isInitialized &&
       this.accountOp.signingKeyAddr &&
       this.accountOp.signingKeyType &&
-      this.accountOp.gasFeePayment &&
-      !this.#updateBlacklistedStatusPromise
+      this.accountOp.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 

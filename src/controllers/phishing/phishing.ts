@@ -82,6 +82,24 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const now = Date.now()
     const TWO_HOURS = 2 * 60 * 60 * 1000
 
+    if (process.env.IS_TESTING !== 'true') {
+      dappIds.forEach((id) => {
+        this.#dappsBlacklistedStatus[id] = {
+          // eslint-disable-next-line no-nested-ternary
+          status: this.#dappsBlacklistedStatus[id].status || 'VERIFIED',
+          updatedAt: Date.now()
+        }
+      })
+
+      !!callback &&
+        callback(
+          Object.fromEntries(
+            dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id].status])
+          ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+        )
+      return
+    }
+
     // Filter: we only fetch for ones that are missing or stale
     const idsToFetch = dappIds.filter((id) => {
       const existing = this.#dappsBlacklistedStatus[id]
@@ -164,6 +182,25 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     await this.initialLoadPromise
 
     if (!addresses.length) return
+
+    if (process.env.IS_TESTING !== 'true') {
+      addresses.forEach((addr) => {
+        this.#addressesBlacklistedStatus[addr] = {
+          // eslint-disable-next-line no-nested-ternary
+          status: this.#addressesBlacklistedStatus[addr].status || 'VERIFIED',
+          updatedAt: Date.now()
+        }
+      })
+
+      !!callback &&
+        callback(
+          Object.fromEntries(
+            addresses.map((addr) => [addr, this.#addressesBlacklistedStatus[addr].status])
+          ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
+        )
+      this.emitUpdate()
+      return
+    }
 
     const now = Date.now()
     const TWO_HOURS = 2 * 60 * 60 * 1000

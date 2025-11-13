@@ -11,7 +11,6 @@ import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -536,3 +535,4 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)
     })
   })
+})
