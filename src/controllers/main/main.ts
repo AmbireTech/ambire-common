@@ -346,8 +346,7 @@ export class MainController extends EventEmitter implements IMainController {
     )
     this.phishing = new PhishingController({
       fetch: this.fetch,
-      storage: this.storage,
-      ui: this.ui
+      storage: this.storage
     })
 
     this.selectedAccount.initControllers({
