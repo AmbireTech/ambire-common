@@ -606,8 +606,6 @@ const PORTFOLIO_STATE: AccountState = {
           name: 'USD Coin',
           amount: 5n * 10n ** 6n,
           availableAmount: 5n * 10n ** 6n,
-          cashback: 1n,
-          saved: 14040n,
           decimals: 6,
           chainId: 1n,
           priceIn: [{ baseCurrency: 'usd', price: 1 }],

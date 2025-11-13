@@ -434,12 +434,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   ): Portfolio | null {
     const providers = this.#providers.providers
     const key = `${chainId}:${accountId}`
+    const libForKey = this.#portfolioLibs.get(key)
+
     // Initialize a new Portfolio lib if:
     // 1. It does not exist in the portfolioLibs map
-    // 2. The network RPC URL has changed
+    // 2. The network RPC URL has changed or the provider is destroyed !
     if (
-      !this.#portfolioLibs.has(key) ||
-      this.#portfolioLibs.get(key)?.network?.selectedRpcUrl !==
+      !libForKey ||
+      !libForKey.provider ||
+      libForKey.provider.destroyed ||
+      // eslint-disable-next-line no-underscore-dangle
+      libForKey.provider?._getConnection().url !==
         // eslint-disable-next-line no-underscore-dangle
         providers[network.chainId.toString()]?._getConnection().url
     ) {
@@ -457,6 +462,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
         )
       } catch (e: any) {
+        this.emitError({
+          level: 'silent',
+          message: `Error while initializing portfolio lib for ${network.name} (${network.chainId}).`,
+          error: e
+        })
         return null
       }
     }
