@@ -74,9 +74,9 @@ export default class EventEmitter {
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
-  protected async withStatus<T>(
+  protected async withStatus(
     callName: string,
-    fn: () => Promise<T> | T,
+    fn: Function,
     allowConcurrentActions = false,
     // Silence this error in prod to avoid displaying wired error messages.
     // The only benefit of displaying it is for devs to see when an action is dispatched twice.
@@ -111,14 +111,11 @@ export default class EventEmitter {
     this.statuses[callName] = 'LOADING'
     await this.forceEmitUpdate()
 
-    let result: T | undefined
-
     try {
-      result = await fn()
+      await fn()
 
       this.statuses[callName] = 'SUCCESS'
       await this.forceEmitUpdate()
-      return result
     } catch (error: any) {
       this.statuses[callName] = 'ERROR'
       if ('message' in error && 'level' in error && 'error' in error) {
