@@ -2768,8 +2768,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const visualizations = this.humanization.flatMap((call) => call.fullVisualization ?? [])
 
-    const blacklistedCount = visualizations.filter(
-      (v) => (v.type === 'token' || v.type === 'address') && v.verification === 'BLACKLISTED'
+    // Keep only token/address types AND ensure uniqueness by address
+    const addressVisualizations = Array.from(
+      new Map(
+        visualizations
+          .filter((v) => (v.type === 'token' || v.type === 'address') && v.address)
+          .map((v) => [v.address, v]) // key: address → value: visualization
+      ).values()
+    )
+
+    const blacklistedCount = addressVisualizations.filter(
+      (v) => v.verification === 'BLACKLISTED'
     ).length
 
     if (blacklistedCount > 0) {
@@ -2778,7 +2787,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         type: 'error',
         text:
           blacklistedCount === 1
-            ? 'One of the destination addresses in this transaction was flagged as dangerous. Proceed at your own risk.'
+            ? `${
+                this.type !== 'default'
+                  ? 'The destination address'
+                  : 'One of the destination addresses'
+              } in this transaction was flagged as dangerous. Proceed at your own risk.`
             : `${blacklistedCount} of the destination addresses in this transaction were flagged as dangerous. Proceed at your own risk.`
       })
     } else {
