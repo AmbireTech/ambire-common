@@ -216,7 +216,6 @@ export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
   Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
     lastSuccessfulUpdate: number
     total: Total
-    totalBeforeSimulation?: Total
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
   }

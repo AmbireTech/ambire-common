@@ -331,12 +331,13 @@ export const getTokenBalanceInUSD = (token: TokenResult) => {
 
 export const getTotal = (
   t: TokenResult[],
-  excludeHiddenTokens: boolean = true,
-  beforeSimulation: boolean = false
-) =>
-  t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
+  opts?: { includeHiddenTokens?: boolean; beforeSimulation?: boolean }
+) => {
+  const { includeHiddenTokens = false, beforeSimulation = false } = opts || {}
+
+  return t.reduce((cur: { [key: string]: number }, token: TokenResult) => {
     const localCur = cur // Add index signature to the type of localCur
-    if (token.flags.isHidden && excludeHiddenTokens) return localCur
+    if (token.flags.isHidden && !includeHiddenTokens) return localCur
     // eslint-disable-next-line no-restricted-syntax
     for (const x of token.priceIn) {
       const currentAmount = localCur[x.baseCurrency] || 0
@@ -347,6 +348,7 @@ export const getTotal = (
 
     return localCur
   }, {})
+}
 
 export const addHiddenTokenValueToTotal = (
   totalWithoutHiddenTokens: number,
