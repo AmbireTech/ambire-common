@@ -350,6 +350,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
     const accountState = this.#state[accountId]
+    if (!accountState) return
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (error)
@@ -364,7 +365,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
   removeNetworkData(chainId: bigint) {
     for (const accountId of Object.keys(this.#state)) {
-      delete this.#state[accountId][chainId.toString()]
+      if (this.#state[accountId]) {
+        delete this.#state[accountId][chainId.toString()]
+      }
     }
 
     this.emitUpdate()
@@ -407,10 +410,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     await this.#initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
 
+    const provider = this.#providers.providers[token.chainId.toString()]
+    if (!provider) return
+
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
-      this.#providers.providers[token.chainId.toString()]
+      provider
     )) as [boolean, string]
 
     this.validTokens[standard] = {
@@ -443,11 +449,13 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         providers[network.chainId.toString()]?._getConnection().url
     ) {
       try {
+        const provider = providers[network.chainId.toString()]
+        if (!provider) return null
         this.#portfolioLibs.set(
           key,
           new Portfolio(
             this.#fetch,
-            providers[network.chainId.toString()],
+            provider,
             network,
             this.#velcroUrl,
             this.#batchedVelcroDiscovery
@@ -474,7 +482,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     const temporaryTokensToFetch =
       (this.temporaryTokens[network.chainId.toString()] &&
-        this.temporaryTokens[network.chainId.toString()].result?.tokens.filter(
+        this.temporaryTokens[network.chainId.toString()]?.result?.tokens.filter(
           (x) => x.address !== additionalHint
         )) ||
       []
@@ -482,9 +490,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.temporaryTokens[network.chainId.toString()] = {
       isLoading: false,
       errors: [],
-      result:
-        this.temporaryTokens[network.chainId.toString()] &&
-        this.temporaryTokens[network.chainId.toString()].result
+      result: {
+        tokens:
+          (this.temporaryTokens[network.chainId.toString()] &&
+            this.temporaryTokens[network.chainId.toString()]?.result?.tokens) ||
+          []
+      }
     }
     this.emitUpdate()
 
@@ -515,8 +526,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}).`,
         error: e
       })
-      this.temporaryTokens[network.chainId.toString()].isLoading = false
-      this.temporaryTokens[network.chainId.toString()].errors.push(e)
+      const tempTokens = this.temporaryTokens[network.chainId.toString()]
+      if (tempTokens) {
+        tempTokens.isLoading = false
+        tempTokens.errors.push(e)
+      }
       this.emitUpdate()
       return false
     }
@@ -596,46 +610,48 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address, t.name, t.symbol)
       }))
 
-    accountState.rewards = {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      result: {
-        ...res.data.rewards,
-        lastSuccessfulUpdate: Date.now(),
-        updateStarted: start,
-        tokens: rewardsTokens,
-        total: getTotal(rewardsTokens)
+    if (accountState) {
+      accountState.rewards = {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          ...res.data.rewards,
+          lastSuccessfulUpdate: Date.now(),
+          updateStarted: start,
+          tokens: rewardsTokens,
+          total: getTotal(rewardsTokens)
+        }
       }
-    }
 
-    accountState.projectedRewards = {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      result: {
-        ...res.data.rewardsProjectionData
+      accountState.projectedRewards = {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          ...res.data.rewardsProjectionData
+        }
       }
-    }
 
-    const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
-      ...t,
-      amount: BigInt(t.amount || 0),
-      chainId: BigInt(t.chainId || 1),
-      availableAmount: BigInt(t.availableAmount || 0),
-      flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
-    }))
+      const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
+        ...t,
+        amount: BigInt(t.amount || 0),
+        chainId: BigInt(t.chainId || 1),
+        availableAmount: BigInt(t.availableAmount || 0),
+        flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
+      }))
 
-    accountState.gasTank = {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      result: {
-        updateStarted: start,
-        lastSuccessfulUpdate: Date.now(),
-        tokens: [],
-        gasTankTokens,
-        total: getTotal(gasTankTokens)
+      accountState.gasTank = {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          updateStarted: start,
+          lastSuccessfulUpdate: Date.now(),
+          tokens: [],
+          gasTankTokens,
+          total: getTotal(gasTankTokens)
+        }
       }
     }
 
@@ -857,6 +873,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       })
       Object.keys(oldStructureLearnedNfts).forEach((collectionAddr) => {
         const nftIds = oldStructureLearnedNfts[collectionAddr]
+        if (!nftIds) return
 
         // A hint for the collection already exists
         if (specialErc721Hints.learn[collectionAddr]) {
@@ -896,9 +913,19 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const stringChainId = chainId.toString()
 
     // If we don't know about the network we assume it has assets
-    if (!(stringChainId in networksWithAssets)) return maxDataAgeMs
+    if (
+      !(
+        typeof networksWithAssets === 'object' &&
+        networksWithAssets !== null &&
+        stringChainId in networksWithAssets
+      )
+    )
+      return maxDataAgeMs
 
-    const hasAssetsOnNetwork = networksWithAssets[stringChainId]
+    const hasAssetsOnNetwork =
+      typeof networksWithAssets === 'object' && networksWithAssets !== null
+        ? (networksWithAssets as AccountAssetsState)[stringChainId]
+        : false
 
     return hasAssetsOnNetwork ? maxDataAgeMs : maxDataAgeUnused
   }
@@ -984,7 +1011,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
 
           const hintsResponse =
-            this.#state[accountId][network.chainId.toString()]?.result?.lastExternalApiUpdateData
+            this.#state[accountId]?.[network.chainId.toString()]?.result
+              ?.lastExternalApiUpdateData ?? undefined
 
           const canSkipExternalApiHintsUpdate =
             !!hintsResponse &&
@@ -1048,11 +1076,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         }
 
         // Chain the new updatePromise to the current queue
-        this.#queue[accountId][network.chainId.toString()] = this.#queue[accountId][
+        this.#queue[accountId][network.chainId.toString()] = this.#queue?.[accountId]?.[
           network.chainId.toString()
-        ]
-          .then(updatePromise)
-          .catch(() => updatePromise())
+        ]!.then(updatePromise).catch(() => updatePromise())
 
         // Ensure the method waits for the entire queue to resolve
         await this.#queue[accountId][network.chainId.toString()]
@@ -1064,7 +1090,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   markSimulationAsBroadcasted(accountId: string, chainId: bigint) {
-    const simulation = this.#state[accountId][chainId.toString()]?.accountOps?.[0]
+    const simulation = this.#state?.[accountId]?.[chainId.toString()]?.accountOps?.[0]
 
     if (!simulation) return
 
@@ -1160,7 +1186,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.#toBeLearnedAssets.erc721s[chainId.toString()] = {}
       }
 
-      const toBeLearnedAssets = this.#toBeLearnedAssets.erc721s[chainId.toString()]
+      // Ensure toBeLearnedAssets is always defined
+      const toBeLearnedAssets =
+        this.#toBeLearnedAssets.erc721s[chainId.toString()] ??
+        (this.#toBeLearnedAssets.erc721s[chainId.toString()] = {})
       const learnedErc721s = this.#learnedAssets.erc721s[key]
 
       let added = false
@@ -1169,7 +1198,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         // An enumerable NFT of this type already exists in either toBeLearned or learnedAssets
         // so we don't have to add it again
         if (
-          (toBeLearnedAssets[collectionAddress] && !toBeLearnedAssets[collectionAddress].length) ||
+          (toBeLearnedAssets?.[collectionAddress] &&
+            !toBeLearnedAssets?.[collectionAddress].length) ||
           (learnedErc721s && learnedErc721s[`${collectionAddress}:enumerable`])
         )
           return
@@ -1185,6 +1215,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
         ids.forEach((id) => {
           const [, tokenIdString] = id.split(':')
+          if (!tokenIdString) return
 
           const tokenId = BigInt(tokenIdString)
           // An NFT with this id is already added to toBeLearned or learnedAssets
@@ -1245,10 +1276,14 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       learnedTokens[address] = now
 
       if (this.#toBeLearnedAssets.erc20s[chainId.toString()]?.length) {
-        // Remove the token from toBeLearnedTokens if it will be learned
-        this.#toBeLearnedAssets.erc20s[chainId.toString()] = this.#toBeLearnedAssets.erc20s[
-          chainId.toString()
-        ].filter((addr) => addr !== address)
+        // Remove the token from toBeLearnedTokens if it will be learned now
+        const toBeLearnedAddress = this.#toBeLearnedAssets.erc20s[chainId.toString()]
+
+        if (!toBeLearnedAddress) return
+
+        this.#toBeLearnedAssets.erc20s[chainId.toString()] = toBeLearnedAddress.filter(
+          (addr) => addr !== address
+        )
       }
     })
 
