@@ -1,5 +1,4 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
-import { IPhishingController } from 'interfaces/phishing'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
@@ -8,6 +7,7 @@ import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
