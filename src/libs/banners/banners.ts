@@ -289,10 +289,12 @@ export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabl
 
 export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   defiPositionsAccountState,
-  networks
+  networks,
+  accountAddr
 }: {
   defiPositionsAccountState: AccountState
   networks: Network[]
+  accountAddr: string
 }) => {
   const banners: Banner[] = []
 
@@ -339,7 +341,10 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
         label: 'Dismiss',
         actionName: 'dismiss-defi-positions-banner'
       }
-    ]
+    ],
+    meta: {
+      accountAddr
+    }
   })
 
   return banners
