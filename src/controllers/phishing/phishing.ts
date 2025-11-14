@@ -8,7 +8,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 
-interface BlacklistedStatuses {
+export interface BlacklistedStatuses {
   [dappId: string]: {
     status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     updatedAt: number
@@ -71,8 +71,29 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       this.#storage.get('addressesBlacklistedStatus', {})
     ])
 
-    this.#dappsBlacklistedStatus = dappsBlacklistedStatus
-    this.#addressesBlacklistedStatus = addressesBlacklistedStatus
+    const now = Date.now()
+    const twoHours = 2 * 60 * 60 * 1000
+
+    // Filter out expired records
+    const freshDappsBlacklistedStatus = Object.fromEntries(
+      Object.entries(dappsBlacklistedStatus).filter(
+        ([, entry]) =>
+          entry && typeof entry.updatedAt === 'number' && now - entry.updatedAt < twoHours
+      )
+    )
+
+    const freshAddressesBlacklistedStatus = Object.fromEntries(
+      Object.entries(addressesBlacklistedStatus).filter(
+        ([, entry]) =>
+          entry && typeof entry.updatedAt === 'number' && now - entry.updatedAt < twoHours
+      )
+    )
+
+    await this.#storage.set('dappsBlacklistedStatus', freshDappsBlacklistedStatus)
+    await this.#storage.set('addressesBlacklistedStatus', freshAddressesBlacklistedStatus)
+
+    this.#dappsBlacklistedStatus = freshDappsBlacklistedStatus
+    this.#addressesBlacklistedStatus = freshAddressesBlacklistedStatus
 
     this.emitUpdate()
   }
