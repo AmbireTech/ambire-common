@@ -763,6 +763,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const { parsedSiwe, status } = parsedSiweAndStatus
         let autoLoginStatus: AutoLoginStatus = 'no-policy'
 
+        if (parsedSiwe.address?.toLowerCase() !== msgAddress.toLowerCase()) {
+          throw ethErrors.rpc.invalidRequest(
+            'SIWE message address does not match the requested signing address'
+          )
+        }
+
         // Try to auto-login
         if (status === 'valid' && parsedSiwe) {
           try {

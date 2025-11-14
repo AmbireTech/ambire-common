@@ -302,7 +302,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
+    const portfolioAccountState = structuredClone(
+      this.#portfolio.getAccountPortfolioState(this.account.addr)
+    )
 
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
@@ -351,6 +353,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     // Reset isManualUpdate flag when the portfolio has finished the initial load
     if (this.#isManualUpdate && newSelectedAccountPortfolio.isAllReady) {
       this.#isManualUpdate = false
+      this.portfolio.shouldShowPartialResult = false
     }
 
     this.portfolio = newSelectedAccountPortfolio
