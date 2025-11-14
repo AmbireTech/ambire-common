@@ -7,6 +7,7 @@ import { IAddressBookController } from '../../interfaces/addressBook'
 import { AddressState } from '../../interfaces/domains'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -113,6 +114,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #providers: IProvidersController
 
+  #phishing: IPhishingController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -155,6 +158,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     activity: IActivityController,
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
+    phishing: IPhishingController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess
   ) {
@@ -173,6 +177,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#activity = activity
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
+    this.#phishing = phishing
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
 
@@ -700,6 +705,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       account: this.#selectedAccountData.account,
       network,
       provider,
+      phishing: this.#phishing,
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
       isSignRequestStillActive: () => true,

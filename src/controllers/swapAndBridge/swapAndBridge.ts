@@ -14,6 +14,7 @@ import { Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -222,6 +223,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #providers: IProvidersController
 
+  #phishing: IPhishingController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -283,6 +286,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks,
     activity,
     storage,
+    phishing,
     invite,
     portfolioUpdate,
     relayerUrl,
@@ -303,6 +307,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks: INetworksController
     activity: IActivityController
     storage: IStorageController
+    phishing: IPhishingController
     invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
@@ -328,6 +333,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activity = activity
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
+    this.#phishing = phishing
     this.#invite = invite
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
@@ -2399,6 +2405,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       account: this.#selectedAccount.account,
       network,
       provider: this.#providers.providers[network.chainId.toString()],
+      phishing: this.#phishing,
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
       isSignRequestStillActive: (): boolean => !!this.#signAccountOpController,

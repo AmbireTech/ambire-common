@@ -14,6 +14,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
+import { AddressBookController } from '../addressBook/addressBook'
 import { Account } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
@@ -42,6 +43,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -400,6 +402,22 @@ const init = async (
     relayerUrl,
     fetch
   )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystore,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl,
+    keystore,
+    autoLogin: autoLoginCtrl
+  })
+  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
   await waitForAccountsCtrlFirstLoad(accountsCtrl)
   await networksCtrl.initialLoadPromise
@@ -416,6 +434,11 @@ const init = async (
     velcroUrl,
     new BannerController(storageCtrl)
   )
+  const phishing = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    addressBook: addressBookCtrl
+  })
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
@@ -465,21 +488,7 @@ const init = async (
     keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
     network
   )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore,
-    autoLogin: autoLoginCtrl
-  })
+
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
     storageCtrl,
@@ -529,6 +538,7 @@ const init = async (
     network,
     activity,
     provider,
+    phishing,
     fromActionId: 1,
     accountOp: op,
     isSignRequestStillActive: () => true,
