@@ -1,4 +1,5 @@
 /* eslint-disable no-restricted-syntax */
+import { IAddressBookController } from '../../interfaces/addressBook'
 import { Fetch } from '../../interfaces/fetch'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
@@ -34,6 +35,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #storage: IStorageController
 
+  #addressBook: IAddressBookController
+
   #dappsBlacklistedStatus: BlacklistedStatuses = {}
 
   #addressesBlacklistedStatus: BlacklistedStatuses = {}
@@ -41,11 +44,20 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  constructor({ fetch, storage }: { fetch: Fetch; storage: IStorageController }) {
+  constructor({
+    fetch,
+    storage,
+    addressBook
+  }: {
+    fetch: Fetch
+    storage: IStorageController
+    addressBook: IAddressBookController
+  }) {
     super()
 
     this.#fetch = fetch
     this.#storage = storage
+    this.#addressBook = addressBook
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
@@ -85,7 +97,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     if (process.env.IS_TESTING !== 'true') {
       dappIds.forEach((id) => {
         this.#dappsBlacklistedStatus[id] = {
-          // eslint-disable-next-line no-nested-ternary
           status: this.#dappsBlacklistedStatus[id]?.status || 'VERIFIED',
           updatedAt: Date.now()
         }
@@ -183,10 +194,21 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     if (!addresses.length) return
 
+    const addressesInAccounts = addresses.filter((addr) => {
+      if (this.#addressBook.contacts.find((c) => c.isWalletAccount && c.address === addr)) {
+        return true
+      }
+
+      return false
+    })
+
+    addressesInAccounts.forEach((addr) => {
+      this.#addressesBlacklistedStatus[addr] = { status: 'VERIFIED', updatedAt: Date.now() }
+    })
+
     if (process.env.IS_TESTING !== 'true') {
       addresses.forEach((addr) => {
         this.#addressesBlacklistedStatus[addr] = {
-          // eslint-disable-next-line no-nested-ternary
           status: this.#addressesBlacklistedStatus[addr]?.status || 'VERIFIED',
           updatedAt: Date.now()
         }
@@ -207,6 +229,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     // Filter: we only fetch for ones that are missing or stale
     const addressesToFetch = addresses.filter((addr) => {
+      const isInAccounts = this.#addressBook.contacts.find(
+        (c) => c.isWalletAccount && c.address === addr
+      )
+      if (isInAccounts) return true
+
       const existing = this.#addressesBlacklistedStatus[addr]
       if (!existing) return true
       if (existing.status === 'LOADING') return true

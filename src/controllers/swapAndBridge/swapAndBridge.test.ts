@@ -8,6 +8,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
+import { AddressBookController } from '../addressBook/addressBook'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -125,6 +126,8 @@ const selectedAccountCtrl = new SelectedAccountController({
   autoLogin: autoLoginCtrl
 })
 
+const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
+
 const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
   ui: uiCtrl,
@@ -163,7 +166,11 @@ const activityCtrl = new ActivityController(
   () => Promise.resolve()
 )
 
-const phishingCtrl = new PhishingController({ fetch, storage: storageCtrl })
+const phishingCtrl = new PhishingController({
+  fetch,
+  storage: storageCtrl,
+  addressBook: addressBookCtrl
+})
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 

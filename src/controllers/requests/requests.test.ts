@@ -123,11 +123,6 @@ const prepareTest = async () => {
     new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
 
-  const phishingCtrl = new PhishingController({
-    fetch,
-    storage: storageCtrl
-  })
-
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
@@ -136,6 +131,13 @@ const prepareTest = async () => {
   })
 
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
+
+  const phishingCtrl = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    addressBook: addressBookCtrl
+  })
+
   const portfolioCtrl = new PortfolioController(
     storageCtrl,
     fetch,

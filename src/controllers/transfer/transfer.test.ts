@@ -256,7 +256,11 @@ const activity = new ActivityController(
   () => Promise.resolve()
 )
 
-const phishing = new PhishingController({ fetch, storage: storageCtrl })
+const phishing = new PhishingController({
+  fetch,
+  storage: storageCtrl,
+  addressBook: addressBookController
+})
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)

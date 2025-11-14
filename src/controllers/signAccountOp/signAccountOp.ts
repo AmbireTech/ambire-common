@@ -2803,7 +2803,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
-          text: 'We couldn’t check the destination addresses in this transaction for malicious activity. Proceed with caution.'
+          text: "We couldn't check the destination addresses in this transaction for malicious activity. Proceed with caution."
         })
       }
     }
