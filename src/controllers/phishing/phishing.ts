@@ -86,7 +86,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       dappIds.forEach((id) => {
         this.#dappsBlacklistedStatus[id] = {
           // eslint-disable-next-line no-nested-ternary
-          status: this.#dappsBlacklistedStatus[id].status || 'VERIFIED',
+          status: this.#dappsBlacklistedStatus[id]?.status || 'VERIFIED',
           updatedAt: Date.now()
         }
       })
@@ -187,7 +187,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       addresses.forEach((addr) => {
         this.#addressesBlacklistedStatus[addr] = {
           // eslint-disable-next-line no-nested-ternary
-          status: this.#addressesBlacklistedStatus[addr].status || 'VERIFIED',
+          status: this.#addressesBlacklistedStatus[addr]?.status || 'VERIFIED',
           updatedAt: Date.now()
         }
       })
