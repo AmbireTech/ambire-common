@@ -86,6 +86,10 @@ const config: HardhatUserConfig = {
       url: 'https://invictus.ambire.com/arbitrum',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    arbSepolia: {
+      url: 'https://sepolia-rollup.arbitrum.io/rpc',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     berachainBepolia: {
       url: 'https://bepolia.rpc.berachain.com',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -227,6 +231,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.arbiscan.io/api',
           browserURL: 'https://api.arbiscan.io'
+        }
+      },
+      {
+        network: 'arbSepolia',
+        chainId: 421614,
+        urls: {
+          apiURL: 'https://api.sepolia.arbiscan.io/api',
+          browserURL: 'https://api.sepolia.arbiscan.io'
         }
       },
       {

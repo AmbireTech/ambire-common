@@ -1,1 +1,2 @@
 export const SPOOF_SIGTYPE = '03'
+export const PAYMASTER_SIG_MAGIC = '0x22e325a297439656'

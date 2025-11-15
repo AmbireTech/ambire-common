@@ -13,9 +13,7 @@ import { Account } from './account'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 import { Network } from './network'
-import { EIP7702Signature } from './signatures'
-// TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
+import { EIP7702Signature, PlainSignature } from './signatures'
 import { TypedMessage } from './userRequest'
 
 export type IKeystoreController = ControllerInterface<
@@ -94,6 +92,7 @@ export interface KeystoreSignerInterface {
     eip7702Auth: EIP7702Auth
   }) => Promise<Hex>
   signingCleanup?: () => Promise<void>
+  plainSign?: (hex: string) => PlainSignature
 }
 
 export type ScryptParams = {

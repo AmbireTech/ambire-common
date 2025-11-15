@@ -22,6 +22,7 @@ import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { BUNDLER } from '../../consts/bundlers'
 import {
+  AMBIRE_ACCOUNT_OMNI,
   EIP_7702_AMBIRE_ACCOUNT,
   EIP_7702_GRID_PLUS,
   EIP_7702_KATANA,
@@ -850,6 +851,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.delegatedContract &&
       this.delegatedContract !== ZeroAddress &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_AMBIRE_ACCOUNT.toLowerCase() &&
+      this.delegatedContract?.toLowerCase() !== AMBIRE_ACCOUNT_OMNI.toLowerCase() &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_GRID_PLUS.toLowerCase() &&
       this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
