@@ -12,7 +12,6 @@ import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network } from './network'
 import { StoredPhishingDetection } from './phishing'
-import { CashbackStatusByAccount } from './selectedAccount'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 export type IStorageController = ControllerInterface<
@@ -36,7 +35,6 @@ export type StorageProps = {
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
   keystoreSeeds: KeystoreSeed[]
-  cashbackStatusByAccount: CashbackStatusByAccount
   dappsV2: Dapp[]
   lastDappsUpdateVersion: string | null
   invite: object
@@ -52,7 +50,7 @@ export type StorageProps = {
 }
 
 export interface Storage {
-  get<K extends keyof StorageProps | string | undefined>(
+  get<K extends keyof StorageProps | string>(
     key: K,
     defaultValue?: any
   ): Promise<K extends keyof StorageProps ? StorageProps[K] : any>

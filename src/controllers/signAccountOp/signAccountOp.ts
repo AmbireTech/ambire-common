@@ -946,6 +946,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     paidByKeyType,
     accountOpData
   }: SignAccountOpUpdateProps) {
+    if (!this.#isSignRequestStillActive()) return
+
     try {
       // This must be at the top, otherwise it won't be updated because
       // most updates are frozen during the signing process

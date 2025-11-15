@@ -49,7 +49,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
   },
   recipientAddress: {
     success: false,
-    message: ''
+    message: '',
+    severity: 'info'
   }
 }
 
@@ -294,7 +295,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (this.#humanizerInfo && this.#selectedAccountData.account?.addr) {
       const isEnsAddress = !!this.addressState.ensAddress
 
-      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
+      const recipientValidation = validateSendTransferAddress(
         this.recipientAddress,
         this.#selectedAccountData.account?.addr,
         this.isRecipientAddressUnknownAgreed,
@@ -307,6 +308,12 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt
       )
+
+      validationFormMsgsNew.recipientAddress = {
+        success: recipientValidation.success,
+        message: recipientValidation.message,
+        severity: recipientValidation.severity ?? 'info'
+      }
     }
 
     // Validate the amount
@@ -332,14 +339,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
 
-    const isRecipientAddressUnknownMissingOrAccepted =
-      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
-
     return (
-      areFormFieldsValid &&
-      isSWWarningMissingOrAccepted &&
-      isRecipientAddressUnknownMissingOrAccepted &&
-      !this.addressState.isDomainResolving
+      areFormFieldsValid && isSWWarningMissingOrAccepted && !this.addressState.isDomainResolving
     )
   }
 
