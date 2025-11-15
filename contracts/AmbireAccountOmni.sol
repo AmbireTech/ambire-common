@@ -59,7 +59,7 @@ contract AmbireAccountOmni is AmbireAccount7702 {
     //make a leaf out of userOpHash, validUntil and validAfter
     bytes32 leaf = keccak256(abi.encodePacked(validUntil, validAfter, userOpHash));
     if (!MerkleProof.verify(merkleProof, merkleTreeRoot, leaf)) {
-      revert('Invalid UserOp');
+      return SIG_VALIDATION_FAILED;
     }
 
     (address merkleSigner, ) = SignatureValidator.recoverAddrAllowUnprotected(

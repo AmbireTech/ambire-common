@@ -1084,10 +1084,23 @@ export class MainController extends EventEmitter implements IMainController {
     const isAccountStateStillMissing =
       !accountAddr || !chainId || !this.accounts.accountStates?.[accountAddr]?.[chainId.toString()]
     if (isAccountStateStillMissing) {
-      const message =
+      let message =
         'Unable to sign the message. During the preparation step, required account data failed to get received. Please try again later or contact Ambire support.'
+      if (!accountAddr) {
+        message = 'accountAddr missing as a parameter'
+      } else if (!chainId) {
+        message = 'chainId missing as a parameter'
+      }
+      if (chainId) {
+        const foundNetwork = this.networks.networks.find((n) => n.chainId === chainId)
+        if (!foundNetwork || foundNetwork.disabled) {
+          message = !foundNetwork
+            ? `Network with id ${chainId.toString()} not found in the extension. Please add it before proceeding`
+            : `Network with id ${chainId.toString()} is disabled in the extension. Please enable it before proceeding`
+        }
+      }
       const error = new Error(
-        `The account state of ${accountAddr} is missing for the network with id ${chainId}.`
+        `The account state for ${accountAddr} is missing for network with id ${chainId?.toString()}.`
       )
       return this.emitError({ level: 'major', message, error })
     }

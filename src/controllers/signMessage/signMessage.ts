@@ -252,7 +252,23 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
         if (this.messageToSign.content.kind === 'signUserOperations') {
           if (!this.#signer.plainSign)
-            throw new Error('signer does not support signing multiple user operations')
+            throw new Error('Signer does not support signing multiple user operations')
+
+          // make sure the passed chain ids are extension enabled networks
+          const chainIds = this.messageToSign.content.chainIdWithUserOps.map((chainIdWithUserOp) =>
+            BigInt(chainIdWithUserOp.chainId)
+          )
+          chainIds.forEach((passedChainId) => {
+            const extensionNetwork = this.#networks.networks.find(
+              (n) => n.chainId === passedChainId
+            )
+            if (!extensionNetwork || extensionNetwork.disabled) {
+              const errMsg = !extensionNetwork
+                ? `Network with id ${passedChainId.toString()} not found in the extension. Please add it before proceeding`
+                : `Network with id ${passedChainId.toString()} is disabled in the extension. Please enable it before proceeding`
+              throw new Error(errMsg)
+            }
+          })
 
           const userOps = []
           const hasSigned7702: string[] = []
