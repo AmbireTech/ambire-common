@@ -37,7 +37,6 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const STATUS_WRAPPED_METHODS = {
-  selectAccount: 'INITIAL',
   addAccounts: 'INITIAL'
 } as const
 
