@@ -17,6 +17,7 @@ import { EIP7702Auth } from '../../consts/7702'
 import { BUNDLER } from '../../consts/bundlers'
 import {
   AMBIRE_ACCOUNT_FACTORY,
+  AMBIRE_ACCOUNT_OMNI,
   AMBIRE_PAYMASTER,
   AMBIRE_PAYMASTER_SIGNER,
   ENTRY_POINT_MARKER,
@@ -77,52 +78,6 @@ export function getActivatorCall(addr: AccountId) {
  */
 export function getCleanUserOp(userOp: UserOperation) {
   return [(({ activatorCall, bundler, ...o }) => o)(userOp)]
-}
-
-/**
- * Get the nonce we're expecting in validateUserOp
- * when we're going through the activation | recovery
- *
- * @param UserOperation userOperation
- * @returns hex string
- */
-export function getOneTimeNonce(userOperation: UserOperation) {
-  if (
-    !userOperation.paymaster ||
-    !userOperation.paymasterVerificationGasLimit ||
-    !userOperation.paymasterPostOpGasLimit ||
-    !userOperation.paymasterData
-  ) {
-    throw new Error('One time nonce could not be encoded because paymaster data is missing')
-  }
-
-  const abiCoder = new AbiCoder()
-  return `0x${keccak256(
-    abiCoder.encode(
-      ['bytes', 'bytes', 'bytes32', 'uint256', 'bytes32', 'bytes'],
-      [
-        userOperation.factory && userOperation.factoryData
-          ? concat([userOperation.factory, userOperation.factoryData])
-          : '0x',
-        userOperation.callData,
-        concat([
-          toBeHex(userOperation.verificationGasLimit, 16),
-          toBeHex(userOperation.callGasLimit, 16)
-        ]),
-        userOperation.preVerificationGas,
-        concat([
-          toBeHex(userOperation.maxPriorityFeePerGas, 16),
-          toBeHex(userOperation.maxFeePerGas, 16)
-        ]),
-        concat([
-          userOperation.paymaster,
-          toBeHex(userOperation.paymasterVerificationGasLimit, 16),
-          toBeHex(userOperation.paymasterPostOpGasLimit, 16),
-          userOperation.paymasterData
-        ])
-      ]
-    )
-  ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
 export function getUserOperation({
@@ -235,7 +190,17 @@ function getPackedPaymasterData(userOp: SignUserOperation) {
 }
 
 export function getPackedUserOp(userOp: SignUserOperation): PackedUserOperation {
-  const initCode = userOp.factory ? concat([userOp.factory, userOp.factoryData!]) : '0x'
+  let initCode = '0x'
+  if (
+    userOp.factory &&
+    userOp.factory !== '0x' &&
+    userOp.factoryData &&
+    userOp.factoryData !== '0x'
+  ) {
+    initCode = concat([userOp.factory, userOp.factoryData])
+  } else if (userOp.factory && BigInt(userOp.factory) === 0x7702n) {
+    initCode = AMBIRE_ACCOUNT_OMNI
+  }
   const accountGasLimits = concat([
     toBeHex(userOp.verificationGasLimit.toString(), 16),
     toBeHex(userOp.callGasLimit.toString(), 16)
