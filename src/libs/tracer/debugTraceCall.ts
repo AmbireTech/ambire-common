@@ -11,7 +11,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
-import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls, toSingletonCall } from '../accountOp/accountOp'
 import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getDeploylessOpts } from '../portfolio/getOnchainBalances'
 
@@ -21,7 +21,7 @@ const NFT_COLLECTION_LIMIT = 100
 // set the spoof+addr and pass all the calls
 function getFunctionParams(account: Account, op: AccountOp, accountState: AccountOnchainState) {
   if (isBasicAccount(account, accountState) && op.calls.length === 1) {
-    const call = op.calls[0]
+    const call = toSingletonCall(op.calls[0])
     return {
       to: call.to,
       value: toQuantity(call.value.toString()),
