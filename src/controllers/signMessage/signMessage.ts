@@ -270,6 +270,9 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             }
           })
 
+          // fetch the newest account state for those chain ids
+          await this.#accounts.updateAccountState(account.addr, 'latest', chainIds)
+
           const userOps = []
           const hasSigned7702: string[] = []
           const userOpHashes = this.messageToSign.content.chainIdWithUserOps.map(
@@ -288,13 +291,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
             const chainId = BigInt(chainIdWithUserOp.chainId)
 
             // find or fetch the account state
-            let curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
-            if (!curAccountState) {
-              // eslint-disable-next-line no-await-in-loop
-              await this.#accounts.updateAccountState(account.addr, 'pending', [chainId])
-              curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
-            }
-
+            const curAccountState = this.#accounts.accountStates[account.addr][chainId.toString()]
             let eip7702Sig = null
             const hasDelegatedToOmni =
               hasSigned7702.indexOf(chainIdWithUserOp.chainId) !== -1 ||
