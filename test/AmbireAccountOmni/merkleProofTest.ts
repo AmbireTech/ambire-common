@@ -1,8 +1,18 @@
 import { ethers } from 'hardhat'
 
-import { AbiCoder, getBytes, hexlify, keccak256, solidityPacked } from 'ethers'
+import {
+  AbiCoder,
+  concat,
+  getBytes,
+  hexlify,
+  keccak256,
+  randomBytes,
+  solidityPacked,
+  toBeHex
+} from 'ethers'
 import secp256k1 from 'secp256k1'
 import { Hex } from '../../src/interfaces/hex'
+import { getMerkleProof, getMerkleRoot } from '../../src/libs/userOperation/merkleProofs'
 import { expect, pk1, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
@@ -87,20 +97,20 @@ describe('AmbireAccountOmni tests', () => {
     const [relayer] = await ethers.getSigners()
     const latestBlock = await provider.getBlock('latest')
     const timestamp = latestBlock?.timestamp || 0
-    const nonce = await entryPoint.getNonce(...[ambireAccountAddress, 0])
     const userOpOne = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
-      userOpNonce: nonce,
+      userOpNonce: concat([randomBytes(24), toBeHex(0, 8)]),
       validUntil: timestamp + 60
     })
     const userOpTwo = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
-      userOpNonce: nonce + 1n,
+      userOpNonce: concat([randomBytes(24), toBeHex(0, 8)]),
       validUntil: timestamp + 60
     })
     const userOpThree = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
-      userOpNonce: nonce + 2n,
+      // userOpNonce: nonce + 2n,
+      userOpNonce: concat([randomBytes(24), toBeHex(0, 8)]),
       validUntil: timestamp + 60
     })
     const [userOpHashOne, userOpHashTwo, userOpHashThree] = await Promise.all([
@@ -126,6 +136,8 @@ describe('AmbireAccountOmni tests', () => {
     const merkleRoot = keccak256(
       solidityPacked(['bytes32', 'bytes32'], sortHexes([levelOneLeft, levelOneRight]))
     )
+    const generatedMerkleRoot = getMerkleRoot(0, 0, [userOpHashOne, userOpHashTwo, userOpHashThree])
+    expect(generatedMerkleRoot).to.equal(merkleRoot)
     const merkleTreeSig = signUserOps(validAfter, validUntil, [
       userOpHashOne,
       userOpHashTwo,
@@ -133,6 +145,14 @@ describe('AmbireAccountOmni tests', () => {
     ])
 
     // broadcast first txn
+    const firstProof = getMerkleProof(0, 0, userOpHashOne, [
+      userOpHashOne,
+      userOpHashTwo,
+      userOpHashThree
+    ])
+    expect(firstProof.length).to.equal(2)
+    expect(firstProof[0]).to.equal(leafTwo)
+    expect(firstProof[1]).to.equal(levelOneRight)
     const fullSigWithoutWrapping = coder.encode(
       ['uint48', 'uint48', 'bytes32', 'bytes32[]', 'bytes'],
       [validUntil, validAfter, merkleRoot, [leafTwo, levelOneRight], merkleTreeSig]
@@ -142,6 +162,14 @@ describe('AmbireAccountOmni tests', () => {
     await entryPoint.handleOps([userOpOne], relayer)
 
     // broadcast second txn
+    const secondProof = getMerkleProof(0, 0, userOpHashTwo, [
+      userOpHashOne,
+      userOpHashTwo,
+      userOpHashThree
+    ])
+    expect(secondProof.length).to.equal(2)
+    expect(secondProof[0]).to.equal(leafOne)
+    expect(secondProof[1]).to.equal(levelOneRight)
     const fullSigWithoutWrappingTwo = coder.encode(
       ['uint48', 'uint48', 'bytes32', 'bytes32[]', 'bytes'],
       [validUntil, validAfter, merkleRoot, [leafOne, levelOneRight], merkleTreeSig]
@@ -151,6 +179,14 @@ describe('AmbireAccountOmni tests', () => {
     await entryPoint.handleOps([userOpTwo], relayer)
 
     // broadcast third txn
+    const thirdProof = getMerkleProof(0, 0, userOpHashThree, [
+      userOpHashOne,
+      userOpHashTwo,
+      userOpHashThree
+    ])
+    expect(thirdProof.length).to.equal(2)
+    expect(thirdProof[0]).to.equal(leafThree)
+    expect(thirdProof[1]).to.equal(levelOneLeft)
     const fullSigWithoutWrappingThree = coder.encode(
       ['uint48', 'uint48', 'bytes32', 'bytes32[]', 'bytes'],
       [validUntil, validAfter, merkleRoot, [leafThree, levelOneLeft], merkleTreeSig]

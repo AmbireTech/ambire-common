@@ -49,8 +49,8 @@ export function getMerkleProof(
   const leaf = keccak256(
     solidityPacked(['uint48', 'uint48', 'bytes32'], [validUntil, validAfter, userOpHash])
   )
-  const leafs = userOpHashes.map((userOpHash) =>
-    keccak256(solidityPacked(['uint48', 'uint48', 'bytes32'], [validUntil, validAfter, userOpHash]))
+  const leafs = userOpHashes.map((uHash) =>
+    keccak256(solidityPacked(['uint48', 'uint48', 'bytes32'], [validUntil, validAfter, uHash]))
   )
 
   let level = leafs
@@ -72,9 +72,10 @@ export function getMerkleProof(
 
       if (i === index || i + 1 === index) {
         const sibling = i === index ? right : left
-        if (sibling !== left || sibling !== right) {
-          proof.push(sibling)
-        }
+        // if (sibling !== left || sibling !== right) {
+        //   proof.push(sibling)
+        // }
+        proof.push(sibling)
         index = Math.floor(i / 2)
       }
 
