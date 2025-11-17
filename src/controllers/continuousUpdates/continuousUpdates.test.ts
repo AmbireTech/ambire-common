@@ -89,6 +89,7 @@ const prepareTest = async () => {
 
   const uiManager = mockUiManager().uiManager
   const mainCtrl = new MainController({
+    appVersion: '5.31.0',
     platform: 'default',
     storageAPI: storage,
     fetch,

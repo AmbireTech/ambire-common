@@ -39,8 +39,6 @@ export type TokenResult = {
 
 export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
-  cashback: bigint
-  saved: bigint
 }
 
 export type ProjectedRewardsTokenResult = TokenResult & {
