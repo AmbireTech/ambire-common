@@ -442,7 +442,8 @@ export class ActionsController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       visibleActionsQueue: this.visibleActionsQueue,
-      banners: this.banners
+      banners: this.banners,
+      currentAction: this.currentAction
     }
   }
 }
