@@ -1,9 +1,10 @@
-/* eslint-disable no-restricted-syntax */
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { Fetch } from '../../interfaces/fetch'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { getDappIdFromUrl } from '../../libs/dapps/helpers'
+/* eslint-disable no-restricted-syntax */
+import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
@@ -115,7 +116,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const now = Date.now()
     const TWO_HOURS = 2 * 60 * 60 * 1000
 
-    if (process.env.IS_TESTING !== 'true') {
+    if (process.env.IS_TESTING === 'true') {
       dappIds.forEach((id) => {
         this.#dappsBlacklistedStatus[id] = {
           status: this.#dappsBlacklistedStatus[id]?.status || 'VERIFIED',
@@ -160,34 +161,41 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // If nothing to fetch → we are done
     if (!idsToFetch.length) return
 
-    const res = await this.#fetch(`${SCAMCHECKER_BASE_URL}/domains`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domains: idsToFetch })
-    })
+    const res = await fetchWithTimeout(
+      this.#fetch,
+      `${SCAMCHECKER_BASE_URL}/domains`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domains: idsToFetch })
+      },
+      4000
+    )
 
     const updatedAt = Date.now()
 
     if (!res.ok) {
-      console.error('Error: failed to fetch domains blacklisted status', res.status)
       dappIds.forEach((id) => {
         this.#dappsBlacklistedStatus[id] = { status: 'FAILED_TO_GET', updatedAt }
       })
-    } else {
-      const dappsBlacklistedStatus: Record<string, boolean> = await res.json()
-
-      idsToFetch.forEach((id) => {
-        this.#dappsBlacklistedStatus[id] = {
-          // eslint-disable-next-line no-nested-ternary
-          status: !dappsBlacklistedStatus
-            ? 'FAILED_TO_GET'
-            : dappsBlacklistedStatus[id]
-            ? 'BLACKLISTED'
-            : 'VERIFIED',
-          updatedAt
-        }
-      })
+      throw new Error(
+        `Failed to fetch domains blacklisted data (status: ${res.status}, url: ${res.url})`
+      )
     }
+
+    const dappsBlacklistedStatus: Record<string, boolean> = await res.json()
+
+    idsToFetch.forEach((id) => {
+      this.#dappsBlacklistedStatus[id] = {
+        // eslint-disable-next-line no-nested-ternary
+        status: !dappsBlacklistedStatus
+          ? 'FAILED_TO_GET'
+          : dappsBlacklistedStatus[id]
+          ? 'BLACKLISTED'
+          : 'VERIFIED',
+        updatedAt
+      }
+    })
 
     const dappsBlacklistedStatusToStore = filterByStatus(this.#dappsBlacklistedStatus, [
       'BLACKLISTED',
@@ -227,7 +235,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       this.#addressesBlacklistedStatus[addr] = { status: 'VERIFIED', updatedAt: Date.now() }
     })
 
-    if (process.env.IS_TESTING !== 'true') {
+    if (process.env.IS_TESTING === 'true') {
       addresses.forEach((addr) => {
         this.#addressesBlacklistedStatus[addr] = {
           status: this.#addressesBlacklistedStatus[addr]?.status || 'VERIFIED',
@@ -250,11 +258,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     // Filter: we only fetch for ones that are missing or stale
     const addressesToFetch = addresses.filter((addr) => {
-      const isInAccounts = this.#addressBook.contacts.find(
-        (c) => c.isWalletAccount && c.address === addr
-      )
-      if (isInAccounts) return true
-
       const existing = this.#addressesBlacklistedStatus[addr]
       if (!existing) return true
       if (existing.status === 'LOADING') return true
@@ -281,34 +284,41 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // If nothing to fetch → we are done
     if (!addressesToFetch.length) return
 
-    const res = await this.#fetch(`${SCAMCHECKER_BASE_URL}/addresses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ addresses: addressesToFetch })
-    })
+    const res = await fetchWithTimeout(
+      this.#fetch,
+      `${SCAMCHECKER_BASE_URL}/addresses`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addresses: addressesToFetch })
+      },
+      4000
+    )
 
     const updatedAt = Date.now()
 
     if (!res.ok) {
-      console.error('Error: failed to fetch addresses blacklisted status', res.status)
       addressesToFetch.forEach((addr) => {
         this.#addressesBlacklistedStatus[addr] = { status: 'FAILED_TO_GET', updatedAt }
       })
-    } else {
-      const addressesBlacklistedStatus: Record<string, boolean> = await res.json()
-
-      addressesToFetch.forEach((addr) => {
-        this.#addressesBlacklistedStatus[addr] = {
-          // eslint-disable-next-line no-nested-ternary
-          status: !addressesBlacklistedStatus
-            ? 'FAILED_TO_GET'
-            : addressesBlacklistedStatus[addr]
-            ? 'BLACKLISTED'
-            : 'VERIFIED',
-          updatedAt
-        }
-      })
+      throw new Error(
+        `Failed to fetch addresses blacklisted data (status: ${res.status}, url: ${res.url})`
+      )
     }
+
+    const addressesBlacklistedStatus: Record<string, boolean> = await res.json()
+
+    addressesToFetch.forEach((addr) => {
+      this.#addressesBlacklistedStatus[addr] = {
+        // eslint-disable-next-line no-nested-ternary
+        status: !addressesBlacklistedStatus
+          ? 'FAILED_TO_GET'
+          : addressesBlacklistedStatus[addr]
+          ? 'BLACKLISTED'
+          : 'VERIFIED',
+        updatedAt
+      }
+    })
 
     const addressesBlacklistedStatusToStore = filterByStatus(this.#addressesBlacklistedStatus, [
       'BLACKLISTED',
@@ -326,14 +336,21 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.emitUpdate()
   }
 
-  updateDappsBlacklistedStatus(
+  async updateDappsBlacklistedStatus(
     urls: string[],
     callback: (res: {
       [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
+    try {
+      await this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
+    } catch (err: any) {
+      this.emitError({
+        message: 'Failed to fetch and update domains blacklisted status',
+        error: err,
+        level: 'silent'
+      })
+    }
   }
 
   async updateAddressesBlacklistedStatus(
@@ -342,7 +359,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
     }) => void
   ) {
-    await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
+    try {
+      await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
+    } catch (err: any) {
+      this.emitError({
+        message: 'Failed to fetch and update addresses blacklisted status',
+        error: err,
+        level: 'silent'
+      })
+    }
   }
 
   toJSON() {
