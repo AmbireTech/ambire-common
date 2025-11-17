@@ -106,7 +106,15 @@ const validateSendTransferAddress = (
     }
   }
   // Check for proper checksum
-  if (address !== getAddress(address)) {
+  try {
+    if (address !== getAddress(address)) {
+      return {
+        success: false,
+        message: 'Invalid checksum. Verify the address and try again.',
+        severity: 'error'
+      }
+    }
+  } catch {
     return {
       success: false,
       message: 'Invalid checksum. Verify the address and try again.',
