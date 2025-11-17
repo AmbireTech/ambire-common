@@ -114,6 +114,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
 
+  #onSetCurrentAction: (currentAction: Action | null) => void
+
   userRequests: UserRequest[] = []
 
   userRequestsWaitingAccountSwitch: UserRequest[] = []
@@ -144,7 +146,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
     guardHWSigning,
-    getMainStatuses
+    getMainStatuses,
+    onSetCurrentAction
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -165,6 +168,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
     getMainStatuses: () => StatusesWithCustom
+    onSetCurrentAction: (currentAction: Action | null) => void
   }) {
     super()
 
@@ -187,10 +191,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
     this.#guardHWSigning = guardHWSigning
+    this.#onSetCurrentAction = onSetCurrentAction
 
     this.actions = new ActionsController({
       selectedAccount: this.#selectedAccount,
       ui,
+      onSetCurrentAction: this.#onSetCurrentAction,
       onActionWindowClose: async () => {
         // eslint-disable-next-line no-restricted-syntax
         for (const r of this.userRequests) {

@@ -1,3 +1,4 @@
+/* eslint-disable no-continue */
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -12,14 +13,13 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps'
+import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 /* eslint-disable no-restricted-syntax */
 import { IPhishingController } from '../../interfaces/phishing'
-/* eslint-disable no-continue */
-import { IRequestsController } from '../../interfaces/requests'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import {
@@ -50,8 +50,6 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #phishing: IPhishingController
 
-  #requests: IRequestsController
-
   #ui: IUiController
 
   dappSessions: { [sessionId: string]: Session } = {}
@@ -79,7 +77,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
-    requests,
     ui
   }: {
     appVersion: string
@@ -87,7 +84,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage: IStorageController
     networks: INetworksController
     phishing: IPhishingController
-    requests: IRequestsController
     ui: IUiController
   }) {
     super()
@@ -97,7 +93,6 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#storage = storage
     this.#networks = networks
     this.#phishing = phishing
-    this.#requests = requests
     this.#ui = ui
 
     // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
@@ -117,54 +112,6 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
         this.#retryFetchAndUpdateInterval.start()
-      }
-    })
-
-    this.#requests.onUpdate(async () => {
-      try {
-        if (
-          this.#requests.actions.currentAction &&
-          this.#requests.actions.currentAction.type === 'dappRequest' &&
-          this.#requests.actions.currentAction.userRequest.action.kind === 'dappConnect'
-        ) {
-          const { session } = this.#requests.actions.currentAction.userRequest
-          const dapp = await this.#buildDapp({
-            id: session.id,
-            name: session.name,
-            url: session.origin,
-            icon: session.icon,
-            chainId: 1,
-            isConnected: false
-          })
-          if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
-            this.dappToConnect = dapp
-            this.#phishing.updateDappsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
-              if (this.dappToConnect) {
-                this.dappToConnect.blacklisted = blacklistedStatus[dapp.id]
-                this.emitUpdate()
-              }
-
-              const existingDapp = this.#dapps.get(dapp.id)
-              if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
-                this.#dapps.set(dapp.id, {
-                  ...existingDapp,
-                  blacklisted: blacklistedStatus[dapp.id]
-                })
-                this.emitUpdate()
-              }
-            })
-            this.emitUpdate()
-          }
-
-          return
-        }
-
-        if (this.dappToConnect) {
-          this.dappToConnect = null
-          this.emitUpdate()
-        }
-      } catch (err) {
-        console.error('Error in DappsController while updating the dappToConnect:', err)
       }
     })
 
@@ -398,6 +345,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const unverifiedDappsArray = Array.from(dappsMap.values())
 
     this.#dapps = dappsMap
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#phishing.updateDappsBlacklistedStatus(
       unverifiedDappsArray.map((d) => d.id),
       (blacklistedStatus) => {
@@ -658,6 +606,55 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!this.isReady) return
 
     return this.#dapps.get(getDomainFromUrl(url)!)
+  }
+
+  async setDappToConnectIfNeeded(currentAction: Action | null) {
+    try {
+      if (
+        currentAction &&
+        currentAction.type === 'dappRequest' &&
+        currentAction.userRequest.action.kind === 'dappConnect'
+      ) {
+        const { session } = currentAction.userRequest
+        const dapp = await this.#buildDapp({
+          id: session.id,
+          name: session.name,
+          url: session.origin,
+          icon: session.icon,
+          chainId: 1,
+          isConnected: false
+        })
+        if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
+          this.dappToConnect = dapp
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#phishing.updateDappsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
+            if (this.dappToConnect) {
+              this.dappToConnect.blacklisted = blacklistedStatus[dapp.id]
+              this.emitUpdate()
+            }
+
+            const existingDapp = this.#dapps.get(dapp.id)
+            if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
+              this.#dapps.set(dapp.id, {
+                ...existingDapp,
+                blacklisted: blacklistedStatus[dapp.id]
+              })
+              this.emitUpdate()
+            }
+          })
+          this.emitUpdate()
+        }
+
+        return
+      }
+
+      if (this.dappToConnect) {
+        this.dappToConnect = null
+        this.emitUpdate()
+      }
+    } catch (err) {
+      console.error('Error in DappsController while updating the dappToConnect:', err)
+    }
   }
 
   toJSON() {

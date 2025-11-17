@@ -226,6 +226,7 @@ const prepareTest = async () => {
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
       guardHWSigning: () => Promise.resolve(false),
+      onSetCurrentAction: () => {},
       autoLogin: autoLoginCtrl
     })
   }

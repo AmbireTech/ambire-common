@@ -485,7 +485,11 @@ export class MainController extends EventEmitter implements IMainController {
         await this.updateSelectedAccountPortfolio({ networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
-      guardHWSigning: this.#guardHWSigning.bind(this)
+      guardHWSigning: this.#guardHWSigning.bind(this),
+      onSetCurrentAction: (currentAction) => {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.dapps.setDappToConnectIfNeeded(currentAction)
+      }
     })
 
     this.dapps = new DappsController({
@@ -494,7 +498,6 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       networks: this.networks,
       phishing: this.phishing,
-      requests: this.requests,
       ui: this.ui
     })
 
