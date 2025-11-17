@@ -532,6 +532,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #load(shouldSimulate: boolean) {
     this.humanize()
+    this.learnTokens()
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
