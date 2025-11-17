@@ -172,6 +172,7 @@ describe('Contract Names', () => {
   })
 
   it('Test address validity handling', async () => {
+    const { restore } = suppressConsole()
     const badCheckSum = '0x026224a2940bfe258D0dbE947919B62fE321F042'
     const randomAddress = Wallet.createRandom().address
     const contractNamesController = new ContractNamesController(fetch)
@@ -188,5 +189,6 @@ describe('Contract Names', () => {
     contractNamesController.getName(randomAddress.toLowerCase(), 1n)
 
     expect(contractNamesController.contractsPendingToBeFetched.length).toBe(1)
+    restore()
   })
 })
