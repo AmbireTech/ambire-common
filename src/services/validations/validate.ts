@@ -105,22 +105,6 @@ const validateSendTransferAddress = (
       message: ''
     }
   }
-  // Check for proper checksum
-  try {
-    if (address !== getAddress(address)) {
-      return {
-        success: false,
-        message: 'Invalid checksum. Verify the address and try again.',
-        severity: 'error'
-      }
-    }
-  } catch {
-    return {
-      success: false,
-      message: 'Invalid checksum. Verify the address and try again.',
-      severity: 'error'
-    }
-  }
 
   if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
