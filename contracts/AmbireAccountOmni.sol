@@ -14,24 +14,19 @@ contract AmbireAccountOmni is AmbireAccount7702 {
   using ComposableExecutionLib for InputParam[];
   using ComposableExecutionLib for OutputParam[];
 
-  /**
-   * @notice A mapping of all allowed entryPoints
-   */
-  mapping(address => bool) public entryPoints;
+  address immutable entryPointOne;
+  address immutable entryPointTwo;
 
-  constructor(address[] memory _entryPoints) {
-    for (uint256 i = 0; i < _entryPoints.length; i++) {
-      address ep = _entryPoints[i];
-      require(ep != address(0));
-      entryPoints[ep] = true;
-    }
+  constructor(address _epOne, address _epTwo) {
+    entryPointOne = _epOne;
+    entryPointTwo = _epTwo;
   }
 
   function privileges(address key) public view override returns (bytes32) {
     if (key == address(this)) return bytes32(uint256(2));
 
     // if the entry point is the sender, we return the marker priv
-    if (entryPoints[key]) return ENTRY_POINT_MARKER;
+    if (key == entryPointOne || key == entryPointTwo) return ENTRY_POINT_MARKER;
 
     return getAmbireStorage().privileges[key];
   }

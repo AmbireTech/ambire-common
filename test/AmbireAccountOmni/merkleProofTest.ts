@@ -71,7 +71,8 @@ describe('AmbireAccountOmni tests', () => {
           hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
         }
       ],
-      'AmbireAccountOmni'
+      'AmbireAccountOmni',
+      await entryPoint.getAddress()
     )
     ambireAccount = acc
     ambireAccountAddress = await ambireAccount.getAddress()
