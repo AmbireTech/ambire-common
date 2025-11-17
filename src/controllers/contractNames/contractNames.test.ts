@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { ContractNamesController, PERSIST_NOT_FOUND_IN_MS } from './contractNames'
 
 const contracts = {
@@ -65,6 +66,7 @@ describe('Contract Names', () => {
   })
 
   it('Refetch failed addresses', async () => {
+    const { restore } = suppressConsole()
     // init
     jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
@@ -111,6 +113,7 @@ describe('Contract Names', () => {
     // make sure an attempt was actually made
     expect(mockedFetch).toHaveBeenCalledTimes(2)
     jest.useRealTimers()
+    restore()
   })
   it('fetch two times', async () => {
     // init

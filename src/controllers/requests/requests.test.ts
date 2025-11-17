@@ -8,7 +8,6 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { PhishingController } from '../phishing/phishing'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
@@ -25,6 +24,7 @@ import { DappsController } from '../dapps/dapps'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -286,8 +286,7 @@ describe('RequestsController ', () => {
         request: {
           method: 'dapp_connect',
           params: {},
-          session: MOCK_SESSION,
-          origin: 'https://test-dApp.com'
+          session: MOCK_SESSION
         },
         dappPromise: { resolve: () => {}, reject: () => {}, session: MOCK_SESSION }
       }
@@ -318,6 +317,7 @@ describe('RequestsController ', () => {
           }
         },
         amount: '1',
+        amountInFiat: 100000n,
         actionExecutionType: 'open-action-window',
         recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }
