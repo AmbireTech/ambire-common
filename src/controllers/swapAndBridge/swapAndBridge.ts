@@ -2538,14 +2538,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   get #shouldAutoUpdateQuote() {
-    console.log('Debug: checking', {
-      1: this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit,
-      2: !this.hasProceeded,
-      3: !!this.quote,
-      4: !this.quote?.selectedRoute?.disabled,
-      5: !this.quote?.selectedRoute?.isSelectedManually
-    })
-
     return (
       this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
       !this.hasProceeded &&
@@ -2557,12 +2549,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async continuouslyUpdateQuote() {
     if (!this.#shouldAutoUpdateQuote) {
-      console.log('Debug: Stopping quote update interval as auto-update is not needed anymore.')
       this.updateQuoteInterval.stop()
       return
     }
-
-    console.log('Debug: Auto-updating quote...')
 
     await this.updateQuote({
       skipPreviousQuoteRemoval: true,
