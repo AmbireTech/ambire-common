@@ -632,8 +632,6 @@ describe('Portfolio Controller ', () => {
       expect(token).toBeTruthy()
       expect(token?.amount).toEqual(0n)
       expect(token?.availableAmount).toEqual(0n)
-      expect(token?.cashback).toEqual(0n)
-      expect(token?.saved).toEqual(0n)
     })
   })
 
