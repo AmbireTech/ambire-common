@@ -196,7 +196,7 @@ const prepareTest = async () => {
     accounts: accountsCtrl,
     activity: activityCtrl,
     storage: storageCtrl,
-    swapProvider: SocketAPIMock as any,
+    swapProvider: new SocketAPIMock({ fetch, apiKey: '' }) as any,
     invite: new InviteController({ relayerUrl: '', fetch, storage: storageCtrl }),
     keystore,
     portfolio: portfolioCtrl,
