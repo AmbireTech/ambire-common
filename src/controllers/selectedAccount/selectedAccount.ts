@@ -573,8 +573,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
-  // TODO: think if this logic can be moved it defiPositions controller
-
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
