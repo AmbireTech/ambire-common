@@ -24,7 +24,10 @@ async function main() {
   ]
   const singletonInterface = new Interface(singletonABI)
   const encoder = new AbiCoder()
-  const encodedArgs = encoder.encode(['address[]'], [[ENTRYPOINT_0_9_0, ENTRYPOINT_0_9_0_OLD]])
+  const encodedArgs = encoder.encode(
+    ['address', 'address'],
+    [ENTRYPOINT_0_9_0, ENTRYPOINT_0_9_0_OLD]
+  )
   const deploymentBytecode = concat([bytecode, encodedArgs])
   const tx = {
     to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton

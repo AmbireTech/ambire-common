@@ -14,8 +14,8 @@ contract AmbireAccountOmni is AmbireAccount7702 {
   using ComposableExecutionLib for InputParam[];
   using ComposableExecutionLib for OutputParam[];
 
-  address immutable entryPointOne;
-  address immutable entryPointTwo;
+  address public immutable entryPointOne;
+  address public immutable entryPointTwo;
 
   constructor(address _epOne, address _epTwo) {
     entryPointOne = _epOne;
