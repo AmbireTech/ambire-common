@@ -60,12 +60,18 @@ function getSignificantBalanceDecreaseWarning(
     const simulatedTokensValueBeforeSimulationInUSD = getTotal(simulatedTokens, {
       includeHiddenTokens: true,
       beforeSimulation: true
-    }).usd
+    })?.usd
     // Calculates the amount after the simulation * the price of the token
     const simulatedTokensValueAfterSimulationInUSD = getTotal(simulatedTokens, {
       includeHiddenTokens: true,
       beforeSimulation: false
-    }).usd
+    })?.usd
+
+    if (
+      typeof simulatedTokensValueBeforeSimulationInUSD !== 'number' ||
+      typeof simulatedTokensValueAfterSimulationInUSD !== 'number'
+    )
+      return null
 
     const absoluteDecreaseInUSD =
       simulatedTokensValueBeforeSimulationInUSD - simulatedTokensValueAfterSimulationInUSD
