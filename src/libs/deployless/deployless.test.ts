@@ -160,6 +160,8 @@ describe('Deployless', () => {
       ) {
         console.error('Unexpected error structure:', e)
         throw e
+      } else {
+        expect(true).toBe(true)
       }
     }
     try {
@@ -177,6 +179,8 @@ describe('Deployless', () => {
       ) {
         console.error('Unexpected error structure:', e)
         throw e
+      } else {
+        expect(true).toBe(true)
       }
     }
   })
