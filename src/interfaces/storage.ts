@@ -43,7 +43,7 @@ export type StorageProps = {
   keyStoreUid: string | null
   keystoreSecrets: MainKeyEncryptedWithSecret[]
   onboardingState?: object
-  dappsBlacklistedStatus: BlacklistedStatuses
+  domainsBlacklistedStatus: BlacklistedStatuses
   addressesBlacklistedStatus: BlacklistedStatuses
   selectedAccount: string | null
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]

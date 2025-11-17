@@ -6,7 +6,7 @@ import {
   IPhishingController
 } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { getDappIdFromUrl } from '../../libs/dapps/helpers'
+import { getDappIdFromUrl, getDomainFromUrl } from '../../libs/dapps/helpers'
 /* eslint-disable no-restricted-syntax */
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -32,7 +32,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #addressBook: IAddressBookController
 
-  #dappsBlacklistedStatus: BlacklistedStatuses = {}
+  #domainsBlacklistedStatus: BlacklistedStatuses = {}
 
   #addressesBlacklistedStatus: BlacklistedStatuses = {}
 
@@ -61,8 +61,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async #load() {
-    const [dappsBlacklistedStatus, addressesBlacklistedStatus] = await Promise.all([
-      this.#storage.get('dappsBlacklistedStatus', {}),
+    const [domainsBlacklistedStatus, addressesBlacklistedStatus] = await Promise.all([
+      this.#storage.get('domainsBlacklistedStatus', {}),
       this.#storage.get('addressesBlacklistedStatus', {})
     ])
 
@@ -70,8 +70,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const twoHours = 2 * 60 * 60 * 1000
 
     // Filter out expired records
-    const freshDappsBlacklistedStatus = Object.fromEntries(
-      Object.entries(dappsBlacklistedStatus).filter(
+    const freshDomainsBlacklistedStatus = Object.fromEntries(
+      Object.entries(domainsBlacklistedStatus).filter(
         ([, entry]) =>
           entry && typeof entry.updatedAt === 'number' && now - entry.updatedAt < twoHours
       )
@@ -84,10 +84,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
     )
 
-    await this.#storage.set('dappsBlacklistedStatus', freshDappsBlacklistedStatus)
+    await this.#storage.set('domainsBlacklistedStatus', freshDomainsBlacklistedStatus)
     await this.#storage.set('addressesBlacklistedStatus', freshAddressesBlacklistedStatus)
 
-    this.#dappsBlacklistedStatus = freshDappsBlacklistedStatus
+    this.#domainsBlacklistedStatus = freshDomainsBlacklistedStatus
     this.#addressesBlacklistedStatus = freshAddressesBlacklistedStatus
 
     this.emitUpdate()
@@ -96,7 +96,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   /**
    * Takes a list of dapp domains and returns each with blacklist status.
    */
-  async #fetchAndSetDappsBlacklistedStatus(
+  async #fetchAndSetDomainsBlacklistedStatus(
     urls: string[],
     callback?: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
@@ -104,14 +104,18 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     if (!urls.length) return
 
-    const dappIds = urls.map((url) => getDappIdFromUrl(url))
+    const dappsData = urls.map((url) => ({
+      dappId: getDappIdFromUrl(url),
+      domain: getDomainFromUrl(url) || getDappIdFromUrl(url),
+      url
+    }))
     const now = Date.now()
     const TWO_HOURS = 2 * 60 * 60 * 1000
 
     if (process.env.IS_TESTING === 'true') {
-      dappIds.forEach((id) => {
-        this.#dappsBlacklistedStatus[id] = {
-          status: this.#dappsBlacklistedStatus[id]?.status || 'VERIFIED',
+      dappsData.forEach(({ domain }) => {
+        this.#domainsBlacklistedStatus[domain] = {
+          status: this.#domainsBlacklistedStatus[domain]?.status || 'VERIFIED',
           updatedAt: Date.now()
         }
       })
@@ -119,15 +123,18 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       !!callback &&
         callback(
           Object.fromEntries(
-            dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id].status])
+            dappsData.map(({ dappId, domain }) => [
+              dappId,
+              this.#domainsBlacklistedStatus[domain].status
+            ])
           ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
         )
       return
     }
 
     // Filter: we only fetch for ones that are missing or stale
-    const idsToFetch = dappIds.filter((id) => {
-      const existing = this.#dappsBlacklistedStatus[id]
+    const dappsToFetch = dappsData.filter(({ domain }) => {
+      const existing = this.#domainsBlacklistedStatus[domain]
       if (!existing) return true
       if (existing.status === 'LOADING') return true
       if (!existing.updatedAt || now - existing.updatedAt > TWO_HOURS) return true
@@ -135,23 +142,25 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     })
 
     // Mark only the ones we will fetch as LOADING
-    idsToFetch.forEach((id) => {
-      this.#dappsBlacklistedStatus[id] = {
+    dappsToFetch.forEach(({ domain }) => {
+      this.#domainsBlacklistedStatus[domain] = {
         status: 'LOADING',
-        updatedAt: this.#dappsBlacklistedStatus[id]?.updatedAt || 0
+        updatedAt: this.#domainsBlacklistedStatus[domain]?.updatedAt || 0
       }
     })
 
     !!callback &&
       callback(
         Object.fromEntries(
-          dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id].status])
+          dappsData.map(({ dappId, domain }) => [
+            dappId,
+            this.#domainsBlacklistedStatus[domain].status
+          ])
         ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
       )
     this.emitUpdate()
 
-    // If nothing to fetch → we are done
-    if (!idsToFetch.length) return
+    if (!dappsToFetch.length) return
 
     const res = await fetchWithTimeout(
       this.#fetch,
@@ -159,46 +168,49 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domains: idsToFetch })
+        body: JSON.stringify({ domains: dappsToFetch.map(({ domain }) => domain) })
       },
-      4000
+      dappsToFetch.length === 1 ? 5000 : 30000
     )
 
     const updatedAt = Date.now()
-
-    if (!res.ok) {
-      dappIds.forEach((id) => {
-        this.#dappsBlacklistedStatus[id] = { status: 'FAILED_TO_GET', updatedAt }
+    if (!res.ok || res.status !== 200) {
+      dappsData.forEach(({ domain }) => {
+        this.#domainsBlacklistedStatus[domain] = { status: 'FAILED_TO_GET', updatedAt }
       })
       throw new Error(
         `Failed to fetch domains blacklisted data (status: ${res.status}, url: ${res.url})`
       )
     }
 
-    const dappsBlacklistedStatus: Record<string, boolean> = await res.json()
+    const domainsBlacklistedStatus: Record<string, boolean> = await res.json()
 
-    idsToFetch.forEach((id) => {
-      this.#dappsBlacklistedStatus[id] = {
-        // eslint-disable-next-line no-nested-ternary
-        status: !dappsBlacklistedStatus
-          ? 'FAILED_TO_GET'
-          : dappsBlacklistedStatus[id]
-          ? 'BLACKLISTED'
-          : 'VERIFIED',
+    dappsToFetch.forEach(({ domain }) => {
+      this.#domainsBlacklistedStatus[domain] = {
+        status:
+          // eslint-disable-next-line no-nested-ternary
+          !domainsBlacklistedStatus || domainsBlacklistedStatus[domain] === undefined
+            ? 'FAILED_TO_GET'
+            : domainsBlacklistedStatus[domain]
+            ? 'BLACKLISTED'
+            : 'VERIFIED',
         updatedAt
       }
     })
 
-    const dappsBlacklistedStatusToStore = filterByStatus(this.#dappsBlacklistedStatus, [
+    const domainsBlacklistedStatusToStore = filterByStatus(this.#domainsBlacklistedStatus, [
       'BLACKLISTED',
       'VERIFIED'
     ])
-    await this.#storage.set('dappsBlacklistedStatus', dappsBlacklistedStatusToStore)
+    await this.#storage.set('domainsBlacklistedStatus', domainsBlacklistedStatusToStore)
 
     !!callback &&
       callback(
         Object.fromEntries(
-          dappIds.map((id) => [id, this.#dappsBlacklistedStatus[id].status])
+          dappsData.map(({ dappId, domain }) => [
+            dappId,
+            this.#domainsBlacklistedStatus[domain].status
+          ])
         ) as Record<string, BlacklistedStatuses[keyof BlacklistedStatuses]['status']>
       )
 
@@ -282,12 +294,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addresses: addressesToFetch })
       },
-      4000
+      5000
     )
 
     const updatedAt = Date.now()
 
-    if (!res.ok) {
+    if (!res.ok || res.status !== 200) {
       addressesToFetch.forEach((addr) => {
         this.#addressesBlacklistedStatus[addr] = { status: 'FAILED_TO_GET', updatedAt }
       })
@@ -300,12 +312,13 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     addressesToFetch.forEach((addr) => {
       this.#addressesBlacklistedStatus[addr] = {
-        // eslint-disable-next-line no-nested-ternary
-        status: !addressesBlacklistedStatus
-          ? 'FAILED_TO_GET'
-          : addressesBlacklistedStatus[addr]
-          ? 'BLACKLISTED'
-          : 'VERIFIED',
+        status:
+          // eslint-disable-next-line no-nested-ternary
+          !addressesBlacklistedStatus || addressesBlacklistedStatus[addr] === undefined
+            ? 'FAILED_TO_GET'
+            : addressesBlacklistedStatus[addr]
+            ? 'BLACKLISTED'
+            : 'VERIFIED',
         updatedAt
       }
     })
@@ -326,12 +339,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.emitUpdate()
   }
 
-  async updateDappsBlacklistedStatus(
+  async updateDomainsBlacklistedStatus(
     urls: string[],
     callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     try {
-      await this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
+      await this.#fetchAndSetDomainsBlacklistedStatus(urls, callback)
     } catch (err: any) {
       this.emitError({
         message: 'Failed to fetch and update domains blacklisted status',

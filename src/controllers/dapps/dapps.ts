@@ -195,7 +195,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     // NOTE: For debugging, you can comment out this line
     // to fetch and update dapps on every extension restart.
-    // if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
 
     if (this.#shouldRetryFetchAndUpdate) this.#retryFetchAndUpdateAttempts += 1
 
@@ -346,11 +346,11 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#dapps = dappsMap
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#phishing.updateDappsBlacklistedStatus(
-      unverifiedDappsArray.map((d) => getDomainFromUrl(d.url) || d.id),
+    this.#phishing.updateDomainsBlacklistedStatus(
+      unverifiedDappsArray.map((d) => d.url),
       (blacklistedStatus) => {
-        Object.entries(blacklistedStatus).forEach(([dappDomain, status]) => {
-          const dapp = this.getDappByDomain(dappDomain)
+        Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
+          const dapp = this.#dapps.get(dappId)
           if (dapp && dapp.blacklisted !== status) {
             this.#dapps.set(dapp.id, { ...dapp, blacklisted: status })
           }
@@ -626,22 +626,19 @@ export class DappsController extends EventEmitter implements IDappsController {
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
-          const domain = getDomainFromUrl(dapp.url) || dapp.id
+
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#phishing.updateDappsBlacklistedStatus([domain], (blacklistedStatus) => {
+          this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
             if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
-              const status = blacklistedStatus[domain] || 'FAILED_TO_GET'
+              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.dappToConnect.blacklisted = status
               this.emitUpdate()
             }
 
             const existingDapp = this.#dapps.get(dapp.id)
-            if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[domain]) {
-              const status = blacklistedStatus[domain] || 'FAILED_TO_GET'
-              this.#dapps.set(dapp.id, {
-                ...existingDapp,
-                blacklisted: status
-              })
+            if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
+              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
               this.emitUpdate()
             }
           })
