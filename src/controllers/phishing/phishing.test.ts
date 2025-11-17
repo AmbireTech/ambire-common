@@ -29,7 +29,7 @@ const prepareTest = async () => {
   const storage: Storage = produceMemoryStore()
   const storageCtrl = new StorageController(storage)
 
-  await storageCtrl.set('dappsBlacklistedStatus', {
+  await storageCtrl.set('domainsBlacklistedStatus', {
     'foourmemez.com': {
       status: 'BLACKLISTED',
       updatedAt: Date.now()
@@ -114,7 +114,7 @@ describe('PhishingController', () => {
   })
   test('should get dapps blacklisted status', async () => {
     const { controller } = await prepareTest()
-    await controller.updateDappsBlacklistedStatus(
+    await controller.updateDomainsBlacklistedStatus(
       ['foourmemez.com', 'rewards.ambire.com'],
       (blacklistedStatus) => {
         expect(blacklistedStatus['foourmemez.com'] === 'BLACKLISTED')
