@@ -9,7 +9,9 @@ import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
 import { RPCProviders } from '../../interfaces/provider'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import * as accountStateLib from '../../libs/accountState/accountState'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
 import { MainController } from '../main/main'
 
@@ -88,7 +90,12 @@ const prepareTest = async () => {
   await storage.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
 
   const uiManager = mockUiManager().uiManager
+  jest.spyOn(accountStateLib, 'getAccountState').mockImplementation(async () => {
+    return []
+  })
+  jest.spyOn(SwapProviderParallelExecutor.prototype, 'getSupportedChains').mockResolvedValue([])
   const mainCtrl = new MainController({
+    appVersion: '5.31.0',
     platform: 'default',
     storageAPI: storage,
     fetch,
@@ -100,6 +107,9 @@ const prepareTest = async () => {
     externalSignerControllers: {},
     uiManager,
     velcroUrl
+  })
+  mainCtrl.defiPositions.updatePositions = jest.fn().mockImplementation(async () => {
+    await wait(500)
   })
   mainCtrl.portfolio.updateSelectedAccount = jest.fn().mockResolvedValue(undefined)
   mainCtrl.updateSelectedAccountPortfolio = jest.fn().mockImplementation(async () => {

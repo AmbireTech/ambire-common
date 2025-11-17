@@ -9,6 +9,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
+import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BUNDLER, PIMLICO } from '../../consts/bundlers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -258,6 +259,7 @@ describe('Bundler estimation tests', () => {
 })
 
 describe('Bundler fallback tests', () => {
+  suppressConsoleBeforeEach()
   class BrokenPimlico extends Pimlico {
     // eslint-disable-next-line class-methods-use-this
     async estimate(userOperation: UserOperation, network: Network): Promise<BundlerEstimateResult> {

@@ -50,7 +50,7 @@ export type StorageProps = {
 }
 
 export interface Storage {
-  get<K extends keyof StorageProps | string | undefined>(
+  get<K extends keyof StorageProps | string>(
     key: K,
     defaultValue?: any
   ): Promise<K extends keyof StorageProps ? StorageProps[K] : any>
