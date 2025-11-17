@@ -3,7 +3,7 @@ require('dotenv').config()
 const { ethers } = require('hardhat')
 const { Interface, AbiCoder, concat } = require('ethers')
 const ambireAccountOmni = require('../contracts/compiled/AmbireAccountOmni.json')
-const { ENTRYPOINT_0_9_0 } = require('../src/consts/deploy')
+const { ENTRYPOINT_0_9_0, ENTRYPOINT_0_9_0_OLD } = require('../src/consts/deploy')
 
 async function main() {
   const [deployer] = await ethers.getSigners()
@@ -24,7 +24,7 @@ async function main() {
   ]
   const singletonInterface = new Interface(singletonABI)
   const encoder = new AbiCoder()
-  const encodedArgs = encoder.encode(['address'], [ENTRYPOINT_0_9_0])
+  const encodedArgs = encoder.encode(['address[]'], [[ENTRYPOINT_0_9_0, ENTRYPOINT_0_9_0_OLD]])
   const deploymentBytecode = concat([bytecode, encodedArgs])
   const tx = {
     to: '0xce0042B868300000d44A59004Da54A005ffdcf9f', // the singleton
