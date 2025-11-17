@@ -154,9 +154,9 @@ describe('Deployless', () => {
       const notAvailable = 'not available'
 
       if (
-        !e.info.error.message.includes(noSHR) &&
-        !e.info.error.message.includes(notActivated) &&
-        !e.info.error.message.includes(notAvailable)
+        !e?.info?.error?.message?.includes(noSHR) &&
+        !e?.info?.error?.message?.includes(notActivated) &&
+        !e?.info?.error?.message?.includes(notAvailable)
       ) {
         console.error('Unexpected error structure:', e)
         throw e
@@ -171,9 +171,9 @@ describe('Deployless', () => {
       // ethers wraps the error if we use the Provider; perhaps we should un-wrap it
       // fails with out-of-gas when wrapped in the ProxyContract mode (or invalid opcode: SHL)
       if (
-        !e.info.error.message.includes('out of gas') &&
-        !e.info.error.message.includes('invalid opcode: SHL') &&
-        !e.info.error.message.includes('NotActivated')
+        !e?.info?.error?.message?.includes('out of gas') &&
+        !e?.info?.error?.message?.includes('invalid opcode: SHL') &&
+        !e?.info?.error?.message?.includes('NotActivated')
       ) {
         console.error('Unexpected error structure:', e)
         throw e
