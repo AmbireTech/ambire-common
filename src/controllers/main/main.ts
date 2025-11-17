@@ -613,11 +613,12 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async selectAccount(toAccountAddr: string) {
+    await this.initialLoadPromise
+
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
   async #selectAccount(toAccountAddr: string | null) {
-    await this.initialLoadPromise
     if (!toAccountAddr) {
       await this.selectedAccount.setAccount(null)
 
@@ -651,6 +652,15 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge.reset()
     this.transfer.resetForm()
 
+    // Don't await this as it's not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reloadSelectedAccount({
+      maxDataAgeMs: 5 * 60 * 1000,
+      maxDataAgeMsUnused: 60 * 60 * 1000
+    })
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
       this.activity.forceEmitUpdate(),
@@ -659,14 +669,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
-    // Don't await these as they are not critical for the account selection
-    // and if the user decides to quickly change to another account withStatus
-    // will block the UI until these are resolved.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000,
-      maxDataAgeMsUnused: 60 * 60 * 1000
-    })
   }
 
   async #onAccountPickerSuccess() {

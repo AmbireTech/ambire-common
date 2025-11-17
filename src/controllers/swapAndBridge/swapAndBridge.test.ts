@@ -393,6 +393,9 @@ describe('SwapAndBridge Controller', () => {
       .spyOn(swapAndBridgeController, 'formStatus', 'get')
       .mockReturnValueOnce(SwapAndBridgeFormStatus.ReadyToSubmit)
 
+    // Otherwise the interval won't run
+    swapAndBridgeController.quote!.selectedRoute!.disabled = false
+
     swapAndBridgeController.updateQuoteInterval.restart()
     expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(2)
     expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)

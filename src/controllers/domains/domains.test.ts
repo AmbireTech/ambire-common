@@ -1,5 +1,6 @@
 import { expect, jest } from '@jest/globals'
 
+import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import * as withTimeoutModule from '../../utils/with-timeout'
@@ -73,6 +74,7 @@ describe('Domains', () => {
   it(`reverse lookup should expire after ${
     PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS / 1000 / 60
   } min, if the last lookup had failed (the unhappy case)`, async () => {
+    const { restore } = suppressConsole()
     const start = Date.now()
     const nowSpy = jest.spyOn(Date, 'now')
     nowSpy.mockReturnValue(start)
@@ -104,6 +106,7 @@ describe('Domains', () => {
 
     withTimeoutSpy.mockRestore()
     nowSpy.mockRestore()
+    restore()
   })
   it('should NOT reverse lookup if already resolved', async () => {
     const { address } = ENS2

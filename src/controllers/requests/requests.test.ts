@@ -189,7 +189,7 @@ const prepareTest = async () => {
     accounts: accountsCtrl,
     activity: activityCtrl,
     storage: storageCtrl,
-    swapProvider: SocketAPIMock as any,
+    swapProvider: new SocketAPIMock({ fetch, apiKey: '' }) as any,
     invite: new InviteController({ relayerUrl: '', fetch, storage: storageCtrl }),
     keystore,
     portfolio: portfolioCtrl,
@@ -312,6 +312,7 @@ describe('RequestsController ', () => {
           }
         },
         amount: '1',
+        amountInFiat: 100000n,
         actionExecutionType: 'open-action-window',
         recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }
