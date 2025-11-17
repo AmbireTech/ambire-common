@@ -87,8 +87,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     await this.#storage.set('domainsBlacklistedStatus', freshDomainsBlacklistedStatus)
     await this.#storage.set('addressesBlacklistedStatus', freshAddressesBlacklistedStatus)
 
-    // this.#domainsBlacklistedStatus = freshDomainsBlacklistedStatus
-    // this.#addressesBlacklistedStatus = freshAddressesBlacklistedStatus
+    this.#domainsBlacklistedStatus = freshDomainsBlacklistedStatus
+    this.#addressesBlacklistedStatus = freshAddressesBlacklistedStatus
 
     this.emitUpdate()
   }
