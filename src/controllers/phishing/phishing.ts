@@ -1,6 +1,10 @@
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { Fetch } from '../../interfaces/fetch'
-import { IPhishingController } from '../../interfaces/phishing'
+import {
+  BlacklistedStatus,
+  BlacklistedStatuses,
+  IPhishingController
+} from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 /* eslint-disable no-restricted-syntax */
@@ -9,21 +13,11 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 
-export interface BlacklistedStatuses {
-  [dappId: string]: {
-    status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
-    updatedAt: number
-  }
-}
-
 function filterByStatus(
   obj: {
-    [item: string]: {
-      status: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
-      updatedAt: number
-    }
+    [item: string]: { status: BlacklistedStatus; updatedAt: number }
   },
-  statuses: ('LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED')[]
+  statuses: BlacklistedStatus[]
 ) {
   return Object.entries(obj).reduce((acc: BlacklistedStatuses, [key, val]) => {
     if (statuses.includes(val.status)) acc[key] = val
@@ -104,9 +98,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    */
   async #fetchAndSetDappsBlacklistedStatus(
     urls: string[],
-    callback?: (res: {
-      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
-    }) => void
+    callback?: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     await this.initialLoadPromise
 
@@ -215,9 +207,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   async #fetchAndSetAddressesBlacklistedStatus(
     addresses: string[],
-    callback?: (res: {
-      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
-    }) => void
+    callback?: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     await this.initialLoadPromise
 
@@ -338,9 +328,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   async updateDappsBlacklistedStatus(
     urls: string[],
-    callback: (res: {
-      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
-    }) => void
+    callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     try {
       await this.#fetchAndSetDappsBlacklistedStatus(urls, callback)
@@ -355,9 +343,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   async updateAddressesBlacklistedStatus(
     urls: string[],
-    callback: (res: {
-      [dappId: string]: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
-    }) => void
+    callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     try {
       await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)

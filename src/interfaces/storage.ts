@@ -1,5 +1,4 @@
 import { SignedMessage } from '../controllers/activity/types'
-import { BlacklistedStatuses } from '../controllers/phishing/phishing'
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
@@ -12,6 +11,7 @@ import { ControllerInterface } from './controller'
 import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network } from './network'
+import { BlacklistedStatuses } from './phishing'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 export type IStorageController = ControllerInterface<

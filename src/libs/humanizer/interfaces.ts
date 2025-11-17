@@ -1,5 +1,6 @@
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { BlacklistedStatus } from '../../interfaces/phishing'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -35,7 +36,7 @@ export type HumanizerVisualization = (
   id: number
   content?: string
   isBold?: boolean
-  verification?: 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'
+  verification?: BlacklistedStatus
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
