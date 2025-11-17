@@ -60,6 +60,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   ISignAccountOpController,
+  SignAccountOpBanner,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
   Warning
@@ -2756,16 +2757,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       .delegatedContract
   }
 
-  get banners(): {
-    id: string
-    type: 'error' | 'warning'
-    text: string
-  }[] {
-    const banners: {
-      id: string
-      type: 'error' | 'warning'
-      text: string
-    }[] = []
+  get banners(): SignAccountOpBanner[] {
+    const banners: SignAccountOpBanner[] = []
 
     const visualizations = this.humanization.flatMap((call) => call.fullVisualization ?? [])
 
