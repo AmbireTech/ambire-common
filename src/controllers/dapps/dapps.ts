@@ -131,6 +131,10 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     for (const [key, d] of filteredMap) {
       const isPredefined = predefinedDapps.some((pd) => pd.id === d.id)
+      if (!d.isConnected && d.blacklisted === 'BLACKLISTED') {
+        filteredMap.delete(key)
+        continue
+      }
       if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
