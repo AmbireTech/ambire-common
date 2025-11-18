@@ -7,6 +7,7 @@ import { getSessionId, Session, SessionInitProps, SessionProp } from '../../clas
 import {
   categoriesNotToFilterOut,
   categoriesToExclude,
+  CATEGORY_MAP,
   dappIdsToBeRemoved,
   dappsNotToFilterOutByDomain,
   defiLlamaProtocolIdsToExclude,
@@ -139,7 +140,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
       const hasNoNetworks = d.chainIds.length === 0
-      const hasLowTVL = !d.tvl || d.tvl <= 5_000_000
+      const hasLowTVL = !d.tvl || d.tvl <= 15_000_000
 
       // Remove dapps that are not in excluded categories and either have no networks or low TVL
       if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
@@ -273,7 +274,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         description: dapp.description,
         url: unifyDefiLlamaDappUrl(dapp.url),
         icon: dapp.logo,
-        category: dapp.category,
+        category: CATEGORY_MAP[dapp.category] || dapp.category,
         tvl: dapp.tvl,
         chainIds,
         isConnected: prevStoredDapp?.isConnected || false,
@@ -308,7 +309,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           description: pd.description,
           url: pd.url,
           icon: pd.icon,
-          category: pd.category || null,
+          category: (pd.category ? CATEGORY_MAP[pd.category] : pd.category) || null,
           tvl: null,
           chainIds: pd.chainIds || [],
           isConnected: prevStoredDapp?.isConnected ?? false,
