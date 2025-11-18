@@ -1360,12 +1360,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   async simulateAccountOp(op: AccountOp): Promise<void> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
-    const state = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.chainId)
-    const noSimulation = isBasicAccount(account, state) && network.rpcNoStateOverride
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      op.accountAddr,
+      op.chainId
+    )
+
+    if (!accountState) throw new Error('Cannot simulate AccountOp: missing account state')
+
+    const noSimulation = isBasicAccount(account, accountState) && network.rpcNoStateOverride
     const simulation = !noSimulation
       ? {
           accountOps: { [network.chainId.toString()]: [op] },
-          states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
+          states: { [network.chainId.toString()]: accountState }
         }
       : undefined
 
