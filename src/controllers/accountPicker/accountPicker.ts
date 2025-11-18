@@ -871,10 +871,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       ...this.addedAccountsFromCurrentSession,
       ...this.readyToAddAccounts
     ]
+
     this.selectedAccountsFromCurrentSession = []
     this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
       this.#onAddAccountsSuccessCallbackPromise = undefined
     })
+
+    // Explicitly emit an update here because the front-end needs this state immediately,
+    // without waiting for the promise below to resolve.
+    // Previously, this caused a bug in AccountPersonalizeScreen where
+    // `addedAccountsFromCurrentSession` was still empty while waiting for the Promise.
+    // As a result, the app redirected to the NextRoute instead of showing the Personalize screen.
+    await this.forceEmitUpdate()
+
     await this.#onAddAccountsSuccessCallbackPromise
 
     this.addAccountsStatus = 'SUCCESS'
