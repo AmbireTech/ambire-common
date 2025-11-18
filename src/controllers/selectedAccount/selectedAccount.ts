@@ -605,7 +605,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       : this.#networks.allNetworks
     return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
       defiPositionsAccountState,
-      networks: notDismissedNetworks
+      networks: notDismissedNetworks,
+      accountAddr: this.account.addr
     })
   }
 

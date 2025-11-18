@@ -153,15 +153,16 @@ describe('Deployless', () => {
       const notActivated = 'EVM error: NotActivated'
       const notAvailable = 'not available'
 
-      if (!e.info || !e.info.error || !e.info.error.message) {
+      if (
+        !e?.info?.error?.message?.includes(noSHR) &&
+        !e?.info?.error?.message?.includes(notActivated) &&
+        !e?.info?.error?.message?.includes(notAvailable)
+      ) {
         console.error('Unexpected error structure:', e)
+        throw e
+      } else {
+        expect(true).toBe(true)
       }
-
-      expect(
-        e.info.error.message.includes(noSHR) ||
-          e.info.error.message.includes(notActivated) ||
-          e.info.error.message.includes(notAvailable)
-      ).toBe(true)
     }
     try {
       await localDeployless.call('helloWorld', [], {
@@ -169,17 +170,18 @@ describe('Deployless', () => {
         mode: DeploylessMode.ProxyContract
       })
     } catch (e: any) {
-      if (!e.info || !e.info.error || !e.info.error.message) {
-        console.error('Unexpected error structure:', e)
-      }
-
       // ethers wraps the error if we use the Provider; perhaps we should un-wrap it
       // fails with out-of-gas when wrapped in the ProxyContract mode (or invalid opcode: SHL)
-      expect(
-        e.info.error.message.includes('out of gas') ||
-          e.info.error.message.includes('invalid opcode: SHL') ||
-          e.info.error.message.includes('NotActivated')
-      ).toBe(true)
+      if (
+        !e?.info?.error?.message?.includes('out of gas') &&
+        !e?.info?.error?.message?.includes('invalid opcode: SHL') &&
+        !e?.info?.error?.message?.includes('NotActivated')
+      ) {
+        console.error('Unexpected error structure:', e)
+        throw e
+      } else {
+        expect(true).toBe(true)
+      }
     }
   })
 
