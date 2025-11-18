@@ -8,7 +8,6 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { Session } from '../../classes/session'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { PhishingController } from '../phishing/phishing'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { RPCProviders } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
@@ -21,10 +20,10 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
-import { DappsController } from '../dapps/dapps'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -124,12 +123,6 @@ const prepareTest = async () => {
     new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
 
-  const phishingCtrl = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    ui: uiCtrl
-  })
-
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
@@ -137,16 +130,14 @@ const prepareTest = async () => {
     autoLogin: autoLoginCtrl
   })
 
-  const dappsCtrl = new DappsController({
-    appVersion: '10',
+  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
+
+  const phishingCtrl = new PhishingController({
     fetch,
     storage: storageCtrl,
-    networks: networksCtrl,
-    phishing: phishingCtrl,
-    ui: uiCtrl
+    addressBook: addressBookCtrl
   })
 
-  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   const portfolioCtrl = new PortfolioController(
     storageCtrl,
     fetch,
@@ -170,6 +161,7 @@ const prepareTest = async () => {
     portfolioCtrl,
     () => Promise.resolve()
   )
+
   const transferCtrl = new TransferController(
     () => {},
     storageCtrl,
@@ -183,6 +175,7 @@ const prepareTest = async () => {
     activityCtrl,
     {},
     providersCtrl,
+    phishingCtrl,
     relayerUrl,
     () => Promise.resolve()
   )
@@ -196,11 +189,12 @@ const prepareTest = async () => {
     accounts: accountsCtrl,
     activity: activityCtrl,
     storage: storageCtrl,
-    swapProvider: SocketAPIMock as any,
+    swapProvider: new SocketAPIMock({ fetch, apiKey: '' }) as any,
     invite: new InviteController({ relayerUrl: '', fetch, storage: storageCtrl }),
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
+    phishing: phishingCtrl,
     externalSignerControllers: {},
     relayerUrl,
     getUserRequests: () => {
@@ -221,10 +215,10 @@ const prepareTest = async () => {
       providers: providersCtrl,
       selectedAccount: selectedAccountCtrl,
       keystore: keystoreCtrl,
-      dapps: dappsCtrl,
       transfer: transferCtrl,
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
+      getDapp: async () => undefined,
       getSignAccountOp: () => null,
       getMainStatuses: () => STATUS_WRAPPED_METHODS,
       updateSignAccountOp: () => {},
@@ -232,6 +226,7 @@ const prepareTest = async () => {
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
       guardHWSigning: () => Promise.resolve(false),
+      onSetCurrentAction: () => {},
       autoLogin: autoLoginCtrl
     })
   }
@@ -286,8 +281,7 @@ describe('RequestsController ', () => {
         request: {
           method: 'dapp_connect',
           params: {},
-          session: MOCK_SESSION,
-          origin: 'https://test-dApp.com'
+          session: MOCK_SESSION
         },
         dappPromise: { resolve: () => {}, reject: () => {}, session: MOCK_SESSION }
       }
@@ -318,6 +312,7 @@ describe('RequestsController ', () => {
           }
         },
         amount: '1',
+        amountInFiat: 100000n,
         actionExecutionType: 'open-action-window',
         recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }

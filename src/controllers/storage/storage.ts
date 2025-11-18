@@ -60,6 +60,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateLegacyDappsToDappsV2() // As of version 5.30.0
       await this.#cleanObsoleteNewlyCreatedFlagOnAccounts() // As of version 5.30.0
       await this.#cleanupCashbackStatus() // As of version 5.32.0
+      await this.#removeLegacyPhishingDetection() // As of version 5.32.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -396,7 +397,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
   }
 
-  async get<K extends keyof StorageProps | string | undefined>(
+  async get<K extends keyof StorageProps | string>(
     key: K,
     defaultValue?: any
   ): Promise<K extends keyof StorageProps ? StorageProps[K] : any> {
@@ -638,6 +639,17 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.remove('cashbackStatusByAccount')
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'cleanupCashbackStatus'])
+    ])
+  }
+
+  // As of version 5.32.0 we no longer need the dappSessions in the storage so this migration removes them
+  async #removeLegacyPhishingDetection() {
+    const passedMigrations = await this.#storage.get('passedMigrations', [])
+    if (passedMigrations.includes('removePhishingDetection')) return
+
+    await this.#storage.remove('phishingDetection')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'removePhishingDetection'])
     ])
   }
 

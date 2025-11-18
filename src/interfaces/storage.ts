@@ -11,7 +11,7 @@ import { ControllerInterface } from './controller'
 import { Dapp } from './dapp'
 import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
 import { Network } from './network'
-import { StoredPhishingDetection } from './phishing'
+import { BlacklistedStatuses } from './phishing'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 export type IStorageController = ControllerInterface<
@@ -43,14 +43,15 @@ export type StorageProps = {
   keyStoreUid: string | null
   keystoreSecrets: MainKeyEncryptedWithSecret[]
   onboardingState?: object
-  phishingDetection: StoredPhishingDetection
+  domainsBlacklistedStatus: BlacklistedStatuses
+  addressesBlacklistedStatus: BlacklistedStatuses
   selectedAccount: string | null
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
   termsState?: object
 }
 
 export interface Storage {
-  get<K extends keyof StorageProps | string | undefined>(
+  get<K extends keyof StorageProps | string>(
     key: K,
     defaultValue?: any
   ): Promise<K extends keyof StorageProps ? StorageProps[K] : any>
