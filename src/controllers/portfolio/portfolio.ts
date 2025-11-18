@@ -1365,9 +1365,9 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       op.chainId
     )
 
-    if (!accountState) throw new Error('Cannot simulate AccountOp: missing account state')
+    const noSimulation =
+      !accountState || (isBasicAccount(account, accountState) && network.rpcNoStateOverride)
 
-    const noSimulation = isBasicAccount(account, accountState) && network.rpcNoStateOverride
     const simulation = !noSimulation
       ? {
           accountOps: { [network.chainId.toString()]: [op] },
