@@ -652,8 +652,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.dappToConnect = null
         this.emitUpdate()
       }
-    } catch (err) {
-      console.error('Error in DappsController while updating the dappToConnect:', err)
+    } catch (err: any) {
+      this.emitError({
+        message: 'Error in DappsController while updating the dappToConnect',
+        error: err,
+        level: 'silent'
+      })
     }
   }
 
