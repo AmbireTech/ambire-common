@@ -1,5 +1,6 @@
 import { Account } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { BlacklistedStatus } from '../../interfaces/phishing'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -30,7 +31,13 @@ export type HumanizerVisualization = (
       value: bigint
       chainId?: bigint
     }
-) & { isHidden?: boolean; id: number; content?: string; isBold?: boolean }
+) & {
+  isHidden?: boolean
+  id: number
+  content?: string
+  isBold?: boolean
+  verification?: BlacklistedStatus
+}
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]

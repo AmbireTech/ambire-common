@@ -1,5 +1,6 @@
 import { Session } from '../classes/session'
 import { ControllerInterface } from './controller'
+import { BlacklistedStatus } from './phishing'
 
 export type IDappsController = ControllerInterface<
   InstanceType<typeof import('../controllers/dapps/dapps').DappsController>
@@ -21,7 +22,7 @@ export interface Dapp {
   isCustom: boolean
   chainId: number
   favorite: boolean
-  blacklisted?: boolean
+  blacklisted: BlacklistedStatus
   grantedPermissionId?: string
   grantedPermissionAt?: number
 }

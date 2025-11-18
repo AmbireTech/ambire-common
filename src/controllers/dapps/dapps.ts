@@ -13,6 +13,7 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps'
+import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
@@ -54,6 +55,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   dappSessions: { [sessionId: string]: Session } = {}
 
   #dapps = new Map<string, Dapp>()
+
+  dappToConnect: Dapp | null = null
 
   isFetchingAndUpdatingDapps: boolean = false
 
@@ -128,6 +131,10 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     for (const [key, d] of filteredMap) {
       const isPredefined = predefinedDapps.some((pd) => pd.id === d.id)
+      if (!d.isConnected && d.blacklisted === 'BLACKLISTED') {
+        filteredMap.delete(key)
+        continue
+      }
       if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
@@ -274,7 +281,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         isCustom: !!prevStoredDapp?.isCustom,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
-        blacklisted: !!prevStoredDapp?.blacklisted,
+        blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
         grantedPermissionId: prevStoredDapp?.grantedPermissionId,
@@ -309,7 +316,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           isCustom: false,
           chainId: prevStoredDapp?.chainId ?? 1,
           favorite: prevStoredDapp?.favorite ?? false,
-          blacklisted: prevStoredDapp?.blacklisted ?? false,
+          blacklisted: 'LOADING',
           twitter: pd.twitter || null,
           geckoId: null
         })
@@ -339,8 +346,23 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // Delete legacy IDs
     for (const id of dappIdsToBeRemoved) dappsMap.delete(id)
+    const unverifiedDappsArray = Array.from(dappsMap.values())
 
     this.#dapps = dappsMap
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#phishing.updateDomainsBlacklistedStatus(
+      unverifiedDappsArray.map((d) => d.url),
+      (blacklistedStatus) => {
+        Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
+          const dapp = this.#dapps.get(dappId)
+          if (dapp && dapp.blacklisted !== status) {
+            this.#dapps.set(dapp.id, { ...dapp, blacklisted: status })
+          }
+        })
+        this.emitUpdate()
+      }
+    )
+
     await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
     await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
     this.#shouldRetryFetchAndUpdate = false
@@ -439,15 +461,15 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
-  async addDapp(dapp: {
+  async #buildDapp(dapp: {
     id: Dapp['id']
     name: Dapp['name']
     url: Dapp['url']
     icon: Dapp['icon']
     chainId?: Dapp['chainId']
     isConnected: Dapp['isConnected']
-  }) {
-    if (!this.isReady) return
+  }): Promise<Dapp> {
+    await this.initialLoadPromise
 
     const existing = this.#dapps.get(dapp.id)
 
@@ -458,16 +480,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     const DEFAULT_CHAIN_ID = 1
 
     if (existing) {
-      this.updateDapp(dapp.id, {
+      return {
+        ...existing,
         chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
         isConnected: dapp.isConnected
-      })
-      return
+      }
     }
 
     const existingByDomain = this.#dapps.get(getDomainFromUrl(dapp.url)!)
 
-    this.#dapps.set(dapp.id, {
+    return {
       id: dapp.id,
       url: dapp.url,
       name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
@@ -481,23 +503,40 @@ export class DappsController extends EventEmitter implements IDappsController {
       isFeatured: existingByDomain?.isFeatured || false,
       isCustom: existingByDomain?.isCustom ?? true,
       tvl: existingByDomain?.tvl || null,
-      blacklisted: await this.#phishing.getIsBlacklisted(dapp.url),
+      blacklisted: 'LOADING',
       geckoId: existingByDomain?.geckoId || null,
       twitter: existingByDomain?.twitter || null
-    })
+    }
+  }
 
-    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
-    this.emitUpdate()
+  async addDapp(dapp: Dapp) {
+    if (!this.isReady) return
 
-    if (dapp.isConnected) {
-      await this.broadcastDappSessionEvent(
-        'chainChanged',
-        {
-          chain: networkChainIdToHex(dapp.chainId || DEFAULT_CHAIN_ID),
-          networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
-        },
-        dapp.id
-      )
+    const existing = this.#dapps.get(dapp.id)
+
+    if (existing) {
+      this.updateDapp(dapp.id, { chainId: dapp.chainId, isConnected: dapp.isConnected })
+    } else {
+      this.#dapps.set(dapp.id, dapp)
+
+      await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+      this.emitUpdate()
+
+      if (dapp.isConnected) {
+        const network = this.#networks.allNetworks.find(
+          (n) => n.chainId.toString() === dapp.chainId?.toString()
+        )
+        const DEFAULT_CHAIN_ID = 1
+
+        await this.broadcastDappSessionEvent(
+          'chainChanged',
+          {
+            chain: networkChainIdToHex(dapp.chainId),
+            networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
+          },
+          dapp.id
+        )
+      }
     }
   }
 
@@ -571,6 +610,59 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!this.isReady) return
 
     return this.#dapps.get(getDomainFromUrl(url)!)
+  }
+
+  async setDappToConnectIfNeeded(currentAction: Action | null) {
+    try {
+      if (
+        currentAction &&
+        currentAction.type === 'dappRequest' &&
+        currentAction.userRequest.action.kind === 'dappConnect'
+      ) {
+        const { session } = currentAction.userRequest
+        const dapp = await this.#buildDapp({
+          id: session.id,
+          name: session.name,
+          url: session.origin,
+          icon: session.icon,
+          chainId: 1,
+          isConnected: false
+        })
+        if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
+          this.dappToConnect = dapp
+
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
+            if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
+              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+              this.dappToConnect.blacklisted = status
+              this.emitUpdate()
+            }
+
+            const existingDapp = this.#dapps.get(dapp.id)
+            if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
+              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
+              this.emitUpdate()
+            }
+          })
+          this.emitUpdate()
+        }
+
+        return
+      }
+
+      if (this.dappToConnect) {
+        this.dappToConnect = null
+        this.emitUpdate()
+      }
+    } catch (err: any) {
+      this.emitError({
+        message: 'Error in DappsController while updating the dappToConnect',
+        error: err,
+        level: 'silent'
+      })
+    }
   }
 
   toJSON() {

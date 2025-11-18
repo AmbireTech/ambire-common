@@ -347,15 +347,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.phishing = new PhishingController({
       fetch: this.fetch,
       storage: this.storage,
-      ui: this.ui
-    })
-    this.dapps = new DappsController({
-      appVersion: this.#appVersion,
-      fetch: this.fetch,
-      storage: this.storage,
-      networks: this.networks,
-      phishing: this.phishing,
-      ui: this.ui
+      addressBook: this.addressBook
     })
 
     this.selectedAccount.initControllers({
@@ -393,6 +385,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       invite: this.invite,
       storage: this.storage,
+      phishing: this.phishing,
       swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
@@ -435,6 +428,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.activity,
       this.#externalSignerControllers,
       this.providers,
+      this.phishing,
       relayerUrl,
       this.#commonHandlerForBroadcastSuccess.bind(this)
     )
@@ -471,12 +465,15 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
-      dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
+      getDapp: async (id) => {
+        await this.dapps.initialLoadPromise
+        return this.dapps.getDapp(id)
+      },
       getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
@@ -488,7 +485,20 @@ export class MainController extends EventEmitter implements IMainController {
         await this.updateSelectedAccountPortfolio({ networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
-      guardHWSigning: this.#guardHWSigning.bind(this)
+      guardHWSigning: this.#guardHWSigning.bind(this),
+      onSetCurrentAction: (currentAction) => {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.dapps.setDappToConnectIfNeeded(currentAction)
+      }
+    })
+
+    this.dapps = new DappsController({
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -744,6 +754,7 @@ export class MainController extends EventEmitter implements IMainController {
         account: this.selectedAccount.account,
         network,
         provider: this.providers.providers[network.chainId.toString()],
+        phishing: this.phishing,
         fromActionId: actionId,
         accountOp,
         isSignRequestStillActive: () => {

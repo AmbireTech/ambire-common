@@ -1,3 +1,5 @@
+/* eslint-disable no-continue */
+/* eslint-disable no-restricted-syntax */
 /* eslint-disable @typescript-eslint/brace-style */
 /* eslint-disable no-await-in-loop */
 /* eslint-disable class-methods-use-this */
@@ -53,10 +55,12 @@ import {
   Key
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   ISignAccountOpController,
+  SignAccountOpBanner,
   SignAccountOpError,
   TraceCallDiscoveryStatus,
   Warning
@@ -84,6 +88,7 @@ import {
   GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
+import { IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -217,6 +222,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #blockGasLimit: bigint | undefined = undefined
 
+  #phishing: IPhishingController
+
   // this is not used in the controller directly but it's being read outside
   fromActionId: AccountOpAction['id']
 
@@ -285,6 +292,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   estimation: EstimationController
 
+  humanization: IrCall[] = []
+
+  humanizationId: number | null = null
+
   gasPrice: GasPriceController
 
   #onAccountOpUpdate: (updatedAccountOp: AccountOp) => void
@@ -313,6 +324,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   #onBroadcastFailed?: OnBroadcastFailed
 
+  #updateBlacklistedStatusPromise: Promise<void> | undefined
+
   signPromise: Promise<void> | undefined
 
   broadcastPromise: Promise<void> | undefined
@@ -331,6 +344,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     network,
     activity,
     provider,
+    phishing,
     fromActionId,
     accountOp,
     isSignRequestStillActive,
@@ -351,6 +365,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     network: Network
     activity: IActivityController
     provider: RPCProvider
+    phishing: IPhishingController
     fromActionId: AccountOpAction['id']
     accountOp: AccountOp
     isSignRequestStillActive: Function
@@ -377,6 +392,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     )
     this.#network = network
     this.#activity = activity
+    this.#phishing = phishing
     this.fromActionId = fromActionId
     this.#accountOp = structuredClone(accountOp)
     this.#isSignRequestStillActive = isSignRequestStillActive
@@ -421,6 +437,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
 
     this.#load(shouldSimulate)
+  }
+
+  get safetyChecksLoading() {
+    return !!this.#updateBlacklistedStatusPromise
   }
 
   get accountOp(): Readonly<AccountOp> {
@@ -512,7 +532,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   #load(shouldSimulate: boolean) {
-    this.learnTokensFromCalls()
+    this.humanize()
+    this.learnTokens()
 
     this.estimation.onUpdate(() => {
       this.update({ hasNewEstimation: true })
@@ -533,9 +554,49 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.fetch()
   }
 
-  learnTokensFromCalls() {
-    const humanization = humanizeAccountOp(this.accountOp, {})
-    const additionalHints: GetOptions['additionalErc20Hints'] = humanization
+  humanize() {
+    this.humanization = humanizeAccountOp(this.accountOp, {})
+    const currentHumanizationId = Date.now()
+    this.humanizationId = currentHumanizationId
+    if (this.humanization.length) {
+      this.#updateBlacklistedStatusPromise = this.#phishing
+        .updateAddressesBlacklistedStatus(
+          this.humanization
+            .flatMap((call) =>
+              (call.fullVisualization ?? [])
+                .filter((v) => v.type === 'token' || v.type === 'address')
+                .map((v) => v.address)
+            )
+            .filter((addr): addr is string => Boolean(addr)),
+          (addressesStatus) => {
+            if (this.humanizationId !== currentHumanizationId) return
+
+            for (const call of this.humanization) {
+              if (!call.fullVisualization) continue
+
+              for (const vis of call.fullVisualization) {
+                if (
+                  (vis.type === 'token' || vis.type === 'address') &&
+                  vis.address &&
+                  addressesStatus[vis.address]
+                ) {
+                  vis.verification = addressesStatus[vis.address]
+                }
+              }
+            }
+            this.emitUpdate()
+          }
+        )
+        .finally(() => {
+          this.#updateBlacklistedStatusPromise = undefined
+          this.updateStatus()
+        })
+    }
+    this.emitUpdate()
+  }
+
+  learnTokens() {
+    const additionalHints: GetOptions['additionalErc20Hints'] = this.humanization
       .map((call: any) =>
         !call.fullVisualization
           ? []
@@ -1007,10 +1068,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // update only if there are differences in the calls array
           // we do this to prevent double estimation problems
           if (shouldUpdate) {
-            const hasNewCalls = this.accountOp.calls.length < calls.length
             this.#updateAccountOp({ calls })
+            this.humanize()
 
-            if (hasNewCalls) this.learnTokensFromCalls()
+            const hasNewCalls = this.accountOp.calls.length < calls.length
+            if (hasNewCalls) this.learnTokens()
             this.#shouldSimulate ? this.simulate(hasNewCalls) : this.estimate()
 
             this.#reestimateCounter = 0
@@ -2695,6 +2757,54 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       .delegatedContract
   }
 
+  get banners(): SignAccountOpBanner[] {
+    const banners: SignAccountOpBanner[] = []
+
+    const visualizations = this.humanization.flatMap((call) => call.fullVisualization ?? [])
+
+    // Keep only token/address types AND ensure uniqueness by address
+    const addressVisualizations = Array.from(
+      new Map(
+        visualizations
+          .filter((v) => (v.type === 'token' || v.type === 'address') && v.address)
+          .map((v) => [v.address, v]) // key: address → value: visualization
+      ).values()
+    )
+
+    const blacklistedCount = addressVisualizations.filter(
+      (v) => v.verification === 'BLACKLISTED'
+    ).length
+
+    if (blacklistedCount > 0) {
+      banners.push({
+        id: 'blacklisted-addresses-error-banner',
+        type: 'error',
+        text:
+          blacklistedCount === 1
+            ? `${
+                this.type !== 'default'
+                  ? 'The destination address'
+                  : 'One of the destination addresses'
+              } in this transaction was flagged as dangerous. Proceed at your own risk.`
+            : `${blacklistedCount} of the destination addresses in this transaction were flagged as dangerous. Proceed at your own risk.`
+      })
+    } else {
+      const hasFailedToGet = visualizations.some(
+        (v) => (v.type === 'token' || v.type === 'address') && v.verification === 'FAILED_TO_GET'
+      )
+
+      if (hasFailedToGet) {
+        banners.push({
+          id: 'blacklisted-addresses-warning-banner',
+          type: 'warning',
+          text: "We couldn't check the destination addresses in this transaction for malicious activity. Proceed with caution."
+        })
+      }
+    }
+
+    return banners
+  }
+
   toJSON() {
     return {
       ...this,
@@ -2702,6 +2812,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       isInitialized: this.isInitialized,
       type: this.type,
       readyToSign: this.readyToSign,
+      safetyChecksLoading: this.safetyChecksLoading,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
       feePayerKeyStoreKeys: this.feePayerKeyStoreKeys,
       feeToken: this.feeToken,
@@ -2714,7 +2825,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       accountOp: this.accountOp,
       isSignInProgress: this.isSignInProgress,
       isBroadcastInProgress: this.isBroadcastInProgress,
-      isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress
+      isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
+      banners: this.banners
     }
   }
 }
