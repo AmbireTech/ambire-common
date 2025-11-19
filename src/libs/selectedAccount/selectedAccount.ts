@@ -588,8 +588,10 @@ export const calculateAndSetProjectedRewards = (
     walletPrice,
     minLvl,
     minBalance,
-    userXp
+    userXp,
+    reasonToNotDisplayProjectedRewards
   } = result
+  if (reasonToNotDisplayProjectedRewards) return
 
   const currentTotalBalanceOnSupportedChains = supportedChainIds
     .map((chainId: number) => latestBalances[chainId] || 0)

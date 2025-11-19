@@ -239,6 +239,7 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
   minLvl: number
   minBalance: number
   userXp: number
+  reasonToNotDisplayProjectedRewards?: string
 }
 
 export type NetworkState = {
