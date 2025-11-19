@@ -508,16 +508,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   async #reestimate() {
-    // stop the interval reestimate if the user has done it over 20 times
-    this.#reestimateCounter += 1
-    if (this.#reestimateCounter > 20) this.#stopRefetching = true
-
     if (
       this.#stopRefetching ||
       this.estimation.status === EstimationStatus.Initial ||
       this.estimation.status === EstimationStatus.Loading
     )
       return
+
+    // stop the interval reestimate if the user has done it at least 20 times
+    if (this.#reestimateCounter >= 20) this.#stopRefetching = true
+
+    this.#reestimateCounter += 1
 
     // the first 10 times, reestimate once every 30s; then, slow down
     // the time as the user might just have closed the popup of the extension
