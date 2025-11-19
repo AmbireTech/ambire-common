@@ -201,6 +201,18 @@ describe('Activity Controller ', () => {
     const { uiManager } = mockUiManager()
     const uiCtrl = new UiController({ uiManager })
     const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
+    accountsCtrl = new AccountsController(
+      storageCtrl,
+      providersCtrl,
+      networksCtrl,
+      keystore,
+      () => {},
+      () => {},
+      () => {},
+      relayerUrl,
+      fetch
+    )
+
     portfolioCtrl = new PortfolioController(
       storageCtrl,
       fetch,
@@ -213,17 +225,7 @@ describe('Activity Controller ', () => {
       new BannerController(storageCtrl)
     )
     providersCtrl.providers = providers
-    accountsCtrl = new AccountsController(
-      storageCtrl,
-      providersCtrl,
-      networksCtrl,
-      keystore,
-      () => {},
-      () => {},
-      () => {},
-      relayerUrl,
-      fetch
-    )
+
     const autoLoginCtrl = new AutoLoginController(
       storageCtrl,
       keystore,

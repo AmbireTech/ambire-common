@@ -14,7 +14,6 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { networks } from '../../consts/networks'
-import { AddressBookController } from '../addressBook/addressBook'
 import { Account } from '../../interfaces/account'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
@@ -35,6 +34,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
@@ -542,7 +542,7 @@ const init = async (
     fromActionId: 1,
     accountOp: op,
     isSignRequestStillActive: () => true,
-    shouldSimulate: true,
+    shouldSimulate: false,
     onAccountOpUpdate: () => {},
     // @ts-ignore
     onBroadcastSuccess: () => {},

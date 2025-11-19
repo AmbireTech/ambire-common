@@ -206,7 +206,8 @@ describe('Actions Controller', () => {
     actionsCtrl = new ActionsController({
       selectedAccount: selectedAccountCtrl,
       ui: uiCtrl,
-      onActionWindowClose: () => Promise.resolve()
+      onActionWindowClose: () => Promise.resolve(),
+      onSetCurrentAction: () => Promise.resolve()
     })
     expect(actionsCtrl).toBeDefined()
   })
