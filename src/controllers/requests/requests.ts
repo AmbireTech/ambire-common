@@ -44,6 +44,7 @@ import {
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { TokenResult } from '../../libs/portfolio'
+import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
@@ -1141,8 +1142,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }) {
     if (!this.#selectedAccount.account) return
 
-    const claimableRewardsData =
-      this.#selectedAccount.portfolio.portfolioState.rewards?.result?.claimableRewardsData
+    const claimableRewardsData = (
+      this.#selectedAccount.portfolio.portfolioState.rewards?.result as PortfolioRewardsResult
+    )?.claimableRewardsData
 
     if (!claimableRewardsData) return
 
@@ -1165,8 +1167,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }) {
     if (!this.#selectedAccount.account) return
 
-    const addrVestingData =
-      this.#selectedAccount.portfolio.portfolioState.rewards?.result?.addrVestingData
+    const addrVestingData = (
+      this.#selectedAccount.portfolio.portfolioState.rewards?.result as PortfolioRewardsResult
+    )?.addrVestingData
 
     if (!addrVestingData) return
     const userRequest: UserRequest = buildMintVestingRequest({

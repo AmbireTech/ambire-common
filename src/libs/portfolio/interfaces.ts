@@ -191,8 +191,6 @@ interface Total {
   [currency: string]: number
 }
 
-type AdditionalPortfolioProperties = 'updateStarted' | 'tokens'
-
 export type ClaimableRewardsData = {
   addr: string
   fromBalanceClaimable: number
@@ -211,22 +209,35 @@ export type AddrVestingData = {
   end: string
 }
 
-// Create the final type with some properties optional
-export type AdditionalPortfolioNetworkResult = Partial<PortfolioLibGetResult> &
-  Pick<PortfolioLibGetResult, AdditionalPortfolioProperties> & {
-    lastSuccessfulUpdate: number
-    total: Total
+type CommonResultProps = Pick<PortfolioLibGetResult, 'tokens' | 'updateStarted'> & {
+  lastSuccessfulUpdate: number
+  total: Total
+}
+
+export type PortfolioNetworkResult = CommonResultProps &
+  Pick<
+    PortfolioLibGetResult,
+    | 'collections'
+    | 'tokenErrors'
+    | 'errors'
+    | 'blockNumber'
+    | 'priceCache'
+    | 'lastExternalApiUpdateData'
+    | 'toBeLearned'
+    | 'feeTokens'
+  >
+
+export type PortfolioRewardsResult = CommonResultProps &
+  Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
     claimableRewardsData?: ClaimableRewardsData
     addrVestingData?: AddrVestingData
   }
 
-type PortfolioNetworkResult = Required<AdditionalPortfolioNetworkResult>
-
-export type PortfolioGasTankResult = AdditionalPortfolioNetworkResult & {
+export type PortfolioGasTankResult = CommonResultProps & {
   gasTankTokens: GasTankTokenResult[]
 }
 
-export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
+export type PortfolioProjectedRewardsResult = {
   currentSeasonSnapshots: { week: number; balance: number }[]
   currentWeek: number
   supportedChainIds: number[]
@@ -241,16 +252,17 @@ export type PortfolioProjectedRewardsResult = PortfolioNetworkResult & {
   userXp: number
 }
 
-export type NetworkState = {
+export type PortfolioKeyResult =
+  | PortfolioRewardsResult
+  | PortfolioGasTankResult
+  | PortfolioNetworkResult
+
+export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
   isLoading: boolean
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
-  result?:
-    | PortfolioNetworkResult
-    | AdditionalPortfolioNetworkResult
-    | PortfolioGasTankResult
-    | PortfolioProjectedRewardsResult
+  result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
   // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
@@ -258,7 +270,11 @@ export type NetworkState = {
 }
 
 export type AccountState = {
-  [chainId: string]: NetworkState | undefined
+  rewards?: NetworkState<PortfolioRewardsResult>
+  gasTank?: NetworkState<PortfolioGasTankResult>
+  projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+} & {
+  [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
 
 export type PortfolioControllerState = {
