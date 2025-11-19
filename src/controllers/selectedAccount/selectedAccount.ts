@@ -490,7 +490,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   get balanceAffectingErrors() {
-    return [...this.#portfolioErrors, ...this.#defiPositionsErrors]
+    // Sort errors so that errors are shown before warnings
+    const sorted = [...this.#portfolioErrors, ...this.#defiPositionsErrors].sort((a, b) => {
+      const order = { error: 0, warning: 1 } as const
+      return order[a.type] - order[b.type]
+    })
+
+    return sorted
   }
 
   get deprecatedSmartAccountBanner(): Banner[] {
