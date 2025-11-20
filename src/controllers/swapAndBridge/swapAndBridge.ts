@@ -2293,6 +2293,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       network.chainId
     )
 
+    if (!accountState) {
+      this.updateQuoteStatus = 'INITIAL'
+      this.addOrUpdateError({
+        id: 'all-routes-failed',
+        level: 'error',
+        title: 'Missing mandatory account data. Please try again later.'
+      })
+      return
+    }
+
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     const userTxn = await this.getRouteStartUserTx()

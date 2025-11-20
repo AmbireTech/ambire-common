@@ -663,13 +663,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.#selectedAccount.account.addr,
+        network.chainId
+      )
+
+      if (!accountState) {
+        throw ethErrors.rpc.internal(
+          'Transaction failed - unable to fetch account state for the selected account'
+        )
+      }
 
       const baseAcc = getBaseAccount(
         this.#selectedAccount.account,
-        await this.#accounts.getOrFetchAccountOnChainState(
-          this.#selectedAccount.account.addr,
-          network.chainId
-        ),
+        accountState,
         this.#keystore.getAccountKeys(this.#selectedAccount.account),
         network
       )
@@ -957,12 +964,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      selectedToken.chainId
+    )
+
+    if (!accountState) {
+      this.emitError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${
+            this.#selectedAccount.account?.addr
+          } is undefined on network with id ${selectedToken.chainId}`
+        )
+      })
+      return
+    }
+
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
-      await this.#accounts.getOrFetchAccountOnChainState(
-        this.#selectedAccount.account.addr,
-        selectedToken.chainId
-      ),
+      accountState,
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
@@ -1008,12 +1031,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
 
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      selectedToken.chainId
+    )
+
+    if (!accountState) {
+      this.emitError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${
+            this.#selectedAccount.account?.addr
+          } is undefined on network with id ${selectedToken.chainId}`
+        )
+      })
+      return
+    }
+
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
-      await this.#accounts.getOrFetchAccountOnChainState(
-        this.#selectedAccount.account.addr,
-        selectedToken.chainId
-      ),
+      accountState,
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
@@ -1084,12 +1123,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
-        // TODO: Consider refining the error handling in here, because this
-        // swallows errors and doesn't provide any feedback to the user.
         const accountState = await this.#accounts.getOrFetchAccountOnChainState(
           this.#selectedAccount.account.addr,
           network.chainId
         )
+
+        if (!accountState) {
+          const error = new SwapAndBridgeError(
+            "Required account data couldn't be retrieved. Please try again later or contact Ambire support."
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
+        }
+
         const baseAcc = getBaseAccount(
           this.#selectedAccount.account,
           accountState,
