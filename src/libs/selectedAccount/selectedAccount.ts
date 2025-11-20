@@ -342,7 +342,12 @@ const recalculateNetworkPortfolio = (
   defiPositionsAccountState: DefiPositionsAccountState,
   simulatedAccountOp: NetworkSimulatedAccountOp[string] | undefined
 ) => {
-  const collectionsArray: CollectionResult[] = portfolioState.result?.collections || []
+  const collectionsArray: CollectionResult[] =
+    portfolioState.result &&
+    'collections' in portfolioState.result &&
+    portfolioState.result?.collections
+      ? portfolioState.result.collections
+      : []
   let tokensArray = portfolioState.result?.tokens || []
   let networkTotal = portfolioState.result?.total?.usd || 0
   const hasTokensWithAmountOnNetwork = tokensArray.some(({ amount }) => amount > 0n)
@@ -571,13 +576,15 @@ export function calculateSelectedAccountPortfolio(
 }
 
 export const calculateAndSetProjectedRewards = (
-  projectedRewards: NetworkState | undefined,
+  projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
   latestBalances: { [chainId: string]: number },
   walletOrStkWalletTokenPrice: number | undefined
 ): ProjectedRewardsTokenResult | undefined => {
   if (!projectedRewards) return
 
-  const result = projectedRewards?.result as PortfolioProjectedRewardsResult
+  const result = projectedRewards?.result
+  if (!result) return
+
   const {
     currentSeasonSnapshots,
     supportedChainIds,
