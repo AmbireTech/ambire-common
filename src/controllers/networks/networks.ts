@@ -207,6 +207,35 @@ export class NetworksController extends EventEmitter implements INetworksControl
       finalNetworks = (await this.mergeRelayerNetworks(finalNetworks)).mergedNetworks
     }
 
+    // do the EIL special workshop networks
+    // eth
+    finalNetworks[1].rpcUrls = ['https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-eth']
+    finalNetworks[1].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-eth'
+    finalNetworks[1].customBundlerUrl = 'https://vnet.erc4337.io/bundler/1'
+
+    // op
+    finalNetworks[10].rpcUrls = ['https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-op']
+    finalNetworks[10].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-op'
+    finalNetworks[10].customBundlerUrl = 'https://vnet.erc4337.io/bundler/10'
+
+    // arb
+    finalNetworks[42161].rpcUrls = [
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-arb'
+    ]
+    finalNetworks[42161].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-arb'
+    finalNetworks[42161].customBundlerUrl = 'https://vnet.erc4337.io/bundler/42161'
+
+    // base
+    finalNetworks[8453].rpcUrls = [
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-base'
+    ]
+    finalNetworks[8453].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-base'
+    finalNetworks[8453].customBundlerUrl = 'https://vnet.erc4337.io/bundler/8453'
+
     this.#networks = finalNetworks
     this.emitUpdate()
 
