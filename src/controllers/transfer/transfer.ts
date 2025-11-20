@@ -124,12 +124,6 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   signAccountOpController: ISignAccountOpController | null = null
 
-  /**
-   * Holds all subscriptions (on update and on error) to the signAccountOpController.
-   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
-   */
-  #signAccountOpSubscriptions: Function[] = []
-
   latestBroadcastedAccountOp: AccountOp | null = null
 
   latestBroadcastedToken: TokenResult | null = null
@@ -728,19 +722,14 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     })
 
-    // propagate updates from signAccountOp here
-    this.#signAccountOpSubscriptions.push(
-      this.signAccountOpController.onUpdate(() => {
-        this.emitUpdate()
-      })
-    )
-    this.#signAccountOpSubscriptions.push(
-      this.signAccountOpController.onError((error) => {
-        if (this.signAccountOpController)
-          this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
-        this.emitError(error)
-      })
-    )
+    this.signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.signAccountOpController.onError((error) => {
+      if (this.signAccountOpController)
+        this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
+      this.emitError(error)
+    })
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -749,12 +738,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   destroySignAccountOp() {
-    // Unsubscribe from all previous subscriptions
-    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
-    this.#signAccountOpSubscriptions = []
-
     if (this.signAccountOpController) {
-      this.signAccountOpController.reset()
+      this.signAccountOpController.destroy()
       this.signAccountOpController = null
     }
 

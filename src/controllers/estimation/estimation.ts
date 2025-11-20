@@ -294,13 +294,4 @@ export class EstimationController extends EventEmitter {
 
     return errors
   }
-
-  reset() {
-    this.estimation = null
-    this.error = null
-    this.hasEstimated = false
-    this.status = EstimationStatus.Initial
-    this.estimationRetryError = null
-    this.availableFeeOptions = []
-  }
 }
