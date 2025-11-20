@@ -154,10 +154,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     accounts?: SelectedAccountForImport[]
   } | null = null
 
-  #accountsUnsubscribe?: () => void
-
-  #keystoreUnsubscribe?: () => void
-
   constructor({
     accounts,
     keystore,
@@ -186,7 +182,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
-    this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
+    this.#accounts.onUpdate(() => {
       this.#debounceFunctionCalls(
         'update-accounts',
         () => {
@@ -199,7 +195,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       )
     })
 
-    this.#keystoreUnsubscribe = this.#keystore.onUpdate(() => {
+    this.#keystore.onUpdate(() => {
       if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
         this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
         this.#addAccountsOnKeystoreReady = null
@@ -476,14 +472,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   destroy() {
-    if (this.#accountsUnsubscribe) {
-      this.#accountsUnsubscribe()
-      this.#accountsUnsubscribe = undefined
-    }
-    if (this.#keystoreUnsubscribe) {
-      this.#keystoreUnsubscribe()
-      this.#keystoreUnsubscribe = undefined
-    }
+    super.destroy()
+    this.#keystore.destroy()
+    this.#accounts.destroy()
   }
 
   resetAccountsSelection() {
