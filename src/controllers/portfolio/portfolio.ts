@@ -213,12 +213,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
       }
-    } catch (e) {
+    } catch (e: any) {
       this.emitError({
         message:
           'Something went wrong when loading portfolio. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('portfolio: failed to pull keys from storage')
+        error: e
       })
     }
 

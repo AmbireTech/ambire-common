@@ -112,7 +112,6 @@ describe('happy cases', () => {
   })
   test('recoverKeyStore', async () => {
     const ev = new EmailVaultController(storageCtrl, fetch, relayerUrl, keystore, testingOptions)
-
     await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
