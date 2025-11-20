@@ -97,7 +97,8 @@ function getNetworkMinBaseFee(network: Network, lastBlock: Block): bigint {
 // 5 times before declaring a failure
 async function refetchBlock(
   provider: Provider,
-  blockTag: string | number = -1,
+  blockTag: string | number,
+  getIsActive?: () => boolean,
   counter = 0
 ): Promise<Block> {
   // the reason we throw an error here is that getGasPriceRecommendations is
@@ -113,7 +114,12 @@ async function refetchBlock(
     const response = await Promise.race([
       provider.getBlock(blockTag, true),
       new Promise((_resolve, reject) => {
-        setTimeout(() => reject(new Error('last block failed to resolve, request too slow')), 6000)
+        const timeout = Math.min(30000, 6000 * (counter || 1))
+
+        setTimeout(
+          () => reject(new Error('last block failed to resolve, request too slow')),
+          timeout
+        )
       })
     ])
     lastBlock = response as Block
@@ -121,9 +127,11 @@ async function refetchBlock(
     lastBlock = null
   }
 
+  if (getIsActive && !getIsActive()) throw new Error('operation aborted')
+
   if (!lastBlock) {
     const localCounter = counter + 1
-    lastBlock = await refetchBlock(provider, blockTag, localCounter)
+    lastBlock = await refetchBlock(provider, blockTag, getIsActive, localCounter)
   }
 
   return lastBlock
@@ -132,10 +140,13 @@ async function refetchBlock(
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: Network,
-  blockTag: string | number = -1
+  _blockTag?: string | number,
+  getIsActive?: () => boolean
 ): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
+  const blockTag = _blockTag ?? -1
+
   const [lastBlock, ethGasPrice] = await Promise.all([
-    refetchBlock(provider, blockTag),
+    refetchBlock(provider, blockTag, getIsActive),
     (provider as JsonRpcProvider).send('eth_gasPrice', []).catch((e) => {
       console.log('eth_gasPrice failed because of the following reason:')
       console.log(e)

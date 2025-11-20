@@ -78,7 +78,9 @@ export class GasPriceController extends EventEmitter {
     const bundler = this.#bundlerSwitcher.getBundler()
 
     const [gasPriceData, bundlerGas] = await Promise.all([
-      getGasPriceRecommendations(this.#provider, this.#network).catch((e) => {
+      getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
+        return !this.stopRefetching
+      }).catch((e) => {
         const signAccountOpState = this.#getSignAccountOpState()
         const estimation = signAccountOpState.estimation as EstimationController
 

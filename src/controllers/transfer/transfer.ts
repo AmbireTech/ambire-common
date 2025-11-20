@@ -593,7 +593,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       : getAddressFromAddressState(this.addressState)
 
     // form field validation
-    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress)) return
+    if (!this.#selectedToken || !this.amount || !isAddress(recipientAddress) || !this.isFormValid)
+      return
 
     const sanitizedFiat = getSanitizedAmount(this.amountInFiat, 6)
     const amountInFiatBigInt = sanitizedFiat ? parseUnits(sanitizedFiat, 6) : 0n

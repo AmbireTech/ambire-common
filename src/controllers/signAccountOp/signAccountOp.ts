@@ -332,6 +332,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
   signAndBroadcastPromise: Promise<void> | undefined
 
+  #subscriptions: Function[] = []
+
   constructor({
     type,
     callRelayer,
@@ -535,20 +537,26 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.humanize()
     this.learnTokens()
 
-    this.estimation.onUpdate(() => {
-      this.update({ hasNewEstimation: true })
-      this.#reestimate()
-    })
-    this.gasPrice.onUpdate(() => {
-      this.update({
-        gasPrices: this.gasPrice.gasPrices[this.#network.chainId.toString()] || null,
-        bundlerGasPrices: this.gasPrice.bundlerGasPrices[this.#network.chainId.toString()],
-        blockGasLimit: this.gasPrice.blockGasLimit
+    this.#subscriptions.push(
+      this.estimation.onUpdate(() => {
+        this.update({ hasNewEstimation: true })
+        this.#reestimate()
       })
-    })
-    this.gasPrice.onError((error: ErrorRef) => {
-      this.emitError(error)
-    })
+    )
+    this.#subscriptions.push(
+      this.gasPrice.onUpdate(() => {
+        this.update({
+          gasPrices: this.gasPrice.gasPrices[this.#network.chainId.toString()] || null,
+          bundlerGasPrices: this.gasPrice.bundlerGasPrices[this.#network.chainId.toString()],
+          blockGasLimit: this.gasPrice.blockGasLimit
+        })
+      })
+    )
+    this.#subscriptions.push(
+      this.gasPrice.onError((error: ErrorRef) => {
+        this.emitError(error)
+      })
+    )
 
     shouldSimulate ? this.simulate(true) : this.estimate()
     this.gasPrice.fetch()
@@ -1254,6 +1262,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.status = null
     this.signedTransactionsCount = null
     this.#stopRefetching = true
+    this.#subscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#subscriptions = []
     this.emitUpdate()
   }
 
