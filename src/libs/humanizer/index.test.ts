@@ -240,7 +240,7 @@ describe('Humanizer main function', () => {
     ]
 
     accountOp.calls = [...transactions.generic]
-    const irCalls = humanizeAccountOp(accountOp, {})
+    const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })
@@ -328,7 +328,7 @@ describe('with (Account | Key)[] arg', () => {
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
 
-    const irCalls = humanizeAccountOp(accountOp, {})
+    const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })
