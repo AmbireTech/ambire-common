@@ -1264,6 +1264,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#stopRefetching = true
     this.#subscriptions.forEach((unsubscribe) => unsubscribe())
     this.#subscriptions = []
+    this.gasPrice = null as any
+    this.estimation = null as any
     this.emitUpdate()
   }
 
