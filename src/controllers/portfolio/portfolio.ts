@@ -549,7 +549,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     if (canSkipUpdate) return
 
     const start = Date.now()
-    const accountState = this.#state[accountId]
+    const accountState = this.#state[accountId] ?? (this.#state[accountId] = {})
 
     this.#setNetworkLoading(accountId, 'gasTank', true)
     this.#setNetworkLoading(accountId, 'rewards', true)
@@ -614,48 +614,46 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         flags: getFlags(res.data.rewards, 'rewards', t.chainId, t.address, t.name, t.symbol)
       }))
 
-    if (accountState) {
-      accountState.rewards = {
-        isReady: true,
-        isLoading: false,
-        errors: [],
-        result: {
-          ...res.data.rewards,
-          lastSuccessfulUpdate: Date.now(),
-          updateStarted: start,
-          tokens: rewardsTokens,
-          total: getTotal(rewardsTokens)
-        }
+    accountState.rewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewards,
+        lastSuccessfulUpdate: Date.now(),
+        updateStarted: start,
+        tokens: rewardsTokens,
+        total: getTotal(rewardsTokens)
       }
+    }
 
-      accountState.projectedRewards = {
-        isReady: true,
-        isLoading: false,
-        errors: [],
-        result: {
-          ...res.data.rewardsProjectionData
-        }
+    accountState.projectedRewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewardsProjectionData
       }
+    }
 
-      const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
-        ...t,
-        amount: BigInt(t.amount || 0),
-        chainId: BigInt(t.chainId || 1),
-        availableAmount: BigInt(t.availableAmount || 0),
-        flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
-      }))
+    const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
+      ...t,
+      amount: BigInt(t.amount || 0),
+      chainId: BigInt(t.chainId || 1),
+      availableAmount: BigInt(t.availableAmount || 0),
+      flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
+    }))
 
-      accountState.gasTank = {
-        isReady: true,
-        isLoading: false,
-        errors: [],
-        result: {
-          updateStarted: start,
-          lastSuccessfulUpdate: Date.now(),
-          tokens: [],
-          gasTankTokens,
-          total: getTotal(gasTankTokens)
-        }
+    accountState.gasTank = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        updateStarted: start,
+        lastSuccessfulUpdate: Date.now(),
+        tokens: [],
+        gasTankTokens,
+        total: getTotal(gasTankTokens)
       }
     }
 
@@ -916,14 +914,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     const stringChainId = chainId.toString()
 
     // If we don't know about the network we assume it has assets
-    if (
-      !(
-        typeof networksWithAssets === 'object' &&
-        networksWithAssets !== null &&
-        stringChainId in networksWithAssets
-      )
-    )
-      return maxDataAgeMs
+    if (!(stringChainId in (networksWithAssets || {}))) return maxDataAgeMs
 
     const hasAssetsOnNetwork =
       typeof networksWithAssets === 'object' && networksWithAssets !== null
@@ -1185,10 +1176,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
         this.#learnedAssets.erc721s[key] = {}
       }
 
-      if (!this.#toBeLearnedAssets.erc721s[chainId.toString()]) {
-        this.#toBeLearnedAssets.erc721s[chainId.toString()] = {}
-      }
-
       // Ensure toBeLearnedAssets is always defined
       const toBeLearnedAssets =
         this.#toBeLearnedAssets.erc721s[chainId.toString()] ??
@@ -1277,13 +1264,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     tokensWithBalance.forEach((address) => {
       if (address === ZeroAddress) return
       learnedTokens[address] = now
+      const toBeLearnedAddress = this.#toBeLearnedAssets.erc20s[chainId.toString()]
 
-      if (this.#toBeLearnedAssets.erc20s[chainId.toString()]?.length) {
+      if (toBeLearnedAddress?.length) {
         // Remove the token from toBeLearnedTokens if it will be learned now
-        const toBeLearnedAddress = this.#toBeLearnedAssets.erc20s[chainId.toString()]
-
-        if (!toBeLearnedAddress) return
-
         this.#toBeLearnedAssets.erc20s[chainId.toString()] = toBeLearnedAddress.filter(
           (addr) => addr !== address
         )
