@@ -410,7 +410,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
-    if (!provider) return
+    if (!provider) {
+      const message = `Error while updating token validation for ${token.address} (${token.chainId}).`
+      this.emitError({ level: 'silent', message, error: new Error(message) })
+
+      return
+    }
 
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
@@ -1388,8 +1393,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     return stateNetworksCount !== networksCount
   }
 
-  getNetworksWithAssets(accountAddr: string) {
-    return this.#networksWithAssetsByAccounts[accountAddr] || []
+  getNetworksWithAssets(accountAddr: string): AccountAssetsState {
+    return this.#networksWithAssetsByAccounts[accountAddr] || {}
   }
 
   async simulateAccountOp(op: AccountOp): Promise<void> {
