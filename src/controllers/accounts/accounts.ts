@@ -392,7 +392,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   // the account state to be fetched only for it to haven't been.
   // This ensures production doesn't blow up and it 99.9% of cases it
   // should not call the promise
-  async getOrFetchAccountOnChainState(addr: string, chainId: bigint): Promise<AccountOnchainState> {
+  async getOrFetchAccountOnChainState(
+    addr: string,
+    chainId: bigint
+  ): Promise<AccountOnchainState | undefined> {
     if (!this.accountStates[addr]?.[chainId.toString()]) {
       await this.updateAccountState(addr, 'latest', [chainId])
     }

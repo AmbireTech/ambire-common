@@ -7,7 +7,13 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class Pimlico extends Bundler {
   protected getUrl(network: Network): string {
-    return `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const API_KEY = process.env.REACT_APP_PIMLICO_API_KEY || ''
+
+    if (!API_KEY) {
+      throw new Error('Pimlico API key is not set')
+    }
+
+    return `https://api.pimlico.io/v2/${network.chainId}/rpc?apikey=${API_KEY}`
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {

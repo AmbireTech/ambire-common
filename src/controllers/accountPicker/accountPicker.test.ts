@@ -211,6 +211,7 @@ describe('AccountPicker', () => {
     await accountPicker.init()
     await accountPicker.setPage({ page: 1 })
     expect(accountPicker.linkedAccountsLoading).toBe(false)
+    expect(accountPicker.linkedAccountsError).toBeFalsy()
     const linkedAccountsOnPage = accountPicker.accountsOnPage.filter(({ isLinked }) => isLinked)
 
     const accountsOnSlot1 = linkedAccountsOnPage

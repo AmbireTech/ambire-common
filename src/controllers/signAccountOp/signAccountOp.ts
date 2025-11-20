@@ -1838,6 +1838,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.chainId
     )
 
+    if (!accountState) {
+      throw new EmittableError({
+        message: `Missing mandatory transaction data (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`,
+        level: 'major'
+      })
+    }
+
     if (shouldReestimate) {
       const newEstimate = await bundlerEstimate(
         this.baseAccount,
@@ -2069,6 +2076,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.accountAddr,
       this.accountOp.chainId
     )
+
+    if (!accountState) {
+      const message = `Unable to sign the transaction. During the preparation step, required transaction information was found missing (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
 
     try {
       // plain EOA
@@ -2343,6 +2355,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       accountOp.accountAddr,
       accountOp.chainId
     )
+    if (!accountState) {
+      const message = `Missing mandatory transaction details (account state). ${contactSupportPrompt}`
+
+      return this.throwBroadcastAccountOp({ message, accountState })
+    }
     const baseAcc = getBaseAccount(
       account,
       accountState,

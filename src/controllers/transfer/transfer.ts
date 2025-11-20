@@ -648,6 +648,20 @@ export class TransferController extends EventEmitter implements ITransferControl
       network.chainId
     )
 
+    if (!accountState) {
+      const error = new Error(
+        `Failed to fetch account on-chain state for network with chainId ${network.chainId}`
+      )
+
+      this.emitError({
+        level: 'major',
+        message:
+          'Unable to proceed with the transfer due to missing information (account state). Please try again later.',
+        error
+      })
+      return
+    }
+
     const baseAcc = getBaseAccount(
       this.#selectedAccountData.account,
       accountState,

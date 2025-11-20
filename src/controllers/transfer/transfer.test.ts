@@ -263,10 +263,15 @@ const phishing = new PhishingController({
 })
 
 const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
-  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+  try {
+    const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+    const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
 
-  return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+    return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+  } catch (e: any) {
+    console.error('Error fetching tokens for tests:', e)
+    return []
+  }
 }
 
 describe('Transfer Controller', () => {
