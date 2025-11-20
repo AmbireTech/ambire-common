@@ -144,6 +144,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
 
+  #controllerSubscriptions: Function[] = []
+
   // Used in order to expose the ongoing "find linked accounts" task, so other
   // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
@@ -182,25 +184,29 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
-    this.#accounts.onUpdate(() => {
-      this.#debounceFunctionCalls(
-        'update-accounts',
-        () => {
-          if (!this.isInitialized) return
-          if (this.addAccountsStatus !== 'INITIAL') return
+    this.#controllerSubscriptions.push(
+      this.#accounts.onUpdate(() => {
+        this.#debounceFunctionCalls(
+          'update-accounts',
+          () => {
+            if (!this.isInitialized) return
+            if (this.addAccountsStatus !== 'INITIAL') return
 
-          this.#updateStateWithTheLatestFromAccounts()
-        },
-        20
-      )
-    })
+            this.#updateStateWithTheLatestFromAccounts()
+          },
+          20
+        )
+      })
+    )
 
-    this.#keystore.onUpdate(() => {
-      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
-        this.#addAccountsOnKeystoreReady = null
-      }
-    })
+    this.#controllerSubscriptions.push(
+      this.#keystore.onUpdate(() => {
+        if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+          this.#addAccountsOnKeystoreReady = null
+        }
+      })
+    )
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -473,8 +479,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   destroy() {
     super.destroy()
-    this.#keystore.destroy()
-    this.#accounts.destroy()
+    // We must unsubscribe from the controllers and CAN'T call
+    // their destroy methods. That is because they are also used
+    // outside of this controller instance.
+    this.#controllerSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#controllerSubscriptions = []
   }
 
   resetAccountsSelection() {
