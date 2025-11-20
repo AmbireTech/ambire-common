@@ -555,7 +555,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   humanize() {
-    this.humanization = humanizeAccountOp(this.accountOp, {})
+    this.humanization = humanizeAccountOp(this.accountOp)
     const currentHumanizationId = Date.now()
     this.humanizationId = currentHumanizationId
     if (this.humanization.length) {
