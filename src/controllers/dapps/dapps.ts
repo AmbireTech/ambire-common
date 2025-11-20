@@ -199,8 +199,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   async #fetchAndUpdateDapps() {
     // NOTE: For debugging purposes — uncomment to force a fetch and update every time
-    const lastDappsUpdateVersion = 'debug-force-fetch'
-    // const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
+    // const lastDappsUpdateVersion = 'debug-force-fetch'
+    const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
       const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter((d) =>
         ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
