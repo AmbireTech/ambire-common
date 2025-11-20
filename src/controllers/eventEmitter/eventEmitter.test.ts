@@ -92,7 +92,7 @@ describe('EventEmitter', () => {
     emitter.emitUpdate()
     expect(mockCallback).toHaveBeenCalledTimes(1)
 
-    // Destroying the EvenetEmitter should remove all callbacks
+    // Destroying the EventEmitter should remove all callbacks
     emitter.destroy()
 
     // Try to emit again
