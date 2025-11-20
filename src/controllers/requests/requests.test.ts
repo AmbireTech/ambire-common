@@ -20,7 +20,6 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
-import { DappsController } from '../dapps/dapps'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
@@ -124,12 +123,6 @@ const prepareTest = async () => {
     new InviteController({ relayerUrl, fetch, storage: storageCtrl })
   )
 
-  const phishingCtrl = new PhishingController({
-    fetch,
-    storage: storageCtrl,
-    ui: uiCtrl
-  })
-
   const selectedAccountCtrl = new SelectedAccountController({
     storage: storageCtrl,
     accounts: accountsCtrl,
@@ -137,16 +130,14 @@ const prepareTest = async () => {
     autoLogin: autoLoginCtrl
   })
 
-  const dappsCtrl = new DappsController({
-    appVersion: '10',
+  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
+
+  const phishingCtrl = new PhishingController({
     fetch,
     storage: storageCtrl,
-    networks: networksCtrl,
-    phishing: phishingCtrl,
-    ui: uiCtrl
+    addressBook: addressBookCtrl
   })
 
-  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   const portfolioCtrl = new PortfolioController(
     storageCtrl,
     fetch,
@@ -170,6 +161,7 @@ const prepareTest = async () => {
     portfolioCtrl,
     () => Promise.resolve()
   )
+
   const transferCtrl = new TransferController(
     () => {},
     storageCtrl,
@@ -183,6 +175,7 @@ const prepareTest = async () => {
     activityCtrl,
     {},
     providersCtrl,
+    phishingCtrl,
     relayerUrl,
     () => Promise.resolve()
   )
@@ -201,6 +194,7 @@ const prepareTest = async () => {
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
+    phishing: phishingCtrl,
     externalSignerControllers: {},
     relayerUrl,
     getUserRequests: () => {
@@ -221,10 +215,10 @@ const prepareTest = async () => {
       providers: providersCtrl,
       selectedAccount: selectedAccountCtrl,
       keystore: keystoreCtrl,
-      dapps: dappsCtrl,
       transfer: transferCtrl,
       swapAndBridge: swapAndBridgeCtrl,
       ui: uiCtrl,
+      getDapp: async () => undefined,
       getSignAccountOp: () => null,
       getMainStatuses: () => STATUS_WRAPPED_METHODS,
       updateSignAccountOp: () => {},
@@ -232,6 +226,7 @@ const prepareTest = async () => {
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
       guardHWSigning: () => Promise.resolve(false),
+      onSetCurrentAction: () => {},
       autoLogin: autoLoginCtrl
     })
   }
