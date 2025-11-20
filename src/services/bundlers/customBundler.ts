@@ -66,7 +66,7 @@ export class CustomBundler extends Bundler {
   public async getStatus(network: Network, userOpHash: string): Promise<UserOpStatus> {
     const provider = this.getProvider(network)
 
-    const status = await provider.send('eth_getUserOperationByHash', [userOpHash]).catch((e) => {
+    const status = await provider.send('eth_getUserOperationReceipt', [userOpHash]).catch((e) => {
       console.log(
         `custom bundler with url ${this.getUrl(network)} failed to find the status of the user op`
       )
@@ -75,7 +75,7 @@ export class CustomBundler extends Bundler {
       return null
     })
 
-    if (!status) {
+    if (!status || !status.receipt) {
       return {
         status: 'not_found'
       }
@@ -83,7 +83,7 @@ export class CustomBundler extends Bundler {
 
     return {
       status: 'found',
-      transactionHash: status.transactionHash
+      transactionHash: status.receipt.transactionHash
     }
   }
 
