@@ -110,13 +110,14 @@ async function refetchBlock(
   if (counter >= 5) throw new Error('unable to retrieve block')
 
   let lastBlock = null
+  let timeoutId: NodeJS.Timeout | null = null
   try {
     const response = await Promise.race([
       provider.getBlock(blockTag, true),
       new Promise((_resolve, reject) => {
         const timeout = Math.min(30000, 6000 * (counter || 1))
 
-        setTimeout(
+        timeoutId = setTimeout(
           () => reject(new Error('last block failed to resolve, request too slow')),
           timeout
         )
@@ -127,7 +128,10 @@ async function refetchBlock(
     lastBlock = null
   }
 
-  if (getIsActive && !getIsActive()) throw new Error('operation aborted')
+  if (getIsActive && !getIsActive()) {
+    if (timeoutId) clearTimeout(timeoutId)
+    throw new Error('operation aborted')
+  }
 
   if (!lastBlock) {
     const localCounter = counter + 1
