@@ -52,6 +52,11 @@ import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
+type TokenValidationResult = [
+  boolean,
+  string,
+  { message: string | null; type: 'network' | 'validation' | null }
+]
 
 const LEARNED_UNOWNED_LIMITS = {
   erc20s: 20,
@@ -404,28 +409,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountId: AccountId
   ) {
     await this.#initialLoadPromise
-    if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
+    if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
 
-    const [isValid, standard, hasNetworkError, error]: [
-      boolean,
-      string,
-      boolean,
-      { message: string | null; type: 'network' | 'validation' | null }
-    ] = (await validateERC20Token(
+    const [isValid, standard, error]: TokenValidationResult = await validateERC20Token(
       token,
       accountId,
       this.#providers.providers[token.chainId.toString()]
-    )) as [
-      boolean,
-      string,
-      boolean,
-      { message: string | null; type: 'network' | 'validation' | null }
-    ]
+    )
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
       [`${token.address}-${token.chainId}`]: {
-        isValid: hasNetworkError ? false : isValid,
+        isValid,
         error: error.message || error.type ? error : null
       }
     }

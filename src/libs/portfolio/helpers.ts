@@ -24,6 +24,12 @@ import {
   TokenResult
 } from './interfaces'
 
+type TokenValidationResult = [
+  boolean,
+  string,
+  { message: string | null; type: 'network' | 'validation' | null }
+]
+
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
 const usdcEMapping: { [key: string]: string } = {
@@ -307,7 +313,7 @@ export const validateERC20Token = async (
   token: { address: string; chainId: bigint },
   accountId: string,
   provider: RPCProvider
-) => {
+): Promise<TokenValidationResult> => {
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
   const type = 'erc20'
@@ -316,43 +322,23 @@ export const validateERC20Token = async (
   let errorMessage = ''
   let errorType: 'network' | 'validation' | null = null
 
+  const handleERC20Error = (e: any, operation: string) => {
+    if (isNetworkError(e)) {
+      hasNetworkError = true
+      errorType = 'network'
+      errorMessage = `Network error validating token: ${
+        e.message || `Network error while fetching token ${operation}`
+      }`
+    } else {
+      errorType = 'validation'
+      errorMessage = 'This token type is not supported'
+    }
+  }
+
   const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch((e) => {
-      if (isNetworkError(e)) {
-        hasNetworkError = true
-        errorType = 'network'
-        errorMessage = `Network error validating token: ${
-          e.message || 'Network error while fetching token balance'
-        }`
-      } else {
-        errorType = 'validation'
-        errorMessage = 'This token type is not supported'
-      }
-    }),
-    erc20.symbol().catch((e) => {
-      if (isNetworkError(e)) {
-        hasNetworkError = true
-        errorType = 'network'
-        errorMessage = `Network error validating token: ${
-          e.message || 'Network error while fetching token symbol'
-        }`
-      } else {
-        errorType = 'validation'
-        errorMessage = 'This token type is not supported'
-      }
-    }),
-    erc20.decimals().catch((e) => {
-      if (isNetworkError(e)) {
-        hasNetworkError = true
-        errorType = 'network'
-        errorMessage = `Network error validating token: ${
-          e.message || 'Network error while fetching token decimals'
-        }`
-      } else {
-        errorType = 'validation'
-        errorMessage = 'This token type is not supported'
-      }
-    })
+    erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
+    erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
+    erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
   ]).catch((e) => {
     if (isNetworkError(e)) {
       hasNetworkError = true
@@ -385,7 +371,6 @@ export const validateERC20Token = async (
   return [
     isValid,
     type,
-    hasNetworkError,
     {
       message: errorMessage || null,
       type: errorType
