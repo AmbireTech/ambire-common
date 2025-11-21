@@ -3,7 +3,7 @@ import { isAddress } from 'ethers'
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
 import { genericErc20Humanizer } from '../modules/Tokens'
-import { getAction, getAddressVisualization, getLabel } from '../utils'
+import { getAction, getAddressVisualization, getLabel, getWarning } from '../utils'
 
 export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind === 'message' || typeof message.content.message === 'string')
@@ -13,29 +13,29 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
   const humanizedCalls = genericErc20Humanizer({ accountAddr }, [{ to, value, data }])
-  // erc20Module
   const fullVisualization: HumanizerVisualization[] = []
   if (!isAddress(verifyingContract)) return {}
-
-  if (operation === 0) {
-    fullVisualization.push(
-      ...[
-        getAction('Safe{WALLET} transaction'),
-        getLabel('from'),
-        getAddressVisualization(verifyingContract)
+  fullVisualization.push(
+    ...[
+      getAction('Safe{WALLET} transaction'),
+      getLabel('from'),
+      getAddressVisualization(verifyingContract)
+    ]
+  )
+  if (humanizedCalls[0]?.fullVisualization) {
+    fullVisualization.push(...humanizedCalls[0].fullVisualization)
+  }
+  if (operation === 1) {
+    return {
+      fullVisualization,
+      warnings: [
+        getWarning(
+          'Delegate call from Safe{WALLET} account',
+          'SAFE{WALLET}_DELEGATE_CALL',
+          'danger'
+        )
       ]
-    )
-    if (humanizedCalls[0]?.fullVisualization) {
-      fullVisualization.push(...humanizedCalls[0].fullVisualization)
     }
-  } else if (operation === 1) {
-    fullVisualization.push(
-      ...[
-        getAction('Safe{WALLET} delegated transaction', { warning: true }),
-        getLabel('from'),
-        getAddressVisualization(verifyingContract)
-      ]
-    )
   }
 
   return { fullVisualization }
