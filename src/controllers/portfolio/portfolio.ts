@@ -45,7 +45,8 @@ import {
   PreviousHintsStorage,
   TemporaryTokens,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
@@ -404,17 +405,20 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     accountId: AccountId
   ) {
     await this.#initialLoadPromise
-    if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
+    if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
 
-    const [isValid, standard]: [boolean, string] = (await validateERC20Token(
+    const [isValid, standard, error]: TokenValidationResult = await validateERC20Token(
       token,
       accountId,
       this.#providers.providers[token.chainId.toString()]
-    )) as [boolean, string]
+    )
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
-      [`${token.address}-${token.chainId}`]: isValid
+      [`${token.address}-${token.chainId}`]: {
+        isValid,
+        error: error.message || error.type ? error : null
+      }
     }
 
     this.emitUpdate()

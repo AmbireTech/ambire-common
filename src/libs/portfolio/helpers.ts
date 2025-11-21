@@ -21,7 +21,8 @@ import {
   PortfolioGasTankResult,
   SuspectedType,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult
 } from './interfaces'
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
@@ -273,29 +274,90 @@ export const mapToken = (
   }
 }
 
+/**
+ * Determines whether an error is related to network connectivity issues rather than validation failures.
+ *
+ * This function helps distinguish between temporary network problems (which should allow retries)
+ * and actual token validation errors (which indicate the token is genuinely invalid).
+ *
+ * @param error - The error object to analyze. Expected to have a `message` string property and/or a `code` property.
+ * @returns `true` if the error appears to be network-related, `false` otherwise
+ *
+ * Network error patterns detected:
+ * - Message patterns: "network error", "fetch failed", "connection refused", "timeout", etc.
+ * - Error codes: "NETWORK_ERROR", "TIMEOUT", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT"
+ */
+const isNetworkError = (error: any): boolean => {
+  if (!error) return false
+
+  const errorMessage = error.message?.toLowerCase() || ''
+  const errorCode = error.code
+
+  // Common network error patterns
+  const networkErrorPatterns = [
+    'network error',
+    'network request failed',
+    'fetch failed',
+    'connection refused',
+    'timeout',
+    'econnrefused',
+    'enotfound',
+    'etimedout',
+    'socket hang up',
+    'request timeout',
+    'failed to fetch'
+  ]
+
+  // Common network error codes
+  const networkErrorCodes = ['NETWORK_ERROR', 'TIMEOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']
+
+  return (
+    networkErrorPatterns.some((pattern) => errorMessage.includes(pattern)) ||
+    networkErrorCodes.includes(errorCode)
+  )
+}
+
 export const validateERC20Token = async (
   token: { address: string; chainId: bigint },
   accountId: string,
   provider: RPCProvider
-) => {
+): Promise<TokenValidationResult> => {
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
   const type = 'erc20'
   let isValid = true
-  let hasError = false
+  let hasNetworkError = false
+  let errorMessage = ''
+  let errorType: 'network' | 'validation' | null = null
+
+  const handleERC20Error = (e: any, operation: string) => {
+    if (isNetworkError(e)) {
+      hasNetworkError = true
+      errorType = 'network'
+      errorMessage = `Network error validating token: ${
+        e.message || `Network error while fetching token ${operation}`
+      }`
+    } else {
+      errorType = 'validation'
+      errorMessage = 'This token type is not supported'
+    }
+  }
 
   const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch(() => {
-      hasError = true
-    }),
-    erc20.symbol().catch(() => {
-      hasError = true
-    }),
-    erc20.decimals().catch(() => {
-      hasError = true
-    })
-  ]).catch(() => {
-    hasError = true
+    erc20.balanceOf(accountId).catch((e) => handleERC20Error(e, 'balance')),
+    erc20.symbol().catch((e) => handleERC20Error(e, 'symbol')),
+    erc20.decimals().catch((e) => handleERC20Error(e, 'decimals'))
+  ]).catch((e) => {
+    if (isNetworkError(e)) {
+      hasNetworkError = true
+      errorType = 'network'
+      errorMessage = `Network error validating token: ${
+        e.message || 'Network error during token validation'
+      }`
+    } else {
+      errorType = 'validation'
+      errorMessage = 'This token type is not supported'
+    }
     isValid = false
   })) || [undefined, undefined, undefined]
 
@@ -304,11 +366,24 @@ export const validateERC20Token = async (
     typeof symbol === 'undefined' ||
     typeof decimals === 'undefined'
   ) {
-    isValid = false
+    // Only mark as invalid if it's not a network error
+    if (!hasNetworkError) {
+      isValid = false
+      if (!errorMessage) {
+        errorMessage = 'Token validation failed: unable to fetch required token data'
+        errorType = 'validation'
+      }
+    }
   }
 
-  isValid = isValid && !hasError
-  return [isValid, type]
+  return [
+    isValid,
+    type,
+    {
+      message: errorMessage || null,
+      type: errorType
+    }
+  ]
 }
 
 // fetch the amountPostSimulation for the token if set
