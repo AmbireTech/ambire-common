@@ -406,15 +406,28 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     await this.#initialLoadPromise
     if (this.validTokens.erc20[`${token.address}-${token.chainId}`] === true) return
 
-    const [isValid, standard]: [boolean, string] = (await validateERC20Token(
+    const [isValid, standard, hasNetworkError, error]: [
+      boolean,
+      string,
+      boolean,
+      { message: string | null; type: 'network' | 'validation' | null }
+    ] = (await validateERC20Token(
       token,
       accountId,
       this.#providers.providers[token.chainId.toString()]
-    )) as [boolean, string]
+    )) as [
+      boolean,
+      string,
+      boolean,
+      { message: string | null; type: 'network' | 'validation' | null }
+    ]
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
-      [`${token.address}-${token.chainId}`]: isValid
+      [`${token.address}-${token.chainId}`]: {
+        isValid: hasNetworkError ? false : isValid,
+        error: error.message || error.type ? error : null
+      }
     }
 
     this.emitUpdate()

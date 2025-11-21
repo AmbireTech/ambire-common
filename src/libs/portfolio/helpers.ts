@@ -273,6 +273,36 @@ export const mapToken = (
   }
 }
 
+const isNetworkError = (error: any): boolean => {
+  if (!error) return false
+
+  const errorMessage = error.message?.toLowerCase() || ''
+  const errorCode = error.code
+
+  // Common network error patterns
+  const networkErrorPatterns = [
+    'network error',
+    'network request failed',
+    'fetch failed',
+    'connection refused',
+    'timeout',
+    'econnrefused',
+    'enotfound',
+    'etimedout',
+    'socket hang up',
+    'request timeout',
+    'failed to fetch'
+  ]
+
+  // Common network error codes
+  const networkErrorCodes = ['NETWORK_ERROR', 'TIMEOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT']
+
+  return (
+    networkErrorPatterns.some((pattern) => errorMessage.includes(pattern)) ||
+    networkErrorCodes.includes(errorCode)
+  )
+}
+
 export const validateERC20Token = async (
   token: { address: string; chainId: bigint },
   accountId: string,
@@ -282,20 +312,58 @@ export const validateERC20Token = async (
 
   const type = 'erc20'
   let isValid = true
-  let hasError = false
+  let hasNetworkError = false
+  let errorMessage = ''
+  let errorType: 'network' | 'validation' | null = null
 
   const [balance, symbol, decimals] = (await Promise.all([
-    erc20.balanceOf(accountId).catch(() => {
-      hasError = true
+    erc20.balanceOf(accountId).catch((e) => {
+      if (isNetworkError(e)) {
+        hasNetworkError = true
+        errorType = 'network'
+        errorMessage = `Network error validating token: ${
+          e.message || 'Network error while fetching token balance'
+        }`
+      } else {
+        errorType = 'validation'
+        errorMessage = 'This token type is not supported'
+      }
     }),
-    erc20.symbol().catch(() => {
-      hasError = true
+    erc20.symbol().catch((e) => {
+      if (isNetworkError(e)) {
+        hasNetworkError = true
+        errorType = 'network'
+        errorMessage = `Network error validating token: ${
+          e.message || 'Network error while fetching token symbol'
+        }`
+      } else {
+        errorType = 'validation'
+        errorMessage = 'This token type is not supported'
+      }
     }),
-    erc20.decimals().catch(() => {
-      hasError = true
+    erc20.decimals().catch((e) => {
+      if (isNetworkError(e)) {
+        hasNetworkError = true
+        errorType = 'network'
+        errorMessage = `Network error validating token: ${
+          e.message || 'Network error while fetching token decimals'
+        }`
+      } else {
+        errorType = 'validation'
+        errorMessage = 'This token type is not supported'
+      }
     })
-  ]).catch(() => {
-    hasError = true
+  ]).catch((e) => {
+    if (isNetworkError(e)) {
+      hasNetworkError = true
+      errorType = 'network'
+      errorMessage = `Network error validating token: ${
+        e.message || 'Network error during token validation'
+      }`
+    } else {
+      errorType = 'validation'
+      errorMessage = 'This token type is not supported'
+    }
     isValid = false
   })) || [undefined, undefined, undefined]
 
@@ -304,11 +372,25 @@ export const validateERC20Token = async (
     typeof symbol === 'undefined' ||
     typeof decimals === 'undefined'
   ) {
-    isValid = false
+    // Only mark as invalid if it's not a network error
+    if (!hasNetworkError) {
+      isValid = false
+      if (!errorMessage) {
+        errorMessage = 'Token validation failed: unable to fetch required token data'
+        errorType = 'validation'
+      }
+    }
   }
 
-  isValid = isValid && !hasError
-  return [isValid, type]
+  return [
+    isValid,
+    type,
+    hasNetworkError,
+    {
+      message: errorMessage || null,
+      type: errorType
+    }
+  ]
 }
 
 // fetch the amountPostSimulation for the token if set
