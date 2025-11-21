@@ -88,7 +88,7 @@ import {
   GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
+import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -477,6 +477,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
       }
+    const warnings: HumanizerWarning[] = this.humanization
+      .map((h) => h.warnings)
+      .filter((w): w is HumanizerWarning[] => !!w)
+      .flat()
+    if (warnings.length)
+      return {
+        title: 'A malicious transaction found in this batch.',
+        code: warnings.map((w) => w.code).join(', ')
+      }
 
     let callError: SignAccountOpError | null = null
 
@@ -557,7 +566,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   humanize() {
-    this.humanization = humanizeAccountOp(this.accountOp, {})
+    this.humanization = humanizeAccountOp(this.accountOp)
     const currentHumanizationId = Date.now()
     this.humanizationId = currentHumanizationId
     if (this.humanization.length) {
