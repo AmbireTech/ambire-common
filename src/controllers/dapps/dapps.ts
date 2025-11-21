@@ -58,7 +58,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   dappToConnect: Dapp | null = null
 
-  isReadyToDisplayDapps: boolean = false
+  isReadyToDisplayDapps: boolean = true
 
   #fetchAndUpdateDappsSessionId: number = 0
 
@@ -172,7 +172,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   async #load() {
     await this.#networks.initialLoadPromise
 
-    const storedDapps = await this.#storage.get('dappsV2', [])
+    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
 
     this.fetchAndUpdateDapps()
