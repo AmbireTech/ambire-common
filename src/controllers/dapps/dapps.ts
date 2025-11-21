@@ -1,4 +1,3 @@
-/* eslint-disable no-continue */
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -12,7 +11,9 @@ import {
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
   predefinedDapps
-} from '../../consts/dapps'
+} from '../../consts/dapps/dapps'
+import mockChains from '../../consts/dapps/mockChains'
+import mockDapps from '../../consts/dapps/mockDapps'
 import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -32,6 +33,8 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+/* eslint-disable no-continue */
+import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // The DappsController is responsible for the following tasks:
@@ -59,8 +62,6 @@ export class DappsController extends EventEmitter implements IDappsController {
   dappToConnect: Dapp | null = null
 
   isReadyToDisplayDapps: boolean = true
-
-  #fetchAndUpdateDappsSessionId: number = 0
 
   #shouldRetryFetchAndUpdate: boolean = false
 
@@ -219,8 +220,23 @@ export class DappsController extends EventEmitter implements IDappsController {
     let fetchedChainsList: DefiLlamaChain[] = []
 
     const [res, chainsRes] = await Promise.all([
-      this.#fetch('https://api.llama.fi/protocols'),
-      this.#fetch('https://api.llama.fi/v2/chains')
+      process.env.IS_TESTING === 'true'
+        ? Promise.resolve(mockDapps)
+        : fetchWithTimeout(
+            this.#fetch,
+            'https://api.llama.fi/protocols',
+            {},
+            this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+          ),
+
+      process.env.IS_TESTING === 'true'
+        ? Promise.resolve(mockChains)
+        : fetchWithTimeout(
+            this.#fetch,
+            'https://api.llama.fi/v2/chains',
+            {},
+            this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+          )
     ])
 
     if (!res.ok || !chainsRes.ok) {
@@ -241,7 +257,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return
     }
 
-    const chainNamesToIds = new Map<string, number>()
+    const chainNamesToIds = new Map<string, number | null>()
     for (const c of fetchedChainsList) {
       chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
     }
