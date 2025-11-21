@@ -154,7 +154,7 @@ const networks: Network[] = [
   {
     name: 'Arbitrum Sepolia Mainnet',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
     selectedRpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
@@ -183,7 +183,7 @@ const networks: Network[] = [
   {
     name: 'OP Sepolia',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://sepolia.optimism.io'],
     selectedRpcUrl: 'https://sepolia.optimism.io',
@@ -210,38 +210,9 @@ const networks: Network[] = [
     predefined: true
   },
   {
-    name: 'Base Sepolia',
-    nativeAssetSymbol: 'ETH',
-    has7702: true,
-    nativeAssetName: 'Ether',
-    rpcUrls: ['https://sepolia.base.org'],
-    selectedRpcUrl: 'https://sepolia.base.org',
-    rpcNoStateOverride: false,
-    chainId: 84532n,
-    explorerUrl: 'https://sepolia.basescan.org',
-    erc4337: {
-      enabled: true,
-      hasPaymaster: false,
-      hasBundlerSupport: true,
-      bundlers: [PIMLICO],
-      defaultBundler: PIMLICO
-    },
-    isSAEnabled: true,
-    areContractsDeployed: true,
-    hasRelayer: false,
-    platformId: '',
-    nativeAssetId: '',
-    hasSingleton: true,
-    features: [],
-    feeOptions: {
-      is1559: false
-    },
-    predefined: true
-  },
-  {
     name: 'Ethereum Sepolia',
     nativeAssetSymbol: 'ETH',
-    has7702: false,
+    has7702: true,
     nativeAssetName: 'Ether',
     rpcUrls: ['https://eth-sepolia.g.alchemy.com/v2/demo'],
     selectedRpcUrl: 'https://eth-sepolia.g.alchemy.com/v2/demo',

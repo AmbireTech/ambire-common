@@ -236,6 +236,16 @@ export class NetworksController extends EventEmitter implements INetworksControl
       'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-base'
     finalNetworks[8453].customBundlerUrl = 'https://vnet.erc4337.io/bundler/8453'
 
+    // test networks custom bundler url
+    finalNetworks[421614].customBundlerUrl = 'https://rpc.erc4337.io/421614'
+    finalNetworks[11155420].customBundlerUrl = 'https://rpc.erc4337.io/11155420'
+    finalNetworks[11155111].customBundlerUrl = 'https://rpc.erc4337.io/11155111'
+
+    // test networks has7702 flags
+    finalNetworks[421614].has7702 = true
+    finalNetworks[11155420].has7702 = true
+    finalNetworks[11155111].has7702 = true
+
     this.#networks = finalNetworks
     this.emitUpdate()
 
