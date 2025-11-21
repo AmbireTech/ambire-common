@@ -12,8 +12,6 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps/dapps'
-import mockChains from '../../consts/dapps/mockChains'
-import mockDapps from '../../consts/dapps/mockDapps'
 import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -63,6 +61,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   isReadyToDisplayDapps: boolean = true
 
+  fetchAndUpdatePromise?: Promise<void>
+
   #shouldRetryFetchAndUpdate: boolean = false
 
   #retryFetchAndUpdateInterval: IRecurringTimeout
@@ -70,6 +70,18 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateAttempts: number = 0
 
   #retryFetchAndUpdateMaxAttempts: number = 3
+
+  get shouldRetryFetchAndUpdate() {
+    return this.#shouldRetryFetchAndUpdate
+  }
+
+  get retryFetchAndUpdateInterval() {
+    return this.#retryFetchAndUpdateInterval
+  }
+
+  get retryFetchAndUpdateAttempts() {
+    return this.#retryFetchAndUpdateAttempts
+  }
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -184,18 +196,29 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.isReadyToDisplayDapps = false
     this.emitUpdate()
-    try {
-      await this.#fetchAndUpdateDapps()
-    } catch (err: any) {
-      this.emitError({
-        message: 'Failed to fetch the app catalog.',
-        error: err,
-        level: 'silent'
+
+    this.fetchAndUpdatePromise = this.#fetchAndUpdateDapps()
+    await this.fetchAndUpdatePromise
+      .catch((err: any) => {
+        this.#shouldRetryFetchAndUpdate = true
+
+        // run the interval if the initial fetch failed while the extension is not in use
+        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+          this.#retryFetchAndUpdateInterval.start()
+        } else {
+          this.#retryFetchAndUpdateInterval.stop()
+        }
+        this.emitError({
+          message: 'Failed to fetch the app catalog.',
+          error: err,
+          level: 'silent'
+        })
       })
-    } finally {
-      this.isReadyToDisplayDapps = true
-      this.emitUpdate()
-    }
+      .finally(() => {
+        this.fetchAndUpdatePromise = undefined
+        this.isReadyToDisplayDapps = true
+        this.emitUpdate()
+      })
   }
 
   async #fetchAndUpdateDapps() {
@@ -220,23 +243,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     let fetchedChainsList: DefiLlamaChain[] = []
 
     const [res, chainsRes] = await Promise.all([
-      process.env.IS_TESTING === 'true'
-        ? Promise.resolve(mockDapps)
-        : fetchWithTimeout(
-            this.#fetch,
-            'https://api.llama.fi/protocols',
-            {},
-            this.#shouldRetryFetchAndUpdate ? 15000 : 10000
-          ),
-
-      process.env.IS_TESTING === 'true'
-        ? Promise.resolve(mockChains)
-        : fetchWithTimeout(
-            this.#fetch,
-            'https://api.llama.fi/v2/chains',
-            {},
-            this.#shouldRetryFetchAndUpdate ? 15000 : 10000
-          )
+      fetchWithTimeout(
+        this.#fetch,
+        'https://api.llama.fi/protocols',
+        {},
+        this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+      ),
+      fetchWithTimeout(
+        this.#fetch,
+        'https://api.llama.fi/v2/chains',
+        {},
+        this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+      )
     ])
 
     if (!res.ok || !chainsRes.ok) {
@@ -246,15 +264,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     ;[fetchedDappsList, fetchedChainsList] = await Promise.all([res.json(), chainsRes.json()])
 
     if (!fetchedDappsList.length || !fetchedChainsList.length) {
-      this.#shouldRetryFetchAndUpdate = true
-
-      // run the interval if the initial fetch failed while the extension is not in use
-      if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
-        this.#retryFetchAndUpdateInterval.start()
-      } else {
-        this.#retryFetchAndUpdateInterval.stop()
-      }
-      return
+      throw new Error('Fetch completed, but no apps or chains were returned')
     }
 
     const chainNamesToIds = new Map<string, number | null>()
@@ -702,7 +712,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps: this.dapps,
       categories: this.categories,
-      isReady: this.isReady
+      isReady: this.isReady,
+      shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
+      retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
+      retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts
     }
   }
 }
