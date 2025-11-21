@@ -308,14 +308,6 @@ export class DefiPositionsController {
     }))
   }
 
-  static getEmptyState(): NetworkState {
-    return {
-      isLoading: false,
-      positionsByProvider: [],
-      providerErrors: []
-    }
-  }
-
   /**
    * Fetches the USD prices for the assets in the provided positions
    * using cena and updates the positions with the fetched prices and values.
