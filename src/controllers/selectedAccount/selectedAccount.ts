@@ -6,27 +6,20 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
-import { IDefiPositionsController } from '../../interfaces/defiPositions'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   ISelectedAccountController,
-  SelectedAccountPortfolio,
-  SelectedAccountPortfolioByNetworks
+  SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
-import {
-  defiPositionsOnDisabledNetworksBannerId,
-  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
-} from '../../libs/banners/banners'
-import { sortByValue } from '../../libs/defiPositions/helpers'
+import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
 import {
-  getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
   SelectedAccountBalanceError
 } from '../../libs/selectedAccount/errors'
@@ -59,8 +52,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #portfolio: IPortfolioController | null = null
 
-  #defiPositions: IDefiPositionsController | null = null
-
   #networks: INetworksController | null = null
 
   #keystore: IKeystoreController | null = null
@@ -75,14 +66,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    * It is updated when the portfolio or defi positions controllers are updated.
    */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
-
-  /**
-   * Holds the selected account portfolio divided by networks. It includes the portfolio
-   * and defi positions for each network. It's used when calculating the portfolio
-   * for the UI - unnecessary calculations are avoided by using data stored here
-   * in case it doesn't have to be recalculated.
-   */
-  #portfolioByNetworks: SelectedAccountPortfolioByNetworks = {}
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
@@ -170,24 +153,19 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   initControllers({
     portfolio,
-    defiPositions,
     networks,
     providers
   }: {
     portfolio: IPortfolioController
-    defiPositions: IDefiPositionsController
     networks: INetworksController
     providers: IProvidersController
   }) {
     this.#portfolio = portfolio
-    this.#defiPositions = defiPositions
     this.#networks = networks
     this.#providers = providers
 
     this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
-    this.#updateSelectedAccountDefiPositions(true)
-    this.#updateDefiPositionsErrors(true)
 
     this.#portfolio.onUpdate(async () => {
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
@@ -195,23 +173,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     }, 'selectedAccount')
 
-    this.#defiPositions.onUpdate(() => {
-      this.#debounceFunctionCallsOnSameTick('updateSelectedAccountDefiPositions', () => {
-        this.#updateSelectedAccountDefiPositions()
-
-        if (!this.areDefiPositionsLoading) {
-          this.#debounceFunctionCallsOnSameTick('updateSelectedAccountPortfolio', () => {
-            this.updateSelectedAccountPortfolio(true)
-            this.#updateDefiPositionsErrors()
-          })
-        }
-      })
-    })
-
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateDefiPositionsErrors', () => {
         this.#updatePortfolioErrors(true)
-        this.#updateDefiPositionsErrors()
       })
     })
 
@@ -219,7 +183,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#debounceFunctionCallsOnSameTick('updateSelectedAccount', () => {
         this.#updateSelectedAccount(true)
         this.#updatePortfolioErrors(true)
-        this.#updateDefiPositionsErrors()
       })
     })
 
@@ -239,7 +202,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#portfolioErrors = []
     this.#defiPositionsErrors = []
     this.defiPositions = []
-    this.#portfolioByNetworks = {}
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
 
     const isStateWithOutdatedNetworks =
@@ -250,9 +212,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     // Display the current portfolio state immediately only if the user hasn't
     // added/removed networks since the last time the portfolio was calculated.
     if (!isStateWithOutdatedNetworks) {
-      this.#updateSelectedAccountDefiPositions(true)
       this.updateSelectedAccountPortfolio(true)
-      this.#updateDefiPositionsErrors(true)
     }
     this.dashboardNetworkFilter = null
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
@@ -290,7 +250,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.portfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
     this.#portfolioErrors = []
-    this.#portfolioByNetworks = {}
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -298,21 +257,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
-    if (!this.#portfolio || !this.#defiPositions || !this.account) return
-
-    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
+    if (!this.#portfolio || !this.account) return
 
     const portfolioAccountState = structuredClone(
       this.#portfolio.getAccountPortfolioState(this.account.addr)
     )
 
-    const {
-      selectedAccountPortfolio: newSelectedAccountPortfolio,
-      selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
-    } = calculateSelectedAccountPortfolio(
+    const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
-      structuredClone(this.#portfolioByNetworks),
-      defiPositionsAccountState,
       this.portfolio.shouldShowPartialResult,
       this.#isManualUpdate
     )
@@ -357,7 +309,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
 
     this.portfolio = newSelectedAccountPortfolio
-    this.#portfolioByNetworks = newSelectedAccountPortfolioByNetworks
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
@@ -365,49 +316,40 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  get areDefiPositionsLoading() {
-    if (!this.account || !this.#defiPositions) return false
+  // @TODO: Implement sorting of defi positions in the portfolio
+  // #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
+  //   if (!this.#defiPositions || !this.account) return
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
-    return (
-      !Object.keys(defiPositionsAccountState).length ||
-      Object.values(defiPositionsAccountState).some((n) => n.isLoading)
-    )
-  }
+  //   const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-  #updateSelectedAccountDefiPositions(skipUpdate?: boolean) {
-    if (!this.#defiPositions || !this.account) return
+  //   const positionsByProvider = Object.values(defiPositionsAccountState).flatMap(
+  //     (n) => n.positionsByProvider
+  //   )
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
+  //   const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
+  //     const positions = provider.positions
+  //       .map((position) => {
+  //         const assets = position.assets
+  //           .filter(Boolean)
+  //           .sort((a, b) => sortByValue(a.value, b.value))
 
-    const positionsByProvider = Object.values(defiPositionsAccountState).flatMap(
-      (n) => n.positionsByProvider
-    )
+  //         return { ...position, assets }
+  //       })
+  //       .sort((a, b) => sortByValue(a.additionalData.positionInUSD, b.additionalData.positionInUSD))
 
-    const positionsByProviderWithSortedAssets = positionsByProvider.map((provider) => {
-      const positions = provider.positions
-        .map((position) => {
-          const assets = position.assets
-            .filter(Boolean)
-            .sort((a, b) => sortByValue(a.value, b.value))
+  //     return { ...provider, positions }
+  //   })
 
-          return { ...position, assets }
-        })
-        .sort((a, b) => sortByValue(a.additionalData.positionInUSD, b.additionalData.positionInUSD))
+  //   const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) =>
+  //     sortByValue(a.positionInUSD, b.positionInUSD)
+  //   )
 
-      return { ...provider, positions }
-    })
+  //   this.defiPositions = sortedPositionsByProvider
 
-    const sortedPositionsByProvider = positionsByProviderWithSortedAssets.sort((a, b) =>
-      sortByValue(a.positionInUSD, b.positionInUSD)
-    )
-
-    this.defiPositions = sortedPositionsByProvider
-
-    if (!skipUpdate) {
-      this.emitUpdate()
-    }
-  }
+  //   if (!skipUpdate) {
+  //     this.emitUpdate()
+  //   }
+  // }
 
   #debounceFunctionCallsOnSameTick(funcName: string, func: () => void) {
     if (this.#shouldDebounceFlags[funcName]) return
@@ -428,36 +370,36 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }, 0)
   }
 
-  #updateDefiPositionsErrors(skipUpdate?: boolean) {
-    if (
-      !this.account ||
-      !this.#networks ||
-      !this.#providers ||
-      !this.#defiPositions ||
-      this.areDefiPositionsLoading
-    ) {
-      this.#defiPositionsErrors = []
-      if (!skipUpdate) {
-        this.emitUpdate()
-      }
-      return
-    }
+  // @TODO: The defi positions will still have some sort of error state, consider that
+  // #updateDefiPositionsErrors(skipUpdate?: boolean) {
+  //   if (
+  //     !this.account ||
+  //     !this.#networks ||
+  //     !this.#providers ||
+  //     this.areDefiPositionsLoading
+  //   ) {
+  //     this.#defiPositionsErrors = []
+  //     if (!skipUpdate) {
+  //       this.emitUpdate()
+  //     }
+  //     return
+  //   }
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
+  //   const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const errorBanners = getNetworksWithDeFiPositionsErrorErrors({
-      networks: this.#networks.networks,
-      currentAccountState: defiPositionsAccountState,
-      providers: this.#providers.providers,
-      networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
-    })
+  //   const errorBanners = getNetworksWithDeFiPositionsErrorErrors({
+  //     networks: this.#networks.networks,
+  //     currentAccountState: defiPositionsAccountState,
+  //     providers: this.#providers.providers,
+  //     networksWithPositions: this.#defiPositions.getNetworksWithPositions(this.account.addr)
+  //   })
 
-    this.#defiPositionsErrors = errorBanners
+  //   this.#defiPositionsErrors = errorBanners
 
-    if (!skipUpdate) {
-      this.emitUpdate()
-    }
-  }
+  //   if (!skipUpdate) {
+  //     this.emitUpdate()
+  //   }
+  // }
 
   #updatePortfolioErrors(skipUpdate?: boolean) {
     if (
@@ -544,9 +486,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   removeNetworkData(chainId: bigint) {
     const stringChainId = chainId.toString()
 
-    if (this.#portfolioByNetworks[stringChainId]) {
-      delete this.#portfolioByNetworks[stringChainId]
-    }
     if (String(this.dashboardNetworkFilter) === stringChainId) {
       this.dashboardNetworkFilter = null
     }
@@ -592,28 +531,29 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       !this.account ||
       !this.#networks ||
       !this.#networks.isInitialized ||
-      !this.#defiPositions ||
       !this.portfolio.isAllReady
     )
       return []
 
-    const defiPositionsAccountState = this.#defiPositions.getDefiPositionsStateForAllNetworks(
-      this.account.addr
-    )
+    // @TODO: Read from the portfolio's defi positions state when available
+    return []
+    // const defiPositionsAccountState = this.#defiPositions.getDefiPositionsStateForAllNetworks(
+    //   this.account.addr
+    // )
 
-    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
-      ? this.#networks.allNetworks.filter(
-          (n) =>
-            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
-              `${this.account!.addr}-${n.chainId}`
-            )
-        )
-      : this.#networks.allNetworks
-    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
-      defiPositionsAccountState,
-      networks: notDismissedNetworks,
-      accountAddr: this.account.addr
-    })
+    // const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+    //   ? this.#networks.allNetworks.filter(
+    //       (n) =>
+    //         !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId].includes(
+    //           `${this.account!.addr}-${n.chainId}`
+    //         )
+    //     )
+    //   : this.#networks.allNetworks
+    // return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+    //   defiPositionsAccountState,
+    //   networks: notDismissedNetworks,
+    //   accountAddr: this.account.addr
+    // })
   }
 
   toJSON() {
@@ -624,7 +564,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
       defiPositions: this.defiPositions,
-      areDefiPositionsLoading: this.areDefiPositionsLoading,
       autoLoginPolicies: this.autoLoginPolicies
     }
   }

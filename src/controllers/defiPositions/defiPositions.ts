@@ -3,15 +3,10 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL } from '../../consts/intervals'
-import { Account, AccountId, IAccountsController } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { IDefiPositionsController } from '../../interfaces/defiPositions'
-import { Fetch } from '../../interfaces/fetch'
-import { IKeystoreController } from '../../interfaces/keystore'
-import { INetworksController, Network } from '../../interfaces/network'
-import { IProvidersController, RPCProvider } from '../../interfaces/provider'
-import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { IStorageController } from '../../interfaces/storage'
-import { IUiController } from '../../interfaces/ui'
+import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { getAssetValue, getProviderId } from '../../libs/defiPositions/helpers'
 import {
@@ -23,6 +18,7 @@ import {
   AccountState,
   DeFiPositionsError,
   DeFiPositionsState,
+  NetworkState,
   NetworksWithPositionsByAccounts,
   PositionsByProvider,
   ProviderError
@@ -33,174 +29,109 @@ import shortenAddress from '../../utils/shortenAddress'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ONE_MINUTE = 60000
-export class DefiPositionsController extends EventEmitter implements IDefiPositionsController {
-  #selectedAccount: ISelectedAccountController
-
-  #keystore: IKeystoreController
-
-  #accounts: IAccountsController
-
-  #networks: INetworksController
-
-  #providers: IProvidersController
-
-  #ui: IUiController
-
-  #fetch: Fetch
-
-  #storage: IStorageController
-
-  #state: DeFiPositionsState = {}
+export class DefiPositionsController {
+  // #state: DeFiPositionsState = {}
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  sessionIds: string[] = []
+  // sessionIds: string[] = []
 
-  #positionsContinuousUpdateInterval: IRecurringTimeout
+  #fetch: any
+
+  // #positionsContinuousUpdateInterval: IRecurringTimeout
 
   #updatePositionsPromise: Promise<void> | undefined
 
-  #initialLoadPromise: Promise<void> | undefined
+  // get positionsContinuousUpdateInterval() {
+  //   return this.#positionsContinuousUpdateInterval
+  // }
 
-  get positionsContinuousUpdateInterval() {
-    return this.#positionsContinuousUpdateInterval
-  }
-
-  constructor({
-    fetch,
-    storage,
-    selectedAccount,
-    keystore,
-    accounts,
-    networks,
-    providers,
-    ui
-  }: {
-    fetch: Fetch
-    storage: IStorageController
-    selectedAccount: ISelectedAccountController
-    keystore: IKeystoreController
-    accounts: IAccountsController
-    networks: INetworksController
-    providers: IProvidersController
-    ui: IUiController
-  }) {
-    super()
-
+  constructor(fetch: any) {
     this.#fetch = fetch
-    this.#storage = storage
-    this.#selectedAccount = selectedAccount
-    this.#keystore = keystore
-    this.#accounts = accounts
-    this.#networks = networks
-    this.#providers = providers
-    this.#ui = ui
+    // this.#positionsContinuousUpdateInterval = new RecurringTimeout(
+    //   async () => this.positionsContinuousUpdate(),
+    //   ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
+    //   this.emitError.bind(this)
+    // )
 
-    this.#initialLoadPromise = this.#load().finally(() => {
-      this.#initialLoadPromise = undefined
-    })
+    // this.#ui.uiEvent.on('addView', () => {
+    //   this.#positionsContinuousUpdateInterval.start()
+    // })
 
-    this.#positionsContinuousUpdateInterval = new RecurringTimeout(
-      async () => this.positionsContinuousUpdate(),
-      ACTIVE_EXTENSION_DEFI_POSITIONS_UPDATE_INTERVAL,
-      this.emitError.bind(this)
-    )
-
-    this.#ui.uiEvent.on('addView', () => {
-      this.#positionsContinuousUpdateInterval.start()
-    })
-
-    this.#ui.uiEvent.on('removeView', () => {
-      if (!this.#ui.views.length) this.#positionsContinuousUpdateInterval.stop()
-    })
+    // this.#ui.uiEvent.on('removeView', () => {
+    //   if (!this.#ui.views.length) this.#positionsContinuousUpdateInterval.stop()
+    // })
   }
 
-  async #load() {
-    try {
-      this.#networksWithPositionsByAccounts = await this.#storage.get(
-        'networksWithPositionsByAccounts',
-        {}
-      )
+  // async #load() {
+  //   try {
+  //     this.#networksWithPositionsByAccounts = await this.#storage.get(
+  //       'networksWithPositionsByAccounts',
+  //       {}
+  //     )
 
-      this.emitUpdate()
-    } catch (e: any) {
-      this.emitError({
-        message: 'Failed to load DeFi positions data from storage.',
-        error: e,
-        level: 'silent'
-      })
-    }
-  }
+  //     this.emitUpdate()
+  //   } catch (e: any) {
+  //     this.emitError({
+  //       message: 'Failed to load DeFi positions data from storage.',
+  //       error: e,
+  //       level: 'silent'
+  //     })
+  //   }
+  // }
 
-  #getShouldSkipUpdate(
-    accountAddr: string,
-    _maxDataAgeMs = ONE_MINUTE,
-    forceUpdate: boolean = false
-  ) {
-    const hasKeys = this.#keystore.keys.some(({ addr }) =>
-      this.#selectedAccount.account!.associatedKeys.includes(addr)
-    )
-    let maxDataAgeMs = _maxDataAgeMs
+  // #getShouldSkipUpdate(
+  //   accountAddr: string,
+  //   _maxDataAgeMs = ONE_MINUTE,
+  //   forceUpdate: boolean = false
+  // ) {
+  //   const hasKeys = this.#keystore.keys.some(({ addr }) =>
+  //     this.#selectedAccount.account!.associatedKeys.includes(addr)
+  //   )
+  //   let maxDataAgeMs = _maxDataAgeMs
 
-    // force update the positions if forceUpdate is passed,
-    // the account has keys and a session with the DeFi tab is opened
-    const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
-    if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
+  //   // force update the positions if forceUpdate is passed,
+  //   // the account has keys and a session with the DeFi tab is opened
+  //   const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
+  //   if (shouldForceUpdatePositions) maxDataAgeMs = 30000 // half a min
 
-    let latestUpdatedAt: number | undefined
+  //   let latestUpdatedAt: number | undefined
 
-    const accountState = Object.values(this.#state[accountAddr])
-    // eslint-disable-next-line no-restricted-syntax
-    for (const network of accountState) {
-      if (typeof network.updatedAt === 'number') {
-        if (latestUpdatedAt === undefined || network.updatedAt > latestUpdatedAt) {
-          latestUpdatedAt = network.updatedAt
-        }
-      }
-    }
+  //   const accountState = Object.values(this.#state[accountAddr])
+  //   // eslint-disable-next-line no-restricted-syntax
+  //   for (const network of accountState) {
+  //     if (typeof network.updatedAt === 'number') {
+  //       if (latestUpdatedAt === undefined || network.updatedAt > latestUpdatedAt) {
+  //         latestUpdatedAt = network.updatedAt
+  //       }
+  //     }
+  //   }
 
-    if (!latestUpdatedAt) return false
+  //   if (!latestUpdatedAt) return false
 
-    if (!forceUpdate && accountState.some((n) => n.providerErrors?.length || n.error)) {
-      maxDataAgeMs = ONE_MINUTE
-    }
+  //   if (!forceUpdate && accountState.some((n) => n.providerErrors?.length || n.error)) {
+  //     maxDataAgeMs = ONE_MINUTE
+  //   }
 
-    const isWithinMinUpdateInterval = Date.now() - latestUpdatedAt < maxDataAgeMs
+  //   const isWithinMinUpdateInterval = Date.now() - latestUpdatedAt < maxDataAgeMs
 
-    return isWithinMinUpdateInterval || accountState.some((n) => n.isLoading)
-  }
+  //   return isWithinMinUpdateInterval || accountState.some((n) => n.isLoading)
+  // }
 
-  async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
-    this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
-      accountId,
-      accountState,
-      this.#networksWithPositionsByAccounts,
-      this.#providers.providers
-    )
+  // @TODO: Reimplement
+  // async #updateNetworksWithPositions(accountId: AccountId, accountState: AccountState) {
+  //   this.#networksWithPositionsByAccounts[accountId] = getAccountNetworksWithPositions(
+  //     accountId,
+  //     accountState,
+  //     this.#networksWithPositionsByAccounts,
+  //     this.#providers.providers
+  //   )
 
-    await this.#storage.set(
-      'networksWithPositionsByAccounts',
-      this.#networksWithPositionsByAccounts
-    )
-  }
-
-  async updatePositions(opts?: {
-    chainIds?: bigint[]
-    maxDataAgeMs?: number
-    forceUpdate?: boolean
-    forceDebankCall?: boolean
-  }) {
-    // If a previous update is still in progress, exit early to avoid
-    // running multiple overlapping executions of the func. This ensures that only
-    // one update runs at a time, preventing race conditions and inconsistent state/storage writes
-    if (this.#updatePositionsPromise) return
-
-    this.#updatePositionsPromise = this.#updatePositions(opts).finally(() => {
-      this.#updatePositionsPromise = undefined
-    })
-
-    await this.#updatePositionsPromise
-  }
+  //   await this.#storage.set(
+  //     'networksWithPositionsByAccounts',
+  //     this.#networksWithPositionsByAccounts
+  //   )
+  // }
 
   /**
    * Fetches the defi positions of certain protocols using RPC calls and custom logic.
@@ -211,7 +142,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
    * Returns the old positions if the call fails. Some positions, like that of Uniswap V3,
    * are merged with the data from Cena/Debank.
    */
-  async #getCustomProviderPositions(
+  async getCustomProviderPositions(
     addr: string,
     provider: RPCProvider,
     network: Network,
@@ -236,12 +167,6 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       let newPositions = (
         await Promise.all([
           getAAVEPositions(addr, provider, network).catch((e: any) => {
-            this.emitError({
-              message: `Failed to fetch AAVE v3 positions for ${addr} on ${network.name}.`,
-              error: e,
-              level: 'silent'
-            })
-
             providerErrors.push({
               providerName: 'AAVE v3',
               error: e?.message || 'Unknown error'
@@ -258,12 +183,6 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
             debankNetworkPositionsByProvider,
             isDebankCallSuccessful
           ).catch((e: any) => {
-            this.emitError({
-              message: `Failed to fetch Uniswap v3 positions for ${addr} on ${network.name}.`,
-              error: e,
-              level: 'silent'
-            })
-
             providerErrors.push({
               providerName: 'Uniswap V3',
               error: e?.message || 'Unknown error'
@@ -277,7 +196,7 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
       if (newPositions.length) {
         try {
           newPositions =
-            (await this.updatePositionsByProviderAssetPrices(newPositions, network.chainId)) ||
+            (await this.updatePositionsByProviderAssetPrices(newPositions, network.platformId)) ||
             newPositions
         } catch (e) {
           console.error(`#setAssetPrices error for ${addr} on ${network.name}:`, e)
@@ -302,11 +221,6 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
         error
       }
     } catch (e: any) {
-      this.emitError({
-        message: `Failed to fetch custom DeFi positions on ${network.name} for ${addr}`,
-        error: e,
-        level: 'silent'
-      })
       return {
         positionsByProvider: previousPositions.filter((p) => p.source === 'custom'),
         providerErrors: [],
@@ -338,84 +252,34 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
   /**
    * Updates an account's positions for a single network.
    */
-  async #updateSingleNetwork(
-    network: Network,
-    selectedAccount: Account,
-    debankPositionsByProvider: PositionsByProvider[] | null
+  static getNewDefiState(
+    debankPositionsByProvider: PositionsByProvider[] | undefined,
+    previousPositionsByProvider: PositionsByProvider[],
+    customPositionsByProvider: PositionsByProvider[],
+    customPositionsError: DeFiPositionsError | null,
+    customProvidersErrors: ProviderError[],
+    nonceId: string | undefined
   ) {
-    const chain = network.chainId.toString()
-    const debankNetworkPositionsByProvider =
-      debankPositionsByProvider?.filter((p) => String(p.chainId) === String(network.chainId)) || []
-    const previousNetworkPositionsByProvider =
-      this.#state[selectedAccount.addr][chain].positionsByProvider
-    const nonceId = this.#getNonceId(selectedAccount, network.chainId)
     const isDebankCallSuccessful = !!debankPositionsByProvider
-    const state = this.#state[selectedAccount.addr][network.chainId.toString()]
-    const {
-      positionsByProvider: customPositionsByProvider,
-      providerErrors: customProvidersErrors,
-      error: customPositionsError
-    } = await this.#getCustomProviderPositions(
-      selectedAccount.addr,
-      this.#providers.providers[chain],
-      network,
-      previousNetworkPositionsByProvider,
-      debankNetworkPositionsByProvider,
-      isDebankCallSuccessful
-    )
 
     const uniqueAndMerged = DefiPositionsController.getUniqueMergedPositions(
       isDebankCallSuccessful
-        ? debankNetworkPositionsByProvider
-        : previousNetworkPositionsByProvider.filter((p) => p.source === 'debank'),
+        ? debankPositionsByProvider
+        : previousPositionsByProvider.filter((p) => p.source === 'debank'),
       customPositionsByProvider
     )
 
-    this.#state[selectedAccount.addr][network.chainId.toString()] = {
-      ...this.#state[selectedAccount.addr][network.chainId.toString()],
+    return {
       nonceId,
       isLoading: false,
       error: !isDebankCallSuccessful ? DeFiPositionsError.CriticalError : customPositionsError,
-      updatedAt: isDebankCallSuccessful && !customPositionsError ? Date.now() : state.updatedAt,
+      updatedAt: isDebankCallSuccessful && !customPositionsError ? Date.now() : undefined,
       providerErrors: customProvidersErrors,
-      positionsByProvider: uniqueAndMerged || state.positionsByProvider
+      positionsByProvider: uniqueAndMerged || previousPositionsByProvider
     }
   }
 
-  /**
-   * Makes the actual call to Debank to fetch DeFi positions.
-   *
-   * Note: It's private so we can mock it in tests.
-   */
-  private async callDebank(accountAddr: string, forceUpdate?: boolean) {
-    const defiUrl = `https://cena.ambire.com/api/v3/defi/${accountAddr}`
-    const hasKeys = this.#keystore.keys.some(({ addr }) =>
-      this.#selectedAccount.account!.associatedKeys.includes(addr)
-    )
-    const shouldForceUpdatePositions = forceUpdate && this.sessionIds.length && hasKeys
-    const hasFetchedBefore = Object.values(this.#state[accountAddr]).some((n) => n.updatedAt)
-
-    const resp = await fetchWithTimeout(
-      this.#fetch,
-      shouldForceUpdatePositions ? `${defiUrl}?update=true` : defiUrl,
-      {},
-      hasFetchedBefore ? 5000 : 10000
-    )
-
-    const body = await resp.json()
-    if (resp.status !== 200 || body?.message || body?.error) throw body
-
-    return (body.data as Omit<PositionsByProvider, 'source'>[]) || []
-  }
-
-  /**
-   * Fetches and formats the DeFi positions from Debank for a given account.
-   *
-   * Note: It's private so we can mock it in tests.
-   */
-  private async getDebankPositionsForAccount(accountAddr: string, forceUpdate?: boolean) {
-    const result = await this.callDebank(accountAddr, forceUpdate)
-
+  static getFormattedApiPositions(result: Omit<PositionsByProvider, 'source'>[]) {
     return result.map((p) => ({
       ...p,
       source: 'debank' as const,
@@ -444,77 +308,12 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     }))
   }
 
-  #initState(addr: string, networksToUpdate: Network[]) {
-    if (!this.#state[addr]) {
-      this.#state[addr] = {}
+  static getEmptyState(): NetworkState {
+    return {
+      isLoading: false,
+      positionsByProvider: [],
+      providerErrors: []
     }
-    networksToUpdate.forEach((n) => {
-      const chainId = n.chainId.toString()
-      if (!this.#state[addr][chainId]) {
-        this.#state[addr][chainId] = {
-          isLoading: false,
-          positionsByProvider: [],
-          providerErrors: []
-        }
-      }
-    })
-  }
-
-  async #updatePositions(opts?: {
-    chainIds?: bigint[]
-    maxDataAgeMs?: number
-    forceUpdate?: boolean
-    /**
-     * Used for specific testing purposes only.
-     */
-    forceDebankCall?: boolean
-  }) {
-    const { chainIds, maxDataAgeMs, forceUpdate, forceDebankCall } = opts || {}
-    const selectedAccount = this.#selectedAccount.account
-    if (!selectedAccount) return
-
-    const selectedAccountAddr = selectedAccount.addr
-    const networksToUpdate = chainIds
-      ? this.#networks.allNetworks.filter((n) => chainIds.includes(n.chainId))
-      : this.#networks.allNetworks
-
-    this.#initState(selectedAccountAddr, networksToUpdate)
-
-    if (this.#getShouldSkipUpdate(selectedAccountAddr, maxDataAgeMs, forceUpdate)) return
-    if (this.#getShouldSkipUpdateOnAccountWithNoDefiPositions(selectedAccount, forceUpdate)) return
-
-    // Set all networks to loading
-    networksToUpdate.forEach((n) => {
-      this.#state[selectedAccountAddr][n.chainId.toString()].isLoading = true
-    })
-
-    this.emitUpdate()
-
-    let debankPositions: PositionsByProvider[] | null = null
-
-    // Skip Debank call in testing mode — only fetch custom DeFi positions
-    if (process.env.IS_TESTING !== 'true' || forceDebankCall) {
-      try {
-        debankPositions = await this.getDebankPositionsForAccount(selectedAccountAddr, forceUpdate)
-      } catch (err: any) {
-        this.emitError({
-          message: `Failed to fetch DeFi positions from Debank for ${selectedAccountAddr}`,
-          error: err,
-          level: 'silent'
-        })
-      }
-    } else {
-      // Null means an error occurred when fetching from Debank
-      // so we must set it to an empty array if the call was skipped
-      debankPositions = []
-    }
-
-    await Promise.all(
-      networksToUpdate.map((n) => this.#updateSingleNetwork(n, selectedAccount, debankPositions))
-    )
-    await this.#updateNetworksWithPositions(selectedAccountAddr, this.#state[selectedAccountAddr])
-
-    this.emitUpdate()
   }
 
   /**
@@ -525,10 +324,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
    */
   private async updatePositionsByProviderAssetPrices(
     positionsByProvider: PositionsByProvider[],
-    chainId: bigint
+    platformId: string | null = null
   ) {
-    const platformId = this.#networks.allNetworks.find((n) => n.chainId === chainId)?.platformId
-
     // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
     // since it would return nothing.
     // This can happen when adding a custom network that doesn't have a CoinGecko platform ID.
@@ -602,104 +399,90 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     return positionsByProviderWithPrices
   }
 
-  #getShouldSkipUpdateOnAccountWithNoDefiPositions(acc: Account, forceUpdate?: boolean) {
-    if (forceUpdate) return false
-    if (!this.#accounts.accountStates[acc.addr]) return false
-    if (!this.#state[acc.addr]) return false
-    // Don't skip if the account has any DeFi positions or the account has never been updated
-    if (
-      Object.values(this.#state[acc.addr]).some(
-        (network) => network.positionsByProvider.length || !network.updatedAt
-      )
-    )
-      return false
-    const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
-      (chainId: string) => {
-        const posNonceId = this.#state[acc.addr][chainId]?.nonceId
-        const nonceId = this.#getNonceId(acc, chainId)
+  // #getShouldSkipUpdateOnAccountWithNoDefiPositions(acc: Account, forceUpdate?: boolean) {
+  //   if (forceUpdate) return false
+  //   if (!this.#accounts.accountStates[acc.addr]) return false
+  //   if (!this.#state[acc.addr]) return false
+  //   // Don't skip if the account has any DeFi positions or the account has never been updated
+  //   if (
+  //     Object.values(this.#state[acc.addr]).some(
+  //       (network) => network.positionsByProvider.length || !network.updatedAt
+  //     )
+  //   )
+  //     return false
+  //   const someNonceIdChanged = Object.keys(this.#accounts.accountStates[acc.addr]).some(
+  //     (chainId: string) => {
+  //       const posNonceId = this.#state[acc.addr][chainId]?.nonceId
+  //       const nonceId = this.#getNonceId(acc, chainId)
 
-        if (!nonceId || !posNonceId) return false
+  //       if (!nonceId || !posNonceId) return false
 
-        return nonceId !== posNonceId
-      }
-    )
+  //       return nonceId !== posNonceId
+  //     }
+  //   )
 
-    // Return false (don’t skip) if any nonceId has changed
-    return !someNonceIdChanged
-  }
+  //   // Return false (don’t skip) if any nonceId has changed
+  //   return !someNonceIdChanged
+  // }
 
-  #getNonceId(acc: Account, chainId: bigint | string) {
-    if (!this.#accounts.accountStates) return undefined
-    if (!this.#accounts.accountStates[acc.addr]) return undefined
+  // removeNetworkData(chainId: bigint) {
+  //   Object.keys(this.#state).forEach((accountId) => {
+  //     delete this.#state[accountId][chainId.toString()]
+  //   })
+  //   this.emitUpdate()
+  // }
 
-    const networkState = this.#accounts.accountStates[acc.addr][chainId.toString()]
-    if (!networkState) return undefined
+  // getDefiPositionsStateForAllNetworks(accountAddr: string) {
+  //   // return defi positions for enabled and disabled networks
+  //   return this.#state[accountAddr] || {}
+  // }
 
-    const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
-    if (!network) return undefined
+  // getDefiPositionsState(accountAddr: string) {
+  //   // return defi positions only for enabled networks
+  //   return Object.entries(this.#state[accountAddr] || {}).reduce((acc, [chainId, networkState]) => {
+  //     if (this.#networks.networks.find((n) => n.chainId.toString() === chainId)) {
+  //       acc[chainId] = networkState
+  //     }
+  //     return acc
+  //   }, {} as AccountState)
+  // }
 
-    const baseAcc = getBaseAccount(acc, networkState, this.#keystore.getAccountKeys(acc), network)
-    return baseAcc.getNonceId()
-  }
+  // getNetworksWithPositions(accountAddr: string) {
+  //   return this.#networksWithPositionsByAccounts[accountAddr] || []
+  // }
 
-  removeNetworkData(chainId: bigint) {
-    Object.keys(this.#state).forEach((accountId) => {
-      delete this.#state[accountId][chainId.toString()]
-    })
-    this.emitUpdate()
-  }
+  // removeAccountData(accountAddr: string) {
+  //   delete this.#state[accountAddr]
+  //   delete this.#networksWithPositionsByAccounts[accountAddr]
+  //   this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts)
 
-  getDefiPositionsStateForAllNetworks(accountAddr: string) {
-    // return defi positions for enabled and disabled networks
-    return this.#state[accountAddr] || {}
-  }
+  //   this.emitUpdate()
+  // }
 
-  getDefiPositionsState(accountAddr: string) {
-    // return defi positions only for enabled networks
-    return Object.entries(this.#state[accountAddr] || {}).reduce((acc, [chainId, networkState]) => {
-      if (this.#networks.networks.find((n) => n.chainId.toString() === chainId)) {
-        acc[chainId] = networkState
-      }
-      return acc
-    }, {} as AccountState)
-  }
+  // addSession(sessionId: string) {
+  //   this.sessionIds = [...new Set([...this.sessionIds, sessionId])]
+  //   this.emitUpdate()
+  // }
 
-  getNetworksWithPositions(accountAddr: string) {
-    return this.#networksWithPositionsByAccounts[accountAddr] || []
-  }
+  // removeSession(sessionId: string) {
+  //   this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
+  //   this.emitUpdate()
+  // }
 
-  removeAccountData(accountAddr: string) {
-    delete this.#state[accountAddr]
-    delete this.#networksWithPositionsByAccounts[accountAddr]
-    this.#storage.set('networksWithPositionsByAccounts', this.#networksWithPositionsByAccounts)
+  // async positionsContinuousUpdate() {
+  //   if (!this.#ui.views.length) {
+  //     this.#positionsContinuousUpdateInterval.stop()
+  //     return
+  //   }
 
-    this.emitUpdate()
-  }
+  //   const FIVE_MINUTES = 1000 * 60 * 5
+  //   await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
+  // }
 
-  addSession(sessionId: string) {
-    this.sessionIds = [...new Set([...this.sessionIds, sessionId])]
-    this.emitUpdate()
-  }
-
-  removeSession(sessionId: string) {
-    this.sessionIds = this.sessionIds.filter((id) => id !== sessionId)
-    this.emitUpdate()
-  }
-
-  async positionsContinuousUpdate() {
-    if (!this.#ui.views.length) {
-      this.#positionsContinuousUpdateInterval.stop()
-      return
-    }
-
-    const FIVE_MINUTES = 1000 * 60 * 5
-    await this.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
-  }
-
-  toJSON() {
-    return {
-      ...this,
-      ...super.toJSON()
-    }
-  }
+  // toJSON() {
+  //   return {
+  //     ...this,
+  //     ...super.toJSON()
+  //   }
+  // }
 }

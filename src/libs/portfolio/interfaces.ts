@@ -1,7 +1,12 @@
+import { ProviderError } from '../../classes/ProviderError'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Price } from '../../interfaces/assets'
 import { AccountOp } from '../accountOp/accountOp'
-import { AssetType } from '../defiPositions/types'
+import {
+  AssetType,
+  NetworkState as DefiNetworkState,
+  PositionsByProvider
+} from '../defiPositions/types'
 
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
@@ -130,11 +135,27 @@ export type ExternalHintsAPIResponse = {
   erc20s: Hints['erc20s']
   erc721s: VelcroERC721Hints
 } & (Required<Hints['externalApi']> & {
+  error?: string
+})
+
+export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
   chainId: number
   accountAddr: string
-  error?: string
-})
+  hints: ExternalHintsAPIResponse
+  defi: {
+    positions: Omit<PositionsByProvider, 'source'>[]
+    updatedAt: number
+    error?: string
+  }
+}
+
+export type FormattedPortfolioDiscoveryResponse = {
+  hints: FormattedExternalHintsAPIResponse | null
+  defi: {
+    positions: PositionsByProvider[]
+  } & Pick<ExternalPortfolioDiscoveryResponse['defi'], 'updatedAt' | 'error'>
+}
 
 /**
  * A stripped version of `ExternalHintsAPIResponse`. Also, ERC-721 hints
@@ -173,14 +194,6 @@ export interface PortfolioLibGetResult {
   }
   tokenErrors: { error: string; address: string }[]
   collections: CollectionResult[]
-  /**
-   * Metadata from the last external api hints call. It comes from the API
-   * if the request is successful and not cached, or from cache otherwise.
-   */
-  lastExternalApiUpdateData: {
-    lastUpdate: number
-    hasHints: boolean
-  } | null
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
@@ -222,10 +235,15 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'errors'
     | 'blockNumber'
     | 'priceCache'
-    | 'lastExternalApiUpdateData'
     | 'toBeLearned'
     | 'feeTokens'
-  >
+  > & {
+    defiPositions: DefiNetworkState
+    lastExternalApiUpdateData?: {
+      lastUpdate: number
+      hasHints: boolean
+    } | null
+  }
 
 export type PortfolioRewardsResult = CommonResultProps &
   Pick<PortfolioNetworkResult, 'tokens' | 'total' | 'updateStarted' | 'lastSuccessfulUpdate'> & {
@@ -324,10 +342,6 @@ export interface GetOptions {
   priceCache?: PriceCache
   priceRecency: number
   priceRecencyOnFailure?: number
-  lastExternalApiUpdateData?: {
-    lastUpdate: number
-    hasHints: boolean
-  } | null
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type

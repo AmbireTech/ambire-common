@@ -24,29 +24,6 @@ export type SelectedAccountPortfolioState = {
     | undefined
 }
 
-export type SelectedAccountPortfolioByNetworksNetworkState = {
-  totalBalance: number
-  tokens: SelectedAccountPortfolio['tokens']
-  collections: SelectedAccountPortfolio['collections']
-  /**
-   * When the portfolio lib was last called to update the portfolio for this network.
-   * It's compared to the current timestamp to determine whether the
-   * selected account portfolio must be recalculated.
-   */
-  portfolioUpdateStarted?: number
-  /**
-   * The timestamp at which the defi positions were last updated.
-   * It's compared to the current timestamp to determine whether the
-   * selected account portfolio must be recalculated.
-   */
-  defiPositionsUpdatedAt?: number
-  simulatedAccountOp?: NetworkSimulatedAccountOp[string]
-}
-
-export type SelectedAccountPortfolioByNetworks = {
-  [chainId: string]: SelectedAccountPortfolioByNetworksNetworkState
-}
-
 export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
   latestAmount?: bigint
   pendingAmount?: bigint
