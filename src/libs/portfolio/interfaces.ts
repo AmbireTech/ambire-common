@@ -250,6 +250,7 @@ export type PortfolioProjectedRewardsResult = {
   minLvl: number
   minBalance: number
   userXp: number
+  reasonToNotDisplayProjectedRewards?: string
 }
 
 export type PortfolioKeyResult =
