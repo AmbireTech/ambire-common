@@ -21,14 +21,9 @@ import {
   PortfolioGasTankResult,
   SuspectedType,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult
 } from './interfaces'
-
-type TokenValidationResult = [
-  boolean,
-  string,
-  { message: string | null; type: 'network' | 'validation' | null }
-]
 
 const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
 
@@ -279,6 +274,19 @@ export const mapToken = (
   }
 }
 
+/**
+ * Determines whether an error is related to network connectivity issues rather than validation failures.
+ *
+ * This function helps distinguish between temporary network problems (which should allow retries)
+ * and actual token validation errors (which indicate the token is genuinely invalid).
+ *
+ * @param error - The error object to analyze. Expected to have a `message` string property and/or a `code` property.
+ * @returns `true` if the error appears to be network-related, `false` otherwise
+ *
+ * Network error patterns detected:
+ * - Message patterns: "network error", "fetch failed", "connection refused", "timeout", etc.
+ * - Error codes: "NETWORK_ERROR", "TIMEOUT", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT"
+ */
 const isNetworkError = (error: any): boolean => {
   if (!error) return false
 

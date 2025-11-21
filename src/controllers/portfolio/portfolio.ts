@@ -45,18 +45,14 @@ import {
   PreviousHintsStorage,
   TemporaryTokens,
   ToBeLearnedAssets,
-  TokenResult
+  TokenResult,
+  TokenValidationResult
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
-type TokenValidationResult = [
-  boolean,
-  string,
-  { message: string | null; type: 'network' | 'validation' | null }
-]
 
 const LEARNED_UNOWNED_LIMITS = {
   erc20s: 20,
