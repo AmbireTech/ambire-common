@@ -539,6 +539,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.update({ hasNewEstimation: true })
       this.#reestimate()
     })
+
     this.gasPrice.onUpdate(() => {
       this.update({
         gasPrices: this.gasPrice.gasPrices[this.#network.chainId.toString()] || null,
@@ -546,6 +547,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         blockGasLimit: this.gasPrice.blockGasLimit
       })
     })
+
     this.gasPrice.onError((error: ErrorRef) => {
       this.emitError(error)
     })
@@ -1244,9 +1246,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
-  reset() {
-    this.estimation.reset()
-    this.gasPrice.reset()
+  destroy() {
+    super.destroy()
+    this.estimation.destroy()
+    this.gasPrice.destroy()
     this.gasPrices = undefined
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
@@ -1254,7 +1257,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.status = null
     this.signedTransactionsCount = null
     this.#stopRefetching = true
-    this.emitUpdate()
+    this.gasPrice = null as any
+    this.estimation = null as any
   }
 
   resetStatus() {

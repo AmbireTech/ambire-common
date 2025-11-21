@@ -78,13 +78,20 @@ export class GasPriceController extends EventEmitter {
     const bundler = this.#bundlerSwitcher.getBundler()
 
     const [gasPriceData, bundlerGas] = await Promise.all([
-      getGasPriceRecommendations(this.#provider, this.#network).catch((e) => {
+      getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
+        return !this.stopRefetching
+      }).catch((e) => {
         const signAccountOpState = this.#getSignAccountOpState()
-        const estimation = signAccountOpState.estimation as EstimationController
+        // null because the estimation is destroyed with signAccountOp
+        const estimation = signAccountOpState.estimation as EstimationController | null
 
         // if the gas price data has been fetched once successfully OR an estimation error
         // is currently being displayed, do not emit another error
-        if (this.gasPrices[this.#network.chainId.toString()] || estimation.estimationRetryError)
+        if (
+          this.gasPrices[this.#network.chainId.toString()] ||
+          !estimation ||
+          estimation.estimationRetryError
+        )
           return
 
         const { type } = decodeError(e)
@@ -143,7 +150,8 @@ export class GasPriceController extends EventEmitter {
     this.refetch()
   }
 
-  reset() {
+  destroy() {
+    super.destroy()
     this.stopRefetching = true
   }
 }
