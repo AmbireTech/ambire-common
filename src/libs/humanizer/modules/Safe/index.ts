@@ -11,6 +11,7 @@ import {
   getLabel,
   getRecipientText,
   getToken,
+  getWarning,
   uintToAddress
 } from '../../utils'
 
@@ -20,7 +21,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
   const matcher = {
     [iface.getFunction(
       'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
-    )?.selector!]: (call: IrCall): HumanizerVisualization[] | undefined => {
+    )?.selector!]: (call: IrCall): IrCall | undefined => {
       if (!call.to) return
       if (call.value) return
       const {
@@ -36,13 +37,6 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         signatures
       } = iface.parseTransaction(call)!.args
 
-      if (operation === 1)
-        return [
-          getAction('Delegate control of Safe{Wallet} account', { warning: true }),
-          getAddressVisualization(call.to),
-          getLabel('to'),
-          getAddressVisualization(to)
-        ]
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -54,14 +48,27 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
         fullVisualization.push(
           ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, value)]
         )
-      return fullVisualization
+
+      if (operation === 1)
+        return {
+          ...call,
+          fullVisualization,
+          warnings: [
+            getWarning(
+              'Delegate call from Safe{WALLET} account',
+              'SAFE{WALLET}_DELEGATE_CALL',
+              'danger'
+            )
+          ]
+        }
+      return { ...call, fullVisualization }
     }
   }
   const newCalls = calls.map((call) => {
     if (call.fullVisualization || !matcher[call.data.slice(0, 10)]) return call
-    const fullVisualization = matcher[call.data.slice(0, 10)](call)
-    if (!fullVisualization) return call
-    return { ...call, fullVisualization }
+    const newCall = matcher[call.data.slice(0, 10)](call)
+    if (!newCall) return call
+    return newCall
   })
 
   return newCalls

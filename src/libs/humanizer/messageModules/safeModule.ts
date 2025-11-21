@@ -20,7 +20,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   if (operation === 0) {
     fullVisualization.push(
       ...[
-        getAction('Safe{Wallet} transaction'),
+        getAction('Safe{WALLET} transaction'),
         getLabel('from'),
         getAddressVisualization(verifyingContract)
       ]
@@ -31,7 +31,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   } else if (operation === 1) {
     fullVisualization.push(
       ...[
-        getAction('Safe{Wallet} delegated transaction', { warning: true }),
+        getAction('Safe{WALLET} delegated transaction', { warning: true }),
         getLabel('from'),
         getAddressVisualization(verifyingContract)
       ]
