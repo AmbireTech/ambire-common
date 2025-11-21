@@ -59,7 +59,7 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta?: HumanizerMeta): IrCall[]
+  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta): IrCall[]
 }
 
 export interface HumanizerTypedMessageModule {
