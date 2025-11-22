@@ -58,7 +58,9 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   dappToConnect: Dapp | null = null
 
-  isFetchingAndUpdatingDapps: boolean = false
+  isReadyToDisplayDapps: boolean = true
+
+  #fetchAndUpdateDappsSessionId: number = 0
 
   #shouldRetryFetchAndUpdate: boolean = false
 
@@ -170,16 +172,16 @@ export class DappsController extends EventEmitter implements IDappsController {
   async #load() {
     await this.#networks.initialLoadPromise
 
-    const storedDapps = await this.#storage.get('dappsV2', [])
+    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
     this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
 
     this.fetchAndUpdateDapps()
   }
 
   async fetchAndUpdateDapps() {
-    if (this.isFetchingAndUpdatingDapps) return
+    if (!this.isReadyToDisplayDapps) return
 
-    this.isFetchingAndUpdatingDapps = true
+    this.isReadyToDisplayDapps = false
     this.emitUpdate()
     try {
       await this.#fetchAndUpdateDapps()
@@ -190,16 +192,24 @@ export class DappsController extends EventEmitter implements IDappsController {
         level: 'silent'
       })
     } finally {
-      this.isFetchingAndUpdatingDapps = false
+      this.isReadyToDisplayDapps = true
       this.emitUpdate()
     }
   }
 
   async #fetchAndUpdateDapps() {
+    // NOTE: For debugging purposes — uncomment to force a fetch and update every time
+    // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
-    // NOTE: For debugging, you can comment out this line
-    // to fetch and update dapps on every extension restart.
-    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) return
+    if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
+      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter((d) =>
+        ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
+      )
+      // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#updateDappsBlacklistedStatus(dappsWithoutBlacklistedStatus)
+      return
+    }
 
     if (this.#shouldRetryFetchAndUpdate) this.#retryFetchAndUpdateAttempts += 1
 
@@ -349,9 +359,19 @@ export class DappsController extends EventEmitter implements IDappsController {
     const unverifiedDappsArray = Array.from(dappsMap.values())
 
     this.#dapps = dappsMap
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#phishing.updateDomainsBlacklistedStatus(
-      unverifiedDappsArray.map((d) => d.url),
+    this.isReadyToDisplayDapps = true
+    this.#shouldRetryFetchAndUpdate = false
+    this.#retryFetchAndUpdateInterval.stop()
+    this.emitUpdate()
+
+    await this.#updateDappsBlacklistedStatus(unverifiedDappsArray)
+    await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
+    await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
+  }
+
+  async #updateDappsBlacklistedStatus(dapps: Dapp[]) {
+    await this.#phishing.updateDomainsBlacklistedStatus(
+      dapps.map((d) => d.url),
       (blacklistedStatus) => {
         Object.entries(blacklistedStatus).forEach(([dappId, status]) => {
           const dapp = this.#dapps.get(dappId)
@@ -362,11 +382,6 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.emitUpdate()
       }
     )
-
-    await this.#storage.set('dappsV2', Array.from(dappsMap.values()))
-    await this.#storage.set('lastDappsUpdateVersion', this.#appVersion)
-    this.#shouldRetryFetchAndUpdate = false
-    this.#retryFetchAndUpdateInterval.stop()
   }
 
   async #createDappSession(initProps: SessionInitProps) {
@@ -621,7 +636,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ) {
         const { session } = currentAction.userRequest
         const dapp = await this.#buildDapp({
-          id: session.id,
+          id: getDappIdFromUrl(session.origin),
           name: session.name,
           url: session.origin,
           icon: session.icon,

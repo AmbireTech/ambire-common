@@ -132,7 +132,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const dappsToFetch = dappsData.filter(({ dappId }) => {
       const existing = this.#domainsBlacklistedStatus[dappId]
       if (!existing) return true
-      if (existing.status === 'LOADING') return true
+      if (['FAILED_TO_GET', 'LOADING'].includes(existing.status)) return true
       if (!existing.updatedAt || now - existing.updatedAt > TWO_HOURS) return true
       return false
     })
@@ -252,7 +252,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const addressesToFetch = addresses.filter((addr) => {
       const existing = this.#addressesBlacklistedStatus[addr]
       if (!existing) return true
-      if (existing.status === 'LOADING') return true
+      if (['FAILED_TO_GET', 'LOADING'].includes(existing.status)) return true
       if (!existing.updatedAt || now - existing.updatedAt > TWO_HOURS) return true
       return false
     })
