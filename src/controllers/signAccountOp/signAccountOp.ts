@@ -72,6 +72,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { getScamDetectedText } from '../../libs/banners/banners'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
@@ -2801,22 +2802,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ).values()
     )
 
-    const blacklistedCount = addressVisualizations.filter(
-      (v) => v.verification === 'BLACKLISTED'
-    ).length
+    const blacklistedItems = addressVisualizations.filter((v) => v.verification === 'BLACKLISTED')
 
-    if (blacklistedCount > 0) {
+    if (blacklistedItems.length) {
       banners.push({
         id: 'blacklisted-addresses-error-banner',
         type: 'error',
-        text:
-          blacklistedCount === 1
-            ? `${
-                this.type !== 'default'
-                  ? 'The destination address'
-                  : 'One of the destination addresses'
-              } in this transaction was flagged as dangerous. Proceed at your own risk.`
-            : `${blacklistedCount} of the destination addresses in this transaction were flagged as dangerous. Proceed at your own risk.`
+        text: getScamDetectedText(blacklistedItems)
       })
     } else {
       const hasFailedToGet = visualizations.some(
@@ -2827,7 +2819,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
-          text: "We couldn't check the destination addresses in this transaction for malicious activity. Proceed with caution."
+          text: "We couldn't check the addresses or tokens in this transaction for malicious activity. Proceed with caution."
         })
       }
     }
