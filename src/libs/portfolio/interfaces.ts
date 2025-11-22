@@ -54,6 +54,10 @@ export interface CollectionResult extends TokenResult {
   }
 }
 
+/**
+ * Cache for prices, used to avoid redundant price fetches
+ * Map<tokenAddress, [timestamp, prices]>
+ */
 export type PriceCache = Map<string, [number, Price[]]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
