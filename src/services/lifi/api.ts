@@ -224,6 +224,8 @@ export class LiFiAPI implements SwapProvider {
 
   #apiKey: string
 
+  supportedChains: SwapProvider['supportedChains'] = null
+
   /**
    * We don't use the apiKey as a default option for sending LiFi API
    * requests, we let a custom rate limit be set per user.
@@ -368,7 +370,10 @@ export class LiFiAPI implements SwapProvider {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response.chains.map((c) => ({ chainId: c.id }))
+    const chains = response.chains.map((c) => ({ chainId: c.id }))
+    this.supportedChains = chains
+
+    return chains
   }
 
   async getToTokenList({

@@ -36,7 +36,14 @@ export class SwapProviderParallelExecutor {
     this.isHealthy = null
   }
 
-  async #fetchFromAll<T>(fetchMethod: (provider: SwapProvider) => Promise<T | Error>): Promise<T> {
+  async #fetchFromAll<T>(
+    fetchMethod: (provider: SwapProvider) => Promise<T | Error>,
+    reqMeta?: {
+      chainIds?: number[]
+    }
+  ): Promise<T> {
+    const { chainIds = [] } = reqMeta || {}
+    const uniqueChainIds = [...new Set(chainIds)]
     const MIN_WAIT = 3000 // 3s
     const MAX_WAIT_AFTER_FIRST_COMPLETED = 2000 // 2s
     const MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE = 15000 // 15s
@@ -45,11 +52,27 @@ export class SwapProviderParallelExecutor {
 
     const startTime = Date.now()
 
-    const tasks = this.#providers.map((provider) =>
-      fetchMethod(provider)
-        .then((result) => ({ provider, result }))
-        .catch((err) => ({ provider, result: err as Error }))
-    )
+    const tasks = this.#providers
+      .filter((provider) => {
+        // If the request is not chainId specific, use all providers
+        if (!uniqueChainIds.length) return true
+        // If supportedChains is not set yet, we just try to use the provider
+        if (provider.supportedChains === null) return true
+        const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
+
+        const res = uniqueChainIds.every((chainId) => supportedChainIds?.includes(chainId))
+
+        return res
+      })
+      .map((provider) =>
+        fetchMethod(provider)
+          .then((result) => ({ provider, result }))
+          .catch((err) => ({ provider, result: err as Error }))
+      )
+
+    if (!tasks.length) {
+      throw new SwapAndBridgeProviderApiError('Unsupported network')
+    }
 
     const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
       throw new Error(
@@ -64,7 +87,8 @@ export class SwapProviderParallelExecutor {
     }
 
     const remainingTasks = this.#providers
-      .filter((p) => !results.some((r) => r.provider === p))
+      // Make sure the provider was not filtered out
+      .filter((p) => !results.some((r) => r.provider === p) && !!tasks[this.#providers.indexOf(p)])
       .map((provider) => {
         const originalIdx = this.#providers.indexOf(provider)
         return tasks[originalIdx]
@@ -78,7 +102,8 @@ export class SwapProviderParallelExecutor {
     const remainingMinWait = Math.max(0, MIN_WAIT - elapsed)
 
     const secondResult = (await Promise.race([
-      Promise.any(remainingTasks),
+      // Promise.any can't be called with an empty array
+      remainingTasks.length ? Promise.any(remainingTasks) : Promise.resolve(),
       wait(MAX_WAIT_AFTER_FIRST_COMPLETED + remainingMinWait)
     ])) as { provider: SwapProvider; result: Error | T }
 
@@ -154,8 +179,10 @@ export class SwapProviderParallelExecutor {
     fromChainId: number
     toChainId: number
   }): Promise<SwapAndBridgeToToken[]> {
-    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>((provider: SwapProvider) =>
-      provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e)
+    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>(
+      (provider: SwapProvider) =>
+        provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e),
+      { chainIds: [fromChainId, toChainId] }
     )
 
     // filter duplicates
@@ -174,7 +201,8 @@ export class SwapProviderParallelExecutor {
     chainId: number
   }): Promise<SwapAndBridgeToToken | null> {
     const toTokens = await this.#fetchFromAll<SwapAndBridgeToToken[] | null[]>(
-      (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e)
+      (provider: SwapProvider) => provider.getToken({ address, chainId }).catch((e) => e),
+      { chainIds: [chainId] }
     )
     return toTokens.find((t) => t) || null
   }
@@ -198,24 +226,26 @@ export class SwapProviderParallelExecutor {
     nativeSymbol,
     isWrapOrUnwrap
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
-    const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>((provider: SwapProvider) =>
-      provider
-        .quote({
-          fromAsset,
-          fromChainId,
-          fromTokenAddress,
-          toAsset,
-          toChainId,
-          toTokenAddress,
-          fromAmount,
-          userAddress,
-          sort,
-          isOG,
-          accountNativeBalance,
-          nativeSymbol,
-          isWrapOrUnwrap
-        })
-        .catch((e) => e)
+    const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>(
+      (provider: SwapProvider) =>
+        provider
+          .quote({
+            fromAsset,
+            fromChainId,
+            fromTokenAddress,
+            toAsset,
+            toChainId,
+            toTokenAddress,
+            fromAmount,
+            userAddress,
+            sort,
+            isOG,
+            accountNativeBalance,
+            nativeSymbol,
+            isWrapOrUnwrap
+          })
+          .catch((e) => e),
+      { chainIds: [fromChainId, toChainId] }
     )
     const firstQuote = quotes[0]
     return {
