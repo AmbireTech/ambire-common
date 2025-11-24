@@ -65,12 +65,13 @@ export const buildSwitchAccountUserRequest = ({
   } as any
 }
 
-const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
+export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
   return (
     userRequests
-      .filter((req) => req.meta.topUpAmount)
-      .map((req) => req.meta.topUpAmount)
-      .reduce((a, b) => a + b, 0n) ?? undefined
+      .filter((req) => req.kind === 'calls')
+      .filter((req) => req.accountOp?.meta?.topUpAmount)
+      .map((req) => req.accountOp.meta!.topUpAmount)
+      .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
 }
 

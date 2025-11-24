@@ -27,7 +27,7 @@ export type BuildRequest =
         amountInFiat: bigint
         recipientAddress: string
         selectedToken: TokenResult
-        actionExecutionType: ActionExecutionType
+        executionType: ActionExecutionType
         windowId?: number
       }
     }
@@ -52,6 +52,6 @@ export type BuildRequest =
         amount: string
         recipientAddress: string
         selectedToken: TokenResult
-        actionExecutionType: ActionExecutionType
+        executionType: ActionExecutionType
       }
     }

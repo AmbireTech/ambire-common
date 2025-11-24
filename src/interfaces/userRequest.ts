@@ -45,6 +45,8 @@ export interface CallsUserRequest extends UserRequestBase {
     accountAddr: string
     chainId: bigint
     paymasterService?: PaymasterService
+    walletSendCallsVersion?: string
+    setDelegation?: boolean
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
   }
@@ -94,10 +96,25 @@ export interface AuthorizationUserRequest extends UserRequestBase {
   }
 }
 
+export interface BenzinUserRequest extends UserRequestBase {
+  kind: 'benzin'
+}
+
+export interface SwitchAccountRequest extends UserRequestBase {
+  kind: 'switchAccount'
+  meta: {
+    accountAddr: string
+    switchToAccountAddr: string
+    nextRequestKind: UserRequest['kind']
+  }
+}
+
 export type UserRequest =
   | CallsUserRequest
   | PlainTextMessageUserRequest
   | TypedMessageUserRequest
   | SiweMessageUserRequest
   | AuthorizationUserRequest
+  | BenzinUserRequest
+  | SwitchAccountRequest
 // | UserRequestBase
