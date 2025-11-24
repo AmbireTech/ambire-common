@@ -1,4 +1,3 @@
-/* eslint-disable no-continue */
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -12,7 +11,7 @@ import {
   defiLlamaProtocolIdsToExclude,
   featuredDapps,
   predefinedDapps
-} from '../../consts/dapps'
+} from '../../consts/dapps/dapps'
 import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
@@ -32,6 +31,8 @@ import {
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
+/* eslint-disable no-continue */
+import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // The DappsController is responsible for the following tasks:
@@ -60,7 +61,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   isReadyToDisplayDapps: boolean = true
 
-  #fetchAndUpdateDappsSessionId: number = 0
+  fetchAndUpdatePromise?: Promise<void>
 
   #shouldRetryFetchAndUpdate: boolean = false
 
@@ -69,6 +70,18 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateAttempts: number = 0
 
   #retryFetchAndUpdateMaxAttempts: number = 3
+
+  get shouldRetryFetchAndUpdate() {
+    return this.#shouldRetryFetchAndUpdate
+  }
+
+  get retryFetchAndUpdateInterval() {
+    return this.#retryFetchAndUpdateInterval
+  }
+
+  get retryFetchAndUpdateAttempts() {
+    return this.#retryFetchAndUpdateAttempts
+  }
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -183,18 +196,29 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.isReadyToDisplayDapps = false
     this.emitUpdate()
-    try {
-      await this.#fetchAndUpdateDapps()
-    } catch (err: any) {
-      this.emitError({
-        message: 'Failed to fetch the app catalog.',
-        error: err,
-        level: 'silent'
+
+    this.fetchAndUpdatePromise = this.#fetchAndUpdateDapps()
+    await this.fetchAndUpdatePromise
+      .catch((err: any) => {
+        this.#shouldRetryFetchAndUpdate = true
+
+        // run the interval if the initial fetch failed while the extension is not in use
+        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+          this.#retryFetchAndUpdateInterval.start()
+        } else {
+          this.#retryFetchAndUpdateInterval.stop()
+        }
+        this.emitError({
+          message: 'Failed to fetch the app catalog.',
+          error: err,
+          level: 'silent'
+        })
       })
-    } finally {
-      this.isReadyToDisplayDapps = true
-      this.emitUpdate()
-    }
+      .finally(() => {
+        this.fetchAndUpdatePromise = undefined
+        this.isReadyToDisplayDapps = true
+        this.emitUpdate()
+      })
   }
 
   async #fetchAndUpdateDapps() {
@@ -219,8 +243,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     let fetchedChainsList: DefiLlamaChain[] = []
 
     const [res, chainsRes] = await Promise.all([
-      this.#fetch('https://api.llama.fi/protocols'),
-      this.#fetch('https://api.llama.fi/v2/chains')
+      fetchWithTimeout(
+        this.#fetch,
+        'https://api.llama.fi/protocols',
+        {},
+        this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+      ),
+      fetchWithTimeout(
+        this.#fetch,
+        'https://api.llama.fi/v2/chains',
+        {},
+        this.#shouldRetryFetchAndUpdate ? 15000 : 10000
+      )
     ])
 
     if (!res.ok || !chainsRes.ok) {
@@ -230,18 +264,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     ;[fetchedDappsList, fetchedChainsList] = await Promise.all([res.json(), chainsRes.json()])
 
     if (!fetchedDappsList.length || !fetchedChainsList.length) {
-      this.#shouldRetryFetchAndUpdate = true
-
-      // run the interval if the initial fetch failed while the extension is not in use
-      if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
-        this.#retryFetchAndUpdateInterval.start()
-      } else {
-        this.#retryFetchAndUpdateInterval.stop()
-      }
-      return
+      throw new Error('Fetch completed, but no apps or chains were returned')
     }
 
-    const chainNamesToIds = new Map<string, number>()
+    const chainNamesToIds = new Map<string, number | null>()
     for (const c of fetchedChainsList) {
       chainNamesToIds.set(c.name.toLowerCase(), c.chainId)
     }
@@ -645,23 +671,23 @@ export class DappsController extends EventEmitter implements IDappsController {
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
+          this.emitUpdate()
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
             if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
               const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.dappToConnect.blacklisted = status
-              this.emitUpdate()
             }
 
             const existingDapp = this.#dapps.get(dapp.id)
             if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
               const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
-              this.emitUpdate()
             }
+
+            this.emitUpdate()
           })
-          this.emitUpdate()
         }
 
         return
@@ -686,7 +712,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps: this.dapps,
       categories: this.categories,
-      isReady: this.isReady
+      isReady: this.isReady,
+      shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
+      retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
+      retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts
     }
   }
 }
