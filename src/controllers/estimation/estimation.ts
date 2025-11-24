@@ -110,6 +110,16 @@ export class EstimationController extends EventEmitter {
       op.accountAddr,
       op.chainId
     )
+    if (!accountState) {
+      this.error = new Error(
+        'During the preparation step, required transaction information was found missing (account state). Please try again later or contact support.'
+      )
+      this.status = EstimationStatus.Error
+      this.hasEstimated = true
+      this.emitUpdate()
+      return
+    }
+
     const baseAcc = getBaseAccount(
       account,
       accountState,
@@ -293,14 +303,5 @@ export class EstimationController extends EventEmitter {
     }
 
     return errors
-  }
-
-  reset() {
-    this.estimation = null
-    this.error = null
-    this.hasEstimated = false
-    this.status = EstimationStatus.Initial
-    this.estimationRetryError = null
-    this.availableFeeOptions = []
   }
 }

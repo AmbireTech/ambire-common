@@ -49,7 +49,8 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
-  level?: 'info' | 'warning' | 'danger'
+  level: 'info' | 'warning' | 'danger'
+  code: string
 }
 export interface Ir {
   calls: IrCall[]
@@ -58,12 +59,7 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (
-    AccountOp: AccountOp,
-    calls: IrCall[],
-    humanizerMeta: HumanizerMeta,
-    options?: HumanizerOptions
-  ): IrCall[]
+  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta): IrCall[]
 }
 
 export interface HumanizerTypedMessageModule {
@@ -98,11 +94,6 @@ export interface HumanizerMeta {
   knownAddresses: {
     [address: string]: HumanizerMetaAddress
   }
-}
-
-export interface HumanizerOptions {
-  network?: Network
-  chainId?: bigint
 }
 
 export type DataToHumanize = AccountOp | Message

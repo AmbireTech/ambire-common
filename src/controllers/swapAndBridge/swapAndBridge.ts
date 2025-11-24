@@ -237,12 +237,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #signAccountOpController: ISignAccountOpController | null = null
 
-  /**
-   * Holds all subscriptions (on update and on error) to the signAccountOpController.
-   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
-   */
-  #signAccountOpSubscriptions: Function[] = []
-
   #portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
 
   #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
@@ -2232,14 +2226,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   destroySignAccountOp() {
-    // Always attempt to unsubscribe from all previous subscriptions,
-    // because the signAccountOpController getter might return null,
-    // but prev references to the signAccountOpController might still exist.
-    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
-    this.#signAccountOpSubscriptions = []
-
     if (!this.#signAccountOpController) return
-    this.#signAccountOpController.reset()
+    this.#signAccountOpController.destroy()
     this.#signAccountOpController = null
     this.hasProceeded = false
   }
@@ -2292,6 +2280,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#selectedAccount.account.addr,
       network.chainId
     )
+
+    if (!accountState) {
+      this.updateQuoteStatus = 'INITIAL'
+      this.addOrUpdateError({
+        id: 'all-routes-failed',
+        level: 'error',
+        title: 'Missing mandatory account data. Please try again later.'
+      })
+      return
+    }
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
@@ -2434,48 +2432,34 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.emitUpdate()
 
-    // Unsubscribe from all previous subscriptions, if any exist, because the
-    // sign account op does NOT destroys before every initSignAccountOpIfNeeded() call
-    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
-    this.#signAccountOpSubscriptions = []
+    this.#signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.#signAccountOpController.onError((error) => {
+      // Need to clean the pending results for THIS signAccountOpController
+      // specifically. NOT the one from the getter (this.signAccountOpController)
+      // that is ALWAYS up-to-date with the current quote and the current form state.
+      // Due to the async nature, it might not exist - an issue caught by our crash reporting.
+      if (this.#signAccountOpController)
+        this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
 
-    // propagate updates from signAccountOp here
-    this.#signAccountOpSubscriptions.push(
-      this.#signAccountOpController.onUpdate(() => {
-        this.emitUpdate()
-      })
-    )
-    this.#signAccountOpSubscriptions.push(
-      this.#signAccountOpController.onError((error) => {
-        // Need to clean the pending results for THIS signAccountOpController
-        // specifically. NOT the one from the getter (this.signAccountOpController)
-        // that is ALWAYS up-to-date with the current quote and the current form state.
-        // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-        if (this.#signAccountOpController)
-          this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
-
-        this.emitError(error)
-      })
-    )
+      this.emitError(error)
+    })
     // if the estimation emits an error, handle it
-    this.#signAccountOpSubscriptions.push(
-      this.#signAccountOpController.estimation.onUpdate(() => {
-        if (
-          this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
-          this.#signAccountOpController.estimation.status === EstimationStatus.Error
-        ) {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.markSelectedRouteAsFailed(
-            this.#signAccountOpController.estimation.error?.message || 'Invalid quote'
-          )
+    this.#signAccountOpController.estimation.onUpdate(() => {
+      if (
+        this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+        this.#signAccountOpController.estimation.status === EstimationStatus.Error
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.markSelectedRouteAsFailed(
+          this.#signAccountOpController.estimation.error?.message || 'Invalid quote'
+        )
 
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.onEstimationFailure(
-            this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
-          )
-        }
-      })
-    )
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.onEstimationFailure(this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
+      }
+    })
   }
 
   setUserProceeded(hasProceeded: boolean) {

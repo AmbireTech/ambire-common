@@ -72,6 +72,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { getScamDetectedText } from '../../libs/banners/banners'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
@@ -88,7 +89,7 @@ import {
   GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
+import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -477,6 +478,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
       }
+    const warnings: HumanizerWarning[] = this.humanization
+      .map((h) => h.warnings)
+      .filter((w): w is HumanizerWarning[] => !!w)
+      .flat()
+    if (warnings.length)
+      return {
+        title: 'A malicious transaction found in this batch.',
+        code: warnings.map((w) => w.code).join(', ')
+      }
 
     let callError: SignAccountOpError | null = null
 
@@ -539,6 +549,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.update({ hasNewEstimation: true })
       this.#reestimate()
     })
+
     this.gasPrice.onUpdate(() => {
       this.update({
         gasPrices: this.gasPrice.gasPrices[this.#network.chainId.toString()] || null,
@@ -546,6 +557,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         blockGasLimit: this.gasPrice.blockGasLimit
       })
     })
+
     this.gasPrice.onError((error: ErrorRef) => {
       this.emitError(error)
     })
@@ -555,7 +567,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   humanize() {
-    this.humanization = humanizeAccountOp(this.accountOp, {})
+    this.humanization = humanizeAccountOp(this.accountOp)
     const currentHumanizationId = Date.now()
     this.humanizationId = currentHumanizationId
     if (this.humanization.length) {
@@ -1244,9 +1256,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
-  reset() {
-    this.estimation.reset()
-    this.gasPrice.reset()
+  destroy() {
+    super.destroy()
+    this.estimation.destroy()
+    this.gasPrice.destroy()
     this.gasPrices = undefined
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.#paidBy = null
@@ -1254,7 +1267,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.status = null
     this.signedTransactionsCount = null
     this.#stopRefetching = true
-    this.emitUpdate()
+    this.gasPrice = null as any
+    this.estimation = null as any
   }
 
   resetStatus() {
@@ -1834,6 +1848,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.chainId
     )
 
+    if (!accountState) {
+      throw new EmittableError({
+        message: `Missing mandatory transaction data (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`,
+        level: 'major'
+      })
+    }
+
     if (shouldReestimate) {
       const newEstimate = await bundlerEstimate(
         this.baseAccount,
@@ -2065,6 +2086,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.accountAddr,
       this.accountOp.chainId
     )
+
+    if (!accountState) {
+      const message = `Unable to sign the transaction. During the preparation step, required transaction information was found missing (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+      return this.#emitSigningErrorAndResetToReadyToSign(message)
+    }
 
     try {
       // plain EOA
@@ -2339,6 +2365,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       accountOp.accountAddr,
       accountOp.chainId
     )
+    if (!accountState) {
+      const message = `Missing mandatory transaction details (account state). ${contactSupportPrompt}`
+
+      return this.throwBroadcastAccountOp({ message, accountState })
+    }
     const baseAcc = getBaseAccount(
       account,
       accountState,
@@ -2771,22 +2802,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ).values()
     )
 
-    const blacklistedCount = addressVisualizations.filter(
-      (v) => v.verification === 'BLACKLISTED'
-    ).length
+    const blacklistedItems = addressVisualizations.filter((v) => v.verification === 'BLACKLISTED')
 
-    if (blacklistedCount > 0) {
+    if (blacklistedItems.length) {
       banners.push({
         id: 'blacklisted-addresses-error-banner',
         type: 'error',
-        text:
-          blacklistedCount === 1
-            ? `${
-                this.type !== 'default'
-                  ? 'The destination address'
-                  : 'One of the destination addresses'
-              } in this transaction was flagged as dangerous. Proceed at your own risk.`
-            : `${blacklistedCount} of the destination addresses in this transaction were flagged as dangerous. Proceed at your own risk.`
+        text: getScamDetectedText(blacklistedItems)
       })
     } else {
       const hasFailedToGet = visualizations.some(
@@ -2797,7 +2819,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
-          text: "We couldn't check the destination addresses in this transaction for malicious activity. Proceed with caution."
+          text: "We couldn't check the addresses or tokens in this transaction for malicious activity. Proceed with caution."
         })
       }
     }

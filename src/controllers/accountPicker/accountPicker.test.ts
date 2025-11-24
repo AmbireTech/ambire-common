@@ -106,16 +106,21 @@ describe('AccountPicker', () => {
     fetch
   )
   beforeEach(() => {
-    accountPicker = new AccountPickerController({
-      accounts: accountsCtrl,
-      keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl),
-      networks: networksCtrl,
-      providers: providersCtrl,
-      relayerUrl,
-      fetch,
-      externalSignerControllers: {},
-      onAddAccountsSuccessCallback: () => Promise.resolve()
-    })
+    try {
+      accountPicker = new AccountPickerController({
+        accounts: accountsCtrl,
+        keystore: new KeystoreController('default', storageCtrl, {}, uiCtrl),
+        networks: networksCtrl,
+        providers: providersCtrl,
+        relayerUrl,
+        fetch,
+        externalSignerControllers: {},
+        onAddAccountsSuccessCallback: () => Promise.resolve()
+      })
+    } catch (e) {
+      console.error('Error in beforeEach setup:', e)
+      throw e
+    }
   })
 
   test('should initialize', async () => {
@@ -211,6 +216,7 @@ describe('AccountPicker', () => {
     await accountPicker.init()
     await accountPicker.setPage({ page: 1 })
     expect(accountPicker.linkedAccountsLoading).toBe(false)
+    expect(accountPicker.linkedAccountsError).toBeFalsy()
     const linkedAccountsOnPage = accountPicker.accountsOnPage.filter(({ isLinked }) => isLinked)
 
     const accountsOnSlot1 = linkedAccountsOnPage
