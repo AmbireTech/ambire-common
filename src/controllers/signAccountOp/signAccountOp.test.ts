@@ -560,7 +560,7 @@ const init = async (
 }
 
 describe('SignAccountOp Controller ', () => {
-  test.only('Estimation race conditions are prevented', async () => {
+  test('Estimation race conditions are prevented', async () => {
     const chainId = 137n
     const feePaymentOptions = [
       {
