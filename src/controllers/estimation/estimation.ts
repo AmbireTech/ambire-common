@@ -54,6 +54,8 @@ export class EstimationController extends EventEmitter {
 
   #activity: IActivityController
 
+  protected callId = 0
+
   constructor(
     keystore: IKeystoreController,
     accounts: IAccountsController,
@@ -175,6 +177,8 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
+    const beforeCallId = this.callId + 1
+
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -193,6 +197,22 @@ export class EstimationController extends EventEmitter {
         (accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation
       )
     ).catch((e) => e)
+
+    const expectedEstimationCallId = this.callId + 1
+
+    // Done to prevent race conditions
+    if (beforeCallId !== expectedEstimationCallId) {
+      this.emitError({
+        message: 'Estimation race condition prevented',
+        error: new Error(
+          `Estimation race condition prevented. Current id: ${this.callId}. Call id: ${beforeCallId}`
+        ),
+        level: 'silent'
+      })
+      return
+    }
+
+    this.callId = expectedEstimationCallId
 
     const isSuccess = !(estimation instanceof Error)
     if (isSuccess) {

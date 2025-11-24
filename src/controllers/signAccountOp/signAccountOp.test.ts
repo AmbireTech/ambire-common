@@ -21,6 +21,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
+import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -32,6 +33,7 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -505,7 +507,7 @@ const init = async (
     keystore,
     accountsCtrl,
     networksCtrl,
-    providers,
+    provider,
     portfolio,
     bundlerSwitcher,
     activity
@@ -558,6 +560,163 @@ const init = async (
 }
 
 describe('SignAccountOp Controller ', () => {
+  test.only('Estimation race conditions are prevented', async () => {
+    const chainId = 137n
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: usdcFeeToken.address,
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const network = networks.find((n) => n.chainId === chainId)!
+    const { controller } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, network.chainId),
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        '137': [
+          {
+            name: 'slow',
+            baseFeePerGas: 1000000000n,
+            maxPriorityFeePerGas: 1000000000n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 2000000000n,
+            maxPriorityFeePerGas: 2000000000n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 5000000000n,
+            maxPriorityFeePerGas: 5000000000n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 7000000000n,
+            maxPriorityFeePerGas: 7000000000n
+          }
+        ]
+      }
+    )
+
+    controller.update({
+      feeToken: usdcFeeToken,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      hasNewEstimation: true
+    })
+
+    await controller.estimate()
+
+    // @ts-ignore
+    const estimationId = controller.estimation.callId || 0
+
+    console.log('Debug: estimation id', estimationId)
+
+    jest.spyOn(estimationLib, 'getEstimation').mockImplementationOnce(async (...allParams) => {
+      await wait(8000)
+
+      // call the original implementation
+      return estimationLib.getEstimation(...allParams)
+    })
+
+    // This call should take +8sec, but it should not overwrite the latest estimation
+    const firstCallPromise = controller.estimate()
+
+    // This call should be faster and as it's fresher, it should be stored in state
+    await controller.estimate()
+
+    // Awaiting the second call that will be scrapped
+    await firstCallPromise
+
+    // We are expecting a single increment
+    // @ts-ignore
+    expect(controller.estimation.callId).toBe(estimationId + 1)
+  })
   test('Signing [EOA]: EOA account paying with a native token', async () => {
     const feePaymentOptions = [
       {
