@@ -671,23 +671,23 @@ export class DappsController extends EventEmitter implements IDappsController {
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
+          this.emitUpdate()
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
             if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
               const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.dappToConnect.blacklisted = status
-              this.emitUpdate()
             }
 
             const existingDapp = this.#dapps.get(dapp.id)
             if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
               const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
               this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
-              this.emitUpdate()
             }
+
+            this.emitUpdate()
           })
-          this.emitUpdate()
         }
 
         return

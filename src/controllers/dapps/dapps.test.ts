@@ -5,12 +5,15 @@ import { expect } from '@jest/globals'
 import { relayerUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
 import { networks } from '../../consts/networks'
+import { DappRequestAction } from '../../interfaces/actions'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController, Storage } from '../../interfaces/storage'
+import { DappUserRequest } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -204,7 +207,9 @@ describe('DappsController', () => {
     expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(false)
     try {
       await controller.fetchAndUpdatePromise
-    } catch (error) {}
+    } catch (error) {
+      // silent fail
+    }
     await jest.advanceTimersByTimeAsync(0)
     expect(controller.shouldRetryFetchAndUpdate).toBe(true)
     expect(controller.retryFetchAndUpdateInterval.running).toBe(true)
@@ -217,11 +222,60 @@ describe('DappsController', () => {
     expect(controller.isReadyToDisplayDapps).toBe(false)
     try {
       await controller.fetchAndUpdatePromise
-    } catch (error) {}
+    } catch (error) {
+      // silent fail
+    }
     expect(controller.retryFetchAndUpdateInterval.running).toBe(false)
     expect(controller.retryFetchAndUpdateInterval.fnExecutionsCount).toBe(1)
     expect(controller.isReadyToDisplayDapps).toBe(true)
     expect(controller.dapps.length).toBeGreaterThan(predefinedDapps.length)
     jest.useRealTimers()
+  })
+  test('should add dapp to connect and update blacklisted status', async () => {
+    const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+    MOCK_SESSION.setProp({ name: 'Test Dapp' })
+    const DAPP_CONNECT_REQUEST: DappUserRequest = {
+      id: 1,
+      action: { kind: 'dappConnect', params: {} },
+      meta: { isSignAction: false },
+      session: MOCK_SESSION,
+      dappPromise: {
+        resolve: () => {},
+        reject: () => {},
+        session: MOCK_SESSION
+      }
+    }
+
+    const DAPP_CONNECT_ACTION: DappRequestAction = {
+      id: DAPP_CONNECT_REQUEST.id,
+      type: 'dappRequest',
+      userRequest: DAPP_CONNECT_REQUEST
+    }
+
+    const { controller } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+    await controller.initialLoadPromise
+
+    controller.setDappToConnectIfNeeded(DAPP_CONNECT_ACTION)
+
+    await new Promise((resolve) => {
+      let emitCounter = 0
+      const unsubscribe = controller.onUpdate(() => {
+        if (emitCounter === 0) {
+          expect(controller.dappToConnect).not.toBe(null)
+          expect(controller.dappToConnect!.name).toBe(MOCK_SESSION.name)
+          expect(controller.dappToConnect!.blacklisted).toBe('LOADING')
+        }
+        if (emitCounter === 1) {
+          expect(controller.dappToConnect!.blacklisted).toBe('VERIFIED')
+          unsubscribe()
+          resolve(null)
+        }
+
+        emitCounter++
+      })
+    })
   })
 })
