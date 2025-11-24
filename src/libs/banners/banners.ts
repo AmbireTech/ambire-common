@@ -353,15 +353,15 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
 
 export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) {
   const blacklistedItemsCount = blacklistedItems.length
-  const hasScamAddress = blacklistedItems.map((i) => i.type).includes('address')
-  const hasScamToken = blacklistedItems.map((i) => i.type).includes('token')
+  const hasScamAddress = blacklistedItems.some((i) => i.type === 'address')
+  const hasScamToken = blacklistedItems.some((i) => i.type === 'token')
 
   const isSingle = blacklistedItemsCount === 1
 
   let label = ''
 
   if (hasScamAddress && hasScamToken) {
-    label = isSingle ? 'address or token' : 'addresses or tokens'
+    label = blacklistedItemsCount === 2 ? 'address or token' : 'addresses or tokens'
   } else if (hasScamAddress) {
     label = isSingle ? 'address' : 'addresses'
   } else if (hasScamToken) {
