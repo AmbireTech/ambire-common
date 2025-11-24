@@ -30,6 +30,10 @@ const config: HardhatUserConfig = {
       url: 'https://mainnet.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    monad: {
+      url: 'https://rpc.monad.xyz',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     baseSepolia: {
       url: 'https://sepolia.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -212,6 +216,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.celoscan.io/api',
           browserURL: 'https://celoscan.io'
+        }
+      },
+      {
+        network: 'monad',
+        chainId: 143,
+        urls: {
+          apiURL: 'https://api.monadvision.com',
+          browserURL: 'https://monadvision.com'
         }
       }
     ]
