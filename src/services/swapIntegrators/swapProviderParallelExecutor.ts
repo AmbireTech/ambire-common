@@ -20,6 +20,9 @@ export class SwapProviderParallelExecutor {
 
   #providers: SwapProvider[]
 
+  // Added for compatibility with the type
+  supportedChains: SwapProvider['supportedChains'] = []
+
   constructor(providers: SwapProvider[]) {
     this.#providers = providers
   }
