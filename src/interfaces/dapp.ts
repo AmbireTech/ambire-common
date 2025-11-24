@@ -47,12 +47,12 @@ export interface DefiLlamaProtocol {
 }
 
 export interface DefiLlamaChain {
-  gecko_id: string
+  gecko_id: string | null
   tvl: number
-  tokenSymbol: string
-  cmcId: string
+  tokenSymbol: string | null
+  cmcId: string | null
   name: string
-  chainId: number
+  chainId: number | null
 }
 
 export interface DappProviderRequest {
