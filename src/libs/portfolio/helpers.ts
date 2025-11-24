@@ -333,11 +333,13 @@ export const validateERC20Token = async (
   const handleERC20Error = (e: any, operation: string) => {
     if (isNetworkError(e)) {
       hasNetworkError = true
+      isValid = false
       errorType = 'network'
       errorMessage = `Network error validating token: ${
         e.message || `Network error while fetching token ${operation}`
       }`
     } else {
+      isValid = false
       errorType = 'validation'
       errorMessage = 'This token type is not supported'
     }
@@ -350,6 +352,8 @@ export const validateERC20Token = async (
   ]).catch((e) => {
     if (isNetworkError(e)) {
       hasNetworkError = true
+      isValid = false
+
       errorType = 'network'
       errorMessage = `Network error validating token: ${
         e.message || 'Network error during token validation'
@@ -374,7 +378,14 @@ export const validateERC20Token = async (
         errorType = 'validation'
       }
     }
+  } else if (!hasNetworkError) {
+    // Reset error state only if validation succeeded AND there was no network error
+    isValid = true
+    errorMessage = ''
+    errorType = null
   }
+
+  console.log('validateERC20Token result:', token, isValid, errorMessage, errorType)
 
   return [
     isValid,
