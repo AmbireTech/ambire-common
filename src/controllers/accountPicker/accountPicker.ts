@@ -144,6 +144,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #onAddAccountsSuccessCallbackPromise?: Promise<void>
 
+  #controllerSubscriptions: Function[] = []
+
   // Used in order to expose the ongoing "find linked accounts" task, so other
   // code can await it, preventing race conditions.
   findAndSetLinkedAccountsPromise?: Promise<void>
@@ -153,10 +155,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #addAccountsOnKeystoreReady: {
     accounts?: SelectedAccountForImport[]
   } | null = null
-
-  #accountsUnsubscribe?: () => void
-
-  #keystoreUnsubscribe?: () => void
 
   constructor({
     accounts,
@@ -186,25 +184,29 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
-    this.#accountsUnsubscribe = this.#accounts.onUpdate(() => {
-      this.#debounceFunctionCalls(
-        'update-accounts',
-        () => {
-          if (!this.isInitialized) return
-          if (this.addAccountsStatus !== 'INITIAL') return
+    this.#controllerSubscriptions.push(
+      this.#accounts.onUpdate(() => {
+        this.#debounceFunctionCalls(
+          'update-accounts',
+          () => {
+            if (!this.isInitialized) return
+            if (this.addAccountsStatus !== 'INITIAL') return
 
-          this.#updateStateWithTheLatestFromAccounts()
-        },
-        20
-      )
-    })
+            this.#updateStateWithTheLatestFromAccounts()
+          },
+          20
+        )
+      })
+    )
 
-    this.#keystoreUnsubscribe = this.#keystore.onUpdate(() => {
-      if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-        this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
-        this.#addAccountsOnKeystoreReady = null
-      }
-    })
+    this.#controllerSubscriptions.push(
+      this.#keystore.onUpdate(() => {
+        if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
+          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+          this.#addAccountsOnKeystoreReady = null
+        }
+      })
+    )
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -476,14 +478,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   destroy() {
-    if (this.#accountsUnsubscribe) {
-      this.#accountsUnsubscribe()
-      this.#accountsUnsubscribe = undefined
-    }
-    if (this.#keystoreUnsubscribe) {
-      this.#keystoreUnsubscribe()
-      this.#keystoreUnsubscribe = undefined
-    }
+    super.destroy()
+    // We must unsubscribe from the controllers and CAN'T call
+    // their destroy methods. That is because they are also used
+    // outside of this controller instance.
+    this.#controllerSubscriptions.forEach((unsubscribe) => unsubscribe())
+    this.#controllerSubscriptions = []
   }
 
   resetAccountsSelection() {
@@ -516,7 +516,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // should never happen
     if (accountsOnPageWithThisAcc.length === 0) {
       const message = `accountPicker: account ${account.addr} was not found in the accountsOnPage.`
-      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+      this.emitError({ message, level: 'silent', error: new Error(message) })
 
       return []
     }
@@ -871,10 +871,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       ...this.addedAccountsFromCurrentSession,
       ...this.readyToAddAccounts
     ]
+
     this.selectedAccountsFromCurrentSession = []
     this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
       this.#onAddAccountsSuccessCallbackPromise = undefined
     })
+
+    // Explicitly emit an update here because the front-end needs this state immediately,
+    // without waiting for the promise below to resolve.
+    // Previously, this caused a bug in AccountPersonalizeScreen where
+    // `addedAccountsFromCurrentSession` was still empty while waiting for the Promise.
+    // As a result, the app redirected to the NextRoute instead of showing the Personalize screen.
+    await this.forceEmitUpdate()
+
     await this.#onAddAccountsSuccessCallbackPromise
 
     this.addAccountsStatus = 'SUCCESS'
@@ -935,7 +944,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // Should never happen
     if (!nextAccount) {
       const message = 'accountPicker: selectNextAccount called, but no next account found.'
-      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+      this.emitError({ message, level: 'silent', error: new Error(message) })
     }
 
     this.selectNextAccountStatus = 'SUCCESS'
@@ -989,7 +998,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
       const message = 'accountPicker: #deriveAccounts called, but keyIterator was missing'
-      this.emitError({ message, level: 'silent', sendCrashReport: true, error: new Error(message) })
+      this.emitError({ message, level: 'silent', error: new Error(message) })
 
       return []
     }

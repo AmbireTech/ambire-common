@@ -48,6 +48,7 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
+import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-shadow */
@@ -62,17 +63,15 @@ const EXTERNAL_API_HINTS_TTL = {
 }
 
 export class PortfolioController extends EventEmitter implements IPortfolioController {
-  #latest: PortfolioControllerState
-
-  #pending: PortfolioControllerState
+  #state: PortfolioControllerState
 
   // A queue to prevent race conditions when calling `updateSelectedAccount`.
   // All calls are queued by network and account.
-  // Each time `updateSelectedAccount` is invoked to update the latest or pending state, the call is added to the queue.
+  // Each time `updateSelectedAccount` is invoked to update the state, the call is added to the queue.
   // If a previous call is still running, the new call will be queued and executed only after the first one completes,
   // regardless of whether it succeeds or fails.
   // Before implementing this queue, multiple `updateSelectedAccount` calls made in a short period of time could cause
-  // the response of the latest call to be overwritten by a slower previous call.
+  // the response of the update call to be overwritten by a slower previous call.
   #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
 
   customTokens: CustomToken[] = []
@@ -145,8 +144,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     banner: IBannerController
   ) {
     super()
-    this.#latest = {}
-    this.#pending = {}
+    this.#state = {}
     this.#queue = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
@@ -215,12 +213,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
       }
-    } catch (e) {
+    } catch (e: any) {
       this.emitError({
         message:
           'Something went wrong when loading portfolio. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('portfolio: failed to pull keys from storage')
+        error: e
       })
     }
 
@@ -350,15 +348,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
   }
 
-  #setNetworkLoading(
-    accountId: AccountId,
-    stateKey: 'latest' | 'pending',
-    network: string,
-    isLoading: boolean,
-    error?: any
-  ) {
-    const states = { latest: this.#latest, pending: this.#pending }
-    const accountState = states[stateKey][accountId]
+  #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
+    const accountState = this.#state[accountId]
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
     if (error)
@@ -372,26 +363,40 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   removeNetworkData(chainId: bigint) {
-    for (const accountState of [this.#latest, this.#pending]) {
-      for (const accountId of Object.keys(accountState)) {
-        delete accountState[accountId][chainId.toString()]
-      }
+    for (const accountId of Object.keys(this.#state)) {
+      delete this.#state[accountId][chainId.toString()]
     }
+
     this.emitUpdate()
   }
 
-  // make the pending results the same as the latest ones
-  overridePendingResults(accountOp: AccountOp) {
-    if (
-      this.#pending[accountOp.accountAddr] &&
-      this.#pending[accountOp.accountAddr][accountOp.chainId.toString()] &&
-      this.#latest[accountOp.accountAddr] &&
-      this.#latest[accountOp.accountAddr][accountOp.chainId.toString()]
-    ) {
-      this.#pending[accountOp.accountAddr][accountOp.chainId.toString()]!.result =
-        this.#latest[accountOp.accountAddr][accountOp.chainId.toString()]!.result
-      this.emitUpdate()
-    }
+  /**
+   * Removes simulation results from the portfolio state
+   */
+  overrideSimulationResults(accountOp: AccountOp) {
+    const { accountAddr, chainId } = accountOp
+
+    if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
+
+    const networkState = this.#state[accountAddr][chainId.toString()]!
+
+    if (!networkState.result) return
+
+    networkState.result.tokens = networkState.result.tokens.map((token) => {
+      const { amountPostSimulation, simulationAmount, ...rest } = token
+
+      return rest
+    })
+
+    networkState.result.collections = (networkState.result.collections || []).map((collection) => {
+      const { amountPostSimulation, postSimulation, simulationAmount, ...rest } = collection
+
+      return rest
+    })
+
+    networkState.result.total = getTotal(networkState.result.tokens)
+
+    this.emitUpdate()
   }
 
   async updateTokenValidationByStandard(
@@ -422,12 +427,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   ): Portfolio | null {
     const providers = this.#providers.providers
     const key = `${chainId}:${accountId}`
+    const libForKey = this.#portfolioLibs.get(key)
+
     // Initialize a new Portfolio lib if:
     // 1. It does not exist in the portfolioLibs map
-    // 2. The network RPC URL has changed
+    // 2. The network RPC URL has changed or the provider is destroyed !
     if (
-      !this.#portfolioLibs.has(key) ||
-      this.#portfolioLibs.get(key)?.network?.selectedRpcUrl !==
+      !libForKey ||
+      !libForKey.provider ||
+      libForKey.provider.destroyed ||
+      // eslint-disable-next-line no-underscore-dangle
+      libForKey.provider?._getConnection().url !==
         // eslint-disable-next-line no-underscore-dangle
         providers[network.chainId.toString()]?._getConnection().url
     ) {
@@ -443,6 +453,11 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           )
         )
       } catch (e: any) {
+        this.emitError({
+          level: 'silent',
+          message: `Error while initializing portfolio lib for ${network.name} (${network.chainId}).`,
+          error: e
+        })
         return null
       }
     }
@@ -507,8 +522,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   async #getAdditionalPortfolio(accountId: AccountId, maxDataAgeMs?: number) {
-    const rewardsOrGasTankState =
-      this.#latest[accountId]?.rewards || this.#latest[accountId]?.gasTank
+    const rewardsOrGasTankState = this.#state[accountId]?.rewards || this.#state[accountId]?.gasTank
     const canSkipUpdate = rewardsOrGasTankState
       ? PortfolioController.#getCanSkipUpdate(rewardsOrGasTankState, maxDataAgeMs)
       : false
@@ -516,10 +530,10 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     if (canSkipUpdate) return
 
     const start = Date.now()
-    const accountState = this.#latest[accountId]
+    const accountState = this.#state[accountId]
 
-    this.#setNetworkLoading(accountId, 'latest', 'gasTank', true)
-    this.#setNetworkLoading(accountId, 'latest', 'rewards', true)
+    this.#setNetworkLoading(accountId, 'gasTank', true)
+    this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
     let res: any
@@ -533,8 +547,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       )
     } catch (e: any) {
       console.error('relayer error for portfolio additional')
-      this.#setNetworkLoading(accountId, 'latest', 'gasTank', false, e)
-      this.#setNetworkLoading(accountId, 'latest', 'rewards', false, e)
+      this.#setNetworkLoading(accountId, 'gasTank', false, e)
+      this.#setNetworkLoading(accountId, 'rewards', false, e)
       this.emitUpdate()
       return
     }
@@ -608,8 +622,6 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       amount: BigInt(t.amount || 0),
       chainId: BigInt(t.chainId || 1),
       availableAmount: BigInt(t.availableAmount || 0),
-      cashback: BigInt(t.cashback || 0),
-      saved: BigInt(t.saved || 0),
       flags: getFlags(res.data, 'gasTank', t.chainId, t.address, t.name, t.symbol)
     }))
 
@@ -647,14 +659,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     network: Network,
     portfolioLib: Portfolio | null,
     portfolioProps: Partial<GetOptions> & {
-      blockTag: 'latest' | 'pending'
       maxDataAgeMs?: number
       isManualUpdate?: boolean
     }
   ): Promise<boolean> {
-    const { blockTag, maxDataAgeMs, isManualUpdate } = portfolioProps
-    const stateKeys = { latest: this.#latest, pending: this.#pending }
-    const accountState = stateKeys[blockTag][accountId]
+    const { maxDataAgeMs, isManualUpdate } = portfolioProps
+    const accountState = this.#state[accountId]
 
     // Can occur if the account is removed while updateSelectedAccount is in progress
     if (!accountState) return false
@@ -672,7 +682,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
     if (canSkipUpdate) return false
 
-    this.#setNetworkLoading(accountId, blockTag, network.chainId.toString(), true)
+    this.#setNetworkLoading(accountId, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
     if (isManualUpdate) state.criticalError = undefined
 
@@ -691,6 +701,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
         priceCache: state.result?.priceCache,
+        blockTag: 'both',
         fetchPinned: !hasNonZeroTokens,
         ...portfolioProps
       })
@@ -863,14 +874,41 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     }
   }
 
+  /**
+   * Returns the maxDataAgeMs to be used for portfolio updates on a specific network,
+   * based on whether the account ops have changed and the user has assets on that network.
+   */
+  #getMaxDataAgeMs(
+    accountId: AccountId,
+    chainId: bigint,
+    areAccountOpsChanged: boolean,
+    maxDataAgeMs?: number,
+    maxDataAgeUnused?: number
+  ): number | undefined {
+    if (areAccountOpsChanged) return undefined
+
+    // maxDataAgeMsUnused is optional so we fall back to maxDataAgeMs if not provided
+    if (typeof maxDataAgeUnused !== 'number') return maxDataAgeMs
+
+    const networksWithAssets = this.getNetworksWithAssets(accountId)
+    const stringChainId = chainId.toString()
+
+    // If we don't know about the network we assume it has assets
+    if (!(stringChainId in networksWithAssets)) return maxDataAgeMs
+
+    const hasAssetsOnNetwork = networksWithAssets[stringChainId]
+
+    return hasAssetsOnNetwork ? maxDataAgeMs : maxDataAgeUnused
+  }
+
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
   // The recommended behavior of the application that this API encourages is:
-  // 1) when the user selects an account, update it's portfolio on all networks (latest state only) by calling updateSelectedAccount
+  // 1) when the user selects an account, update it's portfolio on all networks by calling updateSelectedAccount
   // 2) every time the user has a change in their pending (to be signed or to be mined) bundle(s) on a
   // certain network, call updateSelectedAccount again with those bundles; it will update the portfolio balance
-  // on each network where there are bundles, and it will update both `latest` and `pending` states on said networks
+  // on each network where there are bundles, and it will update the state on said networks
   // it will also use a high `priceRecency` to make sure we don't lose time in updating prices (since we care about running the simulations)
 
   // the purpose of this function is to call it when an account is selected or the queue of accountOps changes
@@ -881,20 +919,23 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       accountOps: { [key: string]: AccountOp[] }
       states: { [chainId: string]: AccountOnchainState }
     },
-    opts?: { maxDataAgeMs?: number; isManualUpdate?: boolean }
+    opts?: { maxDataAgeMs?: number; maxDataAgeMsUnused?: number; isManualUpdate?: boolean }
   ) {
-    const { maxDataAgeMs: paramsMaxDataAgeMs = 0, isManualUpdate } = opts || {}
+    const {
+      maxDataAgeMs: paramsMaxDataAgeMs = 0,
+      maxDataAgeMsUnused: paramsMaxDataAgeMsUnused,
+      isManualUpdate
+    } = opts || {}
     await this.#initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
     if (!selectedAccount)
       throw new Error(
         `${accountId} is not found in accounts. Account count: ${this.#accounts.accounts.length}`
       )
-    if (!this.#latest[accountId]) this.#latest[accountId] = {}
-    if (!this.#pending[accountId]) this.#pending[accountId] = {}
 
-    const accountState = this.#latest[accountId]
-    const pendingState = this.#pending[accountId]
+    if (!this.#state[accountId]) this.#state[accountId] = {}
+
+    const accountState = this.#state[accountId]
 
     const networksToUpdate = networks || this.#networks.networks
     await Promise.all([
@@ -912,7 +953,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           (op) => op.accountAddr === accountId
         )
         const state = simulation?.states?.[network.chainId.toString()]
-        const simulatedAccountOps = pendingState[network.chainId.toString()]?.accountOps
+        const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
 
         if (!this.#queue?.[accountId]?.[network.chainId.toString()])
           this.#queue[accountId] = {
@@ -932,10 +973,16 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
               : currentAccountOps !== simulatedAccountOps
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
-          const maxDataAgeMs = areAccountOpsChanged ? undefined : paramsMaxDataAgeMs
+          const maxDataAgeMs = this.#getMaxDataAgeMs(
+            accountId,
+            network.chainId,
+            areAccountOpsChanged,
+            paramsMaxDataAgeMs,
+            paramsMaxDataAgeMsUnused
+          )
 
           const hintsResponse =
-            this.#latest[accountId][network.chainId.toString()]?.result?.lastExternalApiUpdateData
+            this.#state[accountId][network.chainId.toString()]?.result?.lastExternalApiUpdateData
 
           const canSkipExternalApiHintsUpdate =
             !!hintsResponse &&
@@ -945,36 +992,25 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
 
           const allHints = this.getAllHints(accountId, network.chainId, isManualUpdate)
 
-          const [isSuccessfulLatestUpdate] = await Promise.all([
-            // Latest state update
-            this.updatePortfolioState(accountId, network, portfolioLib, {
-              blockTag: 'latest',
-              maxDataAgeMs,
-              isManualUpdate,
-              lastExternalApiUpdateData: hintsResponse,
-              ...allHints,
-              disableAutoDiscovery: canSkipExternalApiHintsUpdate
-            }),
-            this.updatePortfolioState(accountId, network, portfolioLib, {
-              blockTag: 'pending',
-              maxDataAgeMs,
-              isManualUpdate,
-              lastExternalApiUpdateData: hintsResponse,
-              ...(currentAccountOps &&
-                state && {
-                  simulation: {
-                    account: selectedAccount,
-                    accountOps: currentAccountOps,
-                    state
-                  }
-                }),
-              disableAutoDiscovery: canSkipExternalApiHintsUpdate,
-              ...allHints
-            })
-          ])
+          const isSuccessful = await this.updatePortfolioState(accountId, network, portfolioLib, {
+            maxDataAgeMs,
+            isManualUpdate,
+            blockTag: 'both',
+            lastExternalApiUpdateData: hintsResponse,
+            ...(currentAccountOps &&
+              state && {
+                simulation: {
+                  account: selectedAccount,
+                  accountOps: currentAccountOps,
+                  state
+                }
+              }),
+            disableAutoDiscovery: canSkipExternalApiHintsUpdate,
+            ...allHints
+          })
 
           // Learn tokens and nfts from the portfolio lib
-          if (isSuccessfulLatestUpdate && accountState[network.chainId.toString()]?.result) {
+          if (isSuccessful && accountState[network.chainId.toString()]?.result) {
             const networkResult = accountState[network.chainId.toString()]!.result
             const { erc20s, erc721s } = networkResult?.toBeLearned || {}
             let shouldUpdateLearnedInStorage = false
@@ -1026,7 +1062,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   markSimulationAsBroadcasted(accountId: string, chainId: bigint) {
-    const simulation = this.#pending[accountId][chainId.toString()]?.accountOps?.[0]
+    const simulation = this.#state[accountId][chainId.toString()]?.accountOps?.[0]
 
     if (!simulation) return
 
@@ -1287,8 +1323,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   removeAccountData(address: Account['addr']) {
-    delete this.#latest[address]
-    delete this.#pending[address]
+    delete this.#state[address]
     delete this.#networksWithAssetsByAccounts[address]
 
     this.#networks.networks.forEach((network) => {
@@ -1304,21 +1339,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     this.emitUpdate()
   }
 
-  getLatestPortfolioState(accountAddr: string) {
-    return this.#latest[accountAddr] || {}
-  }
-
-  getPendingPortfolioState(accountAddr: string) {
-    return this.#pending[accountAddr] || {}
+  getAccountPortfolioState(accountAddr: string) {
+    return this.#state[accountAddr] || {}
   }
 
   getIsStateWithOutdatedNetworks(accountAddr: string) {
-    // Get the pending state as latest contains internal networks
-    const pendingNetworksCount = Object.keys(this.getPendingPortfolioState(accountAddr)).length
+    const stateNetworksCount = Object.keys(this.getAccountPortfolioState(accountAddr)).filter(
+      (key) => !isInternalChain(key)
+    ).length
     // Read from networks, and not allNetworks
     const networksCount = this.#networks.networks.length
 
-    return pendingNetworksCount !== networksCount
+    return stateNetworksCount !== networksCount
   }
 
   getNetworksWithAssets(accountAddr: string) {
@@ -1328,12 +1360,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   async simulateAccountOp(op: AccountOp): Promise<void> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
-    const state = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.chainId)
-    const noSimulation = isBasicAccount(account, state) && network.rpcNoStateOverride
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      op.accountAddr,
+      op.chainId
+    )
+
+    const noSimulation =
+      !accountState || (isBasicAccount(account, accountState) && network.rpcNoStateOverride)
+
     const simulation = !noSimulation
       ? {
           accountOps: { [network.chainId.toString()]: [op] },
-          states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
+          states: { [network.chainId.toString()]: accountState }
         }
       : undefined
 

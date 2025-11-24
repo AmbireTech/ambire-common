@@ -23,7 +23,14 @@ export const getUniRecipientText = (accAddr: string, recAddr: string): Humanizer
 export const joinWithAndLabel = (
   humanizations: HumanizerVisualization[][]
 ): HumanizerVisualization[] => {
-  return humanizations.reduce((acc, arr) => [...acc, ...arr, getLabel('and')], []).slice(0, -1)
+  const hiddenTokens = humanizations.map((h) => h.filter(({ isHidden }) => isHidden)).flat()
+  const humanizationsWithoutHiddenTokens = humanizations
+    .map((h) => h.filter(({ isHidden }) => !isHidden))
+    .filter((h) => h.length)
+  const concatenatedVisibleHumanizations = humanizationsWithoutHiddenTokens
+    .reduce((acc, arr) => [...acc, ...arr, getLabel('and')], [])
+    .slice(0, -1)
+  return [...concatenatedVisibleHumanizations, ...hiddenTokens]
 }
 
 const isSwap = (call: HumanizerVisualization[] | undefined) =>
@@ -34,11 +41,7 @@ const isSwap = (call: HumanizerVisualization[] | undefined) =>
   call[3].type === 'token'
 
 const isTake = (call: HumanizerVisualization[] | undefined) =>
-  call &&
-  call.length === 3 &&
-  call[0].content?.includes('Take') &&
-  call[1].content === 'at least' &&
-  call[2].type === 'token'
+  call && call.length === 2 && call[0].content?.includes('Take') && call[1].type === 'token'
 
 const isWrap = (call: HumanizerVisualization[] | undefined) =>
   call && call.length >= 2 && call[0].content?.includes('Wrap') && call[1].type === 'token'
@@ -47,12 +50,8 @@ const isUnwrap = (call: HumanizerVisualization[] | undefined) =>
   call && call.length >= 2 && call[0].content?.includes('Unwrap') && call[1].type === 'token'
 
 const isSend = (call: HumanizerVisualization[] | undefined) =>
-  call &&
-  call.length >= 4 &&
-  call[0].content?.includes('Send') &&
-  call[1].type === 'token' &&
-  call[2]?.content?.includes('to') &&
-  call[3].type === 'address'
+  call && call.length >= 2 && call[0].content?.includes('Send') && call[1].type === 'token'
+
 export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
   const calls = _calls
   const originalCallsLength = calls.length
@@ -65,9 +64,9 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls[j] &&
         isSwap(calls[i]) &&
         isWrap(calls[j]) &&
-        calls[j]![1].value === calls[i]![1].value
+        calls[j][1].value === calls[i][1].value
       ) {
-        calls[i]![1].address = ZeroAddress
+        calls[i][1].address = ZeroAddress
         calls.splice(j, 1)
       }
       // looks for unwrap after the swap
@@ -77,9 +76,9 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls[j] &&
         isSwap(calls[i]) &&
         isUnwrap(calls[j]) &&
-        calls[j]![1].value === calls[i]![3].value
+        (calls[j][1].value === calls[i][3].value || calls[i][3].value === 0n)
       ) {
-        calls[i]![3].address = ZeroAddress
+        calls[i][3].address = ZeroAddress
         calls.splice(j, 1)
       }
 
@@ -88,13 +87,13 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         i !== j &&
         calls[i] &&
         calls[j] &&
-        isSwap(calls[i]!) &&
-        isSwap(calls[j]!) &&
-        calls[i]![1].address === calls[j]![1].address &&
-        calls[i]![3].address === calls[j]![3].address
+        isSwap(calls[i]) &&
+        isSwap(calls[j]) &&
+        calls[i][1].address === calls[j][1].address &&
+        calls[i][3].address === calls[j][3].address
       ) {
-        calls[i]![1].value = calls[i]![1].value! + calls[j]![1].value!
-        calls[i]![3].value = calls[i]![3].value! + calls[j]![3].value!
+        calls[i][1].value = calls[i][1].value! + calls[j][1].value!
+        calls[i][3].value = calls[i][3].value! + calls[j][3].value!
         calls.splice(j, 1)
       }
 
@@ -104,11 +103,22 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         calls[i] &&
         calls[j] &&
         isSend(calls[j]) &&
-        isSwap(calls[i]!) &&
-        calls[i]![3].value! / 400n >= calls[j]![1].value!
+        isSwap(calls[i]) &&
+        calls[i][3].value! / 400n >= calls[j][1].value!
       ) {
-        calls[i]![3].value = calls[i]![3].value! - calls[j]![1].value!
+        calls[i][3].value = calls[i][3].value! - calls[j][1].value!
         calls.splice(j, 1)
+      }
+
+      if (
+        i !== j &&
+        calls[i] &&
+        calls[j] &&
+        isSend(calls[i]) &&
+        isSwap(calls[j]) &&
+        calls[i][1].address === calls[j][1].address
+      ) {
+        calls.splice(i, 1)
       }
 
       // looks for take (sweep) action to infer the swap minimum by
@@ -116,12 +126,24 @@ export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualiz
         i !== j &&
         calls[i] &&
         calls[j] &&
-        isSwap(calls[i]!) &&
-        isTake(calls[j]!) &&
-        calls[i]![3].address === calls[j]![2].address
+        isSwap(calls[i]) &&
+        isTake(calls[j]) &&
+        calls[i][3].address === calls[j][1].address
       ) {
-        calls[i]![3].value =
-          calls[i]![3].value! > calls[j]![2].value! ? calls[i]![3].value : calls[j]![2].value
+        calls[i][3].value =
+          calls[i][3].value! > calls[j][1].value! ? calls[i][3].value : calls[j][1].value
+        calls.splice(j, 1)
+      }
+      if (
+        i !== j &&
+        calls[i] &&
+        calls[j] &&
+        isUnwrap(calls[i]) &&
+        isTake(calls[j]) &&
+        calls[i][1].address === calls[j][1].address
+      ) {
+        calls[i][1].value =
+          calls[i][1].value! > calls[j][1].value! ? calls[i][1].value : calls[j][1].value
         calls.splice(j, 1)
       }
       // because of this https://www.codeslaw.app/contracts/ethereum/0x66a9893cc07d91d95644aedd05d03f95e1dba8af?file=src%2Fpkgs%2Funiversal-router%2Flib%2Fv4-periphery%2Fsrc%2Flibraries%2FActionConstants.sol&start=11&end=13

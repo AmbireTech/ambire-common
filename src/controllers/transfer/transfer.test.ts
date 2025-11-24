@@ -32,6 +32,7 @@ import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -255,11 +256,22 @@ const activity = new ActivityController(
   () => Promise.resolve()
 )
 
-const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
-  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+const phishing = new PhishingController({
+  fetch,
+  storage: storageCtrl,
+  addressBook: addressBookController
+})
 
-  return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+const getTokens = async () => {
+  try {
+    const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+    const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+
+    return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+  } catch (e: any) {
+    console.error('Error fetching tokens for tests:', e)
+    return []
+  }
 }
 
 describe('Transfer Controller', () => {
@@ -277,6 +289,7 @@ describe('Transfer Controller', () => {
       activity,
       {},
       providersCtrl,
+      phishing,
       relayerUrl,
       () => Promise.resolve()
     )

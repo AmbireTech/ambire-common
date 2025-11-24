@@ -12,8 +12,6 @@ import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
-  CashbackStatus,
-  CashbackStatusByAccount,
   ISelectedAccountController,
   SelectedAccountPortfolio,
   SelectedAccountPortfolioByNetworks
@@ -27,7 +25,6 @@ import {
 import { sortByValue } from '../../libs/defiPositions/helpers'
 import { getStakedWalletPositions } from '../../libs/defiPositions/providers'
 import { PositionsByProvider } from '../../libs/defiPositions/types'
-import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
 import {
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
@@ -37,7 +34,6 @@ import {
   calculateAndSetProjectedRewards,
   calculateSelectedAccountPortfolio
 } from '../../libs/selectedAccount/selectedAccount'
-import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
@@ -51,8 +47,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   shouldShowPartialResult: false,
   isReloading: false,
   networkSimulatedAccountOp: {},
-  latest: {},
-  pending: {}
+  portfolioState: {}
 }
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
@@ -108,8 +103,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  #cashbackStatusByAccount: CashbackStatusByAccount = {}
-
   dismissedBannerIds: { [key: string]: string[] } = {}
 
   #_defiPositions: PositionsByProvider[] = []
@@ -164,13 +157,10 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   async #load() {
     await this.#accounts.initialLoadPromise
 
-    const [selectedAccountAddress, cashbackStatusByAccount, selectedAccountDismissedBannerIds] =
-      await Promise.all([
-        this.#storage.get('selectedAccount', null),
-        this.#storage.get('cashbackStatusByAccount', {}),
-        this.#storage.get('selectedAccountDismissedBannerIds', [])
-      ])
-    this.#cashbackStatusByAccount = cashbackStatusByAccount
+    const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
+      this.#storage.get('selectedAccount', null),
+      this.#storage.get('selectedAccountDismissedBannerIds', [])
+    ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
     this.isReady = true
@@ -268,13 +258,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     if (this.#portfolioLoadingTimeout) clearTimeout(this.#portfolioLoadingTimeout)
     this.#portfolioLoadingTimeout = null
 
+    this.emitUpdate()
+
     if (!account) {
       await this.#storage.remove('selectedAccount')
     } else {
       await this.#storage.set('selectedAccount', account.addr)
     }
-
-    this.emitUpdate()
   }
 
   #updateSelectedAccount(skipUpdate: boolean = false) {
@@ -312,19 +302,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const latestStateSelectedAccount = structuredClone(
-      this.#portfolio.getLatestPortfolioState(this.account.addr)
-    )
-    const pendingStateSelectedAccount = structuredClone(
-      this.#portfolio.getPendingPortfolioState(this.account.addr)
+    const portfolioAccountState = structuredClone(
+      this.#portfolio.getAccountPortfolioState(this.account.addr)
     )
 
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
       selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
     } = calculateSelectedAccountPortfolio(
-      latestStateSelectedAccount,
-      pendingStateSelectedAccount,
+      portfolioAccountState,
       structuredClone(this.#portfolioByNetworks),
       defiPositionsAccountState,
       this.portfolio.shouldShowPartialResult,
@@ -332,16 +318,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     )
 
     // Find stkWALLET or WALLET token in the latest portfolio state
-    const walletORStkWalletToken = latestStateSelectedAccount['1']?.result?.tokens.find(
+    const walletORStkWalletToken = portfolioAccountState['1']?.result?.tokens.find(
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
 
-    if (newSelectedAccountPortfolio.isAllReady && latestStateSelectedAccount.projectedRewards) {
+    if (newSelectedAccountPortfolio.isAllReady && portfolioAccountState.projectedRewards) {
       const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
 
       // Calculate and add projected rewards token
       const projectedRewardsToken = calculateAndSetProjectedRewards(
-        latestStateSelectedAccount.projectedRewards,
+        portfolioAccountState.projectedRewards,
         newSelectedAccountPortfolio.balancePerNetwork,
         walletOrStkWalletTokenPrice
       )
@@ -367,51 +353,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     // Reset isManualUpdate flag when the portfolio has finished the initial load
     if (this.#isManualUpdate && newSelectedAccountPortfolio.isAllReady) {
       this.#isManualUpdate = false
+      this.portfolio.shouldShowPartialResult = false
     }
 
     this.portfolio = newSelectedAccountPortfolio
     this.#portfolioByNetworks = newSelectedAccountPortfolioByNetworks
     this.#updatePortfolioErrors(true)
-    this.updateCashbackStatus(skipUpdate)
-
-    if (!skipUpdate) {
-      this.emitUpdate()
-    }
-  }
-
-  async updateCashbackStatus(skipUpdate?: boolean) {
-    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
-    const importedAccountKeys = this.#keystore?.getAccountKeys(this.account) || []
-
-    // Don't update cashback status for view-only accounts
-    if (getIsViewOnly(importedAccountKeys, this.account.associatedKeys)) return
-
-    const accountId = this.account.addr
-    const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
-
-    const isCashbackZero = gasTankResult.gasTankTokens?.[0]?.cashback === 0n
-    const cashbackWasZeroBefore = this.#cashbackStatusByAccount[accountId] === 'no-cashback'
-    const notReceivedFirstCashbackBefore =
-      this.#cashbackStatusByAccount[accountId] !== 'unseen-cashback'
-
-    if (isCashbackZero) {
-      await this.changeCashbackStatus('no-cashback', skipUpdate)
-    } else if (!isCashbackZero && cashbackWasZeroBefore && notReceivedFirstCashbackBefore) {
-      await this.changeCashbackStatus('unseen-cashback', skipUpdate)
-    }
-  }
-
-  async changeCashbackStatus(newStatus: CashbackStatus, skipUpdate?: boolean) {
-    if (!this.account) return
-
-    const accountId = this.account.addr
-
-    this.#cashbackStatusByAccount = {
-      ...this.#cashbackStatusByAccount,
-      [accountId]: newStatus
-    }
-
-    await this.#storage.set('cashbackStatusByAccount', this.#cashbackStatusByAccount)
 
     if (!skipUpdate) {
       this.emitUpdate()
@@ -530,7 +477,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
       shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
-      selectedAccountLatest: this.portfolio.latest,
+      selectedAccountPortfolioState: this.portfolio.portfolioState,
       isAllReady: this.portfolio.isAllReady,
       accountState: this.#accounts.accountStates[this.account.addr] || {},
       providers: this.#providers.providers,
@@ -543,7 +490,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   get balanceAffectingErrors() {
-    return [...this.#portfolioErrors, ...this.#defiPositionsErrors]
+    // Sort errors so that errors are shown before warnings
+    const sorted = [...this.#portfolioErrors, ...this.#defiPositionsErrors].sort((a, b) => {
+      const order = { error: 0, warning: 1 } as const
+      return order[a.type] - order[b.type]
+    })
+
+    return sorted
   }
 
   get deprecatedSmartAccountBanner(): Banner[] {
@@ -575,12 +528,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         actions: []
       }
     ]
-  }
-
-  get cashbackStatus(): CashbackStatus | undefined {
-    if (!this.account) return undefined
-
-    return this.#cashbackStatusByAccount[this.account.addr]
   }
 
   get autoLoginPolicies(): AutoLoginPolicy[] {
@@ -664,7 +611,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       : this.#networks.allNetworks
     return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
       defiPositionsAccountState,
-      networks: notDismissedNetworks
+      networks: notDismissedNetworks,
+      accountAddr: this.account.addr
     })
   }
 
@@ -673,7 +621,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       ...this,
       ...super.toJSON(),
       banners: this.banners,
-      cashbackStatus: this.cashbackStatus,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       balanceAffectingErrors: this.balanceAffectingErrors,
       defiPositions: this.defiPositions,

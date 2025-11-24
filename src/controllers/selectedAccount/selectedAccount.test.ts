@@ -11,7 +11,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { PortfolioGasTankResult } from '../../libs/portfolio/interfaces'
+import { stringify } from '../../libs/richJson/richJson'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -106,7 +106,7 @@ const accounts = [
     }
   },
   {
-    addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+    addr: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
     initialPrivileges: [],
     associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
     creation: {
@@ -117,7 +117,7 @@ const accounts = [
     },
     preferences: {
       label: DEFAULT_ACCOUNT_LABEL,
-      pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+      pfp: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
     }
   }
 ]
@@ -222,6 +222,28 @@ describe('SelectedAccount Controller', () => {
 
     expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
     expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
+  })
+  test('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
+    // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
+    const { selectedAccountCtrl, portfolioCtrl, defiPositionsCtrl } = await prepareTest()
+
+    await selectedAccountCtrl.setAccount(accounts[1])
+
+    await portfolioCtrl.updateSelectedAccount('0xC2E6dFcc2C6722866aD65F211D5757e1D2879337')
+    await defiPositionsCtrl.updatePositions({ forceUpdate: true })
+    const PORTFOLIO_STATE_BEFORE = stringify(
+      portfolioCtrl.getAccountPortfolioState('0xC2E6dFcc2C6722866aD65F211D5757e1D2879337')
+    )
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    selectedAccountCtrl.resetSelectedAccountPortfolio()
+    selectedAccountCtrl.updateSelectedAccountPortfolio()
+
+    const PORTFOLIO_STATE_AFTER = stringify(
+      portfolioCtrl.getAccountPortfolioState('0xC2E6dFcc2C6722866aD65F211D5757e1D2879337')
+    )
+
+    expect(PORTFOLIO_STATE_AFTER).toEqual(PORTFOLIO_STATE_BEFORE)
   })
   test('should reset selected account portfolio', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
@@ -383,8 +405,8 @@ describe('SelectedAccount Controller', () => {
       jest
         .spyOn(portfolioCtrl, 'getNetworksWithAssets')
         .mockImplementation(() => ({ '137': true, '1': false }))
-      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -404,8 +426,8 @@ describe('SelectedAccount Controller', () => {
 
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
-      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
-      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
       await waitNextControllerUpdate(selectedAccountCtrl)
 
@@ -435,13 +457,13 @@ describe('SelectedAccount Controller', () => {
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
       // There is a critical error but lastSuccessfulUpdate is less than 10 minutes ago
-      selectedAccountCtrl.portfolio.latest['1']!.criticalError = new Error('Mock error')
+      selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       await forceBannerRecalculation()
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
 
       // There is a critical error and lastSuccessfulUpdate is more than 10 minutes ago
-      selectedAccountCtrl.portfolio.latest['1']!.result!.lastSuccessfulUpdate = 0
+      selectedAccountCtrl.portfolio.portfolioState['1']!.result!.lastSuccessfulUpdate = 0
       await forceBannerRecalculation()
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBeGreaterThan(0)
@@ -535,24 +557,5 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(1)
     })
-  })
-  test("Cashback status is not updated for the account because it's view-only", async () => {
-    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
-
-    await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
-    ;(
-      selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
-    ).gasTankTokens[0].cashback = 0n
-    // Mocks 'no-cashback'
-    await selectedAccountCtrl.updateCashbackStatus()
-    ;(
-      selectedAccountCtrl.portfolio.latest.gasTank!.result as PortfolioGasTankResult
-    ).gasTankTokens[0].cashback = 10n
-    // Mocks 'unseen-cashback'
-    await selectedAccountCtrl.updateCashbackStatus()
-
-    // Cashback is undefined because the account is view-only
-    expect(selectedAccountCtrl.cashbackStatus).toBeUndefined()
   })
 })

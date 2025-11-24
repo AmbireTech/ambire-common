@@ -75,7 +75,7 @@ const getMockSelectedAccountPortfolio = (params?: {
         : []
     }
     return acc
-  }, {} as SelectedAccountPortfolio['latest'])
+  }, {} as SelectedAccountPortfolio['portfolioState'])
 }
 
 describe('selectedAccount errors', () => {
@@ -467,7 +467,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 137n]
         }),
         isAllReady: true,
@@ -482,7 +482,7 @@ describe('selectedAccount errors', () => {
     it('critical portfolio error', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 137n]
         }),
         isAllReady: true,
@@ -503,7 +503,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [1n, 56n]
         }),
         isAllReady: true,
@@ -520,7 +520,7 @@ describe('selectedAccount errors', () => {
     it('no errors are added when the state is fresh (not Ethereum)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           freshDataChainIds: [56n, 137n],
           criticalErrorChainIds: [56n]
         }),
@@ -536,7 +536,7 @@ describe('selectedAccount errors', () => {
     it('errors are added even when the state is fresh (Ethereum)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           freshDataChainIds: [1n, 56n, 137n],
           criticalErrorChainIds: [1n]
         }),
@@ -558,7 +558,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -577,7 +577,7 @@ describe('selectedAccount errors', () => {
 
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [137n]
         }),
         isAllReady: true,
@@ -592,7 +592,7 @@ describe('selectedAccount errors', () => {
     it("critical portfolio error, but we don't know if the user has assets", () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           criticalErrorChainIds: [137n]
         }),
         isAllReady: true,
@@ -609,7 +609,7 @@ describe('selectedAccount errors', () => {
     it('non-critical portfolio errors', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           nonCriticalErrorChainIds: [1n, 137n],
           criticalErrorChainIds: [1n]
         }),
@@ -631,7 +631,7 @@ describe('selectedAccount errors', () => {
     it('no errors are added for loading networks if (isAllReady=false)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -647,7 +647,7 @@ describe('selectedAccount errors', () => {
     it('errors are added for loading networks if (isAllReady=true)', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n],
           criticalErrorChainIds: [1n, 56n]
         }),
@@ -665,7 +665,7 @@ describe('selectedAccount errors', () => {
     it('loading-too-long error is added for loading networks if isAllReady=false and shouldShowPartialResult=true', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n]
         }),
         isAllReady: false,
@@ -683,7 +683,7 @@ describe('selectedAccount errors', () => {
     it('loading-too-long error is not added for loading networks if isAllReady=true and shouldShowPartialResult=true', () => {
       const errors = getNetworksWithErrors({
         networks: mockNetworks,
-        selectedAccountLatest: getMockSelectedAccountPortfolio({
+        selectedAccountPortfolioState: getMockSelectedAccountPortfolio({
           loadingChainIds: [1n, 56n]
         }),
         isAllReady: true,

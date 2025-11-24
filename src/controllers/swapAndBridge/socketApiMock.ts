@@ -10,6 +10,8 @@ import {
 export class SocketAPIMock {
   id = 'socket'
 
+  name = 'Socket'
+
   #fetch: Fetch
 
   #baseUrl = 'https://api.socket.tech/v2'
@@ -40,7 +42,7 @@ export class SocketAPIMock {
     this.isHealthy = null
   }
 
-  getSupportedChains() {
+  async getSupportedChains() {
     return networks.map((network) => ({ chainId: network.chainId }))
   }
 

@@ -1,7 +1,7 @@
 import { ethers } from 'hardhat'
 
 import { Hex } from '../../src/interfaces/hex'
-import { getExecute712Data, getUserOp712Data, wrapEIP712 } from '../ambireSign'
+import { getExecute712Data, wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
 import { abiCoder, addressOne, chainId, expect, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
@@ -53,8 +53,13 @@ describe('Send User Operation Tests', () => {
       userOpNonce: nonce,
       validUntil: timestamp + 60
     })
-    const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
-    const signature = wrapEIP712(
+    // const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
+    const typedData = wrapTypedData(
+      chainId,
+      ambireAccountAddress,
+      await entryPoint.getUserOpHash(userOp)
+    )
+    const signature = wrapEthSign(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
     ) as Hex
     userOp.signature = signature
@@ -96,13 +101,18 @@ describe('Send User Operation Tests', () => {
       validUntil: timestamp + 60,
       callData: ambireAccount.interface.encodeFunctionData('execute', [txns, executeSignature])
     })
-    const typedData = getUserOp712Data(
+    // const typedData = getUserOp712Data(
+    //   chainId,
+    //   txns,
+    //   userOp,
+    //   await entryPoint.getUserOpHash(userOp)
+    // )
+    const typedData = wrapTypedData(
       chainId,
-      txns,
-      userOp,
+      ambireAccountAddress,
       await entryPoint.getUserOpHash(userOp)
     )
-    const signature = wrapEIP712(
+    const signature = wrapEthSign(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
     ) as Hex
     userOp.signature = signature
@@ -117,8 +127,13 @@ describe('Send User Operation Tests', () => {
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp - 60
     })
-    const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
-    const signature = wrapEIP712(
+    // const typedData = getUserOp712Data(chainId, [], userOp, await entryPoint.getUserOpHash(userOp))
+    const typedData = wrapTypedData(
+      chainId,
+      ambireAccountAddress,
+      await entryPoint.getUserOpHash(userOp)
+    )
+    const signature = wrapEthSign(
       await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
     ) as Hex
     userOp.signature = signature

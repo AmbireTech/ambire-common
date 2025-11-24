@@ -7,7 +7,7 @@ import EmittableError from '../../classes/EmittableError'
 import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId, IAccountsController } from '../../interfaces/account'
+import { AccountId, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import {
   AccountOpAction,
   Action,
@@ -17,7 +17,7 @@ import {
 } from '../../interfaces/actions'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
-import { DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { StatusesWithCustom } from '../../interfaces/main'
@@ -46,6 +46,7 @@ import {
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { TokenResult } from '../../libs/portfolio'
+import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
   ACCOUNT_SWITCH_USER_REQUEST,
   buildSwitchAccountUserRequest,
@@ -90,8 +91,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #keystore: IKeystoreController
 
-  #dapps: IDappsController
-
   #transfer: ITransferController
 
   #swapAndBridge: ISwapAndBridgeController
@@ -101,6 +100,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #ui: IUiController
 
   #autoLogin: IAutoLoginController
+
+  #getDapp: (id: string) => Promise<Dapp | undefined>
 
   #getSignAccountOp: () => ISignAccountOpController | null
 
@@ -115,6 +116,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
 
   #guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
+
+  #onSetCurrentAction: (currentAction: Action | null) => void
 
   userRequests: UserRequest[] = []
 
@@ -156,19 +159,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     providers,
     selectedAccount,
     keystore,
-    dapps,
     transfer,
     swapAndBridge,
     transactionManager,
     ui,
     autoLogin,
+    getDapp,
     getSignAccountOp,
     updateSignAccountOp,
     destroySignAccountOp,
     updateSelectedAccountPortfolio,
     addTokensToBeLearned,
     guardHWSigning,
-    getMainStatuses
+    getMainStatuses,
+    onSetCurrentAction
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -176,12 +180,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     providers: IProvidersController
     selectedAccount: ISelectedAccountController
     keystore: IKeystoreController
-    dapps: IDappsController
     transfer: ITransferController
     swapAndBridge: ISwapAndBridgeController
     transactionManager?: ITransactionManagerController
     ui: IUiController
     autoLogin: IAutoLoginController
+    getDapp: (id: string) => Promise<Dapp | undefined>
     getSignAccountOp: () => ISignAccountOpController | null
     updateSignAccountOp: (props: SignAccountOpUpdateProps) => void
     destroySignAccountOp: () => void
@@ -189,6 +193,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
     getMainStatuses: () => StatusesWithCustom
+    onSetCurrentAction: (currentAction: Action | null) => void
   }) {
     super()
 
@@ -198,13 +203,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#providers = providers
     this.#selectedAccount = selectedAccount
     this.#keystore = keystore
-    this.#dapps = dapps
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
     this.#transactionManager = transactionManager
     this.#ui = ui
     this.#autoLogin = autoLogin
-
+    this.#getDapp = getDapp
     this.#getSignAccountOp = getSignAccountOp
     this.#getMainStatuses = getMainStatuses
     this.#updateSignAccountOp = updateSignAccountOp
@@ -212,10 +216,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
     this.#guardHWSigning = guardHWSigning
+    this.#onSetCurrentAction = onSetCurrentAction
 
     this.actions = new ActionsController({
       selectedAccount: this.#selectedAccount,
       ui,
+      onSetCurrentAction: this.#onSetCurrentAction,
       onActionWindowClose: async () => {
         // eslint-disable-next-line no-restricted-syntax
         for (const r of this.userRequests) {
@@ -262,7 +268,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
     await this.#keystore.initialLoadPromise
-    await this.#dapps.initialLoadPromise
   }
 
   async addUserRequests(
@@ -370,16 +375,32 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-        const accountState = (await Promise.race([
+        const accountState = await Promise.race([
           this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
           // Fallback to the old account state if it exists and the fetch takes too long
           accountStateBefore
-            ? new Promise((res) => {
+            ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
+              new Promise<AccountOnchainState | undefined>((res) => {
                 setTimeout(() => res(accountStateBefore), 2000)
               })
-            : new Promise(() => {}) // Explicitly never-resolving promise
-        ])) as any
-        const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
+            : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+        ])
+
+        if (!accountState) {
+          const message =
+            "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support."
+          const error = new Error(
+            `requestsController error: accountState for ${meta.accountAddr} is undefined on network with id ${meta.chainId}`
+          )
+          this.emitError({ level: 'major', message, error })
+
+          if (req.dappPromise) {
+            req.dappPromise?.reject(ethErrors.rpc.internal())
+            await this.#ui.notification.create({ title: "Couldn't Process Request", message })
+          }
+
+          return
+        }
 
         const accountOpAction = makeAccountOpAction({
           account,
@@ -397,8 +418,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             this.#updateSignAccountOp({ accountOpData: { calls: accountOpAction.accountOp.calls } })
           }
         } else {
+          const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
           // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
           // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
         }
       } else {
@@ -665,7 +688,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let userRequest = null
     let actionPosition: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
-    const dapp = this.#dapps.getDapp(request.session.id)
+    const dapp = await this.#getDapp(request.session.id)
 
     if (kind === 'calls') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -675,13 +698,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.#selectedAccount.account.addr,
+        network.chainId
+      )
+
+      if (!accountState) {
+        throw ethErrors.rpc.internal(
+          'Transaction failed - unable to fetch account state for the selected account'
+        )
+      }
 
       const baseAcc = getBaseAccount(
         this.#selectedAccount.account,
-        await this.#accounts.getOrFetchAccountOnChainState(
-          this.#selectedAccount.account.addr,
-          network.chainId
-        ),
+        accountState,
         this.#keystore.getAccountKeys(this.#selectedAccount.account),
         network
       )
@@ -789,6 +819,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (rawMessage && parsedSiweAndStatus) {
         const { parsedSiwe, status } = parsedSiweAndStatus
         let autoLoginStatus: AutoLoginStatus = 'no-policy'
+
+        if (parsedSiwe.address?.toLowerCase() !== msgAddress.toLowerCase()) {
+          throw ethErrors.rpc.invalidRequest(
+            'SIWE message address does not match the requested signing address'
+          )
+        }
 
         // Try to auto-login
         if (status === 'valid' && parsedSiwe) {
@@ -971,12 +1007,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      selectedToken.chainId
+    )
+
+    if (!accountState) {
+      this.emitError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${
+            this.#selectedAccount.account?.addr
+          } is undefined on network with id ${selectedToken.chainId}`
+        )
+      })
+      return
+    }
+
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
-      await this.#accounts.getOrFetchAccountOnChainState(
-        this.#selectedAccount.account.addr,
-        selectedToken.chainId
-      ),
+      accountState,
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
@@ -1022,12 +1074,28 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
 
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      this.#selectedAccount.account.addr,
+      selectedToken.chainId
+    )
+
+    if (!accountState) {
+      this.emitError({
+        level: 'major',
+        message:
+          "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+        error: new Error(
+          `requestsController error: accountState for ${
+            this.#selectedAccount.account?.addr
+          } is undefined on network with id ${selectedToken.chainId}`
+        )
+      })
+      return
+    }
+
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
-      await this.#accounts.getOrFetchAccountOnChainState(
-        this.#selectedAccount.account.addr,
-        selectedToken.chainId
-      ),
+      accountState,
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
@@ -1098,12 +1166,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           (n) => Number(n.chainId) === transaction!.chainId
         )!
 
-        // TODO: Consider refining the error handling in here, because this
-        // swallows errors and doesn't provide any feedback to the user.
         const accountState = await this.#accounts.getOrFetchAccountOnChainState(
           this.#selectedAccount.account.addr,
           network.chainId
         )
+
+        if (!accountState) {
+          const error = new SwapAndBridgeError(
+            "Required account data couldn't be retrieved. Please try again later or contact Ambire support."
+          )
+          throw new EmittableError({ message: error.message, level: 'major', error })
+        }
+
         const baseAcc = getBaseAccount(
           this.#selectedAccount.account,
           accountState,
@@ -1156,8 +1230,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }) {
     if (!this.#selectedAccount.account) return
 
-    const claimableRewardsData =
-      this.#selectedAccount.portfolio.latest.rewards?.result?.claimableRewardsData
+    const claimableRewardsData = (
+      this.#selectedAccount.portfolio.portfolioState.rewards?.result as PortfolioRewardsResult
+    )?.claimableRewardsData
 
     if (!claimableRewardsData) return
 
@@ -1180,7 +1255,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }) {
     if (!this.#selectedAccount.account) return
 
-    const addrVestingData = this.#selectedAccount.portfolio.latest.rewards?.result?.addrVestingData
+    const addrVestingData = (
+      this.#selectedAccount.portfolio.portfolioState.rewards?.result as PortfolioRewardsResult
+    )?.addrVestingData
 
     if (!addrVestingData) return
     const userRequest: UserRequest = buildMintVestingRequest({

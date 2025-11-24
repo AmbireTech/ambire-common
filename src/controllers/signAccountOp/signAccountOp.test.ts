@@ -34,6 +34,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { EstimationController } from '../estimation/estimation'
@@ -42,6 +43,7 @@ import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -400,6 +402,22 @@ const init = async (
     relayerUrl,
     fetch
   )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystore,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl,
+    keystore,
+    autoLogin: autoLoginCtrl
+  })
+  const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
   await waitForAccountsCtrlFirstLoad(accountsCtrl)
   await networksCtrl.initialLoadPromise
@@ -416,13 +434,18 @@ const init = async (
     velcroUrl,
     new BannerController(storageCtrl)
   )
+  const phishing = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    addressBook: addressBookCtrl
+  })
   const { op } = accountOp
   const network = networksCtrl.networks.find((x) => x.chainId === op.chainId)!
   await portfolio.updateSelectedAccount(account.addr, updateWholePortfolio ? undefined : [network])
   const provider = getRpcProvider(network.rpcUrls, network.chainId)
 
-  if (portfolio.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result) {
-    portfolio!.getLatestPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
+  if (portfolio.getAccountPortfolioState(account.addr)[op.chainId.toString()]!.result) {
+    portfolio!.getAccountPortfolioState(account.addr)[op.chainId.toString()]!.result!.tokens = [
       {
         amount: 1n,
         chainId: op.chainId,
@@ -465,21 +488,7 @@ const init = async (
     keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
     network
   )
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore,
-    autoLogin: autoLoginCtrl
-  })
+
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const activity = new ActivityController(
     storageCtrl,
@@ -529,10 +538,11 @@ const init = async (
     network,
     activity,
     provider,
+    phishing,
     fromActionId: 1,
     accountOp: op,
-    isSignRequestStillActive: () => {},
-    shouldSimulate: true,
+    isSignRequestStillActive: () => true,
+    shouldSimulate: false,
     onAccountOpUpdate: () => {},
     // @ts-ignore
     onBroadcastSuccess: () => {},

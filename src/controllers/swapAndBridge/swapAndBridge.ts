@@ -14,6 +14,7 @@ import { Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -222,6 +223,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #providers: IProvidersController
 
+  #phishing: IPhishingController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -234,12 +237,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #signAccountOpController: ISignAccountOpController | null = null
 
-  /**
-   * Holds all subscriptions (on update and on error) to the signAccountOpController.
-   * This is needed to unsubscribe from the subscriptions when the controller is destroyed.
-   */
-  #signAccountOpSubscriptions: Function[] = []
-
   #portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
 
   #isMainSignAccountOpThrowingAnEstimationError: Function | undefined
@@ -249,13 +246,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #getVisibleActionsQueue: () => Action[]
 
   hasProceeded: boolean = false
-
-  /**
-   * Describes whether quote refetch should happen at a given interval.
-   * We forbid it:
-   * - when the user has chosen a custom route by himself
-   */
-  isAutoSelectRouteDisabled: boolean = false
 
   #relayerUrl: string
 
@@ -290,6 +280,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks,
     activity,
     storage,
+    phishing,
     invite,
     portfolioUpdate,
     relayerUrl,
@@ -310,6 +301,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     networks: INetworksController
     activity: IActivityController
     storage: IStorageController
+    phishing: IPhishingController
     invite: IInviteController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
@@ -335,6 +327,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#activity = activity
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
+    this.#phishing = phishing
     this.#invite = invite
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
@@ -983,7 +976,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           })
         : undefined
     ])
-    this.updateQuoteInterval.restart()
   }
 
   resetForm(shouldEmit?: boolean) {
@@ -999,7 +991,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.quoteRoutesStatuses = {}
     this.destroySignAccountOp()
     this.hasProceeded = false
-    this.isAutoSelectRouteDisabled = false
     this.#updateQuoteId = undefined
     this.fromAmountUpdateCounter = 0
     this.#userTxn = null
@@ -1342,7 +1333,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #accountNativeBalance(amount: bigint): bigint {
     if (!this.#selectedAccount.account || !this.fromChainId) return 0n
 
-    const currentPortfolio = this.#portfolio.getLatestPortfolioState(
+    const currentPortfolio = this.#portfolio.getAccountPortfolioState(
       this.#selectedAccount.account.addr
     )
     const currentPortfolioNetwork = currentPortfolio[this.fromChainId.toString()]
@@ -1701,7 +1692,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             routes,
             withConvenienceFee: quoteResult.withConvenienceFee
           }
-          this.isAutoSelectRouteDisabled = quoteResult.selectedRoute.disabled
         }
         this.quoteRoutesStatuses = (quoteResult as any).bridgeRouteErrors || {}
 
@@ -1750,6 +1740,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.destroySignAccountOp()
       this.#resetQuote()
     }
+    this.updateQuoteInterval.restart()
   }
 
   #resetQuote() {
@@ -1894,7 +1885,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     )
   }
 
-  async selectRoute(route: SwapAndBridgeRoute, isAutoSelectDisabled?: boolean) {
+  async selectRoute(
+    route: SwapAndBridgeRoute,
+    opts?: {
+      isManualSelection?: boolean
+    }
+  ) {
+    const { isManualSelection = false } = opts || {}
     if (!this.quote || !this.quote.routes.length) return
     if (
       ![
@@ -1907,9 +1904,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.quote.selectedRoute = route
     this.quote.selectedRouteSteps = route.steps
-    if (isAutoSelectDisabled !== undefined) {
-      this.isAutoSelectRouteDisabled = isAutoSelectDisabled
-    }
+    if (isManualSelection) this.quote.selectedRoute.isSelectedManually = true
 
     if (this.#updateQuoteId) await this.initSignAccountOpIfNeeded(this.#updateQuoteId)
     this.emitUpdate()
@@ -2024,7 +2019,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * Find the next route in line and try to re-estimate with it
    */
   async onEstimationFailure(activeRouteId?: SwapAndBridgeSendTxRequest['activeRouteId']) {
-    if (!this.quote || !this.quote.selectedRoute || this.isAutoSelectRouteDisabled) return
+    if (!this.quote || !this.quote.selectedRoute || this.quote.selectedRoute.isSelectedManually)
+      return
 
     const routeId = activeRouteId ?? this.quote.selectedRoute.routeId
     let routeIndex = null
@@ -2046,7 +2042,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const firstEnabledRoute = this.quote.routes.find((r) => !r.disabled)
     if (!firstEnabledRoute) {
       this.updateQuoteStatus = 'INITIAL'
-      this.isAutoSelectRouteDisabled = true
       this.emitUpdate()
       return
     }
@@ -2062,7 +2057,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   /**
    * We need this as a separate method as it's called from the UI as well
    */
-  async markSelectedRouteAsFailed(disabledReason: string, shouldStopAutoUpdates = true) {
+  async markSelectedRouteAsFailed(disabledReason: string) {
     if (!this.quote || !this.quote.selectedRoute) return
 
     this.quote.selectedRoute.disabled = true
@@ -2075,11 +2070,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.quote!.routes[i].disabledReason = disabledReason
       }
     })
-
-    if (shouldStopAutoUpdates) {
-      this.isAutoSelectRouteDisabled = true
-      this.emitUpdate()
-    }
   }
 
   // update active route if needed on SubmittedAccountOp update
@@ -2236,14 +2226,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   destroySignAccountOp() {
-    // Always attempt to unsubscribe from all previous subscriptions,
-    // because the signAccountOpController getter might return null,
-    // but prev references to the signAccountOpController might still exist.
-    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
-    this.#signAccountOpSubscriptions = []
-
     if (!this.#signAccountOpController) return
-    this.#signAccountOpController.reset()
+    this.#signAccountOpController.destroy()
     this.#signAccountOpController = null
     this.hasProceeded = false
   }
@@ -2297,6 +2281,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       network.chainId
     )
 
+    if (!accountState) {
+      this.updateQuoteStatus = 'INITIAL'
+      this.addOrUpdateError({
+        id: 'all-routes-failed',
+        level: 'error',
+        title: 'Missing mandatory account data. Please try again later.'
+      })
+      return
+    }
+
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
     const userTxn = await this.getRouteStartUserTx()
@@ -2309,10 +2303,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#userTxn = null
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote', false)
+      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
 
       // if we're not auto updating routes, just show the error
-      if (this.isAutoSelectRouteDisabled) {
+      if (!this.#shouldAutoUpdateQuote) {
         this.updateQuoteStatus = 'INITIAL'
         this.emitUpdate()
         return
@@ -2409,28 +2403,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       account: this.#selectedAccount.account,
       network,
       provider: this.#providers.providers[network.chainId.toString()],
+      phishing: this.#phishing,
       fromActionId: randomId(), // the account op and the action are fabricated,
       accountOp,
-      isSignRequestStillActive: (): boolean => {
-        // if we're refetching a quote atm, we don't execute the estimation
-        // a race between the old estimation with the old quote and the new
-        // estimation with the new quote might happen
-        //
-        // also, if the tx data is different, it means the user is playing
-        // with the swap, so we don't want to reestimate
-        //
-        // we only want a re-estimate in a stale state
-        if (
-          this.updateQuoteStatus === 'LOADING' ||
-          !this.#signAccountOpController ||
-          !this.#signAccountOpController.accountOp.meta?.swapTxn ||
-          !this.#userTxn ||
-          this.#userTxn.txData !== this.#signAccountOpController.accountOp.meta.swapTxn.txData
-        )
-          return false
-
-        return true
-      },
+      isSignRequestStillActive: (): boolean => !!this.#signAccountOpController,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         this.#portfolio
@@ -2456,72 +2432,39 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.emitUpdate()
 
-    // Unsubscribe from all previous subscriptions, if any exist, because the
-    // sign account op does NOT destroys before every initSignAccountOpIfNeeded() call
-    this.#signAccountOpSubscriptions.forEach((unsubscribe) => unsubscribe())
-    this.#signAccountOpSubscriptions = []
+    this.#signAccountOpController.onUpdate(() => {
+      this.emitUpdate()
+    })
+    this.#signAccountOpController.onError((error) => {
+      // Need to clean the pending results for THIS signAccountOpController
+      // specifically. NOT the one from the getter (this.signAccountOpController)
+      // that is ALWAYS up-to-date with the current quote and the current form state.
+      // Due to the async nature, it might not exist - an issue caught by our crash reporting.
+      if (this.#signAccountOpController)
+        this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
 
-    // propagate updates from signAccountOp here
-    this.#signAccountOpSubscriptions.push(
-      this.#signAccountOpController.onUpdate(() => {
-        this.emitUpdate()
-      })
-    )
-    this.#signAccountOpSubscriptions.push(
-      this.#signAccountOpController.onError((error) => {
-        // Need to clean the pending results for THIS signAccountOpController
-        // specifically. NOT the one from the getter (this.signAccountOpController)
-        // that is ALWAYS up-to-date with the current quote and the current form state.
-        // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-        if (this.#signAccountOpController)
-          this.#portfolio.overridePendingResults(this.#signAccountOpController.accountOp)
-
-        this.emitError(error)
-      })
-    )
+      this.emitError(error)
+    })
     // if the estimation emits an error, handle it
-    this.#signAccountOpSubscriptions.push(
-      this.#signAccountOpController.estimation.onUpdate(() => {
-        if (
-          this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
-          this.#signAccountOpController.estimation.status === EstimationStatus.Error
-        ) {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.markSelectedRouteAsFailed(
-            this.#signAccountOpController.estimation.error?.message || 'Invalid quote',
-            false
-          )
+    this.#signAccountOpController.estimation.onUpdate(() => {
+      if (
+        this.#signAccountOpController?.accountOp.meta?.swapTxn?.activeRouteId &&
+        this.#signAccountOpController.estimation.status === EstimationStatus.Error
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.markSelectedRouteAsFailed(
+          this.#signAccountOpController.estimation.error?.message || 'Invalid quote'
+        )
 
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.onEstimationFailure(
-            this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId
-          )
-        }
-      })
-    )
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.onEstimationFailure(this.#signAccountOpController.accountOp.meta.swapTxn.activeRouteId)
+      }
+    })
   }
 
   setUserProceeded(hasProceeded: boolean) {
     this.hasProceeded = hasProceeded
-    this.isAutoSelectRouteDisabled = hasProceeded
 
-    // this is so when the user get an error during broadcast which then leads
-    // to an estimation error - if he does back, he should see the failed route
-    // and be able to select another. if this.isAutoSelectRouteDisabled is not
-    // made to true, he will see an infinite loading
-    if (
-      hasProceeded === false &&
-      this.signAccountOpController &&
-      this.signAccountOpController.estimation.status === EstimationStatus.Error
-    ) {
-      this.isAutoSelectRouteDisabled = true
-    }
-
-    this.emitUpdate()
-  }
-
-  setIsAutoSelectRouteDisabled(isDisabled: boolean) {
-    this.isAutoSelectRouteDisabled = isDisabled
     this.emitUpdate()
   }
 
@@ -2585,8 +2528,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
   }
 
+  get #shouldAutoUpdateQuote() {
+    return (
+      this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
+      !this.hasProceeded &&
+      this.quote &&
+      !this.quote.selectedRoute?.disabled &&
+      !this.quote.selectedRoute?.isSelectedManually
+    )
+  }
+
   async continuouslyUpdateQuote() {
-    if (this.formStatus !== SwapAndBridgeFormStatus.ReadyToSubmit) {
+    if (!this.#shouldAutoUpdateQuote) {
       this.updateQuoteInterval.stop()
       return
     }

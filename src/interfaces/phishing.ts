@@ -4,8 +4,11 @@ export type IPhishingController = ControllerInterface<
   InstanceType<typeof import('../controllers/phishing/phishing').PhishingController>
 >
 
-export type StoredPhishingDetection = {
-  timestamp: number
-  metamaskBlacklist: string[]
-  phantomBlacklist: string[]
-} | null
+export interface BlacklistedStatuses {
+  [item: string]: {
+    status: BlacklistedStatus
+    updatedAt: number
+  }
+}
+
+export type BlacklistedStatus = 'LOADING' | 'FAILED_TO_GET' | 'BLACKLISTED' | 'VERIFIED'

@@ -38,30 +38,49 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 }
 
 function getSignificantBalanceDecreaseWarning(
-  latest: AccountState,
-  pending: AccountState,
+  portfolioState: AccountState,
   chainId: bigint,
   traceCallDiscoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
-  const latestNetworkData = latest?.[chainId.toString()]
-  const pendingNetworkData = pending?.[chainId.toString()]
-  const canDetermineIfBalanceWillDecrease =
-    latestNetworkData &&
-    !latestNetworkData.isLoading &&
-    pendingNetworkData &&
-    !pendingNetworkData.isLoading
+  const portfolioNetworkState = portfolioState?.[chainId.toString()]
 
-  if (canDetermineIfBalanceWillDecrease) {
-    const latestTotalInUSD = getAccountPortfolioTotal(
-      latest,
+  if (portfolioNetworkState && portfolioNetworkState.result && !portfolioNetworkState.isLoading) {
+    const totalInUSD = getAccountPortfolioTotal(
+      portfolioState,
       ['rewards', 'gasTank', 'projectedRewards'],
       false
     )
-    const latestOnNetworkInUSD = getTotal(latestNetworkData.result?.tokens || []).usd
-    const pendingOnNetworkInUSD = getTotal(pendingNetworkData.result?.tokens || []).usd
-    const absoluteDecreaseInUSD = latestOnNetworkInUSD - pendingOnNetworkInUSD
+    const simulatedTokens = portfolioNetworkState.result.tokens.filter(
+      (t) => typeof t.amountPostSimulation === 'bigint'
+    )
+
+    if (!simulatedTokens.length) return null
+
+    // Calculates the amount on the pending block * the price of the token
+    const simulatedTokensValueBeforeSimulationInUSD = getTotal(simulatedTokens, {
+      includeHiddenTokens: true,
+      beforeSimulation: true
+    })?.usd
+    // Calculates the amount after the simulation * the price of the token
+    const simulatedTokensValueAfterSimulationInUSD = getTotal(simulatedTokens, {
+      includeHiddenTokens: true,
+      beforeSimulation: false
+    })?.usd
+
+    if (
+      typeof simulatedTokensValueBeforeSimulationInUSD !== 'number' ||
+      typeof simulatedTokensValueAfterSimulationInUSD !== 'number'
+    )
+      return null
+
+    const absoluteDecreaseInUSD =
+      simulatedTokensValueBeforeSimulationInUSD - simulatedTokensValueAfterSimulationInUSD
+
+    // In case the balance increased or stayed the same
+    if (absoluteDecreaseInUSD <= 0) return null
+
     const hasSignificantBalanceDecrease =
-      absoluteDecreaseInUSD >= latestTotalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
+      absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
     if (!hasSignificantBalanceDecrease) return null
 
