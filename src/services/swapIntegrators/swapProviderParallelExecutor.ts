@@ -55,31 +55,31 @@ export class SwapProviderParallelExecutor {
 
     const startTime = Date.now()
 
-    const tasks = this.#providers
-      .filter((provider) => {
-        // If the request is not chainId specific, use all providers
-        if (!uniqueChainIds.length) return true
-        // If supportedChains is not set yet, we just try to use the provider
-        if (provider.supportedChains === null) return true
-        const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
+    const supportedProviders = this.#providers.filter((provider) => {
+      // If the request is not chainId specific, use all providers
+      if (!uniqueChainIds.length) return true
+      // If supportedChains is not set yet, we just try to use the provider
+      if (provider.supportedChains === null) return true
+      const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
 
-        const res = uniqueChainIds.every((chainId) => supportedChainIds?.includes(chainId))
+      const res = uniqueChainIds.every((chainId) => supportedChainIds?.includes(chainId))
 
-        return res
-      })
-      .map((provider) =>
-        fetchMethod(provider)
-          .then((result) => ({ provider, result }))
-          .catch((err) => ({ provider, result: err as Error }))
-      )
+      return res
+    })
 
-    if (!tasks.length) {
+    if (!supportedProviders.length) {
       throw new SwapAndBridgeProviderApiError(
         `The requested network(s) are not supported by any available service provider. Chain IDs: ${uniqueChainIds.join(
           ', '
         )}`
       )
     }
+
+    const tasks = supportedProviders.map((provider) =>
+      fetchMethod(provider)
+        .then((result) => ({ provider, result }))
+        .catch((err) => ({ provider, result: err as Error }))
+    )
 
     const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
       throw new Error(
@@ -93,11 +93,11 @@ export class SwapProviderParallelExecutor {
       results.push(firstResult)
     }
 
-    const remainingTasks = this.#providers
+    const remainingTasks = supportedProviders
       // Make sure the provider was not filtered out
-      .filter((p) => !results.some((r) => r.provider === p) && !!tasks[this.#providers.indexOf(p)])
+      .filter((p) => !results.some((r) => r.provider === p))
       .map((provider) => {
-        const originalIdx = this.#providers.indexOf(provider)
+        const originalIdx = supportedProviders.indexOf(provider)
         return tasks[originalIdx]
           .then((res) => res)
           .catch((err) => ({ provider, result: err as Error }))
@@ -143,7 +143,7 @@ export class SwapProviderParallelExecutor {
       .filter(Boolean)
 
     // Modify the base message to indicate multiple providers
-    const providerNames = this.#providers.map((p) => p.name).join(' and ')
+    const providerNames = supportedProviders.map((p) => p.name).join(' and ')
     let combinedMessage = baseMessage
       .replace(/\bLiFi\b/g, providerNames)
       .replace(/\bservice provider\b/g, 'service providers')
