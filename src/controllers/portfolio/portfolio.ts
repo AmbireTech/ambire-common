@@ -43,6 +43,7 @@ import {
   NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
+  PriceCache,
   TemporaryTokens,
   ToBeLearnedAssets,
   TokenResult
@@ -120,6 +121,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
+
+  #priceCache: { [chainId: string]: PriceCache } = {}
 
   #providers: IProvidersController
 
@@ -698,13 +701,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
+      const networkPriceCache = this.#priceCache[network.chainId.toString()] || new Map()
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
-        priceCache: state.result?.priceCache,
+        priceCache: networkPriceCache,
         blockTag: 'both',
         fetchPinned: !hasNonZeroTokens,
         ...portfolioProps
       })
+
+      this.#priceCache[network.chainId.toString()] = result.priceCache
 
       const hasError = result.errors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate =
