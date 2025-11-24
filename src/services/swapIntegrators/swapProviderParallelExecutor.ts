@@ -74,7 +74,11 @@ export class SwapProviderParallelExecutor {
       )
 
     if (!tasks.length) {
-      throw new SwapAndBridgeProviderApiError('Unsupported network')
+      throw new SwapAndBridgeProviderApiError(
+        `The requested network(s) are not supported by any available service provider. Chain IDs: ${uniqueChainIds.join(
+          ', '
+        )}`
+      )
     }
 
     const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
