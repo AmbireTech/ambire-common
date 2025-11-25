@@ -130,6 +130,10 @@ export interface SwapAndBridgeRequest extends UserRequestBase {
   kind: 'swapAndBridge'
 }
 
+export interface TransferRequest extends UserRequestBase {
+  kind: 'transfer'
+}
+
 export interface UnlockRequest extends UserRequestBase {
   kind: 'unlock'
   meta: {
@@ -137,7 +141,21 @@ export interface UnlockRequest extends UserRequestBase {
   }
 }
 
+export interface DappConnectRequest extends UserRequestBase {
+  kind: 'dappConnect'
+  meta: { params: any }
+}
+
+export interface WalletWatchAssetRequest extends UserRequestBase {
+  kind: 'walletWatchAsset'
+  meta: { params: any }
+}
+
 export type UserRequest =
+  | UnlockRequest
+  | DappConnectRequest
+  | WalletAddEthereumChainRequest
+  | WalletWatchAssetRequest
   | CallsUserRequest
   | PlainTextMessageUserRequest
   | TypedMessageUserRequest
@@ -145,9 +163,8 @@ export type UserRequest =
   | AuthorizationUserRequest
   | BenzinUserRequest
   | SwitchAccountRequest
-  | WalletAddEthereumChainRequest
   | SwapAndBridgeRequest
-  | UnlockRequest
+  | TransferRequest
 
 export type SignUserRequest =
   | CallsUserRequest

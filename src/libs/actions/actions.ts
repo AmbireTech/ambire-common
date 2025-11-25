@@ -1,5 +1,6 @@
 import { AccountOpAction, Action, DappRequestAction } from '../../interfaces/actions'
 import { DappProviderRequest } from '../../interfaces/dapp'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 
 export const dappRequestMethodToActionKind = (method: DappProviderRequest['method']) => {
   if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'
@@ -14,24 +15,29 @@ export const dappRequestMethodToActionKind = (method: DappProviderRequest['metho
     return 'typedMessage'
   if (['personal_sign'].includes(method)) return 'message'
   // method to camelCase
-  return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase())
+  return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase()) as
+    | 'dappConnect'
+    | 'unlock'
+    | 'switchAccount'
+    | 'walletAddEthereumChain'
+    | 'walletWatchAsset'
 }
 
-export const getAccountOpActionsByNetwork = (
+export const getCallsUserRequestsByNetwork = (
   accountAddr: string,
-  actions: Action[]
-): { [key: string]: AccountOpAction[] } => {
-  const accountOpActions = (
-    actions.filter((a) => a.type === 'accountOp') as AccountOpAction[]
-  ).filter((action) => action.accountOp.accountAddr === accountAddr)
+  userRequests: UserRequest[]
+): { [key: string]: CallsUserRequest[] } => {
+  const callsUserRequests = (
+    userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]
+  ).filter((req) => req.accountOp.accountAddr === accountAddr)
 
-  const actionsByNetwork = accountOpActions.reduce((acc: any, accountOpAction) => {
-    const { chainId } = accountOpAction.accountOp
+  const requestsByNetwork = callsUserRequests.reduce((acc: any, req) => {
+    const { chainId } = req.accountOp
     if (!acc[chainId.toString()]) acc[chainId.toString()] = []
-    acc[chainId.toString()].push(accountOpAction)
+    acc[chainId.toString()].push(req)
     return acc
   }, {})
-  return actionsByNetwork
+  return requestsByNetwork
 }
 
 export const getAccountOpFromAction = (

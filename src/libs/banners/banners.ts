@@ -3,6 +3,7 @@ import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfa
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 import { AccountState } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
@@ -199,23 +200,23 @@ const getAccountOpBannerText = (
 }
 
 export const getAccountOpBanners = ({
-  accountOpActionsByNetwork,
+  callsUserRequestsByNetwork,
   selectedAccount,
   networks,
   swapAndBridgeRoutesPendingSignature
 }: {
-  accountOpActionsByNetwork: {
-    [key: string]: AccountOpAction[]
+  callsUserRequestsByNetwork: {
+    [key: string]: CallsUserRequest[]
   }
 
   selectedAccount: string
   networks: Network[]
   swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
-  if (!accountOpActionsByNetwork) return []
+  if (!callsUserRequestsByNetwork) return []
   const txnBanners: Banner[] = []
 
-  Object.entries(accountOpActionsByNetwork).forEach(([netId, actions]) => {
+  Object.entries(callsUserRequestsByNetwork).forEach(([netId, actions]) => {
     actions.forEach((action) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]
       const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {

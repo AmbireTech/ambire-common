@@ -3,10 +3,9 @@ import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
-import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountId, AccountOnchainState, IAccountsController } from '../../interfaces/account'
+import { AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { Action, ActionExecutionType, ActionPosition } from '../../interfaces/actions'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
@@ -32,6 +31,7 @@ import {
   OpenRequestWindowParams,
   PlainTextMessageUserRequest,
   SignUserRequest,
+  SiweMessageUserRequest,
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
@@ -41,7 +41,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   dappRequestMethodToActionKind,
-  getAccountOpActionsByNetwork
+  getCallsUserRequestsByNetwork
 } from '../../libs/actions/actions'
 import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
@@ -306,7 +306,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (allowAccountSwitch && isSignRequest(kind)) {
         if ((meta as SignUserRequest['meta']).accountAddr !== this.#selectedAccount.account?.addr) {
-          await this.#addSwitchAccountUserRequest(req)
+          await this.#addSwitchAccountUserRequest(req as SignUserRequest)
           return
         }
       }
@@ -834,7 +834,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let userRequest: UserRequest | null = null
     let position: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
-    const dapp = await this.#getDapp(request.session.id)
+    const dapp = (await this.#getDapp(request.session.id)) || null
 
     if (kind === 'calls') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -898,13 +898,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           walletSendCallsVersion,
           paymasterService
         },
-        [
-          {
-            ...dappPromise,
-            dapp: dapp || null,
-            meta: { isWalletSendCalls }
-          }
-        ]
+        [{ ...dappPromise, dapp, meta: { isWalletSendCalls } }]
       )
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -925,18 +919,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       userRequest = {
         id: new Date().getTime(),
-        action: {
-          kind: 'message',
-          message: msg[0]
-        },
-        session: request.session,
-        meta: {
-          isSignAction: true,
-          accountAddr: msgAddress,
-          chainId: network.chainId
-        },
-        dappPromise
-      } as SignUserRequest
+        kind: 'message',
+        meta: { message: msg[0], accountAddr: msgAddress },
+        dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
+      } as PlainTextMessageUserRequest
 
       // SIWE
       const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
@@ -995,15 +981,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           }
         }
 
-        userRequest.action = {
+        userRequest = {
+          ...userRequest,
           kind: 'siwe',
-          message: msg[0],
-          parsedMessage: parsedSiwe,
-          autoLoginStatus,
-          siweValidityStatus: status,
-          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
-          autoLoginDuration: this.#autoLogin.settings.duration
-        }
+          meta: {
+            ...userRequest.meta,
+            parsedMessage: parsedSiwe,
+            autoLoginStatus,
+            siweValidityStatus: status,
+            isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
+            autoLoginDuration: this.#autoLogin.settings.duration
+          }
+        } as SiweMessageUserRequest
       }
     } else if (kind === 'typedMessage') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -1050,45 +1039,44 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       userRequest = {
         id: new Date().getTime(),
-        action: {
-          kind: 'typedMessage',
+        kind: 'typedMessage',
+        meta: {
+          accountAddr: msgAddress,
           types: typedData.types,
           domain: typedData.domain,
           message: typedData.message,
           primaryType: typedData.primaryType
         },
-        session: request.session,
-        meta: {
-          isSignAction: true,
-          accountAddr: msgAddress,
-          chainId: network.chainId
-        },
-        dappPromise
-      } as SignUserRequest
+        dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
+      } as TypedMessageUserRequest
     } else {
       userRequest = {
         id: new Date().getTime(),
-        action: { kind, params: request.params },
-        meta: { isSignAction: false },
-        dappPromise
-      } as UserRequest
-    }
-
-    if (userRequest.action.kind !== 'calls') {
-      const otherUserRequestFromSameDapp = this.userRequests.find(
-        (r) => r.dappPromise?.session?.origin === dappPromise?.session?.origin
-      )
-
-      if (!otherUserRequestFromSameDapp && !!dappPromise?.session?.origin) {
-        position = 'first'
+        kind,
+        meta: { params: request.params } as any,
+        dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
       }
     }
 
     if (!userRequest) return
 
+    if (userRequest.kind !== 'calls') {
+      const otherUserRequestFromSameDapp = this.userRequests.find((r) =>
+        r.dappPromises.some((p) =>
+          userRequest.dappPromises
+            .map((promise) => promise.session.origin)
+            .includes(p.session.origin)
+        )
+      )
+
+      if (!otherUserRequestFromSameDapp && !!dappPromise.session.origin) {
+        position = 'first'
+      }
+    }
+
     const isASignOperationRequestedForAnotherAccount =
-      userRequest.meta.isSignAction &&
-      userRequest.meta.accountAddr !== this.#selectedAccount.account?.addr
+      isSignRequest(userRequest.kind) &&
+      (userRequest as SignUserRequest).meta.accountAddr !== this.#selectedAccount.account?.addr
 
     // We can simply add the user request if it's not a sign operation
     // for another account
@@ -1105,7 +1093,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const accountError = this.#getUserRequestAccountError(
       dappPromise.session.origin,
-      userRequest.meta.accountAddr
+      (userRequest as SignUserRequest).meta.accountAddr
     )
 
     if (accountError) {
@@ -1113,7 +1101,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    await this.#addSwitchAccountUserRequest(userRequest)
+    await this.#addSwitchAccountUserRequest(userRequest as SignUserRequest)
   }
 
   async #buildIntentUserRequest({
@@ -1401,20 +1389,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.addUserRequests([userRequest])
   }
 
-  #batchCallsFromUserRequests(accountAddr: AccountId, chainId: bigint): Call[] {
-    // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    return (this.userRequests.filter((r) => r.action.kind === 'calls') as SignUserRequest[]).reduce(
-      (uCalls: Call[], req) => {
-        if (req.meta.chainId === chainId && req.meta.accountAddr === accountAddr) {
-          const { calls } = req.action as Calls
-          calls.map((call) => uCalls.push({ ...call, fromUserRequestId: req.id }))
-        }
-        return uCalls
-      },
-      []
-    )
-  }
-
   #getUserRequestAccountError(dappOrigin: string, fromAccountAddr: string): string | null {
     if (ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS.includes(dappOrigin)) {
       const isAddressInAccounts = this.#accounts.accounts.some((a) => a.addr === fromAccountAddr)
@@ -1430,15 +1404,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return 'The dApp is trying to sign using an address that is not selected in the extension.'
   }
 
-  async #addSwitchAccountUserRequest(req: UserRequest) {
+  async #addSwitchAccountUserRequest(req: SignUserRequest) {
     this.userRequestsWaitingAccountSwitch.push(req)
     await this.addUserRequests(
       [
         buildSwitchAccountUserRequest({
           nextUserRequest: req,
           selectedAccountAddr: req.meta.accountAddr,
-          session: req.session || new Session(),
-          dappPromise: req.dappPromise
+          dappPromises: req.dappPromises
         })
       ],
       {
@@ -1465,9 +1438,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
 
     return getAccountOpBanners({
-      accountOpActionsByNetwork: getAccountOpActionsByNetwork(
+      callsUserRequestsByNetwork: getCallsUserRequestsByNetwork(
         this.#selectedAccount.account.addr,
-        this.actions.actionsQueue
+        this.userRequests
       ),
       selectedAccount: this.#selectedAccount.account.addr,
       networks: this.#networks.networks,

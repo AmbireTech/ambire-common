@@ -1,7 +1,11 @@
 import { Account, AccountId } from '../../interfaces/account'
 import { AccountOpAction, Action } from '../../interfaces/actions'
-import { DappProviderRequest } from '../../interfaces/dapp'
-import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
+import {
+  CallsUserRequest,
+  SignUserRequest,
+  SwitchAccountRequest,
+  UserRequest
+} from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { Call } from '../accountOp/types'
 
@@ -36,38 +40,22 @@ export const batchCallsFromUserRequests = ({
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,
   selectedAccountAddr,
-  session,
-  dappPromise
+  dappPromises
 }: {
-  nextUserRequest: UserRequest
+  nextUserRequest: SignUserRequest
   selectedAccountAddr: string
-  session?: DappProviderRequest['session']
-  dappPromise?: DappUserRequest['dappPromise']
-}): UserRequest => {
+  dappPromises: UserRequest['dappPromises']
+}): SwitchAccountRequest => {
   return {
-    id: ACCOUNT_SWITCH_USER_REQUEST,
-    action: {
-      kind: 'switchAccount',
-      params: {
-        accountAddr: selectedAccountAddr,
-        switchToAccountAddr: nextUserRequest.meta.accountAddr,
-        nextRequestType: nextUserRequest.action.kind
-      }
-    },
-    session,
+    id: new Date().getTime(),
+    kind: 'switchAccount',
     meta: {
-      isSignAction: false,
       accountAddr: selectedAccountAddr,
       switchToAccountAddr: nextUserRequest.meta.accountAddr,
-      nextRequestType: nextUserRequest.action.kind
+      nextRequestKind: nextUserRequest.kind
     },
-    dappPromise: dappPromise
-      ? {
-          ...dappPromise,
-          resolve: () => {}
-        }
-      : undefined
-  } as any
+    dappPromises
+  } as SwitchAccountRequest
 }
 
 export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
