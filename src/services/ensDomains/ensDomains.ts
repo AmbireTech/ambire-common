@@ -62,8 +62,10 @@ async function resolveENSDomain(
     }
 
   try {
-    const ethAddress = await resolver.getAddress()
-    const avatar = await resolver.getAvatar().catch(() => null)
+    const [ethAddress, avatar] = await Promise.all([
+      resolver.getAddress().catch(() => null),
+      resolver.getAvatar().catch(() => null)
+    ])
     const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
 
     return {
