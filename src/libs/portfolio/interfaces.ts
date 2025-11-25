@@ -450,3 +450,9 @@ export type KnownTokenInfo = {
   isSC?: boolean
   chainIds?: number[]
 }
+
+export type TokenValidationResult = [
+  boolean,
+  string,
+  { message: string | null; type: 'network' | 'validation' | null }
+]
