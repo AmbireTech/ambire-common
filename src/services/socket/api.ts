@@ -67,6 +67,8 @@ export class SocketAPI implements SwapProvider {
 
   isHealthy: boolean | null = null
 
+  supportedChains: SwapProvider['supportedChains'] = null
+
   constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
@@ -179,11 +181,15 @@ export class SocketAPI implements SwapProvider {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response
+    const chains = response
       .filter((c) => c.sendingEnabled && c.receivingEnabled)
       .map(({ chainId }) => ({
         chainId
       }))
+
+    this.supportedChains = chains
+
+    return chains
   }
 
   async getToTokenList({ toChainId }: { toChainId: number }): Promise<SwapAndBridgeToToken[]> {

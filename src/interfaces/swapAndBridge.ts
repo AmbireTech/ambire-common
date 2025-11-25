@@ -491,6 +491,11 @@ export interface SwapProvider {
   isHealthy: boolean | null
   updateHealth(): void
   resetHealth(): void
+  /**
+   * List of supported chains by the provider
+   * null if a successful fetch has not been made yet
+   */
+  supportedChains: SwapAndBridgeSupportedChain[] | null
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,
