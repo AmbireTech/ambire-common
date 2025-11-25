@@ -65,8 +65,9 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
     }
   }
   const newCalls = calls.map((call) => {
-    if (call.fullVisualization || !matcher[call.data.slice(0, 10)]) return call
-    const newCall = matcher[call.data.slice(0, 10)](call)
+    const match = matcher[call.data.slice(0, 10)]
+    if (call.fullVisualization || !match) return call
+    const newCall = match(call)
     if (!newCall) return call
     return newCall
   })
