@@ -264,15 +264,8 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
     }
 
     // A trick to exclude specific keys
-    const {
-      tokens,
-      collections,
-      tokenErrors,
-      priceCache,
-      toBeLearned,
-      lastExternalApiUpdateData,
-      ...result
-    } = networkState.result
+    const { tokens, collections, tokenErrors, toBeLearned, lastExternalApiUpdateData, ...result } =
+      networkState.result
 
     strippedState[chainId] = { ...networkState, result }
   })
@@ -595,8 +588,10 @@ export const calculateAndSetProjectedRewards = (
     walletPrice,
     minLvl,
     minBalance,
-    userXp
+    userXp,
+    reasonToNotDisplayProjectedRewards
   } = result
+  if (reasonToNotDisplayProjectedRewards) return
 
   const currentTotalBalanceOnSupportedChains = supportedChainIds
     .map((chainId: number) => latestBalances[chainId] || 0)

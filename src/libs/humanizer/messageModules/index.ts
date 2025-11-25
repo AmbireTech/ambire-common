@@ -6,6 +6,7 @@ import { erc721Module } from './erc721Module'
 import { legendsMessageModule } from './legendsModule'
 import { openseaMessageModule } from './openseaModule'
 import { permit2Module } from './permit2Module'
+import { safeMessageModule } from './safeModule'
 import { snapshotModule } from './snapshotModule'
 import { zealyMessageModule } from './zealyModule'
 
@@ -19,5 +20,6 @@ export {
   openseaMessageModule,
   zealyMessageModule,
   eip7702AuthorizationModule,
-  snapshotModule
+  snapshotModule,
+  safeMessageModule
 }

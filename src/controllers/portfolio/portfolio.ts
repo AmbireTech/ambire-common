@@ -43,6 +43,7 @@ import {
   NetworkState,
   PortfolioControllerState,
   PreviousHintsStorage,
+  PriceCache,
   TemporaryTokens,
   ToBeLearnedAssets,
   TokenResult
@@ -120,6 +121,8 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   }
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
+
+  #priceCache: { [chainId: string]: PriceCache } = {}
 
   #providers: IProvidersController
 
@@ -213,12 +216,12 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
       if (!isOldStructure) {
         this.#networksWithAssetsByAccounts = networksWithAssets
       }
-    } catch (e) {
+    } catch (e: any) {
       this.emitError({
         message:
           'Something went wrong when loading portfolio. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('portfolio: failed to pull keys from storage')
+        error: e
       })
     }
 
@@ -527,7 +530,7 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
     } catch (e: any) {
       this.emitError({
         level: 'silent',
-        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}).`,
+        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId}) for account ${accountId}.`,
         error: e
       })
       const tempTokens = this.temporaryTokens[network.chainId.toString()]
@@ -717,13 +720,17 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
           `a portfolio library is not initialized for ${network.name} (${network.chainId})`
         )
 
+      const networkPriceCache = this.#priceCache[network.chainId.toString()] || new Map()
+
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000 * 5,
-        priceCache: state.result?.priceCache,
+        priceCache: networkPriceCache,
         blockTag: 'both',
         fetchPinned: !hasNonZeroTokens,
         ...portfolioProps
       })
+
+      this.#priceCache[network.chainId.toString()] = result.priceCache
 
       const hasError = result.errors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate =
@@ -1384,12 +1391,18 @@ export class PortfolioController extends EventEmitter implements IPortfolioContr
   async simulateAccountOp(op: AccountOp): Promise<void> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
-    const state = await this.#accounts.getOrFetchAccountOnChainState(op.accountAddr, op.chainId)
-    const noSimulation = isBasicAccount(account, state) && network.rpcNoStateOverride
+    const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+      op.accountAddr,
+      op.chainId
+    )
+
+    const noSimulation =
+      !accountState || (isBasicAccount(account, accountState) && network.rpcNoStateOverride)
+
     const simulation = !noSimulation
       ? {
           accountOps: { [network.chainId.toString()]: [op] },
-          states: await this.#accounts.getOrFetchAccountStates(op.accountAddr)
+          states: { [network.chainId.toString()]: accountState }
         }
       : undefined
 

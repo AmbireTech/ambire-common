@@ -5,7 +5,7 @@ import {
   NetworkState as DefiNetworkState
 } from '../defiPositions/types'
 /* eslint-disable @typescript-eslint/no-use-before-define */
-import { AccountState, NetworkState, PriceCache, TokenResult } from '../portfolio/interfaces'
+import { AccountState, NetworkState, TokenResult } from '../portfolio/interfaces'
 import {
   calculateDefiPositions,
   calculateSelectedAccountPortfolio,
@@ -461,7 +461,6 @@ const PORTFOLIO_STATE: AccountState = {
       discoveryTime: 415,
       oracleCallTime: 364,
       priceUpdateTime: 1585,
-      priceCache: {} as PriceCache,
       tokens: [
         {
           amount: 100n,
@@ -564,7 +563,6 @@ const PORTFOLIO_STATE: AccountState = {
       discoveryTime: 415,
       oracleCallTime: 364,
       priceUpdateTime: 1585,
-      priceCache: {} as PriceCache,
       tokens: [
         {
           amount: 10n ** 18n,

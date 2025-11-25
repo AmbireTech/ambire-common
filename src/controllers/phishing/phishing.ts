@@ -1,3 +1,6 @@
+/* eslint-disable no-param-reassign */
+import { zeroAddress } from 'viem'
+
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { Fetch } from '../../interfaces/fetch'
 import {
@@ -132,7 +135,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const dappsToFetch = dappsData.filter(({ dappId }) => {
       const existing = this.#domainsBlacklistedStatus[dappId]
       if (!existing) return true
-      if (existing.status === 'LOADING') return true
+      if (['FAILED_TO_GET', 'LOADING'].includes(existing.status)) return true
       if (!existing.updatedAt || now - existing.updatedAt > TWO_HOURS) return true
       return false
     })
@@ -212,6 +215,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     callback?: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
     await this.initialLoadPromise
+    // only unique addresses
+    addresses = [...new Set(addresses)]
 
     if (!addresses.length) return
 
@@ -223,9 +228,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       return false
     })
 
+    // always return verified for the added accounts
     addressesInAccounts.forEach((addr) => {
       this.#addressesBlacklistedStatus[addr] = { status: 'VERIFIED', updatedAt: Date.now() }
     })
+
+    // always return verified for the zero address
+    if (addresses.includes(zeroAddress)) {
+      this.#addressesBlacklistedStatus[zeroAddress] = { status: 'VERIFIED', updatedAt: Date.now() }
+    }
 
     if (process.env.IS_TESTING === 'true') {
       addresses.forEach((addr) => {
@@ -252,7 +263,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const addressesToFetch = addresses.filter((addr) => {
       const existing = this.#addressesBlacklistedStatus[addr]
       if (!existing) return true
-      if (existing.status === 'LOADING') return true
+      if (['FAILED_TO_GET', 'LOADING'].includes(existing.status)) return true
       if (!existing.updatedAt || now - existing.updatedAt > TWO_HOURS) return true
       return false
     })

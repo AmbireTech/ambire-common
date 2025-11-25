@@ -983,7 +983,7 @@ export class MainController extends EventEmitter implements IMainController {
     if (!this.signAccountOp) return
 
     this.#abortHWTransactionSign(this.signAccountOp)
-    this.signAccountOp.reset()
+    this.signAccountOp.destroy()
     this.signAccountOp = null
     this.signAccOpInitError = null
 
