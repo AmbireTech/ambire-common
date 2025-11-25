@@ -5,6 +5,13 @@ import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { Call } from '../accountOp/types'
 
+export const isSignRequest = (kind: UserRequest['kind']) =>
+  kind === 'calls' ||
+  kind === 'message' ||
+  kind === 'typedMessage' ||
+  kind === 'siwe' ||
+  kind === 'authorization-7702'
+
 export const batchCallsFromUserRequests = ({
   accountAddr,
   chainId,
@@ -25,8 +32,6 @@ export const batchCallsFromUserRequests = ({
     []
   )
 }
-
-export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
 export const buildSwitchAccountUserRequest = ({
   nextUserRequest,

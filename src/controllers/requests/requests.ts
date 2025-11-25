@@ -7,12 +7,7 @@ import { Session } from '../../classes/session'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
 import { AccountId, AccountOnchainState, IAccountsController } from '../../interfaces/account'
-import {
-  AccountOpAction,
-  Action,
-  ActionExecutionType,
-  ActionPosition
-} from '../../interfaces/actions'
+import { Action, ActionExecutionType, ActionPosition } from '../../interfaces/actions'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
@@ -31,10 +26,12 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
-import { IUiController, WindowProps } from '../../interfaces/ui'
+import { FocusWindowParams, IUiController, WindowProps } from '../../interfaces/ui'
 import {
   CallsUserRequest,
+  OpenRequestWindowParams,
   PlainTextMessageUserRequest,
+  SignUserRequest,
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
@@ -50,10 +47,7 @@ import { getAccountOpBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
-import {
-  ACCOUNT_SWITCH_USER_REQUEST,
-  buildSwitchAccountUserRequest
-} from '../../libs/requests/requests'
+import { buildSwitchAccountUserRequest, isSignRequest } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
 import {
   buildSwapAndBridgeUserRequests,
@@ -74,6 +68,11 @@ import { SwapAndBridgeFormStatus } from '../swapAndBridge/swapAndBridge'
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
+
+const SWAP_AND_BRIDGE_WINDOW_SIZE = {
+  width: 640,
+  height: 640
+}
 
 /**
  * The RequestsController is responsible for building different user request types and managing their associated actions (within an action window).
@@ -125,7 +124,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   userRequestsWaitingAccountSwitch: UserRequest[] = []
 
-  userRequestWindow: {
+  requestWindow: {
     windowProps: WindowProps
     openWindowPromise?: Promise<WindowProps>
     focusWindowPromise?: Promise<WindowProps>
@@ -223,36 +222,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     //   ui,
     //   onSetCurrentAction: this.#onSetCurrentAction,
     //   onActionWindowClose: async () => {
-    //     // eslint-disable-next-line no-restricted-syntax
-    //     for (const r of this.userRequests) {
-    //       if (r.action.kind === 'walletAddEthereumChain') {
-    //         const chainId = r.action.params?.[0]?.chainId
-    //         // eslint-disable-next-line no-continue
-    //         if (!chainId) continue
 
-    //         const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
-    //         if (network && !network.disabled) {
-    //           await this.resolveUserRequest(null, r.id)
-    //         }
-    //       }
-    //     }
-
-    //     const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-    //       (r) => r.action.kind !== 'calls'
-    //     )
-    //     await this.rejectUserRequests(
-    //       ethErrors.provider.userRejectedRequest().message,
-    //       userRequestsToRejectOnWindowClose.map((r) => r.id),
-    //       // If the user closes a window and non-calls user requests exist,
-    //       // the window will reopen with the next request.
-    //       // For example: if the user has both a sign message and sign account op request,
-    //       // closing the window will reject the sign message request but immediately
-    //       // reopen the window for the sign account op request.
-    //       { shouldOpenNextRequest: false }
-    //     )
-
-    //     this.userRequestsWaitingAccountSwitch = []
-    //     this.emitUpdate()
     //   }
     // })
 
@@ -332,12 +302,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     // eslint-disable-next-line no-restricted-syntax
     for (const req of reqs) {
-      if (allowAccountSwitch && req.meta.accountAddr !== this.#selectedAccount.account?.addr) {
-        await this.#addSwitchAccountUserRequest(req)
-        return
+      const { kind, meta, dappPromises } = req
+
+      if (allowAccountSwitch && isSignRequest(kind)) {
+        if ((meta as SignUserRequest['meta']).accountAddr !== this.#selectedAccount.account?.addr) {
+          await this.#addSwitchAccountUserRequest(req)
+          return
+        }
       }
 
-      if (req.kind === 'calls') {
+      if (kind === 'calls') {
         // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
         //
         // Why? When a transaction is being signed and broadcast, its action is still unresolved.
@@ -350,8 +324,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (
           signStatus === 'LOADING' &&
-          signAccountOpController?.accountOp.accountAddr === req.meta.accountAddr &&
-          signAccountOpController?.accountOp.chainId === req.meta.chainId
+          signAccountOpController?.accountOp.accountAddr === meta.accountAddr &&
+          signAccountOpController?.accountOp.chainId === meta.chainId
         ) {
           // Make sure to show the error once
           if (!hasTxInProgressErrorShown) {
@@ -366,36 +340,29 @@ export class RequestsController extends EventEmitter implements IRequestsControl
               )
             })
 
-            if (req.dappPromises) {
-              req.dappPromises.forEach((p) => {
-                p.reject(
-                  ethErrors.rpc.transactionRejected({
-                    message: errorMessage
-                  })
-                )
-              })
+            dappPromises.forEach((p) => {
+              p.reject(
+                ethErrors.rpc.transactionRejected({
+                  message: errorMessage
+                })
+              )
+            })
 
-              await this.#ui.notification.create({
-                title: 'Rejected!',
-                message: errorMessage
-              })
-            }
+            await this.#ui.notification.create({
+              title: 'Rejected!',
+              message: errorMessage
+            })
 
             hasTxInProgressErrorShown = true
           }
 
           return
         }
-      }
 
-      if (req.kind === 'calls') {
         req.accountOp.calls.forEach((_, i) => {
           req.accountOp.calls[i].id = `${req.id}-${i}`
         })
-      }
 
-      const { kind, meta } = req
-      if (kind === 'calls') {
         const accountStateBefore =
           this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
@@ -421,21 +388,26 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           )
           this.emitError({ level: 'major', message, error })
 
-          if (req.dappPromises) {
-            req.dappPromises[0]?.reject(ethErrors.rpc.internal())
-            await this.#ui.notification.create({ title: "Couldn't Process Request", message })
-          }
+          req.dappPromises[0]?.reject(ethErrors.rpc.internal())
+          await this.#ui.notification.create({ title: "Couldn't Process Request", message })
 
           return
         }
 
-        const userRequestToAdd = await this.#addOrUpdateCallsUserRequest(
-          req.accountOp.calls,
-          req.meta,
-          req.dappPromises
-        )
+        userRequestsToAdd.push(req)
 
-        if (userRequestToAdd) userRequestsToAdd.push(userRequestToAdd)
+        const signAccountOp = this.#getSignAccountOp()
+        if (signAccountOp) {
+          if (signAccountOp.fromRequestId === req.id) {
+            this.#updateSignAccountOp({ accountOpData: { calls: req.accountOp.calls } })
+          }
+        } else {
+          const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
+          // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
+          // It's necessary to continue operating with the token `amountPostSimulation` amount.
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
+        }
       } else if (req.kind === 'typedMessage' || req.kind === 'message') {
         const existingMessageRequest = this.userRequests.find(
           (r) =>
@@ -503,7 +475,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // this.sendNewActionMessage(nextAction, 'queued')
         currentUserRequest = this.currentUserRequest || this.visibleUserRequests[0] || null
       }
-      await this.#setCurrentAction(currentUserRequest, {
+      await this.#setCurrentUserRequest(currentUserRequest, {
         skipFocus,
         baseWindowId
       })
@@ -512,16 +484,164 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  async #setCurrentAction(nextAction: Action | null, params?: OpenActionWindowParams) {
-    this.currentAction = nextAction
+  async #awaitPendingPromises() {
+    await this.requestWindow.closeWindowPromise
+    await this.requestWindow.focusWindowPromise
+    await this.requestWindow.openWindowPromise
+  }
+
+  async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
+    this.currentUserRequest = nextRequest
     this.emitUpdate()
 
-    if (nextAction) {
-      await this.openActionWindow(params)
+    if (nextRequest) {
+      await this.openRequestWindow(params)
       return
     }
 
-    await this.closeActionWindow()
+    await this.closeRequestWindow()
+  }
+
+  async openRequestWindow(params?: OpenRequestWindowParams) {
+    const { skipFocus, baseWindowId } = params || {}
+    await this.#awaitPendingPromises()
+
+    if (this.requestWindow.windowProps) {
+      if (!skipFocus) await this.focusRequestWindow()
+    } else {
+      let customSize
+
+      if (this.currentUserRequest?.kind === 'swapAndBridge') {
+        customSize = SWAP_AND_BRIDGE_WINDOW_SIZE
+      }
+
+      try {
+        await this.#ui.window.remove('popup')
+        this.requestWindow.openWindowPromise = this.#ui.window
+          .open({ customSize, baseWindowId })
+          .finally(() => {
+            this.requestWindow.openWindowPromise = undefined
+          })
+        this.requestWindow.windowProps = await this.requestWindow.openWindowPromise
+
+        this.emitUpdate()
+      } catch (err) {
+        this.emitError({
+          message:
+            'Failed to open a new request window. Please restart your browser if the issue persists.',
+          level: 'major',
+          error: err as Error
+        })
+      }
+    }
+  }
+
+  async focusRequestWindow(params?: FocusWindowParams) {
+    await this.#awaitPendingPromises()
+
+    if (
+      !this.visibleUserRequests.length ||
+      !this.currentUserRequest ||
+      !this.requestWindow.windowProps
+    )
+      return
+
+    try {
+      await this.#ui.window.remove('popup')
+      this.requestWindow.focusWindowPromise = this.#ui.window
+        .focus(this.requestWindow.windowProps, params)
+        .finally(() => {
+          this.requestWindow.focusWindowPromise = undefined
+        })
+
+      const newRequestWindowProps = await this.requestWindow.focusWindowPromise
+
+      if (newRequestWindowProps) {
+        this.requestWindow.windowProps = newRequestWindowProps
+      }
+
+      this.emitUpdate()
+    } catch (err) {
+      this.emitError({
+        message:
+          'Failed to focus the request window. Please restart your browser if the issue persists.',
+        level: 'major',
+        error: err as Error
+      })
+    }
+  }
+
+  async closeRequestWindow() {
+    await this.#awaitPendingPromises()
+
+    if (!this.requestWindow.windowProps) return
+
+    this.requestWindow.closeWindowPromise = this.#ui.window
+      .remove(this.requestWindow.windowProps.id)
+      .finally(() => {
+        this.requestWindow.closeWindowPromise = undefined
+      })
+
+    await this.requestWindow.closeWindowPromise
+
+    if (!this.requestWindow.windowProps) return
+
+    await this.#handleRequestWindowClose(this.requestWindow.windowProps.id)
+  }
+
+  async #handleRequestWindowClose(winId: number) {
+    if (
+      winId === this.requestWindow.windowProps?.id ||
+      (!this.visibleUserRequests.length &&
+        this.currentUserRequest &&
+        this.requestWindow.windowProps)
+    ) {
+      this.requestWindow.windowProps = null
+      this.requestWindow.loaded = false
+      this.requestWindow.pendingMessage = null
+      this.currentUserRequest = null
+
+      this.userRequests = this.userRequests.filter((r) => r.kind === 'calls')
+      const callsCount = this.userRequests.reduce((acc, request) => {
+        if (request.kind !== 'calls') return acc
+
+        return acc + (request.accountOp.calls?.length || 0)
+      }, 0)
+
+      if (this.visibleUserRequests.length) {
+        await this.#ui.notification.create({
+          title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
+          message: 'Queued pending transactions are available on your Dashboard.'
+        })
+      }
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const r of this.userRequests) {
+        if (r.kind === 'walletAddEthereumChain') {
+          const chainId = r.meta.params[0].chainId
+          // eslint-disable-next-line no-continue
+          if (!chainId) continue
+
+          const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
+          if (network && !network.disabled) await this.resolveUserRequest(null, r.id)
+        }
+      }
+
+      const userRequestsToRejectOnWindowClose = this.userRequests.filter((r) => r.kind !== 'calls')
+      await this.rejectUserRequests(
+        ethErrors.provider.userRejectedRequest().message,
+        userRequestsToRejectOnWindowClose.map((r) => r.id),
+        // If the user closes a window and non-calls user requests exist,
+        // the window will reopen with the next request.
+        // For example: if the user has both a sign message and sign account op request,
+        // closing the window will reject the sign message request but immediately
+        // reopen the window for the sign account op request.
+        { shouldOpenNextRequest: false }
+      )
+
+      this.userRequestsWaitingAccountSwitch = []
+      this.emitUpdate()
+    }
   }
 
   async removeUserRequests(
@@ -538,9 +658,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       shouldOpenNextRequest = true
     } = options || {}
 
-    const actionsToAddOrUpdate: Action[] = []
     const userRequestsToAdd: UserRequest[] = []
-    const actionsToRemove: string[] = []
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -551,8 +669,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
 
       // update the pending stuff to be signed
-      const { action, meta } = req
-      if (action.kind === 'calls') {
+      const { kind, meta } = req
+      if (kind === 'calls') {
         const network = this.#networks.networks.find((net) => net.chainId === meta.chainId)!
         const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)
         if (!account)
@@ -560,72 +678,46 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             `batchCallsFromUserRequests: tried to run for non-existent account ${meta.accountAddr}`
           )
 
-        const accountOpIndex = this.actions.actionsQueue.findIndex(
-          (a) => a.type === 'accountOp' && a.id === `${meta.accountAddr}-${meta.chainId}`
-        )
-        const accountOpAction = this.actions.actionsQueue[accountOpIndex] as
-          | AccountOpAction
-          | undefined
-        // accountOp has just been rejected or broadcasted
-        if (!accountOpAction) {
-          if (shouldUpdateAccount)
-            this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
+        if (shouldUpdateAccount)
+          this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
 
-          if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
-            this.#swapAndBridge.removeActiveRoute(meta.activeRouteId)
-          }
-          return
-        }
-        const newCalls = this.#batchCallsFromUserRequests(meta.accountAddr, meta.chainId)
-        const signAccountOp = this.#getSignAccountOp()
-        if (newCalls.length) {
-          actionsToAddOrUpdate.push({
-            ...accountOpAction,
-            accountOp: { ...accountOpAction.accountOp, calls: newCalls }
-          })
-
-          if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
-            this.#updateSignAccountOp({ accountOpData: { calls: newCalls } })
-          }
-        } else {
-          if (signAccountOp && signAccountOp.fromActionId === accountOpAction.id) {
-            this.#destroySignAccountOp()
-          }
-          actionsToRemove.push(`${meta.accountAddr}-${meta.chainId}`)
-          if (shouldUpdateAccount)
-            this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-        }
-        if (this.#swapAndBridge.activeRoutes.length && shouldRemoveSwapAndBridgeRoute) {
+        if (
+          this.#swapAndBridge.activeRoutes.length &&
+          shouldRemoveSwapAndBridgeRoute &&
+          meta.activeRouteId
+        ) {
           this.#swapAndBridge.removeActiveRoute(meta.activeRouteId)
         }
-      } else if (id === ACCOUNT_SWITCH_USER_REQUEST) {
-        const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
-          (r) => r.meta.accountAddr === this.#selectedAccount.account!.addr
-        )
-        const isSelectedAccountSwitched =
-          this.#selectedAccount.account?.addr === (action as any).params!.switchToAccountAddr
 
-        if (!isSelectedAccountSwitched) {
-          actionsToRemove.push(id)
-        } else {
-          requestsToAddOrRemove.forEach((r) => {
-            this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
-            userRequestsToAdd.push(r)
-          })
+        const signAccountOp = this.#getSignAccountOp()
+
+        if (signAccountOp && signAccountOp.fromRequestId === req.id) {
+          this.#destroySignAccountOp()
         }
-      } else {
-        actionsToRemove.push(id as string)
+        return
+      }
+      if (kind === 'switchAccount') {
+        const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
+          (r) =>
+            isSignRequest(r.kind) &&
+            (r as SignUserRequest).meta.accountAddr === this.#selectedAccount.account?.addr
+        )
+
+        requestsToAddOrRemove.forEach((r) => {
+          this.userRequestsWaitingAccountSwitch.splice(this.userRequests.indexOf(r), 1)
+          userRequestsToAdd.push(r)
+        })
       }
     })
 
-    if (actionsToRemove.length) {
-      await this.actions.removeActions(actionsToRemove, shouldOpenNextRequest)
-    }
     if (userRequestsToAdd.length) {
       await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
     }
-    if (actionsToAddOrUpdate.length) {
-      await this.actions.addOrUpdateActions(actionsToAddOrUpdate, {
+
+    if (!this.visibleUserRequests.length) {
+      await this.#setCurrentUserRequest(null)
+    } else if (shouldOpenNextRequest) {
+      await this.#setCurrentUserRequest(this.visibleUserRequests[0], {
         skipFocus: true
       })
     }
@@ -637,11 +729,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
 
-    userRequest.dappPromise?.resolve(data)
+    const { kind, meta, dappPromises } = userRequest
+
+    dappPromises.forEach((p) => {
+      p.resolve(data)
+    })
+
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
-    if (['unlock', 'dappConnect'].includes(userRequest.action.kind)) {
-      userRequest.meta.pendingToRemove = true
+    if (kind === 'unlock' || kind === 'switchAccount') {
+      meta.pendingToRemove = true
 
       setTimeout(async () => {
         await this.removeUserRequests([requestId])
@@ -667,25 +764,29 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const userRequest = this.userRequests.find((r) => r.id === requestId)
       if (!userRequest) return
 
+      const { kind, meta, dappPromises } = userRequest
+
       // if the userRequest that is about to be removed is an approval request
       // find and remove the associated pending transaction request if there is any
       // this is valid scenario for a swap & bridge txs with a BA
-      if (userRequest.action.kind === 'calls') {
-        const acc = this.#accounts.accounts.find((a) => a.addr === userRequest.meta.accountAddr)!
+      if (kind === 'calls') {
+        const acc = this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)!
 
         if (
-          isBasicAccount(acc, this.#accounts.accountStates[acc.addr][userRequest.meta.chainId]) &&
-          userRequest.meta.isSwapAndBridgeCall
+          isBasicAccount(acc, this.#accounts.accountStates[acc.addr][meta.chainId.toString()]) &&
+          meta.isSwapAndBridgeCall
         ) {
           userRequestsToRemove.push(
-            userRequest.meta.activeRouteId,
-            `${userRequest.meta.activeRouteId}-approval`,
-            `${userRequest.meta.activeRouteId}-revoke-approval`
+            meta.activeRouteId || '',
+            `${meta.activeRouteId}-approval`,
+            `${meta.activeRouteId}-revoke-approval`
           )
         }
       }
 
-      userRequest.dappPromise?.reject(ethErrors.provider.userRejectedRequest<any>(err))
+      dappPromises.forEach((p) => {
+        p.reject(ethErrors.provider.userRejectedRequest<any>(err))
+      })
     })
 
     await this.removeUserRequests([...userRequestsToRemove, ...requestIds], options)
@@ -730,7 +831,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
     await this.#guardHWSigning(true)
 
-    let userRequest = null
+    let userRequest: UserRequest | null = null
     let position: ActionPosition = 'last'
     const kind = dappRequestMethodToActionKind(request.method)
     const dapp = await this.#getDapp(request.session.id)
@@ -789,36 +890,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].version ?? '1.0.0'
         : undefined
 
-      const callsUserRequests = this.userRequests.filter(
-        (req): req is CallsUserRequest => req.kind === 'calls'
-      )
-      const existingUserRequest = callsUserRequests.find(
-        (r) => r.accountOp.accountAddr === accountAddr && r.accountOp.chainId === network.chainId
-      )
-
-      userRequest = {
-        id: new Date().getTime(),
-        kind: 'calls',
-        action: {
-          kind,
-          calls: calls.map((call) => ({
-            to: call.to,
-            data: call.data || '0x',
-            value: call.value ? getBigInt(call.value) : 0n
-          }))
-        },
-        session: new Session({ windowId: request.session.windowId }),
-        meta: {
-          dapp,
-          isSignAction: true,
-          isWalletSendCalls,
-          walletSendCallsVersion,
+      userRequest = await this.#buildCallsUserRequest(
+        calls,
+        {
           accountAddr,
           chainId: network.chainId,
+          walletSendCallsVersion,
           paymasterService
         },
-        dappPromise
-      } as CallsUserRequest
+        [
+          {
+            ...dappPromise,
+            dapp: dapp || null,
+            meta: { isWalletSendCalls }
+          }
+        ]
+      )
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -981,11 +1068,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } else {
       userRequest = {
         id: new Date().getTime(),
-        session: request.session,
         action: { kind, params: request.params },
         meta: { isSignAction: false },
         dappPromise
-      } as DappUserRequest
+      } as UserRequest
     }
 
     if (userRequest.action.kind !== 'calls') {
@@ -1389,11 +1475,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
   }
 
-  async #addOrUpdateCallsUserRequest(
+  async #buildCallsUserRequest(
     calls: Call[],
     meta: CallsUserRequest['meta'],
     dappPromises: CallsUserRequest['dappPromises'] = []
   ) {
+    let callUserRequest: CallsUserRequest
     const existingUserRequest = this.userRequests.find(
       (r) =>
         r.kind === 'calls' &&
@@ -1402,80 +1489,65 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ) as CallsUserRequest | undefined
 
     if (existingUserRequest) {
-      existingUserRequest.accountOp.calls = [
-        ...existingUserRequest.accountOp.calls,
-        ...calls.map((call) => ({
-          to: call.to,
-          data: call.data || '0x',
-          value: call.value ? getBigInt(call.value) : 0n
-        }))
-      ].map((c, i) => ({ ...c, id: `${existingUserRequest.id}-${i}` }))
-      existingUserRequest.accountOp.meta = { ...existingUserRequest.accountOp.meta, ...meta }
-      if (dappPromises) {
-        existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
+      callUserRequest = {
+        ...existingUserRequest,
+        accountOp: {
+          ...existingUserRequest.accountOp,
+          calls: [
+            ...existingUserRequest.accountOp.calls,
+            ...calls.map((call) => ({
+              to: call.to,
+              data: call.data || '0x',
+              value: call.value ? getBigInt(call.value) : 0n
+            }))
+          ].map((c, i) => ({ ...c, id: `${existingUserRequest.id}-${i}` })),
+          meta: { ...existingUserRequest.accountOp.meta, ...meta }
+        },
+        dappPromises: [...existingUserRequest.dappPromises, ...dappPromises]
       }
+    } else {
+      const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+      const accountStateBefore =
+        this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-      const signAccountOp = this.#getSignAccountOp()
-      if (signAccountOp) {
-        if (
-          signAccountOp.accountOp.accountAddr === meta.accountAddr &&
-          signAccountOp.accountOp.chainId === meta.chainId
-        ) {
-          this.#updateSignAccountOp({
-            accountOpData: { calls: existingUserRequest.accountOp.calls }
-          })
-        }
-      }
-      return undefined
+      // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+      // otherwise wait for the fetch to complete (no matter how long it takes).
+      // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+      const accountState = (await Promise.race([
+        this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+        // Fallback to the old account state if it exists and the fetch takes too long
+        accountStateBefore
+          ? new Promise((res) => {
+              setTimeout(() => res(accountStateBefore), 2000)
+            })
+          : new Promise(() => {}) // Explicitly never-resolving promise
+      ])) as any
+
+      callUserRequest = {
+        id: `${meta.accountAddr}-${meta.chainId}`,
+        kind: 'calls',
+        meta,
+        accountOp: {
+          accountAddr: meta.accountAddr,
+          chainId: meta.chainId,
+          signingKeyAddr: null,
+          signingKeyType: null,
+          gasLimit: null,
+          gasFeePayment: null,
+          nonce: accountState.nonce,
+          signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
+          calls: calls.map((call) => ({
+            to: call.to,
+            data: call.data || '0x',
+            value: call.value ? getBigInt(call.value) : 0n
+          })),
+          meta
+        },
+        dappPromises
+      } as CallsUserRequest
     }
 
-    const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
-    const accountStateBefore =
-      this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
-
-    // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
-    // otherwise wait for the fetch to complete (no matter how long it takes).
-    // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-    const accountState = (await Promise.race([
-      this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
-      // Fallback to the old account state if it exists and the fetch takes too long
-      accountStateBefore
-        ? new Promise((res) => {
-            setTimeout(() => res(accountStateBefore), 2000)
-          })
-        : new Promise(() => {}) // Explicitly never-resolving promise
-    ])) as any
-
-    const userRequest = {
-      id: new Date().getTime(),
-      kind: 'calls',
-      meta,
-      accountOp: {
-        accountAddr: meta.accountAddr,
-        chainId: meta.chainId,
-        signingKeyAddr: null,
-        signingKeyType: null,
-        gasLimit: null,
-        gasFeePayment: null,
-        nonce: accountState.nonce,
-        signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-        calls: calls.map((call) => ({
-          to: call.to,
-          data: call.data || '0x',
-          value: call.value ? getBigInt(call.value) : 0n
-        })),
-        meta
-      },
-      dappPromises
-    } as CallsUserRequest
-
-    const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)
-    // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
-    // It's necessary to continue operating with the token `amountPostSimulation` amount.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#updateSelectedAccountPortfolio(network ? [network] : undefined)
-
-    return userRequest
+    return callUserRequest
   }
 
   toJSON() {

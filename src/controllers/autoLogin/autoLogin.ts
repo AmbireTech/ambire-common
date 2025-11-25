@@ -413,7 +413,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
           kind: 'message',
           message: messageToSign.message
         },
-        fromActionId: 'siwe-auto-login',
+        fromRequestId: 'siwe-auto-login',
         signature: null
       }
     })

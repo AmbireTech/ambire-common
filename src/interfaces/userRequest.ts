@@ -13,7 +13,7 @@ import { EIP7702Signature } from './signatures'
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
-  fromActionId: SignMessageAction['id']
+  fromRequestId: SignMessageAction['id']
   accountAddr: AccountId
   chainId: bigint
   content:
@@ -106,6 +106,34 @@ export interface SwitchAccountRequest extends UserRequestBase {
     accountAddr: string
     switchToAccountAddr: string
     nextRequestKind: UserRequest['kind']
+    pendingToRemove?: boolean
+  }
+}
+export interface WalletAddEthereumChainRequest extends UserRequestBase {
+  kind: 'walletAddEthereumChain'
+  meta: {
+    params: [
+      {
+        chainId: string
+        chainName: string
+        rpcUrls: string[]
+        nativeCurrency: { name: string; symbol: string; decimals: number }
+        iconUrls?: string[]
+        blockExplorerUrls?: string[]
+      }
+    ]
+    [key: string]: any
+  }
+}
+
+export interface SwapAndBridgeRequest extends UserRequestBase {
+  kind: 'swapAndBridge'
+}
+
+export interface UnlockRequest extends UserRequestBase {
+  kind: 'unlock'
+  meta: {
+    pendingToRemove?: boolean
   }
 }
 
@@ -117,4 +145,22 @@ export type UserRequest =
   | AuthorizationUserRequest
   | BenzinUserRequest
   | SwitchAccountRequest
-// | UserRequestBase
+  | WalletAddEthereumChainRequest
+  | SwapAndBridgeRequest
+  | UnlockRequest
+
+export type SignUserRequest =
+  | CallsUserRequest
+  | PlainTextMessageUserRequest
+  | TypedMessageUserRequest
+  | SiweMessageUserRequest
+  | AuthorizationUserRequest
+
+export type RequestPosition = 'first' | 'last'
+
+export type RequestExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
+
+export type OpenRequestWindowParams = {
+  skipFocus?: boolean
+  baseWindowId?: number
+}

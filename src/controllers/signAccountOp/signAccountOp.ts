@@ -195,7 +195,7 @@ export type OnboardingSuccessProps = {
   submittedAccountOp: SubmittedAccountOp
   accountOp: AccountOp
   type: SignAccountOpType
-  fromActionId: string | number
+  fromRequestId: string | number
 }
 
 export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void>
@@ -226,7 +226,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #phishing: IPhishingController
 
   // this is not used in the controller directly but it's being read outside
-  fromActionId: AccountOpAction['id']
+  fromRequestId: AccountOpAction['id']
 
   /**
    * Never modify this directly, use #updateAccountOp instead.
@@ -346,7 +346,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     activity,
     provider,
     phishing,
-    fromActionId,
+    fromRequestId,
     accountOp,
     isSignRequestStillActive,
     shouldSimulate,
@@ -367,7 +367,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     activity: IActivityController
     provider: RPCProvider
     phishing: IPhishingController
-    fromActionId: AccountOpAction['id']
+    fromRequestId: AccountOpAction['id']
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean
@@ -394,7 +394,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#network = network
     this.#activity = activity
     this.#phishing = phishing
-    this.fromActionId = fromActionId
+    this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
     this.#isSignRequestStillActive = isSignRequestStillActive
 
@@ -2321,7 +2321,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
     const accountOp = this.accountOp
     const estimation = this.estimation.estimation
-    const actionId = this.fromActionId
+    const actionId = this.fromRequestId
     const bundlerSwitcher = this.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
@@ -2614,7 +2614,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       submittedAccountOp,
       accountOp: this.accountOp,
       type: this.#type,
-      fromActionId: this.fromActionId
+      fromRequestId: this.fromRequestId
     })
 
     // Allow the user to broadcast a new transaction;

@@ -287,7 +287,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       this.signedMessage = {
-        fromActionId: this.messageToSign.fromActionId,
+        fromRequestId: this.messageToSign.fromRequestId,
         accountAddr: this.messageToSign.accountAddr,
         chainId: this.messageToSign.chainId,
         content: this.messageToSign.content,

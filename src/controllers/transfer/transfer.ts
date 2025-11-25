@@ -715,7 +715,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       network,
       provider,
       phishing: this.#phishing,
-      fromActionId: randomId(), // the account op and the action are fabricated,
+      fromRequestId: randomId(), // the account op and the action are fabricated,
       accountOp,
       isSignRequestStillActive: () => true,
       shouldSimulate: false,
