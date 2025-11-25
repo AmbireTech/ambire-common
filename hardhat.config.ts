@@ -38,6 +38,18 @@ const config: HardhatUserConfig = {
       url: 'https://sepolia.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
+    opSepolia: {
+      url: 'https://sepolia.optimism.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    sepolia: {
+      url: 'https://eth-sepolia.g.alchemy.com/v2/demo',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
+    arbSepolia: {
+      url: 'https://sepolia-rollup.arbitrum.io/rpc',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
+    },
     optimism: {
       url: 'https://invictus.ambire.com/optimism',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
@@ -48,10 +60,6 @@ const config: HardhatUserConfig = {
     },
     ethereum: {
       url: 'https://invictus.ambire.com/ethereum',
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
-    },
-    sepolia: {
-      url: 'https://eth-sepolia.public.blastapi.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : undefined
     },
     binance: {
@@ -159,6 +167,30 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: 'https://api.bscscan.com/api',
           browserURL: 'https://api.bscscan.com/'
+        }
+      },
+      {
+        network: 'arbSepolia',
+        chainId: 421614,
+        urls: {
+          apiURL: 'https://api.sepolia.arbiscan.io/api',
+          browserURL: 'https://api.sepolia.arbiscan.io'
+        }
+      },
+      {
+        network: 'opSepolia',
+        chainId: 11155420,
+        urls: {
+          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
+          browserURL: 'https://api-sepolia-optimistic.etherscan.io/api'
+        }
+      },
+      {
+        network: 'sepolia',
+        chainId: 11155111,
+        urls: {
+          apiURL: 'https://api-sepolia.etherscan.io/api',
+          browserURL: 'https://api-sepolia.etherscan.io/'
         }
       },
       {
