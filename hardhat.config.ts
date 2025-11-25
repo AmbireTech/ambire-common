@@ -25,6 +25,11 @@ const config: HardhatUserConfig = {
     coinmarketcap: 'c47b3b52-863b-4ffe-8673-955a09a393c2',
     token: 'ETH'
   },
+  sourcify: {
+    enabled: true,
+    apiUrl: 'https://sourcify-api-monad.blockvision.org/',
+    browserUrl: 'https://monadvision.com/'
+  },
   networks: {
     base: {
       url: 'https://mainnet.base.org',
