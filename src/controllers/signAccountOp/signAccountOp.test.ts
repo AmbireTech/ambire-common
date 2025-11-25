@@ -695,8 +695,6 @@ describe('SignAccountOp Controller ', () => {
     // @ts-ignore
     const estimationId = controller.estimation.callId || 0
 
-    console.log('Debug: estimation id', estimationId)
-
     jest.spyOn(estimationLib, 'getEstimation').mockImplementationOnce(async (...allParams) => {
       await wait(8000)
 
