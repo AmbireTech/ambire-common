@@ -345,7 +345,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           description: pd.description,
           url: pd.url,
           icon: pd.icon,
-          category: pd.category ? CATEGORY_MAP[pd.category] : pd.category || null,
+          category: pd.category ? CATEGORY_MAP[pd.category] || pd.category : null,
           tvl: null,
           chainIds: pd.chainIds || [],
           isConnected: prevStoredDapp?.isConnected ?? false,
