@@ -56,15 +56,6 @@ export class EstimationController extends EventEmitter {
 
   #getIsAccountOpOutdated?: (op: AccountOp) => boolean
 
-  /**
-   * Used to prevent race conditions in estimation calls
-   * @example
-   * - The estimation is called and the call takes 10sec
-   * - It's called again after 1 second with different account op. It resolves fast (after 2sec)
-   * - The estimation of the second account op is set, but the first call resolves and overwrites it
-   */
-  protected callId = 0
-
   constructor(
     keystore: IKeystoreController,
     accounts: IAccountsController,
