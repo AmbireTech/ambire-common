@@ -566,19 +566,19 @@ describe('KeystoreController', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     expect(keystore.seeds.length).toBe(1)
-    expect(keystore.seeds[0].label).toBe('Recovery Phrase 1')
-    expect(keystore.seeds[0].hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    expect(keystore.seeds[0]!.label).toBe('Recovery Phrase 1')
+    expect(keystore.seeds[0]!.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
   })
   test('should update existing seed', async () => {
     expect(keystore.seeds.length).toBe(1)
     await keystore.updateSeed({
-      id: keystore.seeds[0].id,
+      id: keystore.seeds[0]!.id,
       label: 'New Label',
       hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE
     })
     expect(keystore.seeds.length).toBe(1)
-    expect(keystore.seeds[0].label).toBe('New Label')
-    expect(keystore.seeds[0].hdPathTemplate).toBe(LEGACY_POPULAR_DERIVATION_TEMPLATE)
+    expect(keystore.seeds[0]!.label).toBe('New Label')
+    expect(keystore.seeds[0]!.hdPathTemplate).toBe(LEGACY_POPULAR_DERIVATION_TEMPLATE)
   })
 })
 

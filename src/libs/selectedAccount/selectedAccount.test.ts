@@ -177,7 +177,7 @@ describe('Selected Account lib', () => {
     it('should add the value of hidden collateral tokens to the total balance', () => {
       const clonedPortfolioEthereumState = structuredClone(PORTFOLIO_STATE['1']) as NetworkState
       const originalToken = structuredClone(
-        DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]
+        DEFI_STATE['1']?.positionsByProvider[2]?.positions[0]?.assets[0]!
       )
       if (!originalToken) throw new Error('Original token not found')
 
@@ -819,7 +819,7 @@ const DEFI_STATE: DefiAccountState = {
 }
 
 if (PORTFOLIO_STATE['1']?.result?.tokens?.[0]) {
-  PORTFOLIO_STATE['1'].result.tokens[0].amount = 10n
+  PORTFOLIO_STATE['1'].result.tokens[0]!.amount = 10n
 }
 PORTFOLIO_STATE['1']!.accountOps = [
   {

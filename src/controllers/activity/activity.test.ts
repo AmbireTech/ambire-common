@@ -118,7 +118,7 @@ const providers: RPCProviders = {}
 
 networks.forEach((network) => {
   providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.chainId.toString()].isWorking = true
+  providers[network.chainId.toString()]!.isWorking = true
 })
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
@@ -243,7 +243,7 @@ describe('Activity Controller ', () => {
     })
 
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(ACCOUNTS[1])
+    await selectedAccountCtrl.setAccount(ACCOUNTS[1]!)
   })
 
   // Clear activity storage after each test
@@ -261,13 +261,13 @@ describe('Activity Controller ', () => {
       const controllerAccountsOps = controller.accountsOps
       const storageAccountsOps = await storage.get('accountsOps', {})
 
-      expect(controllerAccountsOps[sessionId].result).toEqual({
+      expect(controllerAccountsOps[sessionId]!.result).toEqual({
         items: [{ ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }], // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
         itemsTotal: 1,
         currentPage: 0,
         maxPages: 1
       })
-      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']['1']).toEqual([
+      expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']!['1']).toEqual([
         { ...SUBMITTED_ACCOUNT_OP, status: 'broadcasted-but-not-confirmed' }
       ])
     })
@@ -412,7 +412,7 @@ describe('Activity Controller ', () => {
 
       const controllerAccountsOps = controller.accountsOps
 
-      expect(controllerAccountsOps[sessionId].result).toEqual({
+      expect(controllerAccountsOps[sessionId]!.result).toEqual({
         items: [
           {
             accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -486,7 +486,7 @@ describe('Activity Controller ', () => {
 
       await controller.addAccountOp(accountOp)
       await controller.updateAccountsOpsStatuses()
-      expect(controller.accountsOps[sessionId].result).toEqual({
+      expect(controller.accountsOps[sessionId]!.result).toEqual({
         items: [{ ...accountOp, status: 'success' }], //  we expect success here
         itemsTotal: 1,
         currentPage: 0,
@@ -532,7 +532,7 @@ describe('Activity Controller ', () => {
       await controller.updateAccountsOpsStatuses()
       const controllerAccountsOps = controller.accountsOps
 
-      expect(controllerAccountsOps[sessionId].result).toEqual({
+      expect(controllerAccountsOps[sessionId]!.result).toEqual({
         items: [{ ...accountOp, status: 'failure' }], // we expect failure here
         itemsTotal: 1,
         currentPage: 0,
@@ -551,12 +551,12 @@ describe('Activity Controller ', () => {
       await controller.addAccountOp(accountOp)
 
       expect(controller.banners.length).toBe(1)
-      expect(controller.banners[0].category).toBe('pending-to-be-confirmed-acc-ops')
-      expect(controller.banners[0].meta!.accountOpsCount).toBe(1)
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+      expect(controller.banners[0]!.meta!.accountOpsCount).toBe(1)
       await controller.addAccountOp({ ...accountOp, timestamp: Date.now() })
       expect(controller.banners.length).toBe(1)
-      expect(controller.banners[0].category).toBe('pending-to-be-confirmed-acc-ops')
-      expect(controller.banners[0].meta!.accountOpsCount).toBe(2)
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
+      expect(controller.banners[0]!.meta!.accountOpsCount).toBe(2)
     })
     test('should display failed txns banners and hide them on session removal', async () => {
       const { controller } = await prepareTest()
@@ -570,7 +570,7 @@ describe('Activity Controller ', () => {
       await controller.addAccountOp(accountOp)
 
       expect(controller.banners.length).toBe(1)
-      expect(controller.banners[0].category).toBe('pending-to-be-confirmed-acc-ops')
+      expect(controller.banners[0]!.category).toBe('pending-to-be-confirmed-acc-ops')
       const spy = jest.spyOn(submittedAccountOp, 'updateOpStatus')
       spy.mockImplementationOnce((op) => {
         // eslint-disable-next-line no-param-reassign
@@ -580,12 +580,12 @@ describe('Activity Controller ', () => {
 
       await controller.updateAccountsOpsStatuses()
       expect(controller.banners.length).toBe(1)
-      expect(controller.banners[0].category).toBe('failed-acc-ops')
-      expect(controller.banners[0].meta!.seen).toBe(false)
+      expect(controller.banners[0]!.category).toBe('failed-acc-ops')
+      expect(controller.banners[0]!.meta!.seen).toBe(false)
       await controller.filterAccountsOps('dashboard-test-id', {
         account: accountOp.accountAddr
       })
-      expect(controller.banners[0].meta!.seen).toBe(true)
+      expect(controller.banners[0]!.meta!.seen).toBe(true)
       controller.resetAccountsOpsFilters('dashboard-test-id')
       expect(controller.banners.length).toBe(0)
     })
@@ -678,7 +678,7 @@ describe('Activity Controller ', () => {
     //   await controller.updateAccountsOpsStatuses()
     //   const controllerAccountsOps = controller.accountsOps
 
-    //   expect(controllerAccountsOps[sessionId].result).toEqual({
+    //   expect(controllerAccountsOps[sessionId]!.result).toEqual({
     //     items: [accountOpCompleted, { ...accountOp, status: 'unknown-but-past-nonce' }], // we expect unknown-but-past-nonce status here
     //     itemsTotal: 2,
     //     currentPage: 0,
@@ -735,11 +735,11 @@ describe('Activity Controller ', () => {
         itemsPerPage: 1000
       })
       const controllerAccountsOps = controller.accountsOps
-      expect(controllerAccountsOps[sessionId].result.itemsTotal).toEqual(1000)
+      expect(controllerAccountsOps[sessionId]!.result!.itemsTotal).toEqual(1000)
       // newest added item will be added to the beginning of the array
       // in this case newest item is with nonce 1499n and should be at index 0
-      expect(controllerAccountsOps[sessionId].result.items[0].nonce).toEqual(1499n)
-      expect(controllerAccountsOps[sessionId].result.items[999].nonce).toEqual(500n)
+      expect(controllerAccountsOps[sessionId]!.result!.items[0]!.nonce).toEqual(1499n)
+      expect(controllerAccountsOps[sessionId]!.result!.items[999]!.nonce).toEqual(500n)
     })
   })
 
@@ -768,7 +768,7 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
       const storageSignedMessages = await storage.get('signedMessages', {})
 
-      expect(controllerSignedMessages[sessionId].result).toEqual({
+      expect(controllerSignedMessages[sessionId]!.result).toEqual({
         items: [signedMessage],
         itemsTotal: 1,
         currentPage: 0,
@@ -807,7 +807,7 @@ describe('Activity Controller ', () => {
 
       const controllerSignedMessages = controller.signedMessages
 
-      expect(controllerSignedMessages[sessionId].result).toEqual({
+      expect(controllerSignedMessages[sessionId]!.result).toEqual({
         items: [SIGNED_MESSAGE],
         itemsTotal: 3,
         currentPage: 1, // index based
@@ -835,11 +835,11 @@ describe('Activity Controller ', () => {
       })
       const controllerSignedMessages = controller.signedMessages
 
-      expect(controllerSignedMessages[sessionId].result.itemsTotal).toEqual(1000)
+      expect(controllerSignedMessages[sessionId]!.result!.itemsTotal).toEqual(1000)
       // newest added item will be added to the beginning of the array
       // in this case newest item is with signature 1499 and should be at index 0
-      expect(controllerSignedMessages[sessionId].result.items[0].signature).toEqual('1499')
-      expect(controllerSignedMessages[sessionId].result.items[999].signature).toEqual('500')
+      expect(controllerSignedMessages[sessionId]!.result!.items[0]!.signature).toEqual('1499')
+      expect(controllerSignedMessages[sessionId]!.result!.items[999]!.signature).toEqual('500')
     })
   })
   test('removeAccountData', async () => {
@@ -867,14 +867,14 @@ describe('Activity Controller ', () => {
     await controller.addSignedMessage(SIGNED_MESSAGE, INIT_PARAMS.account)
 
     // Validate that they are in the controller
-    expect(controller.accountsOps[sessionId].result.items.length).toEqual(1)
-    expect(controller.signedMessages[sessionId].result.items.length).toEqual(1)
+    expect(controller.accountsOps[sessionId]!.result!.items.length).toEqual(1)
+    expect(controller.signedMessages[sessionId]!.result!.items.length).toEqual(1)
 
     // Remove account data
     await controller.removeAccountData('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
 
     // Validate that the account data is removed
-    expect(controller.accountsOps[sessionId].result.items.length).toEqual(0)
-    expect(controller.signedMessages[sessionId].result.items.length).toEqual(0)
+    expect(controller.accountsOps[sessionId]!.result!.items.length).toEqual(0)
+    expect(controller.signedMessages[sessionId]!.result!.items.length).toEqual(0)
   })
 })

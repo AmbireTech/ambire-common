@@ -152,8 +152,7 @@ describe('AccountState', () => {
 
     expect(state.length).toBe(6)
 
-    const v1Acc = state[0]
-    expect(v1Acc.isEOA).toBe(false)
+    const v1Acc = state[0]!    expect(v1Acc.isEOA).toBe(false)
     expect(v1Acc.isV2).toBeFalsy()
     expect(v1Acc.isDeployed).toBeTruthy()
     expect(v1Acc.currentBlock).toBeGreaterThan(0)
@@ -197,8 +196,7 @@ describe('AccountState', () => {
 
     expect(state.length).toBe(1)
 
-    const eoa7702 = state[0]
-    expect(eoa7702.isEOA).toBeTruthy()
+    const eoa7702 = state[0]!    expect(eoa7702.isEOA).toBeTruthy()
     expect(eoa7702.isV2).toBeTruthy()
     expect(eoa7702.isDeployed).toBeTruthy()
     expect(eoa7702.isSmarterEoa).toBeTruthy()

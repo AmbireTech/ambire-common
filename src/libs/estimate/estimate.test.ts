@@ -391,11 +391,11 @@ describe('estimate', () => {
     expect(providerGas.gasUsed).toBe(21000n)
 
     // there should be native here
-    expect(providerGas.feePaymentOptions[0].availableAmount).toBeGreaterThan(0)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(undefined)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(null)
-    expect(providerGas.feePaymentOptions[0].token.address).toBe(ZeroAddress)
-    expect(providerGas.feePaymentOptions[0].token.symbol).toBe('ETH')
+    expect(providerGas.feePaymentOptions[0]!.availableAmount).toBeGreaterThan(0)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(undefined)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(null)
+    expect(providerGas.feePaymentOptions[0]!.token.address).toBe(ZeroAddress)
+    expect(providerGas.feePaymentOptions[0]!.token.symbol).toBe('ETH')
   })
 
   it('[EOA]:Polygon | sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
@@ -454,10 +454,10 @@ describe('estimate', () => {
 
     // availableAmount for the providerGas is above 0 as it doesn't have
     // the subtraction that the ambire estimation has
-    expect(providerGas.feePaymentOptions[0].availableAmount).toBeGreaterThan(0n)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(undefined)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(null)
-    expect(providerGas.feePaymentOptions[0].token.address).toBe(ZeroAddress)
+    expect(providerGas.feePaymentOptions[0]!.availableAmount).toBeGreaterThan(0n)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(undefined)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(null)
+    expect(providerGas.feePaymentOptions[0]!.token.address).toBe(ZeroAddress)
 
     expect(res.ambire instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation

@@ -394,8 +394,7 @@ describe('Actions Controller', () => {
 
       if (emitCounter === 1) {
         expect(actionsCtrl.actionWindow.windowProps).toBe(null)
-        expect(actionsCtrl.actionsQueue).toHaveLength(1) // the remaining accountOp action of the accounts[0]
-        expect(actionsCtrl.visibleActionsQueue).toHaveLength(0) // accounts[1] should have no actions
+        expect(actionsCtrl.actionsQueue).toHaveLength(1) // the remaining accountOp action of the accounts[0]!        expect(actionsCtrl.visibleActionsQueue).toHaveLength(0) // accounts[1] should have no actions
         expect(actionsCtrl.currentAction).toEqual(null)
 
         unsubscribe()

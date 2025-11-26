@@ -555,7 +555,7 @@ describe('Portfolio Controller ', () => {
 
       const accountOp2 = await getAccountOp()
       // Change the address
-      accountOp2['1'][0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
+      accountOp2['1'][0]!.accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp2,
@@ -815,7 +815,7 @@ describe('Portfolio Controller ', () => {
         1n
       )
       controller.addErc721sToBeLearned(
-        [[DUPLICATE_COLLECTION[0].toLowerCase(), [1n, 2n]]],
+        [[DUPLICATE_COLLECTION[0]!.toLowerCase(), [1n, 2n]]],
         account.addr,
         1n
       )
@@ -830,7 +830,7 @@ describe('Portfolio Controller ', () => {
       ).toBe(1)
       expect(
         Object.keys(allHints.specialErc721Hints.learn).filter(
-          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0].toLowerCase()
+          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0]!.toLowerCase()
         ).length
       ).toBe(1)
       expect(allHints.specialErc721Hints.learn[DUPLICATE_COLLECTION[0]].length).toBe(2)
@@ -890,7 +890,7 @@ describe('Portfolio Controller ', () => {
 
       expect(
         Object.keys(learnedAssets.erc721s?.[`${1}:${account.addr}`] || {}).filter((addr) =>
-          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0].toLowerCase())
+          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0]!.toLowerCase())
         ).length
       ).toBe(2)
     })
@@ -1438,8 +1438,7 @@ describe('Portfolio Controller ', () => {
         ...Object.keys(learnedAssets.erc20s[key]),
         ...Object.keys(learnedAssets.erc20s[key2])
       ])
-      const firstNftAddr = Object.keys(learnedAssets.erc721s[key])[0].split(':')[0]
-      expect(hints.additionalErc721Hints).toEqual({
+      const firstNftAddr = Object.keys(learnedAssets.erc721s[key])[0]!.split(':')[0]!      expect(hints.additionalErc721Hints).toEqual({
         ...learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {})),
         ...learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key2] || {})),
         [firstNftAddr]: [1n, 2n, 3n, 10n, 11n, 12n]

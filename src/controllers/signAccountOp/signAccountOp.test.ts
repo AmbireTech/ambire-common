@@ -1103,8 +1103,10 @@ describe('Negative cases', () => {
 
     const errors = controller.errors
     expect(errors.length).toBe(1)
-    expect(errors[0].title).toBe(
-      `Currently, ${controller.estimation.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+    expect(errors[0]!.title).toBe(
+      `Currently, ${
+        controller.estimation.availableFeeOptions[0]!.token.symbol
+      } is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
     )
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
@@ -1532,7 +1534,7 @@ describe('Negative cases', () => {
 
     const errors = controller.errors
     expect(errors.length).toBe(1)
-    expect(errors[0].title.indexOf('Insufficient funds to cover the fee') !== -1).toBe(true)
+    expect(errors[0]!.title.indexOf('Insufficient funds to cover the fee') !== -1).toBe(true)
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
 

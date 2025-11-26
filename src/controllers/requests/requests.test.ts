@@ -288,7 +288,7 @@ describe('RequestsController ', () => {
     })
 
     expect(controller.userRequests.length).toBe(1)
-    expect(controller.userRequests[0].action.kind).toBe('dappConnect')
+    expect(controller.userRequests[0]!.action.kind).toBe('dappConnect')
   })
   test('build transfer request', async () => {
     const { controller } = await prepareTest()
@@ -319,7 +319,7 @@ describe('RequestsController ', () => {
     })
 
     expect(controller.userRequests.length).toBe(1)
-    expect(controller.userRequests[0].action.kind).toBe('calls')
+    expect(controller.userRequests[0]!.action.kind).toBe('calls')
   })
   test('resolve user request', async () => {
     const { controller } = await prepareTest()
