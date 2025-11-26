@@ -12,7 +12,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -53,6 +53,12 @@ export class EstimationController extends EventEmitter {
   #notFatalBundlerError?: Error
 
   #activity: IActivityController
+
+  /**
+   * Used to prevent slow estimations for a past accountOp overwriting
+   * the latest estimation results
+   */
+  private lastAccountOpId: string | null = null
 
   constructor(
     keystore: IKeystoreController,
@@ -100,7 +106,7 @@ export class EstimationController extends EventEmitter {
     )
   }
 
-  async estimate(op: AccountOp) {
+  async estimate(op: AccountOpWithId) {
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 
@@ -175,6 +181,8 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
+    this.lastAccountOpId = op.id
+
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -185,7 +193,8 @@ export class EstimationController extends EventEmitter {
       nativeToCheck,
       this.#bundlerSwitcher,
       (e: ErrorRef) => {
-        if (!this) return
+        if (!this || op.id !== this.lastAccountOpId) return
+
         this.estimationRetryError = e
         this.emitUpdate()
       },
@@ -193,6 +202,20 @@ export class EstimationController extends EventEmitter {
         (accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation
       )
     ).catch((e) => e)
+
+    // Done to prevent race conditions
+    if (op.id !== this.lastAccountOpId) {
+      const error = new Error(
+        `Estimation race condition prevented. Op id: ${op.id}. Expected: ${this.lastAccountOpId}`
+      )
+
+      this.emitError({
+        message: 'Estimation race condition prevented',
+        error,
+        level: 'silent'
+      })
+      return
+    }
 
     const isSuccess = !(estimation instanceof Error)
     if (isSuccess) {
