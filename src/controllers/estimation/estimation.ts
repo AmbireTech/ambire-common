@@ -192,12 +192,6 @@ export class EstimationController extends EventEmitter {
       feeTokens,
       nativeToCheck,
       this.#bundlerSwitcher,
-      (e: ErrorRef) => {
-        if (!this || op.id !== this.lastAccountOpId) return
-
-        this.estimationRetryError = e
-        this.emitUpdate()
-      },
       (this.#activity.broadcastedButNotConfirmed[account.addr] || []).find(
         (accOp) => accOp.chainId === network.chainId && !!accOp.asUserOperation
       )

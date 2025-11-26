@@ -29,7 +29,6 @@ export async function getEstimation(
   feeTokens: TokenResult[],
   nativeToCheck: string[],
   switcher: BundlerSwitcher,
-  errorCallback: Function,
   pendingUserOp?: SubmittedAccountOp
 ): Promise<FullEstimation | Error> {
   const ambireEstimation = ambireEstimateGas(
@@ -49,7 +48,6 @@ export async function getEstimation(
     feeTokens,
     provider,
     switcher,
-    errorCallback,
     undefined,
     pendingUserOp
   )
