@@ -710,8 +710,6 @@ describe('Activity Controller ', () => {
         await controller.addAccountOp(ao)
       }
 
-      // Expect 5 account ops on 56
-
       await controller.filterAccountsOps(
         sessionId,
         {
