@@ -137,10 +137,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     if (this.messageToSign && this.messageToSign.content.kind === 'siwe') {
       if (typeof isAutoLoginEnabledByUser === 'boolean') {
-        this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
+        this.messageToSign.content.meta.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
       }
       if (typeof autoLoginDuration === 'number') {
-        this.messageToSign.content.autoLoginDuration = autoLoginDuration
+        this.messageToSign.content.meta.autoLoginDuration = autoLoginDuration
       }
     }
     this.emitUpdate()
@@ -185,7 +185,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
 
       const account = this.#accounts.accounts.find(
-        (acc) => acc.addr === this.messageToSign?.accountAddr
+        (acc) => acc.addr === this.messageToSign?.content?.accountAddr
       )
       if (!account) {
         throw new Error(
@@ -193,7 +193,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
       const network = this.#networks.networks.find(
-        (n: Network) => n.chainId === this.messageToSign!.chainId
+        (n: Network) => n.chainId === this.messageToSign!.content.chainId
       )
       if (!network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
@@ -205,7 +205,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       try {
         if (isPlainTextMessage(this.messageToSign.content)) {
           signature = await getPlainTextSignature(
-            this.messageToSign.content.message,
+            this.messageToSign.content.meta.message,
             network,
             account,
             accountState,
@@ -216,7 +216,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
-          if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
+          if (account.creation && this.messageToSign.content.meta.primaryType === 'Permit') {
             throw new Error(
               'It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.'
             )
@@ -261,21 +261,23 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         provider: this.#providers.providers[network?.chainId.toString() || '1'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
-        signer: this.messageToSign.accountAddr,
+        signer: this.messageToSign.content.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
         ...(isPlainTextMessage(this.messageToSign.content)
-          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
+          ? { message: hexStringToUint8Array(this.messageToSign.content.meta.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
               typedData: {
-                domain: this.messageToSign.content.domain,
-                types: this.messageToSign.content.types,
-                message: this.messageToSign.content.message,
-                primaryType: this.messageToSign.content.primaryType
+                domain: this.messageToSign.content.meta.domain,
+                types: this.messageToSign.content.meta.types,
+                message: this.messageToSign.content.meta.message,
+                primaryType: this.messageToSign.content.meta.primaryType
               }
             }
-          : { authorization: this.messageToSign.content.message })
+          : {
+              authorization: this.messageToSign.content.meta.message
+            })
       }
       const isValidSignature = await verifyMessage(verifyMessageParams)
       if (!this.#isSigningOperationValidAfterAsyncOperation()) return
@@ -288,8 +290,6 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
       this.signedMessage = {
         fromRequestId: this.messageToSign.fromRequestId,
-        accountAddr: this.messageToSign.accountAddr,
-        chainId: this.messageToSign.chainId,
         content: this.messageToSign.content,
         timestamp: new Date().getTime(),
         signature: getAppFormatted(signature, account, accountState),
@@ -318,7 +318,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   removeAccountData(address: Account['addr']) {
-    if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
+    if (this.messageToSign?.content?.accountAddr.toLowerCase() === address.toLowerCase()) {
       this.reset()
     }
   }

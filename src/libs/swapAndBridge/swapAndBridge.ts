@@ -24,7 +24,7 @@ import {
   SwapAndBridgeToToken,
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
-import { UserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import {
   AMBIRE_WALLET_TOKEN_ON_BASE,
@@ -372,33 +372,27 @@ const getSwapAndBridgeCalls = async (
   return calls
 }
 
-const buildSwapAndBridgeUserRequests = async (
+const getSwapAndBridgeRequestParams = async (
   userTx: SwapAndBridgeSendTxRequest,
   chainId: bigint,
   account: Account,
   provider: RPCProvider,
   state: AccountOnchainState,
-  paymasterService?: PaymasterService,
-  windowId?: number
-): Promise<UserRequest[]> => {
-  return [
-    {
-      id: userTx.activeRouteId,
-      action: {
-        kind: 'calls' as const,
-        calls: await getSwapAndBridgeCalls(userTx, account, provider, state)
-      },
-      session: new Session({ windowId }),
-      meta: {
-        isSignAction: true as true,
-        chainId,
-        accountAddr: account.addr,
-        activeRouteId: userTx.activeRouteId,
-        isSwapAndBridgeCall: true,
-        paymasterService
-      }
+  paymasterService?: PaymasterService
+): Promise<{
+  calls: CallsUserRequest['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+}> => {
+  return {
+    calls: await getSwapAndBridgeCalls(userTx, account, provider, state),
+    meta: {
+      chainId,
+      accountAddr: account.addr,
+      activeRouteId: userTx.activeRouteId,
+      isSwapAndBridgeCall: true,
+      paymasterService
     }
-  ]
+  }
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
@@ -618,7 +612,7 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
 
 export {
   addCustomTokensIfNeeded,
-  buildSwapAndBridgeUserRequests,
+  getSwapAndBridgeRequestParams,
   convertNullAddressToZeroAddressIfNeeded,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,

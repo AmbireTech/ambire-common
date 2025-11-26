@@ -42,7 +42,6 @@ import {
   SA_NATIVE_TRANSFER_GAS_USED
 } from '../../consts/signAccountOp/gas'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
-import { AccountOpAction } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { ErrorRef } from '../../interfaces/eventEmitter'
@@ -65,6 +64,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
+import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -226,7 +226,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   #phishing: IPhishingController
 
   // this is not used in the controller directly but it's being read outside
-  fromRequestId: AccountOpAction['id']
+  fromRequestId: UserRequest['id']
 
   /**
    * Never modify this directly, use #updateAccountOp instead.
@@ -367,7 +367,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     activity: IActivityController
     provider: RPCProvider
     phishing: IPhishingController
-    fromRequestId: AccountOpAction['id']
+    fromRequestId: UserRequest['id']
     accountOp: AccountOp
     isSignRequestStillActive: Function
     shouldSimulate: boolean
@@ -2618,9 +2618,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
 
     // Allow the user to broadcast a new transaction;
-    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the action is resolved:
+    // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the request is resolved:
     // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
-    // Otherwise, a new request could be added to a previously broadcast action that will resolve shortly,
+    // Otherwise, new calls could be added to a previously broadcast request that will resolve shortly,
     // leaving the new request 'orphaned' in the background without being attached to any action.
     this.broadcastStatus = 'SUCCESS'
     await this.forceEmitUpdate()

@@ -8,7 +8,6 @@ import {
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 } from '../../consts/intervals'
 import { IAccountsController } from '../../interfaces/account'
-import { AccountOpAction, Action } from '../../interfaces/actions'
 import { IActivityController } from '../../interfaces/activity'
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IInviteController } from '../../interfaces/invite'
@@ -34,7 +33,7 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { UserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -243,7 +242,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #getUserRequests: () => UserRequest[]
 
-  #getVisibleActionsQueue: () => Action[]
+  #getVisibleUserRequests: () => UserRequest[]
 
   hasProceeded: boolean = false
 
@@ -286,7 +285,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     relayerUrl,
     isMainSignAccountOpThrowingAnEstimationError,
     getUserRequests,
-    getVisibleActionsQueue,
+    getVisibleUserRequests,
     swapProvider,
     onBroadcastSuccess,
     onBroadcastFailed
@@ -307,7 +306,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isMainSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
-    getVisibleActionsQueue: () => Action[]
+    getVisibleUserRequests: () => UserRequest[]
     swapProvider: SwapProvider
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
@@ -331,7 +330,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#invite = invite
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
-    this.#getVisibleActionsQueue = getVisibleActionsQueue
+    this.#getVisibleUserRequests = getVisibleUserRequests
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
 
@@ -2519,13 +2518,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#selectedAccount.account.addr,
       this.activeRoutes
     )
-    const accountOpActions = this.#getVisibleActionsQueue().filter(
-      ({ type }) => type === 'accountOp'
-    ) as AccountOpAction[]
+    const callsUserRequests = this.#getVisibleUserRequests().filter(
+      ({ kind }) => kind === 'calls'
+    ) as CallsUserRequest[]
 
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, accountOpActions)
+    return getBridgeBanners(activeRoutesForSelectedAccount, callsUserRequests)
   }
 
   get #shouldAutoUpdateQuote() {

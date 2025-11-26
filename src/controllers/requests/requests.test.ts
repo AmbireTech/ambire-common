@@ -200,7 +200,7 @@ const prepareTest = async () => {
     getUserRequests: () => {
       return requestsController?.userRequests || []
     },
-    getVisibleActionsQueue: () => {
+    getVisibleUserRequests: () => {
       return requestsController?.actions?.visibleActionsQueue || []
     },
     onBroadcastSuccess: () => Promise.resolve(),
@@ -226,7 +226,7 @@ const prepareTest = async () => {
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
       guardHWSigning: () => Promise.resolve(false),
-      onSetCurrentAction: () => {},
+      onSetCurrentUserRequest: () => {},
       autoLogin: autoLoginCtrl
     })
   }

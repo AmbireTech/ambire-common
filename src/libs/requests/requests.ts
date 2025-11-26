@@ -1,5 +1,5 @@
 import { Account, AccountId } from '../../interfaces/account'
-import { AccountOpAction, Action } from '../../interfaces/actions'
+import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
   SignUserRequest,
@@ -9,12 +9,77 @@ import {
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { Call } from '../accountOp/types'
 
+export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
+  if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'
+  if (
+    [
+      'eth_signTypedData',
+      'eth_signTypedData_v1',
+      'eth_signTypedData_v3',
+      'eth_signTypedData_v4'
+    ].includes(method)
+  )
+    return 'typedMessage'
+  if (['personal_sign'].includes(method)) return 'message'
+  // method to camelCase
+  return method.replace(/_(.)/g, (m, p1) => p1.toUpperCase()) as
+    | 'dappConnect'
+    | 'unlock'
+    | 'switchAccount'
+    | 'walletAddEthereumChain'
+    | 'walletWatchAsset'
+}
+
 export const isSignRequest = (kind: UserRequest['kind']) =>
   kind === 'calls' ||
   kind === 'message' ||
   kind === 'typedMessage' ||
   kind === 'siwe' ||
   kind === 'authorization-7702'
+
+export const messageOnNewRequest = (request: UserRequest, addType: 'queued' | 'updated') => {
+  let requestType = ''
+  if (request.kind === 'calls') requestType = 'Sign Transaction'
+  if (
+    request.kind === 'message' ||
+    request.kind === 'typedMessage' ||
+    request.kind === 'authorization-7702' ||
+    request.kind === 'siwe'
+  )
+    requestType = 'Sign Message'
+
+  if (request.kind === 'dappConnect') requestType = 'Dapp Connect'
+  if (request.kind === 'walletAddEthereumChain') requestType = 'Add Chain'
+  if (request.kind === 'walletWatchAsset') requestType = 'Watch Asset'
+  if (request.kind === 'ethGetEncryptionPublicKey') requestType = 'Get Encryption Public Key'
+
+  if (addType === 'queued') {
+    return `A new${requestType ? ` ${requestType} ` : ' '}request was queued.`
+  }
+
+  if (addType === 'updated') {
+    return `${requestType ? ` ${requestType} ` : ' '}request was updated.`
+  }
+
+  return null
+}
+
+export const getCallsUserRequestsByNetwork = (
+  accountAddr: string,
+  userRequests: UserRequest[]
+): { [key: string]: CallsUserRequest[] } => {
+  const callsUserRequests = (
+    userRequests.filter((r) => r.kind === 'calls') as CallsUserRequest[]
+  ).filter((req) => req.accountOp.accountAddr === accountAddr)
+
+  const requestsByNetwork = callsUserRequests.reduce((acc: any, req) => {
+    const { chainId } = req.accountOp
+    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
+    acc[chainId.toString()].push(req)
+    return acc
+  }, {})
+  return requestsByNetwork
+}
 
 export const batchCallsFromUserRequests = ({
   accountAddr,

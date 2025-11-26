@@ -28,7 +28,6 @@ export type BuildRequest =
         recipientAddress: string
         selectedToken: TokenResult
         executionType: ActionExecutionType
-        windowId?: number
       }
     }
   | {

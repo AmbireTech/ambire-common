@@ -7,16 +7,21 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { AddressBookController } from '../addressBook/addressBook'
+import { RequestsController } from '../../controllers/requests/requests'
+import { TransferController } from '../../controllers/transfer/transfer'
+import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { IProvidersController } from '../../interfaces/provider'
+import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
-import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
@@ -128,12 +133,6 @@ const selectedAccountCtrl = new SelectedAccountController({
 
 const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
 
-const actionsCtrl = new ActionsController({
-  selectedAccount: selectedAccountCtrl,
-  ui: uiCtrl,
-  onActionWindowClose: () => Promise.resolve()
-})
-
 const inviteCtrl = new InviteController({
   relayerUrl: '',
   fetch,
@@ -207,6 +206,8 @@ const PORTFOLIO_TOKENS = [
   }
 ]
 
+let requestsCtrl: IRequestsController | undefined
+
 const swapAndBridgeController = new SwapAndBridgeController({
   callRelayer: () => {},
   selectedAccount: selectedAccountCtrl,
@@ -223,9 +224,49 @@ const swapAndBridgeController = new SwapAndBridgeController({
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
-  getVisibleActionsQueue: () => actionsCtrl.visibleActionsQueue,
+  getVisibleUserRequests: () => (!!requestsCtrl ? requestsCtrl.visibleUserRequests : []),
   onBroadcastSuccess: () => Promise.resolve(),
   onBroadcastFailed: () => {}
+})
+
+const transferCtrl = new TransferController(
+  () => {},
+  storageCtrl,
+  humanizerInfo as HumanizerMeta,
+  selectedAccountCtrl,
+  networksCtrl,
+  addressBookCtrl,
+  accountsCtrl,
+  keystore,
+  portfolioCtrl,
+  activityCtrl,
+  {},
+  providersCtrl,
+  phishingCtrl,
+  relayerUrl,
+  () => Promise.resolve()
+)
+
+requestsCtrl = new RequestsController({
+  relayerUrl,
+  accounts: accountsCtrl,
+  networks: networksCtrl,
+  providers: providersCtrl,
+  selectedAccount: selectedAccountCtrl,
+  keystore: keystore,
+  transfer: transferCtrl,
+  swapAndBridge: swapAndBridgeController,
+  ui: uiCtrl,
+  getDapp: async () => undefined,
+  getSignAccountOp: () => null,
+  getMainStatuses: () => STATUS_WRAPPED_METHODS,
+  updateSignAccountOp: () => {},
+  destroySignAccountOp: () => {},
+  updateSelectedAccountPortfolio: () => Promise.resolve(),
+  addTokensToBeLearned: () => {},
+  guardHWSigning: () => Promise.resolve(false),
+  onSetCurrentUserRequest: () => {},
+  autoLogin: autoLoginCtrl
 })
 
 describe('SwapAndBridge Controller', () => {

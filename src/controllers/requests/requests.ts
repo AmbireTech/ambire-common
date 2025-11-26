@@ -5,8 +5,7 @@ import { getAddress, getBigInt } from 'ethers'
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { ORIGINS_WHITELISTED_TO_ALL_ACCOUNTS } from '../../consts/dappCommunication'
-import { AccountOnchainState, IAccountsController } from '../../interfaces/account'
-import { Action, ActionExecutionType, ActionPosition } from '../../interfaces/actions'
+import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest } from '../../interfaces/dapp'
@@ -30,6 +29,8 @@ import {
   CallsUserRequest,
   OpenRequestWindowParams,
   PlainTextMessageUserRequest,
+  RequestExecutionType,
+  RequestPosition,
   SignUserRequest,
   SiweMessageUserRequest,
   TypedMessageUserRequest,
@@ -39,24 +40,26 @@ import { isBasicAccount, isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
-import {
-  dappRequestMethodToActionKind,
-  getCallsUserRequestsByNetwork
-} from '../../libs/actions/actions'
-import { getAccountOpBanners } from '../../libs/banners/banners'
+import { getAccountOpBanners, getDappUserRequestsBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
-import { buildSwitchAccountUserRequest, isSignRequest } from '../../libs/requests/requests'
+import {
+  buildSwitchAccountUserRequest,
+  dappRequestMethodToRequestKind,
+  getCallsUserRequestsByNetwork,
+  isSignRequest,
+  messageOnNewRequest
+} from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
 import {
-  buildSwapAndBridgeUserRequests,
-  getActiveRoutesForAccount
+  getActiveRoutesForAccount,
+  getSwapAndBridgeRequestParams
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
-  buildClaimWalletRequest,
-  buildMintVestingRequest,
-  buildTransferUserRequest,
+  getClaimWalletRequestParams,
+  getMintVestingRequestParams,
+  getTransferRequestParams,
   prepareIntentUserRequest
 } from '../../libs/transfer/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -75,9 +78,13 @@ const SWAP_AND_BRIDGE_WINDOW_SIZE = {
 }
 
 /**
- * The RequestsController is responsible for building different user request types and managing their associated actions (within an action window).
+ * The RequestsController is responsible for building and managing different user request types (within a request window).
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
  * and testability, this logic was encapsulated in this dedicated controller.
+ *
+ * After being opened, the request window will remain visible to the user until all requests are resolved or rejected,
+ * or until the user forcefully closes the window using the system close icon (X).
+ * After the request window is closed all pending/unresolved requests will be removed except for the requests of type 'calls' to allow batching to an already existing ones.
  */
 export class RequestsController extends EventEmitter implements IRequestsController {
   #relayerUrl: string
@@ -118,7 +125,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
 
-  #onSetCurrentAction: (currentAction: Action | null) => void
+  #onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
 
   userRequests: UserRequest[] = []
 
@@ -144,7 +151,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     pendingMessage: null
   }
 
-  currentUserRequest: UserRequest | null = null
+  #currentUserRequest: UserRequest | null = null
+
+  get currentUserRequest() {
+    return this.#currentUserRequest
+  }
+
+  set currentUserRequest(val: UserRequest | null) {
+    this.#currentUserRequest = val
+    this.#onSetCurrentUserRequest(val)
+  }
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -171,7 +187,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     addTokensToBeLearned,
     guardHWSigning,
     getMainStatuses,
-    onSetCurrentAction
+    onSetCurrentUserRequest
   }: {
     relayerUrl: string
     accounts: IAccountsController
@@ -192,7 +208,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     addTokensToBeLearned: (tokenAddresses: string[], chainId: bigint) => void
     guardHWSigning: (throwRpcError: boolean) => Promise<boolean>
     getMainStatuses: () => StatusesWithCustom
-    onSetCurrentAction: (currentAction: Action | null) => void
+    onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
   }) {
     super()
 
@@ -215,16 +231,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#updateSelectedAccountPortfolio = updateSelectedAccountPortfolio
     this.#addTokensToBeLearned = addTokensToBeLearned
     this.#guardHWSigning = guardHWSigning
-    this.#onSetCurrentAction = onSetCurrentAction
+    this.#onSetCurrentUserRequest = onSetCurrentUserRequest
 
-    // this.actions = new ActionsController({
-    //   selectedAccount: this.#selectedAccount,
-    //   ui,
-    //   onSetCurrentAction: this.#onSetCurrentAction,
-    //   onActionWindowClose: async () => {
+    this.#ui.window.event.on('windowRemoved', async (winId: number) => {
+      // When windowManager.focus is called, it may close and reopen the request window as part of its fallback logic.
+      // To avoid prematurely running the cleanup logic during that transition, we wait for focusWindowPromise to resolve.
+      await this.requestWindow.focusWindowPromise
 
-    //   }
-    // })
+      await this.#handleRequestWindowClose(winId)
+    })
+
+    this.#ui.window.event.on('windowFocusChange', async (winId: number) => {
+      if (this.requestWindow.windowProps) {
+        if (
+          this.requestWindow.windowProps.id === winId &&
+          !this.requestWindow.windowProps.focused
+        ) {
+          this.requestWindow.windowProps.focused = true
+          this.emitUpdate()
+        } else if (
+          this.requestWindow.windowProps.id !== winId &&
+          this.requestWindow.windowProps.focused
+        ) {
+          this.requestWindow.windowProps.focused = false
+          this.emitUpdate()
+        }
+      }
+    })
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -258,10 +291,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (r.kind === 'switchAccount') {
         return r.meta.switchToAccountAddr !== this.#selectedAccount.account?.addr
       }
-      // TODO:
-      // if (a.type === 'swapAndBridge' || a.type === 'transfer') {
-      //   return a.userRequest.meta.accountAddr === this.#selectedAccount.account?.addr
-      // }
+      if (r.kind === 'swapAndBridge' || r.kind === 'transfer') {
+        return r.meta.accountAddr === this.#selectedAccount.account?.addr
+      }
 
       return true
     })
@@ -275,8 +307,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       allowAccountSwitch = false,
       skipFocus = false
     }: {
-      position?: ActionPosition
-      executionType?: ActionExecutionType
+      position?: RequestPosition
+      executionType?: RequestExecutionType
       allowAccountSwitch?: boolean
       skipFocus?: boolean
     } = {}
@@ -454,9 +486,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (existingIndex !== -1) {
         this.userRequests[existingIndex] = newReq
         if (executionType === 'open-action-window') {
-          // this.sendNewActionMessage(newAction, 'updated')
+          this.sendNewRequestMessage(newReq, 'updated')
         } else if (executionType === 'queue-but-open-action-window') {
-          // this.sendNewActionMessage(newAction, 'queued')
+          this.sendNewRequestMessage(newReq, 'queued')
         }
       } else if (position === 'first') {
         this.userRequests.unshift(newReq)
@@ -472,7 +504,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (executionType === 'open-action-window') {
         currentUserRequest = this.visibleUserRequests.find((r) => r.id === nextRequest.id) || null
       } else if (executionType === 'queue-but-open-action-window') {
-        // this.sendNewActionMessage(nextAction, 'queued')
+        this.sendNewRequestMessage(nextRequest, 'queued')
         currentUserRequest = this.currentUserRequest || this.visibleUserRequests[0] || null
       }
       await this.#setCurrentUserRequest(currentUserRequest, {
@@ -642,6 +674,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.userRequestsWaitingAccountSwitch = []
       this.emitUpdate()
     }
+  }
+
+  updateCallsUserRequest(accountOp: AccountOp) {
+    const { accountAddr, chainId } = accountOp
+    const request = this.userRequests.find(
+      (r) => r.kind === 'calls' && r.id === `${accountAddr}-${chainId}`
+    )
+
+    if (!request || request.kind !== 'calls') return
+
+    request.accountOp = accountOp
+    this.emitUpdate()
   }
 
   async removeUserRequests(
@@ -832,8 +876,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#guardHWSigning(true)
 
     let userRequest: UserRequest | null = null
-    let position: ActionPosition = 'last'
-    const kind = dappRequestMethodToActionKind(request.method)
+    let position: RequestPosition = 'last'
+    const kind = dappRequestMethodToRequestKind(request.method)
     const dapp = (await this.#getDapp(request.session.id)) || null
 
     if (kind === 'calls') {
@@ -890,16 +934,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? request.params[0].version ?? '1.0.0'
         : undefined
 
-      userRequest = await this.#buildCallsUserRequest(
+      userRequest = await this.#createCallsUserRequest({
         calls,
-        {
+        meta: {
           accountAddr,
           chainId: network.chainId,
           walletSendCallsVersion,
           paymasterService
         },
-        [{ ...dappPromise, dapp, meta: { isWalletSendCalls } }]
-      )
+        dappPromises: [{ ...dappPromise, dapp, meta: { isWalletSendCalls } }]
+      })
     } else if (kind === 'message') {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
@@ -1112,7 +1156,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amount: string
     recipientAddress: string
     selectedToken: TokenResult
-    executionType: ActionExecutionType
+    executionType: RequestExecutionType
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1179,16 +1223,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amountInFiat,
     recipientAddress,
     selectedToken,
-    executionType = 'open-action-window',
-    windowId
+    executionType = 'open-action-window'
   }: {
     amount: string
     amountInFiat: bigint
     recipientAddress: string
     selectedToken: TokenResult
-    // eslint-disable-next-line default-param-last
-    executionType: ActionExecutionType
-    windowId?: number
+    executionType: RequestExecutionType
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1218,17 +1259,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#keystore.getAccountKeys(this.#selectedAccount.account),
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
-    const userRequest = buildTransferUserRequest({
+
+    const callsRequestParams = getTransferRequestParams({
       selectedAccount: this.#selectedAccount.account.addr,
       amount,
       amountInFiat,
       selectedToken,
       recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-      windowId
+      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl)
     })
 
-    if (!userRequest) {
+    if (!callsRequestParams) {
       this.emitError({
         level: 'major',
         message: 'Unexpected error while building transfer request',
@@ -1239,23 +1280,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    await this.addUserRequests([userRequest], {
-      position: 'last',
-      executionType
-    })
-
-    // reset the transfer form after adding a req
-    this.#transfer.resetForm()
+    const userRequest = await this.#createCallsUserRequest(callsRequestParams)
+    await this.addUserRequests([userRequest], { position: 'last', executionType })
+    this.#transfer.resetForm() // reset the transfer form after adding a req
   }
 
   async #buildSwapAndBridgeUserRequest({
     openActionWindow,
-    activeRouteId,
-    windowId
+    activeRouteId
   }: {
     openActionWindow: boolean
     activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
-    windowId?: number
   }) {
     await this.withStatus(
       'buildSwapAndBridgeUserRequest',
@@ -1303,16 +1338,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#keystore.getAccountKeys(this.#selectedAccount.account),
           network
         )
-        const swapAndBridgeUserRequests = await buildSwapAndBridgeUserRequests(
+        const swapAndBridgeRequestParams = await getSwapAndBridgeRequestParams(
           transaction,
           network.chainId,
           this.#selectedAccount.account,
           this.#providers.providers[network.chainId.toString()],
           accountState,
-          getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-          windowId
+          getAmbirePaymasterService(baseAcc, this.#relayerUrl)
         )
-        await this.addUserRequests(swapAndBridgeUserRequests, {
+
+        const userRequest = await this.#createCallsUserRequest(swapAndBridgeRequestParams)
+        await this.addUserRequests([userRequest], {
           position: 'last',
           executionType: openActionWindow ? 'open-action-window' : 'queue'
         })
@@ -1340,13 +1376,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
   }
 
-  async #buildClaimWalletUserRequest({
-    token,
-    windowId
-  }: {
-    token: TokenResult
-    windowId?: number
-  }) {
+  async #buildClaimWalletUserRequest({ token }: { token: TokenResult }) {
     if (!this.#selectedAccount.account) return
 
     const claimableRewardsData = (
@@ -1355,23 +1385,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!claimableRewardsData) return
 
-    const userRequest: UserRequest = buildClaimWalletRequest({
+    const userRequestParams = getClaimWalletRequestParams({
       selectedAccount: this.#selectedAccount.account.addr,
       selectedToken: token,
-      claimableRewardsData,
-      windowId
+      claimableRewardsData
     })
-
+    const userRequest = await this.#createCallsUserRequest(userRequestParams)
     await this.addUserRequests([userRequest])
   }
 
-  async #buildMintVestingUserRequest({
-    token,
-    windowId
-  }: {
-    token: TokenResult
-    windowId?: number
-  }) {
+  async #buildMintVestingUserRequest({ token }: { token: TokenResult }) {
     if (!this.#selectedAccount.account) return
 
     const addrVestingData = (
@@ -1379,13 +1402,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )?.addrVestingData
 
     if (!addrVestingData) return
-    const userRequest: UserRequest = buildMintVestingRequest({
+    const userRequestParams = getMintVestingRequestParams({
       selectedAccount: this.#selectedAccount.account.addr,
       selectedToken: token,
-      addrVestingData,
-      windowId
+      addrVestingData
     })
-
+    const userRequest = await this.#createCallsUserRequest(userRequestParams)
     await this.addUserRequests([userRequest])
   }
 
@@ -1437,22 +1459,29 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) => r.routeStatus === 'ready'
     )
 
-    return getAccountOpBanners({
-      callsUserRequestsByNetwork: getCallsUserRequestsByNetwork(
-        this.#selectedAccount.account.addr,
-        this.userRequests
-      ),
-      selectedAccount: this.#selectedAccount.account.addr,
-      networks: this.#networks.networks,
-      swapAndBridgeRoutesPendingSignature
-    })
+    return [
+      ...getAccountOpBanners({
+        callsUserRequestsByNetwork: getCallsUserRequestsByNetwork(
+          this.#selectedAccount.account.addr,
+          this.userRequests
+        ),
+        selectedAccount: this.#selectedAccount.account.addr,
+        networks: this.#networks.networks,
+        swapAndBridgeRoutesPendingSignature
+      }),
+      ...getDappUserRequestsBanners(this.visibleUserRequests)
+    ]
   }
 
-  async #buildCallsUserRequest(
-    calls: Call[],
-    meta: CallsUserRequest['meta'],
-    dappPromises: CallsUserRequest['dappPromises'] = []
-  ) {
+  async #createCallsUserRequest({
+    calls,
+    meta,
+    dappPromises = []
+  }: {
+    calls: Call[]
+    meta: CallsUserRequest['meta']
+    dappPromises?: CallsUserRequest['dappPromises']
+  }) {
     let callUserRequest: CallsUserRequest
     const existingUserRequest = this.userRequests.find(
       (r) =>
@@ -1523,11 +1552,101 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     return callUserRequest
   }
 
+  async setCurrentUserRequestById(requestId: UserRequest['id'], params?: OpenRequestWindowParams) {
+    const request = this.visibleUserRequests.find((r) => r.id.toString() === requestId.toString())
+    if (!request)
+      throw new EmittableError({
+        message:
+          'Failed to open request window. If the issue persists, please reject the request and try again.',
+        level: 'major',
+        error: new Error(`UserRequest not found. Id: ${requestId}`)
+      })
+    await this.#setCurrentUserRequest(request, params)
+  }
+
+  async setCurrentUserRequestByIndex(actionIndex: number, params?: OpenRequestWindowParams) {
+    const request = this.visibleUserRequests[actionIndex]
+    if (!request)
+      throw new EmittableError({
+        message:
+          'Failed to open request window. If the issue persists, please reject the request and try again.',
+        level: 'major',
+        error: new Error(`UserRequest not found. Index: ${actionIndex}`)
+      })
+    await this.#setCurrentUserRequest(request, params)
+  }
+
+  sendNewRequestMessage(newRequest: UserRequest, type: 'queued' | 'updated') {
+    if (this.visibleUserRequests.length > 1 && newRequest.kind !== 'benzin') {
+      if (this.requestWindow.loaded) {
+        // When the request window is loaded, we don't show messages for dappRequest requests
+        // if the current request is also a dappRequest and is pending to be removed
+        if (
+          this.currentUserRequest &&
+          !isSignRequest(this.currentUserRequest.kind) &&
+          this.currentUserRequest?.meta?.pendingToRemove
+        )
+          return
+
+        const message = messageOnNewRequest(newRequest, type)
+        if (message) this.#ui.message.sendToastMessage(message, { type: 'success' })
+      } else {
+        const message = messageOnNewRequest(newRequest, type)
+        if (message) this.requestWindow.pendingMessage = { message, options: { type: 'success' } }
+      }
+    }
+  }
+
+  setWindowLoaded() {
+    if (!this.requestWindow.windowProps) return
+    this.requestWindow.loaded = true
+
+    if (this.requestWindow.pendingMessage) {
+      this.#ui.message.sendToastMessage(
+        this.requestWindow.pendingMessage.message,
+        this.requestWindow.pendingMessage.options
+      )
+      this.requestWindow.pendingMessage = null
+    }
+    this.emitUpdate()
+  }
+
+  removeAccountData(address: Account['addr']) {
+    this.userRequests = this.userRequests.filter((r) => {
+      if (r.kind === 'calls') {
+        return r.accountOp.accountAddr !== address
+      }
+      if (
+        r.kind === 'message' ||
+        r.kind === 'typedMessage' ||
+        r.kind === 'authorization-7702' ||
+        r.kind === 'siwe'
+      ) {
+        return r.meta.accountAddr !== address
+      }
+      if (r.kind === 'benzin') {
+        return r.meta.accountAddr !== address
+      }
+      if (r.kind === 'switchAccount') {
+        return r.meta.switchToAccountAddr !== address
+      }
+      if (r.kind === 'swapAndBridge') {
+        return r.meta.accountAddr !== address
+      }
+
+      return true
+    })
+
+    this.emitUpdate()
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      visibleUserRequests: this.visibleUserRequests,
+      currentUserRequest: this.currentUserRequest
     }
   }
 }

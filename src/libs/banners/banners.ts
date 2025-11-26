@@ -1,9 +1,8 @@
 import { AccountId } from '../../interfaces/account'
-import { AccountOpAction, Action as ActionFromActionsQueue } from '../../interfaces/actions'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
-import { CallsUserRequest } from '../../interfaces/userRequest'
+import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { AccountState } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
@@ -55,11 +54,11 @@ const getBridgeBannerText = (
 
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  accountOpActions: AccountOpAction[]
+  callsUserRequests: CallsUserRequest[]
 ): Banner[] => {
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
-    return accountOpActions.some((action) => {
-      return action.accountOp.calls.some(
+    return callsUserRequests.some((req) => {
+      return req.accountOp.calls.some(
         (call) =>
           call.fromUserRequestId === route.activeRouteId ||
           call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
@@ -148,8 +147,10 @@ export const getBridgeBanners = (
   return banners
 }
 
-export const getDappActionRequestsBanners = (actions: ActionFromActionsQueue[]): Banner[] => {
-  const requests = actions.filter((a) => !['accountOp', 'benzin', 'swapAndBridge'].includes(a.type))
+export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[] => {
+  const requests = userRequests.filter(
+    (r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind)
+  )
   if (!requests.length) return []
 
   return [

@@ -7,7 +7,14 @@ import WETH from '../../../contracts/compiled/WETH.json'
 import { Session } from '../../classes/session'
 import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
-import { Calls, PlainTextMessage, SignUserRequest } from '../../interfaces/userRequest'
+import {
+  Calls,
+  CallsUserRequest,
+  Message,
+  PlainTextMessageUserRequest,
+  SignUserRequest,
+  SiweMessageUserRequest
+} from '../../interfaces/userRequest'
 import { PaymasterService } from '../erc7677/types'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
@@ -25,19 +32,19 @@ interface BuildUserRequestParams {
   amountInFiat?: bigint
 }
 
-function buildMintVestingRequest({
+function getMintVestingRequestParams({
   selectedAccount,
   selectedToken,
-  addrVestingData,
-  windowId
+  addrVestingData
 }: {
   selectedAccount: string
   selectedToken: TokenResult
   addrVestingData: AddrVestingData
-  windowId?: number
-}): SignUserRequest {
-  const txn = {
-    kind: 'calls' as Calls['kind'],
+}): {
+  calls: CallsUserRequest['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+} {
+  return {
     calls: [
       {
         to: SUPPLY_CONTROLLER_ADDR,
@@ -48,33 +55,27 @@ function buildMintVestingRequest({
           addrVestingData?.rate
         ])
       }
-    ]
-  }
-  return {
-    id: new Date().getTime(),
-    action: txn,
-    session: new Session({ windowId }),
+    ],
     meta: {
-      isSignAction: true,
       chainId: selectedToken.chainId,
       accountAddr: selectedAccount
     }
   }
 }
 
-function buildClaimWalletRequest({
+function getClaimWalletRequestParams({
   selectedAccount,
   selectedToken,
-  claimableRewardsData,
-  windowId
+  claimableRewardsData
 }: {
   selectedAccount: string
   selectedToken: TokenResult
   claimableRewardsData: ClaimableRewardsData
-  windowId?: number
-}): SignUserRequest {
-  const txn = {
-    kind: 'calls' as Calls['kind'],
+}): {
+  calls: CallsUserRequest['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+} {
+  return {
     calls: [
       {
         to: SUPPLY_CONTROLLER_ADDR,
@@ -88,29 +89,25 @@ function buildClaimWalletRequest({
           claimableRewardsData?.signedRoot
         ])
       }
-    ]
-  }
-  return {
-    id: new Date().getTime(),
-    action: txn,
-    session: new Session({ windowId }),
+    ],
     meta: {
-      isSignAction: true,
       chainId: selectedToken.chainId,
       accountAddr: selectedAccount
     }
   }
 }
 
-function buildTransferUserRequest({
+function getTransferRequestParams({
   amount,
   amountInFiat,
   selectedToken,
   selectedAccount,
   recipientAddress: _recipientAddress,
-  paymasterService,
-  windowId
-}: BuildUserRequestParams): SignUserRequest | null {
+  paymasterService
+}: BuildUserRequestParams): {
+  calls: CallsUserRequest['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+} | null {
   if (!selectedToken || !selectedAccount || !_recipientAddress) return null
 
   // if the request is a top up, the recipient is the relayer
@@ -156,11 +153,8 @@ function buildTransferUserRequest({
     }
 
     return {
-      id: new Date().getTime(),
-      action: calls,
-      session: new Session({ windowId }),
+      calls,
       meta: {
-        isSignAction: true,
         chainId: selectedToken.chainId,
         accountAddr: selectedAccount,
         paymasterService,
@@ -191,11 +185,8 @@ function buildTransferUserRequest({
   }
 
   return {
-    id: new Date().getTime(),
-    action: txn,
-    session: new Session({ windowId }),
+    calls: txn.calls,
     meta: {
-      isSignAction: true,
       chainId: selectedToken.chainId,
       accountAddr: selectedAccount,
       paymasterService,
@@ -310,15 +301,15 @@ function prepareIntentUserRequest({
 }
 
 const isPlainTextMessage = (
-  messageContent: SignUserRequest['action']
-): messageContent is PlainTextMessage => {
+  messageContent: Message['content']
+): messageContent is PlainTextMessageUserRequest | SiweMessageUserRequest => {
   return messageContent.kind === 'message' || messageContent.kind === 'siwe'
 }
 
 export {
-  buildClaimWalletRequest,
-  buildMintVestingRequest,
-  buildTransferUserRequest,
+  getClaimWalletRequestParams,
+  getMintVestingRequestParams,
+  getTransferRequestParams,
   isPlainTextMessage,
   prepareIntentUserRequest
 }

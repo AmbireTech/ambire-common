@@ -4,7 +4,6 @@ import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 import { AccountOp } from '../libs/accountOp/accountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
-import { SignMessageAction } from './actions'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
@@ -13,21 +12,30 @@ import { EIP7702Signature } from './signatures'
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
-  fromRequestId: SignMessageAction['id']
-  accountAddr: AccountId
-  chainId: bigint
-  content:
-    | PlainTextMessageUserRequest
-    | TypedMessageUserRequest
-    | AuthorizationUserRequest
-    | SiweMessageUserRequest
+  fromRequestId: string | number
+  content: (
+    | PlainTextMessageUserRequest['meta']
+    | TypedMessageUserRequest['meta']
+    | AuthorizationUserRequest['meta']
+    | SiweMessageUserRequest['meta']
+  ) & {
+    kind: (
+      | PlainTextMessageUserRequest
+      | TypedMessageUserRequest
+      | AuthorizationUserRequest
+      | SiweMessageUserRequest
+    )['kind']
+  }
   signature: EIP7702Signature | string | null
 }
 
 interface UserRequestBase {
   id: string | number
   kind: string
-  meta: { [key: string]: any }
+  meta: {
+    pendingToRemove?: boolean
+    [key: string]: any
+  }
   dappPromises: {
     dapp: Dapp | null
     session: DappProviderRequest['session']
@@ -41,7 +49,7 @@ interface UserRequestBase {
 
 export interface CallsUserRequest extends UserRequestBase {
   kind: 'calls'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     accountAddr: string
     chainId: bigint
     paymasterService?: PaymasterService
@@ -55,7 +63,7 @@ export interface CallsUserRequest extends UserRequestBase {
 
 export interface PlainTextMessageUserRequest extends UserRequestBase {
   kind: 'message'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     message: Hex
     accountAddr: AccountId
   }
@@ -63,7 +71,7 @@ export interface PlainTextMessageUserRequest extends UserRequestBase {
 
 export interface SiweMessageUserRequest extends UserRequestBase {
   kind: 'siwe'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     message: Hex
     parsedMessage: ViemSiweMessage
     siweValidityStatus: SiweValidityStatus
@@ -76,7 +84,7 @@ export interface SiweMessageUserRequest extends UserRequestBase {
 
 export interface TypedMessageUserRequest extends UserRequestBase {
   kind: 'typedMessage'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     domain: TypedDataDomain
     types: Record<string, Array<TypedDataField>>
     message: Record<string, any>
@@ -87,7 +95,7 @@ export interface TypedMessageUserRequest extends UserRequestBase {
 
 export interface AuthorizationUserRequest extends UserRequestBase {
   kind: 'authorization-7702'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     accountAddr: AccountId
     chainId: bigint
     nonce: bigint
@@ -102,7 +110,7 @@ export interface BenzinUserRequest extends UserRequestBase {
 
 export interface SwitchAccountRequest extends UserRequestBase {
   kind: 'switchAccount'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     accountAddr: string
     switchToAccountAddr: string
     nextRequestKind: UserRequest['kind']
@@ -111,7 +119,7 @@ export interface SwitchAccountRequest extends UserRequestBase {
 }
 export interface WalletAddEthereumChainRequest extends UserRequestBase {
   kind: 'walletAddEthereumChain'
-  meta: {
+  meta: UserRequestBase['meta'] & {
     params: [
       {
         chainId: string
@@ -136,19 +144,21 @@ export interface TransferRequest extends UserRequestBase {
 
 export interface UnlockRequest extends UserRequestBase {
   kind: 'unlock'
-  meta: {
-    pendingToRemove?: boolean
-  }
 }
 
 export interface DappConnectRequest extends UserRequestBase {
   kind: 'dappConnect'
-  meta: { params: any }
+  meta: UserRequestBase['meta'] & { params: any }
 }
 
 export interface WalletWatchAssetRequest extends UserRequestBase {
   kind: 'walletWatchAsset'
-  meta: { params: any }
+  meta: UserRequestBase['meta'] & { params: any }
+}
+
+export interface GetEncryptionPublicKeyRequest extends UserRequestBase {
+  kind: 'ethGetEncryptionPublicKey'
+  meta: UserRequestBase['meta'] & { params: any }
 }
 
 export type UserRequest =
@@ -165,6 +175,7 @@ export type UserRequest =
   | SwitchAccountRequest
   | SwapAndBridgeRequest
   | TransferRequest
+  | GetEncryptionPublicKeyRequest
 
 export type SignUserRequest =
   | CallsUserRequest
