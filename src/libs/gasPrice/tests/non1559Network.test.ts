@@ -18,7 +18,8 @@ describe('1559 Network gas price tests', () => {
     const provider = MockProvider.init(params)
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice
-    const slow: any = gasPrice[0]!    expect(slow.gasPrice).toBe(MIN_GAS_PRICE)
+    const slow: any = gasPrice[0]!
+    expect(slow.gasPrice).toBe(MIN_GAS_PRICE)
     const medium: any = gasPrice[1]
     expect(medium.gasPrice).toBe(MIN_GAS_PRICE)
     const fast: any = gasPrice[2]
@@ -39,7 +40,8 @@ describe('1559 Network gas price tests', () => {
     const provider = MockProvider.init(params)
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice
-    const slow: any = gasPrice[0]!    expect(slow.gasPrice).toBe(MIN_GAS_PRICE + 100n)
+    const slow: any = gasPrice[0]!
+    expect(slow.gasPrice).toBe(MIN_GAS_PRICE + 100n)
     const medium: any = gasPrice[1]
     expect(medium.gasPrice).toBe(MIN_GAS_PRICE + 100n)
     const fast: any = gasPrice[2]
@@ -76,7 +78,8 @@ describe('1559 Network gas price tests', () => {
     const provider = MockProvider.init(params)
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice
-    const slow: any = gasPrice[0]!    expect(slow.gasPrice).toBe(MIN_GAS_PRICE + 100n)
+    const slow: any = gasPrice[0]!
+    expect(slow.gasPrice).toBe(MIN_GAS_PRICE + 100n)
     const medium: any = gasPrice[1]
     expect(medium.gasPrice).toBe(MIN_GAS_PRICE + 110n)
     const fast: any = gasPrice[2]
@@ -116,7 +119,8 @@ describe('1559 Network gas price tests', () => {
     const provider = MockProvider.init(params)
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice
-    const slow: any = gasPrice[0]!    expect(slow.gasPrice).toBe(MIN_GAS_PRICE + 20n)
+    const slow: any = gasPrice[0]!
+    expect(slow.gasPrice).toBe(MIN_GAS_PRICE + 20n)
     const medium: any = gasPrice[1]
     expect(medium.gasPrice).toBe(MIN_GAS_PRICE + 48n)
     const fast: any = gasPrice[2]

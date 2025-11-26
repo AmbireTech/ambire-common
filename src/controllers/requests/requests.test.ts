@@ -96,7 +96,7 @@ const prepareTest = async () => {
   const providers: RPCProviders = {}
   networks.forEach((network) => {
     providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-    providers[network.chainId.toString()].isWorking = true
+    providers[network.chainId.toString()]!.isWorking = true
   })
   providersCtrl.providers = providers
   const accountsCtrl = new AccountsController(
