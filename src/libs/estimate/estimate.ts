@@ -9,7 +9,6 @@ import { AccountOp } from '../accountOp/accountOp'
 import { TokenResult } from '../portfolio'
 import { ambireEstimateGas } from './ambireEstimation'
 import { bundlerEstimate } from './estimateBundler'
-import { estimateWithRetries } from './estimateWithRetries'
 import { FullEstimation, FullEstimationSummary } from './interfaces'
 import { providerEstimateGas } from './providerEstimateGas'
 
@@ -64,18 +63,7 @@ export async function getEstimation(
     feeTokens
   )
 
-  const estimations = await estimateWithRetries<
-    [FullEstimation['ambire'], FullEstimation['bundler'], FullEstimation['provider']]
-  >(
-    () => [ambireEstimation, bundlerEstimation, providerEstimation],
-    'estimation-deployless',
-    errorCallback,
-    12000
-  )
-
-  // this is only if we hit a timeout 5 consecutive times
-  if (estimations instanceof Error) return estimations
-
+  const estimations = await Promise.all([ambireEstimation, bundlerEstimation, providerEstimation])
   const ambireGas = estimations[0]
   const bundlerGas = estimations[1]
   const providerGas = estimations[2]
