@@ -12,7 +12,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { SignAccountOpError, Warning } from '../../interfaces/signAccountOp'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpWithId } from '../../libs/accountOp/accountOp'
 import { getEstimation, getEstimationSummary } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
@@ -54,7 +54,11 @@ export class EstimationController extends EventEmitter {
 
   #activity: IActivityController
 
-  #getIsAccountOpOutdated?: (op: AccountOp) => boolean
+  /**
+   * Used to prevent slow estimations for a past accountOp overwriting
+   * the latest estimation results
+   */
+  private lastAccountOpId: string | null = null
 
   constructor(
     keystore: IKeystoreController,
@@ -63,8 +67,7 @@ export class EstimationController extends EventEmitter {
     provider: RPCProvider,
     portfolio: IPortfolioController,
     bundlerSwitcher: BundlerSwitcher,
-    activity: IActivityController,
-    getIsAccountOpOutdated?: (op: AccountOp) => boolean
+    activity: IActivityController
   ) {
     super()
     this.#keystore = keystore
@@ -74,7 +77,6 @@ export class EstimationController extends EventEmitter {
     this.#portfolio = portfolio
     this.#bundlerSwitcher = bundlerSwitcher
     this.#activity = activity
-    this.#getIsAccountOpOutdated = getIsAccountOpOutdated
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
@@ -104,13 +106,7 @@ export class EstimationController extends EventEmitter {
     )
   }
 
-  #isEstimationOutdated(op: AccountOp) {
-    if (!this.#getIsAccountOpOutdated) return false
-
-    return this.#getIsAccountOpOutdated(op)
-  }
-
-  async estimate(op: AccountOp) {
+  async estimate(op: AccountOpWithId) {
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 
@@ -185,6 +181,8 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
+    this.lastAccountOpId = op.id
+
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -195,7 +193,7 @@ export class EstimationController extends EventEmitter {
       nativeToCheck,
       this.#bundlerSwitcher,
       (e: ErrorRef) => {
-        if (!this || this.#isEstimationOutdated(op)) return
+        if (!this || op.id !== this.lastAccountOpId) return
 
         this.estimationRetryError = e
         this.emitUpdate()
@@ -206,10 +204,14 @@ export class EstimationController extends EventEmitter {
     ).catch((e) => e)
 
     // Done to prevent race conditions
-    if (this.#isEstimationOutdated(op)) {
+    if (op.id !== this.lastAccountOpId) {
+      const error = new Error(
+        `Estimation race condition prevented. Op id: ${op.id}. Expected: ${this.lastAccountOpId}`
+      )
+
       this.emitError({
         message: 'Estimation race condition prevented',
-        error: new Error('Estimation race condition prevented.'),
+        error,
         level: 'silent'
       })
       return

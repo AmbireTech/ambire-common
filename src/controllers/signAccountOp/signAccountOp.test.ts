@@ -8,7 +8,7 @@ import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-u
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -561,6 +561,7 @@ const init = async (
 
 describe('SignAccountOp Controller ', () => {
   test('Estimation race conditions are prevented', async () => {
+    const { restore } = suppressConsole()
     const chainId = 137n
     const feePaymentOptions = [
       {
@@ -637,10 +638,10 @@ describe('SignAccountOp Controller ', () => {
         }
       }
     ]
-    const network = networks.find((n) => n.chainId === chainId)!
+    const accountOp = createAccountOp(smartAccount, chainId)
     const { controller } = await init(
       smartAccount,
-      createAccountOp(smartAccount, network.chainId),
+      accountOp,
       eoaSigner,
       {
         providerEstimation: {
@@ -690,11 +691,7 @@ describe('SignAccountOp Controller ', () => {
       hasNewEstimation: true
     })
 
-    await controller.estimate()
-
-    // @ts-ignore
-    const estimationId = controller.estimation.callId || 0
-
+    // Slow down the first estimation artificially
     jest.spyOn(estimationLib, 'getEstimation').mockImplementationOnce(async (...allParams) => {
       await wait(8000)
 
@@ -702,18 +699,60 @@ describe('SignAccountOp Controller ', () => {
       return estimationLib.getEstimation(...allParams)
     })
 
-    // This call should take +8sec, but it should not overwrite the latest estimation
-    const firstCallPromise = controller.estimate()
+    controller.update({
+      accountOpData: {
+        calls: [
+          {
+            to: '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45',
+            value: 10n,
+            data: '0x'
+          }
+        ]
+      }
+    })
 
-    // This call should be faster and as it's fresher, it should be stored in state
-    await controller.estimate()
+    const firstOpId = controller.accountOp.id
 
-    // Awaiting the second call that will be scrapped
-    await firstCallPromise
+    // This estimation should finish first and as it's for the latest accountOp, it should be applied
+    // and the other should be scrapped
+    controller.update({
+      accountOpData: {
+        calls: [
+          {
+            to: '0x96Aa53ece4214b9e42036452C399719d346D9a1A', // different address
+            value: 10n,
+            data: '0x'
+          }
+        ]
+      }
+    })
 
-    // We are expecting a single increment
-    // @ts-ignore
-    expect(controller.estimation.callId).toBe(estimationId + 1)
+    const latestAccountOpId = controller.accountOp.id
+
+    await Promise.all([
+      new Promise((resolve) => {
+        const unsub = controller.onUpdate(() => {
+          if (controller.estimation.status !== EstimationStatus.Loading) {
+            resolve(true)
+            unsub()
+            // @ts-ignore
+            expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
+          }
+        })
+      }),
+      new Promise((resolve) => {
+        const unsub = controller.estimation.onError((error) => {
+          expect(error.error.message).toBe(
+            `Estimation race condition prevented. Op id: ${firstOpId}. Expected: ${latestAccountOpId}`
+          )
+          resolve(true)
+          unsub()
+        })
+      })
+    ])
+
+    expect.assertions(2)
+    restore()
   })
   test('Signing [EOA]: EOA account paying with a native token', async () => {
     const feePaymentOptions = [
