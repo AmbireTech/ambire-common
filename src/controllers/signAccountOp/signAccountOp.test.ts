@@ -713,8 +713,8 @@ describe('SignAccountOp Controller ', () => {
 
     const firstOpId = controller.accountOp.id
 
-    // This estimation should finish first and as it's for the latest accountOp, it should be applied
-    // and the other should be scrapped
+    // This estimation should finish after the other one, but as it's for the latest accountOp,
+    // it should be applied and the other should be scrapped
     controller.update({
       accountOpData: {
         calls: [
