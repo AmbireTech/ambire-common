@@ -54,6 +54,8 @@ export class EstimationController extends EventEmitter {
 
   #activity: IActivityController
 
+  #getIsAccountOpOutdated?: (op: AccountOp) => boolean
+
   /**
    * Used to prevent race conditions in estimation calls
    * @example
@@ -70,7 +72,8 @@ export class EstimationController extends EventEmitter {
     provider: RPCProvider,
     portfolio: IPortfolioController,
     bundlerSwitcher: BundlerSwitcher,
-    activity: IActivityController
+    activity: IActivityController,
+    getIsAccountOpOutdated?: (op: AccountOp) => boolean
   ) {
     super()
     this.#keystore = keystore
@@ -80,6 +83,7 @@ export class EstimationController extends EventEmitter {
     this.#portfolio = portfolio
     this.#bundlerSwitcher = bundlerSwitcher
     this.#activity = activity
+    this.#getIsAccountOpOutdated = getIsAccountOpOutdated
   }
 
   #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
@@ -107,6 +111,12 @@ export class EstimationController extends EventEmitter {
         : [],
       op
     )
+  }
+
+  #isEstimationOutdated(op: AccountOp) {
+    if (!this.#getIsAccountOpOutdated) return false
+
+    return this.#getIsAccountOpOutdated(op)
   }
 
   async estimate(op: AccountOp) {
@@ -184,8 +194,6 @@ export class EstimationController extends EventEmitter {
           .map((acc) => acc.addr)
       : []
 
-    const beforeCallId = this.callId + 1
-
     const estimation = await getEstimation(
       baseAcc,
       accountState,
@@ -196,7 +204,8 @@ export class EstimationController extends EventEmitter {
       nativeToCheck,
       this.#bundlerSwitcher,
       (e: ErrorRef) => {
-        if (!this) return
+        if (!this || this.#isEstimationOutdated(op)) return
+
         this.estimationRetryError = e
         this.emitUpdate()
       },
@@ -205,21 +214,15 @@ export class EstimationController extends EventEmitter {
       )
     ).catch((e) => e)
 
-    const expectedEstimationCallId = this.callId + 1
-
     // Done to prevent race conditions
-    if (beforeCallId !== expectedEstimationCallId) {
+    if (this.#isEstimationOutdated(op)) {
       this.emitError({
         message: 'Estimation race condition prevented',
-        error: new Error(
-          `Estimation race condition prevented. Current id: ${this.callId}. Call id: ${beforeCallId}`
-        ),
+        error: new Error('Estimation race condition prevented.'),
         level: 'silent'
       })
       return
     }
-
-    this.callId = expectedEstimationCallId
 
     const isSuccess = !(estimation instanceof Error)
     if (isSuccess) {

@@ -415,7 +415,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       provider,
       portfolio,
       this.bundlerSwitcher,
-      this.#activity
+      this.#activity,
+      (op) => {
+        return (
+          op.accountAddr === this.account.addr &&
+          op.chainId === this.#network.chainId &&
+          op.nonce === this.accountOp.nonce &&
+          op.calls.length === this.accountOp.calls.length
+        )
+      }
     )
     const emptyFunc = () => {}
     this.#traceCall = traceCall ?? emptyFunc
