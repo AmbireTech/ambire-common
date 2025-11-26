@@ -8,7 +8,6 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
-import { AddressBookController } from '../addressBook/addressBook'
 import { IProvidersController } from '../../interfaces/provider'
 import { Storage } from '../../interfaces/storage'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -17,6 +16,7 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
@@ -97,7 +97,7 @@ const uiCtrl = new UiController({ uiManager })
 
 const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
-storage.set('selectedAccount', accounts[0].addr)
+storage.set('selectedAccount', accounts[0]!.addr)
 
 const accountsCtrl = new AccountsController(
   storageCtrl,
@@ -306,7 +306,7 @@ describe('SwapAndBridge Controller', () => {
       }
     })
     swapAndBridgeController.updateForm({
-      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0].address
+      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0]!.address
     })
   })
   test('should update fromAmount', (done) => {
@@ -414,21 +414,21 @@ describe('SwapAndBridge Controller', () => {
       userTxIndex: userTx.userTxIndex
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('ready')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
-    const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.updateActiveRoute(activeRouteId, {
       routeStatus: 'in-progress',
       userTxHash: 'test'
     })
     swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
+    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
   })
   it('should continuously update active routes', async () => {
     jest.useFakeTimers()
@@ -478,7 +478,7 @@ describe('SwapAndBridge Controller', () => {
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
-      swapAndBridgeController.activeRoutes[0].activeRouteId,
+      swapAndBridgeController.activeRoutes[0]!.activeRouteId,
       {
         routeStatus: 'in-progress',
         userTxHash: 'test',
@@ -486,10 +486,10 @@ describe('SwapAndBridge Controller', () => {
       }
     )
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('completed')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
   })
   test('should remove an activeRoute', async () => {
-    const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.removeActiveRoute(activeRouteId)
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)

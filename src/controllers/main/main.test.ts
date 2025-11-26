@@ -171,8 +171,8 @@ describe('Main Controller ', () => {
       // eslint-disable-next-line no-await-in-loop
       await wait(100)
     }
-    const accToSelect = controller.accountPicker.accountsOnPage[0].account
-    controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0].account)
+    const accToSelect = controller.accountPicker.accountsOnPage[0]!.account
+    controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0]!.account)
     await controller.accountPicker.addAccounts().catch(console.error)
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
@@ -205,7 +205,7 @@ describe('Main Controller ', () => {
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
         ],
-        creation: accounts[0].creation,
+        creation: accounts[0]!.creation,
         preferences: {
           label: DEFAULT_ACCOUNT_LABEL,
           pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
@@ -217,11 +217,11 @@ describe('Main Controller ', () => {
     const unsubscribe = mainCtrl.onUpdate(() => {
       emitCounter++
       if (emitCounter === 3) {
-        expect(mainCtrl.accounts.accounts[0].associatedKeys.length).toEqual(2)
-        expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts.accounts[0]!.associatedKeys.length).toEqual(2)
+        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
           '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
         )
-        expect(mainCtrl.accounts.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
           '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
         )
         unsubscribe()
@@ -240,7 +240,7 @@ describe('Main Controller ', () => {
             '0x0000000000000000000000000000000000000000000000000000000000000001'
           ]
         ],
-        creation: accounts[0].creation,
+        creation: accounts[0]!.creation,
         preferences: {
           label: DEFAULT_ACCOUNT_LABEL,
           pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'

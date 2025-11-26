@@ -314,7 +314,7 @@ describe('with (Account | Key)[] arg', () => {
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getLabel('to'),
-        getAddressVisualization(accounts[0].addr.toLowerCase()),
+        getAddressVisualization(accounts[0]!.addr.toLowerCase()),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ],
       [
@@ -322,7 +322,7 @@ describe('with (Account | Key)[] arg', () => {
         getLabel('for'),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n),
         getLabel('to'),
-        getAddressVisualization(keys[0].addr.toLowerCase()),
+        getAddressVisualization(keys[0]!.addr.toLowerCase()),
         getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 0n, true)
       ]
     ]
