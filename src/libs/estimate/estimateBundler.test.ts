@@ -60,7 +60,6 @@ const areUpdatesForbidden = () => {
 }
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
-const errorCallback = () => {}
 
 describe('Bundler estimation tests', () => {
   describe('Estimation tests: optimism, undeployed', () => {
@@ -124,8 +123,7 @@ describe('Bundler estimation tests', () => {
         optimism,
         feeTokens,
         providers[optimism.chainId.toString()],
-        switcher,
-        errorCallback
+        switcher
       )
 
       expect(result instanceof Error).toBe(false)
@@ -185,8 +183,7 @@ describe('Bundler estimation tests', () => {
         optimism,
         feeTokens,
         providers[optimism.chainId.toString()],
-        switcher,
-        errorCallback
+        switcher
       )
 
       expect(result instanceof Error).toBe(false)
@@ -243,8 +240,7 @@ describe('Bundler estimation tests', () => {
         optimism,
         feeTokens,
         providers[optimism.chainId.toString()],
-        switcher,
-        errorCallback
+        switcher
       )
 
       expect(result instanceof Error).toBe(false)
@@ -320,8 +316,7 @@ describe('Bundler fallback tests', () => {
       base,
       feeTokens,
       providers[base.chainId.toString()],
-      switcher,
-      errorCallback
+      switcher
     )
 
     expect(result instanceof Error).toBe(false)

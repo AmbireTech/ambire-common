@@ -151,11 +151,7 @@ export abstract class Bundler {
     return result.status === 200
   }
 
-  async fetchGasPrices(
-    network: Network,
-    errorCallback: Function,
-    counter: number = 0
-  ): Promise<GasSpeeds> {
+  async fetchGasPrices(network: Network, counter: number = 0): Promise<GasSpeeds> {
     if (counter >= 3)
       throw new Error('Estimating gas prices from the bundler timed out. Retrying...')
 
@@ -173,7 +169,7 @@ export abstract class Bundler {
       ])
     } catch (e: any) {
       const increment = counter + 1
-      return this.fetchGasPrices(network, errorCallback, increment)
+      return this.fetchGasPrices(network, increment)
     }
 
     return response as GasSpeeds
