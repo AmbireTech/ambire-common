@@ -487,7 +487,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.userRequests[existingIndex] = newReq
         if (executionType === 'open-request-window') {
           this.sendNewRequestMessage(newReq, 'updated')
-        } else if (executionType === 'queue-but-open-action-window') {
+        } else if (executionType === 'queue-but-open-request-window') {
           this.sendNewRequestMessage(newReq, 'queued')
         }
       } else if (position === 'first') {
@@ -503,7 +503,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       let currentUserRequest = null
       if (executionType === 'open-request-window') {
         currentUserRequest = this.visibleUserRequests.find((r) => r.id === nextRequest.id) || null
-      } else if (executionType === 'queue-but-open-action-window') {
+      } else if (executionType === 'queue-but-open-request-window') {
         this.sendNewRequestMessage(nextRequest, 'queued')
         currentUserRequest = this.currentUserRequest || this.visibleUserRequests[0] || null
       }
@@ -780,7 +780,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
 
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
-    // before being resolved. The timeout prevents the action-window from closing before the actual dApp request arrives
+    // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
     if (kind === 'unlock' || kind === 'switchAccount') {
       meta.pendingToRemove = true
 
@@ -841,6 +841,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'dappRequest') {
       await this.#buildUserRequestFromDAppRequest(params.request, params.dappPromise)
+    }
+
+    if (type === 'calls') {
+      const { userRequestParams, ...rest } = params
+      const userRequest = await this.#createCallsUserRequest(userRequestParams)
+      await this.addUserRequests([userRequest], { ...rest })
     }
 
     if (type === 'transferRequest') {
@@ -1136,7 +1142,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         executionType:
           position === 'first' || isSmartAccount(this.#selectedAccount.account)
             ? 'open-request-window'
-            : 'queue-but-open-action-window'
+            : 'queue-but-open-request-window'
       })
       return
     }

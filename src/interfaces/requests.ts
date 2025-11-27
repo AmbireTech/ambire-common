@@ -1,8 +1,8 @@
 import { TokenResult } from '../libs/portfolio'
-import { ActionExecutionType } from './actions'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
+import { CallsUserRequest, RequestExecutionType, RequestPosition } from './userRequest'
 
 export type IRequestsController = ControllerInterface<
   InstanceType<typeof import('../controllers/requests/requests').RequestsController>
@@ -21,13 +21,26 @@ export type BuildRequest =
       }
     }
   | {
+      type: 'calls'
+      params: {
+        userRequestParams: {
+          calls: CallsUserRequest['accountOp']['calls']
+          meta: CallsUserRequest['meta']
+        }
+        position?: RequestPosition
+        executionType?: RequestExecutionType
+        allowAccountSwitch?: boolean
+        skipFocus?: boolean
+      }
+    }
+  | {
       type: 'transferRequest'
       params: {
         amount: string
         amountInFiat: bigint
         recipientAddress: string
         selectedToken: TokenResult
-        executionType: ActionExecutionType
+        executionType: RequestExecutionType
       }
     }
   | {
@@ -51,6 +64,6 @@ export type BuildRequest =
         amount: string
         recipientAddress: string
         selectedToken: TokenResult
-        executionType: ActionExecutionType
+        executionType: RequestExecutionType
       }
     }

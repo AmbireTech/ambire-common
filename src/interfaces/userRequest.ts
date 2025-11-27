@@ -209,7 +209,7 @@ export type SignUserRequest =
 
 export type RequestPosition = 'first' | 'last'
 
-export type RequestExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-request-window'
+export type RequestExecutionType = 'queue' | 'queue-but-open-request-window' | 'open-request-window'
 
 export type OpenRequestWindowParams = {
   skipFocus?: boolean

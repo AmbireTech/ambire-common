@@ -217,7 +217,7 @@ describe('SignMessageController', () => {
     await signMessageController.init({ messageToSign })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
-    await accountsCtrl.updateAccountState(messageToSign.content.accountAddr, 'latest')
+    await accountsCtrl.updateAccountState(messageToSign.accountAddr, 'latest')
 
     await signMessageController.sign()
 

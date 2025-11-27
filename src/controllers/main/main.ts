@@ -1642,7 +1642,7 @@ export class MainController extends EventEmitter implements IMainController {
     const signAccountOp = this.swapAndBridge.signAccountOpController
 
     // Always unload the screen when the action window is closed
-    this.swapAndBridge.unloadScreen('action-window', true)
+    this.swapAndBridge.unloadScreen('request-window', true)
 
     if (!signAccountOp) return
 
