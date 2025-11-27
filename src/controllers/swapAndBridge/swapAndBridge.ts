@@ -2403,7 +2403,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       network,
       provider: this.#providers.providers[network.chainId.toString()],
       phishing: this.#phishing,
-      fromRequestId: randomId(), // the account op and the action are fabricated,
+      fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       isSignRequestStillActive: (): boolean => !!this.#signAccountOpController,
       shouldSimulate: false,

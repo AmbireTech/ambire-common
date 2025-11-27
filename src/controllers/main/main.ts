@@ -1641,7 +1641,7 @@ export class MainController extends EventEmitter implements IMainController {
   onOneClickSwapClose() {
     const signAccountOp = this.swapAndBridge.signAccountOpController
 
-    // Always unload the screen when the action window is closed
+    // Always unload the screen when the request window is closed
     this.swapAndBridge.unloadScreen('request-window', true)
 
     if (!signAccountOp) return
@@ -1666,7 +1666,7 @@ export class MainController extends EventEmitter implements IMainController {
   onOneClickTransferClose() {
     const signAccountOp = this.transfer.signAccountOpController
 
-    // Always unload the screen when the action window is closed
+    // Always unload the screen when the request window is closed
     this.transfer.unloadScreen(true)
 
     if (!signAccountOp) return
@@ -1690,9 +1690,9 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Don't allow the user to open new action windows
+   * Don't allow the user to open new request windows
    * if there's a pending to sign action (swap and bridge or transfer)
-   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an action window).
+   * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an request window).
    * This is done to prevent complications with the signing process- e.g. a new request
    * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
    * @returns {boolean} - true if an error was thrown
@@ -1707,7 +1707,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     const isSigningOrBroadcasting = this.statuses.signAndBroadcastAccountOp === 'LOADING'
 
-    // The swap and bridge or transfer is done/forgotten so we can remove the action
+    // The swap and bridge or transfer is done/forgotten so we can remove the request
     if (!isSigningOrBroadcasting) {
       await this.requests.removeUserRequests([pendingRequest.id])
 
@@ -1735,7 +1735,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     const error = errors[pendingRequest.kind as keyof typeof errors]
 
-    // Don't reopen the action window if focusing it fails
+    // Don't reopen the request window if focusing it fails
     // because closing it will abort the signing process
     await this.requests.focusRequestWindow({ reopenIfNeeded: false })
     this.emitError({

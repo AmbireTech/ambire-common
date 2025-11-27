@@ -13,7 +13,6 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps/dapps'
-import { Action } from '../../interfaces/actions'
 import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
 import { Fetch } from '../../interfaces/fetch'
 import { Messenger } from '../../interfaces/messenger'
@@ -22,6 +21,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
+import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
   getDappIdFromUrl,
@@ -654,19 +654,15 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
-  async setDappToConnectIfNeeded(currentAction: Action | null) {
+  async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
-      if (
-        currentAction &&
-        currentAction.type === 'dappRequest' &&
-        currentAction.userRequest.action.kind === 'dappConnect'
-      ) {
-        const { session } = currentAction.userRequest
+      if (currentRequest && currentRequest.kind === 'dappConnect') {
+        const { dappPromises } = currentRequest
         const dapp = await this.#buildDapp({
-          id: getDappIdFromUrl(session.origin),
-          name: session.name,
-          url: session.origin,
-          icon: session.icon,
+          id: getDappIdFromUrl(dappPromises[0].session.origin),
+          name: dappPromises[0].session.name,
+          url: dappPromises[0].session.origin,
+          icon: dappPromises[0].session.icon,
           chainId: 1,
           isConnected: false
         })

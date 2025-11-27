@@ -346,10 +346,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (kind === 'calls') {
         // Prevent adding a new request if a signing or broadcasting process is already in progress for the same account and chain.
         //
-        // Why? When a transaction is being signed and broadcast, its action is still unresolved.
-        // If a new request is added during this time, it gets incorrectly attached to the ongoing action.
-        // Once the transaction is broadcast, the action resolves,
-        // leaving the new request "orphaned" in the background with no banner shown on the Dashboard.
+        // Why? When a transaction is being signed and broadcast, its calls are still unresolved.
+        // If a new request is added during this time, it gets incorrectly attached to the ongoing request.
         // The next time the user starts a transaction, both requests appear in the batch, which is confusing.
         // To avoid this, we block new requests until the current process is complete.
         //

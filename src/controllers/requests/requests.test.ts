@@ -201,7 +201,7 @@ const prepareTest = async () => {
       return requestsController?.userRequests || []
     },
     getVisibleUserRequests: () => {
-      return requestsController?.actions?.visibleActionsQueue || []
+      return requestsController?.visibleUserRequests || []
     },
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {}

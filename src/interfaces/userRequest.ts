@@ -63,6 +63,7 @@ export interface CallsUserRequest extends UserRequestBase {
     setDelegation?: boolean
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
+    topUpAmount?: bigint
   }
   accountOp: AccountOp
 }
