@@ -259,12 +259,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ) {
     await this.#initialLoadPromise
 
-    let filteredItems
+    const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
+    const accountOpsEntriesOnEnabledNetworks = Object.entries(
+      this.#accountsOps[filters.account] || {}
+    ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
+    let filteredItems: SubmittedAccountOp[]
 
-    if (filters.chainId) {
-      filteredItems = this.#accountsOps[filters.account]?.[filters.chainId.toString()] || []
+    if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
+      filteredItems =
+        accountOpsEntriesOnEnabledNetworks.find(
+          ([chainId]) => chainId === String(filters.chainId)
+        )?.[1] || []
     } else {
-      filteredItems = Object.values(this.#accountsOps[filters.account] || []).flat()
+      filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
       // By default, #accountsOps are grouped by network and sorted in descending order.
       // However, when the network filter is omitted, #accountsOps from different networks are mixed,
       // requiring additional sorting to ensure they are also in descending order.
