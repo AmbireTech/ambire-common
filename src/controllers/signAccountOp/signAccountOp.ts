@@ -1877,7 +1877,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         [this.selectedOption!.token],
         this.provider,
         this.bundlerSwitcher,
-        () => {},
         eip7702Auth
       )
 
