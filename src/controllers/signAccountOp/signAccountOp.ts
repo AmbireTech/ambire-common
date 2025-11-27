@@ -22,7 +22,6 @@ import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { BUNDLER } from '../../consts/bundlers'
 import {
   EIP_7702_AMBIRE_ACCOUNT,
   EIP_7702_GRID_PLUS,
@@ -89,6 +88,7 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import {
+  bundlerToGasPriceTransformer,
   Gas1559Recommendation,
   GasPriceRecommendation,
   GasRecommendation
@@ -190,8 +190,7 @@ export type SignAccountOpUpdateProps = {
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
   rbfAccountOps?: { [key: string]: SubmittedAccountOp | null }
-  bundlerGasPrices?: { speeds: GasSpeeds; bundler: BUNDLER }
-  blockGasLimit?: bigint
+  bundlerGasPrices?: GasSpeeds
   signedTransactionsCount?: number | null
   hasNewEstimation?: boolean
   accountOpData?: Partial<AccountOp>
@@ -226,8 +225,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   baseAccount: BaseAccount
 
   #network: Network
-
-  #blockGasLimit: bigint | undefined = undefined
 
   #phishing: IPhishingController
 
@@ -566,8 +563,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.gasPrice.onUpdate(() => {
       this.update({
         gasPrices: this.gasPrice.gasPrices[this.#network.chainId.toString()] || null,
-        bundlerGasPrices: this.gasPrice.bundlerGasPrices[this.#network.chainId.toString()],
-        blockGasLimit: this.gasPrice.blockGasLimit
+        bundlerGasPrices: this.gasPrice.bundlerGasPrices
       })
     })
 
@@ -716,16 +712,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       errors.push({
         title:
           'Gas price information is currently unavailable. This may be due to network congestion or connectivity issues. Please try again in a few moments or check your internet connection.'
-      })
-    }
-
-    if (
-      this.#blockGasLimit &&
-      this.accountOp.gasFeePayment &&
-      this.accountOp.gasFeePayment.simulatedGasLimit > this.#blockGasLimit
-    ) {
-      errors.push({
-        title: 'Transaction invalid: out of gas.'
       })
     }
 
@@ -940,7 +926,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.delegatedContract?.toLowerCase() !== EIP_7702_KATANA.toLowerCase() &&
       (!this.accountOp.meta || this.accountOp.meta.setDelegation === undefined) &&
       (broadcastOption === BROADCAST_OPTIONS.byBundler ||
-        broadcastOption === BROADCAST_OPTIONS.delegation)
+        broadcastOption === BROADCAST_OPTIONS.delegation) &&
+      WARNINGS.delegationDetected
     ) {
       warnings.push(WARNINGS.delegationDetected)
     }
@@ -1024,7 +1011,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     signingKeyType,
     rbfAccountOps,
     bundlerGasPrices,
-    blockGasLimit,
     signedTransactionsCount,
     hasNewEstimation,
     paidByKeyType,
@@ -1062,6 +1048,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         }
         if (estimation.bundlerEstimation) {
           this.bundlerGasPrices = estimation.bundlerEstimation.gasPrice
+
+          // by transforming and setting the bundler gas prices as this.gasPrices, we accomplish two things:
+          // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
+          // 2. we make sure we give priority to the bundler prices as they are generally better
+          this.gasPrices = bundlerToGasPriceTransformer(estimation.bundlerEstimation.gasPrice)
         }
       }
 
@@ -1082,9 +1073,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             this.accountOp.calls.forEach((call, i) => {
               const newCall = calls[i]
               if (
-                call.to !== newCall.to ||
-                call.data !== newCall.data ||
-                call.value !== newCall.value
+                call.to !== newCall?.to ||
+                call.data !== newCall?.data ||
+                call.value !== newCall?.value
               )
                 shouldUpdate = true
             })
@@ -1104,8 +1095,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           }
         }
       }
-
-      if (blockGasLimit) this.#blockGasLimit = blockGasLimit
 
       if (gasPrices) this.gasPrices = gasPrices
 
@@ -1166,11 +1155,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.selectedOption = selectedOption
       }
 
-      if (
-        bundlerGasPrices &&
-        bundlerGasPrices.bundler === this.bundlerSwitcher.getBundler().getName()
-      ) {
-        this.bundlerGasPrices = bundlerGasPrices.speeds
+      if (bundlerGasPrices) {
+        this.bundlerGasPrices = bundlerGasPrices
       }
 
       if (

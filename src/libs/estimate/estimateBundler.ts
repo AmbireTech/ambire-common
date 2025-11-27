@@ -41,7 +41,7 @@ async function fetchBundlerGasPrice(
     new Promise((_resolve, reject) => {
       setTimeout(
         () => reject(new Error('bundler gas request too slow')),
-        switcher.canSwitch(baseAcc) ? 4000 : 6000
+        switcher.canSwitch(baseAcc) ? 4000 : 10000
       )
     })
   ]).catch(() => {

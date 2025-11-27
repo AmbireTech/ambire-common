@@ -4,6 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { GasSpeeds } from '../../services/bundlers/types'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
@@ -49,6 +50,16 @@ function filterOutliers(data: bigint[]): bigint[] {
   const q1 = data[Math.floor(data.length / 4)]
   const endPosition = Math.ceil(data.length * (3 / 4))
   const q2 = data[endPosition < data.length ? endPosition : data.length - 1]
+
+  // typescript extra protection
+  // q1 and q2 should always exist based on the code above.
+  // but the code changes and a bug is introduced, make sure we return
+  // the whole data instead of throwing an error
+  if (!q1 || !q2) {
+    console.error('q1 or q2 not found in gasPrice.ts')
+    return data
+  }
+
   const iqr = q2 - q1
   const maxValue = q2 + (iqr * 15n) / 10n
   const minValue = q1 - (iqr * 15n) / 10n
@@ -101,13 +112,7 @@ async function refetchBlock(
   getIsActive?: () => boolean,
   counter = 0
 ): Promise<Block> {
-  // the reason we throw an error here is that getGasPriceRecommendations is
-  // used in main.ts #updateGasPrice where we emit an error with a predefined
-  // msg, which in turn displays a notification popup with the error.
-  // If we change the design and decide to display this as an error
-  // somewhere else, we should probably not throw, but return the
-  // error instead
-  if (counter >= 5) throw new Error('unable to retrieve block')
+  if (counter >= 2) throw new Error('unable to retrieve block')
 
   let lastBlock = null
   let timeoutId: NodeJS.Timeout | null = null
@@ -115,11 +120,9 @@ async function refetchBlock(
     const response = await Promise.race([
       provider.getBlock(blockTag, true),
       new Promise((_resolve, reject) => {
-        const timeout = Math.min(30000, 6000 * (counter || 1))
-
         timeoutId = setTimeout(
           () => reject(new Error('last block failed to resolve, request too slow')),
-          timeout
+          30000
         )
       })
     ])
@@ -146,7 +149,7 @@ export async function getGasPriceRecommendations(
   network: Network,
   _blockTag?: string | number,
   getIsActive?: () => boolean
-): Promise<{ gasPrice: GasRecommendation[]; blockGasLimit: bigint }> {
+): Promise<{ gasPrice: GasRecommendation[] }> {
   const blockTag = _blockTag ?? -1
 
   const [lastBlock, ethGasPrice] = await Promise.all([
@@ -210,7 +213,7 @@ export async function getGasPriceRecommendations(
       // This is most impactufull on L2s where txns get stuck for low maxPriorityFeePerGas
       //
       // if the speed is ape, make it 50% more
-      const prevSpeed = fee.length ? fee[i - 1].maxPriorityFeePerGas : null
+      const prevSpeed = fee.length ? fee[i - 1]?.maxPriorityFeePerGas : null
       if (prevSpeed) {
         const divider = name === 'ape' ? 2n : 8n
         const min = prevSpeed + prevSpeed / divider
@@ -223,7 +226,7 @@ export async function getGasPriceRecommendations(
         maxPriorityFeePerGas
       })
     })
-    return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
+    return { gasPrice: fee }
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
 
@@ -238,7 +241,7 @@ export async function getGasPriceRecommendations(
       gasPrice: avgGasPrice >= minOrFetchedGasPrice ? avgGasPrice : minOrFetchedGasPrice
     }
   })
-  return { gasPrice: fee, blockGasLimit: lastBlock.gasLimit }
+  return { gasPrice: fee }
 }
 
 export function getProbableCallData(
@@ -295,4 +298,44 @@ export function getBroadcastGas(baseAcc: BaseAccount, op: AccountOp): bigint {
   const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
   const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
   return txDataGas + FIXED_OVERHEAD
+}
+
+/**
+ * As the name suggests, take the bundler returned gas prices and map them
+ * to our internal GasRecommendation format
+ *
+ * @param bundlerGasPrices - gas prices from the bundler
+ * @returns GasRecommendation - our internal format
+ */
+export function bundlerToGasPriceTransformer(bundlerGasPrices: GasSpeeds): GasRecommendation[] {
+  return [
+    {
+      name: 'slow',
+      baseFeePerGas:
+        BigInt(bundlerGasPrices.slow.maxFeePerGas) -
+        BigInt(bundlerGasPrices.slow.maxPriorityFeePerGas),
+      maxPriorityFeePerGas: BigInt(bundlerGasPrices.slow.maxPriorityFeePerGas)
+    },
+    {
+      name: 'medium',
+      baseFeePerGas:
+        BigInt(bundlerGasPrices.medium.maxFeePerGas) -
+        BigInt(bundlerGasPrices.medium.maxPriorityFeePerGas),
+      maxPriorityFeePerGas: BigInt(bundlerGasPrices.medium.maxPriorityFeePerGas)
+    },
+    {
+      name: 'fast',
+      baseFeePerGas:
+        BigInt(bundlerGasPrices.fast.maxFeePerGas) -
+        BigInt(bundlerGasPrices.fast.maxPriorityFeePerGas),
+      maxPriorityFeePerGas: BigInt(bundlerGasPrices.fast.maxPriorityFeePerGas)
+    },
+    {
+      name: 'ape',
+      baseFeePerGas:
+        BigInt(bundlerGasPrices.ape.maxFeePerGas) -
+        BigInt(bundlerGasPrices.ape.maxPriorityFeePerGas),
+      maxPriorityFeePerGas: BigInt(bundlerGasPrices.ape.maxPriorityFeePerGas)
+    }
+  ]
 }
