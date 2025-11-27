@@ -1415,7 +1415,8 @@ describe('estimate', () => {
       [],
       switcher
     )
-    expect(responseThree instanceof Error).toBe(true)
+    expect(responseThree.criticalError).not.toBe(undefined)
+    expect(responseThree.criticalError instanceof Error).toBe(true)
   })
 
   it('[v2]:Ethereum | deployed account | should work with singletor deployer as salt is different for each contract deployment', async () => {
