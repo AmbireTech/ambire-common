@@ -518,17 +518,11 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(
-    network,
-    provider,
-    baseAccount,
-    bundlerSwitcher,
-    () => ({
-      estimation: estimationController,
-      readyToSign: true,
-      isSignRequestStillActive: () => true
-    })
-  )
+  const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
+    estimation: estimationController,
+    readyToSign: true,
+    isSignRequestStillActive: () => true
+  }))
   gasPriceController.gasPrices = gasPricesOrMock
   const controller = new SignAccountOpTesterController({
     accounts: accountsCtrl,

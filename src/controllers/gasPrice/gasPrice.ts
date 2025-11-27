@@ -6,12 +6,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
-import {
-  bundlerToGasPriceTransformer,
-  GasRecommendation,
-  getGasPriceRecommendations
-} from '../../libs/gasPrice/gasPrice'
-import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
+import { gasPriceToBundlerFormat, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { GasSpeeds } from '../../services/bundlers/types'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
@@ -25,18 +20,13 @@ export class GasPriceController extends EventEmitter {
 
   #baseAccount: BaseAccount
 
-  #bundlerSwitcher: BundlerSwitcher
-
   #getSignAccountOpState: () => {
     estimation: EstimationController
     readyToSign: boolean
     isSignRequestStillActive: Function
   }
 
-  // network => GasRecommendation[]
-  gasPrices: { [key: string]: GasRecommendation[] } = {}
-
-  bundlerGasPrices?: GasSpeeds
+  gasPrices: GasSpeeds | null = null
 
   stopRefetching: boolean = false
 
@@ -44,7 +34,6 @@ export class GasPriceController extends EventEmitter {
     network: Network,
     provider: RPCProvider,
     baseAccount: BaseAccount,
-    bundlerSwitcher: BundlerSwitcher,
     getSignAccountOpState: () => {
       estimation: EstimationController
       readyToSign: boolean
@@ -55,7 +44,6 @@ export class GasPriceController extends EventEmitter {
     this.#network = network
     this.#provider = provider
     this.#baseAccount = baseAccount
-    this.#bundlerSwitcher = bundlerSwitcher
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
@@ -104,10 +92,7 @@ export class GasPriceController extends EventEmitter {
         return null
       })
       if (bundlerGasPrices) {
-        this.gasPrices[this.#network.chainId.toString()] = bundlerToGasPriceTransformer(
-          bundlerGasPrices as GasSpeeds
-        )
-        this.bundlerGasPrices = bundlerGasPrices as GasSpeeds
+        this.gasPrices = bundlerGasPrices as GasSpeeds
 
         this.emitUpdate()
         this.refetch()
@@ -127,12 +112,7 @@ export class GasPriceController extends EventEmitter {
 
       // if the gas price data has been fetched once successfully OR an estimation error
       // is currently being displayed, do not emit another error
-      if (
-        this.gasPrices[this.#network.chainId.toString()] ||
-        !estimation ||
-        estimation.estimationRetryError
-      )
-        return
+      if (this.gasPrices || !estimation || estimation.estimationRetryError) return
 
       const { type } = decodeError(e)
 
@@ -151,7 +131,7 @@ export class GasPriceController extends EventEmitter {
     })
 
     if (gasPriceData && gasPriceData.gasPrice)
-      this.gasPrices[this.#network.chainId.toString()] = gasPriceData.gasPrice
+      this.gasPrices = gasPriceToBundlerFormat(gasPriceData.gasPrice)
 
     this.emitUpdate()
     this.refetch()

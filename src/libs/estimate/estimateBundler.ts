@@ -25,7 +25,7 @@ import { UserOperation } from '../userOperation/types'
 import { getSigForCalculations, getUserOperation } from '../userOperation/userOperation'
 import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './interfaces'
 
-async function fetchBundlerGasPrice(
+export async function fetchBundlerGasPrice(
   baseAcc: BaseAccount,
   network: Network,
   switcher: BundlerSwitcher
@@ -47,7 +47,7 @@ async function fetchBundlerGasPrice(
   ]).catch(() => {
     // eslint-disable-next-line no-console
     console.error(`fetchBundlerGasPrice for ${bundler.getName()} failed`)
-    return Error('Failed to fetch gas prices, retrying...')
+    return Error('Failed to fetch bundler gas prices')
   })
 
   if (prices instanceof Error && switcher.canSwitch(baseAcc)) {
@@ -63,28 +63,12 @@ async function estimate(
   network: Network,
   userOp: UserOperation,
   switcher: BundlerSwitcher,
-  options?: {
-    gasPrices?: GasSpeeds | null
-  }
+  gasPrice: GasSpeeds
 ): Promise<{
-  gasPrice: GasSpeeds | Error
   estimation: BundlerEstimateResult | Error
   nonFatalErrors: Error[]
 }> {
-  const gasPrice = options?.gasPrices
-    ? options.gasPrices
-    : await fetchBundlerGasPrice(baseAcc, network, switcher)
   const bundler = switcher.getBundler()
-
-  // if the gasPrice fetch fails, we will switch the bundler and try again
-  if (gasPrice instanceof Error) {
-    return {
-      gasPrice,
-      // if gas prices couldn't be fetched, it means there's an internal error
-      estimation: Error('Failed to fetch gas prices, retrying...', { cause: '4337_ESTIMATION' }),
-      nonFatalErrors: []
-    }
-  }
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
   // is optimistic as the bundler uses these values to determine the
@@ -138,7 +122,6 @@ async function estimate(
   })
 
   return {
-    gasPrice,
     estimation: estimation as BundlerEstimateResult | Error,
     nonFatalErrors
   }
@@ -151,6 +134,7 @@ export async function bundlerEstimate(
   network: Network,
   feeTokens: TokenResult[],
   provider: RPCProvider,
+  gasPrice: GasSpeeds,
   switcher: BundlerSwitcher,
   eip7702Auth?: EIP7702Auth,
   pendingUserOp?: SubmittedAccountOp
@@ -194,12 +178,10 @@ export async function bundlerEstimate(
   }
 
   const flags: EstimationFlags = {}
-  let gasPrices: GasSpeeds | null = null
+  let latestGasPrice = gasPrice
   while (true) {
     // estimate
-    const estimations = await estimate(baseAcc, network, userOp, switcher, {
-      gasPrices
-    })
+    const estimations = await estimate(baseAcc, network, userOp, switcher, latestGasPrice)
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
@@ -210,7 +192,7 @@ export async function bundlerEstimate(
         callGasLimit: gasData.callGasLimit,
         paymasterVerificationGasLimit: gasData.paymasterVerificationGasLimit,
         paymasterPostOpGasLimit: gasData.paymasterPostOpGasLimit,
-        gasPrice: estimations.gasPrice as GasSpeeds,
+        gasPrice: latestGasPrice,
         paymaster,
         flags,
         feeCallType
@@ -223,11 +205,6 @@ export async function bundlerEstimate(
       estimations.nonFatalErrors.find((err) => err.cause === '4337_INVALID_NONCE')
     ) {
       flags.has4337NonceDiscrepancy = true
-
-      // cache the gas prices on 4337_INVALID_NONCE error as we're not changing the bundler
-      if (!(estimations.gasPrice instanceof Error)) {
-        gasPrices = estimations.gasPrice
-      }
 
       // wait a bit to allow the state to sync
       await wait(2000)
@@ -248,10 +225,14 @@ export async function bundlerEstimate(
     // if there's an error but we can't switch, return the error
     if (!switcher.canSwitch(baseAcc)) return estimations.estimation
 
-    // if there were cached gas prices, delete them
-    gasPrices = null
-
     // try again
     switcher.switch()
+
+    // after switching the bundler, we need to fetch the gas prices from the
+    // selected bundler. Otherwise, we run the risk of the userOp not being
+    // accepted by the new bundler
+    const newBundlerGasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher)
+    if (newBundlerGasPrice instanceof Error) return newBundlerGasPrice
+    latestGasPrice = newBundlerGasPrice
   }
 }

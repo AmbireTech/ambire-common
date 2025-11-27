@@ -1,4 +1,4 @@
-import { Block, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { Block, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -338,4 +338,34 @@ export function bundlerToGasPriceTransformer(bundlerGasPrices: GasSpeeds): GasRe
       maxPriorityFeePerGas: BigInt(bundlerGasPrices.ape.maxPriorityFeePerGas)
     }
   ]
+}
+
+/**
+ * As the name suggests, take our libs gas price format and transform it to match
+ * the one returned from the bundler
+ *
+ * @param gasRecommendations - our lib's format
+ * @returns GasSpeeds - the bundler format
+ */
+export function gasPriceToBundlerFormat(gasRecommendations: GasRecommendation[]): GasSpeeds {
+  const formatted: any = {}
+
+  for (let i = 0; i < gasRecommendations.length; i++) {
+    const entry = gasRecommendations[i]!
+    if ('baseFeePerGas' in entry) {
+      const eip1559 = entry as Gas1559Recommendation
+      formatted[eip1559.name] = {
+        maxFeePerGas: toBeHex(eip1559.baseFeePerGas + eip1559.maxPriorityFeePerGas),
+        maxPriorityFeePerGas: toBeHex(eip1559.maxPriorityFeePerGas)
+      }
+    } else {
+      const oldFormat = entry as GasPriceRecommendation
+      formatted[oldFormat.name] = {
+        maxFeePerGas: toBeHex(oldFormat.gasPrice),
+        maxPriorityFeePerGas: 0
+      }
+    }
+  }
+
+  return formatted as GasSpeeds
 }
