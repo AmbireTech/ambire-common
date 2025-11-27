@@ -1,5 +1,4 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
 import { KeystoreSeed, StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
@@ -54,6 +53,9 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   })
   customNetworkIds.forEach((networkId: string) => {
     const preference = networkPreferences[networkId]
+
+    if (!preference) return
+
     const networkInfo = {
       chainId: preference.chainId!,
       isSAEnabled: preference.isSAEnabled ?? false,

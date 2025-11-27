@@ -444,12 +444,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   get deprecatedSmartAccountBanner(): Banner[] {
     if (!this.account || !isSmartAccount(this.account)) return []
 
-    if (
-      !this.#accounts.accountStates[this.account.addr] ||
-      !this.#accounts.accountStates[this.account.addr]['1'] ||
-      !this.#accounts.accountStates[this.account.addr]['1'].isV2
-    )
-      return []
+    if (!this.#accounts.accountStates[this.account.addr]?.['1']?.isV2) return []
 
     if (
       !this.account.creation ||

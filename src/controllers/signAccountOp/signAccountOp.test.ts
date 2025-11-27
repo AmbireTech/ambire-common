@@ -8,7 +8,7 @@ import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-u
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -21,6 +21,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
+import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -32,6 +33,7 @@ import {
 } from '../../libs/signMessage/signMessage'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
@@ -505,7 +507,7 @@ const init = async (
     keystore,
     accountsCtrl,
     networksCtrl,
-    providers,
+    provider,
     portfolio,
     bundlerSwitcher,
     activity
@@ -558,6 +560,200 @@ const init = async (
 }
 
 describe('SignAccountOp Controller ', () => {
+  test('Estimation race conditions are prevented', async () => {
+    const { restore } = suppressConsole()
+    const chainId = 137n
+    const feePaymentOptions = [
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1n,
+          symbol: 'POL',
+          name: 'Polygon Ecosystem Token',
+          chainId: 137n,
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 50000n,
+        addedNative: 0n,
+        token: {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          amount: 1n,
+          symbol: 'usdt',
+          name: 'USD Token',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      },
+      {
+        paidBy: smartAccount.addr,
+        availableAmount: 500000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: {
+          address: usdcFeeToken.address,
+          amount: 1n,
+          symbol: 'usdc',
+          name: 'USD Coin',
+          chainId: 137n,
+          decimals: 6,
+          priceIn: [
+            {
+              baseCurrency: 'usd',
+              price: 1
+            }
+          ],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+    const accountOp = createAccountOp(smartAccount, chainId)
+    const { controller } = await init(
+      smartAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 50000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 50000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        flags: {}
+      },
+      {
+        '137': [
+          {
+            name: 'slow',
+            baseFeePerGas: 1000000000n,
+            maxPriorityFeePerGas: 1000000000n
+          },
+          {
+            name: 'medium',
+            baseFeePerGas: 2000000000n,
+            maxPriorityFeePerGas: 2000000000n
+          },
+          {
+            name: 'fast',
+            baseFeePerGas: 5000000000n,
+            maxPriorityFeePerGas: 5000000000n
+          },
+          {
+            name: 'ape',
+            baseFeePerGas: 7000000000n,
+            maxPriorityFeePerGas: 7000000000n
+          }
+        ]
+      }
+    )
+
+    controller.update({
+      feeToken: usdcFeeToken,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      hasNewEstimation: true
+    })
+
+    // Slow down the first estimation artificially
+    jest.spyOn(estimationLib, 'getEstimation').mockImplementationOnce(async (...allParams) => {
+      await wait(8000)
+
+      // call the original implementation
+      return estimationLib.getEstimation(...allParams)
+    })
+
+    controller.update({
+      accountOpData: {
+        calls: [
+          {
+            to: '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45',
+            value: 10n,
+            data: '0x'
+          }
+        ]
+      }
+    })
+
+    const firstOpId = controller.accountOp.id
+
+    // This estimation should finish after the other one, but as it's for the latest accountOp,
+    // it should be applied and the other should be scrapped
+    controller.update({
+      accountOpData: {
+        calls: [
+          {
+            to: '0x96Aa53ece4214b9e42036452C399719d346D9a1A', // different address
+            value: 10n,
+            data: '0x'
+          }
+        ]
+      }
+    })
+
+    const latestAccountOpId = controller.accountOp.id
+
+    await Promise.all([
+      new Promise((resolve) => {
+        const unsub = controller.onUpdate(() => {
+          if (controller.estimation.status !== EstimationStatus.Loading) {
+            resolve(true)
+            unsub()
+            // @ts-ignore
+            expect(controller.estimation.lastAccountOpId).toBe(latestAccountOpId)
+          }
+        })
+      }),
+      new Promise((resolve) => {
+        const unsub = controller.estimation.onError((error) => {
+          expect(error.error.message).toBe(
+            `Estimation race condition prevented. Op id: ${firstOpId}. Expected: ${latestAccountOpId}`
+          )
+          resolve(true)
+          unsub()
+        })
+      })
+    ])
+
+    expect.assertions(2)
+    restore()
+  })
   test('Signing [EOA]: EOA account paying with a native token', async () => {
     const feePaymentOptions = [
       {
@@ -1103,8 +1299,10 @@ describe('Negative cases', () => {
 
     const errors = controller.errors
     expect(errors.length).toBe(1)
-    expect(errors[0].title).toBe(
-      `Currently, ${controller.estimation.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+    expect(errors[0]!.title).toBe(
+      `Currently, ${
+        controller.estimation.availableFeeOptions[0]!.token.symbol
+      } is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
     )
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
@@ -1532,7 +1730,7 @@ describe('Negative cases', () => {
 
     const errors = controller.errors
     expect(errors.length).toBe(1)
-    expect(errors[0].title.indexOf('Insufficient funds to cover the fee') !== -1).toBe(true)
+    expect(errors[0]!.title.indexOf('Insufficient funds to cover the fee') !== -1).toBe(true)
     expect(controller.status?.type).toBe(SigningStatus.UnableToSign)
     await controller.sign()
 

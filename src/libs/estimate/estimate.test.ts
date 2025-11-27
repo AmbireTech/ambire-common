@@ -71,7 +71,6 @@ const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
 // const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
-const errorCallback = () => {}
 
 const smartAccDeployed: Account = {
   addr: '0x8E5F6c1F0b134657A546932C3eC9169E1633a39b',
@@ -381,8 +380,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       [],
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
@@ -391,11 +389,11 @@ describe('estimate', () => {
     expect(providerGas.gasUsed).toBe(21000n)
 
     // there should be native here
-    expect(providerGas.feePaymentOptions[0].availableAmount).toBeGreaterThan(0)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(undefined)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(null)
-    expect(providerGas.feePaymentOptions[0].token.address).toBe(ZeroAddress)
-    expect(providerGas.feePaymentOptions[0].token.symbol).toBe('ETH')
+    expect(providerGas.feePaymentOptions[0]!.availableAmount).toBeGreaterThan(0)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(undefined)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(null)
+    expect(providerGas.feePaymentOptions[0]!.token.address).toBe(ZeroAddress)
+    expect(providerGas.feePaymentOptions[0]!.token.symbol).toBe('ETH')
   })
 
   it('[EOA]:Polygon | sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
@@ -442,8 +440,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       [],
-      new BundlerSwitcher(polygon, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -454,10 +451,10 @@ describe('estimate', () => {
 
     // availableAmount for the providerGas is above 0 as it doesn't have
     // the subtraction that the ambire estimation has
-    expect(providerGas.feePaymentOptions[0].availableAmount).toBeGreaterThan(0n)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(undefined)
-    expect(providerGas.feePaymentOptions[0].token).not.toBe(null)
-    expect(providerGas.feePaymentOptions[0].token.address).toBe(ZeroAddress)
+    expect(providerGas.feePaymentOptions[0]!.availableAmount).toBeGreaterThan(0n)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(undefined)
+    expect(providerGas.feePaymentOptions[0]!.token).not.toBe(null)
+    expect(providerGas.feePaymentOptions[0]!.token.address).toBe(ZeroAddress)
 
     expect(res.ambire instanceof Error).toBe(false)
     const ambireGas = res.ambire as AmbireEstimation
@@ -518,8 +515,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       [],
-      new BundlerSwitcher(polygon, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -576,8 +572,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       [],
-      new BundlerSwitcher(polygon, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(true)
@@ -619,8 +614,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -675,8 +669,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -715,8 +708,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, viewOnlyAcc),
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -778,8 +770,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, accountOptimismv1),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -826,8 +817,7 @@ describe('estimate', () => {
       providerArbitrum,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(arbitrum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(arbitrum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -865,8 +855,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -914,8 +903,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -968,8 +956,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(true)
@@ -1018,8 +1005,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAcc),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(true)
@@ -1053,8 +1039,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -1102,8 +1087,7 @@ describe('estimate', () => {
       providerOptimism,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, smartAccDeployed),
-      new BundlerSwitcher(optimism, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -1149,8 +1133,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(polygon, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe('Insufficient POL')
@@ -1186,8 +1169,7 @@ describe('estimate', () => {
       providerPolygon,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(polygon, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
     expect(response instanceof Error).toBe(true)
     expect((response as Error).message).toBe(
@@ -1219,8 +1201,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, v1Acc),
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(true)
@@ -1282,8 +1263,7 @@ describe('estimate', () => {
       bscProvider,
       [],
       [],
-      switcher,
-      errorCallback
+      switcher
     )
     expect(response instanceof Error).toBe(false)
     const res = response as FullEstimation
@@ -1320,8 +1300,7 @@ describe('estimate', () => {
       bscProvider,
       [],
       [],
-      switcher,
-      errorCallback
+      switcher
     )
     expect(responseTwo instanceof Error).toBe(false)
     const resTwo = responseTwo as FullEstimation
@@ -1358,8 +1337,7 @@ describe('estimate', () => {
       bscProvider,
       [],
       [],
-      switcher,
-      errorCallback
+      switcher
     )
     expect(responseFour instanceof Error).toBe(false)
     const resFour = responseFour as FullEstimation
@@ -1397,8 +1375,7 @@ describe('estimate', () => {
       bscProvider,
       [],
       [],
-      switcher,
-      errorCallback
+      switcher
     )
     expect(responseFive instanceof Error).toBe(false)
     const resFive = responseFive as FullEstimation
@@ -1435,8 +1412,7 @@ describe('estimate', () => {
       bscProvider,
       [],
       [],
-      switcher,
-      errorCallback
+      switcher
     )
     expect(responseThree instanceof Error).toBe(true)
   })
@@ -1494,8 +1470,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, devconSmart),
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)
@@ -1552,8 +1527,7 @@ describe('estimate', () => {
       provider,
       feeTokens,
       getNativeToCheckFromEOAs(nativeToCheck, devconSmart),
-      new BundlerSwitcher(ethereum, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(true)
@@ -1591,8 +1565,7 @@ describe('estimate', () => {
       cronosProvider,
       [],
       [],
-      new BundlerSwitcher(cronos, areUpdatesForbidden),
-      errorCallback
+      new BundlerSwitcher(cronos, areUpdatesForbidden)
     )
 
     expect(response instanceof Error).toBe(false)

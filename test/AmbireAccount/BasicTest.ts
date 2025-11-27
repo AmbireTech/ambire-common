@@ -21,6 +21,8 @@ let ambireAccountAddress: string
 describe('Basic Ambire Account tests', () => {
   before('successfully deploys the ambire account', async () => {
     const [signer] = await ethers.getSigners()
+    if (!signer) throw new Error('Signer is undefined')
+
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       {
         addr: signer.address,
@@ -31,6 +33,8 @@ describe('Basic Ambire Account tests', () => {
   })
   it('should successfully perform execute and validate that the nonce has moved', async () => {
     const [signer] = await ethers.getSigners()
+    if (!signer) throw new Error('Signer is undefined')
+
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
@@ -83,6 +87,8 @@ describe('Basic Ambire Account tests', () => {
   })
   it('execute should fail if the account does not have privileges', async () => {
     const [signer, signer2] = await ethers.getSigners()
+    if (!signer || !signer2) throw new Error('Signer is undefined')
+
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
@@ -109,6 +115,7 @@ describe('Basic Ambire Account tests', () => {
   })
   it('fail on downgrading my own key priviledge', async () => {
     const [signer] = await ethers.getSigners()
+    if (!signer) throw new Error('Signer is undefined')
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const txns: [string, string, string][] = [
       getPriviledgeTxn(ambireAccountAddress, addressOne, false)
@@ -211,6 +218,7 @@ describe('Basic Ambire Account tests', () => {
   })
   it('should successfully executeMultiple', async () => {
     const [signer] = await ethers.getSigners()
+    if (!signer) throw new Error('Signer is undefined')
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
@@ -268,6 +276,7 @@ describe('Basic Ambire Account tests', () => {
   })
   it('should successfully execute a txn using accountOpSignableHash', async () => {
     const [signer] = await ethers.getSigners()
+    if (!signer) throw new Error('Signer is undefined')
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
@@ -294,6 +303,7 @@ describe('Basic Ambire Account tests', () => {
   })
   it('should allow a signed message to validate for the signer with a signature length of 65', async () => {
     const [signer] = await ethers.getSigners()
+    if (!signer) throw new Error('Signer is undefined')
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'message does not matter'
     const s = await signer.signMessage(msg)

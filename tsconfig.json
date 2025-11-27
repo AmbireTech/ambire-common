@@ -32,7 +32,8 @@
     "isolatedModules": true,
     "strict": true,
     "strictPropertyInitialization": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true
   },
   "exclude": ["node_modules", "dist"]
 }

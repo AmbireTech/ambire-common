@@ -117,7 +117,7 @@ export class GasPriceController extends EventEmitter {
       // updated in signAccountOp during bundlerEstimate() in estimateBundler.ts
       !this.#baseAccount.supportsBundlerEstimation()
         ? Promise.race([
-            bundler.fetchGasPrices(this.#network, () => {}),
+            bundler.fetchGasPrices(this.#network),
             new Promise((_resolve, reject) => {
               setTimeout(
                 () => reject(new Error('bundler gas price fetch fail, request too slow')),

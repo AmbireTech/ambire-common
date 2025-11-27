@@ -46,13 +46,13 @@ const providers: RPCProviders = {}
 
 networks.forEach((network) => {
   providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.chainId.toString()].isWorking = true
+  providers[network.chainId.toString()]!.isWorking = true
 })
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) =>
-      getAccountState(providers[network.chainId.toString()], network, accounts)
+      getAccountState(providers[network.chainId.toString()]!, network, accounts)
     )
   )
   const states = accounts.map((acc: Account, accIndex: number) => {
@@ -60,7 +60,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.chainId, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex]![accIndex]]
         })
       )
     ]
@@ -227,14 +227,14 @@ const getMultipleAccountsLearnedAssets = () => {
     },
     erc721s: {
       [`${1}:${account.addr}`]: turnCollectionsToLearnedAssetKeys([
-        [tokenHints1[0], [1n, 2n, 3n]],
-        [tokenHints1[1], [4n, 5n, 6n]],
-        [tokenHints1[2], [7n, 8n, 9n]]
+        [tokenHints1[0]!, [1n, 2n, 3n]],
+        [tokenHints1[1]!, [4n, 5n, 6n]],
+        [tokenHints1[2]!, [7n, 8n, 9n]]
       ]),
       [`${1}:${account2.addr}`]: turnCollectionsToLearnedAssetKeys([
         // Collision with account 1 (on purpose)
-        [tokenHints1[0], [10n, 11n, 12n]],
-        [tokenHints2[5], [13n, 14n, 15n]]
+        [tokenHints1[0]!, [10n, 11n, 12n]],
+        [tokenHints2[5]!, [13n, 14n, 15n]]
       ])
     }
   }
@@ -245,7 +245,7 @@ const getKeystoreKeys = (): StoredKey[] => {
     {
       privKey: '0',
       dedicatedToOneSA: false,
-      addr: account.associatedKeys[0],
+      addr: account.associatedKeys[0]!,
       type: 'internal',
       label: 'key 1',
       meta: {} as any
@@ -253,7 +253,7 @@ const getKeystoreKeys = (): StoredKey[] => {
     {
       privKey: '0',
       dedicatedToOneSA: false,
-      addr: account2.associatedKeys[0],
+      addr: account2.associatedKeys[0]!,
       type: 'internal',
       label: 'key 2',
       meta: {} as any
@@ -341,7 +341,7 @@ describe('Portfolio Controller ', () => {
       137
     ])
 
-    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1'])
+    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers['1']!)
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
@@ -460,7 +460,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
 
       controller.onUpdate(() => {
@@ -506,11 +506,11 @@ describe('Portfolio Controller ', () => {
       const accountStates = await getAccountsInfo([account])
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
 
       expect(done).toHaveBeenCalled()
@@ -523,7 +523,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state1 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -531,7 +531,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state2 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -547,7 +547,7 @@ describe('Portfolio Controller ', () => {
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state1 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -555,11 +555,11 @@ describe('Portfolio Controller ', () => {
 
       const accountOp2 = await getAccountOp()
       // Change the address
-      accountOp2['1'][0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
+      accountOp2['1'][0]!.accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
       await controller.updateSelectedAccount(account.addr, undefined, {
         accountOps: accountOp2,
-        states: accountStates[account.addr]
+        states: accountStates[account.addr]!
       })
       const state2 = controller.getAccountPortfolioState(
         '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -734,7 +734,7 @@ describe('Portfolio Controller ', () => {
       const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
       const learnedErc20s = learnedAssets.erc20s?.[`${1}:${account.addr}`]
 
-      expect(Object.keys(learnedErc20s).length).toBe(70)
+      expect(Object.keys(learnedErc20s!).length).toBe(70)
     })
 
     test('To be learned erc721 cleanup mechanism works', async () => {
@@ -781,7 +781,7 @@ describe('Portfolio Controller ', () => {
       // Expect the oldest 10 to be removed
       const learnedAssets: LearnedAssets = await storageCtrl.get('learnedAssets', {})
 
-      const learnedErc721s = learnedAssets.erc721s?.[`${1}:${account.addr}`]
+      const learnedErc721s = learnedAssets.erc721s?.[`${1}:${account.addr}`]!
 
       Object.keys(learnedErc721s).forEach((key) => {
         const [, id] = key.split(':')
@@ -815,7 +815,7 @@ describe('Portfolio Controller ', () => {
         1n
       )
       controller.addErc721sToBeLearned(
-        [[DUPLICATE_COLLECTION[0].toLowerCase(), [1n, 2n]]],
+        [[DUPLICATE_COLLECTION[0]!.toLowerCase(), [1n, 2n]]],
         account.addr,
         1n
       )
@@ -830,10 +830,10 @@ describe('Portfolio Controller ', () => {
       ).toBe(1)
       expect(
         Object.keys(allHints.specialErc721Hints.learn).filter(
-          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0].toLowerCase()
+          (addr) => addr.toLowerCase() === DUPLICATE_COLLECTION[0]!.toLowerCase()
         ).length
       ).toBe(1)
-      expect(allHints.specialErc721Hints.learn[DUPLICATE_COLLECTION[0]].length).toBe(2)
+      expect(allHints.specialErc721Hints.learn[DUPLICATE_COLLECTION[0]]!.length).toBe(2)
     })
 
     test('Add the same learned asset twice', async () => {
@@ -890,7 +890,7 @@ describe('Portfolio Controller ', () => {
 
       expect(
         Object.keys(learnedAssets.erc721s?.[`${1}:${account.addr}`] || {}).filter((addr) =>
-          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0].toLowerCase())
+          addr.toLowerCase().startsWith(DUPLICATE_COLLECTION[0]!.toLowerCase())
         ).length
       ).toBe(2)
     })
@@ -1068,7 +1068,7 @@ describe('Portfolio Controller ', () => {
       const key = `${137}:${account2.addr}`
 
       const previousHintsStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
-      const tokenInLearnedTokens = previousHintsStorage.erc20s?.[key][toBeLearnedToken!.address]
+      const tokenInLearnedTokens = previousHintsStorage.erc20s?.[key]![toBeLearnedToken!.address]
 
       expect(tokenInLearnedTokens).toBeTruthy()
     })
@@ -1231,6 +1231,8 @@ describe('Portfolio Controller ', () => {
 
       const learnedInStorage: LearnedAssets = await storageCtrl.get('learnedAssets', {})
 
+      if (!learnedInStorage.erc721s[key]) throw new Error('No learned erc721s for the account')
+
       // Nfts learned by directly calling learnNfts are added to learned in storage, regardless
       // of whether the user has a collectible from the collection or not.
       expect(learnedInStorage.erc721s[key][`${LILPUDGIS_COLLECTION}:1`]).toBeGreaterThan(0)
@@ -1321,7 +1323,7 @@ describe('Portfolio Controller ', () => {
           if (address === ZeroAddress) return
           expect(learnedAssets.erc20s[key]).toHaveProperty(address)
           // Has a timestamp
-          expect(learnedAssets.erc20s[key][address]).toBeDefined()
+          expect(learnedAssets.erc20s[key]![address]).toBeDefined()
         })
 
       collections?.forEach(({ address, collectibles }) => {
@@ -1332,7 +1334,7 @@ describe('Portfolio Controller ', () => {
           const collectibleKey = `${address}:${id.toString()}`
 
           expect(learnedAssets.erc721s[key]).toHaveProperty(collectibleKey)
-          expect(learnedAssets.erc721s[key][collectibleKey]).toBeGreaterThan(0)
+          expect(learnedAssets.erc721s[key]![collectibleKey]).toBeGreaterThan(0)
         })
       })
     })
@@ -1367,10 +1369,10 @@ describe('Portfolio Controller ', () => {
       // @ts-ignore
       const allHints = controller.getAllHints(account.addr, 1n)
 
-      Object.keys(previousHints.learnedTokens['1']).forEach((addr) => {
+      Object.keys(previousHints.learnedTokens['1']!).forEach((addr) => {
         expect(allHints.specialErc20Hints.learn.find((toBeLearned) => addr === toBeLearned))
       })
-      Object.keys(previousHints.learnedNfts['1']).forEach((addr) => {
+      Object.keys(previousHints.learnedNfts['1']!).forEach((addr) => {
         expect(allHints.specialErc721Hints.learn).toHaveProperty(addr)
       })
 
@@ -1397,7 +1399,7 @@ describe('Portfolio Controller ', () => {
       const hints = controller.getAllHints(account.addr, 1n, true)
       const key = `${1n}:${account.addr}`
 
-      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]))
+      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
       expect(hints.additionalErc721Hints).toEqual(
         learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {}))
       )
@@ -1415,7 +1417,7 @@ describe('Portfolio Controller ', () => {
       const hints = controller.getAllHints(account.addr, 1n)
       const key = `${1n}:${account.addr}`
 
-      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]))
+      expect(hints.additionalErc20Hints).toEqual(Object.keys(learnedAssets.erc20s[key]!))
       expect(hints.additionalErc721Hints).toEqual(
         learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {}))
       )
@@ -1435,10 +1437,10 @@ describe('Portfolio Controller ', () => {
       const key2 = `${1n}:${account2.addr}`
 
       expect(hints.additionalErc20Hints).toEqual([
-        ...Object.keys(learnedAssets.erc20s[key]),
-        ...Object.keys(learnedAssets.erc20s[key2])
+        ...Object.keys(learnedAssets.erc20s[key]!),
+        ...Object.keys(learnedAssets.erc20s[key2]!)
       ])
-      const firstNftAddr = Object.keys(learnedAssets.erc721s[key])[0].split(':')[0]
+      const firstNftAddr = Object.keys(learnedAssets.erc721s[key]!)[0]!.split(':')[0]!
       expect(hints.additionalErc721Hints).toEqual({
         ...learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key] || {})),
         ...learnedErc721sToHints(Object.keys(learnedAssets.erc721s[key2] || {})),

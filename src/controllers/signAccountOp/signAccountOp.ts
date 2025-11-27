@@ -69,9 +69,15 @@ import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpWithId,
+  GasFeePayment,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { getScamDetectedText } from '../../libs/banners/banners'
 import { BROADCAST_OPTIONS, buildRawTransaction } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
@@ -88,7 +94,7 @@ import {
   GasRecommendation
 } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
+import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -115,6 +121,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import shortenAddress from '../../utils/shortenAddress'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
@@ -232,7 +239,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * Otherwise the accountOp will be out of sync with the one stored
    * in requests/actions.
    */
-  #accountOp: AccountOp
+  #accountOp: AccountOpWithId
 
   gasPrices?: GasRecommendation[] | null
 
@@ -394,7 +401,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#activity = activity
     this.#phishing = phishing
     this.fromActionId = fromActionId
-    this.#accountOp = structuredClone(accountOp)
+    this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
     this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.rbfAccountOps = {}
@@ -443,14 +450,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return !!this.#updateBlacklistedStatusPromise
   }
 
-  get accountOp(): Readonly<AccountOp> {
+  get accountOp(): Readonly<AccountOpWithId> {
     return this.#accountOp
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
     if (!Object.keys(accountOp).length) return
 
-    this.#accountOp = { ...this.#accountOp, ...accountOp }
+    const hasUpdatedCalls = !!accountOp.calls
+
+    this.#accountOp = {
+      ...this.#accountOp,
+      ...accountOp,
+      id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
+    }
 
     this.#onAccountOpUpdate(this.#accountOp)
   }
@@ -476,6 +489,15 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       return {
         title: 'A malicious transaction found in this batch.',
         code: 'CALL_TO_SELF'
+      }
+    const warnings: HumanizerWarning[] = this.humanization
+      .map((h) => h.warnings)
+      .filter((w): w is HumanizerWarning[] => !!w)
+      .flat()
+    if (warnings.length)
+      return {
+        title: 'A malicious transaction found in this batch.',
+        code: warnings.map((w) => w.code).join(', ')
       }
 
     let callError: SignAccountOpError | null = null
@@ -508,16 +530,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   async #reestimate() {
-    // stop the interval reestimate if the user has done it over 20 times
-    this.#reestimateCounter += 1
-    if (this.#reestimateCounter > 20) this.#stopRefetching = true
-
     if (
       this.#stopRefetching ||
       this.estimation.status === EstimationStatus.Initial ||
       this.estimation.status === EstimationStatus.Loading
     )
       return
+
+    // stop the interval reestimate if the user has done it at least 20 times
+    if (this.#reestimateCounter >= 20) this.#stopRefetching = true
+
+    this.#reestimateCounter += 1
 
     // the first 10 times, reestimate once every 30s; then, slow down
     // the time as the user might just have closed the popup of the extension
@@ -557,7 +580,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   humanize() {
-    this.humanization = humanizeAccountOp(this.accountOp, {})
+    this.humanization = humanizeAccountOp(this.accountOp)
     const currentHumanizationId = Date.now()
     this.humanizationId = currentHumanizationId
     if (this.humanization.length) {
@@ -1854,7 +1877,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         [this.selectedOption!.token],
         this.provider,
         this.bundlerSwitcher,
-        () => {},
         eip7702Auth
       )
 
@@ -2792,22 +2814,13 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       ).values()
     )
 
-    const blacklistedCount = addressVisualizations.filter(
-      (v) => v.verification === 'BLACKLISTED'
-    ).length
+    const blacklistedItems = addressVisualizations.filter((v) => v.verification === 'BLACKLISTED')
 
-    if (blacklistedCount > 0) {
+    if (blacklistedItems.length) {
       banners.push({
         id: 'blacklisted-addresses-error-banner',
         type: 'error',
-        text:
-          blacklistedCount === 1
-            ? `${
-                this.type !== 'default'
-                  ? 'The destination address'
-                  : 'One of the destination addresses'
-              } in this transaction was flagged as dangerous. Proceed at your own risk.`
-            : `${blacklistedCount} of the destination addresses in this transaction were flagged as dangerous. Proceed at your own risk.`
+        text: getScamDetectedText(blacklistedItems)
       })
     } else {
       const hasFailedToGet = visualizations.some(
@@ -2818,7 +2831,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
-          text: "We couldn't check the destination addresses in this transaction for malicious activity. Proceed with caution."
+          text: "We couldn't check the addresses or tokens in this transaction for malicious activity. Proceed with caution."
         })
       }
     }

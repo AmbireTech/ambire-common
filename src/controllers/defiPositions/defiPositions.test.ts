@@ -46,7 +46,7 @@ const providers: RPCProviders = {}
 
 networks.forEach((network) => {
   providers[network.chainId.toString()] = getRpcProvider(network.rpcUrls, network.chainId)
-  providers[network.chainId.toString()].isWorking = true
+  providers[network.chainId.toString()]!.isWorking = true
 })
 
 const prepareTest = async () => {
@@ -143,8 +143,8 @@ describe('DefiPositionsController', () => {
 
     await controller.updatePositions()
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    expect(selectedAccountState['137'].updatedAt).toBeDefined()
-    expect(selectedAccountState['137'].positionsByProvider.length).toBeGreaterThan(0)
+    expect(selectedAccountState['137']!.updatedAt).toBeDefined()
+    expect(selectedAccountState['137']!.positionsByProvider.length).toBeGreaterThan(0)
   })
 
   it('should handle errors in update positions', async () => {
@@ -165,7 +165,7 @@ describe('DefiPositionsController', () => {
     await controller.updatePositions()
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    expect(selectedAccountState['1'].providerErrors).toEqual([
+    expect(selectedAccountState['1']!.providerErrors).toEqual([
       { providerName: 'AAVE v3', error: 'AAVE error' },
       { providerName: 'Uniswap V3', error: 'Uniswap error' }
     ])
@@ -179,7 +179,7 @@ describe('DefiPositionsController', () => {
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
-    const positions = selectedAccountState['137'].positionsByProvider
+    const positions = selectedAccountState['137']!.positionsByProvider
     expect(positions.length).toBeGreaterThan(0)
     positions.forEach((provider) => {
       provider.positions.forEach((position) => {
@@ -213,8 +213,8 @@ describe('DefiPositionsController', () => {
     await controller.updatePositions()
     const accountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
-    expect(accountState['1'].providerErrors!.length).toBeGreaterThan(0)
-    expect(accountState['137'].providerErrors!.length).toBeGreaterThan(0)
+    expect(accountState['1']!.providerErrors!.length).toBeGreaterThan(0)
+    expect(accountState['137']!.providerErrors!.length).toBeGreaterThan(0)
 
     const networksWithPositions = controller.getNetworksWithPositions(ACCOUNT.addr)
 
@@ -258,7 +258,7 @@ describe('DefiPositionsController', () => {
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
 
-    const uniswapV3Positions = selectedAccountState['1'].positionsByProvider.find(
+    const uniswapV3Positions = selectedAccountState['1']!.positionsByProvider.find(
       (p) => p.providerName === 'Uniswap V3'
     )
 
@@ -300,7 +300,7 @@ describe('DefiPositionsController', () => {
     })
 
     const selectedAccountState = controller.getDefiPositionsState(ACCOUNT.addr)
-    const aaveV3Positions = selectedAccountState['10'].positionsByProvider.find(
+    const aaveV3Positions = selectedAccountState['10']!.positionsByProvider.find(
       (p) => getProviderId(p.providerName) === 'aave v3'
     )
 

@@ -169,7 +169,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const providersForTesting = ['1', '137']
     const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
     // ensure all providers are working
-    mockedProviders[1].isWorking = true
+    mockedProviders[1]!.isWorking = true
     mockedProviders[137].isWorking = true
     mainCtrl.providers.providers = mockedProviders
 
@@ -287,7 +287,7 @@ describe('ContinuousUpdatesController intervals', () => {
     const providersForTesting = ['1', '137']
     const mockedProviders = filterProviders(mainCtrl.providers.providers, providersForTesting)
     // ensure there is at least one provider that is not working
-    mockedProviders[1].isWorking = false
+    mockedProviders[1]!.isWorking = false
     mockedProviders[137].isWorking = true
     mainCtrl.providers.providers = mockedProviders
     jest.spyOn(mainCtrl.continuousUpdates.fastAccountStateReFetchTimeout, 'start')
@@ -305,7 +305,7 @@ describe('ContinuousUpdatesController intervals', () => {
       .mockResolvedValue(undefined)
 
     // ensure there is at least one provider that is not working
-    mainCtrl.providers.providers[1].isWorking = false
+    mainCtrl.providers.providers[1]!.isWorking = false
     mainCtrl.providers.providers[137].isWorking = true
     mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
     const initialFnExecutionsCount =
