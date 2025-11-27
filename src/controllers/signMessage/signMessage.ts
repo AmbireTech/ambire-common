@@ -12,7 +12,7 @@ import {
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController, SignMessageUpdateParams } from '../../interfaces/signMessage'
-import { Message } from '../../interfaces/userRequest'
+import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import {
   getAppFormatted,
   getEIP712Signature,
@@ -20,7 +20,6 @@ import {
   getVerifyMessageSignature,
   verifyMessage
 } from '../../libs/signMessage/signMessage'
-import { isPlainTextMessage } from '../../libs/transfer/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/types'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -137,10 +136,10 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
 
     if (this.messageToSign && this.messageToSign.content.kind === 'siwe') {
       if (typeof isAutoLoginEnabledByUser === 'boolean') {
-        this.messageToSign.content.meta.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
+        this.messageToSign.content.isAutoLoginEnabledByUser = !!isAutoLoginEnabledByUser
       }
       if (typeof autoLoginDuration === 'number') {
-        this.messageToSign.content.meta.autoLoginDuration = autoLoginDuration
+        this.messageToSign.content.autoLoginDuration = autoLoginDuration
       }
     }
     this.emitUpdate()
@@ -185,7 +184,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
 
       const account = this.#accounts.accounts.find(
-        (acc) => acc.addr === this.messageToSign?.content?.accountAddr
+        (acc) => acc.addr === this.messageToSign?.accountAddr
       )
       if (!account) {
         throw new Error(
@@ -193,7 +192,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         )
       }
       const network = this.#networks.networks.find(
-        (n: Network) => n.chainId === this.messageToSign!.content.chainId
+        (n: Network) => n.chainId === this.messageToSign!.chainId
       )
       if (!network) {
         throw new Error('Network not supported on Ambire. Please contract support.')
@@ -203,9 +202,12 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       let signature
 
       try {
-        if (isPlainTextMessage(this.messageToSign.content)) {
+        if (
+          this.messageToSign.content.kind === 'message' ||
+          this.messageToSign.content.kind === 'siwe'
+        ) {
           signature = await getPlainTextSignature(
-            this.messageToSign.content.meta.message,
+            this.messageToSign.content.message,
             network,
             account,
             accountState,
@@ -216,7 +218,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
-          if (account.creation && this.messageToSign.content.meta.primaryType === 'Permit') {
+          if (account.creation && this.messageToSign.content.primaryType === 'Permit') {
             throw new Error(
               'It looks like that this app doesn\'t detect Smart Account wallets, and requested incompatible approval type. Please, go back to the app and change the approval type to "Transaction", which is supported by Smart Account wallets.'
             )
@@ -261,22 +263,27 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
         provider: this.#providers.providers[network?.chainId.toString() || '1'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
-        signer: this.messageToSign.content.accountAddr,
+        signer: this.messageToSign.accountAddr,
         signature: getVerifyMessageSignature(signature, account, accountState),
         // eslint-disable-next-line no-nested-ternary
-        ...(isPlainTextMessage(this.messageToSign.content)
-          ? { message: hexStringToUint8Array(this.messageToSign.content.meta.message) }
+        ...(this.messageToSign.content.kind === 'message' ||
+        this.messageToSign.content.kind === 'siwe'
+          ? { message: hexStringToUint8Array(this.messageToSign.content.message) }
           : this.messageToSign.content.kind === 'typedMessage'
           ? {
               typedData: {
-                domain: this.messageToSign.content.meta.domain,
-                types: this.messageToSign.content.meta.types,
-                message: this.messageToSign.content.meta.message,
-                primaryType: this.messageToSign.content.meta.primaryType
+                domain: this.messageToSign.content.domain,
+                types: this.messageToSign.content.types,
+                message: this.messageToSign.content.message,
+                primaryType: this.messageToSign.content.primaryType
               }
             }
           : {
-              authorization: this.messageToSign.content.meta.message
+              authorization: (
+                this.messageToSign.content as AuthorizationUserRequest['meta']['params'] & {
+                  kind: AuthorizationUserRequest['kind']
+                }
+              ).message
             })
       }
       const isValidSignature = await verifyMessage(verifyMessageParams)
@@ -289,8 +296,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
       }
 
       this.signedMessage = {
-        fromRequestId: this.messageToSign.fromRequestId,
-        content: this.messageToSign.content,
+        ...this.messageToSign,
         timestamp: new Date().getTime(),
         signature: getAppFormatted(signature, account, accountState),
         dapp: this.dapp
@@ -318,7 +324,7 @@ export class SignMessageController extends EventEmitter implements ISignMessageC
   }
 
   removeAccountData(address: Account['addr']) {
-    if (this.messageToSign?.content?.accountAddr.toLowerCase() === address.toLowerCase()) {
+    if (this.messageToSign?.accountAddr.toLowerCase() === address.toLowerCase()) {
       this.reset()
     }
   }

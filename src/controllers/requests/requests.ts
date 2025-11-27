@@ -58,9 +58,9 @@ import {
 } from '../../libs/swapAndBridge/swapAndBridge'
 import {
   getClaimWalletRequestParams,
+  getIntentRequestParams,
   getMintVestingRequestParams,
-  getTransferRequestParams,
-  prepareIntentUserRequest
+  getTransferRequestParams
 } from '../../libs/transfer/userRequest'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AutoLoginController } from '../autoLogin/autoLogin'
@@ -964,7 +964,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       userRequest = {
         id: new Date().getTime(),
         kind: 'message',
-        meta: { message: msg[0], accountAddr: msgAddress, chainId: network.chainId },
+        meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
         dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
       } as PlainTextMessageUserRequest
 
@@ -1030,11 +1030,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           kind: 'siwe',
           meta: {
             ...userRequest.meta,
-            parsedMessage: parsedSiwe,
-            autoLoginStatus,
-            siweValidityStatus: status,
-            isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
-            autoLoginDuration: this.#autoLogin.settings.duration
+            params: {
+              ...userRequest.meta.params,
+              parsedMessage: parsedSiwe,
+              autoLoginStatus,
+              siweValidityStatus: status,
+              isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
+              autoLoginDuration: this.#autoLogin.settings.duration
+            }
           }
         } as SiweMessageUserRequest
       }
@@ -1085,12 +1088,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         id: new Date().getTime(),
         kind: 'typedMessage',
         meta: {
+          params: {
+            types: typedData.types,
+            domain: typedData.domain,
+            message: typedData.message,
+            primaryType: typedData.primaryType
+          },
           accountAddr: msgAddress,
-          chainId: network.chainId,
-          types: typedData.types,
-          domain: typedData.domain,
-          message: typedData.message,
-          primaryType: typedData.primaryType
+          chainId: network.chainId
         },
         dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
       } as TypedMessageUserRequest
@@ -1197,7 +1202,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
     )
 
-    const userRequests = prepareIntentUserRequest({
+    const requestParams = getIntentRequestParams({
       selectedAccount: this.#selectedAccount.account.addr,
       selectedToken,
       recipientAddress,
@@ -1205,7 +1210,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       transactions: this.#transactionManager.intent?.transactions
     })
 
-    if (!userRequests.length) {
+    if (!requestParams) {
       this.emitError({
         level: 'major',
         message: 'Unexpected error while building intent request',
@@ -1216,7 +1221,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    await this.addUserRequests(userRequests, { executionType, position: 'last' })
+    const userRequest = await this.#createCallsUserRequest({ ...requestParams, dappPromises: [] })
+    await this.addUserRequests([userRequest], { executionType, position: 'last' })
   }
 
   async #buildTransferUserRequest({

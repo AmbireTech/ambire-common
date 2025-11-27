@@ -4,17 +4,9 @@ import { v4 as uuidv4 } from 'uuid'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import WALLETSupplyControllerABI from '../../../contracts/compiled/WALLETSupplyController.json'
 import WETH from '../../../contracts/compiled/WETH.json'
-import { Session } from '../../classes/session'
 import { FEE_COLLECTOR, STK_WALLET, SUPPLY_CONTROLLER_ADDR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
-import {
-  Calls,
-  CallsUserRequest,
-  Message,
-  PlainTextMessageUserRequest,
-  SignUserRequest,
-  SiweMessageUserRequest
-} from '../../interfaces/userRequest'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 import { PaymasterService } from '../erc7677/types'
 import { AddrVestingData, ClaimableRewardsData, TokenResult } from '../portfolio'
 import { getSanitizedAmount } from './amount'
@@ -136,8 +128,8 @@ function getTransferRequestParams({
 
     const wrapped = new Interface(WETH)
     const deposit = wrapped.encodeFunctionData('deposit')
-    const calls: Calls = {
-      kind: 'calls' as const,
+
+    return {
       calls: [
         {
           to: wrappedAddr,
@@ -149,11 +141,7 @@ function getTransferRequestParams({
           value: BigInt(0),
           data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
         }
-      ]
-    }
-
-    return {
-      calls,
+      ],
       meta: {
         chainId: selectedToken.chainId,
         accountAddr: selectedAccount,
@@ -195,7 +183,13 @@ function getTransferRequestParams({
   }
 }
 
-interface PrepareIntentUserRequestParams {
+function getIntentRequestParams({
+  selectedToken,
+  selectedAccount,
+  recipientAddress,
+  paymasterService,
+  transactions
+}: {
   selectedToken: TokenResult
   selectedAccount: string
   recipientAddress: string
@@ -206,110 +200,35 @@ interface PrepareIntentUserRequestParams {
     value?: string
     data: string
   }[]
-  windowId?: number
-}
-function prepareIntentUserRequest({
-  selectedToken,
-  selectedAccount,
-  recipientAddress,
-  paymasterService,
-  transactions,
-  windowId
-}: PrepareIntentUserRequestParams): SignUserRequest[] {
-  if (!selectedToken || !selectedAccount || !recipientAddress) return []
+}): {
+  calls: CallsUserRequest['accountOp']['calls']
+  meta: CallsUserRequest['meta']
+} | null {
+  if (!selectedToken || !selectedAccount || !recipientAddress) return null
 
   const id = uuidv4()
-  // const txn = {
-  //   kind: 'calls' as const,
-  //   calls: [
-  //     {
-  //       fromUserRequestId: id,
-  //       id: `${id}-0`,
-  //       to: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-  //       value: BigInt(0),
-  //       data: '0x095ea7b300000000000000000000000073f70aabdad84cc5d6f58c85e655eaf1edeb918400000000000000000000000000000000000000000000000000000000005b8d80'
-  //     }
-  //   ]
-  // }
-  // const id2 = uuidv4()
-  // const txn2 = {
-  //   kind: 'calls' as const,
-  //   calls: [
-  //     {
-  //       fromUserRequestId: id2,
-  //       id: `${id2}-0`,
-  //       to: '0x73f70aABDAD84cC5d6F58c85E655EAF1eDeB9184',
-  //       value: BigInt(0),
-  //       data: '0xe917a962000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000682510949df4b782e7bbc178b3b93bfe8aafb909e84e39484d7f3c59f400f1b4691f85e20000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000000200000000000000000000000001c7d4b196cb0c7b01d743fbc6116a902379c723800000000000000000000000000000000000000000000000000000000000f4240000000000000000000000000036cbd53842c5426634e7929541ec2318f3dcf7e00000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000014a34000000000000000000000000389cf18484e8b0338e94c5c6df3dbc2e229dade800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000'
-  //     }
-  //   ]
-  // }
 
-  const txn = {
-    kind: 'calls' as const,
+  return {
     calls: transactions.map((transaction, index) => ({
       fromUserRequestId: id,
       id: `${id}-${index}`,
       to: transaction.to,
       value: BigInt(transaction.value || '0'),
       data: transaction.data
-    }))
-  }
-
-  // return [
-  //   {
-  //     id,
-  //     action: txn,
-  //     meta: {
-  //       isSignAction: true,
-  //       chainId: selectedToken.chainId,
-  //       accountAddr: selectedAccount,
-  //       paymasterService,
-  //       isSwapAndBridgeCall: true,
-  //       activeRouteId: id
-  //     }
-  //   },
-  //   {
-  //     id: id2,
-  //     action: txn2,
-  //     meta: {
-  //       isSignAction: true,
-  //       chainId: selectedToken.chainId,
-  //       accountAddr: selectedAccount,
-  //       paymasterService,
-  //       isSwapAndBridgeCall: true,
-  //       activeRouteId: id2
-  //     }
-  //   }
-  // ]
-
-  return [
-    {
-      id,
-      action: txn,
-      session: new Session({ windowId }),
-      meta: {
-        isSignAction: true,
-        chainId: selectedToken.chainId,
-        accountAddr: selectedAccount,
-        paymasterService,
-        isSwapAndBridgeCall: true,
-        activeRouteId: id
-      }
+    })),
+    meta: {
+      chainId: selectedToken.chainId,
+      accountAddr: selectedAccount,
+      paymasterService,
+      isSwapAndBridgeCall: true,
+      activeRouteId: id
     }
-  ]
-}
-
-const isPlainTextMessage = (
-  messageContent: Message['content']
-): messageContent is PlainTextMessageUserRequest | SiweMessageUserRequest => {
-  return messageContent.kind === 'message' || messageContent.kind === 'siwe'
+  }
 }
 
 export {
   getClaimWalletRequestParams,
   getMintVestingRequestParams,
   getTransferRequestParams,
-  isPlainTextMessage,
-  prepareIntentUserRequest
+  getIntentRequestParams
 }

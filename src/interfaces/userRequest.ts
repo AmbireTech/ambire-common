@@ -14,19 +14,24 @@ import { EIP7702Signature } from './signatures'
 // probably interfaces
 export interface Message {
   fromRequestId: string | number
-  content: (
-    | PlainTextMessageUserRequest['meta']
-    | TypedMessageUserRequest['meta']
-    | AuthorizationUserRequest['meta']
-    | SiweMessageUserRequest['meta']
-  ) & {
-    kind: (
-      | PlainTextMessageUserRequest
-      | TypedMessageUserRequest
-      | AuthorizationUserRequest
-      | SiweMessageUserRequest
-    )['kind']
-  }
+  content:
+    | (PlainTextMessageUserRequest['meta']['params'] & {
+        kind: PlainTextMessageUserRequest['kind']
+      })
+    | (TypedMessageUserRequest['meta']['params'] & { kind: TypedMessageUserRequest['kind'] })
+    | (AuthorizationUserRequest['meta']['params'] & { kind: AuthorizationUserRequest['kind'] })
+    | (SiweMessageUserRequest['meta']['params'] & { kind: SiweMessageUserRequest['kind'] })
+
+  accountAddr:
+    | PlainTextMessageUserRequest['meta']['accountAddr']
+    | TypedMessageUserRequest['meta']['accountAddr']
+    | AuthorizationUserRequest['meta']['accountAddr']
+    | SiweMessageUserRequest['meta']['accountAddr']
+  chainId:
+    | PlainTextMessageUserRequest['meta']['chainId']
+    | TypedMessageUserRequest['meta']['chainId']
+    | AuthorizationUserRequest['meta']['chainId']
+    | SiweMessageUserRequest['meta']['chainId']
   signature: EIP7702Signature | string | null
 }
 
@@ -65,7 +70,7 @@ export interface CallsUserRequest extends UserRequestBase {
 export interface PlainTextMessageUserRequest extends UserRequestBase {
   kind: 'message'
   meta: UserRequestBase['meta'] & {
-    message: Hex
+    params: { message: Hex }
     accountAddr: AccountId
     chainId: bigint
   }
@@ -74,12 +79,14 @@ export interface PlainTextMessageUserRequest extends UserRequestBase {
 export interface SiweMessageUserRequest extends UserRequestBase {
   kind: 'siwe'
   meta: UserRequestBase['meta'] & {
-    message: Hex
-    parsedMessage: ViemSiweMessage
-    siweValidityStatus: SiweValidityStatus
-    autoLoginStatus: AutoLoginStatus
-    isAutoLoginEnabledByUser: boolean
-    autoLoginDuration: number
+    params: {
+      message: Hex
+      parsedMessage: ViemSiweMessage
+      siweValidityStatus: SiweValidityStatus
+      autoLoginStatus: AutoLoginStatus
+      isAutoLoginEnabledByUser: boolean
+      autoLoginDuration: number
+    }
     accountAddr: AccountId
     chainId: bigint
   }
@@ -88,10 +95,12 @@ export interface SiweMessageUserRequest extends UserRequestBase {
 export interface TypedMessageUserRequest extends UserRequestBase {
   kind: 'typedMessage'
   meta: UserRequestBase['meta'] & {
-    domain: TypedDataDomain
-    types: Record<string, Array<TypedDataField>>
-    message: Record<string, any>
-    primaryType: keyof Record<string, Array<TypedDataField>>
+    params: {
+      domain: TypedDataDomain
+      types: Record<string, Array<TypedDataField>>
+      message: Record<string, any>
+      primaryType: keyof Record<string, Array<TypedDataField>>
+    }
     accountAddr: AccountId
     chainId: bigint
   }
@@ -100,11 +109,13 @@ export interface TypedMessageUserRequest extends UserRequestBase {
 export interface AuthorizationUserRequest extends UserRequestBase {
   kind: 'authorization-7702'
   meta: UserRequestBase['meta'] & {
+    params: {
+      message: Hex
+      contractAddr: Hex
+      nonce: bigint
+    }
     accountAddr: AccountId
     chainId: bigint
-    nonce: bigint
-    contractAddr: Hex
-    message: Hex
   }
 }
 

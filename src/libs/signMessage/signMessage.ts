@@ -95,7 +95,9 @@ interface AmbireReadableOperation {
   calls: { to: Hex; value: bigint; data: Hex }[]
 }
 
-export const adaptTypedMessageForMetaMaskSigUtil = (typedMessage: TypedMessage) => {
+export const adaptTypedMessageForMetaMaskSigUtil = (
+  typedMessage: TypedMessageUserRequest['meta']['params']
+) => {
   return {
     ...typedMessage,
     types: {
@@ -124,7 +126,7 @@ export const getAmbireReadableTypedData = (
   chainId: bigint,
   verifyingAddr: string,
   v1Execute: AmbireReadableOperation
-): TypedMessage => {
+): TypedMessageUserRequest['meta']['params'] => {
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
@@ -169,7 +171,6 @@ export const getAmbireReadableTypedData = (
   }
 
   return {
-    kind: 'typedMessage',
     domain,
     types,
     message: v1Execute,
@@ -184,7 +185,7 @@ export const getTypedData = (
   chainId: bigint,
   verifyingAddr: string,
   msgHash: string
-): TypedMessage => {
+): TypedMessageUserRequest['meta']['params'] => {
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
@@ -226,7 +227,6 @@ export const getTypedData = (
   }
 
   return {
-    kind: 'typedMessage',
     domain,
     types,
     message,
@@ -242,7 +242,7 @@ export const get7702UserOpTypedData = (
   txns: [string, string, string][],
   packedUserOp: PackedUserOperation,
   userOpHash: string
-): TypedMessage => {
+): TypedMessageUserRequest['meta']['params'] => {
   const calls = txns.map((txn) => ({
     to: txn[0],
     value: txn[1],
@@ -298,7 +298,6 @@ export const get7702UserOpTypedData = (
   }
 
   return {
-    kind: 'typedMessage',
     domain,
     types,
     message,
@@ -346,10 +345,10 @@ type Props = {
   | { message: string | Uint8Array; typedData?: never; authorization?: never }
   | {
       typedData: {
-        domain: TypedMessage['domain']
-        types: TypedMessage['types']
-        message: TypedMessage['message']
-        primaryType: TypedMessage['primaryType']
+        domain: TypedMessageUserRequest['meta']['params']['domain']
+        types: TypedMessageUserRequest['meta']['params']['types']
+        message: TypedMessageUserRequest['meta']['params']['message']
+        primaryType: TypedMessageUserRequest['meta']['params']['primaryType']
       }
       message?: never
       authorization?: never
@@ -416,7 +415,7 @@ export async function verifyMessage({
         finalDigest = hexlify(
           // @ts-ignore
           TypedDataUtils.eip712Hash(
-            adaptTypedMessageForMetaMaskSigUtil({ ...typedData, kind: 'typedMessage' }),
+            adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
             SignTypedDataVersion.V4
           )
         )
@@ -494,7 +493,7 @@ export async function getExecuteSignature(
 }
 
 export async function getPlainTextSignature(
-  messageHex: PlainTextMessage['message'],
+  messageHex: PlainTextMessageUserRequest['meta']['params']['message'],
   network: Network,
   account: Account,
   accountState: AccountOnchainState,
@@ -550,7 +549,7 @@ export async function getPlainTextSignature(
 }
 
 export async function getEIP712Signature(
-  message: TypedMessage,
+  message: TypedMessageUserRequest['meta']['params'],
   account: Account,
   accountState: AccountOnchainState,
   signer: KeystoreSignerInterface,
@@ -635,7 +634,7 @@ export async function getEntryPointAuthorization(
   addr: AccountId,
   chainId: bigint,
   nonce: bigint
-): Promise<TypedMessage> {
+): Promise<TypedMessageUserRequest['meta']['params']> {
   const hash = getSignableHash(addr, chainId, nonce, [callToTuple(getActivatorCall(addr))])
   return getTypedData(chainId, addr, hexlify(hash))
 }

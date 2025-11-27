@@ -1082,8 +1082,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.content.accountAddr
-    const chainId = this.signMessage.messageToSign?.content.chainId
+    const accountAddr = this.signMessage.messageToSign?.accountAddr
+    const chainId = this.signMessage.messageToSign?.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
@@ -1122,7 +1122,7 @@ export class MainController extends EventEmitter implements IMainController {
       )
     }
 
-    await this.activity.addSignedMessage(signedMessage, signedMessage.content.accountAddr)
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
 
     await this.requests.resolveUserRequest(
       { hash: signedMessage.signature },
