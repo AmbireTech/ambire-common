@@ -9,7 +9,6 @@ import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
-import { AccountOpAction, BenzinAction, DappRequestAction } from '../../interfaces/actions'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
@@ -231,7 +230,7 @@ describe('Actions Controller', () => {
 
     actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION], {
       position: 'last',
-      executionType: 'open-action-window'
+      executionType: 'open-request-window'
     })
   })
   test('should set window loaded', (done) => {
@@ -535,7 +534,7 @@ describe('Actions Controller', () => {
     })
     actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
       position: 'last',
-      executionType: 'open-action-window'
+      executionType: 'open-request-window'
     })
 
     expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)

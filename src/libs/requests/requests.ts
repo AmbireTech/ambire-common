@@ -1,4 +1,4 @@
-import { Account, AccountId } from '../../interfaces/account'
+import { AccountId } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
@@ -6,7 +6,6 @@ import {
   SwitchAccountRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import generateSpoofSig from '../../utils/generateSpoofSig'
 import { Call } from '../accountOp/types'
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
@@ -131,99 +130,4 @@ export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
       .map((req) => req.accountOp.meta!.topUpAmount)
       .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
-}
-
-export const makeAccountOpAction = ({
-  account,
-  chainId,
-  nonce,
-  actionsQueue,
-  userRequests
-}: {
-  account: Account
-  chainId: bigint
-  nonce: bigint | null
-  actionsQueue: Action[]
-  userRequests: UserRequest[]
-}): AccountOpAction => {
-  const accountOpAction = actionsQueue.find(
-    (a) => a.type === 'accountOp' && a.id === `${account.addr}-${chainId}`
-  ) as AccountOpAction | undefined
-
-  if (accountOpAction) {
-    const calls = batchCallsFromUserRequests({
-      accountAddr: account.addr,
-      chainId,
-      userRequests
-    })
-
-    // add top ups
-    if (!accountOpAction.accountOp.meta) accountOpAction.accountOp.meta = {}
-    accountOpAction.accountOp.meta.topUpAmount = sumTopUps(userRequests)
-
-    // the nonce might have changed during estimation because of
-    // a nonce discrepancy issue. This makes sure we're with the
-    // latest nonce should the user decide to batch
-    accountOpAction.accountOp.nonce = nonce
-    return { ...accountOpAction, accountOp: { ...accountOpAction.accountOp, calls } }
-  }
-
-  // find the user request with a paymaster service
-  const userReqWithPaymasterService = userRequests.find(
-    (req) =>
-      req.meta.accountAddr === account.addr &&
-      req.meta.chainId === chainId &&
-      req.meta.paymasterService
-  )
-  const paymasterService = userReqWithPaymasterService
-    ? userReqWithPaymasterService.meta.paymasterService
-    : undefined
-
-  // find the user request with a wallet send calls version if any
-  const userReqWithWalletSendCallsVersion = userRequests.find(
-    (req) =>
-      req.meta.accountAddr === account.addr &&
-      req.meta.chainId === chainId &&
-      req.meta.walletSendCallsVersion
-  )
-  const walletSendCallsVersion = userReqWithWalletSendCallsVersion
-    ? userReqWithWalletSendCallsVersion.meta.walletSendCallsVersion
-    : undefined
-
-  // find the user request with a setDelegation meta property if any
-  const userReqWithDelegation = userRequests.find(
-    (req) =>
-      req.meta.accountAddr === account.addr &&
-      req.meta.chainId === chainId &&
-      'setDelegation' in req.meta
-  )
-  const setDelegation = userReqWithDelegation ? userReqWithDelegation.meta.setDelegation : undefined
-
-  const accountOp: AccountOpAction['accountOp'] = {
-    accountAddr: account.addr,
-    chainId,
-    signingKeyAddr: null,
-    signingKeyType: null,
-    gasLimit: null,
-    gasFeePayment: null,
-    nonce,
-    signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-    calls: batchCallsFromUserRequests({
-      accountAddr: account.addr,
-      chainId,
-      userRequests
-    }),
-    meta: {
-      paymasterService,
-      walletSendCallsVersion,
-      setDelegation,
-      topUpAmount: sumTopUps(userRequests)
-    }
-  }
-
-  return {
-    id: `${account.addr}-${chainId}`, // SA accountOpAction id
-    type: 'accountOp',
-    accountOp
-  }
 }

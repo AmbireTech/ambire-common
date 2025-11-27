@@ -3,7 +3,6 @@ import { ethErrors } from 'eth-rpc-errors'
 
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import EmittableError from '../../classes/EmittableError'
-import { Session } from '../../classes/session'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import {
   BIP44_LEDGER_DERIVATION_TEMPLATE,
@@ -48,17 +47,15 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '../../interf
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
-import { CallsUserRequest, SignUserRequest, UserRequest } from '../../interfaces/userRequest'
+import { BenzinUserRequest, CallsUserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isBasicAccount } from '../../libs/account/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getDappIdentifier, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-import { getAccountOpFromAction } from '../../libs/actions/actions'
 /* eslint-disable no-await-in-loop */
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { getAccountOpsForSimulation } from '../../libs/main/main'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { makeAccountOpAction } from '../../libs/requests/requests'
 import { isNetworkReady } from '../../libs/selectedAccount/selectedAccount'
 import { debugTraceCall } from '../../libs/tracer/debugTraceCall'
 /* eslint-disable no-underscore-dangle */
@@ -741,7 +738,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.signAccOpInitError = null
 
     // if there's no signAccountOp OR
-    // there is but there's a new actionId requested, rebuild it
+    // there is but there's a new requestId requested, rebuild it
     if (!this.signAccountOp || this.signAccountOp.fromRequestId !== requestId) {
       this.destroySignAccOp()
       this.signAccountOp = new SignAccountOpController({
@@ -776,7 +773,7 @@ export class MainController extends EventEmitter implements IMainController {
           )
           await this.#commonHandlerForBroadcastSuccess(props)
           // resolve dapp requests, open benzin and etc only if the main sign accountOp
-          this.resolveAccountOpAction(submittedAccountOp, fromRequestId)
+          this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
           this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
         },
         onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
@@ -1085,8 +1082,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleSignMessage() {
-    const accountAddr = this.signMessage.messageToSign?.accountAddr
-    const chainId = this.signMessage.messageToSign?.chainId
+    const accountAddr = this.signMessage.messageToSign?.content.accountAddr
+    const chainId = this.signMessage.messageToSign?.content.chainId
 
     // Could (rarely) happen if not even a single account state is fetched yet
     const shouldForceUpdateAndWaitForAccountState =
@@ -1125,7 +1122,7 @@ export class MainController extends EventEmitter implements IMainController {
       )
     }
 
-    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+    await this.activity.addSignedMessage(signedMessage, signedMessage.content.accountAddr)
 
     await this.requests.resolveUserRequest(
       { hash: signedMessage.signature },
@@ -1347,7 +1344,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.accounts.removeAccountData(address)
       this.portfolio.removeAccountData(address)
       await this.activity.removeAccountData(address)
-      this.requests.actions.removeAccountData(address)
+      this.requests.removeAccountData(address)
       this.signMessage.removeAccountData(address)
       this.defiPositions.removeAccountData(address)
 
@@ -1476,7 +1473,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     const accountOpsToBeSimulatedByNetwork = getAccountOpsForSimulation(
       this.selectedAccount.account,
-      this.requests.actions.visibleActionsQueue,
+      this.requests.visibleUserRequests,
       this.networks.networks
     )
 
@@ -1497,37 +1494,8 @@ export class MainController extends EventEmitter implements IMainController {
   async rejectSignAccountOpCall(callId: string) {
     if (!this.signAccountOp) return
 
-    const { calls, chainId, accountAddr } = this.signAccountOp.accountOp
-
-    const requestId = calls.find((c) => c.id === callId)?.fromUserRequestId
-    if (requestId) {
-      const userRequestIndex = this.requests.userRequests.findIndex((r) => r.id === requestId)
-      const userRequest = this.requests.userRequests[userRequestIndex] as SignUserRequest
-      if (userRequest.action.kind === 'calls') {
-        ;(userRequest.action as Calls).calls = (userRequest.action as Calls).calls.filter(
-          (c) => c.id !== callId
-        )
-
-        if (userRequest.action.calls.length === 0) {
-          // the reject will remove the userRequest which will rebuild the action and update the signAccountOp
-          await this.requests.rejectUserRequests('User rejected the transaction request.', [
-            userRequest.id
-          ])
-        } else {
-          const accountOpAction = makeAccountOpAction({
-            account: this.accounts.accounts.find((a) => a.addr === accountAddr)!,
-            chainId,
-            nonce: this.accounts.accountStates[accountAddr][chainId.toString()].nonce,
-            userRequests: this.requests.userRequests,
-            actionsQueue: this.requests.actions.actionsQueue
-          })
-
-          await this.requests.actions.addOrUpdateActions([accountOpAction], {
-            skipFocus: true
-          })
-          this.signAccountOp?.update({ accountOpData: { calls: accountOpAction.accountOp.calls } })
-        }
-      }
+    if (this.signAccountOp.accountOp.calls.find((c) => c.id === callId)) {
+      this.signAccountOp.removeAccountOpCall(callId)
     } else {
       this.emitError({
         message: 'Reject call: the call was not found or was not linked to a user request',
@@ -1579,21 +1547,19 @@ export class MainController extends EventEmitter implements IMainController {
     // this.defiPositions.removeNetworkData(chainId)
   }
 
-  async resolveAccountOpAction(
+  async resolveAccountOpRequest(
     submittedAccountOp: SubmittedAccountOp,
-    actionId: AccountOpAction['id']
+    requestId: CallsUserRequest['id']
   ) {
-    const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
-    if (!accountOpAction) return
+    const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
+    if (!accountOpRequest) return
 
-    const { accountOp } = accountOpAction as AccountOpAction
+    const { accountOp, dappPromises } = accountOpRequest as CallsUserRequest
     const network = this.networks.networks.find((n) => n.chainId === accountOp.chainId)
 
     if (!network) return
 
-    const calls: Call[] = submittedAccountOp.calls
-    const meta: SignUserRequest['meta'] = {
-      isSignAction: true,
+    const meta: BenzinUserRequest['meta'] = {
       accountAddr: accountOp.accountAddr,
       chainId: network.chainId,
       txnId: null,
@@ -1601,57 +1567,37 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     if (submittedAccountOp) {
-      // can be undefined, check submittedAccountOp.ts
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy
       meta.submittedAccountOp = submittedAccountOp
     }
 
-    const benzinUserRequest: SignUserRequest = {
+    const benzinUserRequest: BenzinUserRequest = {
       id: new Date().getTime(),
-      action: { kind: 'benzin' },
-      session: new Session(),
-      meta
+      kind: 'benzin',
+      meta,
+      dappPromises: []
     }
     await this.requests.addUserRequests([benzinUserRequest], {
       position: 'first',
       skipFocus: true
     })
 
-    await this.requests.actions.removeActions([actionId])
+    await this.requests.removeUserRequests([requestId])
 
-    const userRequestsToRemove: UserRequest['id'][] = []
     const dappHandlers: any[] = []
 
     // handle wallet_sendCalls before activity.getConfirmedTxId as 1) it's faster
     // 2) the identifier is different
-    calls.forEach((call) => {
-      const walletSendCallsUserReq = this.requests.userRequests.find(
-        (r) => r.id === call.fromUserRequestId && r.meta.isWalletSendCalls
-      )
-      const uReq = this.requests.userRequests.find((r) => r.id === call.fromUserRequestId)
-
-      if (walletSendCallsUserReq) {
-        walletSendCallsUserReq.dappPromise?.resolve({
-          hash: getDappIdentifier(submittedAccountOp)
-        })
-
-        userRequestsToRemove.push(walletSendCallsUserReq.id)
-      }
-
-      if (uReq) {
-        if (uReq.dappPromise) {
-          dappHandlers.push({
-            promise: uReq.dappPromise,
-            txnId: call.txnId
-          })
-        }
-
-        userRequestsToRemove.push(uReq.id)
+    dappPromises.forEach((dappPromise) => {
+      if (dappPromise.meta.isWalletSendCalls) {
+        dappPromise.resolve({ hash: getDappIdentifier(submittedAccountOp) })
+      } else {
+        dappHandlers.push({ promise: dappPromise, txnId: submittedAccountOp.txnId })
       }
     })
 
-    await this.requests.removeUserRequests(userRequestsToRemove, {
+    await this.requests.removeUserRequests([accountOpRequest.id], {
       shouldRemoveSwapAndBridgeRoute: false,
       // Since `resolveAccountOpAction` is invoked only when we broadcast a transaction,
       // we don't want to update the account portfolio immediately, as we would lose the simulation.
@@ -1668,25 +1614,25 @@ export class MainController extends EventEmitter implements IMainController {
 
   async rejectAccountOpAction(
     err: string,
-    actionId: AccountOpAction['id'],
-    shouldOpenNextAction: boolean
+    requestId: CallsUserRequest['id'],
+    shouldOpenNextRequest: boolean
   ) {
-    const accountOpAction = this.requests.actions.actionsQueue.find((a) => a.id === actionId)
-    if (!accountOpAction) return
+    const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
+    if (!accountOpRequest) return
 
-    const { accountOp, id } = accountOpAction as AccountOpAction
+    const { accountOp, id } = accountOpRequest as CallsUserRequest
 
     if (this.signAccountOp && this.signAccountOp.fromRequestId === id) {
       this.destroySignAccOp()
     }
-    await this.requests.actions.removeActions([actionId], shouldOpenNextAction)
+    await this.requests.removeUserRequests([requestId], { shouldOpenNextRequest })
 
     const requestIdsToRemove = accountOp.calls
       .filter((call) => !!call.fromUserRequestId)
       .map((call) => call.fromUserRequestId)
 
     await this.requests.rejectUserRequests(err, requestIdsToRemove as string[], {
-      shouldOpenNextRequest: shouldOpenNextAction
+      shouldOpenNextRequest
     })
 
     this.emitUpdate()
@@ -1740,9 +1686,7 @@ export class MainController extends EventEmitter implements IMainController {
   get isSignRequestStillActive(): boolean {
     if (!this.signAccountOp) return false
 
-    return !!this.requests.actions.actionsQueue.find(
-      (a) => a.id === this.signAccountOp!.fromRequestId
-    )
+    return !!this.requests.userRequests.find((r) => r.id === this.signAccountOp!.fromRequestId)
   }
 
   /**
@@ -1755,19 +1699,19 @@ export class MainController extends EventEmitter implements IMainController {
    * @throws {Error} - if throwRpcError is true
    */
   async #guardHWSigning(throwRpcError = false): Promise<boolean> {
-    const pendingAction = this.requests.actions.visibleActionsQueue.find(
-      ({ type }) => type === 'swapAndBridge' || type === 'transfer'
+    const pendingRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge' || kind === 'transfer'
     )
 
-    if (!pendingAction) return false
+    if (!pendingRequest) return false
 
     const isSigningOrBroadcasting = this.statuses.signAndBroadcastAccountOp === 'LOADING'
 
     // The swap and bridge or transfer is done/forgotten so we can remove the action
     if (!isSigningOrBroadcasting) {
-      await this.requests.actions.removeActions([pendingAction.id])
+      await this.requests.removeUserRequests([pendingRequest.id])
 
-      if (pendingAction.type === 'swapAndBridge') {
+      if (pendingRequest.kind === 'swapAndBridge') {
         this.swapAndBridge.reset()
       } else {
         this.transfer.resetForm()
@@ -1789,11 +1733,11 @@ export class MainController extends EventEmitter implements IMainController {
       }
     }
 
-    const error = errors[pendingAction.type as keyof typeof errors]
+    const error = errors[pendingRequest.kind as keyof typeof errors]
 
     // Don't reopen the action window if focusing it fails
     // because closing it will abort the signing process
-    await this.requests.actions.focusActionWindow({ reopenIfNeeded: false })
+    await this.requests.focusRequestWindow({ reopenIfNeeded: false })
     this.emitError({
       level: 'expected',
       message: error.message,

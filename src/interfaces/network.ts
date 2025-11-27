@@ -100,7 +100,7 @@ export interface AddNetworkRequestParams {
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
   nativeAssetName: Network['nativeAssetName']
-  explorerUrl: Network['explorerUrl']
+  explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
 }
 

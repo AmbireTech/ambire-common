@@ -251,14 +251,14 @@ export const getAccountOpBanners = ({
             actionName: 'reject-accountOp',
             meta: {
               err: 'User rejected the transaction request.',
-              actionId: action.id,
+              requestId: action.id,
               shouldOpenNextAction: false
             }
           },
           {
             label: 'Open',
             actionName: 'open-accountOp',
-            meta: { actionId: action.id }
+            meta: { requestId: action.id }
           }
         ]
       })

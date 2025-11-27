@@ -303,7 +303,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     reqs: UserRequest[],
     {
       position = 'last',
-      executionType = 'open-action-window',
+      executionType = 'open-request-window',
       allowAccountSwitch = false,
       skipFocus = false
     }: {
@@ -485,7 +485,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (existingIndex !== -1) {
         this.userRequests[existingIndex] = newReq
-        if (executionType === 'open-action-window') {
+        if (executionType === 'open-request-window') {
           this.sendNewRequestMessage(newReq, 'updated')
         } else if (executionType === 'queue-but-open-action-window') {
           this.sendNewRequestMessage(newReq, 'queued')
@@ -501,7 +501,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (executionType !== 'queue') {
       let currentUserRequest = null
-      if (executionType === 'open-action-window') {
+      if (executionType === 'open-request-window') {
         currentUserRequest = this.visibleUserRequests.find((r) => r.id === nextRequest.id) || null
       } else if (executionType === 'queue-but-open-action-window') {
         this.sendNewRequestMessage(nextRequest, 'queued')
@@ -964,7 +964,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       userRequest = {
         id: new Date().getTime(),
         kind: 'message',
-        meta: { message: msg[0], accountAddr: msgAddress },
+        meta: { message: msg[0], accountAddr: msgAddress, chainId: network.chainId },
         dappPromises: [{ ...dappPromise, dapp, session: request.session, meta: {} }]
       } as PlainTextMessageUserRequest
 
@@ -1086,6 +1086,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         kind: 'typedMessage',
         meta: {
           accountAddr: msgAddress,
+          chainId: network.chainId,
           types: typedData.types,
           domain: typedData.domain,
           message: typedData.message,
@@ -1129,7 +1130,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         position,
         executionType:
           position === 'first' || isSmartAccount(this.#selectedAccount.account)
-            ? 'open-action-window'
+            ? 'open-request-window'
             : 'queue-but-open-action-window'
       })
       return
@@ -1151,7 +1152,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async #buildIntentUserRequest({
     recipientAddress,
     selectedToken,
-    executionType = 'open-action-window'
+    executionType = 'open-request-window'
   }: {
     amount: string
     recipientAddress: string
@@ -1223,7 +1224,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     amountInFiat,
     recipientAddress,
     selectedToken,
-    executionType = 'open-action-window'
+    executionType = 'open-request-window'
   }: {
     amount: string
     amountInFiat: bigint
@@ -1350,7 +1351,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const userRequest = await this.#createCallsUserRequest(swapAndBridgeRequestParams)
         await this.addUserRequests([userRequest], {
           position: 'last',
-          executionType: openActionWindow ? 'open-action-window' : 'queue'
+          executionType: openActionWindow ? 'open-request-window' : 'queue'
         })
 
         if (this.#swapAndBridge.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) {
@@ -1438,7 +1439,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ],
       {
         position: 'last',
-        executionType: 'open-action-window'
+        executionType: 'open-request-window'
       }
     )
   }

@@ -1,4 +1,5 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
+import { SubmittedAccountOp } from 'libs/accountOp/submittedAccountOp'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
 import { AccountOp } from '../libs/accountOp/accountOp'
@@ -66,6 +67,7 @@ export interface PlainTextMessageUserRequest extends UserRequestBase {
   meta: UserRequestBase['meta'] & {
     message: Hex
     accountAddr: AccountId
+    chainId: bigint
   }
 }
 
@@ -79,6 +81,7 @@ export interface SiweMessageUserRequest extends UserRequestBase {
     isAutoLoginEnabledByUser: boolean
     autoLoginDuration: number
     accountAddr: AccountId
+    chainId: bigint
   }
 }
 
@@ -90,6 +93,7 @@ export interface TypedMessageUserRequest extends UserRequestBase {
     message: Record<string, any>
     primaryType: keyof Record<string, Array<TypedDataField>>
     accountAddr: AccountId
+    chainId: bigint
   }
 }
 
@@ -106,6 +110,14 @@ export interface AuthorizationUserRequest extends UserRequestBase {
 
 export interface BenzinUserRequest extends UserRequestBase {
   kind: 'benzin'
+  meta: UserRequestBase['meta'] & {
+    submittedAccountOp?: SubmittedAccountOp
+    identifiedBy?: SubmittedAccountOp['identifiedBy']
+    txnId: SubmittedAccountOp['txnId'] | null
+    userOpHash: string | null
+    accountAddr: string
+    chainId: bigint
+  }
 }
 
 export interface SwitchAccountRequest extends UserRequestBase {
@@ -186,7 +198,7 @@ export type SignUserRequest =
 
 export type RequestPosition = 'first' | 'last'
 
-export type RequestExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-action-window'
+export type RequestExecutionType = 'queue' | 'queue-but-open-action-window' | 'open-request-window'
 
 export type OpenRequestWindowParams = {
   skipFocus?: boolean

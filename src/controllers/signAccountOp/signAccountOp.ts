@@ -1256,6 +1256,10 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.emitUpdate()
   }
 
+  removeAccountOpCall(callId: string) {
+    this.update({ accountOpData: { calls: this.accountOp.calls.filter((c) => c.id !== callId) } })
+  }
+
   destroy() {
     super.destroy()
     this.estimation.destroy()
@@ -2321,14 +2325,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     }
     const accountOp = this.accountOp
     const estimation = this.estimation.estimation
-    const actionId = this.fromRequestId
+    const requestId = this.fromRequestId
     const bundlerSwitcher = this.bundlerSwitcher
     const contactSupportPrompt = 'Please try again or contact support if the problem persists.'
 
     if (
       !accountOp ||
       !estimation ||
-      !actionId ||
+      !requestId ||
       !accountOp.signingKeyAddr ||
       !accountOp.signingKeyType ||
       !accountOp.signature ||
@@ -2619,7 +2623,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     // Allow the user to broadcast a new transaction;
     // Important: Update signAndBroadcastAccountOp to SUCCESS/INITIAL only after the request is resolved:
-    // `await this.resolveAccountOpAction(submittedAccountOp, actionId)`
+    // `await this.resolveAccountOpAction(submittedAccountOp, requestId)`
     // Otherwise, new calls could be added to a previously broadcast request that will resolve shortly,
     // leaving the new request 'orphaned' in the background without being attached to any action.
     this.broadcastStatus = 'SUCCESS'
