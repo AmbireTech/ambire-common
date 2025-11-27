@@ -150,6 +150,9 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     let latestUpdatedAt: number | undefined
 
     const accountState = Object.values(this.#state[accountAddr])
+
+    if (accountState.some((n) => !n.updatedAt)) return false
+
     // eslint-disable-next-line no-restricted-syntax
     for (const network of accountState) {
       if (typeof network.updatedAt === 'number') {
