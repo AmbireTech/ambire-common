@@ -2,7 +2,7 @@ import { ethers } from 'hardhat'
 
 import { keccak256, toUtf8Bytes } from 'ethers'
 import { getProxyDeployBytecode } from '../../src/libs/proxyDeploy/deploy'
-import { getExecute712Data, wrapEIP712 } from '../ambireSign'
+import { wrapEthSign, wrapTypedData } from '../ambireSign'
 import {
   addressFour,
   addressOne,
@@ -71,14 +71,15 @@ describe('AmbireFactory tests', () => {
         [ambireAccountAddress, chainId, 0, [setPrivTxn]]
       )
     )
-    const typedData = getExecute712Data(
-      chainId,
-      0n,
-      [setPrivTxn],
-      ambireAccountAddress,
-      executeHash
-    )
-    const s = wrapEIP712(
+    // const typedData = getExecute712Data(
+    //   chainId,
+    //   0n,
+    //   [setPrivTxn],
+    //   ambireAccountAddress,
+    //   executeHash
+    // )
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
       await signer2.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
 
@@ -116,8 +117,9 @@ describe('AmbireFactory tests', () => {
         [accountAddr, chainId, 1, [setPrivTxn]]
       )
     )
-    const typedData = getExecute712Data(chainId, 1n, [setPrivTxn], accountAddr, executeHash)
-    const s = wrapEIP712(
+    // const typedData = getExecute712Data(chainId, 1n, [setPrivTxn], accountAddr, executeHash)
+    const typedData = wrapTypedData(chainId, accountAddr, executeHash)
+    const s = wrapEthSign(
       await signer2.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
     await factoryContract.deployAndExecute(dummyBytecode, deploySalt, [setPrivTxn], s)
