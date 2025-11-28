@@ -14,6 +14,7 @@ import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
+import { IUiController, View } from '../../interfaces/ui'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -139,6 +140,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #onBroadcastSuccess: OnBroadcastSuccess
 
+  #ui: IUiController
+
   constructor(
     callRelayer: Function,
     storage: IStorageController,
@@ -154,7 +157,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     providers: IProvidersController,
     phishing: IPhishingController,
     relayerUrl: string,
-    onBroadcastSuccess: OnBroadcastSuccess
+    onBroadcastSuccess: OnBroadcastSuccess,
+    ui: IUiController
   ) {
     super()
 
@@ -174,10 +178,56 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#phishing = phishing
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
+    this.#ui = ui
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
     })
+
+    this.#ui.uiEvent.on('updateView', (view: View) => {
+      if (view.currentRoute !== 'transfer') return
+
+      const tokens = this.#selectedAccountData.isReady
+        ? this.#selectedAccountData.portfolio.tokens.filter(
+            (t) => t.amount > 0n && !t.flags.rewardsType
+          )
+        : []
+
+      if (!tokens?.length) return
+
+      const searchParams = view.searchParams || {}
+      const tokenAddress = (searchParams.address || '').toLowerCase()
+      const tokenChainId = searchParams.chainId
+
+      let newSelectedToken = null
+
+      // 1. If a valid address is provided → try to match it
+      if (tokenAddress) {
+        newSelectedToken = tokens.find(
+          (t) =>
+            t.address.toLowerCase() === tokenAddress &&
+            tokenChainId === t.chainId.toString() &&
+            t.flags.onGasTank === false
+        )
+      }
+
+      // 2. If no valid address or no match → fallback to first token
+      if (!newSelectedToken) {
+        newSelectedToken = tokens[0]
+      }
+
+      // 3. Only update if changed
+      if (
+        newSelectedToken &&
+        (!this.selectedToken || this.selectedToken.address !== newSelectedToken.address)
+      ) {
+        this.selectedToken = newSelectedToken
+      }
+
+      // Emit update to reflect possible changes in the UI
+      this.emitUpdate()
+    })
+
     this.emitUpdate()
   }
 

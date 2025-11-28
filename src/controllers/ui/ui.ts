@@ -45,8 +45,6 @@ export class UiController extends EventEmitter implements IUiController {
     viewId: string,
     updatedProps: Pick<View, 'currentRoute' | 'isReady' | 'searchParams'>
   ) {
-    console.log('UiController: Updating view', viewId, updatedProps)
-
     const view = this.views.find((v) => v.id === viewId)
     if (!view) return
 
@@ -55,6 +53,7 @@ export class UiController extends EventEmitter implements IUiController {
     if (!shouldUpdate) return
 
     Object.assign(view, updatedProps)
+    this.uiEvent.emit('updateView', view)
     this.emitUpdate()
   }
 
