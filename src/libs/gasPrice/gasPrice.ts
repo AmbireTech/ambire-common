@@ -301,46 +301,6 @@ export function getBroadcastGas(baseAcc: BaseAccount, op: AccountOp): bigint {
 }
 
 /**
- * As the name suggests, take the bundler returned gas prices and map them
- * to our internal GasRecommendation format
- *
- * @param bundlerGasPrices - gas prices from the bundler
- * @returns GasRecommendation - our internal format
- */
-export function bundlerToGasPriceTransformer(bundlerGasPrices: GasSpeeds): GasRecommendation[] {
-  return [
-    {
-      name: 'slow',
-      baseFeePerGas:
-        BigInt(bundlerGasPrices.slow.maxFeePerGas) -
-        BigInt(bundlerGasPrices.slow.maxPriorityFeePerGas),
-      maxPriorityFeePerGas: BigInt(bundlerGasPrices.slow.maxPriorityFeePerGas)
-    },
-    {
-      name: 'medium',
-      baseFeePerGas:
-        BigInt(bundlerGasPrices.medium.maxFeePerGas) -
-        BigInt(bundlerGasPrices.medium.maxPriorityFeePerGas),
-      maxPriorityFeePerGas: BigInt(bundlerGasPrices.medium.maxPriorityFeePerGas)
-    },
-    {
-      name: 'fast',
-      baseFeePerGas:
-        BigInt(bundlerGasPrices.fast.maxFeePerGas) -
-        BigInt(bundlerGasPrices.fast.maxPriorityFeePerGas),
-      maxPriorityFeePerGas: BigInt(bundlerGasPrices.fast.maxPriorityFeePerGas)
-    },
-    {
-      name: 'ape',
-      baseFeePerGas:
-        BigInt(bundlerGasPrices.ape.maxFeePerGas) -
-        BigInt(bundlerGasPrices.ape.maxPriorityFeePerGas),
-      maxPriorityFeePerGas: BigInt(bundlerGasPrices.ape.maxPriorityFeePerGas)
-    }
-  ]
-}
-
-/**
  * As the name suggests, take our libs gas price format and transform it to match
  * the one returned from the bundler
  *
