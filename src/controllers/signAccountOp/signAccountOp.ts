@@ -542,9 +542,14 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     })
 
     this.gasPrice.onUpdate(() => {
-      this.update({
-        gasPrices: this.gasPrice.gasPrices
-      })
+      // if gas prices are not set OR there's no bundler estimation,
+      // use the gas prices from the controller.
+      // otherwise, we're good as gas price also come from the bundlerEstimation
+      if (!this.gasPrices || !this.estimation.estimation?.bundlerEstimation) {
+        this.update({
+          gasPrices: this.gasPrice.gasPrices
+        })
+      }
     })
 
     this.gasPrice.onError((error: ErrorRef) => {
@@ -1011,6 +1016,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         // 1. we no longer need to wait for the gasPrice controller to complete in order to refresh the UI
         // 2. we make sure we give priority to the bundler prices as they are generally better
         this.gasPrices = this.estimation.estimation.bundlerGasPrices
+        // and we're stopping the gas price controller updates as
+        // the bundler will provide them
+        this.gasPrice.stopRefetching = true
       }
 
       if (accountOpData) {
@@ -1409,21 +1417,29 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         isSponsored: this.isSponsored
       })
 
-      for (const [speed, receivedPrices] of Object.entries(this.gasPrices)) {
+      const speeds = ['slow', 'medium', 'fast', 'ape']
+      for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
         // and increasedPrices, which we use for the fee only
-        const increasedPrices = increasedGasPrices[speed as FeeSpeed]
+        const speed = speeds[i] as FeeSpeed
+        const receivedPrices = this.gasPrices[speed]
+        const increasedPrices = increasedGasPrices[speed]
+
+        let amount
+        let simulatedGasLimit: bigint
+        let gasPrice
+        let maxPriorityFeePerGas
 
         if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
           if (!estimation.bundlerEstimation) return
 
           const usesPaymaster = estimation.bundlerEstimation?.paymaster.isUsable()
-          const simulatedGasLimit =
+          simulatedGasLimit =
             BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
             BigInt(option.gasUsed)
-          let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
+          amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
             simulatedGasLimit,
             BigInt(increasedPrices.maxFeePerGas),
             nativeRatio,
@@ -1431,24 +1447,9 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             0n
           )
           if (usesPaymaster) amount = this.#increaseFee(amount, 'paymaster')
-
-          if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
-          this.feeSpeeds[identifier].push({
-            type: speed as FeeSpeed,
-            simulatedGasLimit,
-            amount,
-            amountFormatted: formatUnits(amount, Number(option.token.decimals)),
-            amountUsd: getTokenUsdAmount(option.token, amount),
-            gasPrice: BigInt(receivedPrices.maxFeePerGas),
-            maxPriorityFeePerGas: BigInt(receivedPrices.maxPriorityFeePerGas),
-            disabled: (option.availableAmount || 0n) < amount
-          })
-
-          return
+          gasPrice = BigInt(receivedPrices.maxFeePerGas)
+          maxPriorityFeePerGas = BigInt(receivedPrices.maxPriorityFeePerGas)
         }
-
-        let amount
-        let simulatedGasLimit: bigint
 
         // EOA OR 7702: pays with native by itself
         if (
@@ -1456,6 +1457,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
           simulatedGasLimit = gasUsed
+          gasPrice = BigInt(increasedPrices.maxFeePerGas)
+          maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
 
           this.accountOp.calls.forEach((call) => {
             if (call.to && getAddress(call.to) === SINGLETON) {
@@ -1469,6 +1472,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           // 7702, and it pays for the fee by itself
           simulatedGasLimit = gasUsed
           amount = simulatedGasLimit * BigInt(receivedPrices.maxFeePerGas) + option.addedNative
+          gasPrice = BigInt(increasedPrices.maxFeePerGas)
+          maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
         } else {
           // Relayer
           simulatedGasLimit = gasUsed + option.gasUsed
@@ -1480,16 +1485,19 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             option.addedNative
           )
           amount = this.#increaseFee(amount)
+          gasPrice = BigInt(increasedPrices.maxFeePerGas)
+          maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
         }
 
         const feeSpeed: SpeedCalc = {
-          type: speed as FeeSpeed,
+          type: speed,
           simulatedGasLimit,
           amount,
           amountFormatted: formatUnits(amount, Number(option.token.decimals)),
           amountUsd: getTokenUsdAmount(option.token, amount),
-          gasPrice: BigInt(increasedPrices.maxFeePerGas), // increased to make sure broadcast doesn't stuck
-          maxPriorityFeePerGas: BigInt(increasedPrices.maxPriorityFeePerGas),
+          gasPrice,
+          // undefined will switch the broadcast type to 0, legacy
+          maxPriorityFeePerGas: maxPriorityFeePerGas > 0n ? maxPriorityFeePerGas : undefined,
           disabled: option.availableAmount < amount
         }
         if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
