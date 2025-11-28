@@ -185,7 +185,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.#ui.uiEvent.on('updateView', (view: View) => {
-      if (view.currentRoute !== 'transfer') return
+      if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
 
       const tokens = this.#selectedAccountData.isReady
         ? this.#selectedAccountData.portfolio.tokens.filter(
