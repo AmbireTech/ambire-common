@@ -287,7 +287,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
       acc.addr,
       Object.fromEntries(
         networks.map((network: Network, netIndex: number) => {
-          return [network.chainId, result[netIndex][accIndex]]
+          return [network.chainId, result[netIndex]![accIndex]]
         })
       )
     ]
@@ -370,7 +370,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[EOAAccount.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -430,7 +430,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][polygon.chainId.toString()]
+    const accountState = accountStates[EOAAccount.addr]![polygon.chainId.toString()]!
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -505,7 +505,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][polygon.chainId.toString()]
+    const accountState = accountStates[EOAAccount.addr]![polygon.chainId.toString()]!
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -562,7 +562,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
-    const accountState = accountStates[EOAAccount.addr][polygon.chainId.toString()]
+    const accountState = accountStates[EOAAccount.addr]![polygon.chainId.toString()]!
     const baseAcc = getBaseAccount(EOAAccount, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -575,9 +575,10 @@ describe('estimate', () => {
       new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
 
-    expect(response instanceof Error).toBe(true)
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError instanceof Error).toBe(true)
     expect(
-      (response as Error).message.indexOf(
+      response.criticalError!.message.indexOf(
         'Transaction cannot be sent because the transfer amount exceeds your account balance'
       )
     ).not.toBe(-1)
@@ -593,7 +594,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       chainId: 1n,
-      nonce: await v1AccAbi.nonce(),
+      nonce: await (v1AccAbi as any).nonce(),
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
@@ -604,7 +605,7 @@ describe('estimate', () => {
     )
 
     const accountStates = await getAccountsInfo([v1Acc])
-    const accountState = accountStates[v1Acc.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[v1Acc.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -653,13 +654,13 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       chainId: 1n,
-      nonce: await v1AccAbi.nonce(),
+      nonce: await (v1AccAbi as any).nonce(),
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: 1n, data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
-    const accountState = accountStates[v1Acc.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[v1Acc.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -698,7 +699,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
-    const accountState = accountStates[viewOnlyAcc.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[viewOnlyAcc.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(viewOnlyAcc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -749,18 +750,18 @@ describe('estimate', () => {
     const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
     const opOptimism = {
       accountAddr: accountOptimismv1.addr,
-      signingKeyAddr: accountOptimismv1.associatedKeys[0],
+      signingKeyAddr: accountOptimismv1.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
       chainId: 10n,
-      nonce: await v1AccAbi.nonce(),
+      nonce: await (v1AccAbi as any).nonce(),
       signature: spoofSig,
       calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
     }
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
-    const accountState = accountStates[accountOptimismv1.addr][optimism.chainId.toString()]
+    const accountState = accountStates[accountOptimismv1.addr]![optimism.chainId.toString()]!
     const baseAcc = getBaseAccount(accountOptimismv1, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -790,12 +791,12 @@ describe('estimate', () => {
     const ERC20Interface = new Interface(ERC20.abi)
     const opArbitrum = {
       accountAddr: deprycatedV2.addr,
-      signingKeyAddr: deprycatedV2.associatedKeys[0],
+      signingKeyAddr: deprycatedV2.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
       chainId: 42161n,
-      nonce: await v2AccAbi.nonce(),
+      nonce: await (v2AccAbi as any).nonce(),
       signature: spoofSig,
       calls: [
         {
@@ -807,7 +808,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr][arbitrum.chainId.toString()]
+    const accountState = accountStates[deprycatedV2.addr]![arbitrum.chainId.toString()]!
     const baseAcc = getBaseAccount(deprycatedV2, accountState, [], arbitrum)
     const response = await getEstimation(
       baseAcc,
@@ -835,7 +836,7 @@ describe('estimate', () => {
   it('Optimism | deployed account | should put a lower account nonce in account op and ambire etimation should raise a nonce discrepancy flag', async () => {
     const opOptimism = {
       accountAddr: smartAccDeployed.addr,
-      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -845,7 +846,7 @@ describe('estimate', () => {
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
-    const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
+    const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -879,7 +880,7 @@ describe('estimate', () => {
     const smartAcc = await getSmartAccount(privs, [])
     const opOptimism = {
       accountAddr: smartAcc.addr,
-      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyAddr: smartAcc.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -893,7 +894,7 @@ describe('estimate', () => {
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
-    const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
+    const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
     const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -932,7 +933,7 @@ describe('estimate', () => {
     const smartAcc = await getSmartAccount(privs, [])
     const opOptimism = {
       accountAddr: smartAcc.addr,
-      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyAddr: smartAcc.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -946,7 +947,7 @@ describe('estimate', () => {
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
-    const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
+    const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
     const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -959,9 +960,9 @@ describe('estimate', () => {
       new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
-    expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe('Insufficient ETH')
-    expect((response as Error).cause).toBe('Insufficient ETH for transaction calls')
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError!.message).toBe('Insufficient ETH')
+    expect(response.criticalError!.cause).toBe('Insufficient ETH for transaction calls')
   })
 
   it('[ERC-4337]:Optimism | not deployed | should result in an error as transfer amount of erc-20 token exceed balance', async () => {
@@ -975,7 +976,7 @@ describe('estimate', () => {
     const smartAcc = await getSmartAccount(privs, [])
     const opOptimism = {
       accountAddr: smartAcc.addr,
-      signingKeyAddr: smartAcc.associatedKeys[0],
+      signingKeyAddr: smartAcc.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -995,7 +996,7 @@ describe('estimate', () => {
       }
     }
     const accountStates = await getAccountsInfo([smartAcc])
-    const accountState = accountStates[smartAcc.addr][optimism.chainId.toString()]
+    const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
     const baseAcc = getBaseAccount(smartAcc, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -1008,18 +1009,18 @@ describe('estimate', () => {
       new BundlerSwitcher(optimism, areUpdatesForbidden)
     )
 
-    expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError!.message).toBe(
       'Transaction cannot be sent because the transfer amount exceeds your account balance. Please check your balance or adjust the transfer amount.'
     )
   })
 
   it('[ERC-4337]:Optimism | deployed account | should work', async () => {
     const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
-    const nonce = await ambAcc.nonce()
+    const nonce = await (ambAcc as any).nonce()
     const opOptimism = {
       accountAddr: smartAccDeployed.addr,
-      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1029,7 +1030,7 @@ describe('estimate', () => {
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
-    const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
+    const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
     const baseAcc = getBaseAccount(smartAccDeployed, accountState, [], optimism)
     const response = await getEstimation(
       baseAcc,
@@ -1060,10 +1061,10 @@ describe('estimate', () => {
 
   it('[ERC-4337]:Optimism | deployed account | corrupt the account info with incorrect 4337 nonce | should work regardless', async () => {
     const ambAcc = new Contract(smartAccDeployed.addr, AmbireAccount.abi, providerOptimism)
-    const nonce = await ambAcc.nonce()
+    const nonce = await (ambAcc as any).nonce()
     const opOptimism = {
       accountAddr: smartAccDeployed.addr,
-      signingKeyAddr: smartAccDeployed.associatedKeys[0],
+      signingKeyAddr: smartAccDeployed.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1073,7 +1074,7 @@ describe('estimate', () => {
       calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
-    const accountState = accountStates[smartAccDeployed.addr][optimism.chainId.toString()]
+    const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
 
     // corrupt the nonce to be lower
     accountState.erc4337Nonce = 6n
@@ -1113,7 +1114,7 @@ describe('estimate', () => {
   it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted because of insufficient funds', async () => {
     const opPolygonFailBzNoFunds = {
       accountAddr: deprycatedV2.addr,
-      signingKeyAddr: deprycatedV2.associatedKeys[0],
+      signingKeyAddr: deprycatedV2.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1123,7 +1124,7 @@ describe('estimate', () => {
       calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }]
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
+    const accountState = accountStates[deprycatedV2.addr]![polygon.chainId.toString()]!
     const baseAcc = getBaseAccount(deprycatedV2, accountState, [], polygon)
     const response = await getEstimation(
       baseAcc,
@@ -1135,15 +1136,15 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
       new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
-    expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe('Insufficient POL')
-    expect((response as Error).cause).toBe('Insufficient POL for transaction calls')
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError!.message).toBe('Insufficient POL')
+    expect(response.criticalError!.cause).toBe('Insufficient POL for transaction calls')
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
     const opPolygonFailBzNoFunds = {
       accountAddr: deprycatedV2.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1153,10 +1154,10 @@ describe('estimate', () => {
       calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }]
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr][polygon.chainId.toString()]
+    const accountState = accountStates[deprycatedV2.addr]![polygon.chainId.toString()]!
 
     const baseAcc = getBaseAccount(
-      { ...deprycatedV2, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      { ...deprycatedV2, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]!] },
       accountState,
       [],
       polygon
@@ -1171,8 +1172,8 @@ describe('estimate', () => {
       getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
       new BundlerSwitcher(polygon, areUpdatesForbidden)
     )
-    expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError!.message).toBe(
       'Transaction cannot be sent because your account key lacks the necessary permissions. Ensure that you have authorization to sign or use an account with sufficient privileges.'
     )
   })
@@ -1191,7 +1192,7 @@ describe('estimate', () => {
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
-    const accountState = accountStates[v1Acc.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[v1Acc.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(v1Acc, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -1204,8 +1205,8 @@ describe('estimate', () => {
       new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
-    expect(response instanceof Error).toBe(true)
-    expect((response as Error).message).toBe(
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError!.message).toBe(
       'Transaction cannot be sent because the swap has expired. Return to the app and reinitiate the swap if you wish to proceed.'
     )
   })
@@ -1230,7 +1231,7 @@ describe('estimate', () => {
     ]
     const gasGuardInterface = new Interface(gasGuardAbi)
     const accountStates = await getAccountsInfo([devconSmart])
-    const accountState = accountStates[devconSmart.addr][bsc.chainId.toString()]
+    const accountState = accountStates[devconSmart.addr]![bsc.chainId.toString()]!
     const baseAcc = getBaseAccount(devconSmart, accountState, [], bsc)
     const bscProvider = getRpcProvider(bsc.rpcUrls, bsc.chainId)
     const switcher = new BundlerSwitcher(bsc, areUpdatesForbidden)
@@ -1414,7 +1415,8 @@ describe('estimate', () => {
       [],
       switcher
     )
-    expect(responseThree instanceof Error).toBe(true)
+    expect(responseThree.criticalError).not.toBe(undefined)
+    expect(responseThree.criticalError instanceof Error).toBe(true)
   })
 
   it('[v2]:Ethereum | deployed account | should work with singletor deployer as salt is different for each contract deployment', async () => {
@@ -1447,10 +1449,10 @@ describe('estimate', () => {
     }
 
     const ambAcc = new Contract(devconSmart.addr, AmbireAccount.abi, provider)
-    const nonce = await ambAcc.nonce()
+    const nonce = await (ambAcc as any).nonce()
     const opEthereum = {
       accountAddr: devconSmart.addr,
-      signingKeyAddr: devconSmart.associatedKeys[0],
+      signingKeyAddr: devconSmart.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1460,7 +1462,7 @@ describe('estimate', () => {
       calls: [call, secondCall]
     }
     const accountStates = await getAccountsInfo([devconSmart])
-    const accountState = accountStates[devconSmart.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[devconSmart.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(devconSmart, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -1504,10 +1506,10 @@ describe('estimate', () => {
       data: singletonInterface.encodeFunctionData('deploy', [bytecode, salt])
     }
     const ambAcc = new Contract(devconSmart.addr, AmbireAccount.abi, provider)
-    const nonce = await ambAcc.nonce()
+    const nonce = await (ambAcc as any).nonce()
     const opEthereum = {
       accountAddr: devconSmart.addr,
-      signingKeyAddr: devconSmart.associatedKeys[0],
+      signingKeyAddr: devconSmart.associatedKeys[0]!,
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -1517,7 +1519,7 @@ describe('estimate', () => {
       calls: [call]
     }
     const accountStates = await getAccountsInfo([devconSmart])
-    const accountState = accountStates[devconSmart.addr][ethereum.chainId.toString()]
+    const accountState = accountStates[devconSmart.addr]![ethereum.chainId.toString()]!
     const baseAcc = getBaseAccount(devconSmart, accountState, [], ethereum)
     const response = await getEstimation(
       baseAcc,
@@ -1530,9 +1532,8 @@ describe('estimate', () => {
       new BundlerSwitcher(ethereum, areUpdatesForbidden)
     )
 
-    expect(response instanceof Error).toBe(true)
-    const err = response as Error
-    expect(err.message).toBe('Transaction invalid: out of gas')
+    expect(response.criticalError).not.toBe(undefined)
+    expect(response.criticalError!.message).toBe('Transaction invalid: out of gas')
   })
 
   it('[EOA]:Cronos | should estimate correctly without OOG', async () => {
@@ -1554,7 +1555,7 @@ describe('estimate', () => {
       calls: [call]
     }
     const accountStates = await getAccountsInfo([localRelayer])
-    const accountState = accountStates[localRelayer.addr]['25']
+    const accountState = accountStates[localRelayer.addr]!['25']!
     const cronos = networks.find((n) => n.chainId === 25n)!
     const baseAcc = getBaseAccount(localRelayer, accountState, [], cronos)
     const response = await getEstimation(
