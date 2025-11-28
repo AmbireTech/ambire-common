@@ -1449,10 +1449,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
           if (usesPaymaster) amount = this.#increaseFee(amount, 'paymaster')
           gasPrice = BigInt(receivedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(receivedPrices.maxPriorityFeePerGas)
-        }
-
-        // EOA OR 7702: pays with native by itself
-        if (
+        } else if (
+          // EOA OR 7702: pays with native by itself
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
