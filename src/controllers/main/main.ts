@@ -785,7 +785,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   async #commonHandlerForBroadcastSuccess({
     submittedAccountOp,
-    accountOp
+    accountOp,
+    fromRequestId
   }: OnboardingSuccessProps) {
     // add the txnIds from each transaction to each Call from the accountOp
     // if identifiedBy is MultipleTxns
@@ -808,35 +809,26 @@ export class MainController extends EventEmitter implements IMainController {
       // eslint-disable-next-line no-param-reassign
       submittedAccountOp.calls = calls
 
-      // Handle the calls that weren't signed
-      const rejectedCalls = accountOp.calls.filter((call) =>
-        submittedAccountOp.calls.every((c) => c.id !== call.id)
-      )
-      const rejectedSwapActiveRouteIds = rejectedCalls.map((call) => {
-        const userRequest = this.requests.userRequests.find((r) => r.id === call.fromUserRequestId)
+      const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId)
 
-        return userRequest?.meta.activeRouteId
-      })
-
-      rejectedSwapActiveRouteIds.forEach((routeId) => {
-        this.removeActiveRoute(routeId)
-      })
-
-      if (rejectedCalls.length) {
-        // remove the user requests that were rejected
-        await this.requests.rejectUserRequests(
-          'Transaction rejected by the bundler',
-          rejectedCalls
-            .filter((call) => !!call.fromUserRequestId)
-            .map((call) => call.fromUserRequestId as string)
+      if (userRequest) {
+        // Handle the calls that weren't signed
+        const rejectedCalls = accountOp.calls.filter((call) =>
+          submittedAccountOp.calls.every((c) => c.id !== call.id)
         )
+
+        rejectedCalls.forEach(({ id, dapp }) => {
+          if (id) this.removeActiveRoute(id)
+          if (dapp) {
+            const dappPromise = userRequest.dappPromises.find((p) => p.dapp?.id === dapp.id)
+            if (dappPromise) dappPromise.reject('Transaction rejected by the bundler')
+          }
+        })
       }
     }
 
     if (accountOp.meta?.swapTxn) {
-      this.swapAndBridge.addActiveRoute({
-        userTxIndex: accountOp.meta?.swapTxn.userTxIndex
-      })
+      this.swapAndBridge.addActiveRoute({ userTxIndex: accountOp.meta?.swapTxn.userTxIndex })
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
@@ -1620,20 +1612,10 @@ export class MainController extends EventEmitter implements IMainController {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
 
-    const { accountOp, id } = accountOpRequest as CallsUserRequest
+    const { id } = accountOpRequest as CallsUserRequest
 
-    if (this.signAccountOp && this.signAccountOp.fromRequestId === id) {
-      this.destroySignAccOp()
-    }
-    await this.requests.removeUserRequests([requestId], { shouldOpenNextRequest })
-
-    const requestIdsToRemove = accountOp.calls
-      .filter((call) => !!call.fromUserRequestId)
-      .map((call) => call.fromUserRequestId)
-
-    await this.requests.rejectUserRequests(err, requestIdsToRemove as string[], {
-      shouldOpenNextRequest
-    })
+    if (this.signAccountOp && this.signAccountOp.fromRequestId === id) this.destroySignAccOp()
+    await this.requests.rejectUserRequests(err, [requestId] as string[], { shouldOpenNextRequest })
 
     this.emitUpdate()
   }

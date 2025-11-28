@@ -1,6 +1,7 @@
 /* eslint-disable no-await-in-loop */
 import { ethErrors } from 'eth-rpc-errors'
 import { getAddress, getBigInt } from 'ethers'
+import { v4 as uuidv4 } from 'uuid'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
@@ -389,10 +390,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           return
         }
 
-        req.accountOp.calls.forEach((_, i) => {
-          req.accountOp.calls[i].id = `${req.id}-${i}`
-        })
-
         const accountStateBefore =
           this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
@@ -495,7 +492,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     })
 
-    const nextRequest = userRequestsToAdd[0]
+    const nextRequest = userRequestsToAdd[0]!
 
     if (executionType !== 'queue') {
       let currentUserRequest = null
@@ -631,7 +628,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.pendingMessage = null
       this.currentUserRequest = null
 
-      this.userRequests = this.userRequests.filter((r) => r.kind === 'calls')
       const callsCount = this.userRequests.reduce((acc, request) => {
         if (request.kind !== 'calls') return acc
 
@@ -674,7 +670,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  updateCallsUserRequest(accountOp: AccountOp) {
+  async updateCallsUserRequest(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
     const request = this.userRequests.find(
       (r) => r.kind === 'calls' && r.id === `${accountAddr}-${chainId}`
@@ -682,7 +678,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!request || request.kind !== 'calls') return
 
-    request.accountOp = accountOp
+    const oldCalls = request.accountOp.calls
+    const newCalls = accountOp.calls
+
+    if (newCalls.length === 0) {
+      await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
+        shouldOpenNextRequest: true
+      })
+      return
+    }
+
+    if (newCalls.length < oldCalls.length) {
+      const missingCalls = oldCalls.filter(
+        (oldCall) => !newCalls.some((newCall) => newCall.id === oldCall.id)
+      )
+
+      if (missingCalls.length > 0) {
+        const missingCallIds = missingCalls.map((c) => c.id)
+
+        request.dappPromises
+          .filter((d) => missingCallIds.includes(d?.dapp?.id))
+          .forEach((p) => {
+            p.reject('User rejected the transaction request.')
+          })
+      }
+    }
+
+    Object.assign(request.accountOp, accountOp)
     this.emitUpdate()
   }
 
@@ -759,7 +781,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!this.visibleUserRequests.length) {
       await this.#setCurrentUserRequest(null)
     } else if (shouldOpenNextRequest) {
-      await this.#setCurrentUserRequest(this.visibleUserRequests[0], {
+      await this.#setCurrentUserRequest(this.visibleUserRequests[0] || null, {
         skipFocus: true
       })
     }
@@ -927,9 +949,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           message: 'Request rejected - empty calls array not allowed!'
         })
 
-      const calls: AccountOp['calls'] = isWalletSendCalls
+      let calls: AccountOp['calls'] = isWalletSendCalls
         ? request.params[0].calls
         : [request.params[0]]
+      calls = calls.map((c) => ({ ...c, id: uuidv4(), dapp: dapp ?? undefined }))
       const paymasterService =
         isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
           ? getPaymasterService(network.chainId, request.params[0].capabilities)
@@ -1518,11 +1541,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           calls: [
             ...existingUserRequest.accountOp.calls,
             ...calls.map((call) => ({
+              ...call,
               to: call.to,
               data: call.data || '0x',
               value: call.value ? getBigInt(call.value) : 0n
             }))
-          ].map((c, i) => ({ ...c, id: `${existingUserRequest.id}-${i}` })),
+          ].map((c) => ({ ...c, id: c.id || uuidv4() })),
           meta: { ...existingUserRequest.accountOp.meta, ...meta }
         },
         dappPromises: [...existingUserRequest.dappPromises, ...dappPromises]
@@ -1558,11 +1582,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           gasFeePayment: null,
           nonce: accountState.nonce,
           signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
-          calls: calls.map((call) => ({
-            to: call.to,
-            data: call.data || '0x',
-            value: call.value ? getBigInt(call.value) : 0n
-          })),
+          calls,
           meta
         },
         dappPromises
@@ -1573,7 +1593,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async setCurrentUserRequestById(requestId: UserRequest['id'], params?: OpenRequestWindowParams) {
-    const request = this.visibleUserRequests.find((r) => r.id.toString() === requestId.toString())
+    const request = this.visibleUserRequests.find((r) => r.id === requestId)
     if (!request)
       throw new EmittableError({
         message:
@@ -1584,14 +1604,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#setCurrentUserRequest(request, params)
   }
 
-  async setCurrentUserRequestByIndex(actionIndex: number, params?: OpenRequestWindowParams) {
-    const request = this.visibleUserRequests[actionIndex]
+  async setCurrentUserRequestByIndex(requestIndex: number, params?: OpenRequestWindowParams) {
+    const request = this.visibleUserRequests[requestIndex]
     if (!request)
       throw new EmittableError({
         message:
           'Failed to open request window. If the issue persists, please reject the request and try again.',
         level: 'major',
-        error: new Error(`UserRequest not found. Index: ${actionIndex}`)
+        error: new Error(`UserRequest not found. Index: ${requestIndex}`)
       })
     await this.#setCurrentUserRequest(request, params)
   }

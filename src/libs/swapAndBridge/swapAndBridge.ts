@@ -352,21 +352,21 @@ const getSwapAndBridgeCalls = async (
     if (revokeApproval) calls.push(revokeApproval)
 
     calls.push({
+      id: userTx.activeRouteId,
       to: userTx.approvalData.approvalTokenAddress,
       value: BigInt('0'),
       data: erc20Interface.encodeFunctionData('approve', [
         userTx.approvalData.allowanceTarget,
         BigInt(userTx.approvalData.minimumApprovalAmount)
-      ]),
-      fromUserRequestId: userTx.activeRouteId
+      ])
     } as Call)
   }
 
   calls.push({
+    id: userTx.activeRouteId,
     to: userTx.txTarget,
     value: BigInt(userTx.value),
-    data: userTx.txData,
-    fromUserRequestId: userTx.activeRouteId
+    data: userTx.txData
   })
 
   return calls

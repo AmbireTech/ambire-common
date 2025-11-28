@@ -45,9 +45,7 @@ interface UserRequestBase {
   dappPromises: {
     dapp: Dapp | null
     session: DappProviderRequest['session']
-    meta: {
-      isWalletSendCalls?: boolean
-    }
+    meta: { isWalletSendCalls?: boolean }
     resolve: (data: any) => void
     reject: (data: any) => void
   }[]

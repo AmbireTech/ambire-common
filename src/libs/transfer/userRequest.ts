@@ -39,6 +39,7 @@ function getMintVestingRequestParams({
   return {
     calls: [
       {
+        id: uuidv4(),
         to: SUPPLY_CONTROLLER_ADDR,
         value: BigInt(0),
         data: supplyControllerInterface.encodeFunctionData('mintVesting', [
@@ -70,6 +71,7 @@ function getClaimWalletRequestParams({
   return {
     calls: [
       {
+        id: uuidv4(),
         to: SUPPLY_CONTROLLER_ADDR,
         value: BigInt(0),
         data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
@@ -132,11 +134,13 @@ function getTransferRequestParams({
     return {
       calls: [
         {
+          id: uuidv4(),
           to: wrappedAddr,
           value: BigInt(bigNumberHexAmount),
           data: deposit
         },
         {
+          id: uuidv4(),
           to: wrappedAddr,
           value: BigInt(0),
           data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
@@ -151,20 +155,19 @@ function getTransferRequestParams({
     }
   }
 
-  const txn = {
-    kind: 'calls' as const,
-    calls: [
-      {
-        to: selectedToken.address,
-        value: BigInt(0),
-        data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
-      }
-    ]
-  }
+  let calls = [
+    {
+      id: uuidv4(),
+      to: selectedToken.address,
+      value: BigInt(0),
+      data: ERC20.encodeFunctionData('transfer', [recipientAddress, bigNumberHexAmount])
+    }
+  ]
 
   if (Number(selectedToken.address) === 0) {
-    txn.calls = [
+    calls = [
       {
+        id: uuidv4(),
         to: recipientAddress,
         value: BigInt(bigNumberHexAmount),
         data: '0x'
@@ -173,7 +176,7 @@ function getTransferRequestParams({
   }
 
   return {
-    calls: txn.calls,
+    calls,
     meta: {
       chainId: selectedToken.chainId,
       accountAddr: selectedAccount,
@@ -210,7 +213,6 @@ function getIntentRequestParams({
 
   return {
     calls: transactions.map((transaction, index) => ({
-      fromUserRequestId: id,
       id: `${id}-${index}`,
       to: transaction.to,
       value: BigInt(transaction.value || '0'),

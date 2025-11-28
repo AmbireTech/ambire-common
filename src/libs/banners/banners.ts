@@ -60,9 +60,9 @@ export const getBridgeBanners = (
     return callsUserRequests.some((req) => {
       return req.accountOp.calls.some(
         (call) =>
-          call.fromUserRequestId === route.activeRouteId ||
-          call.fromUserRequestId === `${route.activeRouteId}-revoke-approval` ||
-          call.fromUserRequestId === `${route.activeRouteId}-approval`
+          call.id === route.activeRouteId ||
+          call.id === `${route.activeRouteId}-revoke-approval` ||
+          call.id === `${route.activeRouteId}-approval`
       )
     })
   }
@@ -222,7 +222,7 @@ export const getAccountOpBanners = ({
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]
       const nonSwapAndBridgeTxns = action.accountOp.calls.reduce((prev, call) => {
         const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-          (route) => route.activeRouteId === call.fromUserRequestId
+          (route) => route.activeRouteId === call.id
         )
 
         if (isSwapAndBridge) return prev
