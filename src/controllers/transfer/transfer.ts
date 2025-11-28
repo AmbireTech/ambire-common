@@ -377,7 +377,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
 
     if (selectedToken) {
-      if (selectedToken.chainId !== this.selectedToken?.chainId) {
+      if (this.selectedToken && selectedToken.chainId !== this.selectedToken.chainId) {
         // The SignAccountOp controller is already initialized with the previous chainId and account operation.
         // When the chainId changes, we need to recreate the controller to correctly estimate for the new chain.
         // Here, we destroy it, and at the end of this update method, we initialize it again.

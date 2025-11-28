@@ -28,15 +28,14 @@ import { BundlerEstimateResult, Erc4337GasLimits, EstimationFlags } from './inte
 async function fetchBundlerGasPrice(
   baseAcc: BaseAccount,
   network: Network,
-  switcher: BundlerSwitcher,
-  errorCallback: Function
+  switcher: BundlerSwitcher
 ): Promise<GasSpeeds | Error> {
   const bundler = switcher.getBundler()
 
   // fetchGasPrices should complete in ms, so punish slow bundlers
   // by rotating them off
   const prices = await Promise.race([
-    bundler.fetchGasPrices(network, errorCallback).catch(() => {
+    bundler.fetchGasPrices(network).catch(() => {
       return new Error('Could not fetch gas prices, retrying...')
     }),
     new Promise((_resolve, reject) => {
@@ -53,7 +52,7 @@ async function fetchBundlerGasPrice(
 
   if (prices instanceof Error && switcher.canSwitch(baseAcc)) {
     switcher.switch()
-    return fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
+    return fetchBundlerGasPrice(baseAcc, network, switcher)
   }
 
   return prices as GasSpeeds | Error
@@ -64,7 +63,6 @@ async function estimate(
   network: Network,
   userOp: UserOperation,
   switcher: BundlerSwitcher,
-  errorCallback: Function,
   options?: {
     gasPrices?: GasSpeeds | null
   }
@@ -75,7 +73,7 @@ async function estimate(
 }> {
   const gasPrice = options?.gasPrices
     ? options.gasPrices
-    : await fetchBundlerGasPrice(baseAcc, network, switcher, errorCallback)
+    : await fetchBundlerGasPrice(baseAcc, network, switcher)
   const bundler = switcher.getBundler()
 
   // if the gasPrice fetch fails, we will switch the bundler and try again
@@ -154,7 +152,6 @@ export async function bundlerEstimate(
   feeTokens: TokenResult[],
   provider: RPCProvider,
   switcher: BundlerSwitcher,
-  errorCallback: Function,
   eip7702Auth?: EIP7702Auth,
   pendingUserOp?: SubmittedAccountOp
 ): Promise<Erc4337GasLimits | Error | null> {
@@ -200,7 +197,7 @@ export async function bundlerEstimate(
   let gasPrices: GasSpeeds | null = null
   while (true) {
     // estimate
-    const estimations = await estimate(baseAcc, network, userOp, switcher, errorCallback, {
+    const estimations = await estimate(baseAcc, network, userOp, switcher, {
       gasPrices
     })
 

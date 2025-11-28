@@ -55,8 +55,7 @@ const key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses = Array.from(
     ).address
 )
 
-const key1PublicAddress = key1to11BasicAccPublicAddresses[0]
-
+const key1PublicAddress = key1to11BasicAccPublicAddresses[0]!
 const basicAccount: Account = {
   addr: key1PublicAddress,
   associatedKeys: [key1PublicAddress],
@@ -293,9 +292,9 @@ describe('AccountPicker', () => {
 
     accountPicker.selectAccount(basicAccount)
 
-    expect(accountPicker.selectedAccounts[0].accountKeys).toHaveLength(1)
-    const keyAddr = accountPicker.selectedAccounts[0].accountKeys[0].addr
-    const keyIndex = accountPicker.selectedAccounts[0].accountKeys[0].index
+    expect(accountPicker.selectedAccounts[0]!.accountKeys).toHaveLength(1)
+    const keyAddr = accountPicker.selectedAccounts[0]!.accountKeys[0]!.addr
+    const keyIndex = accountPicker.selectedAccounts[0]!.accountKeys[0]!.index
     expect(keyAddr).toEqual(basicAccount.addr)
     expect(keyIndex).toEqual(0)
   })
@@ -315,7 +314,7 @@ describe('AccountPicker', () => {
     const smartAccount = accountPicker.accountsOnPage.find((x) => isSmartAccount(x.account))
     if (smartAccount) accountPicker.selectAccount(smartAccount.account)
 
-    expect(accountPicker.selectedAccounts[0].accountKeys)
+    expect(accountPicker.selectedAccounts[0]!.accountKeys)
       // Might contain other keys too, but this one should be in there,
       // since that's the derived used only for smart account key
       .toContainEqual({

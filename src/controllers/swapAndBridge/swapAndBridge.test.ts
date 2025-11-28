@@ -9,8 +9,6 @@ import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { RequestsController } from '../requests/requests'
-import { TransferController } from '../transfer/transfer'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
@@ -30,8 +28,10 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { RequestsController } from '../requests/requests'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
+import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
 import { SwapAndBridgeController, SwapAndBridgeFormStatus } from './swapAndBridge'
@@ -102,7 +102,7 @@ const uiCtrl = new UiController({ uiManager })
 
 const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
-storage.set('selectedAccount', accounts[0].addr)
+storage.set('selectedAccount', accounts[0]!.addr)
 
 const accountsCtrl = new AccountsController(
   storageCtrl,
@@ -298,7 +298,7 @@ describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(accounts[0])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
 
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
@@ -347,7 +347,7 @@ describe('SwapAndBridge Controller', () => {
       }
     })
     swapAndBridgeController.updateForm({
-      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0].address
+      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0]!.address
     })
   })
   test('should update fromAmount', (done) => {
@@ -455,21 +455,21 @@ describe('SwapAndBridge Controller', () => {
       userTxIndex: userTx.userTxIndex
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('ready')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
-    const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.updateActiveRoute(activeRouteId, {
       routeStatus: 'in-progress',
       userTxHash: 'test'
     })
     swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
+    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
   })
   it('should continuously update active routes', async () => {
     jest.useFakeTimers()
@@ -519,7 +519,7 @@ describe('SwapAndBridge Controller', () => {
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
-      swapAndBridgeController.activeRoutes[0].activeRouteId,
+      swapAndBridgeController.activeRoutes[0]!.activeRouteId,
       {
         routeStatus: 'in-progress',
         userTxHash: 'test',
@@ -527,10 +527,10 @@ describe('SwapAndBridge Controller', () => {
       }
     )
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('completed')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
   })
   test('should remove an activeRoute', async () => {
-    const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.removeActiveRoute(activeRouteId)
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)

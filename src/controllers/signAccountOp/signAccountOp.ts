@@ -69,7 +69,12 @@ import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpWithId,
+  GasFeePayment,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
@@ -116,6 +121,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import shortenAddress from '../../utils/shortenAddress'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
@@ -233,7 +239,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * Otherwise the accountOp will be out of sync with the one stored
    * in requests/actions.
    */
-  #accountOp: AccountOp
+  #accountOp: AccountOpWithId
 
   gasPrices?: GasRecommendation[] | null
 
@@ -395,7 +401,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#activity = activity
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
-    this.#accountOp = structuredClone(accountOp)
+    this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
     this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.rbfAccountOps = {}
@@ -444,14 +450,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return !!this.#updateBlacklistedStatusPromise
   }
 
-  get accountOp(): Readonly<AccountOp> {
+  get accountOp(): Readonly<AccountOpWithId> {
     return this.#accountOp
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
     if (!Object.keys(accountOp).length) return
 
-    this.#accountOp = { ...this.#accountOp, ...accountOp }
+    const hasUpdatedCalls = !!accountOp.calls
+
+    this.#accountOp = {
+      ...this.#accountOp,
+      ...accountOp,
+      id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
+    }
 
     this.#onAccountOpUpdate(this.#accountOp)
   }
@@ -491,7 +503,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     let callError: SignAccountOpError | null = null
 
     for (let index = 0; index < this.accountOp.calls.length; index++) {
-      const call = this.accountOp.calls[index]
+      const call = this.accountOp.calls[index]!
 
       if (!!call.data && !isBytesLike(call.data)) {
         callError = {
@@ -518,16 +530,17 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
   }
 
   async #reestimate() {
-    // stop the interval reestimate if the user has done it over 20 times
-    this.#reestimateCounter += 1
-    if (this.#reestimateCounter > 20) this.#stopRefetching = true
-
     if (
       this.#stopRefetching ||
       this.estimation.status === EstimationStatus.Initial ||
       this.estimation.status === EstimationStatus.Loading
     )
       return
+
+    // stop the interval reestimate if the user has done it at least 20 times
+    if (this.#reestimateCounter >= 20) this.#stopRefetching = true
+
+    this.#reestimateCounter += 1
 
     // the first 10 times, reestimate once every 30s; then, slow down
     // the time as the user might just have closed the popup of the extension
@@ -639,8 +652,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
       this.#updateAccountOp({
-        signingKeyAddr: this.accountKeyStoreKeys[0].addr,
-        signingKeyType: this.accountKeyStoreKeys[0].type
+        signingKeyAddr: this.accountKeyStoreKeys[0]!.addr,
+        signingKeyType: this.accountKeyStoreKeys[0]!.type
       })
     }
     // we can set a default paidBy and feeToken here if they aren't any set
@@ -1067,7 +1080,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
             // if they are with the same length, check if some of
             // their properties differ. If they do, we should update
             this.accountOp.calls.forEach((call, i) => {
-              const newCall = calls[i]
+              const newCall = calls[i]!
               if (
                 call.to !== newCall.to ||
                 call.data !== newCall.data ||
@@ -1868,7 +1881,6 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         [this.selectedOption!.token],
         this.provider,
         this.bundlerSwitcher,
-        () => {},
         eip7702Auth
       )
 

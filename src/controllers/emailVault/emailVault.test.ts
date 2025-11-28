@@ -150,10 +150,10 @@ describe('happy cases', () => {
     await keystore.unlockWithSecret('smth', 'secret')
     await keystore.addKeys([
       {
-        addr: keys[0].address,
+        addr: keys[0]!.address,
         type: 'internal',
         label: 'Key 1',
-        privateKey: keys[0].privateKey,
+        privateKey: keys[0]!.privateKey,
         dedicatedToOneSA: false,
         meta: {
           createdAt: new Date().getTime()
@@ -162,10 +162,10 @@ describe('happy cases', () => {
     ])
     await keystore.addKeys([
       {
-        addr: keys[1].address,
+        addr: keys[1]!.address,
         type: 'internal',
         label: 'Key 2',
-        privateKey: keys[1].privateKey,
+        privateKey: keys[1]!.privateKey,
         dedicatedToOneSA: false,
         meta: {
           createdAt: new Date().getTime()

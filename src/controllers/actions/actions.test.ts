@@ -85,11 +85,11 @@ const SIGN_ACCOUNT_OP_ACTION: AccountOpAction = {
     accountAddr: SIGN_ACCOUNT_OP_REQUEST.meta.accountAddr,
     calls: [
       {
-        ...(SIGN_ACCOUNT_OP_REQUEST.action as Calls).calls[0],
+        ...(SIGN_ACCOUNT_OP_REQUEST.action as Calls).calls[0]!,
         fromUserRequestId: SIGN_ACCOUNT_OP_REQUEST.id
       },
       {
-        ...(SIGN_ACCOUNT_OP_REQUEST.action as Calls).calls[1],
+        ...(SIGN_ACCOUNT_OP_REQUEST.action as Calls).calls[1]!,
         fromUserRequestId: SIGN_ACCOUNT_OP_REQUEST.id
       }
     ],
@@ -200,7 +200,7 @@ describe('Actions Controller', () => {
     await networksCtrl.initialLoadPromise
     await providersCtrl.initialLoadPromise
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(accounts[0])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
 
     actionsCtrl = new ActionsController({
       selectedAccount: selectedAccountCtrl,
@@ -279,7 +279,7 @@ describe('Actions Controller', () => {
       ...SIGN_ACCOUNT_OP_ACTION,
       accountOp: {
         ...SIGN_ACCOUNT_OP_ACTION.accountOp,
-        calls: [SIGN_ACCOUNT_OP_ACTION.accountOp.calls[0]]
+        calls: [SIGN_ACCOUNT_OP_ACTION.accountOp.calls[0]!]
       }
     }
 
@@ -382,7 +382,7 @@ describe('Actions Controller', () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     ;(async () => {
-      await selectedAccountCtrl.setAccount(accounts[1])
+      await selectedAccountCtrl.setAccount(accounts[1]!)
       await actionsCtrl.forceEmitUpdate()
     })()
   })
@@ -420,7 +420,7 @@ describe('Actions Controller', () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     ;(async () => {
-      await selectedAccountCtrl.setAccount(accounts[0])
+      await selectedAccountCtrl.setAccount(accounts[0]!)
       await actionsCtrl.forceEmitUpdate()
     })()
   })

@@ -275,14 +275,14 @@ describe('SelectedAccount Controller', () => {
   it('Selected account portfolio is calculated immediately when an account with ready portfolio is selected', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
 
     await selectedAccountCtrl.setAccount(accounts[1])
 
-    await portfolioCtrl.updateSelectedAccount(accounts[1].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[1]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
@@ -334,7 +334,7 @@ describe('SelectedAccount Controller', () => {
   it('portfolio isAllReady becomes false when resetSelectedAccountPortfolio is called with isManualUpdate=true', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
@@ -345,7 +345,7 @@ describe('SelectedAccount Controller', () => {
   it('portfolio isAllReady remains true in subsequent portfolio and defi updates', async () => {
     const { selectedAccountCtrl, portfolioCtrl, defiPositionsCtrl } = await prepareTest()
 
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
@@ -359,7 +359,7 @@ describe('SelectedAccount Controller', () => {
     })
 
     await defiPositionsCtrl.updatePositions({ forceUpdate: true })
-    await portfolioCtrl.updateSelectedAccount(accounts[0].addr)
+    await portfolioCtrl.updateSelectedAccount(accounts[0]!.addr)
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
     expect(didSetToFalse).toBe(false)
@@ -367,7 +367,7 @@ describe('SelectedAccount Controller', () => {
   })
 
   describe('Banners', () => {
-    const accountAddr = accounts[0].addr
+    const accountAddr = accounts[0]!.addr
     beforeEach(() => {
       jest.clearAllMocks()
       jest.restoreAllMocks()
