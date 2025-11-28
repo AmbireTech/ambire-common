@@ -5,8 +5,9 @@ import { Pancake } from '../../const/abis/Pancake'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
 
+const iface = new Interface(Pancake)
+
 const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface(Pancake)
   const matcher = {
     [iface.getFunction('approve(address token, address spender, uint160 amount, uint48 expiration)')
       ?.selector!]: (call: IrCall) => {
@@ -21,13 +22,12 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
           getToken(token, amount),
           expirationHumanization
         ]
-      else
-        return [
-          getAction('Revoke approval'),
-          getToken(token, amount),
-          getLabel('for'),
-          getAddressVisualization(spender),
-        ]
+      return [
+        getAction('Revoke approval'),
+        getToken(token, amount),
+        getLabel('for'),
+        getAddressVisualization(spender)
+      ]
     }
   }
   const newCalls = calls.map((call) => {

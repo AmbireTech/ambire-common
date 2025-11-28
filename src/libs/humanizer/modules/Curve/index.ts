@@ -5,9 +5,9 @@ import { CurveRouter } from '../../const/abis/Curve'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getLabel, getToken } from '../../utils'
 
-const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
-  const iface = new Interface(CurveRouter)
+const iface = new Interface(CurveRouter)
 
+const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
   const parseCurveNative = (address: string) =>
     address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? ZeroAddress : address
 

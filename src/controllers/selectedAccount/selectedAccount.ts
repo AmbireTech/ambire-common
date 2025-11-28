@@ -51,8 +51,7 @@ export const DEFAULT_SELECTED_ACCOUNT_PORTFOLIO = {
   shouldShowPartialResult: false,
   isReloading: false,
   networkSimulatedAccountOp: {},
-  latest: {},
-  pending: {}
+  portfolioState: {}
 }
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
@@ -312,19 +311,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const defiPositionsAccountState = this.#defiPositions.getDefiPositionsState(this.account.addr)
 
-    const latestStateSelectedAccount = structuredClone(
-      this.#portfolio.getLatestPortfolioState(this.account.addr)
-    )
-    const pendingStateSelectedAccount = structuredClone(
-      this.#portfolio.getPendingPortfolioState(this.account.addr)
+    const portfolioAccountState = structuredClone(
+      this.#portfolio.getAccountPortfolioState(this.account.addr)
     )
 
     const {
       selectedAccountPortfolio: newSelectedAccountPortfolio,
       selectedAccountPortfolioByNetworks: newSelectedAccountPortfolioByNetworks
     } = calculateSelectedAccountPortfolio(
-      latestStateSelectedAccount,
-      pendingStateSelectedAccount,
+      portfolioAccountState,
       structuredClone(this.#portfolioByNetworks),
       defiPositionsAccountState,
       this.portfolio.shouldShowPartialResult,
@@ -332,16 +327,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     )
 
     // Find stkWALLET or WALLET token in the latest portfolio state
-    const walletORStkWalletToken = latestStateSelectedAccount['1']?.result?.tokens.find(
+    const walletORStkWalletToken = portfolioAccountState['1']?.result?.tokens.find(
       ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
     )
 
-    if (newSelectedAccountPortfolio.isAllReady && latestStateSelectedAccount.projectedRewards) {
+    if (newSelectedAccountPortfolio.isAllReady && portfolioAccountState.projectedRewards) {
       const walletOrStkWalletTokenPrice = walletORStkWalletToken?.priceIn?.[0]?.price
 
       // Calculate and add projected rewards token
       const projectedRewardsToken = calculateAndSetProjectedRewards(
-        latestStateSelectedAccount.projectedRewards,
+        portfolioAccountState.projectedRewards,
         newSelectedAccountPortfolio.balancePerNetwork,
         walletOrStkWalletTokenPrice
       )
@@ -367,6 +362,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     // Reset isManualUpdate flag when the portfolio has finished the initial load
     if (this.#isManualUpdate && newSelectedAccountPortfolio.isAllReady) {
       this.#isManualUpdate = false
+      this.portfolio.shouldShowPartialResult = false
     }
 
     this.portfolio = newSelectedAccountPortfolio
@@ -380,14 +376,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   }
 
   async updateCashbackStatus(skipUpdate?: boolean) {
-    if (!this.#portfolio || !this.account || !this.portfolio.latest.gasTank?.result) return
+    if (!this.#portfolio || !this.account || !this.portfolio.portfolioState.gasTank?.result) return
     const importedAccountKeys = this.#keystore?.getAccountKeys(this.account) || []
 
     // Don't update cashback status for view-only accounts
     if (getIsViewOnly(importedAccountKeys, this.account.associatedKeys)) return
 
     const accountId = this.account.addr
-    const gasTankResult = this.portfolio.latest.gasTank.result as PortfolioGasTankResult
+    const gasTankResult = this.portfolio.portfolioState.gasTank.result as PortfolioGasTankResult
 
     const isCashbackZero = gasTankResult.gasTankTokens?.[0]?.cashback === 0n
     const cashbackWasZeroBefore = this.#cashbackStatusByAccount[accountId] === 'no-cashback'
@@ -530,7 +526,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#portfolioErrors = getNetworksWithErrors({
       networks: this.#networks.networks,
       shouldShowPartialResult: this.portfolio.shouldShowPartialResult,
-      selectedAccountLatest: this.portfolio.latest,
+      selectedAccountPortfolioState: this.portfolio.portfolioState,
       isAllReady: this.portfolio.isAllReady,
       accountState: this.#accounts.accountStates[this.account.addr] || {},
       providers: this.#providers.providers,
