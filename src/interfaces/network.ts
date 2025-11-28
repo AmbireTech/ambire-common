@@ -65,7 +65,7 @@ export interface Network {
   nativeAssetSymbol: string
   nativeAssetName: string
   rpcUrls: string[]
-  explorerUrl: string
+  explorerUrl?: string
   selectedRpcUrl: string
   erc4337: NetworkInfo['erc4337']
   rpcNoStateOverride: NetworkInfo['rpcNoStateOverride']
@@ -100,7 +100,7 @@ export interface AddNetworkRequestParams {
   chainId: Network['chainId']
   nativeAssetSymbol: Network['nativeAssetSymbol']
   nativeAssetName: Network['nativeAssetName']
-  explorerUrl: Network['explorerUrl']
+  explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
 }
 

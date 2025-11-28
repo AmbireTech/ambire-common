@@ -200,8 +200,8 @@ const prepareTest = async () => {
     getUserRequests: () => {
       return requestsController?.userRequests || []
     },
-    getVisibleActionsQueue: () => {
-      return requestsController?.actions?.visibleActionsQueue || []
+    getVisibleUserRequests: () => {
+      return requestsController?.visibleUserRequests || []
     },
     onBroadcastSuccess: () => Promise.resolve(),
     onBroadcastFailed: () => {}
@@ -226,7 +226,7 @@ const prepareTest = async () => {
       updateSelectedAccountPortfolio: () => Promise.resolve(),
       addTokensToBeLearned: () => {},
       guardHWSigning: () => Promise.resolve(false),
-      onSetCurrentAction: () => {},
+      onSetCurrentUserRequest: () => {},
       autoLogin: autoLoginCtrl
     })
   }
@@ -313,7 +313,7 @@ describe('RequestsController ', () => {
         },
         amount: '1',
         amountInFiat: 100000n,
-        actionExecutionType: 'open-action-window',
+        executionType: 'open-request-window',
         recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
       }
     })

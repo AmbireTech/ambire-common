@@ -9,7 +9,6 @@ import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IAccountsController } from '../../interfaces/account'
-import { AccountOpAction, BenzinAction, DappRequestAction } from '../../interfaces/actions'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { Storage } from '../../interfaces/storage'
@@ -231,7 +230,7 @@ describe('Actions Controller', () => {
 
     actionsCtrl.addOrUpdateActions([DAPP_CONNECT_ACTION], {
       position: 'last',
-      executionType: 'open-action-window'
+      executionType: 'open-request-window'
     })
   })
   test('should set window loaded', (done) => {
@@ -255,7 +254,7 @@ describe('Actions Controller', () => {
       if (emitCounter === 1) {
         expect(actionsCtrl.actionsQueue).toHaveLength(2)
         expect(actionsCtrl.visibleActionsQueue).toHaveLength(2)
-        expect(actionsCtrl.currentAction).not.toEqual(SIGN_ACCOUNT_OP_ACTION) // 'queue-but-open-action-window' should not set SIGN_ACCOUNT_OP_ACTION as currentAction
+        expect(actionsCtrl.currentAction).not.toEqual(SIGN_ACCOUNT_OP_ACTION) // 'queue-but-open-request-window' should not set SIGN_ACCOUNT_OP_ACTION as currentAction
         expect(
           (actionsCtrl.visibleActionsQueue[1] as AccountOpAction).accountOp.calls
         ).toHaveLength(2)
@@ -270,7 +269,7 @@ describe('Actions Controller', () => {
 
     actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
       position: 'last',
-      executionType: 'queue-but-open-action-window'
+      executionType: 'queue-but-open-request-window'
     })
   })
   test('should update a queued account op action by removing a call', (done) => {
@@ -301,7 +300,7 @@ describe('Actions Controller', () => {
 
     actionsCtrl.addOrUpdateActions([UPDATED_SIGN_ACCOUNT_OP_ACTION], {
       position: 'last',
-      executionType: 'queue-but-open-action-window'
+      executionType: 'queue-but-open-request-window'
     })
   })
   test('should update the existing accountOp action by removing a call and open it', (done) => {
@@ -535,7 +534,7 @@ describe('Actions Controller', () => {
     })
     actionsCtrl.addOrUpdateActions([SIGN_ACCOUNT_OP_ACTION], {
       position: 'last',
-      executionType: 'open-action-window'
+      executionType: 'open-request-window'
     })
 
     expect(actionsCtrl.actionsQueue.length).toBeGreaterThanOrEqual(2)

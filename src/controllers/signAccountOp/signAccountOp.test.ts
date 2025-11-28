@@ -541,7 +541,7 @@ const init = async (
     activity,
     provider,
     phishing,
-    fromActionId: 1,
+    fromRequestId: 1,
     accountOp: op,
     isSignRequestStillActive: () => true,
     shouldSimulate: false,
