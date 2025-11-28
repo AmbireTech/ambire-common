@@ -9,8 +9,8 @@ import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
-import { RequestsController } from '../../controllers/requests/requests'
-import { TransferController } from '../../controllers/transfer/transfer'
+import { RequestsController } from '../requests/requests'
+import { TransferController } from '../transfer/transfer'
 import { STATUS_WRAPPED_METHODS } from '../../interfaces/main'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
@@ -224,7 +224,7 @@ const swapAndBridgeController = new SwapAndBridgeController({
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
-  getVisibleUserRequests: () => (!!requestsCtrl ? requestsCtrl.visibleUserRequests : []),
+  getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
   onBroadcastSuccess: () => Promise.resolve(),
   onBroadcastFailed: () => {}
 })
@@ -253,7 +253,7 @@ requestsCtrl = new RequestsController({
   networks: networksCtrl,
   providers: providersCtrl,
   selectedAccount: selectedAccountCtrl,
-  keystore: keystore,
+  keystore,
   transfer: transferCtrl,
   swapAndBridge: swapAndBridgeController,
   ui: uiCtrl,
