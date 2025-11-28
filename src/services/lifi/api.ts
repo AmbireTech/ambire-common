@@ -301,10 +301,11 @@ export class LiFiAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
+      let timeoutPromise: NodeJS.Timeout | undefined
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
-          setTimeout(() => {
+          timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
                 'Our service provider LiFi is temporarily unavailable or your internet connection is too slow.'
@@ -313,6 +314,8 @@ export class LiFiAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
+
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       // Rethrow the same error if it's already humanized
       if (e instanceof SwapAndBridgeProviderApiError) throw e

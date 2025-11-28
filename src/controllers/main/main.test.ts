@@ -150,9 +150,17 @@ describe('Main Controller ', () => {
       velcroUrl
     })
 
-    while (!controller.isReady) {
+    let retries = 0
+
+    while (!controller.isReady && retries < 20) {
       // eslint-disable-next-line no-await-in-loop
       await wait(100)
+      retries++
+    }
+
+    if (!controller.isReady) {
+      console.error('Controller failed to become ready in time', controller)
+      throw new Error('Controller initialization timeout')
     }
 
     await controller.keystore.addSecret('password', '12345678', '', true)
@@ -167,10 +175,19 @@ describe('Main Controller ', () => {
 
     await controller.accountPicker.init()
     await controller.accountPicker.setPage({ page: 1 })
-    while (controller.accountPicker.accountsLoading) {
+
+    let retries2 = 0
+    while (controller.accountPicker.accountsLoading && retries2 < 20) {
       // eslint-disable-next-line no-await-in-loop
       await wait(100)
+      retries2++
     }
+
+    if (controller.accountPicker.accountsLoading) {
+      console.error('Account picker failed to load accounts in time', controller.accountPicker)
+      throw new Error('Account picker accounts loading timeout')
+    }
+
     const accToSelect = controller.accountPicker.accountsOnPage[0]!.account
     controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0]!.account)
     await controller.accountPicker.addAccounts().catch(console.error)

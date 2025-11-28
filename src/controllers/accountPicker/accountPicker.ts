@@ -410,7 +410,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   async init() {
-    if (!this.initParams) return
+    if (!this.initParams) {
+      this.emitError({
+        level: 'silent',
+        message: 'AccountPickerController init failed: missing initParams.',
+        error: new Error('AccountPickerController init failed: missing initParams.')
+      })
+      return
+    }
 
     const {
       keyIterator,

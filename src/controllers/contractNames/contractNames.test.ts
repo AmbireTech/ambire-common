@@ -63,6 +63,7 @@ describe('Contract Names', () => {
       'UniswapV3Factory'
     )
     jest.useRealTimers()
+    jest.clearAllTimers()
   })
 
   it('Refetch failed addresses', async () => {
@@ -113,6 +114,7 @@ describe('Contract Names', () => {
     // make sure an attempt was actually made
     expect(mockedFetch).toHaveBeenCalledTimes(2)
     jest.useRealTimers()
+    jest.clearAllTimers()
     restore()
   })
   it('fetch two times', async () => {
@@ -169,6 +171,7 @@ describe('Contract Names', () => {
       PERSIST_NOT_FOUND_IN_MS
     )
     jest.useRealTimers()
+    jest.clearAllTimers()
   })
 
   it('Test address validity handling', async () => {

@@ -1647,6 +1647,6 @@ describe('Portfolio Controller ', () => {
 
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
     expect(hasItems(controller.getAccountPortfolioState(account.addr))).not.toBeTruthy()
-    expect(controller.getNetworksWithAssets(account.addr).length).toEqual(0)
+    expect(Object.keys(controller.getNetworksWithAssets(account.addr)).length).toEqual(0)
   })
 })

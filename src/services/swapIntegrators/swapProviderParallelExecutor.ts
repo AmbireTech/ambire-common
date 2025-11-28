@@ -9,7 +9,7 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import wait from '../../utils/wait'
+import wait, { waitWithAbort } from '../../utils/wait'
 
 export class SwapProviderParallelExecutor {
   id: string = 'parallel'
@@ -81,13 +81,17 @@ export class SwapProviderParallelExecutor {
         .catch((err) => ({ provider, result: err as Error }))
     )
 
-    const absoluteTimeout = wait(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE).then(() => {
+    const waitPromise = waitWithAbort(MAX_ABSOLUTE_WAIT_FOR_ALL_TO_COMPLETE)
+
+    const absoluteTimeout = waitPromise.promise.then(() => {
       throw new Error(
         'Our service providers are temporarily unavailable or your internet connection is too slow.'
       )
     })
 
     const firstResult = await Promise.race([Promise.any(tasks), absoluteTimeout])
+
+    if (waitPromise.abort) waitPromise.abort()
 
     if ('provider' in firstResult && 'result' in firstResult) {
       results.push(firstResult)
