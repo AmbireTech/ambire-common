@@ -8,7 +8,8 @@ import { SignMessageAction } from './actions'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
-import { EIP7702Signature } from './signatures'
+import { EILSignature, EIP7702Signature } from './signatures'
+import { ChainIdWithUserOp } from './userOperation'
 
 export interface Calls {
   kind: 'calls'
@@ -50,19 +51,38 @@ export interface Authorization {
   message: Hex
 }
 
+export interface SignUserOperations {
+  kind: 'signUserOperations'
+  chainIdWithUserOps: ChainIdWithUserOp[]
+  message: Hex
+}
+
+export type MessageKind =
+  | PlainTextMessage['kind']
+  | TypedMessage['kind']
+  | Authorization['kind']
+  | SignUserOperations['kind']
+
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
   fromActionId: SignMessageAction['id']
   accountAddr: AccountId
   chainId: bigint
-  content: PlainTextMessage | TypedMessage | Authorization | SiweMessage
-  signature: EIP7702Signature | string | null
+  content: PlainTextMessage | TypedMessage | Authorization | SiweMessage | SignUserOperations
+  signature: EIP7702Signature | EILSignature[] | string | null
 }
 
 export interface SignUserRequest {
   id: string | number
-  action: Calls | PlainTextMessage | TypedMessage | SiweMessage | Authorization | { kind: 'benzin' }
+  action:
+    | Calls
+    | PlainTextMessage
+    | TypedMessage
+    | SiweMessage
+    | Authorization
+    | SignUserOperations
+    | { kind: 'benzin' }
   session: Session
   meta: {
     isSignAction: true

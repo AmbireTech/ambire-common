@@ -3,6 +3,7 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
+import { PIMLICO } from '../../consts/bundlers'
 import { NETWORKS_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
@@ -205,6 +206,144 @@ export class NetworksController extends EventEmitter implements INetworksControl
       // as this code runs in the initial load promise, thus the RPC providers
       // will be instantiated from the final networks list
       finalNetworks = (await this.mergeRelayerNetworks(finalNetworks)).mergedNetworks
+    }
+
+    // do the EIL special workshop networks
+    // eth
+    finalNetworks[1].rpcUrls = ['https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-eth']
+    finalNetworks[1].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-eth'
+    finalNetworks[1].customBundlerUrl = 'https://vnet.erc4337.io/bundler/1'
+
+    // op
+    finalNetworks[10].rpcUrls = ['https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-op']
+    finalNetworks[10].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-op'
+    finalNetworks[10].customBundlerUrl = 'https://vnet.erc4337.io/bundler/10'
+
+    // arb
+    finalNetworks[42161].rpcUrls = [
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-arb'
+    ]
+    finalNetworks[42161].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-arb'
+    finalNetworks[42161].customBundlerUrl = 'https://vnet.erc4337.io/bundler/42161'
+
+    // base
+    finalNetworks[8453].rpcUrls = [
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-base'
+    ]
+    finalNetworks[8453].selectedRpcUrl =
+      'https://virtual.rpc.tenderly.co/stitchApp/project/public/eil-base'
+    finalNetworks[8453].customBundlerUrl = 'https://vnet.erc4337.io/bundler/8453'
+
+    // add the test networks here
+
+    // test networks custom bundler url
+    if (!finalNetworks[421614]) {
+      finalNetworks[421614] = {
+        name: 'Arbitrum Sepolia Mainnet',
+        nativeAssetSymbol: 'ETH',
+        has7702: true,
+        nativeAssetName: 'Ether',
+        rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
+        selectedRpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
+        rpcNoStateOverride: false,
+        chainId: 421614n,
+        explorerUrl: 'https://sepolia.arbiscan.io/',
+        erc4337: {
+          enabled: true,
+          hasPaymaster: false,
+          hasBundlerSupport: true,
+          bundlers: [PIMLICO],
+          defaultBundler: PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: false,
+        platformId: '',
+        nativeAssetId: '',
+        hasSingleton: true,
+        features: [],
+        feeOptions: {
+          is1559: false
+        },
+        predefined: true,
+        customBundlerUrl: 'https://rpc.erc4337.io/421614'
+      }
+    } else {
+      finalNetworks[421614].customBundlerUrl = 'https://rpc.erc4337.io/421614'
+      finalNetworks[421614].has7702 = true
+    }
+    if (!finalNetworks[11155420]) {
+      finalNetworks[11155420] = {
+        name: 'OP Sepolia',
+        nativeAssetSymbol: 'ETH',
+        has7702: true,
+        nativeAssetName: 'Ether',
+        rpcUrls: ['https://sepolia.optimism.io'],
+        selectedRpcUrl: 'https://sepolia.optimism.io',
+        rpcNoStateOverride: false,
+        chainId: 11155420n,
+        explorerUrl: 'https://sepolia-optimism.etherscan.io/',
+        erc4337: {
+          enabled: true,
+          hasPaymaster: false,
+          hasBundlerSupport: true,
+          bundlers: [PIMLICO],
+          defaultBundler: PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: false,
+        platformId: '',
+        nativeAssetId: '',
+        hasSingleton: true,
+        features: [],
+        feeOptions: {
+          is1559: false
+        },
+        predefined: true,
+        customBundlerUrl: 'https://rpc.erc4337.io/11155420'
+      }
+    } else {
+      finalNetworks[11155420].customBundlerUrl = 'https://rpc.erc4337.io/11155420'
+      finalNetworks[11155420].has7702 = true
+    }
+    if (!finalNetworks[11155111]) {
+      finalNetworks[11155111] = {
+        name: 'Ethereum Sepolia',
+        nativeAssetSymbol: 'ETH',
+        has7702: true,
+        nativeAssetName: 'Ether',
+        rpcUrls: ['https://eth-sepolia.g.alchemy.com/v2/demo'],
+        selectedRpcUrl: 'https://eth-sepolia.g.alchemy.com/v2/demo',
+        rpcNoStateOverride: false,
+        chainId: 11155111n,
+        explorerUrl: 'https://sepolia.etherscan.io',
+        erc4337: {
+          enabled: true,
+          hasPaymaster: false,
+          hasBundlerSupport: true,
+          bundlers: [PIMLICO],
+          defaultBundler: PIMLICO
+        },
+        isSAEnabled: true,
+        areContractsDeployed: true,
+        hasRelayer: false,
+        platformId: '',
+        nativeAssetId: '',
+        hasSingleton: true,
+        features: [],
+        feeOptions: {
+          is1559: false
+        },
+        predefined: true,
+        customBundlerUrl: 'https://rpc.erc4337.io/11155111'
+      }
+    } else {
+      finalNetworks[11155111].customBundlerUrl = 'https://rpc.erc4337.io/11155111'
+      finalNetworks[11155111].has7702 = true
     }
 
     this.#networks = finalNetworks

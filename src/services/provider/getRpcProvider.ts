@@ -16,8 +16,13 @@ const RPC_BATCH_CONFIG: Record<string, number> = {
 }
 
 /** Some RPCs limit batching which causes immediate failures on our end, so configure the known ones */
-const getBatchCountFromUrl = (rpcUrl: string): number | undefined => {
+const getBatchCountFromUrl = (rpcUrl: string, chainId?: bigint | number): number | undefined => {
   try {
+    // hardcode a max batch size of 3 for test networks
+    if (chainId && (chainId === 11155420n || chainId === 421614n || chainId === 84532n)) {
+      return 3
+    }
+
     const rootDomain = getRootDomain(rpcUrl)
     return RPC_BATCH_CONFIG[rootDomain]
   } catch {
@@ -46,7 +51,7 @@ const getRpcProvider = (
     throw new Error('Invalid RPC URL provided')
   }
 
-  const batchMaxCount = getBatchCountFromUrl(rpcUrl)
+  const batchMaxCount = getBatchCountFromUrl(rpcUrl, chainId)
   const providerOptions = batchMaxCount ? { ...options, batchMaxCount } : options
 
   if (chainId) {
