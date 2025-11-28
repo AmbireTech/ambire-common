@@ -315,6 +315,7 @@ export function isBasicAccount(account: Account, state: AccountOnchainState): bo
 
 const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = [
   'internal',
+  'ledger',
   // TODO: Temporarily enable only for Ambire Next, while testing, best to use feature flag for this
   ...(process.env.AMBIRE_NEXT === 'true' ? (['lattice'] as const) : [])
 ]
