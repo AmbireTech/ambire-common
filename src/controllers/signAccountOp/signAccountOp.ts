@@ -176,7 +176,7 @@ export const noStateUpdateStatuses = [
 ]
 
 export type SignAccountOpUpdateProps = {
-  gasPrices?: GasSpeeds | null
+  gasPrices?: GasSpeeds
   feeToken?: TokenResult
   paidBy?: string
   paidByKeyType?: Key['type']
@@ -230,7 +230,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    */
   #accountOp: AccountOpWithId
 
-  gasPrices?: GasSpeeds | null = null
+  gasPrices?: GasSpeeds
 
   feeSpeeds: {
     [identifier: string]: SpeedCalc[]

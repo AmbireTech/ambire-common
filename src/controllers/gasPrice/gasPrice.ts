@@ -26,7 +26,7 @@ export class GasPriceController extends EventEmitter {
     isSignRequestStillActive: Function
   }
 
-  gasPrices: GasSpeeds | null = null
+  gasPrices?: GasSpeeds
 
   stopRefetching: boolean = false
 
