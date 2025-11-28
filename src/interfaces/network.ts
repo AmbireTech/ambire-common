@@ -65,7 +65,7 @@ export interface Network {
   nativeAssetSymbol: string
   nativeAssetName: string
   rpcUrls: string[]
-  explorerUrl: string
+  explorerUrl?: string
   selectedRpcUrl: string
   erc4337: NetworkInfo['erc4337']
   rpcNoStateOverride: NetworkInfo['rpcNoStateOverride']

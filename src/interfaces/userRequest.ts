@@ -1,8 +1,8 @@
 import { TypedDataDomain, TypedDataField } from 'ethers'
-import { SubmittedAccountOp } from 'libs/accountOp/submittedAccountOp'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
 import { AccountOp } from '../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
