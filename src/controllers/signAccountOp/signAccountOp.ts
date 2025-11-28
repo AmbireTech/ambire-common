@@ -69,7 +69,12 @@ import { getContractImplementation } from '../../libs/7702/7702'
 import { isAmbireV1LinkedAccount, isSmartAccount } from '../../libs/account/account'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpWithId,
+  GasFeePayment,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
@@ -116,6 +121,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import shortenAddress from '../../utils/shortenAddress'
+import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
@@ -233,7 +239,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
    * Otherwise the accountOp will be out of sync with the one stored
    * in requests/actions.
    */
-  #accountOp: AccountOp
+  #accountOp: AccountOpWithId
 
   gasPrices?: GasRecommendation[] | null
 
@@ -395,7 +401,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     this.#activity = activity
     this.#phishing = phishing
     this.fromActionId = fromActionId
-    this.#accountOp = structuredClone(accountOp)
+    this.#accountOp = { ...structuredClone(accountOp), id: generateUuid() }
     this.#isSignRequestStillActive = isSignRequestStillActive
 
     this.rbfAccountOps = {}
@@ -444,14 +450,20 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
     return !!this.#updateBlacklistedStatusPromise
   }
 
-  get accountOp(): Readonly<AccountOp> {
+  get accountOp(): Readonly<AccountOpWithId> {
     return this.#accountOp
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
     if (!Object.keys(accountOp).length) return
 
-    this.#accountOp = { ...this.#accountOp, ...accountOp }
+    const hasUpdatedCalls = !!accountOp.calls
+
+    this.#accountOp = {
+      ...this.#accountOp,
+      ...accountOp,
+      id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
+    }
 
     this.#onAccountOpUpdate(this.#accountOp)
   }
