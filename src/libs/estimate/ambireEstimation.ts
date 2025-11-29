@@ -8,6 +8,7 @@ import { SCROLL_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
 import { getAccountDeployParams } from '../account/account'
 import { BaseAccount } from '../account/BaseAccount'
@@ -92,7 +93,7 @@ export async function ambireEstimateGas(
   const ambireEstimation = await deploylessEstimator
     .call('estimate', checkInnerCallsArgs, {
       from: DEPLOYLESS_SIMULATION_FROM,
-      blockTag: 'pending', // there's no reason to do latest
+      blockTag: getPendingBlockTagIfSupported(network),
       mode: isStillPureEoa ? DeploylessMode.StateOverride : DeploylessMode.Detect,
       stateToOverride: isStillPureEoa ? getEoaSimulationStateOverride(account.addr) : null
     })

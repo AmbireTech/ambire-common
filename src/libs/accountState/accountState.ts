@@ -13,6 +13,7 @@ import {
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
@@ -78,7 +79,7 @@ export async function getAccountState(
   const eoas = accounts.filter((account) => !isSmartAccount(account)).map((account) => account.addr)
   const [accountStateResult, eoaNonces, eoaCodes] = await Promise.all([
     deploylessAccountState.call('getAccountsState', [args], {
-      blockTag
+      blockTag: blockTag === 'pending' ? getPendingBlockTagIfSupported(network) : blockTag
     }),
     getEOAsNonce(eoas).catch((e) => {
       throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
