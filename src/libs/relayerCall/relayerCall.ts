@@ -85,11 +85,6 @@ export async function relayerCall(
   headers: any = null,
   timeoutMs: number = 10000
 ): Promise<any> {
-  console.log('Debug: relayerCall called with', {
-    url: this.url,
-    path,
-    fetch: !!this.fetch
-  })
   const res = await relayerCallUncaught(
     this.url + path,
     this.fetch,
