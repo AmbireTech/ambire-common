@@ -1,4 +1,4 @@
-import { Network } from 'interfaces/network'
+import { Network } from '../interfaces/network'
 
 /**
  * Basically, blockTag: pending is not supported on a lot
