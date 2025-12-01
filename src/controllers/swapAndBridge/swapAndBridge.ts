@@ -2297,16 +2297,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn || !userTxn.success) {
-      if (this.#shouldAutoUpdateQuote) {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
 
+      if (!this.quote?.selectedRoute?.isSelectedManually) {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.onEstimationFailure(undefined)
         return
       }
 
-      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
       this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
       return
@@ -2522,8 +2521,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get #shouldAutoUpdateQuote() {
     return (
-      (this.formStatus === SwapAndBridgeFormStatus.ReadyToEstimate ||
-        this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) &&
+      this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
       !this.hasProceeded &&
       this.quote &&
       !this.quote.selectedRoute?.disabled &&
