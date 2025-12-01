@@ -1285,8 +1285,16 @@ export class MainController extends EventEmitter implements IMainController {
           ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
           : undefined
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateSelectedAccountPortfolio({ networks })
+        if (networks?.length) {
+          this.updateSelectedAccountPortfolio({ networks })
+
+          // update the account state to latest as well
+          this.accounts.updateAccountState(
+            this.selectedAccount.account.addr,
+            'latest',
+            networks?.map((net) => net.chainId)
+          )
+        }
       }
     }
 
