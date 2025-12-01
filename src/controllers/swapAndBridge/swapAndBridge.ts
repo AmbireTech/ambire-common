@@ -2302,18 +2302,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!userTxn || !userTxn.success) {
       this.#userTxn = null
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
+      if (this.#shouldAutoUpdateQuote) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
 
-      // if we're not auto updating routes, just show the error
-      if (!this.#shouldAutoUpdateQuote) {
-        this.updateQuoteStatus = 'INITIAL'
-        this.emitUpdate()
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.onEstimationFailure(undefined)
         return
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      this.onEstimationFailure(undefined)
+      this.updateQuoteStatus = 'INITIAL'
+      this.emitUpdate()
       return
     }
 
@@ -2530,7 +2529,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get #shouldAutoUpdateQuote() {
     return (
-      this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
       !this.hasProceeded &&
       this.quote &&
       !this.quote.selectedRoute?.disabled &&
