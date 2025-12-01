@@ -4,6 +4,7 @@ import fetch from 'node-fetch'
 /* eslint-disable prettier/prettier */
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { ACCOUNT_STATE_PENDING_INTERVAL } from '../../consts/intervals'
@@ -152,14 +153,17 @@ const waitForAccountStatesInitialLoad = async (mainCtrl: MainController) => {
 }
 
 describe('ContinuousUpdatesController intervals', () => {
+  let restoreFunc: any
   beforeEach(() => {
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+    const { restore } = suppressConsole()
+
+    restoreFunc = restore
   })
   afterEach(() => {
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restoreFunc()
   })
 
   test('should run updatePortfolioInterval', async () => {
