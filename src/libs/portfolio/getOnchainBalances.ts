@@ -1,6 +1,7 @@
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Network } from '../../interfaces/network'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 /* eslint-disable no-console */
 import { yieldToMain } from '../../utils/scheduler'
 import { getEoaSimulationStateOverride } from '../../utils/simulationStateOverride'
@@ -131,7 +132,10 @@ export async function getNFTs(
 ): Promise<[[TokenError, CollectionResult][], {}][]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
     ...opts,
-    blockTag: opts.blockTag === 'both' ? 'pending' : opts.blockTag
+    blockTag:
+      opts.blockTag === 'pending' || opts.blockTag === 'both'
+        ? getPendingBlockTagIfSupported(network)
+        : opts.blockTag
   })
 
   const mapNft = (token: any) => {
@@ -256,7 +260,10 @@ export async function getTokens(
 
   const deploylessOpts = getDeploylessOpts(accountAddr, !network.rpcNoStateOverride, {
     ...opts,
-    blockTag: isFetchingBothBlocks ? 'pending' : opts.blockTag
+    blockTag:
+      opts.blockTag === 'pending' || isFetchingBothBlocks
+        ? getPendingBlockTagIfSupported(network)
+        : opts.blockTag
   })
 
   // If we are fetching both the pending and latest block, we don't need to fetch the entire token

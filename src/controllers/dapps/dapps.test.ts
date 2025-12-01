@@ -230,6 +230,7 @@ describe('DappsController', () => {
     expect(controller.isReadyToDisplayDapps).toBe(true)
     expect(controller.dapps.length).toBeGreaterThan(predefinedDapps.length)
     jest.useRealTimers()
+    jest.clearAllTimers()
   })
   test('should add dapp to connect and update blacklisted status', async () => {
     const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
