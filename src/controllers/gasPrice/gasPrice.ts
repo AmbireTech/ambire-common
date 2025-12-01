@@ -69,20 +69,18 @@ export class GasPriceController extends EventEmitter {
     // it is counter intuitive but the logic if the account supports the bundler
     // estimate, it would fetch the gas price from the bundler estimation itself,
     // therefore not being required here
-    if (!this.#baseAccount.supportsBundlerEstimation()) {
+    const availableBundlers = getAvailableBunlders(this.#network)
+    if (availableBundlers.length && !this.#baseAccount.supportsBundlerEstimation()) {
+      let timeoutId
       const bundlerGasPrices = await Promise.race([
         // Promise.any because we want the first success, ignoring errors
         // basically, call all the available bundlers on the network for
         // gas prices and take the results from the quickest one.
         // Also, limit it to 6s - if slower than that, we should fallback
         // to our own mechanism
-        Promise.any(
-          getAvailableBunlders(this.#network).map((bundler) =>
-            bundler.fetchGasPrices(this.#network)
-          )
-        ),
+        Promise.any(availableBundlers.map((bundler) => bundler.fetchGasPrices(this.#network))),
         new Promise((_resolve, reject) => {
-          setTimeout(
+          timeoutId = setTimeout(
             () => reject(new Error('bundler gas price fetch fail, request too slow')),
             6000
           )
@@ -91,6 +89,7 @@ export class GasPriceController extends EventEmitter {
         console.error('Failed fetching bundler gas prices from the gasPrice lib')
         return null
       })
+      clearTimeout(timeoutId)
       if (bundlerGasPrices) {
         this.gasPrices = bundlerGasPrices as GasSpeeds
 

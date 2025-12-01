@@ -42,13 +42,13 @@ export async function getEstimation(
     nativeToCheck
   )
   let bundlerGasPrices: GasSpeeds | undefined
-  const bundlerEstimation = new Promise<Erc4337GasLimits | Error | null>(async (resolve) => {
-    if (!baseAcc.supportsBundlerEstimation()) return resolve(null)
+  const bundlerEstimation = async (): Promise<Erc4337GasLimits | Error | null> => {
+    if (!baseAcc.supportsBundlerEstimation()) return null
 
     const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher)
-    if (gasPrice instanceof Error) return resolve(gasPrice)
+    if (gasPrice instanceof Error) return gasPrice
 
-    const bundlerEstimation = await bundlerEstimate(
+    const bundlerEstimateResponse = await bundlerEstimate(
       baseAcc,
       accountState,
       op,
@@ -61,11 +61,11 @@ export async function getEstimation(
       pendingUserOp
     )
     bundlerGasPrices =
-      !bundlerEstimation || bundlerEstimation instanceof Error
+      !bundlerEstimateResponse || bundlerEstimateResponse instanceof Error
         ? gasPrice
-        : bundlerEstimation.gasPrice
-    return resolve(bundlerEstimation)
-  })
+        : bundlerEstimateResponse.gasPrice
+    return bundlerEstimateResponse
+  }
   const providerEstimation = providerEstimateGas(
     baseAcc.getAccount(),
     op,
@@ -75,7 +75,7 @@ export async function getEstimation(
     feeTokens
   )
 
-  const estimations = await Promise.all([ambireEstimation, bundlerEstimation, providerEstimation])
+  const estimations = await Promise.all([ambireEstimation, bundlerEstimation(), providerEstimation])
   const ambireGas = estimations[0]
   const bundlerGas = estimations[1]
   const providerGas = estimations[2]

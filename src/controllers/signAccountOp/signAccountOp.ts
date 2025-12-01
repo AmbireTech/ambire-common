@@ -1753,19 +1753,27 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       this.accountOp.chainId
     )
 
-    if (!accountState || !this.gasPrices) {
+    if (!accountState) {
       throw new EmittableError({
         message: `Missing mandatory transaction data (account state). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`,
         level: 'major'
       })
     }
+    if (!this.gasPrices) {
+      throw new EmittableError({
+        message: `Missing mandatory transaction data (gas prices). ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`,
+        level: 'major'
+      })
+    }
 
     if (shouldReestimate) {
-      const latestGasPrices = await fetchBundlerGasPrice(
+      const latestGasPricesResponse = await fetchBundlerGasPrice(
         this.baseAccount,
         this.#network,
         this.bundlerSwitcher
       )
+      const latestGasPrices =
+        latestGasPricesResponse instanceof Error ? this.gasPrices : latestGasPricesResponse
       const newEstimate = await bundlerEstimate(
         this.baseAccount,
         accountState,
@@ -1773,7 +1781,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
         this.#network,
         [this.selectedOption!.token],
         this.provider,
-        latestGasPrices instanceof Error ? this.gasPrices : latestGasPrices,
+        latestGasPrices,
         this.bundlerSwitcher,
         eip7702Auth
       )
