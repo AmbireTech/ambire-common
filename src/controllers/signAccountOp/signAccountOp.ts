@@ -1882,10 +1882,11 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
 
     const errorResponse = response as PaymasterErrorReponse
     if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
-      // silenly continuing on error as this is an attempt for an UX improvement
+      // continue on error as this is an attempt for an UX improvement
       await this.#accounts
         .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
-        .catch((e) => e)
+        // eslint-disable-next-line no-console
+        .catch((e) => console.error(e))
     }
 
     // auto-retry once if it was the ambire paymaster
