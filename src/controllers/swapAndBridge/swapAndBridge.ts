@@ -2311,6 +2311,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         return
       }
 
+      this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
       this.updateQuoteStatus = 'INITIAL'
       this.emitUpdate()
       return
