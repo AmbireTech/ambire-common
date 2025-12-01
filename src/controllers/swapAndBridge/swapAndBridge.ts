@@ -146,8 +146,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #updateQuoteId?: string
 
-  #userTxn: SwapAndBridgeSendTxRequest | null = null
-
   switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   sessionIds: string[] = []
@@ -993,7 +991,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.hasProceeded = false
     this.#updateQuoteId = undefined
     this.fromAmountUpdateCounter = 0
-    this.#userTxn = null
 
     if (shouldEmit) this.#emitUpdateIfNeeded(true)
   }
@@ -2300,8 +2297,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // if no txn is provided because of a route failure (large slippage),
     // auto select the next route and continue on
     if (!userTxn || !userTxn.success) {
-      this.#userTxn = null
-
       if (this.#shouldAutoUpdateQuote) {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.markSelectedRouteAsFailed(userTxn?.title || 'Invalid quote')
@@ -2316,9 +2311,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.emitUpdate()
       return
     }
-
-    // set the correct userTxn
-    this.#userTxn = userTxn
 
     // learn the token in the portfolio
     this.#portfolio.addTokensToBeLearned([this.toSelectedToken.address], BigInt(this.toChainId))
@@ -2530,6 +2522,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get #shouldAutoUpdateQuote() {
     return (
+      (this.formStatus === SwapAndBridgeFormStatus.ReadyToEstimate ||
+        this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit) &&
       !this.hasProceeded &&
       this.quote &&
       !this.quote.selectedRoute?.disabled &&
