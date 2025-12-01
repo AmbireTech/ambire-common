@@ -184,13 +184,17 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#initialLoadPromise = undefined
     })
 
-    this.#ui.uiEvent.on('updateView', (view: View) => {
+    this.#ui.uiEvent.on('updateView', async (view: View) => {
       if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
 
-      const tokens = this.#selectedAccountData.isReady
-        ? this.#selectedAccountData.portfolio.tokens.filter(
-            (t) => t.amount > 0n && !t.flags.rewardsType
-          )
+      await this.#waitUntilReadyPortfolio()
+
+      const tokens = this.#selectedAccountData.portfolio.isAllReady
+        ? this.#selectedAccountData.portfolio.tokens
+            .filter((t) => t.amount > 0n && !t.flags.rewardsType)
+            .sort((a, b) => {
+              return Number(b.amount - a.amount)
+            })
         : []
 
       if (!tokens?.length) return
@@ -204,7 +208,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       // 1. If a valid address is provided → try to match it
       if (tokenAddress) {
         newSelectedToken = tokens.find(
-          (t) =>
+          (t: TokenResult) =>
             t.address.toLowerCase() === tokenAddress &&
             tokenChainId === t.chainId.toString() &&
             t.flags.onGasTank === false
@@ -225,10 +229,36 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
 
       // Emit update to reflect possible changes in the UI
-      this.emitUpdate()
+      if (this.selectedToken) this.emitUpdate()
     })
 
     this.emitUpdate()
+  }
+
+  #waitUntilReadyPortfolio(): Promise<void> {
+    return new Promise((resolve) => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null
+      let fallbackId: ReturnType<typeof setTimeout> | null = null
+
+      const checkReady = () => {
+        if (this.#selectedAccountData.portfolio.isAllReady) {
+          if (timeoutId) clearTimeout(timeoutId)
+          if (fallbackId) clearTimeout(fallbackId)
+          return resolve()
+        }
+
+        timeoutId = setTimeout(checkReady, 50)
+      }
+
+      // Run first check
+      checkReady()
+
+      // Fallback: max wait 10 seconds
+      fallbackId = setTimeout(() => {
+        if (timeoutId) clearTimeout(timeoutId)
+        resolve()
+      }, 10000)
+    })
   }
 
   async #load() {
