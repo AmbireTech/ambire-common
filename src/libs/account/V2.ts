@@ -7,7 +7,6 @@ import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
-import { getRelayerNonce } from '../../utils/nonce'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
@@ -35,13 +34,17 @@ export class V2 extends BaseAccount {
   // and 15k gas entry point overhead to be on the safe side
   ENTRY_POINT_DEPLOYMENT_ADDITIONAL_GAS = 35000n
 
+  #isTransitioningTo4337() {
+    return this.accountState.isDeployed && !this.accountState.isErc4337Enabled
+  }
+
   getEstimationCriticalError(estimation: FullEstimation): Error | null {
     if (estimation.ambire instanceof Error) return estimation.ambire
     return null
   }
 
   supportsBundlerEstimation() {
-    return this.network.erc4337.enabled
+    return !this.#isTransitioningTo4337()
   }
 
   getAvailableFeeOptions(
@@ -49,28 +52,15 @@ export class V2 extends BaseAccount {
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
     const hasPaymaster =
-      this.network.erc4337.enabled &&
-      estimation.bundlerEstimation &&
-      estimation.bundlerEstimation.paymaster.isUsable()
+      estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
 
-    // on a 4437 network where the account is not deployed,
-    // we force the user to pay by ERC-4337 to enable the entry point
-    if (this.network.erc4337.enabled && !this.accountState.isDeployed) {
-      return feePaymentOptions.filter(
-        (opt) =>
-          opt.paidBy === this.account.addr &&
-          (isNative(opt.token) || (opt.availableAmount > 0n && hasPaymaster))
-      )
-    }
-
-    const hasRelayer = !this.network.erc4337.enabled && this.network.hasRelayer
     return feePaymentOptions.filter(
       (opt) =>
         // always show account native, even if not enough
         (isNative(opt.token) && opt.paidBy === this.account.addr) ||
         // show EOA native only if it has amount to pay the fee
         (isNative(opt.token) && opt.availableAmount > 0n) ||
-        (opt.availableAmount > 0n && (hasPaymaster || hasRelayer))
+        (opt.availableAmount > 0n && (this.network.hasRelayer || hasPaymaster))
     )
   }
 
@@ -87,10 +77,10 @@ export class V2 extends BaseAccount {
     const ambireBroaddcastGas = getBroadcastGas(this, options.op)
     const ambireGas = ambireBroaddcastGas + estimation.ambireEstimation.gasUsed
 
-    // no 4337 => use ambireEstimation
-    if (!this.network.erc4337.enabled) return ambireGas
+    // are we transitioning to 4337?
+    if (this.#isTransitioningTo4337()) return ambireGas
 
-    // has 4337 => use the bundler if it doesn't have an error
+    // use the bundler if it doesn't have an error
     if (!estimation.bundlerEstimation) return ambireGas
     let bundlerGasUsed = BigInt(estimation.bundlerEstimation.callGasLimit)
 
@@ -111,16 +101,17 @@ export class V2 extends BaseAccount {
     }
   ): string {
     if (feeOption.paidBy !== this.getAccount().addr) return BROADCAST_OPTIONS.byOtherEOA
-    if (this.network.erc4337.enabled) return BROADCAST_OPTIONS.byBundler
-    return BROADCAST_OPTIONS.byRelayer
+
+    // keep the relayer only for the transition transaction
+    // when the account is deployed but it doesn't have the entry point
+    // as a signer
+    if (this.#isTransitioningTo4337()) return BROADCAST_OPTIONS.byRelayer
+
+    return BROADCAST_OPTIONS.byBundler
   }
 
-  shouldIncludeActivatorCall(broadcastOption: string) {
-    return (
-      this.network.erc4337.enabled &&
-      !this.accountState.isErc4337Enabled &&
-      broadcastOption === BROADCAST_OPTIONS.byOtherEOA
-    )
+  shouldIncludeActivatorCall() {
+    return this.#isTransitioningTo4337()
   }
 
   canUseReceivingNativeForFee(): boolean {
@@ -135,7 +126,6 @@ export class V2 extends BaseAccount {
       ]) as Hex
     }
 
-    // deployAndExecuteMultiple is the worst case
     const ambireFactory = new Interface(AmbireFactory.abi)
     return ambireFactory.encodeFunctionData('deployAndExecute', [
       this.account.creation!.bytecode,
@@ -182,10 +172,6 @@ export class V2 extends BaseAccount {
     op: AccountOp,
     provider: RPCProvider
   ): Promise<bigint> {
-    // return the account op nonce if we're not using the relayer
-    const hasRelayer = !this.network.erc4337.enabled && this.network.hasRelayer
-    if (!hasRelayer) return op.nonce as bigint
-
-    return getRelayerNonce(activity, op, provider)
+    return op.nonce as bigint
   }
 }
