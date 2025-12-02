@@ -151,28 +151,8 @@ export abstract class Bundler {
     return result.status === 200
   }
 
-  async fetchGasPrices(network: Network, counter: number = 0): Promise<GasSpeeds> {
-    if (counter >= 3)
-      throw new Error('Estimating gas prices from the bundler timed out. Retrying...')
-
-    let response
-
-    try {
-      response = await Promise.race([
-        this.getGasPrice(network),
-        new Promise((_resolve, reject) => {
-          setTimeout(
-            () => reject(new Error('fetching bundler gas prices failed, request too slow')),
-            5000
-          )
-        })
-      ])
-    } catch (e: any) {
-      const increment = counter + 1
-      return this.fetchGasPrices(network, increment)
-    }
-
-    return response as GasSpeeds
+  async fetchGasPrices(network: Network): Promise<GasSpeeds> {
+    return this.getGasPrice(network)
   }
 
   // used when catching errors from bundler requests
