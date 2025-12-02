@@ -67,6 +67,8 @@ export class SocketAPI implements SwapProvider {
 
   isHealthy: boolean | null = null
 
+  supportedChains: SwapProvider['supportedChains'] = null
+
   constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
 
@@ -114,10 +116,12 @@ export class SocketAPI implements SwapProvider {
     let response: CustomResponse
 
     try {
+      let timeoutPromise
+
       response = await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
-          setTimeout(() => {
+          timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
                 'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
@@ -126,6 +130,8 @@ export class SocketAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
+
+      if (timeoutPromise) clearTimeout(timeoutPromise)
     } catch (e: any) {
       const message = e?.message || 'no message'
       const status = e?.status ? `, status: <${e.status}>` : ''
@@ -179,11 +185,15 @@ export class SocketAPI implements SwapProvider {
         'Unable to retrieve the list of supported Swap & Bridge chains from our service provider.'
     })
 
-    return response
+    const chains = response
       .filter((c) => c.sendingEnabled && c.receivingEnabled)
       .map(({ chainId }) => ({
         chainId
       }))
+
+    this.supportedChains = chains
+
+    return chains
   }
 
   async getToTokenList({ toChainId }: { toChainId: number }): Promise<SwapAndBridgeToToken[]> {

@@ -1,8 +1,6 @@
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
 import { KeystoreSeed, StoredKey } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
-import { CashbackStatus, LegacyCashbackStatus } from '../../interfaces/selectedAccount'
 import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
 import { LegacyTokenPreference } from '../portfolio/customToken'
 
@@ -19,14 +17,6 @@ export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: Stor
 
     return internalKeyWithoutMeta || externalKeyWithoutCreatedAt
   })
-
-export const needsCashbackStatusMigration = (
-  cashbackStatusByAccount: Record<Account['addr'], CashbackStatus | LegacyCashbackStatus>
-) => {
-  return Object.values(cashbackStatusByAccount).some(
-    (value) => typeof value === 'object' && value !== null && 'cashbackWasZeroAt' in value
-  )
-}
 
 export const migrateHiddenTokens = (tokenPreferences: LegacyTokenPreference[]) => {
   return tokenPreferences
@@ -63,6 +53,9 @@ export async function migrateNetworkPreferencesToNetworks(networkPreferences: {
   })
   customNetworkIds.forEach((networkId: string) => {
     const preference = networkPreferences[networkId]
+
+    if (!preference) return
+
     const networkInfo = {
       chainId: preference.chainId!,
       isSAEnabled: preference.isSAEnabled ?? false,

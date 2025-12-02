@@ -38,23 +38,50 @@ export function isCorrectAddress(address: string) {
 }
 
 // @TODO: Get RPC provider url from settings controller
-async function resolveENSDomain(domain: string, bip44Item?: number[][]): Promise<string> {
+async function resolveENSDomain(
+  domain: string,
+  bip44Item?: number[][]
+): Promise<{
+  address: string
+  avatar: string | null
+}> {
   const normalizedDomainName = normalizeDomain(domain)
-  if (!normalizedDomainName) return ''
+  if (!normalizedDomainName)
+    return {
+      address: '',
+      avatar: null
+    }
   const ethereum = networks.find((n) => n.chainId === 1n)!
   const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
   const resolver = await provider.getResolver(normalizedDomainName)
-  if (!resolver) return ''
+
+  if (!resolver)
+    return {
+      address: '',
+      avatar: null
+    }
+
   try {
-    const ethAddress = await resolver.getAddress()
+    const [ethAddress, avatar] = await Promise.all([
+      resolver.getAddress().catch(() => null),
+      resolver.getAvatar().catch(() => null)
+    ])
     const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
-    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || ''
+
+    return {
+      address: isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress || '',
+      avatar
+    }
   } catch (e: any) {
     // If the error comes from an internal server error don't
     // show it to the user, because it happens when a domain
     // doesn't exist and we already show a message for that.
     // https://dnssec-oracle.ens.domains/ 500 (ISE)
-    if (e.message?.includes('500_SERVER_ERROR')) return ''
+    if (e.message?.includes('500_SERVER_ERROR'))
+      return {
+        address: '',
+        avatar: null
+      }
 
     throw e
   } finally {
@@ -71,4 +98,8 @@ async function reverseLookupEns(address: string, provider: RPCProvider) {
   return provider.lookupAddress(address)
 }
 
-export { resolveENSDomain, getBip44Items, reverseLookupEns }
+async function getEnsAvatar(name: string, provider: RPCProvider) {
+  return provider.getAvatar(name)
+}
+
+export { resolveENSDomain, getBip44Items, getEnsAvatar, reverseLookupEns }

@@ -4,6 +4,7 @@ import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { AccountState } from '../defiPositions/types'
+import { HumanizerVisualization } from '../humanizer/interfaces'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -289,10 +290,12 @@ export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabl
 
 export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   defiPositionsAccountState,
-  networks
+  networks,
+  accountAddr
 }: {
   defiPositionsAccountState: AccountState
   networks: Network[]
+  accountAddr: string
 }) => {
   const banners: Banner[] = []
 
@@ -339,8 +342,38 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
         label: 'Dismiss',
         actionName: 'dismiss-defi-positions-banner'
       }
-    ]
+    ],
+    meta: {
+      accountAddr
+    }
   })
 
   return banners
+}
+
+export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) {
+  const blacklistedItemsCount = blacklistedItems.length
+  const hasScamAddress = blacklistedItems.some((i) => i.type === 'address')
+  const hasScamToken = blacklistedItems.some((i) => i.type === 'token')
+
+  const isSingle = blacklistedItemsCount === 1
+
+  let label = ''
+
+  if (hasScamAddress && hasScamToken) {
+    label = blacklistedItemsCount === 2 ? 'address or token' : 'addresses or tokens'
+  } else if (hasScamAddress) {
+    label = isSingle ? 'address' : 'addresses'
+  } else if (hasScamToken) {
+    label = isSingle ? 'token' : 'tokens'
+  }
+
+  // eslint-disable-next-line no-nested-ternary
+  const prefix = isSingle
+    ? `The destination ${label}`
+    : `${blacklistedItemsCount} of the destination ${label}`
+
+  return `${prefix} in this transaction ${
+    isSingle ? 'was' : 'were'
+  } flagged as dangerous. Proceed at your own risk.`
 }

@@ -40,8 +40,8 @@ describe('asciiHumanizer', () => {
 
     const irCalls = asciiModule(accountOp, accountOp.calls, humanizerInfo as HumanizerMeta)
 
-    compareVisualizations(irCalls[0].fullVisualization!, [...humanizationPrefix, getText('hello')])
-    compareVisualizations(irCalls[1].fullVisualization!, [
+    compareVisualizations(irCalls[0]!.fullVisualization!, [...humanizationPrefix, getText('hello')])
+    compareVisualizations(irCalls[1]!.fullVisualization!, [
       ...humanizationPrefix,
       getText('hello'),
       getLabel('and'),

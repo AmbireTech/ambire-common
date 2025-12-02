@@ -5,12 +5,13 @@ import { WETH } from '../../const/abis'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
 import { getUnwrapping, getWrapping } from '../../utils'
 
+const iface = new Interface(WETH)
+
 export const wrappingModule: HumanizerCallModule = (
   _: AccountOp,
   irCalls: IrCall[],
   humanizerMeta: HumanizerMeta
 ) => {
-  const iface = new Interface(WETH)
   const newCalls = irCalls.map((call: IrCall) => {
     if (!isAddress(call.to)) return call
     const knownAddressData = humanizerMeta?.knownAddresses[getAddress(call.to)]

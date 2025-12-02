@@ -347,15 +347,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.phishing = new PhishingController({
       fetch: this.fetch,
       storage: this.storage,
-      ui: this.ui
-    })
-    this.dapps = new DappsController({
-      appVersion: this.#appVersion,
-      fetch: this.fetch,
-      storage: this.storage,
-      networks: this.networks,
-      phishing: this.phishing,
-      ui: this.ui
+      addressBook: this.addressBook
     })
 
     this.selectedAccount.initControllers({
@@ -393,6 +385,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       invite: this.invite,
       storage: this.storage,
+      phishing: this.phishing,
       swapProvider: new SwapProviderParallelExecutor([LiFiProvider, SocketProvider]),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
@@ -435,6 +428,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.activity,
       this.#externalSignerControllers,
       this.providers,
+      this.phishing,
       relayerUrl,
       this.#commonHandlerForBroadcastSuccess.bind(this)
     )
@@ -471,12 +465,15 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
-      dapps: this.dapps,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
       ui: this.ui,
       transactionManager: this.transactionManager,
       autoLogin: this.autoLogin,
+      getDapp: async (id) => {
+        await this.dapps.initialLoadPromise
+        return this.dapps.getDapp(id)
+      },
       getSignAccountOp: () => this.signAccountOp,
       getMainStatuses: () => this.statuses,
       updateSignAccountOp: (props) => {
@@ -488,7 +485,20 @@ export class MainController extends EventEmitter implements IMainController {
         await this.updateSelectedAccountPortfolio({ networks })
       },
       addTokensToBeLearned: this.portfolio.addTokensToBeLearned.bind(this.portfolio),
-      guardHWSigning: this.#guardHWSigning.bind(this)
+      guardHWSigning: this.#guardHWSigning.bind(this),
+      onSetCurrentAction: (currentAction) => {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.dapps.setDappToConnectIfNeeded(currentAction)
+      }
+    })
+
+    this.dapps = new DappsController({
+      appVersion: this.#appVersion,
+      fetch: this.fetch,
+      storage: this.storage,
+      networks: this.networks,
+      phishing: this.phishing,
+      ui: this.ui
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -557,10 +567,14 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (selectedAccountAddr) {
       const FIVE_MINUTES = 1000 * 60 * 5
+      const ONE_HOUR = 1000 * 60 * 60
       this.domains.batchReverseLookup(this.accounts.accounts.map((a) => a.addr))
 
       if (!(this.activity.broadcastedButNotConfirmed[selectedAccountAddr] || []).length) {
-        this.updateSelectedAccountPortfolio({ maxDataAgeMs: FIVE_MINUTES })
+        this.updateSelectedAccountPortfolio({
+          maxDataAgeMs: FIVE_MINUTES,
+          maxDataAgeMsUnused: ONE_HOUR
+        })
         this.defiPositions.updatePositions({ maxDataAgeMs: FIVE_MINUTES })
       }
 
@@ -599,11 +613,12 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async selectAccount(toAccountAddr: string) {
+    await this.initialLoadPromise
+
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
   async #selectAccount(toAccountAddr: string | null) {
-    await this.initialLoadPromise
     if (!toAccountAddr) {
       await this.selectedAccount.setAccount(null)
 
@@ -637,6 +652,15 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge.reset()
     this.transfer.resetForm()
 
+    // Don't await this as it's not critical for the account selection
+    // and if the user decides to quickly change to another account withStatus
+    // will block the UI until these are resolved.
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.reloadSelectedAccount({
+      maxDataAgeMs: 5 * 60 * 1000,
+      maxDataAgeMsUnused: 60 * 60 * 1000
+    })
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
       this.activity.forceEmitUpdate(),
@@ -645,13 +669,6 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.broadcastDappSessionEvent('accountsChanged', [toAccountAddr]),
       this.forceEmitUpdate()
     ])
-    // Don't await these as they are not critical for the account selection
-    // and if the user decides to quickly change to another account withStatus
-    // will block the UI until these are resolved.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.reloadSelectedAccount({
-      maxDataAgeMs: 5 * 60 * 1000
-    })
   }
 
   async #onAccountPickerSuccess() {
@@ -737,6 +754,7 @@ export class MainController extends EventEmitter implements IMainController {
         account: this.selectedAccount.account,
         network,
         provider: this.providers.providers[network.chainId.toString()],
+        phishing: this.phishing,
         fromActionId: actionId,
         accountOp,
         isSignRequestStillActive: () => {
@@ -965,7 +983,7 @@ export class MainController extends EventEmitter implements IMainController {
     if (!this.signAccountOp) return
 
     this.#abortHWTransactionSign(this.signAccountOp)
-    this.signAccountOp.reset()
+    this.signAccountOp.destroy()
     this.signAccountOp = null
     this.signAccOpInitError = null
 
@@ -1267,8 +1285,16 @@ export class MainController extends EventEmitter implements IMainController {
           ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
           : undefined
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.updateSelectedAccountPortfolio({ networks })
+        if (networks?.length) {
+          this.updateSelectedAccountPortfolio({ networks })
+
+          // update the account state to latest as well
+          this.accounts.updateAccountState(
+            this.selectedAccount.account.addr,
+            'latest',
+            networks?.map((net) => net.chainId)
+          )
+        }
       }
     }
 
@@ -1357,9 +1383,10 @@ export class MainController extends EventEmitter implements IMainController {
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
+    maxDataAgeMsUnused?: number
     isManualReload?: boolean
   }) {
-    const { chainIds, isManualReload = false, maxDataAgeMs } = options || {}
+    const { chainIds, isManualReload = false, maxDataAgeMsUnused, maxDataAgeMs } = options || {}
     const networksToUpdate = chainIds
       ? this.networks.networks.filter((n) => chainIds.includes(n.chainId))
       : undefined
@@ -1385,6 +1412,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.updateSelectedAccountPortfolio({
         networks: networksToUpdate,
         isManualUpdate: isManualReload,
+        maxDataAgeMsUnused,
         maxDataAgeMs
       }),
       this.defiPositions.updatePositions({ chainIds, maxDataAgeMs, forceUpdate: isManualReload })
@@ -1401,15 +1429,15 @@ export class MainController extends EventEmitter implements IMainController {
     // and not the selected account portfolio the flag isOffline
     // and the errors of the selected account portfolio should
     // come in the same tick. Otherwise the UI may flash the wrong error.
-    const latestState = this.portfolio.getLatestPortfolioState(accountAddr)
-    const latestStateKeys = Object.keys(latestState)
-    const isAllLoaded = latestStateKeys.every((chainId) => {
-      return isNetworkReady(latestState[chainId]) && !latestState[chainId]?.isLoading
+    const portfolioState = this.portfolio.getAccountPortfolioState(accountAddr)
+    const portfolioStateKeys = Object.keys(portfolioState)
+    const isAllLoaded = portfolioStateKeys.every((chainId) => {
+      return isNetworkReady(portfolioState[chainId]) && !portfolioState[chainId]?.isLoading
     })
 
     // Set isOffline back to false if the portfolio is loading.
     // This is done to prevent the UI from flashing the offline error
-    if (!latestStateKeys.length || !isAllLoaded) {
+    if (!portfolioStateKeys.length || !isAllLoaded) {
       // Skip unnecessary updates
       if (!this.isOffline) return
 
@@ -1418,8 +1446,8 @@ export class MainController extends EventEmitter implements IMainController {
       return
     }
 
-    const allPortfolioNetworksHaveErrors = latestStateKeys.every((chainId) => {
-      const state = latestState[chainId]
+    const allPortfolioNetworksHaveErrors = portfolioStateKeys.every((chainId) => {
+      const state = portfolioState[chainId]
 
       return !!state?.criticalError
     })
@@ -1444,8 +1472,9 @@ export class MainController extends EventEmitter implements IMainController {
     networks?: Network[]
     isManualUpdate?: boolean
     maxDataAgeMs?: number
+    maxDataAgeMsUnused?: number
   }) {
-    const { networks, maxDataAgeMs, isManualUpdate } = opts || {}
+    const { networks, maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate } = opts || {}
 
     await this.initialLoadPromise
     if (!this.selectedAccount.account) return
@@ -1467,7 +1496,7 @@ export class MainController extends EventEmitter implements IMainController {
             states: await this.accounts.getOrFetchAccountStates(this.selectedAccount.account.addr)
           }
         : undefined,
-      { maxDataAgeMs, isManualUpdate }
+      { maxDataAgeMs, maxDataAgeMsUnused, isManualUpdate }
     )
     this.#updateIsOffline()
   }

@@ -21,7 +21,7 @@ const NFT_COLLECTION_LIMIT = 100
 // set the spoof+addr and pass all the calls
 function getFunctionParams(account: Account, op: AccountOp, accountState: AccountOnchainState) {
   if (isBasicAccount(account, accountState) && op.calls.length === 1) {
-    const call = op.calls[0]
+    const call = op.calls[0]!
     return {
       to: call.to,
       value: toQuantity(call.value.toString()),
@@ -69,7 +69,7 @@ export async function debugTraceCall(
   overrideData?: any
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const opts = {
-    blockTag: 'latest',
+    blockTag: 'latest' as 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: DeploylessMode.ProxyContract,
     isEOA: isBasicAccount(account, accountState),

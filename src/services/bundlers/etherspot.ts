@@ -8,9 +8,13 @@ import { GasSpeeds, UserOpStatus } from './types'
 
 export class Etherspot extends Bundler {
   protected getUrl(network: Network): string {
-    return `https://rpc.etherspot.io/v2/${network.chainId.toString()}?api-key=${
-      process.env.REACT_APP_ETHERSPOT_API_KEY
-    }`
+    const API_KEY = process.env.REACT_APP_ETHERSPOT_API_KEY || ''
+
+    if (!API_KEY) {
+      throw new Error('Etherspot API key is not set')
+    }
+
+    return `https://rpc.etherspot.io/v2/${network.chainId.toString()}?api-key=${API_KEY}`
   }
 
   protected async getGasPrice(network: Network): Promise<GasSpeeds> {

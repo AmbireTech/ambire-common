@@ -86,8 +86,8 @@ describe.skip('happy cases email vault', () => {
     const res = await emailVault.getInfo(email, authKey)
     expect(res).toHaveProperty('email', email)
     expect(res.availableSecrets.length).toBe(2)
-    expect(res.availableSecrets[0].type).toBe('recoveryKey')
-    expect(res.availableSecrets[1].type).toBe('keyStore')
+    expect(res.availableSecrets[0]!.type).toBe('recoveryKey')
+    expect(res.availableSecrets[1]!.type).toBe('keyStore')
     res.availableSecrets.forEach((s) => {
       expect(s).toHaveProperty('key')
     })

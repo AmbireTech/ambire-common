@@ -28,7 +28,7 @@ describe('DeFi positions', () => {
       expect(uniV3Positions).not.toBeNull()
 
       if (uniV3Positions !== null) {
-        const firstPos = uniV3Positions.positions[0]
+        const firstPos = uniV3Positions.positions[0]!
         expect(firstPos.additionalData.liquidity).toBeGreaterThan(0)
         expect(firstPos.assets.length).toBeGreaterThan(0)
       }
@@ -52,7 +52,7 @@ describe('DeFi positions', () => {
               iconUrl: '',
               siteUrl: 'https://app.uniswap.org/swap',
               type: 'common',
-              positions: DEBANK_UNI_V3[0].positions
+              positions: DEBANK_UNI_V3[0]!.positions
             }
           ],
           [],
@@ -89,7 +89,7 @@ describe('DeFi positions', () => {
         expect(res?.source).toBe('mixed')
         expect(res?.positions.length).toBeGreaterThan(0)
 
-        const firstPos = res?.positions[0]
+        const firstPos = res?.positions[0]!
         expect(firstPos).toBeDefined()
         expect(firstPos?.additionalData.inRange).toBeDefined()
       })
@@ -101,14 +101,13 @@ describe('DeFi positions', () => {
 
       expect(aavePositions).not.toBeNull()
       if (aavePositions !== null) {
-        const pos1 = aavePositions.positions[0]
+        const pos1 = aavePositions.positions[0]!
         expect(pos1.additionalData.healthRate).toBeGreaterThan(1)
       }
     })
     test('AAVE returns prices, health rate, additional date and asset value', async () => {
       const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, ethereum)
-      const pos = aavePositions?.positions[0]
-
+      const pos = aavePositions?.positions[0]!
       if (!pos) throw new Error('no positions found')
 
       expect(aavePositions?.positionInUSD).toBeGreaterThan(0)

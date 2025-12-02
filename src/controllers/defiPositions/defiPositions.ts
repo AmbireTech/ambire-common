@@ -667,8 +667,8 @@ export class DefiPositionsController extends EventEmitter implements IDefiPositi
     }, {} as AccountState)
   }
 
-  getNetworksWithPositions(accountAddr: string) {
-    return this.#networksWithPositionsByAccounts[accountAddr] || []
+  getNetworksWithPositions(accountAddr: string): NetworksWithPositionsByAccounts[string] {
+    return this.#networksWithPositionsByAccounts[accountAddr] || {}
   }
 
   removeAccountData(accountAddr: string) {

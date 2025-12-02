@@ -5,7 +5,6 @@ import { Dapp } from '../../interfaces/dapp'
 /* eslint-disable no-restricted-syntax */
 import { Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
-import { CashbackStatus } from '../../interfaces/selectedAccount'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
 import { getDappNameFromId } from '../../libs/dapps/helpers'
@@ -53,13 +52,15 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateKeyMetaNullToKeyMetaCreatedAt() // As of version v4.33.0
       await this.#clearHumanizerMetaObjectFromStorage() // As of version v4.34.0
       await this.#migrateTokenPreferences() // As of version 4.51.0
-      await this.#migrateCashbackStatusToNewFormat() // As of version 4.53.0
       await this.#removeDappSessions() // As of version 4.55.0
       await this.#removeIsDefaultWalletStorageIfExist() // As of version 4.57.0
       await this.#removeOnboardingStateStorageIfExist() // As of version 4.59.0
       await this.#migrateNetworkIdToChainId()
       await this.#migrateAccountsCleanupUsedOnNetworks() // As of version 5.24.0
       await this.#migrateLegacyDappsToDappsV2() // As of version 5.30.0
+      await this.#cleanObsoleteNewlyCreatedFlagOnAccounts() // As of version 5.30.0
+      await this.#cleanupCashbackStatus() // As of version 5.32.0
+      await this.#removeLegacyPhishingDetection() // As of version 5.32.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -213,58 +214,6 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // humanization process.
   async #clearHumanizerMetaObjectFromStorage() {
     await this.#storage.remove('HumanizerMetaV2')
-  }
-
-  // As of version 4.53.0, cashback status information has been introduced.
-  // Previously, cashback statuses were stored as separate objects per account.
-  // Now, they are normalized under a single structure for simplifying.
-  // Migration is needed to transform existing data into the new format.
-  async #migrateCashbackStatusToNewFormat() {
-    const [passedMigrations, cashbackStatusByAccount] = await Promise.all([
-      this.#storage.get('passedMigrations', []),
-      this.#storage.get('cashbackStatusByAccount', {})
-    ])
-
-    if (passedMigrations.includes('migrateCashbackStatusToNewFormat')) return
-
-    const migratedCashbackStatusByAccount = Object.fromEntries(
-      Object.entries(cashbackStatusByAccount).map(([accountId, status]) => {
-        if (typeof status === 'string') {
-          return [accountId, status as CashbackStatus]
-        }
-
-        if (typeof status === 'object' && status !== null) {
-          const { cashbackWasZeroAt, firstCashbackReceivedAt, firstCashbackSeenAt } = status
-
-          if (
-            cashbackWasZeroAt &&
-            firstCashbackReceivedAt === null &&
-            firstCashbackSeenAt === null
-          ) {
-            return [accountId, 'no-cashback']
-          }
-
-          if (
-            cashbackWasZeroAt === null &&
-            firstCashbackReceivedAt &&
-            firstCashbackSeenAt === null
-          ) {
-            return [accountId, 'unseen-cashback']
-          }
-
-          if (cashbackWasZeroAt === null && firstCashbackReceivedAt && firstCashbackSeenAt) {
-            return [accountId, 'seen-cashback']
-          }
-        }
-
-        return [accountId, 'seen-cashback']
-      })
-    )
-
-    await this.#storage.set('cashbackStatusByAccount', migratedCashbackStatusByAccount)
-    await this.#storage.set('passedMigrations', [
-      ...new Set([...passedMigrations, 'migrateCashbackStatusToNewFormat'])
-    ])
   }
 
   // As of version 4.55.0 we no longer need the dappSessions in the storage so this migration removes them
@@ -448,7 +397,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     }
   }
 
-  async get<K extends keyof StorageProps | string | undefined>(
+  async get<K extends keyof StorageProps | string>(
     key: K,
     defaultValue?: any
   ): Promise<K extends keyof StorageProps ? StorageProps[K] : any> {
@@ -650,6 +599,57 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.remove('dapps')
     await this.#storage.set('passedMigrations', [
       ...new Set([...passedMigrations, 'migrateLegacyDappsToDappsV2'])
+    ])
+  }
+
+  /**
+   * As of version 5.30.0, the "newlyAdded" is no longer part of the account
+   * interface and moreover - even before this v - it was no longer used anywhere.
+   */
+  async #cleanObsoleteNewlyCreatedFlagOnAccounts() {
+    const [passedMigrations, accounts] = await Promise.all([
+      this.#storage.get('passedMigrations', []),
+      this.#storage.get('accounts', [])
+    ])
+
+    if (passedMigrations.includes('cleanObsoleteNewlyCreatedFlagOnAccounts')) return
+
+    const shouldCleanupNewlyCreatedFlags = accounts.some((a) => 'newlyCreated' in a)
+    if (shouldCleanupNewlyCreatedFlags) {
+      await this.#storage.set(
+        'accounts',
+        accounts.map((acc) =>
+          // destructure and re-build to remove the `newlyCreated` property
+          'newlyCreated' in acc ? (({ newlyCreated, ...rest }) => ({ ...rest }))(acc) : acc
+        )
+      )
+    }
+
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'cleanObsoleteNewlyCreatedFlagOnAccounts'])
+    ])
+  }
+
+  // As of version 5.32.0, we no longer need to keep cashback status by account in the storage
+  async #cleanupCashbackStatus() {
+    const [passedMigrations] = await Promise.all([this.#storage.get('passedMigrations', [])])
+
+    if (passedMigrations.includes('cleanupCashbackStatus')) return
+
+    await this.#storage.remove('cashbackStatusByAccount')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'cleanupCashbackStatus'])
+    ])
+  }
+
+  // As of version 5.32.0 we no longer need the dappSessions in the storage so this migration removes them
+  async #removeLegacyPhishingDetection() {
+    const passedMigrations = await this.#storage.get('passedMigrations', [])
+    if (passedMigrations.includes('removePhishingDetection')) return
+
+    await this.#storage.remove('phishingDetection')
+    await this.#storage.set('passedMigrations', [
+      ...new Set([...passedMigrations, 'removePhishingDetection'])
     ])
   }
 

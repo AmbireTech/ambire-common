@@ -21,8 +21,13 @@ describe('Estimation/Broadcast common errors are humanized', () => {
   let contract: any
 
   beforeEach(async () => {
-    const contractFactory = await ethers.getContractFactory('MockContract')
-    contract = await contractFactory.deploy()
+    try {
+      const contractFactory = await ethers.getContractFactory('MockContract')
+      contract = await contractFactory.deploy()
+    } catch (error) {
+      console.error('Error deploying MockContract:', error)
+      throw error
+    }
   })
 
   it('Expired swap (Uniswap)', async () => {

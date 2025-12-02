@@ -2,13 +2,14 @@ import { getAddress, isAddress } from 'ethers'
 
 import { IDomainsController } from '../../interfaces/domains'
 import { RPCProviders } from '../../interfaces/provider'
-import { reverseLookupEns } from '../../services/ensDomains'
+import { getEnsAvatar, reverseLookupEns } from '../../services/ensDomains'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 interface Domains {
   [address: string]: {
     ens: string | null
+    ensAvatar?: string | null
     createdAt?: number
     updatedAt?: number
     updateFailedAt?: number
@@ -52,11 +53,13 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    */
   saveResolvedReverseLookup({
     address,
+    ensAvatar,
     name,
     type
   }: {
     address: string
     name: string
+    ensAvatar: string | null
     type: 'ens'
   }) {
     const checksummedAddress = getAddress(address)
@@ -65,6 +68,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     const existing = this.domains[checksummedAddress]
     const now = Date.now()
     this.domains[checksummedAddress] = {
+      ensAvatar: type === 'ens' ? ensAvatar : existing?.ensAvatar ?? null,
       ens: type === 'ens' ? name : prevEns,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
@@ -116,12 +120,20 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     this.emitUpdate()
 
     try {
+      let ensAvatar: string | undefined | null
+
       const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+
+      if (ens) {
+        // We need the ens name to resolve the avatar
+        ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider))
+      }
 
       const now = Date.now()
       const existing = this.domains[checksummedAddress]
       this.domains[checksummedAddress] = {
         ens,
+        ensAvatar,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
       }

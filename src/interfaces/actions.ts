@@ -24,7 +24,7 @@ export type OpenActionWindowParams = {
 export type SwitchAccountAction = {
   id: UserRequest['id']
   type: 'switchAccount'
-  userRequest: {
+  userRequest: DappUserRequest & {
     meta: {
       accountAddr: Account['addr']
       switchToAccountAddr: Account['addr']

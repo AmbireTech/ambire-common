@@ -2,13 +2,7 @@ import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { parse, stringify } from '../richJson/richJson'
-import {
-  HumanizerCallModule,
-  HumanizerMeta,
-  HumanizerOptions,
-  IrCall,
-  IrMessage
-} from './interfaces'
+import { HumanizerCallModule, HumanizerMeta, IrCall, IrMessage } from './interfaces'
 import {
   eip7702AuthorizationModule,
   ensMessageModule,
@@ -18,6 +12,7 @@ import {
   legendsMessageModule,
   openseaMessageModule,
   permit2Module,
+  safeMessageModule,
   snapshotModule,
   zealyMessageModule
 } from './messageModules'
@@ -42,6 +37,7 @@ import PancakeModule from './modules/Pancake'
 import { postProcessing } from './modules/PostProcessing/postProcessModule'
 import preProcessHumanizer from './modules/PreProcess'
 import privilegeHumanizer from './modules/Privileges'
+import SafeModule from './modules/Safe'
 import singletonFactory from './modules/SingletonFactory'
 import { SocketModule } from './modules/Socket'
 import sushiSwapModule from './modules/Sushiswap'
@@ -74,6 +70,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   wrappingModule,
   aaveHumanizer,
   WALLETModule,
+  SafeModule,
   privilegeHumanizer,
   sushiSwapModule,
   legendsModule,
@@ -89,6 +86,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [
+  safeMessageModule,
   erc20Module,
   erc721Module,
   permit2Module,
@@ -97,21 +95,18 @@ const humanizerTMModules = [
   ensMessageModule,
   openseaMessageModule,
   zealyMessageModule,
+  safeMessageModule,
   eip7702AuthorizationModule,
   snapshotModule
 ]
 
-const humanizeAccountOp = (_accountOp: AccountOp, options: HumanizerOptions): IrCall[] => {
+const humanizeAccountOp = (_accountOp: AccountOp): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
-  const humanizerOptions: HumanizerOptions = {
-    ...options,
-    chainId: accountOp.chainId
-  }
 
   let currentCalls: IrCall[] = accountOp.calls
   humanizerCallModules.forEach((hm) => {
     try {
-      currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta, humanizerOptions)
+      currentCalls = hm(accountOp, currentCalls, humanizerInfo as HumanizerMeta)
     } catch (error) {
       console.error(error)
       // No action is needed here; we only set `currentCalls` if the module successfully resolves the calls.

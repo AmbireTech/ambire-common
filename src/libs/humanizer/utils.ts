@@ -4,9 +4,10 @@ import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './inter
 
 export function getWarning(
   content: string,
+  code: HumanizerWarning['code'],
   level: HumanizerWarning['level'] = 'warning'
 ): HumanizerWarning {
-  return { content, level }
+  return { content, level, code }
 }
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 

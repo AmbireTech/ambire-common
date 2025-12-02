@@ -4,6 +4,7 @@ import { expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -16,11 +17,13 @@ import wait from '../../utils/wait'
 import { AccountsController } from '../accounts/accounts'
 import { ActionsController } from '../actions/actions'
 import { ActivityController } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -95,7 +98,7 @@ const uiCtrl = new UiController({ uiManager })
 
 const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
-storage.set('selectedAccount', accounts[0].addr)
+storage.set('selectedAccount', accounts[0]!.addr)
 
 const accountsCtrl = new AccountsController(
   storageCtrl,
@@ -124,10 +127,13 @@ const selectedAccountCtrl = new SelectedAccountController({
   autoLogin: autoLoginCtrl
 })
 
+const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
+
 const actionsCtrl = new ActionsController({
   selectedAccount: selectedAccountCtrl,
   ui: uiCtrl,
-  onActionWindowClose: () => Promise.resolve()
+  onActionWindowClose: () => Promise.resolve(),
+  onSetCurrentAction: () => Promise.resolve()
 })
 
 const inviteCtrl = new InviteController({
@@ -161,6 +167,12 @@ const activityCtrl = new ActivityController(
   portfolioCtrl,
   () => Promise.resolve()
 )
+
+const phishingCtrl = new PhishingController({
+  fetch,
+  storage: storageCtrl,
+  addressBook: addressBookCtrl
+})
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
 
@@ -209,6 +221,7 @@ const swapAndBridgeController = new SwapAndBridgeController({
   keystore,
   portfolio: portfolioCtrl,
   providers: providersCtrl,
+  phishing: phishingCtrl,
   externalSignerControllers: {},
   relayerUrl,
   getUserRequests: () => [],
@@ -246,7 +259,7 @@ describe('SwapAndBridge Controller', () => {
   test('should initialize', async () => {
     await storage.set('accounts', accounts)
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(accounts[0])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
 
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
@@ -295,7 +308,7 @@ describe('SwapAndBridge Controller', () => {
       }
     })
     swapAndBridgeController.updateForm({
-      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0].address
+      toSelectedTokenAddr: swapAndBridgeController.toTokenShortList[0]!.address
     })
   })
   test('should update fromAmount', (done) => {
@@ -353,7 +366,7 @@ describe('SwapAndBridge Controller', () => {
   })
   it('should continuously update the quote', async () => {
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
+    const { restore } = suppressConsole()
 
     const updateQuoteSpy = jest
       .spyOn(swapAndBridgeController, 'updateQuote')
@@ -382,6 +395,9 @@ describe('SwapAndBridge Controller', () => {
       .spyOn(swapAndBridgeController, 'formStatus', 'get')
       .mockReturnValueOnce(SwapAndBridgeFormStatus.ReadyToSubmit)
 
+    // Otherwise the interval won't run
+    swapAndBridgeController.quote!.selectedRoute!.disabled = false
+
     swapAndBridgeController.updateQuoteInterval.restart()
     expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(2)
     expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
@@ -390,7 +406,7 @@ describe('SwapAndBridge Controller', () => {
     expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restore()
   })
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
@@ -400,25 +416,25 @@ describe('SwapAndBridge Controller', () => {
       userTxIndex: userTx.userTxIndex
     })
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('ready')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('ready')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
   test('should update an activeRoute', async () => {
-    const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.updateActiveRoute(activeRouteId, {
       routeStatus: 'in-progress',
       userTxHash: 'test'
     })
     swapAndBridgeController.updateActiveRoute(activeRouteId) // for the coverage
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('in-progress')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0].actions).toHaveLength(2)
+    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
   })
   it('should continuously update active routes', async () => {
+    const { restore } = suppressConsole()
     jest.useFakeTimers()
-    jest.spyOn(global.console, 'error').mockImplementation(() => {})
 
     const checkForActiveRoutesStatusUpdateSpy = jest
       .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
@@ -459,12 +475,12 @@ describe('SwapAndBridge Controller', () => {
     expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
     jest.clearAllTimers()
     jest.useRealTimers()
-    ;(console.error as jest.Mock).mockRestore()
+    restore()
   })
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
-      swapAndBridgeController.activeRoutes[0].activeRouteId,
+      swapAndBridgeController.activeRoutes[0]!.activeRouteId,
       {
         routeStatus: 'in-progress',
         userTxHash: 'test',
@@ -472,10 +488,10 @@ describe('SwapAndBridge Controller', () => {
       }
     )
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
-    expect(swapAndBridgeController.activeRoutes[0].routeStatus).toEqual('completed')
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
   })
   test('should remove an activeRoute', async () => {
-    const activeRouteId = swapAndBridgeController.activeRoutes[0].activeRouteId
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.removeActiveRoute(activeRouteId)
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)

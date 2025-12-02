@@ -4,7 +4,6 @@ import {
   NetworkState,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
-import { AccountId } from './account'
 import { ControllerInterface } from './controller'
 
 export type ISelectedAccountController = ControllerInterface<
@@ -79,22 +78,5 @@ export interface SelectedAccountPortfolio {
     [chainId: string]: number
   }
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
-  latest: SelectedAccountPortfolioState
-  pending: SelectedAccountPortfolioState
-}
-
-// As of version 4.53.0, cashback status information has been introduced.
-// Previously, each account stored a separate cashback status object with multiple timestamps.
-// Now, cashback statuses are represented as a single normalized value for simplifying.
-// This type represents the old structure before migration.
-export type LegacyCashbackStatus = {
-  firstCashbackReceivedAt: number | null
-  firstCashbackSeenAt: number | null
-  cashbackWasZeroAt: number | null
-}
-
-export type CashbackStatus = 'no-cashback' | 'unseen-cashback' | 'cashback-modal' | 'seen-cashback'
-
-export type CashbackStatusByAccount = {
-  [key: AccountId]: CashbackStatus
+  portfolioState: SelectedAccountPortfolioState
 }

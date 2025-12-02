@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
@@ -18,10 +19,8 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key, KeystoreSignerInterface } from '../../interfaces/keystore'
-import { IProvidersController } from '../../interfaces/provider'
-import { ITransferController } from '../../interfaces/transfer'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
-import { Portfolio } from '../../libs/portfolio'
+import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getRpcProvider } from '../../services/provider'
 import { AccountsController } from '../accounts/accounts'
@@ -32,6 +31,7 @@ import { BannerController } from '../banner/banner'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
 import { NetworksController } from '../networks/networks'
+import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
@@ -44,36 +44,14 @@ const polygon = networks.find((x) => x.chainId === 137n)
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
-const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
-const polygonProvider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const PLACEHOLDER_RECIPIENT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
-const PLACEHOLDER_SELECTED_ACCOUNT: Account = {
-  addr: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337',
-  associatedKeys: ['0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'],
-  creation: {
-    factoryAddr: '0x00',
-    bytecode: '0x000',
-    salt: '0x000'
-  },
-  initialPrivileges: [['0x00', '0x01']],
-  preferences: {
-    label: DEFAULT_ACCOUNT_LABEL,
-    pfp: '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
-  }
-}
+
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const STK_WALLET_ADDRESS = '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0'
-
-const ethPortfolio = new Portfolio(fetch, provider, ethereum, velcroUrl)
-const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon, velcroUrl)
-
-let transferController: ITransferController
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.chainId, getRpcProvider(network.rpcUrls, network.chainId)])
 )
-
-let providersCtrl: IProvidersController
 
 const account = {
   addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -90,33 +68,6 @@ const account = {
     pfp: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
   }
 }
-
-const storage = produceMemoryStore()
-const storageCtrl = new StorageController(storage)
-
-const accounts = [account]
-
-const mockKeys = mockInternalKeys(accounts as Account[])
-
-storage.set('keystoreKeys', mockKeys)
-
-storageCtrl.set('accounts', accounts)
-
-const networksCtrl = new NetworksController({
-  storage: storageCtrl,
-  fetch,
-  relayerUrl,
-  onAddOrUpdateNetworks: (nets) => {
-    nets.forEach((n) => {
-      providersCtrl.setProvider(n)
-    })
-  },
-  onRemoveNetwork: (id) => {
-    providersCtrl.removeProvider(id)
-  }
-})
-providersCtrl = new ProvidersController(networksCtrl)
-providersCtrl.providers = providers
 
 // TODO - this mocks are being duplicated across the tests. Should reuse it.
 class InternalSigner {
@@ -192,101 +143,141 @@ class LedgerSigner {
 }
 
 const { uiManager } = mockUiManager()
-const uiCtrl = new UiController({ uiManager })
-const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
 
-const accountsCtrl = new AccountsController(
-  storageCtrl,
-  providersCtrl,
-  networksCtrl,
-  keystoreController,
-  () => {},
-  () => {},
-  () => {},
-  relayerUrl,
-  fetch
-)
-const autoLoginCtrl = new AutoLoginController(
-  storageCtrl,
-  keystoreController,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  {},
-  new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-)
+const getTokens = () => {
+  return structuredClone(ETHEREUM_TOKENS.concat(POLYGON_TOKENS))
+}
 
-const selectedAccountCtrl = new SelectedAccountController({
-  storage: storageCtrl,
-  accounts: accountsCtrl,
-  keystore: keystoreController,
-  autoLogin: autoLoginCtrl
-})
+const prepareTest = async () => {
+  const storage = produceMemoryStore()
+  const storageCtrl = new StorageController(storage)
 
-const addressBookController = new AddressBookController(
-  storageCtrl,
-  accountsCtrl,
-  selectedAccountCtrl
-)
+  const accounts = [account]
 
-const callRelayer = relayerCall.bind({ url: '', fetch })
+  const mockKeys = mockInternalKeys(accounts as Account[])
 
-const portfolioController = new PortfolioController(
-  storageCtrl,
-  fetch,
-  providersCtrl,
-  networksCtrl,
-  accountsCtrl,
-  keystoreController,
-  relayerUrl,
-  velcroUrl,
-  new BannerController(storageCtrl)
-)
-const activity = new ActivityController(
-  storageCtrl,
-  fetch,
-  callRelayer,
-  accountsCtrl,
-  selectedAccountCtrl,
-  providersCtrl,
-  networksCtrl,
-  portfolioController,
-  () => Promise.resolve()
-)
+  storage.set('keystoreKeys', mockKeys)
 
-const getTokens = async () => {
-  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
-  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT.addr)
+  storageCtrl.set('accounts', accounts)
 
-  return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+  let providersCtrl: any
+
+  const networksCtrl = new NetworksController({
+    storage: storageCtrl,
+    fetch,
+    relayerUrl,
+    onAddOrUpdateNetworks: (nets) => {
+      nets.forEach((n) => {
+        providersCtrl.setProvider(n)
+      })
+    },
+    onRemoveNetwork: (id) => {
+      providersCtrl.removeProvider(id)
+    }
+  })
+
+  providersCtrl = new ProvidersController(networksCtrl)
+  providersCtrl.providers = providers
+
+  const uiCtrl = new UiController({ uiManager })
+  const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
+  const keystoreController = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+
+  const accountsCtrl = new AccountsController(
+    storageCtrl,
+    providersCtrl,
+    networksCtrl,
+    keystoreController,
+    () => {},
+    () => {},
+    () => {},
+    relayerUrl,
+    fetch
+  )
+  const autoLoginCtrl = new AutoLoginController(
+    storageCtrl,
+    keystoreController,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    {},
+    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
+  )
+
+  const selectedAccountCtrl = new SelectedAccountController({
+    storage: storageCtrl,
+    accounts: accountsCtrl,
+    keystore: keystoreController,
+    autoLogin: autoLoginCtrl
+  })
+
+  const addressBookController = new AddressBookController(
+    storageCtrl,
+    accountsCtrl,
+    selectedAccountCtrl
+  )
+
+  const callRelayer = relayerCall.bind({ url: '', fetch })
+
+  const portfolioController = new PortfolioController(
+    storageCtrl,
+    fetch,
+    providersCtrl,
+    networksCtrl,
+    accountsCtrl,
+    keystoreController,
+    relayerUrl,
+    velcroUrl,
+    new BannerController(storageCtrl)
+  )
+  const activity = new ActivityController(
+    storageCtrl,
+    fetch,
+    callRelayer,
+    accountsCtrl,
+    selectedAccountCtrl,
+    providersCtrl,
+    networksCtrl,
+    portfolioController,
+    () => Promise.resolve()
+  )
+
+  const phishing = new PhishingController({
+    fetch,
+    storage: storageCtrl,
+    addressBook: addressBookController
+  })
+
+  const transferController = new TransferController(
+    () => {},
+    storageCtrl,
+    humanizerInfo as HumanizerMeta,
+    selectedAccountCtrl,
+    networksCtrl,
+    addressBookController,
+    accountsCtrl,
+    keystoreController,
+    portfolioController,
+    activity,
+    {},
+    providersCtrl,
+    phishing,
+    relayerUrl,
+    () => Promise.resolve()
+  )
+
+  await selectedAccountCtrl.initialLoadPromise
+  await selectedAccountCtrl.setAccount(account)
+
+  return {
+    transferController,
+    tokens: getTokens()
+  }
 }
 
 describe('Transfer Controller', () => {
-  test('should initialize', async () => {
-    transferController = new TransferController(
-      () => {},
-      storageCtrl,
-      humanizerInfo as HumanizerMeta,
-      selectedAccountCtrl,
-      networksCtrl,
-      addressBookController,
-      accountsCtrl,
-      keystoreController,
-      portfolioController,
-      activity,
-      {},
-      providersCtrl,
-      relayerUrl,
-      () => Promise.resolve()
-    )
-
-    await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(account)
-
-    expect(transferController.isInitialized).toBe(true)
-  })
   test('should set address state', async () => {
+    const { transferController } = await prepareTest()
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
@@ -296,10 +287,21 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.addressState.fieldValue).toBe(PLACEHOLDER_RECIPIENT)
   })
-  test('should set recipient address unknown', () => {
+  test('should set recipient address unknown', async () => {
+    const { transferController } = await prepareTest()
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        isDomainResolving: false
+      }
+    })
+
     expect(transferController.isRecipientAddressUnknown).toBe(true)
   })
   test('should flag recipient address as a smart contract', async () => {
+    const { transferController } = await prepareTest()
+
     await transferController.update({
       addressState: {
         fieldValue: XWALLET_ADDRESS,
@@ -310,16 +312,25 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(true)
   })
   test('should show SW warning', async () => {
-    const tokens = await getTokens()
+    const { transferController, tokens } = await prepareTest()
+
     const polOnPolygon = tokens.find(
       (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 137n
     )
 
-    await transferController.update({ selectedToken: polOnPolygon })
+    await transferController.update({
+      selectedToken: polOnPolygon,
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        isDomainResolving: false
+      }
+    })
     expect(transferController.isSWWarningVisible).toBe(true)
   })
   test('should change selected token', async () => {
-    const tokens = await getTokens()
+    const { transferController, tokens } = await prepareTest()
+
     const xwalletOnEthereum = tokens.find(
       (t) => t.address === STK_WALLET_ADDRESS && t.chainId === 1n
     )
@@ -330,19 +341,31 @@ describe('Transfer Controller', () => {
   })
 
   test('should set amount', async () => {
+    const { transferController } = await prepareTest()
+
     await transferController.update({
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
   })
   test('should set sw warning agreed', async () => {
+    const { transferController } = await prepareTest()
+
     await transferController.update({
       isSWWarningAgreed: true
     })
     expect(transferController.isSWWarningAgreed).toBe(true)
   })
   test('should set validation form messages', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const xwalletOnEthereum = tokens.find(
+      (t) => t.address === STK_WALLET_ADDRESS && t.chainId === 1n
+    )
+
     await transferController.update({
+      amount: '1',
+      selectedToken: xwalletOnEthereum,
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
         ensAddress: '',
@@ -380,15 +403,18 @@ describe('Transfer Controller', () => {
     })
   })
   test("should reject a token that doesn't have amount or amountPostSimulation for transfer", async () => {
-    const tokens = await getTokens()
+    const { transferController, tokens } = await prepareTest()
+
     const zeroAmountToken = tokens.find(
-      (t) => t.address === '0x8793Fb615Eb92822F482f88B3137B00aad4C00D2' && t.chainId === 1n
+      (t) => t.address === '0x1559FA1b8F28238FD5D76D9f434ad86FD20D1559' && t.chainId === 1n
     )
     await transferController.update({ selectedToken: zeroAmountToken })
     expect(transferController.selectedToken?.address).not.toBe(zeroAmountToken?.address)
   })
   test("should accept a token that doesn't have amount but has amountPostSimulation for transfer", async () => {
-    const tokens = await getTokens()
+    const { transferController } = await prepareTest()
+
+    const tokens = getTokens()
     const nativeToken = tokens.find(
       (t) => t.address === '0x0000000000000000000000000000000000000000' && t.chainId === 1n
     )
@@ -398,6 +424,8 @@ describe('Transfer Controller', () => {
   })
 
   test('should detect that the recipient is the fee collector', async () => {
+    const { transferController } = await prepareTest()
+
     await transferController.update({
       addressState: {
         fieldValue: FEE_COLLECTOR,
@@ -409,7 +437,11 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientAddressUnknown).toBeFalsy()
   })
 
-  const checkResetForm = () => {
+  test('should reset form', async () => {
+    const { transferController } = await prepareTest()
+
+    transferController.resetForm()
+
     expect(transferController.amount).toBe('')
     expect(transferController.recipientAddress).toBe('')
     expect(transferController.selectedToken).toBeNull()
@@ -423,16 +455,103 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(false)
     expect(transferController.isSWWarningVisible).toBe(false)
     expect(transferController.isSWWarningAgreed).toBe(false)
-  }
-
-  test('should reset form', () => {
-    transferController.resetForm()
-
-    checkResetForm()
   })
 
-  test('should toJSON()', () => {
+  test('should toJSON()', async () => {
+    const { transferController } = await prepareTest()
+
     const json = transferController.toJSON()
     expect(json).toBeDefined()
   })
 })
+
+const ETHEREUM_TOKENS: TokenResult[] = [
+  {
+    amount: 15896695133407326n,
+    chainId: 1n,
+    decimals: 18,
+    name: 'Ether',
+    symbol: 'ETH',
+    address: '0x0000000000000000000000000000000000000000',
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true,
+      isHidden: false,
+      suspectedType: null
+    },
+    priceIn: [{ baseCurrency: 'usd', price: 2694.55 }]
+  },
+  {
+    amount: 0n,
+    chainId: 1n,
+    decimals: 18,
+    name: 'EDEN',
+    symbol: 'EDEN',
+    address: '0x1559FA1b8F28238FD5D76D9f434ad86FD20D1559',
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: false,
+      isFeeToken: false,
+      isHidden: false,
+      suspectedType: null
+    },
+    priceIn: [{ baseCurrency: 'usd', price: 0.01605456 }]
+  },
+  {
+    amount: 0n,
+    chainId: 1n,
+    decimals: 18,
+    name: 'Ambire Wallet Staking Token',
+    symbol: 'xWALLET',
+    address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: false,
+      isFeeToken: false,
+      isHidden: false,
+      suspectedType: null
+    },
+    priceIn: [{ baseCurrency: 'usd', price: 0.32798689176900603 }]
+  },
+  {
+    amount: 58316260607759458104900n,
+    chainId: 1n,
+    decimals: 18,
+    name: 'Staked $WALLET',
+    symbol: 'stkWALLET',
+    address: '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0',
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: false,
+      isFeeToken: false,
+      isHidden: false,
+      suspectedType: null
+    },
+    priceIn: [{ baseCurrency: 'usd', price: 0.01565007 }]
+  }
+]
+
+const POLYGON_TOKENS: TokenResult[] = [
+  {
+    amount: 347660472650276574649n,
+    chainId: 137n,
+    decimals: 18,
+    name: 'Polygon',
+    symbol: 'POL',
+    address: '0x0000000000000000000000000000000000000000',
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true,
+      isHidden: false,
+      suspectedType: null
+    },
+    priceIn: [{ baseCurrency: 'usd', price: 0.177387 }]
+  }
+]
