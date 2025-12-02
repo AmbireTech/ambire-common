@@ -1040,7 +1040,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               if (
                 call.to !== newCall?.to ||
                 call.data !== newCall?.data ||
-                call.value !== newCall?.value
+                call.value !== newCall?.value ||
+                call.fromUserRequestId !== newCall?.fromUserRequestId
               )
                 shouldUpdate = true
             })
@@ -2669,6 +2670,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
     })
+    throw new Error(message) // so that broadcast resolves with an error status
   }
 
   canUpdate(): boolean {

@@ -1,10 +1,10 @@
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
@@ -174,7 +174,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
 }
 
 const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
-  parentStep: LiFiStep
+  parentStep: LiFiStep,
+  routeId: string
 ): SwapAndBridgeSendTxRequest => {
   if (
     !parentStep.transactionRequest ||
@@ -188,8 +189,7 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
   }
 
   return {
-    // Route ID is the string before the colon, then it's the step index
-    activeRouteId: parentStep.id.split(':')[0],
+    activeRouteId: routeId,
     approvalData:
       parentStep.action.fromToken.address === ZERO_ADDRESS
         ? null // No approval needed fo native tokens
@@ -200,10 +200,10 @@ const normalizeLiFiStepToSwapAndBridgeSendTxRequest = (
             owner: ''
           },
     chainId: parentStep.action.fromChainId,
-    txData: parentStep.transactionRequest.data,
     txTarget: parentStep.transactionRequest.to,
     userTxIndex: 0,
-    value: parentStep.transactionRequest.value
+    value: parentStep.transactionRequest.value,
+    txData: parentStep.transactionRequest.data
   }
 }
 
@@ -549,7 +549,7 @@ export class LiFiAPI implements SwapProvider {
       errorPrefix: 'Unable to start the route.'
     })
 
-    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response)
+    return normalizeLiFiStepToSwapAndBridgeSendTxRequest(response, route.routeId)
   }
 
   async getRouteStatus({
