@@ -2668,7 +2668,7 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
       error: _err || new Error(message),
       sendCrashReport: _err && 'sendCrashReport' in _err ? _err.sendCrashReport : undefined
     })
-    throw new Error(message) // so that broadcast resolves with an error status
+    throw _err || new Error(message) // so that broadcast resolves with an error status
   }
 
   canUpdate(): boolean {
