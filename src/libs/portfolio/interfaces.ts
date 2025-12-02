@@ -11,7 +11,7 @@ export interface GetOptionsSimulation {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
-export type SuspectedType = 'no-latin-symbol' | 'no-latin-name' | 'suspected' | null
+export type SuspectedType = 'suspected' | null
 
 export type TokenResult = {
   symbol: string
