@@ -142,6 +142,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #ui: IUiController
 
+  #waitTokenCounter = 0
+
   constructor(
     callRelayer: Function,
     storage: IStorageController,
@@ -187,17 +189,21 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#ui.uiEvent.on('updateView', async (view: View) => {
       if (view.currentRoute !== 'transfer' && view.currentRoute !== 'top-up-gas-tank') return
 
-      await this.#waitUntilReadyPortfolio()
+      // Increment token → invalidates previous calls
+      const waitToken = ++this.#waitTokenCounter
+
+      const isValid = await this.#waitUntilReadyPortfolio(waitToken)
+
+      // If aborted → don't continue
+      if (!isValid) return
 
       const tokens = this.#selectedAccountData.portfolio.isAllReady
         ? this.#selectedAccountData.portfolio.tokens
             .filter((t) => t.amount > 0n && !t.flags.rewardsType)
-            .sort((a, b) => {
-              return Number(b.amount - a.amount)
-            })
+            .sort((a, b) => Number(b.amount - a.amount))
         : []
 
-      if (!tokens?.length) return
+      if (!tokens.length) return
 
       const searchParams = view.searchParams || {}
       const tokenAddress = (searchParams.address || '').toLowerCase()
@@ -235,28 +241,33 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.emitUpdate()
   }
 
-  #waitUntilReadyPortfolio(): Promise<void> {
+  #waitUntilReadyPortfolio(waitToken: number): Promise<boolean> {
     return new Promise((resolve) => {
       let timeoutId: ReturnType<typeof setTimeout> | null = null
       let fallbackId: ReturnType<typeof setTimeout> | null = null
 
       const checkReady = () => {
+        // Abort if another call superseded this one
+        if (waitToken !== this.#waitTokenCounter) {
+          if (timeoutId) clearTimeout(timeoutId)
+          if (fallbackId) clearTimeout(fallbackId)
+          return resolve(false)
+        }
+
         if (this.#selectedAccountData.portfolio.isAllReady) {
           if (timeoutId) clearTimeout(timeoutId)
           if (fallbackId) clearTimeout(fallbackId)
-          return resolve()
+          return resolve(true)
         }
 
         timeoutId = setTimeout(checkReady, 50)
       }
 
-      // Run first check
       checkReady()
 
-      // Fallback: max wait 10 seconds
       fallbackId = setTimeout(() => {
         if (timeoutId) clearTimeout(timeoutId)
-        resolve()
+        resolve(waitToken === this.#waitTokenCounter)
       }, 10000)
     })
   }
