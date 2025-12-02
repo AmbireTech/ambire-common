@@ -1040,7 +1040,8 @@ export class SignAccountOpController extends EventEmitter implements ISignAccoun
               if (
                 call.to !== newCall?.to ||
                 call.data !== newCall?.data ||
-                call.value !== newCall?.value
+                call.value !== newCall?.value ||
+                call.fromUserRequestId !== newCall?.fromUserRequestId
               )
                 shouldUpdate = true
             })
