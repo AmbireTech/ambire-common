@@ -260,7 +260,7 @@ export class TransferController extends EventEmitter implements ITransferControl
           return resolve(true)
         }
 
-        timeoutId = setTimeout(checkReady, 50)
+        timeoutId = setTimeout(checkReady, 200)
       }
 
       checkReady()
