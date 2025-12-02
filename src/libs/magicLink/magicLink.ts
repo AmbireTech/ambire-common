@@ -10,12 +10,12 @@ export interface MagicLinkData {
 export interface RequestMagicLinkResult {
   success: Boolean
   data: MagicLinkData
-  message: String
+  message: string
 }
 
 export async function requestMagicLink(
-  email: String,
-  relayerUrl: String,
+  email: string,
+  relayerUrl: string,
   fetch: Fetch,
   options?: { autoConfirm?: boolean; flow?: MagicLinkFlow }
 ): Promise<MagicLinkData> {
@@ -24,7 +24,12 @@ export async function requestMagicLink(
   const resp = await fetch(
     `${relayerUrl}/email-vault/request-key/${email}${flow ? `?flow=${flow}` : ''}`
   )
-  const result: RequestMagicLinkResult = await resp.json()
+  let result: RequestMagicLinkResult
+  try {
+    result = await resp.json()
+  } catch {
+    throw new Error('Relayer is down.')
+  }
   if (result?.data?.secret && options?.autoConfirm)
     setTimeout(() => {
       fetch(
@@ -32,6 +37,6 @@ export async function requestMagicLink(
       )
     }, 2000)
 
-  if (!result.success) throw new Error(`magicLink: error getting magic link: ${result.message}`)
+  if (!result.success) throw new Error(result.message)
   return result.data
 }

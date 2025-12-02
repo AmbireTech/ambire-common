@@ -187,10 +187,26 @@ export class EmailVaultController extends EventEmitter implements IEmailVaultCon
     this.#shouldStopConfirmationPolling = false
     this.emitUpdate()
 
-    const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
-      autoConfirm: this.#autoConfirmMagicLink,
-      flow
-    })
+    let newKey
+    try {
+      newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
+        autoConfirm: this.#autoConfirmMagicLink,
+        flow
+      })
+    } catch (error: any) {
+      this.cancelEmailConfirmation()
+
+      const msg = error?.message
+      this.emitError({
+        message: msg
+          ? `Can't request magic link for email ${email}: ${msg}. Please try again or contact support if the problem persists.`
+          : `Can't request magic link for email ${email}. Please try again or contact support if the problem persists.`,
+        level: 'major',
+        error: msg
+      })
+    }
+
+    if (!newKey) return
 
     const polling = new Polling()
     polling.onUpdate(async () => {
