@@ -855,16 +855,18 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.hasProceeded = false
   }
 
-  async destroyLatestBroadcastedAccountOp() {
+  async destroyLatestBroadcastedAccountOp(shouldResetSelectedToken = true) {
     this.latestBroadcastedAccountOp = null
     this.latestBroadcastedToken = null
-    await this.#setDefaultSelectedToken()
+    if (shouldResetSelectedToken) {
+      await this.#setDefaultSelectedToken()
+    }
   }
 
   async unloadScreen(forceUnload?: boolean) {
     if (this.hasPersistedState && !forceUnload) return
 
-    await this.destroyLatestBroadcastedAccountOp()
+    await this.destroyLatestBroadcastedAccountOp(false)
     this.resetForm()
   }
 
