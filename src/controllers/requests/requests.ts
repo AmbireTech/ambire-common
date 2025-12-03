@@ -452,9 +452,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         }
 
         userRequestsToAdd.push(req)
+      } else {
+        userRequestsToAdd.push(req)
       }
-
-      userRequestsToAdd.push(req)
     }
 
     this.userRequests = this.userRequests.filter((r) => {
